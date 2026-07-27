@@ -846,6 +846,9 @@ export default function App() {
   }
 
   const deleteSession = async (id: string) => {
+    // Chat terminals outlive their pane (see ChatTerminal's effect cleanup), so deleting the
+    // chat is what finally tears its pty down — otherwise it would linger until app quit.
+    await window.electronAPI.terminalKill(`chatterm_${id}`)
     await window.electronAPI.deleteSession(id)
     setSessions((prev) => {
       const next = prev.filter((s) => s.id !== id)

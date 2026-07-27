@@ -106,6 +106,11 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
   // Debounced "output went quiet" timer, (re)armed by every data chunk while awaiting
   // reveal; fires setStarting(false) once REVEAL_QUIET_MS passes with no further output.
   const quietTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  // A pty outlives this component (see the effect cleanup below), so remounting reattaches to
+  // a live one and replays its buffered scrollback. Live chunks that land before that replay
+  // is written have to wait in `queuedData`, or they'd paint ahead of the history they follow.
+  const replayedRef = useRef(false)
+  const queuedDataRef = useRef<string[]>([])
 
   // Create the xterm instance once for this component's lifetime.
   useEffect(() => {
@@ -249,9 +254,8 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       termRef.current?.focus()
     }
 
-    const offData = window.electronAPI.onTerminalData((e) => {
-      if (e.id !== terminalId) return
-      term.write(e.data)
+    const writeChunk = (data: string): void => {
+      term.write(data)
       // Reveal as soon as the CLI has actually drawn something. `awaitingRevealRef` is a
       // one-shot gate (flipped off here the moment content first appears) so a CLI that keeps
       // streaming — codex spinning on "model: Loading" — reveals immediately instead of the
@@ -264,6 +268,18 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         clearTimeout(quietTimerRef.current)
         quietTimerRef.current = setTimeout(reveal, REVEAL_PAINT_GRACE_MS)
       }
+    }
+
+    replayedRef.current = false
+    queuedDataRef.current = []
+
+    const offData = window.electronAPI.onTerminalData((e) => {
+      if (e.id !== terminalId) return
+      if (!replayedRef.current) {
+        queuedDataRef.current.push(e.data)
+        return
+      }
+      writeChunk(e.data)
     })
     const offExit = window.electronAPI.onTerminalExit((e) => {
       if (e.id !== terminalId) return
@@ -289,11 +305,27 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       })
       .then((res) => {
         if (!res.ok) {
+          replayedRef.current = true
           term.write('\r\n\x1b[31mFailed to start terminal.\x1b[0m\r\n')
           setStarting(false)
           return
         }
+        // Repaint what the pty emitted while we were unmounted, then release the chunks that
+        // arrived in the meantime so everything lands in the order the pty produced it.
+        if (res.buffer) term.write(res.buffer)
+        replayedRef.current = true
+        for (const chunk of queuedDataRef.current) writeChunk(chunk)
+        queuedDataRef.current = []
         onActive?.()
+        if (res.reused) {
+          // Reattached to a pty that kept running while this component was unmounted. Its
+          // scrollback is already on screen and whatever CLI it was running is still there, so
+          // there's nothing to launch and no first output to wait for — show it right away
+          // rather than sitting behind the loader until the backstop fires.
+          reveal()
+          autoStartRef.current = true
+          return
+        }
         // Note: focus is NOT taken here — it's deferred to reveal() so the loader isn't
         // marred by xterm's native input caret (see reveal). The one exception is the
         // bare-shell case below, which shows no loader and so should focus immediately.
@@ -336,11 +368,12 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       awaitingRevealRef.current = false
       offData()
       offExit()
-      // Deferred, not immediate: a React StrictMode dev remount runs this cleanup and
-      // then immediately re-runs the effect for the same id. createTerminal() reuses the
-      // still-live pty and this scheduled kill is cancelled. A real close/session-switch
-      // has no follow-up create, so it fires after the delay.
-      window.electronAPI.terminalKillDeferred(terminalId)
+      // The pty is deliberately left running. Unmounting happens for reasons that have nothing
+      // to do with wanting the work to stop — switching chats, closing the terminal pane,
+      // navigating to another view — and a CLI mid-task shouldn't die because you looked away.
+      // Remounting reattaches and replays the buffered output (see the create call above).
+      // A pty is only torn down explicitly: Restart (terminalKill), deleting the chat, or app
+      // quit (killAllTerminals).
     }
   }, [terminalId, cwd, accountId, wslDistro, remoteHostId, provider, autoLaunchCli, reloadKey])
 
