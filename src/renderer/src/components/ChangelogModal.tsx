@@ -28,6 +28,10 @@ const CHANGELOG: Entry[] = [
           'Pick a folder for WSL and remote chats too — WSL opens the native picker straight into the distro\'s filesystem, and SSH hosts take a typed working directory that overrides the host default.',
           'Remote hosts: Connect opens a full SFTP file browser, interactive terminal, and command history for any SSH host.',
           'Servers: Remote & WSL is now the default tab; open remote/WSL sessions stay connected in the background and can be run several at once via tabs.',
+          'Chats keep working in the background — leave a chat mid-task, switch to another one or to another view, and its request and terminal carry on. Coming back reattaches to the live terminal and repaints everything it printed while you were away.',
+          'Pending requests bar — a strip at the top of the window lists the chats still working, with a click to jump straight to one (and a mark when it is waiting on your approval). Dismiss any entry you would rather not see; it only hides the entry, the chat keeps running and reappears on its next request.',
+          'Open project files in the Files tab — clicking a file in the sidebar opens it in the same editor the remote sessions use, so you can read and edit it without leaving the app.',
+          'Leaving and returning to Chat, or picking a different account, now lands on a new chat instead of reopening whatever was last active.',
         ],
       },
       {
