@@ -29,6 +29,8 @@ import SettingsModal from './components/SettingsModal'
 import NavRail, { View, VIEW_GROUPS } from './components/NavRail'
 import ClaudeMdModal from './components/ClaudeMdModal'
 import ApprovalModal from './components/ApprovalModal'
+import FileEditor from './components/FileEditor'
+import { readLocalFile, writeLocalFile } from './lib/local-file-io'
 import CheckpointsModal from './components/CheckpointsModal'
 import GitModal from './components/GitModal'
 import CommandPalette, { CommandItem } from './components/CommandPalette'
@@ -139,6 +141,8 @@ export default function App() {
   const [gitOpen, setGitOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [sidebarTab, setSidebarTab] = useState<'files' | 'sessions'>('sessions')
+  // File opened from the sidebar's Files tab, shown in the FileEditor modal.
+  const [openFilePath, setOpenFilePath] = useState<string | null>(null)
   const [auth, setAuth] = useState<AuthStatus | null>(null)
   const [view, setView] = useState<View>('chat')
   const [models, setModels] = useState<ModelInfo[]>([])
@@ -212,6 +216,12 @@ export default function App() {
   const trackedFiles = (sessionId: string) => [...(modifiedFilesRef.current.get(sessionId) ?? [])]
 
   const activeSession = sessions.find((s) => s.id === activeId)
+  // The open file belongs to the chat's project tree, so it goes stale the moment we point at
+  // a different folder or leave the chat view (where the Files tab lives) entirely.
+  const activeProjectPath = activeSession?.projectPath
+  useEffect(() => {
+    setOpenFilePath(null)
+  }, [activeProjectPath, view])
   // "Is the currently-focused session streaming?" — replaces the old global `streaming`
   // boolean wherever it gated the active chat's UI.
   const activeStreaming = activeSession ? runningIds.has(activeSession.id) : false
@@ -1442,6 +1452,8 @@ export default function App() {
             onDeleteSession={deleteSession}
             projectPath={activeSession?.projectPath}
             onSetProject={setSessionProject}
+            onOpenFile={setOpenFilePath}
+            openFilePath={openFilePath ?? undefined}
             onOpenSettings={() => setSettingsOpen(true)}
             auth={auth}
             accounts={accounts}
@@ -1693,6 +1705,14 @@ export default function App() {
       )}
       {view !== 'rooms' && approvalQueue.length > 0 && (
         <ApprovalModal request={approvalQueue[0]} onDecide={respondApproval} />
+      )}
+      {openFilePath && (
+        <FileEditor
+          filePath={openFilePath}
+          onClose={() => setOpenFilePath(null)}
+          read={readLocalFile}
+          write={writeLocalFile}
+        />
       )}
       {checkpointsOpen && activeSession && (
         <CheckpointsModal

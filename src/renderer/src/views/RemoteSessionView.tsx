@@ -4,7 +4,8 @@ import ChatTerminal from '../components/ChatTerminal'
 import RemoteTerminal from '../components/RemoteTerminal'
 import SftpBrowser from '../components/SftpBrowser'
 import LocalBrowser from '../components/LocalBrowser'
-import RemoteFileEditor from '../components/RemoteFileEditor'
+import FileEditor from '../components/FileEditor'
+import { readLocalFile, writeLocalFile } from '../lib/local-file-io'
 import './views.css'
 import './RemoteSessionView.css'
 
@@ -299,7 +300,7 @@ export default function RemoteSessionView({ target, active, onBack }: Props) {
       </div>
 
       {openFile && isSsh && (
-        <RemoteFileEditor
+        <FileEditor
           filePath={openFile}
           onClose={() => setOpenFile(null)}
           read={(p) => window.electronAPI.sftpRead(target.host.id, p)}
@@ -308,11 +309,11 @@ export default function RemoteSessionView({ target, active, onBack }: Props) {
         />
       )}
       {openFile && !isSsh && (
-        <RemoteFileEditor
+        <FileEditor
           filePath={openFile}
           onClose={() => setOpenFile(null)}
-          read={(p) => window.electronAPI.readFile(p).then((res) => ({ ok: !res.error, content: res.content, error: res.error }))}
-          write={(p, content) => window.electronAPI.fsWriteFile(p, content)}
+          read={readLocalFile}
+          write={writeLocalFile}
         />
       )}
     </div>

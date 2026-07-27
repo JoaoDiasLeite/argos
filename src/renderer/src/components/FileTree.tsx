@@ -5,9 +5,11 @@ import './FileTree.css'
 interface TreeNodeProps {
   node: FileNode
   depth: number
+  onOpenFile?: (path: string) => void
+  selectedPath?: string
 }
 
-function TreeNode({ node, depth }: TreeNodeProps) {
+function TreeNode({ node, depth, onOpenFile, selectedPath }: TreeNodeProps) {
   const [open, setOpen] = useState(false)
   const [children, setChildren] = useState<FileNode[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -22,16 +24,19 @@ function TreeNode({ node, depth }: TreeNodeProps) {
         }
       }
       setOpen((v) => !v)
+    } else {
+      onOpenFile?.(node.path)
     }
   }
 
   const ext = node.name.split('.').pop() ?? ''
   const isDir = node.type === 'directory'
+  const active = !isDir && node.path === selectedPath
 
   return (
     <div>
       <div
-        className={`file-node ${isDir ? 'dir' : 'file'}`}
+        className={`file-node ${isDir ? 'dir' : 'file'} ${active ? 'active' : ''}`}
         style={{ paddingLeft: `${8 + depth * 14}px` }}
         onClick={toggle}
         title={node.path}
@@ -64,7 +69,7 @@ function TreeNode({ node, depth }: TreeNodeProps) {
         )}
       </div>
       {open && children.map((child) => (
-        <TreeNode key={child.path} node={child} depth={depth + 1} />
+        <TreeNode key={child.path} node={child} depth={depth + 1} onOpenFile={onOpenFile} selectedPath={selectedPath} />
       ))}
     </div>
   )
@@ -82,9 +87,13 @@ function getFileClass(ext: string, isDir: boolean): string {
 
 interface Props {
   rootPath: string
+  /** Called with the full path when a file row (never a directory) is clicked. */
+  onOpenFile?: (path: string) => void
+  /** Path of the file currently open in the editor, highlighted in the tree. */
+  selectedPath?: string
 }
 
-export default function FileTree({ rootPath }: Props) {
+export default function FileTree({ rootPath, onOpenFile, selectedPath }: Props) {
   const [nodes, setNodes] = useState<FileNode[]>([])
 
   useEffect(() => {
@@ -98,7 +107,7 @@ export default function FileTree({ rootPath }: Props) {
   return (
     <div className="file-tree">
       {nodes.map((node) => (
-        <TreeNode key={node.path} node={node} depth={0} />
+        <TreeNode key={node.path} node={node} depth={0} onOpenFile={onOpenFile} selectedPath={selectedPath} />
       ))}
     </div>
   )

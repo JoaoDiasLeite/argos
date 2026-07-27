@@ -65,6 +65,10 @@ interface Props {
   onDeleteSession: (id: string) => void
   projectPath?: string
   onSetProject: (path: string) => void
+  /** Opens a file from the Files tab in the editor. */
+  onOpenFile?: (path: string) => void
+  /** Path currently open in the editor, so the Files tab can highlight it. */
+  openFilePath?: string
   onOpenSettings: () => void
   auth: AuthStatus | null
   accounts: CCAccountStatus[]
@@ -128,6 +132,8 @@ export default function Sidebar({
   onDeleteSession,
   projectPath,
   onSetProject,
+  onOpenFile,
+  openFilePath,
   onOpenSettings,
   auth,
   accounts,
@@ -664,7 +670,7 @@ export default function Sidebar({
               </button>
             </div>
             {projectPath ? (
-              <FileTree rootPath={projectPath} />
+              <FileTree rootPath={projectPath} onOpenFile={onOpenFile} selectedPath={openFilePath} />
             ) : (
               <div className="empty-state">
                 <button className="open-folder-btn" onClick={handleOpenFolder}>

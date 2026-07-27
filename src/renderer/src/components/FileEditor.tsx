@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import './RemoteFileEditor.css'
+import './FileEditor.css'
 
 interface ReadResult {
   ok: boolean
@@ -28,7 +28,7 @@ interface Props {
 
 /** Simple modal editor for a remote/local file. Intentionally minimal — a plain monospace
  *  textarea, no syntax highlighting or heavy editor dependency. */
-export default function RemoteFileEditor({ filePath, onClose, read, write, onDownload }: Props) {
+export default function FileEditor({ filePath, onClose, read, write, onDownload }: Props) {
   const [content, setContent] = useState('')
   const [original, setOriginal] = useState('')
   const [loading, setLoading] = useState(true)
@@ -82,11 +82,11 @@ export default function RemoteFileEditor({ filePath, onClose, read, write, onDow
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal wide remote-editor-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal wide file-editor-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3 className="mono remote-editor-title" title={filePath}>
+          <h3 className="mono file-editor-title" title={filePath}>
             {filePath}
-            {dirty && <span className="remote-editor-dirty">•</span>}
+            {dirty && <span className="file-editor-dirty">•</span>}
           </h3>
           <button className="icon-btn" onClick={onClose} aria-label="Close">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -94,11 +94,11 @@ export default function RemoteFileEditor({ filePath, onClose, read, write, onDow
             </svg>
           </button>
         </div>
-        <div className="modal-body remote-editor-body">
+        <div className="modal-body file-editor-body">
           {loading && <div className="view-empty small">Loading…</div>}
           {!loading && error && <div className="ssh-test err">{error}</div>}
           {!loading && !error && tooLarge && (
-            <div className="remote-editor-notice">
+            <div className="file-editor-notice">
               <p>This file is too large to edit in-app.</p>
               {onDownload && (
                 <button className="btn-ghost small" onClick={onDownload}>
@@ -108,7 +108,7 @@ export default function RemoteFileEditor({ filePath, onClose, read, write, onDow
             </div>
           )}
           {!loading && !error && binary && (
-            <div className="remote-editor-notice">
+            <div className="file-editor-notice">
               <p>This looks like a binary file — it can&apos;t be shown as text.</p>
               {onDownload && (
                 <button className="btn-ghost small" onClick={onDownload}>
@@ -119,7 +119,7 @@ export default function RemoteFileEditor({ filePath, onClose, read, write, onDow
           )}
           {editable && (
             <textarea
-              className="mono remote-editor-textarea"
+              className="mono file-editor-textarea"
               value={content}
               onChange={(e) => setContent(e.target.value)}
               spellCheck={false}

@@ -17,6 +17,9 @@
   user-select: none;
 }
 .file-node:hover { background: var(--bg-hover); }
+/* The file currently open in the editor, matching .session-item.active in the chat list. */
+.file-node.active { background: var(--accent-dim); }
+.file-node.active .file-name { color: var(--accent); }
 
 .file-icon {
   display: flex;
