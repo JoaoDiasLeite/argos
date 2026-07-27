@@ -84,7 +84,7 @@ export function deleteHost(id: string): SshHostPublic[] {
   return listHosts()
 }
 
-function buildConnectConfig(h: SshHost): ConnectConfig {
+export function buildConnectConfig(h: SshHost): ConnectConfig {
   const conf: ConnectConfig = {
     host: h.host,
     port: h.port || 22,
@@ -104,7 +104,7 @@ function buildConnectConfig(h: SshHost): ConnectConfig {
   return conf
 }
 
-function getHost(id: string): SshHost | null {
+export function getHost(id: string): SshHost | null {
   return readHosts().find((h) => h.id === id) ?? null
 }
 

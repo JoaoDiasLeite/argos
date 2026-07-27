@@ -1,0 +1,57 @@
+.remote-editor-modal {
+  width: min(900px, 92vw);
+  height: min(680px, 86vh);
+  display: flex;
+  flex-direction: column;
+}
+
+.remote-editor-title {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.remote-editor-dirty {
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.remote-editor-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  padding: 0;
+}
+
+.remote-editor-textarea {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  resize: none;
+  border: none;
+  outline: none;
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-size: 12.5px;
+  line-height: 1.55;
+  padding: 14px 16px;
+  tab-size: 2;
+}
+
+.remote-editor-notice {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px 20px;
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: center;
+}

@@ -60,6 +60,89 @@
   color: var(--accent);
 }
 
+/* ── Server sessions layer (App.tsx) ──
+   Always-mounted host for open Remote/WSL "Connect" sessions — sized/positioned exactly
+   like a `.view` (fills the content area, own flex column) but its visibility is toggled
+   with `display` rather than being mounted/unmounted, so a backgrounded session's terminal
+   and SFTP connection survive switching to another part of the app. */
+.server-sessions-layer {
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.server-session-pane {
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+/* Tab strip — mirrors .view-subnav's visual language (same height/border/background) but
+   left-aligned and scrollable instead of a centered segmented control. */
+.server-tabs {
+  flex-shrink: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+  overflow-x: auto;
+  -webkit-app-region: drag;
+}
+
+.server-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px 0 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-1);
+  background: transparent;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s;
+  -webkit-app-region: no-drag;
+}
+.server-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-0);
+}
+.server-tab.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.server-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+.server-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+.server-tab-close:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--text-0) 12%, transparent);
+}
+
 .view-header {
   display: flex;
   align-items: flex-start;

@@ -20,6 +20,16 @@ interface Props {
   provider: ProviderId
   /** The chat's Claude Code session id — resumed when launching claude. */
   resumeSessionId?: string
+  /** Whether to auto-launch the provider CLI once the PTY is up (default true). Set false
+   *  for a plain-shell session (e.g. Remote Session's terminal pane) — the PTY is still
+   *  created and the loader still gates on real output, but nothing is typed into it. */
+  autoLaunchCli?: boolean
+  /** True while this terminal's pane is the one visible. Used only to re-fit on show (see
+   *  the effect below) — a `display: none` pane has zero size, so a backgrounded session's
+   *  terminal (e.g. a Remote Session tab that isn't the active one) needs an explicit refit
+   *  when it's shown again. Does NOT remount the terminal — that would kill its live PTY
+   *  and scrollback, defeating the whole point of keeping it mounted in the background. */
+  active?: boolean
   onClose: () => void
   /** Fired once the PTY has actually launched, so the host can mark this chat as having
    *  real activity (see Session.hasTerminalActivity) even though no `messages` exist. */
@@ -72,7 +82,7 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, onClose, onActive }: Props) {
+export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, autoLaunchCli = true, active, onClose, onActive }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -177,6 +187,25 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     }
   }, [fontSize])
 
+  // Re-fit when this pane goes from hidden to visible (e.g. switching back to a Remote
+  // Session tab). A `display: none` pane has zero size, so a backgrounded terminal is
+  // stale/zero-sized until shown again — the ResizeObserver above never fires for a display
+  // toggle (the element doesn't actually resize while hidden), so this explicit refit on
+  // `active` flipping true is the reliable trigger. Deliberately does NOT touch `reloadKey` /
+  // depend on anything that would respawn the PTY — only fit() + a resize message.
+  useEffect(() => {
+    if (!active) return
+    const term = termRef.current
+    const fit = fitRef.current
+    if (!term || !fit) return
+    try {
+      fit.fit()
+      if (idRef.current) window.electronAPI.terminalResize(idRef.current, term.cols, term.rows)
+    } catch {
+      // container mid-layout — ignore, the ResizeObserver will catch up
+    }
+  }, [active])
+
   // (Re)spawn the PTY when the id, cwd, account, or an explicit restart changes.
   useEffect(() => {
     const term = termRef.current
@@ -276,6 +305,12 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
           // the loader is up for it too — it was only pre-armed for the auto-start case.
           setStarting(true)
           awaitingRevealRef.current = true
+        } else if (!autoLaunchCli) {
+          // Plain-shell session (autoLaunchCli=false, e.g. Remote Session's terminal
+          // pane): the PTY is up but nothing gets typed into it — just arm the reveal
+          // gate so the loader lifts once the shell paints its own prompt.
+          setStarting(true)
+          awaitingRevealRef.current = true
         } else if (autoStartRef.current) {
           // wsl/ssh (or anything else that didn't already launch the CLI): auto-launch by
           // typing the launch command into the interactive remote shell, resuming this
@@ -307,7 +342,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       // has no follow-up create, so it fires after the delay.
       window.electronAPI.terminalKillDeferred(terminalId)
     }
-  }, [terminalId, cwd, accountId, wslDistro, remoteHostId, provider, reloadKey])
+  }, [terminalId, cwd, accountId, wslDistro, remoteHostId, provider, autoLaunchCli, reloadKey])
 
   const providerLabel = provider === 'codex' ? 'Codex' : provider === 'gemini' ? 'Antigravity' : 'Claude'
 
@@ -365,7 +400,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         {starting && !exited && (
           <div className="chat-terminal-loading">
             <div className="chat-terminal-spinner" />
-            <div className="chat-terminal-loading-text">Starting {providerLabel}…</div>
+            <div className="chat-terminal-loading-text">{autoLaunchCli ? `Starting ${providerLabel}…` : 'Connecting…'}</div>
           </div>
         )}
         {exited && (

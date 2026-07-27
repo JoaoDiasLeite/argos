@@ -6,13 +6,17 @@ import './RemoteView.css'
 interface Props {
   onConnect: (host: SshHostPublic) => void
   onConnectWsl: (distro: string, cwd?: string) => void
+  /** Opens the full Remote Session workspace (SFTP browser + terminal + history) for a host. */
+  onOpenSession: (host: SshHostPublic) => void
+  /** Opens the full Remote Session workspace (file browser + terminal + history) for a WSL distro. */
+  onOpenWslSession: (distro: string) => void
 }
 
 function emptyHost(): SshHostInput {
   return { name: '', host: '', port: 22, username: '', authType: 'password' }
 }
 
-export default function RemoteView({ onConnect, onConnectWsl }: Props) {
+export default function RemoteView({ onConnect, onConnectWsl, onOpenSession, onOpenWslSession }: Props) {
   const [hosts, setHosts] = useState<SshHostPublic[]>([])
   const [distros, setDistros] = useState<WslDistro[]>([])
   const [sources, setSources] = useState<SourceInfo[]>([])
@@ -159,7 +163,8 @@ export default function RemoteView({ onConnect, onConnectWsl }: Props) {
                     )}
                   </div>
                   <div className="ssh-card-actions">
-                    <button className="btn-primary small" onClick={() => onConnectWsl(d.name, wslPaths[d.name] || undefined)}>
+                    <button className="btn-primary small" onClick={() => onOpenWslSession(d.name)}>Connect</button>
+                    <button className="btn-ghost small" onClick={() => onConnectWsl(d.name, wslPaths[d.name] || undefined)}>
                       New chat here
                     </button>
                     <button className="btn-ghost small" onClick={() => testWslDistro(d.name)} disabled={wslTesting === d.name}>
@@ -200,7 +205,8 @@ export default function RemoteView({ onConnect, onConnectWsl }: Props) {
                   )}
                 </div>
                 <div className="ssh-card-actions">
-                  <button className="btn-primary small" onClick={() => onConnect(host)}>New chat here</button>
+                  <button className="btn-primary small" onClick={() => onOpenSession(host)}>Connect</button>
+                  <button className="btn-ghost small" onClick={() => onConnect(host)}>New chat here</button>
                   <button className="btn-ghost small" onClick={() => test(host.id)} disabled={testing === host.id}>
                     {testing === host.id ? 'Testing…' : 'Test'}
                   </button>

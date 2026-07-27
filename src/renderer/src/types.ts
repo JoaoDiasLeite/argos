@@ -507,10 +507,22 @@ export interface SshKeyInfo {
 
 export type GenerateKeyResult = { ok: true; key: SshKeyInfo } | { ok: false; error: string }
 
+/** One entry from an `sftpList` directory listing (see src/main/sftp.ts). */
+export interface RemoteEntry {
+  name: string
+  path: string
+  type: 'directory' | 'file' | 'symlink' | 'other'
+  size: number
+  mtime: number
+}
+
 export interface WslDistro {
   name: string
   isDefault: boolean
 }
+
+/** The Remote Session ("Connect") view's target — an SSH host or a WSL distro. */
+export type RemoteTarget = { kind: 'ssh'; host: SshHostPublic } | { kind: 'wsl'; distro: string }
 
 export interface RoomsLayout {
   /** Room keys (project path, or '__unassigned__') in the user's preferred order. */
@@ -777,6 +789,18 @@ export interface TerminalDataEvent {
 export interface TerminalExitEvent {
   id: string
   exitCode: number
+}
+
+// ─── Remote shell (Remote Session SSH terminal, over the SFTP connection) ──────
+
+export interface RemoteShellDataEvent {
+  id: string
+  data: string
+}
+
+export interface RemoteShellExitEvent {
+  id: string
+  code: number
 }
 
 // ─── Auto-update ────────────────────────────────────────────────────────────
@@ -1052,11 +1076,31 @@ declare global {
       sshKeysGenerate: (name: string, comment?: string) => Promise<GenerateKeyResult>
       sshKeysPublic: (privatePath: string) => Promise<string | null>
 
+      // SFTP (Remote Session file browser)
+      sftpConnect: (hostId: string) => Promise<{ ok: boolean; home?: string; cwd?: string; error?: string }>
+      sftpList: (hostId: string, dir: string) => Promise<{ ok: boolean; entries?: RemoteEntry[]; error?: string }>
+      sftpRead: (
+        hostId: string,
+        p: string
+      ) => Promise<{ ok: boolean; content?: string; tooLarge?: boolean; binary?: boolean; error?: string }>
+      sftpWrite: (hostId: string, p: string, content: string) => Promise<{ ok: boolean; error?: string }>
+      sftpMkdir: (hostId: string, dir: string) => Promise<{ ok: boolean; error?: string }>
+      sftpRename: (hostId: string, from: string, to: string) => Promise<{ ok: boolean; error?: string }>
+      sftpDelete: (hostId: string, p: string) => Promise<{ ok: boolean; error?: string }>
+      sftpDownload: (
+        hostId: string,
+        p: string
+      ) => Promise<{ ok: boolean; savedTo?: string; canceled?: boolean; error?: string }>
+      sftpUpload: (hostId: string, dir: string) => Promise<{ ok: boolean; uploaded?: string[]; error?: string }>
+      sftpHistory: (hostId: string) => Promise<{ ok: boolean; commands?: string[]; error?: string }>
+      sftpDisconnect: (hostId: string) => Promise<{ ok: boolean }>
+
       // WSL
       wslList: () => Promise<WslDistro[]>
       wslTest: (distro: string) => Promise<{ ok: boolean; message: string }>
       wslHidden: () => Promise<string[]>
       wslSetHidden: (distro: string, hidden: boolean) => Promise<string[]>
+      wslHistory: (distro: string) => Promise<{ ok: boolean; commands?: string[]; error?: string }>
 
       // Rooms (persisted board layout: room order + custom names)
       roomsGetLayout: () => Promise<RoomsLayout>
@@ -1074,6 +1118,10 @@ declare global {
       readDir: (dirPath: string) => Promise<FileNode[] | { error: string }>
       readFile: (filePath: string) => Promise<{ content?: string; error?: string }>
       openFolder: (defaultPath?: string) => Promise<string | null>
+      fsWriteFile: (filePath: string, content: string) => Promise<{ ok: boolean; error?: string }>
+      fsMkdir: (dirPath: string) => Promise<{ ok: boolean; error?: string }>
+      fsRename: (from: string, to: string) => Promise<{ ok: boolean; error?: string }>
+      fsDelete: (targetPath: string) => Promise<{ ok: boolean; error?: string }>
 
       // Sessions
       listSessions: () => Promise<Session[]>
@@ -1105,6 +1153,14 @@ declare global {
       ) => Promise<{ ok: boolean }>
       onTerminalData: (cb: (data: TerminalDataEvent) => void) => () => void
       onTerminalExit: (cb: (data: TerminalExitEvent) => void) => () => void
+
+      // Remote shell (Remote Session SSH terminal, over the SFTP connection)
+      remoteShellCreate: (id: string, hostId: string, cols: number, rows: number) => Promise<{ ok: boolean; error?: string }>
+      remoteShellWrite: (id: string, data: string) => void
+      remoteShellResize: (id: string, cols: number, rows: number) => void
+      remoteShellKill: (id: string) => Promise<{ ok: boolean }>
+      onRemoteShellData: (cb: (data: RemoteShellDataEvent) => void) => () => void
+      onRemoteShellExit: (cb: (data: RemoteShellExitEvent) => void) => () => void
     }
   }
 }

@@ -243,11 +243,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('ssh:keys-generate', name, comment),
   sshKeysPublic: (privatePath: string) => ipcRenderer.invoke('ssh:keys-public', privatePath),
 
+  // SFTP (Remote Session file browser)
+  sftpConnect: (hostId: string) => ipcRenderer.invoke('sftp:connect', hostId),
+  sftpList: (hostId: string, dir: string) => ipcRenderer.invoke('sftp:list', hostId, dir),
+  sftpRead: (hostId: string, p: string) => ipcRenderer.invoke('sftp:read', hostId, p),
+  sftpWrite: (hostId: string, p: string, content: string) =>
+    ipcRenderer.invoke('sftp:write', hostId, p, content),
+  sftpMkdir: (hostId: string, dir: string) => ipcRenderer.invoke('sftp:mkdir', hostId, dir),
+  sftpRename: (hostId: string, from: string, to: string) =>
+    ipcRenderer.invoke('sftp:rename', hostId, from, to),
+  sftpDelete: (hostId: string, p: string) => ipcRenderer.invoke('sftp:delete', hostId, p),
+  sftpDownload: (hostId: string, p: string) => ipcRenderer.invoke('sftp:download', hostId, p),
+  sftpUpload: (hostId: string, dir: string) => ipcRenderer.invoke('sftp:upload', hostId, dir),
+  sftpHistory: (hostId: string) => ipcRenderer.invoke('sftp:history', hostId),
+  sftpDisconnect: (hostId: string) => ipcRenderer.invoke('sftp:disconnect', hostId),
+
   // WSL
   wslList: () => ipcRenderer.invoke('wsl:list'),
   wslTest: (distro: string) => ipcRenderer.invoke('wsl:test', distro),
   wslHidden: () => ipcRenderer.invoke('wsl:hidden'),
   wslSetHidden: (distro: string, hidden: boolean) => ipcRenderer.invoke('wsl:set-hidden', distro, hidden),
+  wslHistory: (distro: string) => ipcRenderer.invoke('wsl:history', distro),
 
   // Rooms (persisted board layout: room order + custom names)
   roomsGetLayout: () => ipcRenderer.invoke('rooms:get-layout'),
@@ -266,6 +282,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readDir: (dirPath: string) => ipcRenderer.invoke('fs:read-dir', dirPath),
   readFile: (filePath: string) => ipcRenderer.invoke('fs:read-file', filePath),
   openFolder: (defaultPath?: string) => ipcRenderer.invoke('fs:open-folder', defaultPath),
+  fsWriteFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:write-file', filePath, content),
+  fsMkdir: (dirPath: string) => ipcRenderer.invoke('fs:mkdir', dirPath),
+  fsRename: (from: string, to: string) => ipcRenderer.invoke('fs:rename', from, to),
+  fsDelete: (targetPath: string) => ipcRenderer.invoke('fs:delete', targetPath),
 
   // Sessions
   listSessions: () => ipcRenderer.invoke('session:list'),
@@ -305,5 +325,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const fn = (_: unknown, data: unknown) => cb(data)
     ipcRenderer.on('terminal:exit', fn)
     return () => ipcRenderer.removeListener('terminal:exit', fn)
+  },
+
+  // Remote shell (Remote Session SSH terminal, over the SFTP connection)
+  remoteShellCreate: (id: string, hostId: string, cols: number, rows: number) =>
+    ipcRenderer.invoke('remote-shell:create', id, hostId, cols, rows),
+  remoteShellWrite: (id: string, data: string) => ipcRenderer.send('remote-shell:write', id, data),
+  remoteShellResize: (id: string, cols: number, rows: number) =>
+    ipcRenderer.send('remote-shell:resize', id, cols, rows),
+  remoteShellKill: (id: string) => ipcRenderer.invoke('remote-shell:kill', id),
+  onRemoteShellData: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('remote-shell:data', fn)
+    return () => ipcRenderer.removeListener('remote-shell:data', fn)
+  },
+  onRemoteShellExit: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('remote-shell:exit', fn)
+    return () => ipcRenderer.removeListener('remote-shell:exit', fn)
   }
 })

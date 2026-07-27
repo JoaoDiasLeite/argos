@@ -43,7 +43,7 @@ import { provOf, acctOf, AccountDefaults } from './lib/account-scope'
 // of statically imported. That keeps their code — and the vendor libraries
 // they alone pull in — out of the initial renderer chunk. See the Suspense
 // fallback (`ViewLoading`) rendered while each view's chunk is fetched.
-import { SshHostPublic } from './types'
+import { SshHostPublic, RemoteTarget } from './types'
 import './styles/App.css'
 // Pulled in directly (rather than left to each lazy view) so the `.view-loading`
 // spinner below is styled even before any view chunk has finished loading.
@@ -56,6 +56,7 @@ const UsageView = lazy(() => import('./views/UsageView'))
 const McpView = lazy(() => import('./views/McpView'))
 const PlannerView = lazy(() => import('./views/PlannerView'))
 const RemoteView = lazy(() => import('./views/RemoteView'))
+const RemoteSessionView = lazy(() => import('./views/RemoteSessionView'))
 const ScheduledView = lazy(() => import('./views/ScheduledView'))
 
 /** Minimal, style-consistent fallback shown while a lazy view's chunk loads. */
@@ -106,6 +107,18 @@ const MEMBER_LABELS: Record<string, string> = {
   scheduled: 'Routines',
   mcp: 'MCP',
   remote: 'Remote & WSL'
+}
+
+// An open Remote/WSL "Connect" session, rendered as a persistent tab (see the
+// server-sessions-layer render below). Stable per-target id so re-opening the same
+// host/distro re-focuses its tab instead of spawning a duplicate.
+interface ServerSession {
+  id: string
+  target: RemoteTarget
+  title: string
+}
+function serverSessionId(target: RemoteTarget): string {
+  return target.kind === 'ssh' ? `srv:ssh:${target.host.id}` : `srv:wsl:${target.distro}`
 }
 
 export default function App() {
@@ -1127,6 +1140,43 @@ export default function App() {
     setView('chat')
   }
 
+  // Open server (Remote/WSL) sessions, kept alive in a background layer (rendered below,
+  // outside any `view ===` guard) so switching to Chat/Servers/etc. never tears down a live
+  // terminal or SFTP connection — only closing a tab does. One session per target for v1:
+  // Connect on an already-open host/distro re-focuses its existing tab instead of duplicating.
+  const [serverSessions, setServerSessions] = useState<ServerSession[]>([])
+  const [activeServerSessionId, setActiveServerSessionId] = useState<string | null>(null)
+
+  const openOrFocusSession = (target: RemoteTarget) => {
+    const id = serverSessionId(target)
+    setServerSessions((prev) => {
+      if (prev.some((s) => s.id === id)) return prev
+      const title = target.kind === 'ssh' ? target.host.name : target.distro
+      return [...prev, { id, target, title }]
+    })
+    setActiveServerSessionId(id)
+    setView('remote-session')
+  }
+  const openRemoteSession = (host: SshHostPublic) => openOrFocusSession({ kind: 'ssh', host })
+  const openWslSession = (distro: string) => openOrFocusSession({ kind: 'wsl', distro })
+
+  // Close a session tab — the ONLY thing that disconnects it (unmounting RemoteSessionView
+  // triggers its existing sftpDisconnect/remoteShellKill/terminalKill cleanups). Falls back to
+  // an adjacent remaining tab, or back to the Remote & WSL list if none are left.
+  const closeServerSession = (id: string) => {
+    setServerSessions((prev) => {
+      const idx = prev.findIndex((s) => s.id === id)
+      if (idx === -1) return prev
+      const next = prev.filter((s) => s.id !== id)
+      if (activeServerSessionId === id) {
+        const fallback = next[idx] ?? next[idx - 1] ?? null
+        setActiveServerSessionId(fallback ? fallback.id : null)
+        if (!fallback) setView('remote')
+      }
+      return next
+    })
+  }
+
   const connectRemote = (host: SshHostPublic) => {
     const s = newSession(host.remotePath, defaultModel, defaultAccountId)
     s.name = `${host.name} (remote)`
@@ -1552,7 +1602,60 @@ export default function App() {
               />
             )}
             {view === 'mcp' && <McpView />}
-            {view === 'remote' && <RemoteView onConnect={connectRemote} onConnectWsl={connectWsl} />}
+            {view === 'remote' && (
+              <RemoteView
+                onConnect={connectRemote}
+                onConnectWsl={connectWsl}
+                onOpenSession={openRemoteSession}
+                onOpenWslSession={openWslSession}
+              />
+            )}
+          </Suspense>
+        </div>
+      )}
+
+      {/* Always-mounted regardless of `view` (only the CSS display toggles) — this is what
+          keeps a session's terminal + SFTP connection alive while the user is elsewhere in
+          the app. A session is only ever unmounted (and thus disconnected) by closeServerSession
+          removing it from serverSessions; navigating away just hides the layer. */}
+      {serverSessions.length > 0 && (
+        <div className="server-sessions-layer" style={{ display: view === 'remote-session' ? 'flex' : 'none' }}>
+          <div className="server-tabs">
+            {serverSessions.map((s) => (
+              <div
+                key={s.id}
+                className={`server-tab ${s.id === activeServerSessionId ? 'active' : ''}`}
+                onClick={() => setActiveServerSessionId(s.id)}
+              >
+                <span className="server-tab-title">{s.title}</span>
+                <button
+                  className="server-tab-close"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    closeServerSession(s.id)
+                  }}
+                  title="Close session"
+                  aria-label={`Close ${s.title}`}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+          <Suspense fallback={<ViewLoading />}>
+            {serverSessions.map((s) => (
+              <div
+                key={s.id}
+                className="server-session-pane"
+                style={{ display: s.id === activeServerSessionId ? 'flex' : 'none' }}
+              >
+                <RemoteSessionView
+                  target={s.target}
+                  active={view === 'remote-session' && s.id === activeServerSessionId}
+                  onBack={() => setView('remote')}
+                />
+              </div>
+            ))}
           </Suspense>
         </div>
       )}
