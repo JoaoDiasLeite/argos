@@ -1,10 +1,12 @@
 import * as fsp from 'fs/promises'
-import { isRootPath } from './local-fs-pure'
+import { classifyFileBuffer, isRootPath } from './local-fs-pure'
 
 export { isRootPath }
 
+const DEFAULT_MAX_READ_BYTES = 1_000_000
+
 /**
- * Guarded local-filesystem mutation helpers backing the WSL "Connect" file browser
+ * Guarded local-filesystem read/mutation helpers backing the WSL "Connect" file browser
  * (LocalBrowser), which browses a distro over its Windows-side share
  * (\\wsl.localhost\<distro>\…) — plain `fs` from the Windows side, no WSL invocation
  * needed. Every function is defensive: empty paths are rejected, deleting a filesystem/
@@ -13,6 +15,27 @@ export { isRootPath }
 
 function isSafePath(p: unknown): p is string {
   return typeof p === 'string' && p.trim().length > 0
+}
+
+/**
+ * Read a local file as text for the file editor, with the same size/binary guards sftpRead
+ * applies (see sftp.ts) so both results render through the same component. Separate from the
+ * older unguarded 'fs:read-file' IPC, whose consumers expect its plain shape.
+ */
+export async function readTextFile(
+  filePath: string,
+  maxBytes = DEFAULT_MAX_READ_BYTES
+): Promise<{ ok: boolean; content?: string; tooLarge?: boolean; binary?: boolean; error?: string }> {
+  if (!isSafePath(filePath)) return { ok: false, error: 'Invalid path' }
+  try {
+    // Stat first so an oversized file is never pulled into memory; classifyFileBuffer
+    // re-checks the size, which also covers a file that grew between the stat and the read.
+    const st = await fsp.stat(filePath)
+    if (st.size > maxBytes) return { ok: true, tooLarge: true }
+    return { ok: true, ...classifyFileBuffer(await fsp.readFile(filePath), maxBytes) }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
 }
 
 export async function fsWriteFile(filePath: string, content: string): Promise<{ ok: boolean; error?: string }> {

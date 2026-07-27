@@ -12,7 +12,6 @@ const models: ModelInfo[] = [
 // Minimal Session fixture — only the fields the helpers read.
 function makeSession(overrides: Partial<Session> & { id: string }): Session {
   return {
-    id: overrides.id,
     name: overrides.id,
     messages: overrides.messages ?? [{ id: 'm1', role: 'user', content: 'hi', timestamp: 0 }],
     createdAt: 0,

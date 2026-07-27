@@ -246,7 +246,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       clearTimeout(backstopTimer)
       clearTimeout(quietTimerRef.current)
       awaitingRevealRef.current = false
-      term.focus()
+      termRef.current?.focus()
     }
 
     const offData = window.electronAPI.onTerminalData((e) => {

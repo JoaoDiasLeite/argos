@@ -72,7 +72,7 @@ import {
   remoteShellKillAll
 } from './remote-shell'
 import { listDistros, testDistro, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory } from './wsl'
-import { fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
+import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
 import { getHiddenDistros, setDistroHidden, getRoomsLayout, setRoomsLayout, RoomsLayout } from './store'
 import {
   loadAccounts,
@@ -1098,6 +1098,9 @@ ipcMain.handle(
       rows: number
     }
   ) =>
+    // Returns { ok, shell, cliLaunched, reused, buffer }. The scrollback of a reused pty comes
+    // back in this invoke result rather than over 'terminal:data' on purpose — that way the
+    // renderer controls the ordering itself and can replay history before any live chunk.
     createTerminal(
       id,
       opts,
@@ -1881,6 +1884,10 @@ ipcMain.handle('fs:open-folder', async (_, defaultPath?: string) => {
   if (result.canceled) return null
   return result.filePaths[0]
 })
+
+// Size/binary-guarded text read (same result shape as sftp:read), used by the file editor —
+// unlike fs:read-file above it never hands back a multi-megabyte or binary blob.
+ipcMain.handle('fs:read-text', (_, filePath: string) => readTextFile(filePath))
 
 // Guarded local-fs mutation IPC — backs the WSL "Connect" file browser (LocalBrowser),
 // which reads via the existing fs:read-dir/fs:read-file above and writes via these. See

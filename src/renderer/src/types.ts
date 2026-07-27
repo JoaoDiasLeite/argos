@@ -779,6 +779,12 @@ export interface TerminalCreateResult {
    *  and just arm the reveal-on-settle logic. Omitted/false for wsl/ssh, which still rely
    *  on terminalStartCli typing the launch command into an interactive remote shell. */
   cliLaunched?: boolean
+  /** True when an already-live pty was reattached to instead of a new one being spawned —
+   *  the terminal survived the renderer unmounting (navigating away and back). */
+  reused?: boolean
+  /** The reused pty's buffered output, for the fresh xterm instance to replay before any
+   *  live chunk arrives. Only present on the reuse path. */
+  buffer?: string
 }
 
 export interface TerminalDataEvent {
@@ -1118,6 +1124,9 @@ declare global {
       readDir: (dirPath: string) => Promise<FileNode[] | { error: string }>
       readFile: (filePath: string) => Promise<{ content?: string; error?: string }>
       openFolder: (defaultPath?: string) => Promise<string | null>
+      fsReadText: (
+        filePath: string
+      ) => Promise<{ ok: boolean; content?: string; tooLarge?: boolean; binary?: boolean; error?: string }>
       fsWriteFile: (filePath: string, content: string) => Promise<{ ok: boolean; error?: string }>
       fsMkdir: (dirPath: string) => Promise<{ ok: boolean; error?: string }>
       fsRename: (from: string, to: string) => Promise<{ ok: boolean; error?: string }>

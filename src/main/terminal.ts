@@ -31,11 +31,28 @@ const pendingKills = new Map<string, ReturnType<typeof setTimeout>>()
 // terminalStartCli call against the same live pty (e.g. from a StrictMode remount) is a
 // no-op instead of typing the launch command twice.
 const launched = new Set<string>()
+// Everything the pty has ever emitted, per id, capped at MAX_BUFFER_CHARS (oldest dropped).
+// The renderer's xterm instance dies on unmount, so this is what a reattaching terminal
+// replays to repaint its scrollback — the pty itself keeps running throughout.
+const outputBuffers = new Map<string, string>()
+
+const MAX_BUFFER_CHARS = 200_000
+
+function appendToBuffer(id: string, data: string): void {
+  const next = (outputBuffers.get(id) ?? '') + data
+  outputBuffers.set(id, next.length > MAX_BUFFER_CHARS ? next.slice(next.length - MAX_BUFFER_CHARS) : next)
+}
 
 const SAFE_ID_RE = /^[A-Za-z0-9_-]+$/
 
 function isSafeId(id: unknown): id is string {
   return typeof id === 'string' && id.length > 0 && id.length <= 128 && SAFE_ID_RE.test(id)
+}
+
+/** The buffered output replayed when a renderer reattaches to a live pty. */
+export function getTerminalBuffer(id: string): string {
+  if (!isSafeId(id)) return ''
+  return outputBuffers.get(id) ?? ''
 }
 
 export interface CreateTerminalOptions {
@@ -103,21 +120,33 @@ export function createTerminal(
   opts: CreateTerminalOptions,
   onData: (id: string, data: string) => void,
   onExit: (id: string, exitCode: number) => void
-): { ok: boolean; shell?: string; cliLaunched?: boolean } {
+): { ok: boolean; shell?: string; cliLaunched?: boolean; reused?: boolean; buffer?: string } {
   if (!isSafeId(id)) return { ok: false }
 
   const pendingKill = pendingKills.get(id)
   if (pendingKill) {
+    // A pending deferred kill that gets cancelled here means the pty is being reused, so its
+    // buffer must survive — only a kill that actually fires clears it.
     clearTimeout(pendingKill)
     pendingKills.delete(id)
   }
   const existing = terminals.get(id)
   if (existing) {
-    // Benign re-create for an id that already has a live pty (StrictMode remount, or a
-    // redundant renderer create call). Reuse it rather than spawning a duplicate.
-    return { ok: true, shell: shellKinds.get(id), cliLaunched: launched.has(id) }
+    // Benign re-create for an id that already has a live pty (StrictMode remount, a
+    // redundant renderer create call, or a renderer reattaching after navigating away).
+    // Reuse it rather than spawning a duplicate, and hand back the scrollback so the fresh
+    // xterm instance can repaint what it missed.
+    return {
+      ok: true,
+      shell: shellKinds.get(id),
+      cliLaunched: launched.has(id),
+      reused: true,
+      buffer: outputBuffers.get(id) ?? ''
+    }
   }
   launched.delete(id)
+  // Fresh spawn — any buffer left over from a previous pty on this id is stale history.
+  outputBuffers.delete(id)
 
   try {
     const env: Record<string, string> = { ...buildSubprocessEnv() }
@@ -218,13 +247,17 @@ export function createTerminal(
       env
     })
 
-    p.onData((d) => onData(id, d))
+    p.onData((d) => {
+      appendToBuffer(id, d)
+      onData(id, d)
+    })
     p.onExit((e) => {
       onExit(id, e.exitCode)
       terminals.delete(id)
       shellKinds.delete(id)
       sshMeta.delete(id)
       launched.delete(id)
+      outputBuffers.delete(id)
       const t = pendingKills.get(id)
       if (t) {
         clearTimeout(t)
@@ -274,6 +307,9 @@ export function killTerminal(id: string): { ok: boolean } {
     pendingKills.delete(id)
   }
   launched.delete(id)
+  // The terminal is genuinely going away (this also covers the deferred kill, which fires
+  // through here), so its replay history goes with it.
+  outputBuffers.delete(id)
   const p = terminals.get(id)
   if (!p) return { ok: false }
   try {
@@ -480,6 +516,7 @@ export function killAllTerminals(): void {
   for (const t of pendingKills.values()) clearTimeout(t)
   pendingKills.clear()
   launched.clear()
+  outputBuffers.clear()
   for (const [id, p] of terminals) {
     try {
       p.kill()

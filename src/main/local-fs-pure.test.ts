@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isRootPath, posixToWslUnc } from './local-fs-pure'
+import { classifyFileBuffer, isRootPath, posixToWslUnc } from './local-fs-pure'
 
 describe('isRootPath', () => {
   it('accepts drive roots', () => {
@@ -45,5 +45,28 @@ describe('posixToWslUnc', () => {
 
   it('treats a path missing its leading slash as absolute anyway', () => {
     expect(posixToWslUnc('Ubuntu', 'home/me')).toBe('\\\\wsl.localhost\\Ubuntu\\home\\me')
+  })
+})
+
+describe('classifyFileBuffer', () => {
+  it('decodes small text as utf-8 content', () => {
+    expect(classifyFileBuffer(Buffer.from('olá mundo', 'utf-8'), 1000)).toEqual({ content: 'olá mundo' })
+  })
+
+  it('accepts a buffer exactly at the limit and rejects one byte past it', () => {
+    expect(classifyFileBuffer(Buffer.alloc(10, 0x61), 10)).toEqual({ content: 'aaaaaaaaaa' })
+    expect(classifyFileBuffer(Buffer.alloc(11, 0x61), 10)).toEqual({ tooLarge: true })
+  })
+
+  it('flags a buffer containing a NUL byte as binary', () => {
+    expect(classifyFileBuffer(Buffer.from([0x68, 0x69, 0x00, 0x21]), 1000)).toEqual({ binary: true })
+  })
+
+  it('checks size before binaryness', () => {
+    expect(classifyFileBuffer(Buffer.from([0x00, 0x00, 0x00]), 2)).toEqual({ tooLarge: true })
+  })
+
+  it('treats an empty buffer as empty content', () => {
+    expect(classifyFileBuffer(Buffer.alloc(0), 1000)).toEqual({ content: '' })
   })
 })

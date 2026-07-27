@@ -29,3 +29,17 @@ export function posixToWslUnc(distro: string, posixPath: string): string {
   const clean = posixPath.startsWith('/') ? posixPath : `/${posixPath}`
   return `\\\\wsl.localhost\\${distro}${clean.replace(/\//g, '\\')}`
 }
+
+/**
+ * Decide what a local file's bytes are worth showing in the file editor, mirroring sftpRead's
+ * semantics (see sftp.ts) so the same component can render either result: too large first,
+ * then binary (any NUL byte), else a utf-8 decode.
+ */
+export function classifyFileBuffer(
+  buf: Buffer,
+  maxBytes: number
+): { tooLarge: true } | { binary: true } | { content: string } {
+  if (buf.length > maxBytes) return { tooLarge: true }
+  if (buf.includes(0)) return { binary: true }
+  return { content: buf.toString('utf-8') }
+}
