@@ -1,6 +1,6 @@
 {
   "name": "claude-gui",
-  "version": "1.0.0",
+  "version": "0.7.0",
   "description": "Desktop GUI for Claude",
   "main": "out/main/index.js",
   "scripts": {
