@@ -84,6 +84,7 @@ import {
   setDefaultAccount,
   loginAccount
 } from './accounts'
+import { repairClaudeCliIfBroken } from './claude-cli'
 import { checkAgentCliStatus, loginAgentCli, AgentCliId } from './agent-clis'
 import {
   loadProviderAccounts,
@@ -333,6 +334,11 @@ app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.claude-gui')
   ensureDirs()
   loadAuthState()
+  // A Claude Code self-update that renamed the CLI but never wrote the replacement leaves every
+  // launch failing with a raw shell error (most visibly in a chat terminal). Put it back before
+  // anything tries to run it.
+  const cliRepair = repairClaudeCliIfBroken()
+  if (cliRepair.detail) console.log(`[claude-cli] ${cliRepair.detail}`)
   loadAccounts()
   loadProviderAccounts()
   loadConfig()

@@ -72,6 +72,9 @@ interface Props {
   terminalAccountId?: string
   /** Which panel a chat opens in the first time it's seen (the "Open new chats in" pref). */
   defaultChatView: 'chat' | 'terminal'
+  /** Bumped by App whenever it deliberately lands you on a new chat (switching account,
+   *  returning to the chat view) — forces the composer into view. See the effect below. */
+  newChatNonce: number
   onOpenClaudeMd: () => void
   autoApprove: boolean
   onToggleAutoApprove: () => void
@@ -103,6 +106,7 @@ export default function Chat({
   terminalProvider,
   terminalAccountId,
   defaultChatView,
+  newChatNonce,
   onOpenClaudeMd,
   autoApprove,
   onToggleAutoApprove,
@@ -142,6 +146,15 @@ export default function Chat({
     if (session.id in termOpenById) return
     setTermOpenById((prev) => ({ ...prev, [session.id]: defaultChatView === 'terminal' }))
   }, [session, defaultChatView, termOpenById])
+  // When App deliberately moves you to a new chat, show the composer even if the "open new
+  // chats in" pref says Terminal. Otherwise the jump is invisible: you were looking at a
+  // terminal and you'd still be looking at one, so switching account appears to do nothing.
+  // Runs on nonce changes only — a plain chat switch keeps whatever pane that chat was on.
+  useEffect(() => {
+    if (!session || newChatNonce === 0) return
+    setTermOpenById((prev) => ({ ...prev, [session.id]: false }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newChatNonce])
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   // Transient inline feedback (e.g. rejected attachment); clears itself after ~4s.

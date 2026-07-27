@@ -292,6 +292,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     })
 
     let autoStartTimer: ReturnType<typeof setTimeout> | undefined
+    let redrawTimer: ReturnType<typeof setTimeout> | undefined
     window.electronAPI
       .terminalCreate(terminalId, {
         cwd,
@@ -323,6 +324,16 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
           // there's nothing to launch and no first output to wait for — show it right away
           // rather than sitting behind the loader until the backstop fires.
           reveal()
+          // Cursor visibility and layout live in the byte stream we just replayed, and a
+          // full-screen CLI hides the caret constantly while it draws — so replaying can leave
+          // the terminal with no visible caret even though the CLI is sitting at a prompt.
+          // Nudging the pty size makes the CLI redraw from scratch (the trick tmux uses on
+          // reattach), which restores both authoritatively instead of us guessing at the state.
+          window.electronAPI.terminalResize(terminalId, Math.max(cols - 1, 2), rows)
+          redrawTimer = setTimeout(() => {
+            window.electronAPI.terminalResize(terminalId, cols, rows)
+            termRef.current?.focus()
+          }, 60)
           autoStartRef.current = true
           return
         }
@@ -363,6 +374,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
 
     return () => {
       if (autoStartTimer) clearTimeout(autoStartTimer)
+      if (redrawTimer) clearTimeout(redrawTimer)
       clearTimeout(backstopTimer)
       clearTimeout(quietTimerRef.current)
       awaitingRevealRef.current = false

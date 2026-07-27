@@ -146,6 +146,9 @@ export default function App() {
   const [openFilePath, setOpenFilePath] = useState<string | null>(null)
   // Chats the user hid from the pending-requests bar; cleared per id when that run ends.
   const [dismissedRunIds, setDismissedRunIds] = useState<Set<string>>(new Set())
+  // Bumped every time we deliberately land on a new chat, so Chat can bring the composer
+  // forward even when the "open new chats in" pref is Terminal (see Chat's effect).
+  const [newChatNonce, setNewChatNonce] = useState(0)
   const [auth, setAuth] = useState<AuthStatus | null>(null)
   const [view, setView] = useState<View>('chat')
   const [models, setModels] = useState<ModelInfo[]>([])
@@ -814,6 +817,7 @@ export default function App() {
   // you back into whatever happened to be open last. An existing empty draft is reused so
   // bouncing between views doesn't pile up blank chats in the sidebar.
   const goToNewChat = () => {
+    setNewChatNonce((n) => n + 1)
     const draft =
       activeSession && activeSession.messages.length === 0
         ? activeSession
@@ -975,6 +979,7 @@ export default function App() {
   // account — the most recent one already there, else the active empty draft repurposed
   // onto it, else a fresh chat bound to it.
   const pickAccount = async (provider: ProviderId, accountId: string) => {
+    setNewChatNonce((n) => n + 1)
     await switchDefaultProviderAccount(provider, accountId)
 
     // Resolve chats with the just-picked account as this provider's default — state from
@@ -1577,6 +1582,7 @@ export default function App() {
               terminalProvider={activeChatProvider}
               terminalAccountId={activeChatAccountId}
               defaultChatView={ui?.defaultChatView ?? 'chat'}
+              newChatNonce={newChatNonce}
               onOpenClaudeMd={() => setClaudeMdOpen(true)}
               autoApprove={activeSession?.autoApprove ?? false}
               onToggleAutoApprove={toggleAutoApprove}

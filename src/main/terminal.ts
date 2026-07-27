@@ -36,6 +36,22 @@ const launched = new Set<string>()
 // replays to repaint its scrollback — the pty itself keeps running throughout.
 const outputBuffers = new Map<string, string>()
 
+// What each live pty was created with, so a re-create can tell "reattach to this" from
+// "the chat's environment changed, respawn it" — see createTerminal.
+const configs = new Map<string, string>()
+
+// The settings baked into a pty at spawn time (env, cwd, shell). cols/rows are deliberately
+// excluded: a resize is handled by terminal:resize and is never a reason to respawn.
+function configSignature(opts: CreateTerminalOptions): string {
+  return JSON.stringify([
+    opts.cwd ?? '',
+    opts.accountId ?? '',
+    opts.wslDistro ?? '',
+    opts.remoteHostId ?? '',
+    opts.provider ?? 'claude'
+  ])
+}
+
 const MAX_BUFFER_CHARS = 200_000
 
 function appendToBuffer(id: string, data: string): void {
@@ -130,19 +146,26 @@ export function createTerminal(
     clearTimeout(pendingKill)
     pendingKills.delete(id)
   }
+  const sig = configSignature(opts)
   const existing = terminals.get(id)
   if (existing) {
-    // Benign re-create for an id that already has a live pty (StrictMode remount, a
-    // redundant renderer create call, or a renderer reattaching after navigating away).
-    // Reuse it rather than spawning a duplicate, and hand back the scrollback so the fresh
-    // xterm instance can repaint what it missed.
-    return {
-      ok: true,
-      shell: shellKinds.get(id),
-      cliLaunched: launched.has(id),
-      reused: true,
-      buffer: outputBuffers.get(id) ?? ''
+    if (configs.get(id) === sig) {
+      // Benign re-create for an id that already has a live pty (StrictMode remount, a
+      // redundant renderer create call, or a renderer reattaching after navigating away).
+      // Reuse it rather than spawning a duplicate, and hand back the scrollback so the fresh
+      // xterm instance can repaint what it missed.
+      return {
+        ok: true,
+        shell: shellKinds.get(id),
+        cliLaunched: launched.has(id),
+        reused: true,
+        buffer: outputBuffers.get(id) ?? ''
+      }
     }
+    // Same id, different environment — the chat switched account/provider/distro/host/folder.
+    // The live pty has the old one baked into its env and cwd, so reattaching would silently
+    // keep running under the account the user just switched away from. Replace it instead.
+    killTerminal(id)
   }
   launched.delete(id)
   // Fresh spawn — any buffer left over from a previous pty on this id is stale history.
@@ -248,16 +271,25 @@ export function createTerminal(
     })
 
     p.onData((d) => {
+      // A superseded pty (replaced above because the environment changed) can still flush a
+      // final chunk as it dies. Dropping it keeps the replacement's buffer and screen clean.
+      if (terminals.get(id) !== p) return
       appendToBuffer(id, d)
       onData(id, d)
     })
     p.onExit((e) => {
+      // Exit arrives asynchronously, so a pty we replaced can report its death *after* its
+      // replacement is already registered under the same id. Cleaning up here would then wipe
+      // the live pty's state and tell the renderer the new terminal had exited, so only the
+      // pty currently registered for this id is allowed to.
+      if (terminals.get(id) !== p) return
       onExit(id, e.exitCode)
       terminals.delete(id)
       shellKinds.delete(id)
       sshMeta.delete(id)
       launched.delete(id)
       outputBuffers.delete(id)
+      configs.delete(id)
       const t = pendingKills.get(id)
       if (t) {
         clearTimeout(t)
@@ -267,6 +299,7 @@ export function createTerminal(
 
     terminals.set(id, p)
     shellKinds.set(id, kind)
+    configs.set(id, sig)
 
     return { ok: true, shell: kind, cliLaunched }
   } catch {
@@ -310,6 +343,7 @@ export function killTerminal(id: string): { ok: boolean } {
   // The terminal is genuinely going away (this also covers the deferred kill, which fires
   // through here), so its replay history goes with it.
   outputBuffers.delete(id)
+  configs.delete(id)
   const p = terminals.get(id)
   if (!p) return { ok: false }
   try {
@@ -517,6 +551,7 @@ export function killAllTerminals(): void {
   pendingKills.clear()
   launched.clear()
   outputBuffers.clear()
+  configs.clear()
   for (const [id, p] of terminals) {
     try {
       p.kill()
