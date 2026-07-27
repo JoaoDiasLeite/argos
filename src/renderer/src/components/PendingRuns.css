@@ -1,0 +1,83 @@
+/* Pending-request strip, sitting between the titlebar and the app body so it stays visible
+   from every view. Toned with the accent (informational) rather than .budget-banner's error
+   red, and it borrows .server-tab's pill shape so jumping to a background chat looks like
+   switching a remote-session tab. */
+.pending-runs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--accent-dim);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.pending-runs-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.pending-runs-spinner {
+  animation: pending-runs-spin 0.9s linear infinite;
+}
+
+@keyframes pending-runs-spin {
+  to { transform: rotate(360deg); }
+}
+
+.pending-run {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 2px 0 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  max-width: 260px;
+}
+
+/* Same amber as .session-dot.attention in the chat list, which flags the same condition. */
+.pending-run.attention {
+  border-color: #e2b341;
+}
+
+.pending-run-open {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-1);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pending-run-open:hover { color: var(--accent); }
+
+.pending-run-note {
+  color: #e2b341;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.pending-run-close {
+  margin-left: 4px;
+  padding: 0 5px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-2);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.pending-run-close:hover {
+  opacity: 1;
+  color: var(--text-1);
+}

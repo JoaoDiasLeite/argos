@@ -29,6 +29,7 @@ import SettingsModal from './components/SettingsModal'
 import NavRail, { View, VIEW_GROUPS } from './components/NavRail'
 import ClaudeMdModal from './components/ClaudeMdModal'
 import ApprovalModal from './components/ApprovalModal'
+import PendingRuns, { PendingRun } from './components/PendingRuns'
 import FileEditor from './components/FileEditor'
 import { readLocalFile, writeLocalFile } from './lib/local-file-io'
 import CheckpointsModal from './components/CheckpointsModal'
@@ -143,6 +144,8 @@ export default function App() {
   const [sidebarTab, setSidebarTab] = useState<'files' | 'sessions'>('sessions')
   // File opened from the sidebar's Files tab, shown in the FileEditor modal.
   const [openFilePath, setOpenFilePath] = useState<string | null>(null)
+  // Chats the user hid from the pending-requests bar; cleared per id when that run ends.
+  const [dismissedRunIds, setDismissedRunIds] = useState<Set<string>>(new Set())
   const [auth, setAuth] = useState<AuthStatus | null>(null)
   const [view, setView] = useState<View>('chat')
   const [models, setModels] = useState<ModelInfo[]>([])
@@ -197,6 +200,14 @@ export default function App() {
       next.delete(sid)
       return next
     })
+    // Dismissing a chat from the pending bar only hides that run. Forgetting it here means
+    // the chat's NEXT request shows up again rather than being silently suppressed forever.
+    setDismissedRunIds((prev) => {
+      if (!prev.has(sid)) return prev
+      const next = new Set(prev)
+      next.delete(sid)
+      return next
+    })
   }, [])
   // Latest createSession, so the global ⌘N handler never calls a stale closure.
   // An optional projectPath overrides the inherited folder (used by --folder launches).
@@ -230,6 +241,25 @@ export default function App() {
     () => new Set(approvalQueue.map((r) => r.appSessionId)),
     [approvalQueue]
   )
+  // Chats still working, for the window-wide pending bar. The chat you're already looking at
+  // is left out — its own header already shows it streaming, so listing it is just noise.
+  const pendingRuns = useMemo<PendingRun[]>(
+    () =>
+      sessions
+        .filter(
+          (s) =>
+            runningIds.has(s.id) &&
+            !dismissedRunIds.has(s.id) &&
+            !(view === 'chat' && s.id === activeId)
+        )
+        .map((s) => ({ id: s.id, name: s.name, attention: attentionIds.has(s.id) })),
+    [sessions, runningIds, dismissedRunIds, attentionIds, view, activeId]
+  )
+
+  const dismissRun = useCallback((sid: string) => {
+    setDismissedRunIds((prev) => new Set(prev).add(sid))
+  }, [])
+
   const ready = auth ? (auth.mode === 'api-key' ? auth.hasApiKey : auth.claudeCodeDetected || auth.hasApiKey) : false
 
   const addTerm = useCallback((line: TermLine) => {
@@ -780,6 +810,32 @@ export default function App() {
   }
   createSessionRef.current = createSession
 
+  // Coming back to the chat view from elsewhere should land on a new chat rather than dropping
+  // you back into whatever happened to be open last. An existing empty draft is reused so
+  // bouncing between views doesn't pile up blank chats in the sidebar.
+  const goToNewChat = () => {
+    const draft =
+      activeSession && activeSession.messages.length === 0
+        ? activeSession
+        : sessions.find((s) => s.messages.length === 0)
+    if (draft) {
+      setActiveId(draft.id)
+      setView('chat')
+      return
+    }
+    createSession()
+  }
+
+  // Navigation from the nav rail / command palette, as opposed to the setView calls that
+  // already pick a specific chat to land on (createSession, pickAccount, deployAgent, …).
+  const goToView = (v: View) => {
+    if (v === 'chat' && view !== 'chat') {
+      goToNewChat()
+      return
+    }
+    setView(v)
+  }
+
   // Quick chat: forces the current provider's cheapest model for throwaway / trivial questions.
   const createQuickChat = () => {
     const model = cheapestModelForProvider(defaultProvider) ?? defaultModel
@@ -939,27 +995,20 @@ export default function App() {
           ? { geminiAccountId: accountId, geminiAccountName: name }
           : { accountId, accountName: name }
 
-    // Already on this account (the switch may have rebound an empty draft) — nothing to move.
+    // Already on this account with nothing typed yet (the switch may have rebound an empty
+    // draft) — that IS the new-chat page, so stay put.
     const active = sessions.find((s) => s.id === activeIdRef.current)
-    if (active && provOf(models, active.model) === provider && acctOf(active, models, effectiveDefaults) === accountId) {
+    if (
+      active &&
+      active.messages.length === 0 &&
+      provOf(models, active.model) === provider &&
+      acctOf(active, models, effectiveDefaults) === accountId
+    ) {
       setView('chat')
       return
     }
-    // Jump to the most recent real chat already on this provider + account.
-    const existing = sessions
-      .filter(
-        (s) =>
-          s.messages.length > 0 &&
-          provOf(models, s.model) === provider &&
-          acctOf(s, models, effectiveDefaults) === accountId
-      )
-      .sort((a, b) => b.updatedAt - a.updatedAt)[0]
-    if (existing) {
-      setActiveId(existing.id)
-      setView('chat')
-      return
-    }
-    // None yet: repurpose the active empty draft onto this account, else start a fresh chat.
+    // Otherwise land on a new chat on the picked account rather than reopening an old one:
+    // repurpose the active empty draft onto this account, else start a fresh chat.
     if (active && active.messages.length === 0) {
       setSessions((prev) => prev.map((s) => (s.id === active.id ? { ...s, model: providerModel, ...acctFields } : s)))
     } else {
@@ -1390,7 +1439,7 @@ export default function App() {
       { v: 'mcp', label: 'MCP' },
       { v: 'remote', label: 'Remote & WSL' }
     ]
-    for (const { v, label } of views) items.push({ id: `view:${v}`, title: `Go to ${label}`, group: 'Views', run: () => setView(v) })
+    for (const { v, label } of views) items.push({ id: `view:${v}`, title: `Go to ${label}`, group: 'Views', run: () => goToView(v) })
     items.push({ id: 'settings', title: 'Open Settings', group: 'Views', run: () => setSettingsOpen(true) })
     items.push({ id: 'accounts', title: 'Manage Claude accounts', group: 'Views', run: () => setAccountsOpen(true) })
     for (const s of sessions) {
@@ -1434,8 +1483,16 @@ export default function App() {
     <div className={`app-shell ${maximized ? 'maximized' : ''}`}>
       {!maximized && <ResizeHandles />}
       <TitleBar maximized={maximized} />
+      <PendingRuns
+        runs={pendingRuns}
+        onOpen={(id) => {
+          setActiveId(id)
+          setView('chat')
+        }}
+        onDismiss={dismissRun}
+      />
       <div className="app">
-        <NavRail view={view} onChange={setView} onSettings={() => setSettingsOpen(true)} onChangelog={() => setChangelogOpen(true)} />
+        <NavRail view={view} onChange={goToView} onSettings={() => setSettingsOpen(true)} onChangelog={() => setChangelogOpen(true)} />
 
       {view === 'chat' && (
         <>
