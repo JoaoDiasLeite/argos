@@ -15,8 +15,8 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
-    version: '0.7.0',
-    date: '2026-07-24',
+    version: '1.0.0',
+    date: '2026-07-25',
     tag: 'new',
     sections: [
       {
@@ -26,6 +26,8 @@ const CHANGELOG: Entry[] = [
           'Run a chat in a throwaway git worktree — flip "Worktree" on a local repo and the chat works inside a fresh `claude/…` branch checked out beside your repo, so its edits never touch your current branch.',
           'Extra working directories — add folders beyond the project root and the engine can read and write across all of them (Claude Code `--add-dir`).',
           'Pick a folder for WSL and remote chats too — WSL opens the native picker straight into the distro\'s filesystem, and SSH hosts take a typed working directory that overrides the host default.',
+          'Remote hosts: Connect opens a full SFTP file browser, interactive terminal, and command history for any SSH host.',
+          'Servers: Remote & WSL is now the default tab; open remote/WSL sessions stay connected in the background and can be run several at once via tabs.',
         ],
       },
       {

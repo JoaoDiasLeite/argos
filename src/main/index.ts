@@ -50,7 +50,29 @@ import {
   SshHost
 } from './ssh'
 import { listSshKeys, generateKey, readPublicKey } from './ssh-keys'
-import { listDistros, testDistro, runWsl, stopWsl, runWslOneShot, uncToWslPath } from './wsl'
+import {
+  sftpConnect,
+  sftpList,
+  sftpRead,
+  sftpWrite,
+  sftpMkdir,
+  sftpRename,
+  sftpDelete,
+  sftpDownload,
+  sftpUpload,
+  sftpHistory,
+  sftpDisconnect,
+  sftpDisconnectAll
+} from './sftp'
+import {
+  remoteShellCreate,
+  remoteShellWrite,
+  remoteShellResize,
+  remoteShellKill,
+  remoteShellKillAll
+} from './remote-shell'
+import { listDistros, testDistro, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory } from './wsl'
+import { fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
 import { getHiddenDistros, setDistroHidden, getRoomsLayout, setRoomsLayout, RoomsLayout } from './store'
 import {
   loadAccounts,
@@ -386,12 +408,16 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   killAllTerminals()
+  remoteShellKillAll()
+  sftpDisconnectAll()
   if (!hasTray && process.platform !== 'darwin') app.quit()
 })
 
 app.on('before-quit', () => {
   isQuitting = true
   killAllTerminals()
+  remoteShellKillAll()
+  sftpDisconnectAll()
 })
 
 app.on('will-quit', () => {
@@ -933,12 +959,27 @@ ipcMain.handle('ssh:keys-list', () => listSshKeys())
 ipcMain.handle('ssh:keys-generate', (_, name: string, comment?: string) => generateKey(name, comment))
 ipcMain.handle('ssh:keys-public', (_, privatePath: string) => readPublicKey(privatePath))
 
+// ─── SFTP (Remote Session file browser) ────────────────────────────────────
+
+ipcMain.handle('sftp:connect', (_, hostId: string) => sftpConnect(hostId))
+ipcMain.handle('sftp:list', (_, hostId: string, dir: string) => sftpList(hostId, dir))
+ipcMain.handle('sftp:read', (_, hostId: string, p: string) => sftpRead(hostId, p))
+ipcMain.handle('sftp:write', (_, hostId: string, p: string, content: string) => sftpWrite(hostId, p, content))
+ipcMain.handle('sftp:mkdir', (_, hostId: string, dir: string) => sftpMkdir(hostId, dir))
+ipcMain.handle('sftp:rename', (_, hostId: string, from: string, to: string) => sftpRename(hostId, from, to))
+ipcMain.handle('sftp:delete', (_, hostId: string, p: string) => sftpDelete(hostId, p))
+ipcMain.handle('sftp:download', (_, hostId: string, p: string) => sftpDownload(hostId, p))
+ipcMain.handle('sftp:upload', (_, hostId: string, dir: string) => sftpUpload(hostId, dir))
+ipcMain.handle('sftp:history', (_, hostId: string) => sftpHistory(hostId))
+ipcMain.handle('sftp:disconnect', (_, hostId: string) => sftpDisconnect(hostId))
+
 // ─── WSL ──────────────────────────────────────────────────────────────────
 
 ipcMain.handle('wsl:list', () => listDistros())
 ipcMain.handle('wsl:test', (_, distro: string) => testDistro(distro))
 ipcMain.handle('wsl:hidden', () => getHiddenDistros())
 ipcMain.handle('wsl:set-hidden', (_, distro: string, hidden: boolean) => setDistroHidden(distro, hidden))
+ipcMain.handle('wsl:history', (_, distro: string) => wslHistory(distro))
 
 // ─── Rooms (persisted board layout) ───────────────────────────────────────────
 
@@ -1075,6 +1116,24 @@ ipcMain.handle(
   (_, id: string, provider: 'claude' | 'codex' | 'gemini', resumeSessionId?: string) =>
     startCliInTerminal(id, provider, resumeSessionId)
 )
+
+// ─── Remote shell (Remote Session SSH terminal, over the SFTP connection) ──────
+
+ipcMain.handle('remote-shell:create', (_, id: string, hostId: string, cols: number, rows: number) =>
+  remoteShellCreate(
+    id,
+    hostId,
+    cols,
+    rows,
+    (tid, data) => send('remote-shell:data', { id: tid, data }),
+    (tid, code) => send('remote-shell:exit', { id: tid, code })
+  )
+)
+ipcMain.on('remote-shell:write', (_, id: string, data: string) => remoteShellWrite(id, data))
+ipcMain.on('remote-shell:resize', (_, id: string, cols: number, rows: number) =>
+  remoteShellResize(id, cols, rows)
+)
+ipcMain.handle('remote-shell:kill', (_, id: string) => remoteShellKill(id))
 
 // ─── Chat compaction (summarize a long session into a fresh one) ───────────────
 
@@ -1822,6 +1881,14 @@ ipcMain.handle('fs:open-folder', async (_, defaultPath?: string) => {
   if (result.canceled) return null
   return result.filePaths[0]
 })
+
+// Guarded local-fs mutation IPC — backs the WSL "Connect" file browser (LocalBrowser),
+// which reads via the existing fs:read-dir/fs:read-file above and writes via these. See
+// local-fs.ts for the empty-path / filesystem-root guards.
+ipcMain.handle('fs:write-file', (_, filePath: string, content: string) => fsWriteFile(filePath, content))
+ipcMain.handle('fs:mkdir', (_, dirPath: string) => fsMkdir(dirPath))
+ipcMain.handle('fs:rename', (_, from: string, to: string) => fsRename(from, to))
+ipcMain.handle('fs:delete', (_, targetPath: string) => fsDelete(targetPath))
 
 // ─── Sessions ─────────────────────────────────────────────────────────────────
 

@@ -7,6 +7,7 @@ import {
   StreamEmit
 } from './claude-stream'
 import { getHiddenDistros } from './store'
+import { parseHistoryLines } from './sftp-pure'
 
 export interface WslDistro {
   name: string
@@ -373,6 +374,34 @@ export function runWslOneShot(
 
     child.stdin?.end(prompt)
   })
+}
+
+const HISTORY_FILES = ['.bash_history', '.zsh_history']
+
+/**
+ * Read a WSL distro's shell history for the "Connect" session view — the WSL analog of
+ * sftpHistory in sftp.ts. Resolves $HOME first (wslHome, which deliberately avoids a login
+ * shell — see its own comment), then `cat`s the history file directly via an argv array
+ * (no shell string built from user input). Reuses parseHistoryLines (sftp-pure.ts) to parse.
+ */
+export async function wslHistory(distro: string): Promise<{ ok: boolean; commands?: string[]; error?: string }> {
+  if (!isWindows) return { ok: false, error: 'WSL is only available on Windows' }
+  const home = await wslHome(distro)
+  if (!home) return { ok: false, error: 'Could not resolve home directory' }
+
+  for (const name of HISTORY_FILES) {
+    const filePath = `${home}/${name}`
+    const raw = await new Promise<string | null>((resolve) => {
+      execFile(
+        'wsl.exe',
+        ['-d', distro, '--', 'cat', filePath],
+        { encoding: 'utf8', windowsHide: true, timeout: 8000 },
+        (err, stdout) => resolve(err ? null : stdout)
+      )
+    })
+    if (raw !== null) return { ok: true, commands: parseHistoryLines(raw) }
+  }
+  return { ok: true, commands: [] }
 }
 
 /** Convert a \\wsl.localhost\<distro>\home\… (or \\wsl$\…) UNC path to its Linux path. */

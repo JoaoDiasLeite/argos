@@ -1,6 +1,16 @@
 import './NavRail.css'
 
-export type View = 'chat' | 'projects' | 'agents' | 'rooms' | 'planner' | 'scheduled' | 'usage' | 'mcp' | 'remote'
+export type View =
+  | 'chat'
+  | 'projects'
+  | 'agents'
+  | 'rooms'
+  | 'planner'
+  | 'scheduled'
+  | 'usage'
+  | 'mcp'
+  | 'remote'
+  | 'remote-session'
 
 interface Props {
   view: View
@@ -78,7 +88,7 @@ export interface ViewGroup {
 export const VIEW_GROUPS: ViewGroup[] = [
   { key: 'agents', label: 'Agents', members: ['agents', 'rooms'] },
   { key: 'planner', label: 'Planner', members: ['planner', 'scheduled'] },
-  { key: 'servers', label: 'Servers', members: ['mcp', 'remote'] }
+  { key: 'servers', label: 'Servers', members: ['remote', 'mcp'] }
 ]
 
 // A rail entry is either a standalone view or a group of views. Groups use the
