@@ -135,7 +135,12 @@ export default function Chat({
   }
   // Per-chat terminal toggle, keyed by session id so each chat remembers its own state.
   const [termOpenById, setTermOpenById] = useState<Record<string, boolean>>({})
-  const termOpen = !!(session && termOpenById[session.id])
+  // Fall back to the "open new chats in" pref for sessions not yet in the map, so a
+  // brand-new terminal session renders the terminal on its first paint instead of
+  // flashing the chat welcome/picker screen while the seeding effect below catches up.
+  const termOpen = !!session && (session.id in termOpenById
+    ? termOpenById[session.id]
+    : defaultChatView === 'terminal')
   const toggleTerminal = () => {
     if (!session) return
     setTermOpenById((prev) => ({ ...prev, [session.id]: !prev[session.id] }))
