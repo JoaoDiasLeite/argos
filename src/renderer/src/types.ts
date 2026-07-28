@@ -134,7 +134,7 @@ export interface SystemPrefs {
   closeToTray: boolean
   /** Preferred quick-launcher accelerator. '' = automatic (Alt+Space with fallback). */
   overlayShortcut: string
-  /** Add an "Open with Claude GUI" entry to the Explorer folder right-click menu (HKCU). */
+  /** Add an "Open with Argos" entry to the Explorer folder right-click menu (HKCU). */
   explorerContextMenu: boolean
 }
 

@@ -85,6 +85,7 @@ import {
   loginAccount
 } from './accounts'
 import { repairClaudeCliIfBroken } from './claude-cli'
+import { migrateUserDataDir } from './migrate-userdata'
 import { checkAgentCliStatus, loginAgentCli, AgentCliId } from './agent-clis'
 import {
   loadProviderAccounts,
@@ -123,7 +124,12 @@ import { createTray, updateTrayShortcutLabel } from './tray'
 import { initUpdater, getUpdaterState, checkNow, quitAndInstall } from './updater'
 import { getPlanUsageForIpc, startPlanUsageWatcher } from './plan-usage'
 import { getCodexAccountsUsage } from './codex-usage'
-import { setExplorerContextMenu, extractLaunchAction, LaunchAction } from './shell-integration'
+import {
+  setExplorerContextMenu,
+  removeLegacyExplorerContextMenu,
+  extractLaunchAction,
+  LaunchAction
+} from './shell-integration'
 import { refreshJumpList } from './jumplist'
 import { readJsonFile } from './json-file'
 
@@ -304,7 +310,7 @@ function createWindow(): void {
     if (!trayHintShown && Notification.isSupported()) {
       trayHintShown = true
       new Notification({
-        title: 'Claude GUI is still running',
+        title: 'Argos is still running',
         body: 'The app keeps running in the system tray. Use the tray icon to reopen or quit.'
       }).show()
     }
@@ -331,7 +337,18 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.claude-gui')
+  // Must run before anything touches userData (ensureDirs and the load* calls below): the app
+  // was previously named claude-gui, so Electron now points at a fresh, empty directory. See
+  // migrate-userdata.ts — it's a copy, and it no-ops once the marker is in place.
+  const dataImport = migrateUserDataDir(
+    // The literal former name, not the current one — this is the directory we're importing FROM.
+    path.join(app.getPath('appData'), 'claude-gui'),
+    app.getPath('userData')
+  )
+  if (dataImport.detail) console.log(`[userdata] ${dataImport.detail}`)
+  // Matches build.appId. Windows ties toast notifications and jumplist entries to this id, so
+  // a value that disagrees with the installed app's identity silently misroutes both.
+  electronApp.setAppUserModelId('com.argos.app')
   ensureDirs()
   loadAuthState()
   // A Claude Code self-update that renamed the CLI but never wrote the replacement leaves every
@@ -402,6 +419,8 @@ app.whenReady().then(() => {
   if (!is.dev && getConfig().system.explorerContextMenu) {
     void setExplorerContextMenu(true)
   }
+  // Independent of the toggle: clear the entries left behind under the app's former name.
+  if (!is.dev) void removeLegacyExplorerContextMenu()
 
   // Windows Jump List (recent projects + New chat), refreshed on save below.
   refreshJumpList()

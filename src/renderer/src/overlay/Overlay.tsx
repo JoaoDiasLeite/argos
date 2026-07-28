@@ -103,8 +103,8 @@ export default function Overlay() {
         <button
           className="overlay-open-app"
           onClick={() => window.electronAPI.overlayOpenMain()}
-          title="Open Claude GUI"
-          aria-label="Open Claude GUI"
+          title="Open Argos"
+          aria-label="Open Argos"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M15 3h6v6" /><path d="M10 14L21 3" />

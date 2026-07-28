@@ -151,7 +151,7 @@ export function generateKey(name: string, comment?: string): Promise<GenerateKey
       return resolve({ ok: false, error: `A key named "${name}" already exists in ~/.ssh.` })
     }
 
-    const cleanComment = (comment && comment.trim()) || `claude-gui@${os.hostname()}`
+    const cleanComment = (comment && comment.trim()) || `argos@${os.hostname()}`
     const args = ['-t', 'ed25519', '-f', target, '-N', '', '-C', cleanComment]
 
     let child

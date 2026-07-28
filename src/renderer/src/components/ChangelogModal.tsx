@@ -22,6 +22,7 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Features',
         items: [
+          'The app is now called Argos. Your chats, account logins, SSH hosts, sprints and checkpoints are imported automatically on first launch — nothing to move by hand. The previous data is left untouched, so the old build still works if you need to go back.',
           'Set up a new chat before you send — a config row above the composer lets you pick the environment (Local, a WSL distro, or an SSH host), choose the project folder, see the git branch, and add extra working directories, all in one place.',
           'Run a chat in a throwaway git worktree — flip "Worktree" on a local repo and the chat works inside a fresh `claude/…` branch checked out beside your repo, so its edits never touch your current branch.',
           'Extra working directories — add folders beyond the project root and the engine can read and write across all of them (Claude Code `--add-dir`).',

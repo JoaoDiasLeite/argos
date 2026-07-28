@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Launches an isolated instance of the built Claude GUI app (separate userData
+  Launches an isolated instance of the built Argos app (separate userData
   dir, seeded config + demo session) and screenshots it for visual verification.
 
 .PARAMETER View
@@ -33,7 +33,7 @@ if (-not $OutFile) {
   $OutFile = Join-Path $scriptDir 'visual-check.png'
 }
 
-$userDataDir = Join-Path $env:TEMP 'claude-gui-visual-check\userdata'
+$userDataDir = Join-Path $env:TEMP 'argos-visual-check\userdata'
 
 Write-Host "== Preparing isolated userData dir: $userDataDir"
 if (Test-Path $userDataDir) {

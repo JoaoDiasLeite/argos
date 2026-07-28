@@ -113,7 +113,7 @@ async function readCodexRateLimits(configDir: string | null): Promise<CodexAccou
             jsonrpc: '2.0',
             id: 1,
             method: 'initialize',
-            params: { clientInfo: { name: 'claude-gui', title: 'Claude GUI', version: '0.6.0' } }
+            params: { clientInfo: { name: 'argos', title: 'Argos', version: '0.6.0' } }
           }) + '\n'
         )
         child.stdin?.write(JSON.stringify({ jsonrpc: '2.0', method: 'initialized' }) + '\n')

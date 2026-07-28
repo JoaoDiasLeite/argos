@@ -76,7 +76,7 @@ export function initUpdater(notifyFn: (channel: string, payload: unknown) => voi
     if (Notification.isSupported()) {
       const n = new Notification({
         title: 'Update ready',
-        body: `Claude GUI ${info.version} will install on next restart.`
+        body: `Argos ${info.version} will install on next restart.`
       })
       n.on('click', () => quitAndInstall())
       n.show()

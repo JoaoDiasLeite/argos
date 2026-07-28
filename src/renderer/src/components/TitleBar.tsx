@@ -42,7 +42,7 @@ export default function TitleBar({ maximized }: Props) {
             <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
         </span>
-        <span className="titlebar-title">Claude GUI</span>
+        <span className="titlebar-title">Argos</span>
       </div>
 
       <div className="titlebar-drag" />
@@ -51,7 +51,7 @@ export default function TitleBar({ maximized }: Props) {
         <button
           className="titlebar-update-pill"
           onClick={() => window.electronAPI.updaterInstall()}
-          title={`Install Claude GUI v${updater.version ?? ''} and relaunch`}
+          title={`Install Argos v${updater.version ?? ''} and relaunch`}
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" />

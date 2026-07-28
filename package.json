@@ -1,5 +1,5 @@
 {
-  "name": "claude-gui",
+  "name": "argos",
   "version": "1.0.0",
   "description": "Desktop GUI for Claude",
   "main": "out/main/index.js",
@@ -13,14 +13,14 @@
     "release": "node scripts/gen-icon.mjs && electron-vite build && electron-builder --publish always"
   },
   "build": {
-    "appId": "com.claudegui.app",
-    "productName": "Claude GUI",
+    "appId": "com.argos.app",
+    "productName": "Argos",
     "npmRebuild": false,
     "publish": [
       {
         "provider": "github",
         "owner": "JoaoDiasLeite",
-        "repo": "claude-gui",
+        "repo": "argos",
         "releaseType": "release"
       }
     ],
@@ -47,7 +47,7 @@
     "nsis": {
       "oneClick": true,
       "perMachine": false,
-      "artifactName": "Claude-GUI-Setup-${version}.${ext}"
+      "artifactName": "Argos-Setup-${version}.${ext}"
     },
     "mac": {
       "target": [

@@ -27,7 +27,7 @@
 
 /* ── Account row ──────────────────────────────────────────── */
 /* First element in the sidebar now that the duplicate brand row (the title
-   bar already shows "Claude GUI") is gone. Named sidebar-account because
+   bar already shows "Argos") is gone. Named sidebar-account because
    AccountsModal.css already owns `.account-row` (a boxed card) and component
    styles share one global bundle. */
 .sidebar-account {

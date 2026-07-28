@@ -1,17 +1,20 @@
 import { app } from 'electron'
 import { execFile } from 'child_process'
 
-// Explorer "Open with Claude GUI" context-menu entry.
+// Explorer "Open with Argos" context-menu entry.
 //
 // Electron has no registry API, so we drive reg.exe. Writing under HKCU (not HKLM)
 // needs no elevation. Two keys cover both cases the user reaches from Explorer:
-//   • Directory\shell\ClaudeGUI          — right-clicking a folder icon
-//   • Directory\Background\shell\ClaudeGUI — right-clicking empty space *inside* a folder
+//   • Directory\shell\Argos          — right-clicking a folder icon
+//   • Directory\Background\shell\Argos — right-clicking empty space *inside* a folder
 // Each has a `command` subkey whose default value launches us with `--folder "%V"`,
 // where Explorer substitutes %V with the folder path.
 
 const BASE = 'HKCU\\Software\\Classes\\Directory'
-const KEYS = [`${BASE}\\shell\\ClaudeGUI`, `${BASE}\\Background\\shell\\ClaudeGUI`]
+const KEYS = [`${BASE}\\shell\\Argos`, `${BASE}\\Background\\shell\\Argos`]
+// Keys written under the app's former name. Their `command` still points at the old exe, so
+// they'd sit in the Explorer menu as a dead "Open with Claude GUI" entry — removed on startup.
+const LEGACY_KEYS = [`${BASE}\\shell\\ClaudeGUI`, `${BASE}\\Background\\shell\\ClaudeGUI`]
 
 // Run reg.exe with the arguments passed as a real argv array. Node escapes each
 // element for CreateProcess, so a value like `"exe" --folder "%V"` (embedded quotes
@@ -35,7 +38,7 @@ export function launchCommand(extraArgs: string): string {
 
 async function registerKey(key: string): Promise<void> {
   const exe = process.execPath
-  await reg(['add', key, '/ve', '/d', 'Open with Claude GUI', '/f'])
+  await reg(['add', key, '/ve', '/d', 'Open with Argos', '/f'])
   await reg(['add', key, '/v', 'Icon', '/d', exe, '/f'])
   await reg(['add', `${key}\\command`, '/ve', '/d', launchCommand('--folder "%V"'), '/f'])
 }
@@ -75,5 +78,14 @@ export async function setExplorerContextMenu(enabled: boolean): Promise<void> {
     }
   } catch {
     /* registry write failed (locked/policy) — the toggle is best-effort */
+  }
+}
+
+/** Drop the pre-rename entries, whether or not the user has the menu enabled. Never throws. */
+export async function removeLegacyExplorerContextMenu(): Promise<void> {
+  try {
+    for (const key of LEGACY_KEYS) await deleteKey(key)
+  } catch {
+    /* best-effort cleanup */
   }
 }

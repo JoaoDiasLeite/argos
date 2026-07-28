@@ -78,7 +78,7 @@ function buildAndSet(): void {
             program: exe,
             args: argsFor('--new-chat'),
             title: 'New chat',
-            description: 'Start a new Claude GUI chat',
+            description: 'Start a new Argos chat',
             iconPath: exe,
             iconIndex: 0
           }

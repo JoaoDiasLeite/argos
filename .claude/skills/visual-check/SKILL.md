@@ -47,7 +47,7 @@ Valid `-View` names: `chat`, `projects`, `agents`, `rooms`, `planner`,
 ## Gotchas
 
 - **Why isolation is required at all**: `npm run dev` instances share
-  `%APPDATA%\claude-gui` userData and enforce a single-instance lock, so a
+  `%APPDATA%\argos` userData and enforce a single-instance lock, so a
   second `npm run dev` just focuses the first window instead of starting
   fresh — you cannot visually check a change without either disrupting a
   running dev session or (this skill's approach) launching a separate

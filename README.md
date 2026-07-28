@@ -1,4 +1,4 @@
-# Claude GUI
+# Argos
 
 A desktop GUI for Claude Code, built with Electron + React + TypeScript. It runs the
 **Claude Agent SDK** under the hood, so it reuses your existing Claude Code login and

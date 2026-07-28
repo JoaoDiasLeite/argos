@@ -18,14 +18,14 @@ export interface TrayActions {
 
 function buildMenu(actions: TrayActions, overlayShortcut: string): Menu {
   return Menu.buildFromTemplate([
-    { label: 'Open Claude GUI', click: actions.onShowMain },
+    { label: 'Open Argos', click: actions.onShowMain },
     { label: 'New chat', click: actions.onNewChat },
     {
       label: overlayShortcut ? `Quick launcher (${overlayShortcut})` : 'Quick launcher',
       click: actions.onToggleOverlay
     },
     { type: 'separator' },
-    { label: 'Quit Claude GUI', click: actions.onQuit }
+    { label: 'Quit Argos', click: actions.onQuit }
   ])
 }
 
@@ -37,7 +37,7 @@ export function createTray(actions: TrayActions, overlayShortcut: string): Tray 
 
   trayActions = actions
   tray = new Tray(icon.resize({ width: 16, height: 16 }))
-  tray.setToolTip('Claude GUI')
+  tray.setToolTip('Argos')
   tray.setContextMenu(buildMenu(actions, overlayShortcut))
   tray.on('click', actions.onShowMain)
   return tray
@@ -53,5 +53,5 @@ export function updateTrayShortcutLabel(shortcut: string): void {
 /** Update the tray hover tooltip (e.g. live plan usage). No-op if no tray exists. */
 export function updateTrayTooltip(text: string): void {
   if (!tray) return
-  tray.setToolTip(text || 'Claude GUI')
+  tray.setToolTip(text || 'Argos')
 }

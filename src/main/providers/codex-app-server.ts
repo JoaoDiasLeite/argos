@@ -149,7 +149,7 @@ export async function* runCodexAppServer(
   ;(async () => {
     try {
       await rpc.request('initialize', {
-        clientInfo: { name: 'claude-gui', title: 'claude-gui', version: '1' }
+        clientInfo: { name: 'argos', title: 'argos', version: '1' }
       })
 
       let threadId: string

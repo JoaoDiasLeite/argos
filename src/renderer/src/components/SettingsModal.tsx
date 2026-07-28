@@ -418,7 +418,7 @@ export default function SettingsModal({
                   </label>
                 </div>
                 <div className="seg-field">
-                  <span>Show &lsquo;Open with Claude GUI&rsquo; in the Explorer folder menu</span>
+                  <span>Show &lsquo;Open with Argos&rsquo; in the Explorer folder menu</span>
                   <label className="toggle-switch">
                     <input
                       type="checkbox"
@@ -462,7 +462,7 @@ export default function SettingsModal({
             <div className="form-group">
               <label>About</label>
               <div className="cc-settings-row">
-                <span className="field-hint inline">Claude GUI v{updater.currentVersion}</span>
+                <span className="field-hint inline">Argos v{updater.currentVersion}</span>
                 <button
                   className="btn-secondary small"
                   onClick={checkForUpdates}

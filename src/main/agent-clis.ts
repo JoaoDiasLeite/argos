@@ -86,7 +86,7 @@ async function readCodexAccount(codexHome?: string): Promise<{ email?: string; p
     child.on('error', () => finish(null))
     ;(async () => {
       try {
-        await rpc.request('initialize', { clientInfo: { name: 'claude-gui', title: 'claude-gui', version: '1' } })
+        await rpc.request('initialize', { clientInfo: { name: 'argos', title: 'argos', version: '1' } })
         const res = (await rpc.request('account/read', {})) as {
           account?: { type?: string; email?: string | null; planType?: string } | null
         }

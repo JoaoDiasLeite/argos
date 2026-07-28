@@ -797,7 +797,7 @@ export default function App() {
   }, [endRun, addTermFor])
 
   // projectPath, when a string, overrides the folder normally inherited from the
-  // active session (e.g. an Explorer "Open with Claude GUI" or Jump List launch).
+  // active session (e.g. an Explorer "Open with Argos" or Jump List launch).
   // The `typeof` guard lets this double as a plain onClick handler — a click event
   // arg is ignored rather than mistaken for a folder path.
   const createSession = (projectPath?: unknown) => {

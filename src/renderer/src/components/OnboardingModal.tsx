@@ -61,7 +61,7 @@ export default function OnboardingModal({ onFinish }: Props) {
                 <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" />
               </svg>
             </div>
-            <h2 id="onboarding-modal-title">Welcome to Claude GUI</h2>
+            <h2 id="onboarding-modal-title">Welcome to Argos</h2>
             <p>A desktop control center for Claude Code — chat, projects, usage, agents, and remote/WSL backends, all in one place.</p>
             <button className="btn-primary" onClick={() => setStep(1)}>Get started</button>
           </div>
@@ -123,7 +123,7 @@ export default function OnboardingModal({ onFinish }: Props) {
               <div className="ob-spacer" />
               <button className="btn-secondary" onClick={onFinish}>Skip</button>
               <button className="btn-primary" onClick={onFinish} disabled={!ready}>
-                {ready ? 'Start using Claude GUI' : 'Connect to continue'}
+                {ready ? 'Start using Argos' : 'Connect to continue'}
               </button>
             </div>
           </div>

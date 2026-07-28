@@ -360,7 +360,7 @@ async function fetchAccount(
       headers: {
         Authorization: `Bearer ${creds.accessToken}`,
         'anthropic-beta': 'oauth-2025-04-20',
-        'User-Agent': 'claude-gui'
+        'User-Agent': 'argos'
       }
     })
     if (res.status === 401 || res.status === 403) {
@@ -462,14 +462,14 @@ function windowLabelForTooltip(key: string): string {
 
 function buildTooltip(report: PlanUsageReport): string {
   const primary = report.primary && report.accounts.find((a) => a.accountKey === report.primary)
-  if (!primary || primary.windows.length === 0) return 'Claude GUI'
+  if (!primary || primary.windows.length === 0) return 'Argos'
   const parts: string[] = []
   const five = primary.windows.find((w) => w.key === 'five_hour')
   const seven = primary.windows.find((w) => w.key === 'seven_day')
   if (five) parts.push(`Session ${five.utilization.toFixed(0)}%`)
   if (seven) parts.push(`Week ${seven.utilization.toFixed(0)}%`)
-  if (parts.length === 0) return 'Claude GUI'
-  return `Claude GUI — ${parts.join(' · ')}`
+  if (parts.length === 0) return 'Argos'
+  return `Argos — ${parts.join(' · ')}`
 }
 
 // "resets in 1h 20m" for a notification body — plain and terse.

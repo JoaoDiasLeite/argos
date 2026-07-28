@@ -1,4 +1,4 @@
-# Claude GUI — Improvement Backlog
+# Argos — Improvement Backlog
 
 Grounded GUI/UX improvements, ordered by impact. File references point at the
 current implementation each item would change.
