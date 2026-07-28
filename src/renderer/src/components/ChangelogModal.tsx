@@ -15,6 +15,20 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '1.1.0',
+    date: '2026-07-28',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'Opening a new chat that defaults to the terminal no longer flashes the folder/project picker screen first — it now lands straight on the terminal.',
+          'Updates now install silently in the background instead of popping up the NSIS installer window.',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.0',
     date: '2026-07-25',
     tag: 'latest',
