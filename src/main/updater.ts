@@ -134,9 +134,9 @@ export function checkNow(): UpdaterState & { currentVersion: string } {
  * app.quit()/app.exit() itself and fires 'before-quit' first, which is where
  * index.ts sets `isQuitting = true` — so the tray-hiding logic never gets a chance
  * to intercept this close. The explicit args make the intent unambiguous:
- * `isSilent = false` shows the NSIS installer UI, `isForceRunAfter = true`
- * relaunches the app once the install finishes.
+ * `isSilent = true` installs without showing the NSIS installer UI,
+ * `isForceRunAfter = true` relaunches the app once the install finishes.
  */
 export function quitAndInstall(): void {
-  autoUpdater.quitAndInstall(false, true)
+  autoUpdater.quitAndInstall(true, true)
 }
