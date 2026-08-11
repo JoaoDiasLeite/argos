@@ -771,10 +771,12 @@ export default function Chat({
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
             </svg>
           </button>
+          {/* Placeholder stays provider-neutral: a chat runs on Codex or Gemini just as
+              readily as on Claude, and the chip row below already names the model. */}
           <textarea
             ref={textareaRef}
             className="chat-input"
-            placeholder={ready ? 'Message Claude…  (paste images or drop/attach files)' : 'Connect your account in Settings to start'}
+            placeholder={ready ? 'Describe a task or ask a question…  (paste images or drop/attach files)' : 'Connect your account in Settings to start'}
             value={input}
             onChange={handleInput}
             onKeyDown={handleKeyDown}

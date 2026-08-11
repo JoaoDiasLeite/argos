@@ -95,7 +95,7 @@ export default function Overlay() {
             setSelected(-1)
           }}
           onKeyDown={onInputKeyDown}
-          placeholder="Ask Claude anything…"
+          placeholder="Ask anything…"
           autoFocus
           spellCheck={false}
           aria-label="Prompt for a new chat"
