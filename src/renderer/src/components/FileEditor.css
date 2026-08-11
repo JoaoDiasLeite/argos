@@ -25,22 +25,264 @@
   flex: 1;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   padding: 0;
+  /* .modal-body ships a 20px gap and its own scrolling — neither belongs here: the find bar,
+     the code surface and the status bar must sit flush, and only the textarea scrolls. */
+  gap: 0;
+  overflow: hidden;
+}
+
+/* ── Editor surface ──────────────────────────────────────────────────────────
+   The gutter sits beside a stack of two layers: a highlighted <pre> underneath and a
+   transparent textarea on top. EVERY metric that affects text layout is declared once,
+   for both layers together — if these ever diverge the layers visibly drift apart. */
+.file-editor-textarea,
+.file-editor-hl,
+.file-editor-hl code,
+.file-editor-gutter {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  letter-spacing: normal;
+  word-spacing: normal;
+  tab-size: 2;
+  font-variant-ligatures: none;
+  font-kerning: none;
+  text-rendering: auto;
+}
+
+.file-editor-code {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  background: var(--bg-0);
+}
+
+.file-editor-layers {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.file-editor-hl,
+.file-editor-textarea {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  padding: 14px 16px;
+  background: transparent;
+  /* `scroll` rather than `auto` on both layers: the 6px scrollbar gutters are then always
+     reserved on both, so the two content boxes have exactly the same width and the text
+     cannot shift when the buffer starts (or stops) overflowing. */
+  overflow: scroll;
+}
+
+.file-editor-hl {
+  color: var(--text-0);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.file-editor-hl code {
+  display: block;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  white-space: inherit;
+  overflow-wrap: inherit;
+}
+
+/* The under-layer scrolls in lockstep with the textarea but must not show its own thumb —
+   only the track width (reserved above) matters for alignment. */
+.file-editor-hl::-webkit-scrollbar-thumb,
+.file-editor-hl::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .file-editor-textarea {
-  flex: 1;
-  width: 100%;
-  height: 100%;
+  z-index: 1;
   resize: none;
-  border: none;
   outline: none;
-  background: var(--bg-0);
   color: var(--text-0);
+}
+
+/* With highlighting active the glyphs come from the layer below; only the caret and the
+   selection tint belong to the textarea. */
+.file-editor-textarea.hl-on {
+  color: transparent;
+  caret-color: var(--text-0);
+}
+
+.file-editor-textarea::selection {
+  background: color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.file-editor-textarea.nowrap,
+.file-editor-hl.nowrap {
+  white-space: pre;
+}
+
+.file-editor-textarea.wrap,
+.file-editor-hl.wrap {
+  white-space: pre-wrap;
+  /* Chromium's UA stylesheet breaks over-long words inside a textarea; the <pre> has to be
+     told to do the same or wrapped rows fall out of step. */
+  overflow-wrap: break-word;
+  word-break: normal;
+  overflow-x: hidden;
+}
+
+/* ── Line numbers ────────────────────────────────────────────────────────────── */
+.file-editor-gutter {
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding: 14px 8px 14px 12px;
+  color: var(--text-2);
+  text-align: right;
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.file-editor-gutter-inner {
+  min-width: 2ch;
+  will-change: transform;
+}
+
+/* Row height comes from the *measured* line box (inline style) so it can never round away
+   from the textarea's own line height. */
+.file-editor-gutter .gl.current {
+  color: var(--text-0);
+  font-weight: 600;
+}
+
+/* ── Find & replace ──────────────────────────────────────────────────────────── */
+.file-editor-find {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.file-editor-find-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.file-editor-find-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.file-editor-find-count {
+  flex: 0 0 auto;
+  min-width: 68px;
+  font-size: 11px;
+  color: var(--text-2);
+  text-align: right;
+}
+
+/* ── Small square toggles shared by the find bar and the status bar ───────────── */
+.file-editor-chip {
+  flex: 0 0 auto;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-1);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.file-editor-chip:hover:not(:disabled) {
+  color: var(--text-0);
+  background: var(--bg-hover);
+}
+
+.file-editor-chip.on {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.file-editor-chip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── Status bar ── a readout, deliberately quiet ──────────────────────────────── */
+.file-editor-status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 10px;
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--bg-1);
+  border-top: 1px solid var(--border);
+}
+
+.file-editor-status-spacer {
+  flex: 1;
+}
+
+.file-editor-modified {
+  color: var(--accent);
+}
+
+/* ── Unsaved-changes guard ───────────────────────────────────────────────────── */
+.file-editor-confirm {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
   font-size: 12.5px;
-  line-height: 1.55;
-  padding: 14px 16px;
-  tab-size: 2;
+  color: var(--text-0);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  animation: file-editor-confirm-in 0.14s ease-out;
+}
+
+.file-editor-confirm span {
+  flex: 1;
+}
+
+.file-editor-confirm .danger {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 45%, transparent);
+}
+
+.file-editor-confirm .danger:hover {
+  color: #fff;
+  background: var(--error);
+}
+
+@keyframes file-editor-confirm-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-editor-confirm { animation: none; }
+  .file-editor-chip { transition: none; }
 }
 
 .file-editor-notice {
@@ -55,3 +297,63 @@
   font-size: 13px;
   text-align: center;
 }
+
+/* ── highlight.js token theme ─────────────────────────────────────────────────
+   Same palette as rendered Markdown code blocks (Markdown.css), duplicated here scoped to
+   the editor so the colours don't depend on Markdown.css happening to be in the bundle. */
+.file-editor-hl .hljs-comment,
+.file-editor-hl .hljs-quote { color: #8b949e; font-style: italic; }
+.file-editor-hl .hljs-keyword,
+.file-editor-hl .hljs-selector-tag,
+.file-editor-hl .hljs-deletion { color: #ff7b72; }
+.file-editor-hl .hljs-string,
+.file-editor-hl .hljs-regexp,
+.file-editor-hl .hljs-addition { color: #a5d6ff; }
+.file-editor-hl .hljs-number,
+.file-editor-hl .hljs-literal,
+.file-editor-hl .hljs-variable,
+.file-editor-hl .hljs-template-variable,
+.file-editor-hl .hljs-attr,
+.file-editor-hl .hljs-attribute { color: #79c0ff; }
+.file-editor-hl .hljs-title,
+.file-editor-hl .hljs-title.function_,
+.file-editor-hl .hljs-section { color: #d2a8ff; }
+.file-editor-hl .hljs-built_in,
+.file-editor-hl .hljs-class .hljs-title,
+.file-editor-hl .hljs-title.class_,
+.file-editor-hl .hljs-type { color: #ffa657; }
+.file-editor-hl .hljs-tag,
+.file-editor-hl .hljs-name,
+.file-editor-hl .hljs-symbol,
+.file-editor-hl .hljs-bullet { color: #7ee787; }
+.file-editor-hl .hljs-meta,
+.file-editor-hl .hljs-comment.doctag { color: #8b949e; }
+.file-editor-hl .hljs-emphasis { font-style: italic; }
+.file-editor-hl .hljs-strong { font-weight: 600; }
+
+:root[data-theme='light'] .file-editor-hl .hljs-comment,
+:root[data-theme='light'] .file-editor-hl .hljs-quote { color: #6e7781; }
+:root[data-theme='light'] .file-editor-hl .hljs-keyword,
+:root[data-theme='light'] .file-editor-hl .hljs-selector-tag,
+:root[data-theme='light'] .file-editor-hl .hljs-deletion { color: #cf222e; }
+:root[data-theme='light'] .file-editor-hl .hljs-string,
+:root[data-theme='light'] .file-editor-hl .hljs-regexp,
+:root[data-theme='light'] .file-editor-hl .hljs-addition { color: #0a3069; }
+:root[data-theme='light'] .file-editor-hl .hljs-number,
+:root[data-theme='light'] .file-editor-hl .hljs-literal,
+:root[data-theme='light'] .file-editor-hl .hljs-variable,
+:root[data-theme='light'] .file-editor-hl .hljs-template-variable,
+:root[data-theme='light'] .file-editor-hl .hljs-attr,
+:root[data-theme='light'] .file-editor-hl .hljs-attribute { color: #0550ae; }
+:root[data-theme='light'] .file-editor-hl .hljs-title,
+:root[data-theme='light'] .file-editor-hl .hljs-title.function_,
+:root[data-theme='light'] .file-editor-hl .hljs-section { color: #8250df; }
+:root[data-theme='light'] .file-editor-hl .hljs-built_in,
+:root[data-theme='light'] .file-editor-hl .hljs-class .hljs-title,
+:root[data-theme='light'] .file-editor-hl .hljs-title.class_,
+:root[data-theme='light'] .file-editor-hl .hljs-type { color: #953800; }
+:root[data-theme='light'] .file-editor-hl .hljs-tag,
+:root[data-theme='light'] .file-editor-hl .hljs-name,
+:root[data-theme='light'] .file-editor-hl .hljs-symbol,
+:root[data-theme='light'] .file-editor-hl .hljs-bullet { color: #116329; }
+:root[data-theme='light'] .file-editor-hl .hljs-meta { color: #6e7781; }
