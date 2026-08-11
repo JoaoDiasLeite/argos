@@ -158,17 +158,12 @@ export default function Chat({
   // chats in" pref says Terminal. Otherwise the jump is invisible: you were looking at a
   // terminal and you'd still be looking at one, so switching account appears to do nothing.
   // Runs on nonce changes only — a plain chat switch keeps whatever pane that chat was on.
-  // Drives the one-shot composer highlight below; cleared once the sweep has played out.
-  const [greeting, setGreeting] = useState(false)
   useEffect(() => {
     if (!session || newChatNonce === 0) return
     setTermOpenById((prev) => ({ ...prev, [session.id]: false }))
-    // …and sweep a band of accent light across the composer while putting the caret in it,
-    // so landing on a new chat has a visible destination rather than just swapping panes.
-    setGreeting(true)
+    // …and put the caret in the composer. The accent sweep that goes with it is driven by
+    // remounting the band (see the composer markup), not from here.
     textareaRef.current?.focus()
-    const t = setTimeout(() => setGreeting(false), 900)
-    return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newChatNonce])
   const [input, setInput] = useState('')
@@ -706,9 +701,13 @@ export default function Chat({
         )}
         {/* The composer as one unit — input plus the options row — so the new-chat sweep
             crosses the whole thing instead of just the strip of chips. */}
-        <div className={`composer-shell ${greeting ? 'greeting' : ''}`}>
+        <div className="composer-shell">
+        {/* Keyed on the nonce so every New chat press mounts a fresh band and therefore
+            restarts the sweep. Toggling a class instead silently no-ops whenever the class
+            is still applied from a previous press, which left the highlight dead after the
+            first couple of presses. */}
         <span className="composer-sheen" aria-hidden="true">
-          <span className="composer-sheen-band" />
+          {newChatNonce > 0 && <span key={newChatNonce} className="composer-sheen-band" />}
         </span>
         <div className="input-wrapper">
           {pickerOpen && (

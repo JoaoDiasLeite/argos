@@ -334,12 +334,10 @@
 }
 
 /* ── New-chat highlight ───────────────────────────────────── */
-/* Pressing New chat runs a band of accent light diagonally across the options row under
-   the composer, bottom-left to top-right, so the jump has a visible landing point without
-   painting over the text you're about to type. The band lives in its own clipping layer
-   at z-index 0 — a negative z-index would put it *behind* the row's own background and
-   show nothing at all. The layer clips the band; the row itself must not, or the config
-   popovers that open upward out of it would be cut off. */
+/* Pressing New chat runs a band of accent light diagonally across the whole composer —
+   input and options row together — bottom-left to top-right, so the jump has a visible
+   landing point. The band gets its own clipping layer so nothing else in the composer has
+   to clip: the config popovers open upward out of the options row and would be cut off. */
 .composer-shell {
   position: relative;
 }
@@ -371,9 +369,8 @@
     color-mix(in srgb, var(--accent) 16%, transparent) 52.5%,
     transparent 58%
   );
-}
-
-.composer-shell.greeting .composer-sheen-band {
+  /* Unconditional: the element only exists while a sweep is due, and it is remounted per
+     press, so the animation runs exactly once per mount without any class bookkeeping. */
   animation: composer-sweep 700ms cubic-bezier(0.34, 0.68, 0.36, 1) forwards;
 }
 
@@ -385,7 +382,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .composer-shell.greeting .composer-sheen-band { animation: none; }
+  .composer-sheen-band { animation: none; }
 }
 
 .chat-input {
