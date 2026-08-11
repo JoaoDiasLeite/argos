@@ -60,7 +60,9 @@ interface Props {
   tab: 'files' | 'sessions'
   onTabChange: (tab: 'files' | 'sessions') => void
   onSelectSession: (id: string) => void
-  onNewSession: () => void
+  /** Starts a new chat. Pass a folder path to scope it to a project's group (the
+   *  per-group `+` button); the sidebar header `+` calls this with no argument. */
+  onNewSession: (projectPath?: string) => void
   onNewQuickChat?: () => void
   onDeleteSession: (id: string) => void
   projectPath?: string
@@ -118,6 +120,13 @@ const MIN_WIDTH = 200
 const MAX_WIDTH = 500
 const DEFAULT_WIDTH = 260
 const STORAGE_KEY = 'sidebar-width'
+// Project groups collapsed by the user, persisted as a JSON array of full project paths
+// (basenames collide across folders, so the key has to be the full path). The "No folder"
+// group uses the sentinel key below since it has no path of its own.
+const COLLAPSED_GROUPS_KEY = 'sidebar-collapsed-projects'
+const NO_FOLDER_KEY = '__no_folder__'
+// Expanded-group row cap before a "Show N more" control appears.
+const GROUP_ROW_CAP = 5
 
 export default function Sidebar({
   sessions,
@@ -174,6 +183,28 @@ export default function Sidebar({
   const draggingRef = useRef(false)
   const startXRef = useRef(0)
   const startWidthRef = useRef(0)
+
+  // ── Project group collapse state ────────────────────────────────────────
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(COLLAPSED_GROUPS_KEY)
+      if (stored) return new Set(JSON.parse(stored) as string[])
+    } catch {
+      // Malformed storage — fall back to nothing collapsed.
+    }
+    return new Set()
+  })
+  const toggleGroupCollapse = (key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify(Array.from(next)))
+      return next
+    })
+  }
+  // "Show N more" expansion past GROUP_ROW_CAP — session state only, resets on reload.
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!draggingRef.current) return
@@ -370,6 +401,51 @@ export default function Sidebar({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleSessions, searchQuery])
 
+  // ── Group filteredSessions by project ───────────────────────────────────
+  // Keyed by the full path (two folders can share a basename) but displayed by basename.
+  // Sessions with no projectPath land in one "No folder" group, always rendered last.
+  // Groups are ordered by their most recently updated session, descending; sessions
+  // within a group are ordered the same way.
+  type SessionGroup = { key: string; path?: string; basename: string; sessions: Session[] }
+  const groups = useMemo<SessionGroup[]>(() => {
+    const map = new Map<string, SessionGroup>()
+    for (const s of filteredSessions) {
+      const path = s.projectPath
+      const key = path || NO_FOLDER_KEY
+      let g = map.get(key)
+      if (!g) {
+        g = {
+          key,
+          path,
+          basename: path ? path.split(/[\\/]/).filter(Boolean).pop() || path : 'No folder',
+          sessions: []
+        }
+        map.set(key, g)
+      }
+      g.sessions.push(s)
+    }
+    const list = Array.from(map.values())
+    for (const g of list) g.sessions.sort((a, b) => b.updatedAt - a.updatedAt)
+    list.sort((a, b) => {
+      if (a.key === NO_FOLDER_KEY) return 1
+      if (b.key === NO_FOLDER_KEY) return -1
+      const aLatest = a.sessions[0]?.updatedAt ?? 0
+      const bLatest = b.sessions[0]?.updatedAt ?? 0
+      return bLatest - aLatest
+    })
+    return list
+  }, [filteredSessions])
+
+  // The group holding the active chat is always rendered expanded, regardless of
+  // stored collapse state — you should never be looking at a chat hidden in a
+  // collapsed group. Looked up from `sessions` (not filteredSessions) so it still
+  // resolves while a search is narrowing the visible set.
+  const activeGroupKey = useMemo(() => {
+    const active = sessions.find((s) => s.id === activeId)
+    if (!active) return null
+    return active.projectPath || NO_FOLDER_KEY
+  }, [sessions, activeId])
+
   const formatDate = (ts: number) => {
     const d = new Date(ts)
     const now = new Date()
@@ -377,6 +453,70 @@ export default function Sidebar({
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  }
+
+  // A plain one-line row: leading status dot, name, optional inline model/account
+  // badges (only when the session diverges from the app defaults), and a hover delete
+  // button. `showProject` renders the project chip too — used only in the flattened
+  // search view, where there's no group header to say which folder a hit belongs to.
+  const renderSessionRow = (s: Session, showProject = false) => {
+    // Status dot: approval waiting > running > last-message error. At most one.
+    const lastMsg = s.messages[s.messages.length - 1]
+    const status = attentionIds.has(s.id)
+      ? 'attention'
+      : runningIds.has(s.id)
+        ? 'running'
+        : lastMsg?.error
+          ? 'error'
+          : null
+    const statusTitle =
+      status === 'attention' ? 'Waiting for approval'
+        : status === 'running' ? 'Running'
+          : status === 'error' ? 'Ended with an error' : undefined
+    const modelLabel = s.model && s.model !== defaultModel ? shortModelLabel(s.model) : null
+    const accountLabel = accounts.length > 1 && s.accountId && s.accountId !== defaultAccountId
+      ? (s.accountName || accounts.find((a) => a.id === s.accountId)?.name || null)
+      : null
+    // Date and project path moved off the visible row and into its tooltip.
+    const rowTitle = [s.name || 'New chat', s.projectPath, formatDate(s.updatedAt)].filter(Boolean).join(' — ')
+    return (
+      <div
+        key={s.id}
+        className={`session-row ${s.id === activeId ? 'active' : ''}`}
+        onClick={() => onSelectSession(s.id)}
+        onMouseEnter={() => setHoveredId(s.id)}
+        onMouseLeave={() => setHoveredId(null)}
+        title={rowTitle}
+      >
+        {/* Neutral quiet dot when there's no status, so names stay left-aligned. */}
+        <span className={`session-dot ${status || 'idle'}`} title={statusTitle} />
+        <span className="session-row-name">{s.name || 'New chat'}</span>
+        {showProject && s.projectPath && (
+          <span className="session-project" title={s.projectPath}>
+            {s.projectPath.split(/[\\/]/).filter(Boolean).pop()}
+          </span>
+        )}
+        {(modelLabel || accountLabel) && (
+          <span className="session-row-badges">
+            {modelLabel && <span className="session-badge model">{modelLabel}</span>}
+            {accountLabel && <span className="session-badge account">{accountLabel}</span>}
+          </span>
+        )}
+        {hoveredId === s.id && (
+          <button
+            className="session-delete"
+            onClick={(e) => { e.stopPropagation(); onDeleteSession(s.id) }}
+            title="Delete"
+            aria-label="Delete session"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -528,7 +668,7 @@ export default function Sidebar({
                 </svg>
               </button>
             )}
-            <button className="icon-btn" onClick={onNewSession} title="New chat" aria-label="New chat">
+            <button className="icon-btn" onClick={() => onNewSession()} title="New chat" aria-label="New chat">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
@@ -587,69 +727,66 @@ export default function Sidebar({
               {visibleSessions.length > 0 && filteredSessions.length === 0 && (
                 <div className="empty-state session-empty">No sessions match.</div>
               )}
-              {filteredSessions.map((s) => {
-                // Status dot: approval waiting > running > last-message error. At most one.
-                const lastMsg = s.messages[s.messages.length - 1]
-                const status = attentionIds.has(s.id)
-                  ? 'attention'
-                  : runningIds.has(s.id)
-                    ? 'running'
-                    : lastMsg?.error
-                      ? 'error'
-                      : null
-                const statusTitle =
-                  status === 'attention' ? 'Waiting for approval'
-                    : status === 'running' ? 'Running'
-                      : status === 'error' ? 'Ended with an error' : ''
-                return (
-                <div
-                  key={s.id}
-                  className={`session-item ${s.id === activeId ? 'active' : ''}`}
-                  onClick={() => onSelectSession(s.id)}
-                  onMouseEnter={() => setHoveredId(s.id)}
-                  onMouseLeave={() => setHoveredId(null)}
-                >
-                  <div className="session-name">
-                    {status && <span className={`session-dot ${status}`} title={statusTitle} />}
-                    {s.name || 'New chat'}
-                  </div>
-                  <div className="session-meta">
-                    {s.projectPath && (
-                      <span className="session-project" title={s.projectPath}>
-                        {s.projectPath.split(/[\\/]/).pop()}
-                      </span>
-                    )}
-                    <span className="session-date">{formatDate(s.updatedAt)}</span>
-                    {hoveredId === s.id && (
-                      <button
-                        className="session-delete"
-                        onClick={(e) => { e.stopPropagation(); onDeleteSession(s.id) }}
-                        title="Delete"
-                        aria-label="Delete session"
+              {searchQuery.trim() ? (
+                // Flatten while searching — results read as one list, collapse state
+                // doesn't apply, and each row carries its own project chip since
+                // there's no group header here to say which folder it belongs to.
+                filteredSessions.map((s) => renderSessionRow(s, true))
+              ) : (
+                groups.map((g) => {
+                  const isCollapsed = collapsedGroups.has(g.key) && g.key !== activeGroupKey
+                  const isFullyExpanded = expandedGroups.has(g.key)
+                  const visibleRows = isFullyExpanded ? g.sessions : g.sessions.slice(0, GROUP_ROW_CAP)
+                  const remaining = g.sessions.length - visibleRows.length
+                  return (
+                    <div className="session-group" key={g.key}>
+                      {/* A div (not a button) so the nested "+" can be a real button —
+                          buttons can't nest in valid HTML. Keyboard/aria handled manually. */}
+                      <div
+                        className="session-group-header"
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={!isCollapsed}
+                        onClick={() => toggleGroupCollapse(g.key)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            toggleGroupCollapse(g.key)
+                          }
+                        }}
+                        title={g.path || 'No folder'}
                       >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                          <line x1="18" y1="6" x2="6" y2="18" />
-                          <line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                  {(() => {
-                    const modelLabel = s.model && s.model !== defaultModel ? shortModelLabel(s.model) : null
-                    const accountLabel = accounts.length > 1 && s.accountId && s.accountId !== defaultAccountId
-                      ? (s.accountName || accounts.find((a) => a.id === s.accountId)?.name || null)
-                      : null
-                    if (!modelLabel && !accountLabel) return null
-                    return (
-                      <div className="session-badges">
-                        {modelLabel && <span className="session-badge model">{modelLabel}</span>}
-                        {accountLabel && <span className="session-badge account">{accountLabel}</span>}
+                        <span className="session-group-chevron" aria-hidden="true">{isCollapsed ? '▸' : '▾'}</span>
+                        <span className="session-group-name">{g.basename}</span>
+                        <button
+                          className="session-group-add"
+                          onClick={(e) => { e.stopPropagation(); onNewSession(g.path) }}
+                          title={`New chat in ${g.basename}`}
+                          aria-label={`New chat in ${g.basename}`}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                            <line x1="12" y1="5" x2="12" y2="19" />
+                            <line x1="5" y1="12" x2="19" y2="12" />
+                          </svg>
+                        </button>
                       </div>
-                    )
-                  })()}
-                </div>
-                )
-              })}
+                      {!isCollapsed && (
+                        <div className="session-group-rows">
+                          {visibleRows.map((s) => renderSessionRow(s))}
+                          {remaining > 0 && (
+                            <button
+                              className="session-group-more"
+                              onClick={() => setExpandedGroups((prev) => new Set(prev).add(g.key))}
+                            >
+                              Show {remaining} more
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              )}
             </div>
             <button className="sidebar-explore" onClick={onExploreProjects}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

@@ -226,46 +226,143 @@
   padding: 0 6px 12px;
 }
 
-.session-item {
-  padding: 8px 10px;
-  border-radius: var(--radius);
+/* ── Project groups ───────────────────────────────────────── */
+.session-group {
+  margin-bottom: 4px;
+}
+
+.session-group-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 5px 8px 5px 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.14s, border-color 0.14s, transform 0.14s;
-  margin-bottom: 2px;
-  border: 1px solid transparent;
+  transition: background 0.14s, color 0.14s;
+  color: var(--text-2);
+}
+.session-group-header:hover {
+  background: var(--bg-hover);
+  color: var(--text-1);
+}
+.session-group-header:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: -1px;
+}
+
+.session-group-chevron {
+  flex-shrink: 0;
+  width: 10px;
+  font-size: 10px;
+  line-height: 1;
+  text-align: center;
+  color: var(--text-2);
+}
+
+.session-group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.session-group-add {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--text-2);
+  opacity: 0;
+  transition: color 0.14s, background 0.14s, opacity 0.1s;
+}
+.session-group-header:hover .session-group-add,
+.session-group-header:focus-visible .session-group-add {
+  opacity: 1;
+}
+.session-group-add:hover {
+  color: var(--text-0);
+  background: var(--bg-3);
+}
+
+.session-group-rows {
+  /* Indent rows slightly under their group header so the hierarchy reads. */
+  padding-left: 8px;
+}
+
+.session-group-more {
+  width: 100%;
+  padding: 4px 10px;
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--text-2);
+  text-align: left;
+  border-radius: var(--radius-sm);
+  transition: background 0.14s, color 0.14s;
+}
+.session-group-more:hover {
+  background: var(--bg-hover);
+  color: var(--text-1);
+}
+
+/* ── Session row (plain one-line item) ────────────────────── */
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.14s;
   position: relative;
 }
-.session-item:hover {
+.session-row:hover {
   background: var(--bg-hover);
-  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
 }
-.session-item.active {
+.session-row.active {
   background: var(--bg-2);
-  border-color: var(--border-light);
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
-.session-name {
+.session-row-name {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   color: var(--text-0);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-bottom: 2px;
-  font-weight: 500;
+}
+
+.session-row-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* ── Session status dot ───────────────────────────────────── */
 /* A small dot before the name: running (pulsing accent), waiting for approval
-   (amber), or ended in error (red). At most one shows at a time. */
+   (amber), ended in error (red), or a quiet neutral dot with no status so names
+   still line up. At most one non-idle state shows at a time. */
 .session-dot {
   display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  margin-right: 6px;
-  vertical-align: middle;
   flex-shrink: 0;
+}
+.session-dot.idle {
+  background: color-mix(in srgb, var(--text-2) 35%, transparent);
 }
 .session-dot.running {
   background: var(--accent);
@@ -282,18 +379,14 @@
   .session-dot.running { animation: none; }
 }
 
-.session-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-2);
-}
-
+/* Folder chip — only shown in the flattened search view, where there's no group
+   header to say which project a hit belongs to. */
 .session-project {
+  flex-shrink: 0;
   background: var(--bg-3);
   border-radius: 4px;
   padding: 1px 5px;
+  font-size: 11px;
   color: var(--text-1);
   max-width: 80px;
   overflow: hidden;
@@ -301,8 +394,6 @@
   white-space: nowrap;
   border: 1px solid var(--border-light);
 }
-
-.session-date { margin-left: auto; color: var(--text-2); }
 
 .session-delete {
   color: var(--text-2);
@@ -316,14 +407,6 @@
   transition: color 0.14s, background 0.14s;
 }
 .session-delete:hover { color: var(--error); background: rgba(224, 82, 82, 0.12); }
-
-.session-badges {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 3px;
-  flex-wrap: wrap;
-}
 
 .session-badge {
   font-size: 10px;
