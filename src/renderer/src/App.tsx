@@ -810,6 +810,9 @@ export default function App() {
     setSessions((prev) => [s, ...prev])
     setActiveId(s.id)
     setView('chat')
+    // Bump the nonce so the chat pane greets the new draft (composer highlight + focus)
+    // the same way it does when goToNewChat lands you here.
+    setNewChatNonce((n) => n + 1)
   }
   createSessionRef.current = createSession
 
@@ -847,6 +850,7 @@ export default function App() {
     setSessions((prev) => [s, ...prev])
     setActiveId(s.id)
     setView('chat')
+    setNewChatNonce((n) => n + 1)
   }
 
   const deleteSession = async (id: string) => {

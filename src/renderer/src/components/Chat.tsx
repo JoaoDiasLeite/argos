@@ -126,6 +126,9 @@ export default function Chat({
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [markdownCopied, setMarkdownCopied] = useState(false)
   const [markdownSaved, setMarkdownSaved] = useState(false)
+  // Long-session banners the user has waved away, keyed by session id. In-memory only:
+  // the warning is worth re-stating in a fresh app run, but not on every render.
+  const [dismissedBanners, setDismissedBanners] = useState<Record<string, boolean>>({})
   // Which provider's model the active chat is running — the model picker filters to it.
   const activeProvider = models.find((m) => currentModel.startsWith(m.id))?.provider ?? 'claude'
   const CONTEXT_FILE: Record<typeof activeProvider, string> = {
@@ -155,9 +158,17 @@ export default function Chat({
   // chats in" pref says Terminal. Otherwise the jump is invisible: you were looking at a
   // terminal and you'd still be looking at one, so switching account appears to do nothing.
   // Runs on nonce changes only — a plain chat switch keeps whatever pane that chat was on.
+  // Drives the one-shot composer highlight below; cleared once the sweep has played out.
+  const [greeting, setGreeting] = useState(false)
   useEffect(() => {
     if (!session || newChatNonce === 0) return
     setTermOpenById((prev) => ({ ...prev, [session.id]: false }))
+    // …and sweep a band of accent light across the composer while putting the caret in it,
+    // so landing on a new chat has a visible destination rather than just swapping panes.
+    setGreeting(true)
+    textareaRef.current?.focus()
+    const t = setTimeout(() => setGreeting(false), 900)
+    return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newChatNonce])
   const [input, setInput] = useState('')
@@ -445,20 +456,51 @@ export default function Chat({
   // "tokens spent" when it's mostly cheap re-reads; the tooltip keeps the breakdown.
   const ioTokens = (session?.inputTokens ?? 0) + (session?.outputTokens ?? 0)
   const cacheTokens = (session?.cacheReadTokens ?? 0) + (session?.cacheCreationTokens ?? 0)
-  const showUsageChip = !!session && ((session.costUsd ?? 0) > 0 || ioTokens + cacheTokens > 0)
 
   // Real context footprint (last-turn input + cache). null on old sessions w/o usage.
   const ctxTokens = contextTokens(session)
-  const showContextIndicator = ctxTokens != null && ctxTokens >= 20_000
   const ctxColor =
     ctxTokens != null && ctxTokens >= 150_000
       ? 'var(--error)'
       : ctxTokens != null && ctxTokens >= 100_000
         ? '#e2b341'
         : undefined
+  // The single cost/context readout under the composer — the header chip and the separate
+  // context indicator both folded into this one. Shown whenever there's any usage at all.
+  const showUsageReadout = !!session && ((session.costUsd ?? 0) > 0 || ioTokens + cacheTokens > 0)
+  const usageTooltip = session
+    ? [
+        `Input: ${formatTokens(session.inputTokens ?? 0)} tok`,
+        `Output: ${formatTokens(session.outputTokens ?? 0)} tok`,
+        `Cache read: ${formatTokens(session.cacheReadTokens ?? 0)} tok`,
+        `Cache write: ${formatTokens(session.cacheCreationTokens ?? 0)} tok`,
+        '',
+        'Context is the approximate payload re-sent on each turn (last turn\'s input + cache tokens). Compact the chat to shrink it.'
+      ].join('\n')
+    : undefined
+
   // Warn on real context when we have it; fall back to message count for old sessions.
   const showLongSessionBanner =
-    ctxTokens != null ? ctxTokens >= 120_000 : !!session && session.messages.length >= 40
+    (ctxTokens != null ? ctxTokens >= 120_000 : !!session && session.messages.length >= 40) &&
+    !!session &&
+    !dismissedBanners[session.id]
+
+  // Title block: session name plus one quiet meta line replacing the header adornments.
+  const hasTitleMeta = !!(session?.agentName || session?.remoteHostName || session?.claudeSessionId)
+  const titleBlock = session && (
+    <div className="chat-title-block">
+      <div className="chat-title-name">{session.name || 'New chat'}</div>
+      {hasTitleMeta && (
+        <div className="chat-title-meta">
+          {session.agentName && <span title="Agent this chat runs as">{session.agentName}</span>}
+          {session.remoteHostName && (
+            <span title="Running on remote host over SSH">⇄ {session.remoteHostName}</span>
+          )}
+          {session.claudeSessionId && <span title="Resumed Claude Code session">resumed</span>}
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <div
@@ -480,86 +522,11 @@ export default function Chat({
           </div>
         </div>
       )}
-      <div className="chat-header">
-        <div className="chat-title">
-          {session?.agentName && <span className="chat-agent-badge">{session.agentName}</span>}
-          {session?.name || 'New chat'}
-          {session?.claudeSessionId && (
-            <svg
-              className="chat-resumed-icon"
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <title>Resumed Claude Code session</title>
-              <path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" />
-              <path d="M21 3v5h-5" />
-              <path d="M21 12a9 9 0 0 1-15.3 6.4L3 16" />
-              <path d="M3 21v-5h5" />
-            </svg>
-          )}
-          {session?.remoteHostName && (
-            <span className="chat-remote" title="Running on remote host over SSH">⇄ {session.remoteHostName}</span>
-          )}
-          {showUsageChip && (
-            <span
-              className="chat-usage-chip"
-              title={[
-                `Input: ${formatTokens(session!.inputTokens ?? 0)} tok`,
-                `Output: ${formatTokens(session!.outputTokens ?? 0)} tok`,
-                `Cache read: ${formatTokens(session!.cacheReadTokens ?? 0)} tok`,
-                `Cache write: ${formatTokens(session!.cacheCreationTokens ?? 0)} tok`
-              ].join('\n')}
-            >
-              ${(session!.costUsd ?? 0).toFixed(4)} · {formatTokens(ioTokens)} tok
-            </span>
-          )}
-        </div>
-        <div className="chat-header-right">
-          <div className="header-toggle-group">
-            <button
-              className={`approve-toggle ${autoApprove ? 'auto' : 'ask'}`}
-              onClick={onToggleAutoApprove}
-              title={autoApprove ? 'Auto-approving all tools — click to require approval' : 'Asking before file edits & commands — click to auto-approve'}
-              aria-label={autoApprove ? 'Auto-approving all tools — click to require approval' : 'Asking before file edits & commands — click to auto-approve'}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                {autoApprove ? (
-                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-                ) : (
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                )}
-              </svg>
-              {autoApprove ? 'Auto' : 'Approve'}
-            </button>
-            <button
-              className={`approve-toggle ${lightMode ? 'auto' : 'ask'}`}
-              onClick={onToggleLightMode}
-              title={
-                lightMode
-                  ? 'Light mode ON — no tools sent (cheapest for plain chat). Click to enable tools.'
-                  : 'Tools enabled. Click for Light mode: no tools, fewer tokens per turn (best for plain Q&A).'
-              }
-              aria-label="Toggle light (no-tools) chat mode"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-              </svg>
-              {lightMode ? 'Light' : 'Full'}
-            </button>
-          </div>
-          <button className="header-icon-btn" onClick={onOpenGit} title="Git" aria-label="Git">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="9" r="3" />
-              <path d="M18 12a9 9 0 0 1-9 9M6 9v6" />
-            </svg>
-          </button>
+      {/* Floating action cluster over the transcript. Hidden while the embedded terminal
+          is open: it would float over xterm's own surface, and ChatTerminal already
+          renders its own close control to get you back to the chat. */}
+      {!termOpen && (
+        <div className={`chat-float-actions ${exportMenuOpen ? 'open' : ''}`}>
           <button
             className={`header-icon-btn ${termOpen ? 'term-active' : ''}`}
             onClick={toggleTerminal}
@@ -580,6 +547,8 @@ export default function Chat({
               onClick={() => setExportMenuOpen((v) => !v)}
               title="More"
               aria-label="More"
+              aria-haspopup="menu"
+              aria-expanded={exportMenuOpen}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" />
@@ -595,41 +564,33 @@ export default function Chat({
                 </button>
                 <button disabled={isEmpty} onClick={() => { setExportMenuOpen(false); onExportSession('html') }}>Export as HTML</button>
                 <div className="header-menu-divider" />
+                <button onClick={() => { setExportMenuOpen(false); onOpenGit() }}>Git…</button>
                 <button onClick={() => { setExportMenuOpen(false); onOpenCheckpoints() }}>Checkpoints…</button>
                 <button onClick={() => { setExportMenuOpen(false); onOpenClaudeMd() }}>Edit {CONTEXT_FILE[activeProvider]}</button>
               </div>
             )}
           </div>
-          {models.some((m) => m.provider === activeProvider) && (
-            <ModelPicker
-              models={models.filter((m) => m.provider === activeProvider)}
-              value={currentModel}
-              onChange={onModelChange}
-              compact
-            />
-          )}
-          {!ready && (
-            <button className="header-btn warning" onClick={onOpenSettings}>
-              Connect account
-            </button>
-          )}
         </div>
-      </div>
+      )}
 
       <div className="chat-messages" style={termOpen ? { display: 'none' } : undefined}>
         {isEmpty ? (
-          <div className="welcome">
-            <div className="welcome-icon">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" stroke="var(--accent)" strokeWidth="1" />
-                <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
+          <div className="chat-empty">
+            {titleBlock}
+            <div className="welcome">
+              <div className="welcome-icon">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="var(--accent)" strokeWidth="1" />
+                  <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </div>
+              <h2>What&rsquo;s up next?</h2>
+              <p>Set the folder, environment, and any extra directories below, then describe a task to get started.</p>
             </div>
-            <h2>What&rsquo;s up next?</h2>
-            <p>Set the folder, environment, and any extra directories below, then describe a task to get started.</p>
           </div>
         ) : (
           <>
+            {titleBlock}
             {session!.messages.map((msg, idx) => {
               const isLast = idx === session!.messages.length - 1
               const showBranchDivider = session!.branchedFrom?.atMessageId === msg.id
@@ -699,6 +660,16 @@ export default function Chat({
               <button onClick={onStartFresh} disabled={compacting}>
                 Start fresh
               </button>
+              <button
+                className="long-session-dismiss"
+                onClick={() => setDismissedBanners((prev) => ({ ...prev, [session.id]: true }))}
+                title="Dismiss"
+                aria-label="Dismiss this warning"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
             </div>
           </div>
         )}
@@ -733,10 +704,13 @@ export default function Chat({
             )}
           </div>
         )}
-        {isEmpty && session && (
-          <ChatConfigBar session={session} onPatch={onPatchSession} disabled={!ready} />
-        )}
-        <div className="input-wrapper">
+        <div className={`input-wrapper ${greeting ? 'greeting' : ''}`}>
+          {/* One-shot "you've landed on a new chat" highlight. Its own clipping layer rather
+              than overflow:hidden on the wrapper, which would cut off the slash picker that
+              pops out above it. */}
+          <span className="input-sheen" aria-hidden="true">
+            <span className="input-sheen-band" />
+          </span>
           {pickerOpen && (
             <div className="slash-picker" role="listbox" aria-label="Slash commands">
               <div className="slash-picker-list" ref={pickerListRef}>
@@ -828,14 +802,77 @@ export default function Chat({
             )}
           </button>
         </div>
-        {isEmpty && <div className="input-hint">Enter to send · Shift+Enter for newline</div>}
-        {showContextIndicator && (
-          <div
-            className="context-indicator"
-            style={ctxColor ? { color: ctxColor } : undefined}
-            title="Approximate context re-sent on each turn (last turn's input + cache tokens). Compact the chat to shrink it."
-          >
-            context ~{formatTokens(ctxTokens!)} tok
+
+        {/* Persistent chip row under the composer: where the chat runs (ChatConfigBar) plus
+            the model / mode controls that used to live in the header. Connect account leads
+            because it's the only path to a working app — it must never be hover-only. */}
+        <div className="composer-chips">
+          {!ready && (
+            <button className="header-btn warning chip-connect" onClick={onOpenSettings}>
+              Connect account
+            </button>
+          )}
+          {session && <ChatConfigBar session={session} onPatch={onPatchSession} disabled={!ready} />}
+          <div className="composer-chips-right">
+            {models.some((m) => m.provider === activeProvider) && (
+              <ModelPicker
+                models={models.filter((m) => m.provider === activeProvider)}
+                value={currentModel}
+                onChange={onModelChange}
+                compact
+              />
+            )}
+            <div className="chip-toggle-group">
+              <button
+                className={`approve-toggle ${autoApprove ? 'auto' : 'ask'}`}
+                onClick={onToggleAutoApprove}
+                title={autoApprove ? 'Auto-approving all tools — click to require approval' : 'Asking before file edits & commands — click to auto-approve'}
+                aria-label={autoApprove ? 'Auto-approving all tools — click to require approval' : 'Asking before file edits & commands — click to auto-approve'}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  {autoApprove ? (
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                  ) : (
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  )}
+                </svg>
+                {autoApprove ? 'Auto' : 'Approve'}
+              </button>
+              <button
+                className={`approve-toggle ${lightMode ? 'auto' : 'ask'}`}
+                onClick={onToggleLightMode}
+                title={
+                  lightMode
+                    ? 'Light mode ON — no tools sent (cheapest for plain chat). Click to enable tools.'
+                    : 'Tools enabled. Click for Light mode: no tools, fewer tokens per turn (best for plain Q&A).'
+                }
+                aria-label="Toggle light (no-tools) chat mode"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                </svg>
+                {lightMode ? 'Light' : 'Full'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* The one place cost/context is stated. Keyboard hint only on a fresh chat. */}
+        {(isEmpty || showUsageReadout) && (
+          <div className="input-hint">
+            {isEmpty && <span>Enter to send · Shift+Enter for newline</span>}
+            {showUsageReadout && (
+              <span
+                className="usage-readout"
+                style={ctxColor ? { color: ctxColor } : undefined}
+                title={usageTooltip}
+              >
+                {ctxTokens != null && `${formatTokens(ctxTokens)} ctx · `}
+                ${(session!.costUsd ?? 0) < 0.01
+                  ? (session!.costUsd ?? 0).toFixed(4)
+                  : (session!.costUsd ?? 0).toFixed(2)}
+              </span>
+            )}
           </div>
         )}
       </div>

@@ -1,27 +1,36 @@
+/* Lives inside the composer chip row — stays on a single line (overflowing chips
+   collapse behind the "+N more" popover instead of wrapping). */
 .config-bar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .config-pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 30px;
-  padding: 0 11px;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--bg-1);
   color: var(--text-1);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1;
   cursor: pointer;
   white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.config-pill > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .config-pill svg {
@@ -105,9 +114,44 @@ button.config-pill:hover:not(:disabled) {
   color: var(--text-0);
 }
 
+/* "+N more" overflow chip and its popover */
+.config-pill.config-more {
+  color: var(--text-2);
+  background: var(--bg-2);
+}
+.config-overflow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+}
+.config-overflow-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--text-1);
+}
+.config-overflow-row:hover {
+  background: var(--bg-hover);
+}
+.config-overflow-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Environment dropdown */
 .config-env {
   position: relative;
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .config-pill { transition: none; }
 }
 
 .config-menu {

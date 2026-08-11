@@ -72,7 +72,8 @@
   opacity: 0;
   transition: opacity 0.12s, color 0.12s, background 0.12s;
 }
-.message-row:hover .message-copy { opacity: 1; }
+.message-row:hover .message-copy,
+.message-row:focus-within .message-copy { opacity: 1; }
 .message-copy:hover { color: var(--text-0); background: var(--bg-hover); border-color: var(--border-light); }
 
 /* ── Branch action (quiet, same treatment as Copy) ────────────── */
@@ -90,7 +91,8 @@
   opacity: 0;
   transition: opacity 0.12s, color 0.12s, background 0.12s;
 }
-.message-row:hover .message-branch { opacity: 1; }
+.message-row:hover .message-branch,
+.message-row:focus-within .message-branch { opacity: 1; }
 .message-branch:hover { color: var(--text-0); background: var(--bg-hover); border-color: var(--border-light); }
 
 /* ── Message content ──────────────────────────────────────── */
@@ -470,7 +472,8 @@
   opacity: 0;
   transition: opacity 0.12s, color 0.12s, background 0.12s;
 }
-.message-row:hover .message-edit { opacity: 1; }
+.message-row:hover .message-edit,
+.message-row:focus-within .message-edit { opacity: 1; }
 .message-edit:hover { color: var(--text-0); background: var(--bg-hover); border-color: var(--border-light); }
 
 /* ── Retry button ─────────────────────────────────────────── */
@@ -557,6 +560,8 @@
 .message-edit-cancel:hover { background: var(--bg-hover); color: var(--text-0); }
 
 /* ── Per-turn token usage line ── */
+/* Hover-reveal like the message actions: it stays in the DOM (screen readers and
+   keyboard focus still reach the row) but doesn't add per-message noise at rest. */
 .msg-usage {
   display: flex;
   flex-wrap: wrap;
@@ -565,6 +570,17 @@
   font-size: 11px;
   font-family: var(--font-mono);
   color: var(--text-2);
+  opacity: 0;
+  transition: opacity 0.12s;
 }
+.message-row:hover .msg-usage,
+.message-row:focus-within .msg-usage { opacity: 1; }
 .msg-usage-cache { color: var(--success); }
 .msg-usage-cost { color: var(--text-1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .message-copy,
+  .message-branch,
+  .message-edit,
+  .msg-usage { transition: none; }
+}

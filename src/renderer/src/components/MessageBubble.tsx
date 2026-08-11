@@ -559,7 +559,9 @@ export default function MessageBubble({ message, streaming, onRetry, onEditResen
         </div>
         {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
           <div className="tool-calls">
-            {message.toolCalls.length >= 3 ? (
+            {/* Two or more calls collapse into the one-line summary; a lone call stays
+                expanded so the common single-tool turn reads without an extra click. */}
+            {message.toolCalls.length >= 2 ? (
               <ToolCallGroup calls={message.toolCalls} streaming={streaming} />
             ) : (
               message.toolCalls.map((call) => <ToolCallView key={call.id} call={call} />)

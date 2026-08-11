@@ -11,22 +11,26 @@ interface Props {
 
 const basename = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p
 
+/** How many chips the row shows inline before the rest collapse behind "+N more". */
+const CHIP_BUDGET = 5
+
 /**
- * The configuration row shown above the composer on a fresh chat: pick the environment
- * (Local / WSL distro / SSH host), the project folder, see the git branch, toggle a
- * worktree, and add extra working directories. It's a pure draft editor — every change
- * calls `onPatch` to update the active session before the first message is sent.
+ * The configuration row under the composer: pick the environment (Local / WSL distro /
+ * SSH host), the project folder, see the git branch, toggle a worktree, and add extra
+ * working directories. Every change calls `onPatch` to update the active session.
  */
 export default function ChatConfigBar({ session, onPatch, disabled }: Props) {
   const [distros, setDistros] = useState<WslDistro[]>([])
   const [hosts, setHosts] = useState<SshHostPublic[]>([])
   const [envOpen, setEnvOpen] = useState(false)
   const [pathOpen, setPathOpen] = useState(false)
+  const [overflowOpen, setOverflowOpen] = useState(false)
   const [pathDraft, setPathDraft] = useState('')
   const [branch, setBranch] = useState<string | null>(null)
   const [isRepo, setIsRepo] = useState(false)
   const envRef = useRef<HTMLDivElement>(null)
   const pathRef = useRef<HTMLDivElement>(null)
+  const overflowRef = useRef<HTMLDivElement>(null)
 
   const isRemote = !!session.remoteHostId
   const isWsl = !!session.wslDistro
@@ -98,6 +102,23 @@ export default function ChatConfigBar({ session, onPatch, disabled }: Props) {
     }
   }, [pathOpen])
 
+  // Close the "+N more" popover on outside click / Escape (same pattern as above).
+  useEffect(() => {
+    if (!overflowOpen) return
+    const onDoc = (e: MouseEvent) => {
+      if (!overflowRef.current?.contains(e.target as Node)) setOverflowOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOverflowOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [overflowOpen])
+
   const chooseLocal = () => {
     onPatch({
       wslDistro: undefined,
@@ -163,6 +184,14 @@ export default function ChatConfigBar({ session, onPatch, disabled }: Props) {
 
   const envLabel = isRemote ? session.remoteHostName || 'Remote' : isWsl ? session.wslDistro : 'Local'
   const hasEnvOptions = distros.length > 0 || hosts.length > 0
+
+  // The row must stay on one line, so only CHIP_BUDGET chips render inline. Env + folder
+  // (+ branch + worktree when they apply) are always worth seeing; the additional-directory
+  // chips take whatever slots are left and the rest collapse behind "+N more".
+  const fixedChips = 2 + (isLocal && branch ? 1 : 0) + (isLocal && isRepo ? 1 : 0)
+  const dirSlots = Math.max(0, CHIP_BUDGET - fixedChips)
+  const visibleDirs = isLocal ? dirs.slice(0, dirSlots) : []
+  const overflowDirs = isLocal ? dirs.slice(dirSlots) : []
 
   return (
     <div className="config-bar">
@@ -297,21 +326,54 @@ export default function ChatConfigBar({ session, onPatch, disabled }: Props) {
         </button>
       )}
 
-      {/* Additional directories */}
-      {isLocal &&
-        dirs.map((d) => (
-          <span className="config-pill static dir-chip" key={d} title={d}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+      {/* Additional directories (only the ones that fit the one-line budget) */}
+      {visibleDirs.map((d) => (
+        <span className="config-pill static dir-chip" key={d} title={d}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+          <span>{basename(d)}</span>
+          <button className="dir-chip-remove" onClick={() => removeDir(d)} title="Remove directory" aria-label={`Remove ${basename(d)}`}>
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
-            <span>{basename(d)}</span>
-            <button className="dir-chip-remove" onClick={() => removeDir(d)} title="Remove directory" aria-label={`Remove ${basename(d)}`}>
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </span>
-        ))}
+          </button>
+        </span>
+      ))}
+
+      {/* Overflowed directories */}
+      {overflowDirs.length > 0 && (
+        <div className="config-env" ref={overflowRef}>
+          <button
+            className="config-pill config-more"
+            onClick={() => setOverflowOpen((v) => !v)}
+            title={overflowDirs.join('\n')}
+            aria-haspopup="menu"
+            aria-expanded={overflowOpen}
+          >
+            +{overflowDirs.length} more
+          </button>
+          {overflowOpen && (
+            <div className="config-menu config-overflow" role="menu">
+              {overflowDirs.map((d) => (
+                <div className="config-overflow-row" key={d} title={d}>
+                  <span className="config-overflow-name">{basename(d)}</span>
+                  <button
+                    className="dir-chip-remove"
+                    onClick={() => removeDir(d)}
+                    title="Remove directory"
+                    aria-label={`Remove ${basename(d)}`}
+                  >
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {isLocal && (
         <button className="config-pill add-dir" onClick={addDir} disabled={disabled} title="Add another working directory">
