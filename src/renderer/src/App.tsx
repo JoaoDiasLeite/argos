@@ -800,8 +800,29 @@ export default function App() {
   // active session (e.g. an Explorer "Open with Argos" or Jump List launch).
   // The `typeof` guard lets this double as a plain onClick handler — a click event
   // arg is ignored rather than mistaken for a folder path.
+  // An unused chat: no messages, and never driven through the embedded terminal either.
+  // Preferring the active one keeps you where you are when it already qualifies.
+  const blankDraft = (): Session | undefined => {
+    const unused = (s: Session) => s.messages.length === 0 && !s.hasTerminalActivity
+    if (activeSession && unused(activeSession)) return activeSession
+    return sessions.find(unused)
+  }
+
   const createSession = (projectPath?: unknown) => {
     const folder = typeof projectPath === 'string' ? projectPath : undefined
+    // An untouched draft IS the new chat — a chat only earns its own row once it has been
+    // used. So reuse a blank one rather than stacking another, repointing it at whichever
+    // folder was asked for so a project group's "+" still lands you inside that project.
+    const draft = blankDraft()
+    if (draft) {
+      if (folder && draft.projectPath !== folder) {
+        setSessions((prev) => prev.map((s) => (s.id === draft.id ? { ...s, projectPath: folder } : s)))
+      }
+      setActiveId(draft.id)
+      setView('chat')
+      setNewChatNonce((n) => n + 1)
+      return
+    }
     const s = newSession(
       folder ?? activeSession?.projectPath,
       defaultModel,
@@ -820,16 +841,7 @@ export default function App() {
   // you back into whatever happened to be open last. An existing empty draft is reused so
   // bouncing between views doesn't pile up blank chats in the sidebar.
   const goToNewChat = () => {
-    setNewChatNonce((n) => n + 1)
-    const draft =
-      activeSession && activeSession.messages.length === 0
-        ? activeSession
-        : sessions.find((s) => s.messages.length === 0)
-    if (draft) {
-      setActiveId(draft.id)
-      setView('chat')
-      return
-    }
+    // createSession now does the draft reuse itself, for every entry point.
     createSession()
   }
 
@@ -846,6 +858,16 @@ export default function App() {
   // Quick chat: forces the current provider's cheapest model for throwaway / trivial questions.
   const createQuickChat = () => {
     const model = cheapestModelForProvider(defaultProvider) ?? defaultModel
+    // Same draft reuse as createSession, but the point of a quick chat is the model, so a
+    // reused draft gets switched onto it.
+    const draft = blankDraft()
+    if (draft) {
+      setSessions((prev) => prev.map((s) => (s.id === draft.id ? { ...s, model } : s)))
+      setActiveId(draft.id)
+      setView('chat')
+      setNewChatNonce((n) => n + 1)
+      return
+    }
     const s = newSession(activeSession?.projectPath, model, activeSession?.accountId ?? defaultAccountId)
     setSessions((prev) => [s, ...prev])
     setActiveId(s.id)

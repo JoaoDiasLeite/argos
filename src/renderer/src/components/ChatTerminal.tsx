@@ -111,6 +111,9 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
   // is written have to wait in `queuedData`, or they'd paint ahead of the history they follow.
   const replayedRef = useRef(false)
   const queuedDataRef = useRef<string[]>([])
+  // Read from the terminal's one-shot setup effect, which can't close over a prop.
+  const onActiveRef = useRef(onActive)
+  onActiveRef.current = onActive
 
   // Create the xterm instance once for this component's lifetime.
   useEffect(() => {
@@ -126,7 +129,13 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(hostRef.current)
-    term.onData((d) => window.electronAPI.terminalWrite(idRef.current, d))
+    term.onData((d) => {
+      // Typing into the terminal is what makes a chat "used". Reporting it when the pty
+      // merely started marked every chat opened on the Terminal pane as used the instant
+      // it appeared, so blank drafts were kept in the sidebar and could never be reused.
+      onActiveRef.current?.()
+      window.electronAPI.terminalWrite(idRef.current, d)
+    })
 
     // Copy-on-select (like most native terminals), plus explicit Ctrl/Cmd+C
     // (when there's a selection) and Ctrl/Cmd+V for clipboard paste — xterm
@@ -317,7 +326,6 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         replayedRef.current = true
         for (const chunk of queuedDataRef.current) writeChunk(chunk)
         queuedDataRef.current = []
-        onActive?.()
         if (res.reused) {
           // Reattached to a pty that kept running while this component was unmounted. Its
           // scrollback is already on screen and whatever CLI it was running is still there, so

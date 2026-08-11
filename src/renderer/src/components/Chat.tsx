@@ -704,6 +704,12 @@ export default function Chat({
             )}
           </div>
         )}
+        {/* The composer as one unit — input plus the options row — so the new-chat sweep
+            crosses the whole thing instead of just the strip of chips. */}
+        <div className={`composer-shell ${greeting ? 'greeting' : ''}`}>
+        <span className="composer-sheen" aria-hidden="true">
+          <span className="composer-sheen-band" />
+        </span>
         <div className="input-wrapper">
           {pickerOpen && (
             <div className="slash-picker" role="listbox" aria-label="Slash commands">
@@ -800,13 +806,7 @@ export default function Chat({
         {/* Persistent chip row under the composer: where the chat runs (ChatConfigBar) plus
             the model / mode controls that used to live in the header. Connect account leads
             because it's the only path to a working app — it must never be hover-only. */}
-        <div className={`composer-chips ${greeting ? 'greeting' : ''}`}>
-          {/* One-shot "you've landed on a new chat" highlight, swept across the options
-              row. Its own clipping layer rather than overflow:hidden on the row itself,
-              which would cut off the config popovers that open upward out of it. */}
-          <span className="chips-sheen" aria-hidden="true">
-            <span className="chips-sheen-band" />
-          </span>
+        <div className="composer-chips">
           {!ready && (
             <button className="header-btn warning chip-connect" onClick={onOpenSettings}>
               Connect account
@@ -855,6 +855,7 @@ export default function Chat({
               </button>
             </div>
           </div>
+        </div>
         </div>
 
         {/* The one place cost/context is stated. Keyboard hint only on a fresh chat. */}
