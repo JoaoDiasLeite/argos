@@ -3,6 +3,11 @@
   "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*"],
   "compilerOptions": {
     "composite": true,
+    // Composite projects can't set `noEmit`, and without an outDir tsc writes .js/.d.ts
+    // next to the sources — Vite resolves .jsx before .tsx, so stray emit silently shadows
+    // the real files (and vitest picks up duplicated *.test.js). electron-vite does the
+    // actual build; tsc is only ever run to typecheck, so park any output out of the way.
+    "outDir": ".tsbuild/node",
     "types": ["electron-vite/node"]
   }
 }

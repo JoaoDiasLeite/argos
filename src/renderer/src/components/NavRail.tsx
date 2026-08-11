@@ -17,6 +17,9 @@ interface Props {
   onChange: (view: View) => void
   onSettings: () => void
   onChangelog: () => void
+  /** Open Remote/WSL sessions — surfaced as a badge on the Servers entry so they
+      stay discoverable from anywhere in the app. */
+  serverSessionCount?: number
 }
 
 const ICONS: Record<string, JSX.Element> = {
@@ -83,12 +86,21 @@ export interface ViewGroup {
   key: string
   label: string
   members: View[]
+  /** Views that belong to the group but get no sub-nav button of their own — they're
+      reached from within a member (e.g. a Remote/WSL session opened from the list).
+      Kept out of `members` precisely because `members` drives the sub-nav buttons. */
+  extras?: View[]
+}
+
+/** Whether `view` is shown under this group — a sub-nav member or one of its extras. */
+export function groupOwnsView(group: ViewGroup, view: View): boolean {
+  return group.members.includes(view) || (group.extras?.includes(view) ?? false)
 }
 
 export const VIEW_GROUPS: ViewGroup[] = [
   { key: 'agents', label: 'Agents', members: ['agents', 'rooms'] },
   { key: 'planner', label: 'Planner', members: ['planner', 'scheduled'] },
-  { key: 'servers', label: 'Servers', members: ['remote', 'mcp'] }
+  { key: 'servers', label: 'Servers', members: ['remote', 'mcp'], extras: ['remote-session'] }
 ]
 
 // A rail entry is either a standalone view or a group of views. Groups use the
@@ -106,7 +118,7 @@ const RAIL: RailEntry[] = [
   { kind: 'group', group: VIEW_GROUPS[2] }
 ]
 
-export default function NavRail({ view, onChange, onSettings, onChangelog }: Props) {
+export default function NavRail({ view, onChange, onSettings, onChangelog, serverSessionCount = 0 }: Props) {
   return (
     <div className="nav-rail">
       <div className="nav-logo">
@@ -134,11 +146,14 @@ export default function NavRail({ view, onChange, onSettings, onChangelog }: Pro
             )
           }
           const { group } = entry
-          const active = group.members.includes(view)
-          // Clicking a group jumps to its first member — unless a member is
-          // already active, in which case it's a no-op.
+          // Extras count as active so the entry stays lit while, say, a Remote/WSL
+          // session is showing.
+          const active = groupOwnsView(group, view)
+          // Clicking a group jumps to its first member — unless a *member* is already
+          // showing, in which case it's a no-op. Note the deliberate `members` (not
+          // `active`) test: from an extra view the click is the way back to the list.
           const onClickGroup = () => {
-            if (!active) onChange(group.members[0])
+            if (!group.members.includes(view)) onChange(group.members[0])
           }
           return (
             <button
@@ -151,6 +166,14 @@ export default function NavRail({ view, onChange, onSettings, onChangelog }: Pro
                 {ICONS[group.members[0]]}
               </svg>
               <span className="nav-item-label">{group.label}</span>
+              {group.key === 'servers' && serverSessionCount > 0 && (
+                <span
+                  className="nav-item-badge"
+                  aria-label={`${serverSessionCount} open session${serverSessionCount === 1 ? '' : 's'}`}
+                >
+                  {serverSessionCount}
+                </span>
+              )}
             </button>
           )
         })}

@@ -1,0 +1,17 @@
+/* Positioning shell for the terminals' right-click menu (see TerminalContextMenu.tsx).
+   Shape/tokens deliberately mirror .ui-menu-pop in Menu.css — the items themselves reuse
+   .ui-menu-item verbatim — so this reads as the same menu, just placed at a cursor instead
+   of under a trigger button. `left`/`top` are set inline from the clamped click position. */
+.terminal-ctx-menu {
+  position: absolute;
+  z-index: 60;
+  min-width: 168px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-light);
+  border-radius: 11px;
+  padding: 5px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}

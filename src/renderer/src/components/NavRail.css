@@ -26,6 +26,9 @@
 
 .nav-item {
   -webkit-app-region: no-drag;
+  /* Anchor for .nav-item-badge — the rail itself never clips overflow, so a badge
+     nudged into the entry's top-right corner stays fully visible. */
+  position: relative;
   width: 52px;
   height: 48px;
   display: flex;
@@ -42,6 +45,36 @@
   background: var(--accent-dim);
   color: var(--accent);
   box-shadow: inset 2.5px 0 0 var(--accent);
+}
+
+/* Count pill for a rail entry (currently: open Remote/WSL sessions on Servers).
+   Accent-filled rather than the muted grey of the in-view count pills
+   (.remote-count, .terminal-count) — this one has to read at a glance from a
+   collapsed 52px entry. Pinned right into the entry's top-right corner so it
+   never sits on top of the icon, with a rail-coloured ring to keep it legible
+   against .nav-item.active's accent-dim fill. `pointer-events: none` so it
+   never eats the entry's click. */
+.nav-item-badge {
+  position: absolute;
+  /* Pushed past the entry's own corner (the 68px rail leaves 8px either side of a 52px
+     entry, so it still can't be clipped) — anything less and it sits on the icon. */
+  top: -4px;
+  right: -4px;
+  min-width: 17px;
+  height: 17px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border: 1.5px solid var(--bg-1);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg-0);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  pointer-events: none;
 }
 
 .nav-item-label {

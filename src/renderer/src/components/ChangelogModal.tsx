@@ -15,6 +15,32 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '1.3.0',
+    date: '2026-08-11',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Remote & WSL has been rebuilt. Every distro and host is one line instead of a tall card, in a column that no longer stretches its buttons to the far edge of a wide window. There is a filter box and an All / WSL / SSH switch, hidden distros collapse to a single line rather than a card each, and clicking anywhere on a row connects to it.',
+          'Each target carries a live status dot: green with a halo while you have a session open on it, plain green when it is running or has answered, and a neutral dot when it simply is not up — connecting will start it. A failed Test is the only thing that turns it red.',
+          'Several sessions on the same server or distro at once. Connect opens another one every time you press it; the tab strip folds them into a single tab carrying the host name and a count, with the sessions themselves in a dropdown, so the strip never grows as you pile them up.',
+          'Open sessions are visible from anywhere. The tab strip now also appears on the Remote & WSL and MCP screens, and the Servers icon in the sidebar carries a badge with how many sessions you have running.',
+          'Terminals have proper colour. All sixteen ANSI colours are now set instead of falling back to xterm\'s washed-out defaults, so build logs, `ls` and deprecation warnings read the way they do in Windows Terminal — on the app\'s own warm background rather than a cold black one.',
+          'Right-click in a terminal pastes, or copies when there is a selection. Shift+right-click opens a menu with Copy, Paste, Select all and Clear.',
+          'A New file button in the file browser for both SSH and WSL sessions. It refuses to overwrite something that is already there, and drops you into the editor once the file exists.',
+          'SSH keys have moved off the Remote & WSL screen to their own page behind the key button in the header, and the long `authorized_keys` command that used to fill each row is now "Copy install command" in the row\'s menu.',
+        ],
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'Pasting into a terminal no longer duplicates or garbles what you pasted. Ctrl+V was being handled three times over — once by the app, once by the terminal itself, and once by an invisible Edit menu — which arrived as the same text twice, one copy raw and one bracketed.',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.2.0',
     date: '2026-08-11',
     tag: 'latest',

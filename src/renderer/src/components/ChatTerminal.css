@@ -100,7 +100,7 @@
 /* Loader overlay shown until the CLI has actually painted (see ChatTerminal.tsx's
    reveal-on-content logic). MUST be fully opaque so the CLI drawing underneath doesn't
    show through it. The color is the terminal's own fixed dark background (TERMINAL_BG in
-   ChatTerminal.tsx — the terminal is always dark regardless of app theme, so this must NOT
+   terminal-theme.ts — the terminal is always dark regardless of app theme, so this must NOT
    use a theme token like --bg-0, which goes near-white in light mode). Keep the two in sync.
    z-index sits above the isolated .chat-terminal-host layer. */
 .chat-terminal-loading {

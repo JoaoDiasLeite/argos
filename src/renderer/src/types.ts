@@ -519,6 +519,9 @@ export interface RemoteEntry {
 export interface WslDistro {
   name: string
   isDefault: boolean
+  /** The distro's VM is up right now (`wsl -l -v` STATE column). Not the same as
+   *  "reachable" — a stopped distro still works, WSL just boots it on connect. */
+  running: boolean
 }
 
 /** The Remote Session ("Connect") view's target — an SSH host or a WSL distro. */

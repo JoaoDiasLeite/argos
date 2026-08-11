@@ -12,6 +12,9 @@ import { parseHistoryLines } from './sftp-pure'
 export interface WslDistro {
   name: string
   isDefault: boolean
+  /** The distro's VM is up right now — the STATE column of `wsl -l -v`. Mirrors the
+   *  renderer-side type in src/renderer/src/types.ts. */
+  running: boolean
 }
 
 const isWindows = process.platform === 'win32'
@@ -36,8 +39,11 @@ export function listDistros(): Promise<WslDistro[]> {
           const raw = lines[i]
           const isDefault = raw.startsWith('*')
           const withoutStar = isDefault ? raw.slice(1).trim() : raw
-          const name = withoutStar.split(/\s+/)[0]
-          if (name) distros.push({ name, isDefault })
+          const [name, state] = withoutStar.split(/\s+/)
+          // STATE comes free with `--verbose`; RemoteView shows it as a live dot. Note it
+          // means "the VM is up right now", NOT "reachable" — a Stopped distro is perfectly
+          // usable, WSL just boots it on connect, so don't render it as an error.
+          if (name) distros.push({ name, isDefault, running: state === 'Running' })
         }
         resolve(distros)
       }

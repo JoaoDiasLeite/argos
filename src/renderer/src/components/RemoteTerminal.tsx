@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
+import { TERMINAL_THEME } from './terminal-theme'
+import TerminalContextMenu, { terminalMenuItems } from './TerminalContextMenu'
 import './ChatTerminal.css'
 
 interface Props {
@@ -20,15 +22,14 @@ interface Props {
 /**
  * The Remote Session ("Connect") view's SSH terminal — an ssh2 interactive shell channel,
  * not a node-pty process. Copied down from ChatTerminal.tsx (xterm setup, copy-on-select,
- * Ctrl/Cmd-C/V, font-size controls, resize/fit, reveal-on-content gate) but with all
+ * Ctrl/Cmd-C, right-click copy/paste + menu, font-size controls, resize/fit,
+ * reveal-on-content gate) — keep the clipboard/theme bits in step with it — but with all
  * provider/resume/CLI-launch logic stripped: the remote login shell IS the whole point —
  * there's nothing to type into it on our behalf.
  */
 
-// Same fixed dark theme as ChatTerminal — must stay in sync with .chat-terminal-loading's
-// background in ChatTerminal.css.
-const TERMINAL_BG = '#17140f'
-const TERMINAL_FG = '#e8e2d6'
+// The palette (and the reason it's fixed rather than themed) lives in terminal-theme.ts,
+// shared with ChatTerminal so the two can't drift.
 
 const FONT_SIZE_KEY = 'chatterm-font-size'
 const MIN_FONT_SIZE = 10
@@ -61,24 +62,37 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
   const [reloadKey, setReloadKey] = useState(0)
   const [fontSize, setFontSize] = useState(loadFontSize)
   const [starting, setStarting] = useState(true)
+  // Where the Shift+right-click menu is open, in viewport coords; null when closed.
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null)
   const awaitingRevealRef = useRef(false)
   const quietTimerRef = useRef<ReturnType<typeof setTimeout>>()
 
   // Create the xterm instance once for this component's lifetime.
   useEffect(() => {
-    if (!hostRef.current) return
+    const host = hostRef.current
+    if (!host) return
     const term = new Terminal({
       cursorBlink: true,
       fontFamily: 'Menlo, Consolas, "Cascadia Code", "DejaVu Sans Mono", monospace',
       fontSize: loadFontSize(),
       scrollback: 5000,
-      theme: { background: TERMINAL_BG, foreground: TERMINAL_FG, cursor: TERMINAL_FG }
+      theme: TERMINAL_THEME
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
-    term.open(hostRef.current)
+    term.open(host)
     term.onData((d) => window.electronAPI.remoteShellWrite(idRef.current, d))
 
+    // Copy-on-select (like most native terminals), plus explicit Ctrl/Cmd+C when there's a
+    // selection — xterm only forwards raw keystrokes as shell input by default.
+    //
+    // There is deliberately NO Ctrl/Cmd+V branch here: xterm owns paste. Its native paste
+    // path ignores this handler's return value (it never calls preventDefault), so Chromium's
+    // own paste event reached xterm's internal paste() regardless and the pasted text landed
+    // twice — once raw from us, once bracketed (\x1b[200~…) from xterm, which garbles input
+    // rather than merely duplicating it. Letting xterm handle it means one write, and
+    // bracketed-paste mode is honoured. See also the application menu in src/main/index.ts,
+    // which omits the Edit roles for the same reason.
     term.onSelectionChange(() => {
       const sel = term.getSelection()
       if (sel) navigator.clipboard.writeText(sel).catch(() => {})
@@ -90,14 +104,32 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
         navigator.clipboard.writeText(term.getSelection()).catch(() => {})
         return false
       }
-      if (mod && e.key.toLowerCase() === 'v') {
-        navigator.clipboard.readText().then((text) => {
-          if (text) window.electronAPI.remoteShellWrite(idRef.current, text)
-        }).catch(() => {})
-        return false
-      }
       return true
     })
+
+    // Right-click behaves like a terminal, not like a browser: plain right-click is
+    // copy-if-selection / paste-otherwise (the PuTTY/Windows Terminal reflex), and Shift
+    // opens the explicit menu for anyone who wants the actions spelled out. Paste goes
+    // through term.paste so it takes the exact same single, bracketed-paste-aware code path
+    // as Ctrl+V.
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault()
+      if (e.shiftKey) {
+        setMenuPos({ x: e.clientX, y: e.clientY })
+        return
+      }
+      if (term.hasSelection()) {
+        navigator.clipboard.writeText(term.getSelection()).catch(() => {})
+        return
+      }
+      navigator.clipboard
+        .readText()
+        .then((text) => {
+          if (text) term.paste(text)
+        })
+        .catch(() => {})
+    }
+    host.addEventListener('contextmenu', onContextMenu)
 
     termRef.current = term
     fitRef.current = fit
@@ -111,11 +143,12 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
       }
     }
     const ro = new ResizeObserver(() => doFit())
-    ro.observe(hostRef.current)
+    ro.observe(host)
     requestAnimationFrame(() => requestAnimationFrame(doFit))
 
     return () => {
       ro.disconnect()
+      host.removeEventListener('contextmenu', onContextMenu)
       term.dispose()
       termRef.current = null
       fitRef.current = null
@@ -279,6 +312,14 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
           >
             Reconnect
           </button>
+        )}
+        {menuPos && (
+          <TerminalContextMenu
+            x={menuPos.x}
+            y={menuPos.y}
+            onClose={() => setMenuPos(null)}
+            items={terminalMenuItems(termRef.current)}
+          />
         )}
       </div>
     </div>

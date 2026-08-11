@@ -11,6 +11,10 @@ import './RemoteSessionView.css'
 
 interface Props {
   target: RemoteTarget
+  /** This session's 1-based number within its target's group. A target can have several
+   *  sessions open at once, and each needs its OWN shell — so it has to reach the terminal
+   *  id, or two sessions on one host would share (and fight over) a single channel. */
+  seq: number
   /** True while this session's tab is the one currently shown (view is 'remote-session' AND
    *  it's the active tab). The session itself stays mounted regardless — this only drives
    *  the terminal refit-on-show (see RemoteTerminal/ChatTerminal `active` prop). */
@@ -71,10 +75,12 @@ function uncToPosixPath(distro: string, uncPath: string): string {
   return rest.startsWith('/') ? rest : `/${rest}`
 }
 
-export default function RemoteSessionView({ target, active, onBack }: Props) {
+export default function RemoteSessionView({ target, seq, active, onBack }: Props) {
   const isSsh = target.kind === 'ssh'
+  // targetId is per TARGET (the run log is shared by every session on the same box, which
+  // is what you want — it's that machine's command history). terminalId is per SESSION.
   const targetId = isSsh ? target.host.id : `wsl_${target.distro}`
-  const terminalId = isSsh ? `remoteterm_${target.host.id}` : `wslterm_${target.distro}`
+  const terminalId = isSsh ? `remoteterm_${target.host.id}_${seq}` : `wslterm_${target.distro}_${seq}`
 
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>(
     isSsh ? 'connecting' : 'connected'
@@ -90,10 +96,13 @@ export default function RemoteSessionView({ target, active, onBack }: Props) {
   const [quickRun, setQuickRun] = useState('')
   const historyLoadedRef = useRef(false)
 
-  // Connect on mount; disconnect on unmount (or when switching targets). SSH only — the
-  // connection is per-host, cached in main. WSL has nothing to "connect": the terminal
-  // (ChatTerminal, wsl.exe) and the file browser (LocalBrowser, over the distro's share)
-  // are ready as soon as the distro itself is.
+  // Connect on mount. SSH only — the connection is per-host, cached in main. WSL has
+  // nothing to "connect": the terminal (ChatTerminal, wsl.exe) and the file browser
+  // (LocalBrowser, over the distro's share) are ready as soon as the distro itself is.
+  //
+  // Note there's deliberately no disconnect in the cleanup: that ssh2 client is shared by
+  // every session on the host, so tearing it down here would kill a sibling session's
+  // terminal. App.tsx's closeServerSession drops it once the last one is gone.
   useEffect(() => {
     if (!isSsh) {
       setStatus('connected')
@@ -117,7 +126,6 @@ export default function RemoteSessionView({ target, active, onBack }: Props) {
     })
     return () => {
       cancelled = true
-      window.electronAPI.sftpDisconnect(hostId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSsh, isSsh ? target.host.id : target.distro])
