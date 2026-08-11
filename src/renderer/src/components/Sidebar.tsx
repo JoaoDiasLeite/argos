@@ -654,29 +654,34 @@ export default function Sidebar({
         >
           Files
         </button>
-        {tab === 'sessions' && (
-          <div className="sidebar-tab-actions">
-            {onNewQuickChat && (
-              <button
-                className="icon-btn"
-                onClick={onNewQuickChat}
-                title="Quick chat (cheapest model)"
-                aria-label="Quick chat with the cheapest model"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                </svg>
-              </button>
-            )}
-            <button className="icon-btn" onClick={() => onNewSession()} title="New chat" aria-label="New chat">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </button>
-          </div>
-        )}
       </div>
+
+      {/* Labelled action rows above the chat list. A bare "+" in the tab row read as a
+          minor affordance for what is the sidebar's primary action, so New chat gets its
+          own full-width row with a name on it. */}
+      {tab === 'sessions' && (
+        <div className="sidebar-actions">
+          <button className="sidebar-action" onClick={() => onNewSession()} title="New chat">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            New chat
+          </button>
+          {onNewQuickChat && (
+            <button
+              className="sidebar-action"
+              onClick={onNewQuickChat}
+              title="Quick chat — runs on the cheapest model"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+              Quick chat
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="sidebar-content">
         {tab === 'sessions' ? (

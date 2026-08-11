@@ -125,7 +125,9 @@
   align-items: center;
   padding: 0 10px;
   gap: 2px;
-  margin-bottom: 10px;
+  /* The action rows below carry their own bottom margin, so this only needs to
+     separate the tabs from them. */
+  margin-bottom: 6px;
 }
 
 .sidebar-tab {
@@ -144,15 +146,43 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
-/* Quick-chat / new-chat icon buttons, inline at the end of the tab row
-   (only shown while the Chats tab is active). */
-.sidebar-tab-actions {
+/* ── Sidebar action rows ──────────────────────────────────── */
+/* Full-width labelled rows (New chat / Quick chat) between the tab row and the
+   chat list, replacing the pair of bare icon buttons that used to sit inline in
+   the tabs. Quiet by default — they're primary actions, but the chat list below
+   is what the eye should land on. */
+.sidebar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 8px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+
+.sidebar-action {
   display: flex;
   align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-  margin-left: 4px;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-1);
+  text-align: left;
+  transition: background 0.14s, color 0.14s;
 }
+.sidebar-action:hover {
+  background: var(--bg-hover);
+  color: var(--text-0);
+}
+.sidebar-action svg {
+  flex-shrink: 0;
+  color: var(--text-2);
+  transition: color 0.14s;
+}
+.sidebar-action:hover svg { color: var(--accent); }
 
 .sidebar-content {
   flex: 1;
