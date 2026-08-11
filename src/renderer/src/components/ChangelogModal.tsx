@@ -15,9 +15,35 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '1.2.0',
+    date: '2026-08-11',
+    tag: 'latest',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'The chat screen is a lot calmer. The header bar is gone — the chat\'s name now sits at the top of the conversation and scrolls with it, and the terminal and ⋯ buttons float quietly over the transcript until you reach for them.',
+          'Everything about how a chat runs now lives in one row under the composer: environment, folder, branch, worktree, extra directories, model, and the approve and light-mode toggles. Cost and context are stated once, at the bottom right, instead of in three places at once.',
+          'Chats in the sidebar are grouped by project. Each group has a "+" that starts a chat already pointed at that folder, groups remember whether you left them open, and a long project stops at five chats behind a "Show more" so it cannot crowd out everything else.',
+          'New chat and Quick chat are proper labelled rows at the top of the sidebar rather than two unlabelled icons, and landing on a new chat sweeps a band of light across the composer and puts the caret in it, so the jump has somewhere to look.',
+          'The file editor grew up: line numbers, syntax highlighting, find and replace (Ctrl+F / Ctrl+H) with a match count and wraparound, a word-wrap toggle it remembers, and a status bar showing line and column, language, size and whether there are unsaved changes. Ctrl+S saves, and Tab now indents instead of jumping out of the file.',
+        ],
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'Pressing New chat repeatedly no longer leaves a stack of identical empty chats in the sidebar. An untouched chat is the new chat, so it gets reused — and pointed at whichever project you started it from.',
+          'A chat that opens on the terminal pane is no longer counted as used the moment it appears. It counts once you actually type into the terminal, which is also what keeps it out of the sidebar until then.',
+          'The file editor no longer throws away unsaved edits when you click outside it. It asks first.',
+          'Where a chat runs is now visible for the whole conversation. The folder, branch, worktree and extra directories used to vanish the moment you sent your first message, leaving no way to see or change them.',
+          'The composer no longer says "Message Claude" when the chat is running on Codex or Gemini.',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.1.0',
     date: '2026-07-28',
-    tag: 'latest',
     sections: [
       {
         title: 'Fixes',
