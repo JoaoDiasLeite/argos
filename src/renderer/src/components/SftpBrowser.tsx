@@ -73,6 +73,8 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
   const [renameValue, setRenameValue] = useState('')
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
+  const [creatingFile, setCreatingFile] = useState(false)
+  const [newFileName, setNewFileName] = useState('')
 
   const load = async () => {
     setLoading(true)
@@ -89,6 +91,7 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
     setConfirmDelete(null)
     setRenaming(null)
     setCreatingFolder(false)
+    setCreatingFile(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hostId, cwd])
 
@@ -136,6 +139,35 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
     else setError(res.error || 'Could not create folder')
   }
 
+  const doTouch = async () => {
+    const name = newFileName.trim()
+    if (!name) {
+      setCreatingFile(false)
+      return
+    }
+    // sftpWrite happily overwrites whatever's already there, and it doesn't know the
+    // difference between "create empty file" and "truncate this one to empty" — so we
+    // have to check the already-loaded listing ourselves before calling it.
+    if (name.includes('/') || name.includes('\\')) {
+      setError('File name cannot contain a slash.')
+      return
+    }
+    if (entries.some((e) => e.name === name)) {
+      setError('A file with that name already exists.')
+      return
+    }
+    const path = posixJoin(cwd, name)
+    const res = await window.electronAPI.sftpWrite(hostId, path, '')
+    setCreatingFile(false)
+    setNewFileName('')
+    if (res.ok) {
+      await load()
+      onOpenFile({ name, path, type: 'file', size: 0, mtime: Date.now() })
+    } else {
+      setError(res.error || 'Could not create file')
+    }
+  }
+
   const doUpload = async () => {
     const res = await window.electronAPI.sftpUpload(hostId, cwd)
     if (res.ok) {
@@ -154,10 +186,31 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
           </svg>
         </button>
-        <button className="sftp-toolbar-btn" onClick={() => setCreatingFolder(true)} title="New folder">
+        <button
+          className="sftp-toolbar-btn"
+          onClick={() => {
+            setCreatingFolder(true)
+            setCreatingFile(false)
+          }}
+          title="New folder"
+        >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             <line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" />
+          </svg>
+        </button>
+        <button
+          className="sftp-toolbar-btn"
+          onClick={() => {
+            setCreatingFile(true)
+            setCreatingFolder(false)
+          }}
+          title="New file"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="12" y1="12" x2="12" y2="18" /><line x1="9" y1="15" x2="15" y2="15" />
           </svg>
         </button>
         <button className="sftp-toolbar-btn" onClick={doUpload} title="Upload files into this folder">
@@ -184,6 +237,24 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
           />
           <button className="btn-primary small" onClick={doMkdir}>Create</button>
           <button className="btn-ghost small" onClick={() => setCreatingFolder(false)}>Cancel</button>
+        </div>
+      )}
+
+      {creatingFile && (
+        <div className="sftp-inline-form">
+          <input
+            className="text-input mono"
+            autoFocus
+            placeholder="new-file.txt"
+            value={newFileName}
+            onChange={(e) => setNewFileName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') doTouch()
+              if (e.key === 'Escape') setCreatingFile(false)
+            }}
+          />
+          <button className="btn-primary small" onClick={doTouch}>Create</button>
+          <button className="btn-ghost small" onClick={() => setCreatingFile(false)}>Cancel</button>
         </div>
       )}
 

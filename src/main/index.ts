@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
@@ -45,6 +45,7 @@ import {
   saveHost,
   deleteHost,
   testConnection,
+  testClaude,
   runRemote,
   stopRemote,
   SshHost
@@ -71,7 +72,7 @@ import {
   remoteShellKill,
   remoteShellKillAll
 } from './remote-shell'
-import { listDistros, testDistro, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory } from './wsl'
+import { listDistros, testDistro, testDistroClaude, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
 import { getHiddenDistros, setDistroHidden, getRoomsLayout, setRoomsLayout, RoomsLayout } from './store'
 import {
@@ -240,6 +241,48 @@ function ensureDirs(): void {
   if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true })
 }
 
+/**
+ * Replace Electron's default application menu with a minimal one.
+ *
+ * The window is frameless and draws its own title bar, so this menu is never *seen* on
+ * Windows/Linux (autoHideMenuBar, and no menu bar in a frameless window anyway) — it exists
+ * purely for the accelerators it binds.
+ *
+ * Which is exactly why the default had to go: it ships an Edit submenu whose `role: 'paste'`
+ * binds CmdOrCtrl+V to webContents.paste(). In a normal app that's a nice fallback, but on top
+ * of the chat/remote terminals it fired a main-process paste *in addition to* xterm's own
+ * paste handling of the same keystroke — so pasted text arrived twice, once raw and once
+ * bracketed (\x1b[200~…), garbling whatever the CLI was reading. So: NO Edit roles here.
+ *
+ * Nothing is lost by dropping them. Chromium handles Ctrl+C/V/X/A/Z natively inside text
+ * inputs and textareas without any menu accelerator, so the app's own fields are unaffected;
+ * see ChatTerminal.tsx / RemoteTerminal.tsx for the terminal side of the same fix.
+ */
+function installApplicationMenu(): void {
+  const template: MenuItemConstructorOptions[] = [
+    // macOS puts Quit/Hide/Services in the first submenu, and dropping it there would leave
+    // the app with no Cmd+Q. It carries no clipboard roles, so it's safe to keep.
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' } as MenuItemConstructorOptions] : []),
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' }
+      ]
+    },
+    {
+      label: 'Window',
+      submenu: [{ role: 'minimize' }, { role: 'close' }]
+    }
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
 function createWindow(): void {
   // Mirrors global.css --bg-0 for each theme, so the native window background
   // (visible briefly before the renderer paints) doesn't flash the wrong theme.
@@ -361,6 +404,9 @@ app.whenReady().then(() => {
   loadConfig()
   startScheduler()
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
+  // Before any window exists, so the default menu's clipboard accelerators never get a chance
+  // to bind (see installApplicationMenu for why that matters to the terminals).
+  installApplicationMenu()
   createWindow()
   createOverlayWindow()
   createToastWindow()
@@ -980,6 +1026,7 @@ ipcMain.handle('ssh:list', () => listHosts())
 ipcMain.handle('ssh:save', (_, host: SshHost) => saveHost(host))
 ipcMain.handle('ssh:delete', (_, id: string) => deleteHost(id))
 ipcMain.handle('ssh:test', (_, id: string) => testConnection(id))
+ipcMain.handle('ssh:test-claude', (_, id: string) => testClaude(id))
 ipcMain.handle('ssh:keys-list', () => listSshKeys())
 ipcMain.handle('ssh:keys-generate', (_, name: string, comment?: string) => generateKey(name, comment))
 ipcMain.handle('ssh:keys-public', (_, privatePath: string) => readPublicKey(privatePath))
@@ -1002,6 +1049,7 @@ ipcMain.handle('sftp:disconnect', (_, hostId: string) => sftpDisconnect(hostId))
 
 ipcMain.handle('wsl:list', () => listDistros())
 ipcMain.handle('wsl:test', (_, distro: string) => testDistro(distro))
+ipcMain.handle('wsl:test-claude', (_, distro: string) => testDistroClaude(distro))
 ipcMain.handle('wsl:hidden', () => getHiddenDistros())
 ipcMain.handle('wsl:set-hidden', (_, distro: string, hidden: boolean) => setDistroHidden(distro, hidden))
 ipcMain.handle('wsl:history', (_, distro: string) => wslHistory(distro))

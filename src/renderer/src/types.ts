@@ -519,6 +519,9 @@ export interface RemoteEntry {
 export interface WslDistro {
   name: string
   isDefault: boolean
+  /** The distro's VM is up right now (`wsl -l -v` STATE column). Not the same as
+   *  "reachable" — a stopped distro still works, WSL just boots it on connect. */
+  running: boolean
 }
 
 /** The Remote Session ("Connect") view's target — an SSH host or a WSL distro. */
@@ -1078,6 +1081,7 @@ declare global {
       sshSave: (host: SshHostInput) => Promise<SshHostPublic[]>
       sshDelete: (id: string) => Promise<SshHostPublic[]>
       sshTest: (id: string) => Promise<{ ok: boolean; message: string }>
+      sshTestClaude: (id: string) => Promise<{ ok: boolean; message: string }>
       sshKeysList: () => Promise<SshKeyInfo[]>
       sshKeysGenerate: (name: string, comment?: string) => Promise<GenerateKeyResult>
       sshKeysPublic: (privatePath: string) => Promise<string | null>
@@ -1104,6 +1108,7 @@ declare global {
       // WSL
       wslList: () => Promise<WslDistro[]>
       wslTest: (distro: string) => Promise<{ ok: boolean; message: string }>
+      wslTestClaude: (distro: string) => Promise<{ ok: boolean; message: string }>
       wslHidden: () => Promise<string[]>
       wslSetHidden: (distro: string, hidden: boolean) => Promise<string[]>
       wslHistory: (distro: string) => Promise<{ ok: boolean; commands?: string[]; error?: string }>

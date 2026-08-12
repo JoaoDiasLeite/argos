@@ -3,6 +3,8 @@
   "include": ["src/renderer/src/**/*"],
   "compilerOptions": {
     "composite": true,
+    // See tsconfig.node.json — keeps tsc's emit out of src/.
+    "outDir": ".tsbuild/web",
     "baseUrl": ".",
     "paths": {
       "@renderer/*": ["src/renderer/src/*"]

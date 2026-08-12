@@ -26,7 +26,8 @@ import ResizeHandles from './components/ResizeHandles'
 import Chat from './components/Chat'
 import TerminalPanel from './components/TerminalPanel'
 import SettingsModal from './components/SettingsModal'
-import NavRail, { View, VIEW_GROUPS } from './components/NavRail'
+import NavRail, { View, VIEW_GROUPS, groupOwnsView } from './components/NavRail'
+import ServerTabs from './components/ServerTabs'
 import ClaudeMdModal from './components/ClaudeMdModal'
 import ApprovalModal from './components/ApprovalModal'
 import PendingRuns, { PendingRun } from './components/PendingRuns'
@@ -113,14 +114,20 @@ const MEMBER_LABELS: Record<string, string> = {
 }
 
 // An open Remote/WSL "Connect" session, rendered as a persistent tab (see the
-// server-sessions-layer render below). Stable per-target id so re-opening the same
-// host/distro re-focuses its tab instead of spawning a duplicate.
+// server-sessions-layer render below). A target can have SEVERAL sessions open at once, so
+// the identity is (group, seq): `groupKey` is the target the session belongs to — which is
+// what the tab strip groups by, Chrome-tab-group style — and `seq` is a per-group counter.
 interface ServerSession {
   id: string
+  groupKey: string
   target: RemoteTarget
+  /** The target's name, shared by every session in the group. */
   title: string
+  /** 1-based, per group. Never reused within a run, so a tab's number doesn't shift
+   *  under the user when a sibling closes. */
+  seq: number
 }
-function serverSessionId(target: RemoteTarget): string {
+function serverGroupKey(target: RemoteTarget): string {
   return target.kind === 'ssh' ? `srv:ssh:${target.host.id}` : `srv:wsl:${target.distro}`
 }
 
@@ -1235,40 +1242,91 @@ export default function App() {
 
   // Open server (Remote/WSL) sessions, kept alive in a background layer (rendered below,
   // outside any `view ===` guard) so switching to Chat/Servers/etc. never tears down a live
-  // terminal or SFTP connection — only closing a tab does. One session per target for v1:
-  // Connect on an already-open host/distro re-focuses its existing tab instead of duplicating.
+  // terminal or SFTP connection — only closing a tab does. A target can have several
+  // sessions open at once; the strip groups them per target.
   const [serverSessions, setServerSessions] = useState<ServerSession[]>([])
   const [activeServerSessionId, setActiveServerSessionId] = useState<string | null>(null)
+  /** Per-session connection state, reported up by RemoteSessionView. Drives the Remote &
+   *  WSL list's status dots: an open tab proves nothing on its own, since the connection
+   *  may have been refused. */
+  const [serverSessionStatus, setServerSessionStatus] = useState<
+    Record<string, 'connecting' | 'connected' | 'error'>
+  >({})
+  /** Highest session number handed out per group so far — see openServerSession. */
+  const seqCounterRef = useRef<Record<string, number>>({})
 
-  const openOrFocusSession = (target: RemoteTarget) => {
-    const id = serverSessionId(target)
-    setServerSessions((prev) => {
-      if (prev.some((s) => s.id === id)) return prev
-      const title = target.kind === 'ssh' ? target.host.name : target.distro
-      return [...prev, { id, target, title }]
-    })
+  /**
+   * `newSession: false` (the default) focuses the target's most recent existing session and
+   * only opens one if it has none — that's what clicking a row in the Remote & WSL list
+   * does. The explicit Connect button passes true to always add another.
+   */
+  const openServerSession = (target: RemoteTarget, newSession = false) => {
+    const groupKey = serverGroupKey(target)
+    const existing = serverSessions.filter((s) => s.groupKey === groupKey)
+    if (!newSession && existing.length > 0) {
+      setActiveServerSessionId(existing[existing.length - 1].id)
+      setView('remote-session')
+      return
+    }
+    // A monotonic per-group counter in a ref, not max(existing.seq) + 1: two Connect
+    // presses in one React batch would both read the same `serverSessions` and mint the
+    // same id, and reusing a closed session's number would renumber the strip under the
+    // user. The ref advances synchronously, so neither can happen.
+    const seq = (seqCounterRef.current[groupKey] ?? 0) + 1
+    seqCounterRef.current[groupKey] = seq
+    const id = `${groupKey}#${seq}`
+    const title = target.kind === 'ssh' ? target.host.name : target.distro
+    setServerSessions((prev) => [...prev, { id, groupKey, target, title, seq }])
     setActiveServerSessionId(id)
     setView('remote-session')
   }
-  const openRemoteSession = (host: SshHostPublic) => openOrFocusSession({ kind: 'ssh', host })
-  const openWslSession = (distro: string) => openOrFocusSession({ kind: 'wsl', distro })
+  const openRemoteSession = (host: SshHostPublic, newSession?: boolean) =>
+    openServerSession({ kind: 'ssh', host }, newSession)
+  const openWslSession = (distro: string, newSession?: boolean) =>
+    openServerSession({ kind: 'wsl', distro }, newSession)
 
-  // Close a session tab — the ONLY thing that disconnects it (unmounting RemoteSessionView
-  // triggers its existing sftpDisconnect/remoteShellKill/terminalKill cleanups). Falls back to
-  // an adjacent remaining tab, or back to the Remote & WSL list if none are left.
+  // Close a session tab — the ONLY thing that tears it down (unmounting RemoteSessionView
+  // triggers its remoteShellKill/terminalKill cleanups). Falls back to an adjacent remaining
+  // tab, or back to the Remote & WSL list if none are left.
   const closeServerSession = (id: string) => {
-    setServerSessions((prev) => {
-      const idx = prev.findIndex((s) => s.id === id)
-      if (idx === -1) return prev
-      const next = prev.filter((s) => s.id !== id)
-      if (activeServerSessionId === id) {
-        const fallback = next[idx] ?? next[idx - 1] ?? null
-        setActiveServerSessionId(fallback ? fallback.id : null)
-        if (!fallback) setView('remote')
-      }
-      return next
+    const idx = serverSessions.findIndex((s) => s.id === id)
+    if (idx === -1) return
+    const closed = serverSessions[idx]
+    const next = serverSessions.filter((s) => s.id !== id)
+
+    // The ssh2 connection is per HOST and shared by every session on it (SFTP and each
+    // shell channel ride the same client — see getRemoteClient in main/sftp.ts), so it can
+    // only be dropped once the last session for that host is gone. This is why the
+    // disconnect lives here and not in RemoteSessionView's unmount cleanup, which has no
+    // way of knowing whether a sibling session is still using the connection.
+    if (closed.target.kind === 'ssh') {
+      const hostId = closed.target.host.id
+      const stillUsed = next.some((s) => s.target.kind === 'ssh' && s.target.host.id === hostId)
+      if (!stillUsed) window.electronAPI.sftpDisconnect(hostId)
+    }
+
+    setServerSessions(next)
+    setServerSessionStatus((prev) => {
+      const { [id]: _gone, ...rest } = prev
+      return rest
     })
+    if (activeServerSessionId === id) {
+      const fallback = next[idx] ?? next[idx - 1] ?? null
+      setActiveServerSessionId(fallback ? fallback.id : null)
+      // Nothing left to show → leave the (now empty) session layer. Only when we're
+      // actually in it: the same close button also sits in the inline strip on the
+      // Servers screens, and closing a tab from there shouldn't yank the user off
+      // whichever Servers screen they're on.
+      if (!fallback && view === 'remote-session') setView('remote')
+    }
   }
+
+  /** The group header's + button — another session on a target that already has one. */
+  const addToTabGroup = (groupKey: string) => {
+    const target = serverSessions.find((s) => s.groupKey === groupKey)?.target
+    if (target) openServerSession(target, true)
+  }
+
 
   const connectRemote = (host: SshHostPublic) => {
     const s = newSession(host.remotePath, defaultModel, defaultAccountId)
@@ -1510,8 +1568,28 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, models, accounts])
 
-  // The group whose member is currently shown, if any — drives the sub-nav.
-  const activeGroup = VIEW_GROUPS.find((g) => g.members.includes(view))
+  // What the Remote & WSL list's SSH dots are allowed to claim. A host counts as reachable
+  // only once one of its sessions has actually connected; a host whose sessions have all
+  // failed (ECONNREFUSED, auth, …) is reported as failing, so the dot can go red instead of
+  // sitting green next to a visible "Could not connect" banner.
+  const sshHostStatuses = serverSessions.flatMap((s) =>
+    s.target.kind === 'ssh' ? [{ hostId: s.target.host.id, status: serverSessionStatus[s.id] }] : []
+  )
+  const connectedSshHosts = [
+    ...new Set(sshHostStatuses.filter((h) => h.status === 'connected').map((h) => h.hostId))
+  ]
+  const failedSshHosts = [
+    ...new Set(
+      sshHostStatuses
+        .filter((h) => h.status === 'error' && !connectedSshHosts.includes(h.hostId))
+        .map((h) => h.hostId)
+    )
+  ]
+
+  // The group the current view belongs to, if any — drives the sub-nav. Uses
+  // groupOwnsView (not `members`) so a group's extra views — a Remote/WSL session under
+  // Servers — count as in-group too, matching the rail's own highlight.
+  const activeGroup = VIEW_GROUPS.find((g) => groupOwnsView(g, view))
 
   return (
     <div className={`app-shell ${maximized ? 'maximized' : ''}`}>
@@ -1526,7 +1604,13 @@ export default function App() {
         onDismiss={dismissRun}
       />
       <div className="app">
-        <NavRail view={view} onChange={goToView} onSettings={() => setSettingsOpen(true)} onChangelog={() => setChangelogOpen(true)} />
+        <NavRail
+          view={view}
+          onChange={goToView}
+          onSettings={() => setSettingsOpen(true)}
+          onChangelog={() => setChangelogOpen(true)}
+          serverSessionCount={serverSessions.length}
+        />
 
       {view === 'chat' && (
         <>
@@ -1650,7 +1734,13 @@ export default function App() {
         </Suspense>
       )}
 
-      {activeGroup && (
+      {/* The group shell owns the content area for a group's *member* views. Excluded for
+          'remote-session' (an extra of the Servers group, so activeGroup is set there too)
+          because the always-mounted server-sessions layer below is a sibling with its own
+          `flex: 1` — rendering both at once would split the content area between them.
+          The session layer keeps the whole area to itself exactly as before; the way back
+          out is its Back button or the Servers rail entry (see NavRail's onClickGroup). */}
+      {activeGroup && view !== 'remote-session' && (
         <div className="view-with-subnav">
           <div className="view-subnav">
             <div className="view-subnav-group">
@@ -1665,6 +1755,26 @@ export default function App() {
               ))}
             </div>
           </div>
+          {/* Open Remote/WSL sessions, surfaced on the Servers screens so they're
+              reachable without remembering they exist. Selecting one here has to jump
+              into the session view as well as focus its pane. */}
+          {activeGroup.key === 'servers' && serverSessions.length > 0 && (
+            <ServerTabs
+              inline
+              sessions={serverSessions}
+              /* Always null: this copy of the strip only renders on a Servers screen, and
+                 there no tab is "current" — the session is open, but you aren't looking at
+                 it. Passing activeServerSessionId made the list read as though you were
+                 still inside that session. */
+              activeId={null}
+              onSelect={(id) => {
+                setActiveServerSessionId(id)
+                setView('remote-session')
+              }}
+              onClose={closeServerSession}
+              onAddToGroup={addToTabGroup}
+            />
+          )}
           <Suspense fallback={<ViewLoading />}>
             {view === 'agents' && <AgentsView models={models} defaultModel={defaultModel} onRun={runAgent} />}
             {view === 'rooms' && (
@@ -1712,6 +1822,9 @@ export default function App() {
                 onConnectWsl={connectWsl}
                 onOpenSession={openRemoteSession}
                 onOpenWslSession={openWslSession}
+                openWslSessions={serverSessions.flatMap((s) => (s.target.kind === 'wsl' ? [s.target.distro] : []))}
+                openSshSessions={connectedSshHosts}
+                failedSshSessions={failedSshHosts}
               />
             )}
           </Suspense>
@@ -1724,28 +1837,15 @@ export default function App() {
           removing it from serverSessions; navigating away just hides the layer. */}
       {serverSessions.length > 0 && (
         <div className="server-sessions-layer" style={{ display: view === 'remote-session' ? 'flex' : 'none' }}>
-          <div className="server-tabs">
-            {serverSessions.map((s) => (
-              <div
-                key={s.id}
-                className={`server-tab ${s.id === activeServerSessionId ? 'active' : ''}`}
-                onClick={() => setActiveServerSessionId(s.id)}
-              >
-                <span className="server-tab-title">{s.title}</span>
-                <button
-                  className="server-tab-close"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    closeServerSession(s.id)
-                  }}
-                  title="Close session"
-                  aria-label={`Close ${s.title}`}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
+          {/* Topmost strip here, so it keeps the drag region (no `inline`). Selecting a
+              tab only swaps the visible pane — we're already in the session view. */}
+          <ServerTabs
+            sessions={serverSessions}
+            activeId={activeServerSessionId}
+            onSelect={setActiveServerSessionId}
+            onClose={closeServerSession}
+            onAddToGroup={addToTabGroup}
+          />
           <Suspense fallback={<ViewLoading />}>
             {serverSessions.map((s) => (
               <div
@@ -1755,8 +1855,12 @@ export default function App() {
               >
                 <RemoteSessionView
                   target={s.target}
+                  seq={s.seq}
                   active={view === 'remote-session' && s.id === activeServerSessionId}
                   onBack={() => setView('remote')}
+                  onStatusChange={(st) =>
+                    setServerSessionStatus((prev) => (prev[s.id] === st ? prev : { ...prev, [s.id]: st }))
+                  }
                 />
               </div>
             ))}

@@ -1,126 +1,56 @@
-/* ── RemoteView.css — base layout + premium polish layer ─────────────────
-   The base rules below used to live in views.css (duplicated here as an
-   "override" layer); they've been consolidated into this file since these
-   classes are only ever used by RemoteView, so this file is now the
-   single owner. The polish rules further down still layer on top. ────── */
+/* ── RemoteView.css ──────────────────────────────────────────────────────────
+   The Remote & WSL list and its SSH keys sub-screen.
 
-.remote-section-title {
+   The screen used to be full-width cards: every target got a ~90px tall card whose
+   four text buttons ended up marooned against the right edge of a 2000px window, and
+   hidden distros each burned a whole card to say "hidden". This is the compact
+   rewrite — one line per target in a capped-width column, with everything but
+   Connect behind a ··· menu. All classes are prefixed `rt-` and are only used by
+   RemoteView.tsx, which owns this file. ───────────────────────────────────── */
+
+/* Ultra-wide windows are the problem this solves: a row whose name is on the far
+   left and whose buttons are on the far right is unreadable. Cap and centre — and
+   note the header uses the SAME wrapper, so the title, the filter bar and every row
+   share one left edge. Constraining only the list made the screen look broken: a
+   full-bleed title above a floating centred column. */
+.rt-col {
+  width: 100%;
+  /* Generous enough to read as full-width at ordinary window sizes (matching McpView,
+     which is uncapped) while still stopping a 2500px monitor from stretching a row
+     into two distant clusters. */
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* The header is full-bleed (it owns the window drag region and the bottom rule), so
+   the column lives inside it rather than replacing it. */
+.rt-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-2);
-  margin-bottom: 10px;
-}
-.remote-count {
-  background: var(--bg-3);
-  color: var(--text-1);
-  border-radius: 10px;
-  padding: 1px 7px;
-  font-size: 11px;
-}
-.wsl-path { margin-top: 6px; max-width: 360px; }
-
-.ssh-list { display: flex; flex-direction: column; gap: 10px; }
-.ssh-card {
-  display: flex;
-  align-items: center;
+  justify-content: space-between;
   gap: 16px;
-  background: var(--bg-1);
+}
+
+/* The key button sits next to the primary "+ Add SSH host"; give it a border so it
+   reads as a peer control rather than a floating glyph, and centre the pair. */
+.view-header .header-actions { align-items: center; }
+.view-header .header-actions .icon-btn {
+  width: 34px;
+  height: 34px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px 16px;
-}
-.ssh-card-main { flex: 1; min-width: 0; }
-.ssh-card-name { font-size: 14.5px; font-weight: 600; }
-.ssh-card-target { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-1); font-family: var(--font-mono); margin-top: 2px; }
-.ssh-card-path { font-size: 11.5px; color: var(--text-2); font-family: var(--font-mono); margin-top: 2px; }
-.ssh-card-acct { font-size: 11.5px; color: #4fc3f7; margin-top: 3px; }
-.ssh-card.hidden-card { opacity: 0.6; }
-.ssh-card-name.muted, .ssh-card-target.muted { color: var(--text-2); }
-.ssh-test { font-size: 11.5px; margin-top: 6px; font-family: var(--font-mono); }
-.ssh-test.ok { color: var(--success); }
-.ssh-test.err { color: var(--error); }
-.ssh-card-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-
-/* ═══════════════════════════════════════════════════════════════════════
-   Premium polish layer — layered AFTER the base rules above so
-   equal-specificity rules win here.
-   ═══════════════════════════════════════════════════════════════════════ */
-
-/* ── Section headers ─────────────────────────────────────────────────────── */
-.remote-section-title {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--text-2);
-  text-transform: uppercase;
-  margin-bottom: 12px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
 
-.remote-count {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
-  border-radius: 20px;
-  padding: 1px 8px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-/* ── SSH / WSL card layout ────────────────────────────────────────────────── */
-.ssh-card {
-  padding: 14px 16px;
-  gap: 14px;
-}
-
-/* Icon chip anchoring the card row */
-.ssh-icon-chip {
+/* Back arrow + title, for the SSH keys sub-screen header. */
+.rt-header-title {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
-  color: var(--accent);
-  font-size: 16px;
-  font-weight: 700;
+  align-items: flex-start;
+  gap: 12px;
+}
+.rt-header-title .icon-btn {
+  margin-top: 3px;
   flex-shrink: 0;
-  line-height: 1;
-  transition: background 0.14s, border-color 0.14s;
-  font-family: var(--font-mono);
-  text-transform: uppercase;
 }
-
-/* WSL chips use the #4fc3f7 accent */
-.ssh-icon-chip.wsl {
-  background: rgba(79, 195, 247, 0.13);
-  border-color: rgba(79, 195, 247, 0.25);
-  color: #4fc3f7;
-}
-
-/* Key chips use a warm amber accent */
-.ssh-icon-chip.key {
-  background: rgba(240, 180, 90, 0.13);
-  border-color: rgba(240, 180, 90, 0.28);
-  color: #e0a458;
-}
-.ssh-card:hover .ssh-icon-chip.key {
-  background: rgba(240, 180, 90, 0.2);
-  border-color: rgba(240, 180, 90, 0.42);
-}
-
-/* SSH keys section intro copy */
-.keys-intro { margin: -4px 0 14px; }
-.keys-intro code {
+.rt-header-title code {
   font-family: var(--font-mono);
   font-size: 11.5px;
   background: color-mix(in srgb, var(--bg-3) 70%, transparent);
@@ -129,115 +59,338 @@
   padding: 1px 5px;
 }
 
-/* Copyable authorized_keys one-liner row */
-.key-oneliner {
+/* ── Filter bar ─────────────────────────────────────────────────────────────── */
+.rt-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.rt-search {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
-  max-width: 100%;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  color: var(--text-2);
+  transition: border-color 0.14s;
 }
-.key-oneliner code {
+.rt-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.rt-search-input {
   flex: 1;
   min-width: 0;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--text-1);
-  background: color-mix(in srgb, var(--bg-3) 60%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 5px 9px;
-  overflow-x: auto;
-  white-space: nowrap;
-}
-.key-oneliner .btn-ghost { flex-shrink: 0; }
-
-/* Generate-key card sits flush with the key list */
-.ssh-card.key-generate .ssh-card-actions { gap: 8px; }
-
-.ssh-card:hover .ssh-icon-chip {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
-}
-.ssh-card:hover .ssh-icon-chip.wsl {
-  background: rgba(79, 195, 247, 0.2);
-  border-color: rgba(79, 195, 247, 0.4);
-}
-
-/* Name / target / path hierarchy */
-.ssh-card-name {
-  font-size: 14px;
-  font-weight: 600;
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 13px;
   color: var(--text-0);
+}
+.rt-search-input::placeholder { color: var(--text-2); }
+.rt-search-clear {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-2);
+}
+.rt-search-clear:hover { background: var(--bg-hover); color: var(--text-0); }
+
+/* Shorter segmented control so it lines up with the 30px search field. */
+.rt-filter .seg-control.small button {
+  padding: 0 13px;
+  height: 32px;
+  font-size: 12.5px;
+}
+
+/* Count inside a segmented-control button — quieter than the label it trails. */
+.rt-seg-count {
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+  margin-left: 2px;
+}
+
+/* ── Section headings ───────────────────────────────────────────────────────── */
+.rt-section {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin: 22px 0 7px;
+}
+.rt-section:first-child { margin-top: 0; }
+
+/* ── Rows ───────────────────────────────────────────────────────────────────── */
+/* Deliberately NOT `overflow: hidden` — that would clip a row's ··· popover, which
+   hangs below its row. The end rows carry the rounding themselves instead, so the
+   hover background still can't spill past the container's corners. */
+.rt-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.rt-list > :first-child,
+.rt-list > :first-child > .rt-row {
+  border-top-left-radius: calc(var(--radius) - 1px);
+  border-top-right-radius: calc(var(--radius) - 1px);
+}
+.rt-list > :last-child,
+.rt-list > :last-child > .rt-row {
+  border-bottom-left-radius: calc(var(--radius) - 1px);
+  border-bottom-right-radius: calc(var(--radius) - 1px);
+}
+
+/* Wrapper so a row's optional extras (working-dir input, test result) stack under it
+   while still reading as one unit. */
+.rt-row-wrap { border-bottom: 1px solid var(--border); }
+.rt-row-wrap:last-child { border-bottom: none; }
+.rt-list > .rt-row { border-bottom: 1px solid var(--border); }
+.rt-list > .rt-row:last-child { border-bottom: none; }
+
+.rt-row {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 10px;
+  min-height: 58px;
+  padding: 0 16px;
+  transition: background 0.12s;
+}
+.rt-row:hover { background: var(--bg-hover); }
+.rt-row.muted { opacity: 0.6; }
+
+/* Target rows are a Connect shortcut end to end. Keyboard users reach Connect by
+   tabbing to the button itself (which :focus-within reveals), so the row stays a
+   plain div rather than a role="button" wrapping other buttons. */
+.rt-row.clickable { cursor: pointer; }
+.rt-row.clickable:active { background: var(--bg-3); }
+
+/* Chip + its status dot. The dot rides the chip's corner like an avatar presence
+   badge; in its own left-hand column it read as a stray speck detached from the row. */
+.rt-avatar {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
 }
 
-.ssh-card-target {
-  font-size: 12px;
-  color: var(--text-1);
-  margin-top: 3px;
+/* `idle` is the resting state, not a failure — a stopped WSL distro or an SSH host you
+   haven't tested is perfectly fine, so it stays a neutral dot and only a failed Test
+   earns red. The ring knocks it out of the row background so it reads as a badge. */
+.rt-dot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-2);
+  opacity: 0.5;
+  box-shadow: 0 0 0 2px var(--bg-1);
+}
+.rt-row:hover .rt-dot { box-shadow: 0 0 0 2px var(--bg-hover); }
+.rt-dot.ok { background: var(--success); opacity: 1; }
+.rt-dot.error { background: var(--error); opacity: 1; }
+/* A session is open on this target — the strongest "it's up" signal there is, so it
+   gets the halo that plain `ok` (merely running / last test passed) doesn't. */
+.rt-dot.live {
+  background: var(--success);
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--bg-1), 0 0 0 4px color-mix(in srgb, var(--success) 30%, transparent);
+}
+.rt-row:hover .rt-dot.live {
+  box-shadow: 0 0 0 2px var(--bg-hover), 0 0 0 4px color-mix(in srgb, var(--success) 30%, transparent);
+}
+.rt-dot.checking {
+  background: var(--accent);
+  opacity: 1;
+  animation: rt-pulse 1.1s ease-in-out infinite;
+}
+@keyframes rt-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rt-dot.checking { animation: none; }
 }
 
-.ssh-card-path {
-  font-size: 11.5px;
+.rt-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+}
+.rt-chip.wsl {
+  background: rgba(79, 195, 247, 0.13);
+  border-color: rgba(79, 195, 247, 0.25);
+  color: #4fc3f7;
+}
+.rt-chip.key {
+  background: rgba(240, 180, 90, 0.13);
+  border-color: rgba(240, 180, 90, 0.28);
+  color: #e0a458;
+}
+
+.rt-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text-0);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.rt-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--bg-3) 80%, transparent);
+  border: 1px solid var(--border-light);
   color: var(--text-2);
-  font-family: var(--font-mono);
-  margin-top: 2px;
-  opacity: 0.85;
 }
 
-/* Test result lines: monospaced, icon-prefixed feel */
-.ssh-test {
+/* Secondary detail (the wsl/ssh command, the account, a remote path), grouped in one
+   flexible cell that eats the slack — so the identity sits left, the detail floats in
+   the middle and the actions stay pinned right, at any window width.
+   (An earlier version put `margin-left: auto` on `.rt-meta:first-of-type`, which never
+   matched: :first-of-type keys off the ELEMENT type, and .rt-name is a <span> too.) */
+.rt-detail {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 14px;
+  overflow: hidden;
+}
+.rt-meta {
+  font-size: 12.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.rt-meta.mono { font-family: var(--font-mono); }
+.rt-meta.acct { color: #4fc3f7; opacity: 0.85; flex-shrink: 0; }
+
+/* Actions collapse to zero width at rest — not just transparent — so a resting row's
+   detail text runs all the way to the right edge, then slides left to make room as the
+   buttons expand on hover. (Plain `opacity: 0` still reserved the space, which left a
+   dead gap on every row.) They stay reachable by keyboard via :focus-within, which is
+   also what holds the row open while its ··· menu is up.
+   `overflow: hidden` is the clip that makes the slide read as a reveal, but it would
+   also clip the ··· popover — hence overflow going visible in the expanded state. */
+.rt-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  margin-left: 0;
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-width 0.18s ease, margin-left 0.18s ease, opacity 0.14s;
+}
+.rt-row:hover .rt-actions,
+.rt-row:focus-within .rt-actions,
+.rt-actions.always {
+  max-width: 260px;
+  margin-left: 12px;
+  opacity: 1;
+  overflow: visible;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rt-actions { transition: none; }
+}
+
+.rt-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+}
+.rt-more:hover { background: var(--bg-3); color: var(--text-0); }
+
+/* ── Row extras ─────────────────────────────────────────────────────────────── */
+/* Row extras indent to the chip's text edge (14px padding + 28px chip + 10px gap). */
+.rt-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 12px 58px;
+}
+.rt-cwd-input {
+  flex: 1;
+  max-width: 380px;
+  font-size: 12px;
+}
+
+.rt-note {
   font-size: 11.5px;
-  margin-top: 7px;
   font-family: var(--font-mono);
+  margin: 0 16px 12px 58px;
   padding: 5px 9px;
   border-radius: 7px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
 }
-.ssh-test.ok {
+.rt-note.ok {
   color: var(--success);
   background: color-mix(in srgb, var(--success) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--success) 22%, transparent);
 }
-.ssh-test.err {
+.rt-note.err {
   color: var(--error);
   background: color-mix(in srgb, var(--error) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--error) 22%, transparent);
 }
 
-/* Actions: consistent baseline */
-.ssh-card-actions {
-  gap: 7px;
-}
-
-/* WSL path input: a bit slimmer to match card rhythm */
-.wsl-path {
-  margin-top: 7px;
-  max-width: 340px;
-  font-size: 12px;
-}
-
-/* Hidden card: gentler mute */
-.ssh-card.hidden-card {
-  opacity: 0.55;
-  filter: saturate(0.6);
-}
-
-/* Badge refinements inside Remote cards (restate to keep specificity clean) */
-.ssh-card .badge {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 2px 8px;
-  border-radius: 20px;
-}
-.ssh-card .badge.scope {
-  background: color-mix(in srgb, var(--bg-3) 80%, transparent);
+/* ── Hidden distros disclosure ──────────────────────────────────────────────── */
+.rt-hidden { margin-top: 8px; }
+.rt-hidden-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
   color: var(--text-2);
-  border: 1px solid var(--border-light);
 }
+.rt-hidden-toggle:hover { color: var(--text-0); background: var(--bg-hover); }
+.rt-hidden-toggle svg { transition: transform 0.14s; }
+.rt-hidden-toggle svg.open { transform: rotate(90deg); }
+.rt-hidden .rt-list { margin-top: 6px; }
+
+/* ── SSH keys sub-screen ────────────────────────────────────────────────────── */
+.rt-row-generate .rt-name { color: var(--text-1); }
+.rt-gen-input { width: 170px; font-size: 12px; }

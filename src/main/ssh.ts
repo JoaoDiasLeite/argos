@@ -129,7 +129,48 @@ export function getSshTerminalCommand(
   return { shell: 'ssh', args, remotePath: h.remotePath, claudePath: h.claudePath }
 }
 
+/**
+ * Does this host accept an SSH connection? Nothing more — it authenticates, reports how
+ * long that took, and hangs up. This is what the Remote & WSL list's status dot reflects,
+ * so it deliberately does NOT care whether Claude Code is installed: a box can be perfectly
+ * reachable without it, and conflating the two meant a green/red dot that answered the wrong
+ * question. Use testClaude for that.
+ */
 export function testConnection(id: string): Promise<{ ok: boolean; message: string }> {
+  const host = getHost(id)
+  if (!host) return Promise.resolve({ ok: false, message: 'Host not found' })
+
+  return new Promise((resolve) => {
+    const conn = new Client()
+    const startedAt = Date.now()
+    let settled = false
+    const done = (r: { ok: boolean; message: string }) => {
+      if (settled) return
+      settled = true
+      conn.end()
+      resolve(r)
+    }
+    conn.on('ready', () =>
+      done({
+        ok: true,
+        message: `Connected as ${host.username}@${host.host}:${host.port} in ${Date.now() - startedAt} ms`
+      })
+    )
+    conn.on('error', (e) => done({ ok: false, message: e.message }))
+    try {
+      conn.connect(buildConnectConfig(host))
+    } catch (e) {
+      done({ ok: false, message: e instanceof Error ? e.message : String(e) })
+    }
+  })
+}
+
+/**
+ * Connects and asks the host's `claude` for its version — the "is Claude Code actually
+ * installed and runnable over there" check, which is a separate question from whether the
+ * host is up (see testConnection).
+ */
+export function testClaude(id: string): Promise<{ ok: boolean; message: string }> {
   const host = getHost(id)
   if (!host) return Promise.resolve({ ok: false, message: 'Host not found' })
 
@@ -149,9 +190,21 @@ export function testConnection(id: string): Promise<{ ok: boolean; message: stri
         let out = ''
         stream.on('data', (d: Buffer) => (out += d.toString()))
         stream.stderr.on('data', (d: Buffer) => (out += d.toString()))
-        stream.on('close', () =>
-          done({ ok: true, message: out.trim() || 'Connected. Claude Code reachable.' })
-        )
+        stream.on('close', () => {
+          const text = out.trim()
+          const firstLine = text.split('\n')[0] ?? ''
+          // Previously this resolved ok:true whenever the stream closed, so a missing
+          // `claude` reported success with "command not found" as its message.
+          const looksLikeVersion = /\d+\.\d+\.\d+/.test(firstLine)
+          if (looksLikeVersion) return done({ ok: true, message: firstLine })
+          if (/not found|no such file/i.test(text)) {
+            return done({
+              ok: false,
+              message: `claude not found on this host (${host.claudePath || 'claude'}). Install it: npm i -g @anthropic-ai/claude-code`
+            })
+          }
+          done({ ok: false, message: text.slice(0, 300) || 'claude produced no output' })
+        })
       })
     })
     conn.on('error', (e) => done({ ok: false, message: e.message }))

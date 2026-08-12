@@ -92,6 +92,12 @@
   overflow-x: auto;
   -webkit-app-region: drag;
 }
+/* Same strip rendered under the Servers sub-nav instead of at the top of the session
+   layer. The sub-nav is the topmost strip there and already carries the drag region,
+   so this copy must drop it — otherwise dragging the tab row would move the window. */
+.server-tabs.inline {
+  -webkit-app-region: no-drag;
+}
 
 .server-tab {
   display: flex;
@@ -125,22 +131,66 @@
   max-width: 160px;
 }
 
-.server-tab-close {
+/* ── Several sessions on one target ──
+   They collapse into a single tab (see ServerTabs.tsx) carrying the target name and a
+   count, with the sessions themselves in a dropdown. Bracketing sibling tabs inline was
+   the first attempt and it read as clutter — the target name ended up repeated on every
+   tab, and the group's tinted rail competed with the active-tab highlight. */
+.server-tab-multi { gap: 5px; padding-right: 7px; }
+
+.server-tab-count {
+  flex-shrink: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  font-size: 13px;
-  line-height: 1;
-  color: inherit;
-  opacity: 0.6;
-  flex-shrink: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  font-size: 9.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
-.server-tab-close:hover {
-  opacity: 1;
-  background: color-mix(in srgb, var(--text-0) 12%, transparent);
+
+/* Fixed-positioned, because .server-tabs scrolls horizontally and would clip it.
+   ServerTabs measures the trigger and sets left/top. */
+.server-tab-pop {
+  position: fixed;
+  z-index: 60;
+  min-width: 190px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--border-light);
+  border-radius: 11px;
+  background: var(--bg-1);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  -webkit-app-region: no-drag;
+}
+
+.server-tab-pop-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--text-1);
+  cursor: pointer;
+}
+.server-tab-pop-item:hover { background: var(--bg-hover); color: var(--text-0); }
+.server-tab-pop-item.active { background: var(--accent-dim); color: var(--accent); }
+.server-tab-pop-item.add { color: var(--text-2); }
+.server-tab-pop-item.add:hover { color: var(--text-0); }
+
+.server-tab-pop-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
 }
 
 .view-header {

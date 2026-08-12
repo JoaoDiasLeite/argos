@@ -6,4 +6,5 @@ release/
 .DS_Store
 .env
 *.tsbuildinfo
+.tsbuild/
 scripts/visual-check/*.png

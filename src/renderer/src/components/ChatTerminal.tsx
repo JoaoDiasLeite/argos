@@ -3,6 +3,8 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { ProviderId } from '../types'
+import { TERMINAL_THEME } from './terminal-theme'
+import TerminalContextMenu, { terminalMenuItems } from './TerminalContextMenu'
 import './ChatTerminal.css'
 
 interface Props {
@@ -36,16 +38,9 @@ interface Props {
   onActive?: () => void
 }
 
-// The embedded terminal is intentionally ALWAYS dark and does NOT follow the app's
-// light/dark theme: the CLIs it hosts (claude/codex) emit ANSI colors tuned for a dark
-// background, so a light bg would wash them out. These fixed colors must stay in sync
-// with .chat-terminal-loading's background in ChatTerminal.css (the loader overlay) so the
-// loader matches the terminal underneath it.
-const TERMINAL_BG = '#17140f'
-const TERMINAL_FG = '#e8e2d6'
-function themeColors(): { background: string; foreground: string } {
-  return { background: TERMINAL_BG, foreground: TERMINAL_FG }
-}
+// The embedded terminal's palette lives in terminal-theme.ts, shared with
+// RemoteTerminal. See that module for why it's fixed rather than following the app theme, and
+// for the .chat-terminal-loading background in ChatTerminal.css it has to stay in sync with.
 
 const FONT_SIZE_KEY = 'chatterm-font-size'
 const MIN_FONT_SIZE = 10
@@ -99,6 +94,8 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
   // to the prompt) until the CLI settles in and is idle waiting for input. Revealed by the
   // quiet-timer logic in onTerminalData below, once launched output stops streaming.
   const [starting, setStarting] = useState(true)
+  // Where the Shift+right-click menu is open, in viewport coords; null when closed.
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null)
   // True from the moment we've typed the launch command until the terminal is revealed —
   // gates the quiet timer so it only arms for output produced by that launch, not for
   // whatever the shell happened to print beforehand.
@@ -117,18 +114,18 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
 
   // Create the xterm instance once for this component's lifetime.
   useEffect(() => {
-    if (!hostRef.current) return
-    const { background, foreground } = themeColors()
+    const host = hostRef.current
+    if (!host) return
     const term = new Terminal({
       cursorBlink: true,
       fontFamily: 'Menlo, Consolas, "Cascadia Code", "DejaVu Sans Mono", monospace',
       fontSize: loadFontSize(),
       scrollback: 5000,
-      theme: { background, foreground, cursor: foreground }
+      theme: TERMINAL_THEME
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
-    term.open(hostRef.current)
+    term.open(host)
     term.onData((d) => {
       // Typing into the terminal is what makes a chat "used". Reporting it when the pty
       // merely started marked every chat opened on the Terminal pane as used the instant
@@ -137,9 +134,16 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       window.electronAPI.terminalWrite(idRef.current, d)
     })
 
-    // Copy-on-select (like most native terminals), plus explicit Ctrl/Cmd+C
-    // (when there's a selection) and Ctrl/Cmd+V for clipboard paste — xterm
-    // only forwards raw keystrokes as PTY input by default.
+    // Copy-on-select (like most native terminals), plus explicit Ctrl/Cmd+C when there's a
+    // selection — xterm only forwards raw keystrokes as PTY input by default.
+    //
+    // There is deliberately NO Ctrl/Cmd+V branch here: xterm owns paste. Its native paste
+    // path ignores this handler's return value (it never calls preventDefault), so Chromium's
+    // own paste event reached xterm's internal paste() regardless and the pasted text landed
+    // twice — once raw from us, once bracketed (\x1b[200~…) from xterm, which garbles input
+    // rather than merely duplicating it. Letting xterm handle it means one write, and
+    // bracketed-paste mode is honoured. See also the application menu in src/main/index.ts,
+    // which omits the Edit roles for the same reason.
     term.onSelectionChange(() => {
       const sel = term.getSelection()
       if (sel) navigator.clipboard.writeText(sel).catch(() => {})
@@ -151,14 +155,32 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         navigator.clipboard.writeText(term.getSelection()).catch(() => {})
         return false
       }
-      if (mod && e.key.toLowerCase() === 'v') {
-        navigator.clipboard.readText().then((text) => {
-          if (text) window.electronAPI.terminalWrite(idRef.current, text)
-        }).catch(() => {})
-        return false
-      }
       return true
     })
+
+    // Right-click behaves like a terminal, not like a browser: plain right-click is
+    // copy-if-selection / paste-otherwise (the PuTTY/Windows Terminal reflex), and Shift
+    // opens the explicit menu for anyone who wants the actions spelled out. Paste goes
+    // through term.paste so it takes the exact same single, bracketed-paste-aware code path
+    // as Ctrl+V.
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault()
+      if (e.shiftKey) {
+        setMenuPos({ x: e.clientX, y: e.clientY })
+        return
+      }
+      if (term.hasSelection()) {
+        navigator.clipboard.writeText(term.getSelection()).catch(() => {})
+        return
+      }
+      navigator.clipboard
+        .readText()
+        .then((text) => {
+          if (text) term.paste(text)
+        })
+        .catch(() => {})
+    }
+    host.addEventListener('contextmenu', onContextMenu)
 
     termRef.current = term
     fitRef.current = fit
@@ -172,7 +194,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       }
     }
     const ro = new ResizeObserver(() => doFit())
-    ro.observe(hostRef.current)
+    ro.observe(host)
     // A single rAF can still land before the panel's own layout (flex/display
     // swap) has settled, sizing the terminal off the stale hidden-state rect —
     // chain a second frame so fit() runs against the final visible layout.
@@ -180,6 +202,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
 
     return () => {
       ro.disconnect()
+      host.removeEventListener('contextmenu', onContextMenu)
       term.dispose()
       termRef.current = null
       fitRef.current = null
@@ -466,6 +489,14 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
           >
             Restart terminal
           </button>
+        )}
+        {menuPos && (
+          <TerminalContextMenu
+            x={menuPos.x}
+            y={menuPos.y}
+            onClose={() => setMenuPos(null)}
+            items={terminalMenuItems(termRef.current)}
+          />
         )}
       </div>
     </div>
