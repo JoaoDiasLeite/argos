@@ -45,6 +45,7 @@ import {
   saveHost,
   deleteHost,
   testConnection,
+  testClaude,
   runRemote,
   stopRemote,
   SshHost
@@ -71,7 +72,7 @@ import {
   remoteShellKill,
   remoteShellKillAll
 } from './remote-shell'
-import { listDistros, testDistro, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory } from './wsl'
+import { listDistros, testDistro, testDistroClaude, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
 import { getHiddenDistros, setDistroHidden, getRoomsLayout, setRoomsLayout, RoomsLayout } from './store'
 import {
@@ -1025,6 +1026,7 @@ ipcMain.handle('ssh:list', () => listHosts())
 ipcMain.handle('ssh:save', (_, host: SshHost) => saveHost(host))
 ipcMain.handle('ssh:delete', (_, id: string) => deleteHost(id))
 ipcMain.handle('ssh:test', (_, id: string) => testConnection(id))
+ipcMain.handle('ssh:test-claude', (_, id: string) => testClaude(id))
 ipcMain.handle('ssh:keys-list', () => listSshKeys())
 ipcMain.handle('ssh:keys-generate', (_, name: string, comment?: string) => generateKey(name, comment))
 ipcMain.handle('ssh:keys-public', (_, privatePath: string) => readPublicKey(privatePath))
@@ -1047,6 +1049,7 @@ ipcMain.handle('sftp:disconnect', (_, hostId: string) => sftpDisconnect(hostId))
 
 ipcMain.handle('wsl:list', () => listDistros())
 ipcMain.handle('wsl:test', (_, distro: string) => testDistro(distro))
+ipcMain.handle('wsl:test-claude', (_, distro: string) => testDistroClaude(distro))
 ipcMain.handle('wsl:hidden', () => getHiddenDistros())
 ipcMain.handle('wsl:set-hidden', (_, distro: string, hidden: boolean) => setDistroHidden(distro, hidden))
 ipcMain.handle('wsl:history', (_, distro: string) => wslHistory(distro))

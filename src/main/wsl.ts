@@ -194,7 +194,42 @@ function buildCommand(
 /** Claude Code requires a modern Node; older majors can't even parse the CLI bundle. */
 const MIN_NODE_MAJOR = 18
 
+/**
+ * Does this distro start and run a command? Nothing more. This is what the Remote & WSL
+ * list's status dot reflects, so it deliberately does NOT probe Node or Claude Code — a
+ * distro can be perfectly usable without them, and conflating the two meant the dot
+ * answered the wrong question. Use testDistroClaude for that.
+ *
+ * A cold distro has to boot first, hence the same generous timeout as the Claude probe.
+ */
 export function testDistro(distro: string): Promise<{ ok: boolean; message: string }> {
+  if (!isWindows) return Promise.resolve({ ok: false, message: 'WSL is only available on Windows' })
+  return new Promise((resolve) => {
+    const startedAt = Date.now()
+    execFile(
+      'wsl.exe',
+      ['-d', distro, '--', 'sh', '-c', 'printf "%s@%s" "$(whoami)" "$(hostname)"'],
+      { encoding: 'utf8', windowsHide: true, timeout: 20000 },
+      (err, stdout, stderr) => {
+        const who = (stdout || '').trim()
+        if (who) {
+          return resolve({ ok: true, message: `Started as ${who} in ${Date.now() - startedAt} ms` })
+        }
+        resolve({
+          ok: false,
+          message: (stderr || '').trim() || (err ? err.message : 'Distro did not respond')
+        })
+      }
+    )
+  })
+}
+
+/**
+ * Probes Node and Claude Code inside the distro — the "is Claude Code actually installed and
+ * runnable over there" check, which is a separate question from whether the distro starts
+ * (see testDistro).
+ */
+export function testDistroClaude(distro: string): Promise<{ ok: boolean; message: string }> {
   if (!isWindows) return Promise.resolve({ ok: false, message: 'WSL is only available on Windows' })
   return new Promise((resolve) => {
     // Probe Node and Claude together so we can blame an old/missing Node for a CLI that

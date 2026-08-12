@@ -238,6 +238,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sshSave: (host: unknown) => ipcRenderer.invoke('ssh:save', host),
   sshDelete: (id: string) => ipcRenderer.invoke('ssh:delete', id),
   sshTest: (id: string) => ipcRenderer.invoke('ssh:test', id),
+  sshTestClaude: (id: string) => ipcRenderer.invoke('ssh:test-claude', id),
   sshKeysList: () => ipcRenderer.invoke('ssh:keys-list'),
   sshKeysGenerate: (name: string, comment?: string) =>
     ipcRenderer.invoke('ssh:keys-generate', name, comment),
@@ -261,6 +262,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // WSL
   wslList: () => ipcRenderer.invoke('wsl:list'),
   wslTest: (distro: string) => ipcRenderer.invoke('wsl:test', distro),
+  wslTestClaude: (distro: string) => ipcRenderer.invoke('wsl:test-claude', distro),
   wslHidden: () => ipcRenderer.invoke('wsl:hidden'),
   wslSetHidden: (distro: string, hidden: boolean) => ipcRenderer.invoke('wsl:set-hidden', distro, hidden),
   wslHistory: (distro: string) => ipcRenderer.invoke('wsl:history', distro),

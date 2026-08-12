@@ -1246,6 +1246,12 @@ export default function App() {
   // sessions open at once; the strip groups them per target.
   const [serverSessions, setServerSessions] = useState<ServerSession[]>([])
   const [activeServerSessionId, setActiveServerSessionId] = useState<string | null>(null)
+  /** Per-session connection state, reported up by RemoteSessionView. Drives the Remote &
+   *  WSL list's status dots: an open tab proves nothing on its own, since the connection
+   *  may have been refused. */
+  const [serverSessionStatus, setServerSessionStatus] = useState<
+    Record<string, 'connecting' | 'connected' | 'error'>
+  >({})
   /** Highest session number handed out per group so far — see openServerSession. */
   const seqCounterRef = useRef<Record<string, number>>({})
 
@@ -1300,6 +1306,10 @@ export default function App() {
     }
 
     setServerSessions(next)
+    setServerSessionStatus((prev) => {
+      const { [id]: _gone, ...rest } = prev
+      return rest
+    })
     if (activeServerSessionId === id) {
       const fallback = next[idx] ?? next[idx - 1] ?? null
       setActiveServerSessionId(fallback ? fallback.id : null)
@@ -1558,6 +1568,24 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, models, accounts])
 
+  // What the Remote & WSL list's SSH dots are allowed to claim. A host counts as reachable
+  // only once one of its sessions has actually connected; a host whose sessions have all
+  // failed (ECONNREFUSED, auth, …) is reported as failing, so the dot can go red instead of
+  // sitting green next to a visible "Could not connect" banner.
+  const sshHostStatuses = serverSessions.flatMap((s) =>
+    s.target.kind === 'ssh' ? [{ hostId: s.target.host.id, status: serverSessionStatus[s.id] }] : []
+  )
+  const connectedSshHosts = [
+    ...new Set(sshHostStatuses.filter((h) => h.status === 'connected').map((h) => h.hostId))
+  ]
+  const failedSshHosts = [
+    ...new Set(
+      sshHostStatuses
+        .filter((h) => h.status === 'error' && !connectedSshHosts.includes(h.hostId))
+        .map((h) => h.hostId)
+    )
+  ]
+
   // The group the current view belongs to, if any — drives the sub-nav. Uses
   // groupOwnsView (not `members`) so a group's extra views — a Remote/WSL session under
   // Servers — count as in-group too, matching the rail's own highlight.
@@ -1795,7 +1823,8 @@ export default function App() {
                 onOpenSession={openRemoteSession}
                 onOpenWslSession={openWslSession}
                 openWslSessions={serverSessions.flatMap((s) => (s.target.kind === 'wsl' ? [s.target.distro] : []))}
-                openSshSessions={serverSessions.flatMap((s) => (s.target.kind === 'ssh' ? [s.target.host.id] : []))}
+                openSshSessions={connectedSshHosts}
+                failedSshSessions={failedSshHosts}
               />
             )}
           </Suspense>
@@ -1829,6 +1858,9 @@ export default function App() {
                   seq={s.seq}
                   active={view === 'remote-session' && s.id === activeServerSessionId}
                   onBack={() => setView('remote')}
+                  onStatusChange={(st) =>
+                    setServerSessionStatus((prev) => (prev[s.id] === st ? prev : { ...prev, [s.id]: st }))
+                  }
                 />
               </div>
             ))}

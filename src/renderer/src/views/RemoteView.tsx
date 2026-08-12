@@ -15,8 +15,12 @@ interface Props {
   onOpenWslSession: (distro: string, newSession?: boolean) => void
   /** Distro names with a session open right now. */
   openWslSessions?: string[]
-  /** SSH host ids with a session open right now. */
+  /** SSH host ids with a session that has actually CONNECTED. Not merely "a tab is open":
+   *  a refused connection leaves a session sitting there, and treating that as proof of
+   *  reachability is what used to leave the dot green next to a connection error. */
   openSshSessions?: string[]
+  /** SSH host ids whose open sessions have all failed to connect. */
+  failedSshSessions?: string[]
 }
 
 /** Which screen the view is showing. SSH keys are a sub-screen behind the header's key
@@ -29,10 +33,22 @@ type Kind = 'all' | 'wsl' | 'ssh'
  * The live-status dot at the head of every row.
  *
  * `idle` is deliberately NOT an error state — it's "we don't know / it isn't up right now",
- * which for a stopped WSL distro or an untested SSH host is entirely normal. Only an actual
- * failed Test goes red.
+ * which for a stopped WSL distro or an untested SSH host is entirely normal. Red is reserved
+ * for something that actually failed: a failed Test, or an open session that couldn't connect.
  */
 type DotState = 'idle' | 'checking' | 'ok' | 'error' | 'live'
+
+/**
+ * The outcome of a row's Test / Check action. `kind` matters: only a CONNECTION probe may
+ * move the status dot. A Claude Code check that fails says nothing about whether the box is
+ * reachable — it usually means the CLI isn't installed there — so it prints its message and
+ * leaves the dot alone.
+ */
+interface ProbeResult {
+  ok: boolean
+  message: string
+  kind: 'conn' | 'claude'
+}
 
 function emptyHost(): SshHostInput {
   return { name: '', host: '', port: 22, username: '', authType: 'password' }
@@ -44,7 +60,8 @@ export default function RemoteView({
   onOpenSession,
   onOpenWslSession,
   openWslSessions = [],
-  openSshSessions = []
+  openSshSessions = [],
+  failedSshSessions = []
 }: Props) {
   const [hosts, setHosts] = useState<SshHostPublic[]>([])
   const [distros, setDistros] = useState<WslDistro[]>([])
@@ -53,8 +70,8 @@ export default function RemoteView({
   const [wslPaths, setWslPaths] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<SshHostInput | null>(null)
   const [testing, setTesting] = useState<string | null>(null)
-  const [testResult, setTestResult] = useState<Record<string, { ok: boolean; message: string }>>({})
-  const [wslTest, setWslTest] = useState<Record<string, { ok: boolean; message: string }>>({})
+  const [testResult, setTestResult] = useState<Record<string, ProbeResult>>({})
+  const [wslTest, setWslTest] = useState<Record<string, ProbeResult>>({})
   const [wslTesting, setWslTesting] = useState<string | null>(null)
   const [keys, setKeys] = useState<SshKeyInfo[]>([])
   const [copied, setCopied] = useState<string | null>(null)
@@ -139,12 +156,14 @@ export default function RemoteView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openKey])
 
-  const testWslDistro = async (name: string) => {
+  const probeWsl = async (name: string, kind: 'conn' | 'claude') => {
     setWslTesting(name)
-    const res = await window.electronAPI.wslTest(name)
-    setWslTest((prev) => ({ ...prev, [name]: res }))
+    const res = kind === 'conn'
+      ? await window.electronAPI.wslTest(name)
+      : await window.electronAPI.wslTestClaude(name)
+    setWslTest((prev) => ({ ...prev, [name]: { ...res, kind } }))
     setWslTesting(null)
-    // A successful probe means the distro booted, so its dot should go live without
+    // Either probe succeeding means the distro booted, so its dot should go live without
     // waiting for the next full reload.
     if (res.ok) setDistros((prev) => prev.map((d) => (d.name === name ? { ...d, running: true } : d)))
   }
@@ -157,10 +176,12 @@ export default function RemoteView({
 
   const remove = async (id: string) => setHosts(await window.electronAPI.sshDelete(id))
 
-  const test = async (id: string) => {
+  const probeHost = async (id: string, kind: 'conn' | 'claude') => {
     setTesting(id)
-    const res = await window.electronAPI.sshTest(id)
-    setTestResult((prev) => ({ ...prev, [id]: res }))
+    const res = kind === 'conn'
+      ? await window.electronAPI.sshTest(id)
+      : await window.electronAPI.sshTestClaude(id)
+    setTestResult((prev) => ({ ...prev, [id]: { ...res, kind } }))
     setTesting(null)
   }
 
@@ -209,14 +230,18 @@ export default function RemoteView({
   const wslDotState = (d: WslDistro): DotState => {
     if (openWslSessions.includes(d.name)) return 'live'
     if (wslTesting === d.name) return 'checking'
-    if (wslTest[d.name] && !wslTest[d.name].ok) return 'error'
+    const probe = wslTest[d.name]
+    if (probe && probe.kind === 'conn' && !probe.ok) return 'error'
     return d.running || wasLiveWsl.includes(d.name) ? 'ok' : 'idle'
   }
   const hostDotState = (h: SshHostPublic): DotState => {
     if (openSshSessions.includes(h.id)) return 'live'
     if (testing === h.id) return 'checking'
+    // A session that's open and failing is present-tense evidence, so it outranks both an
+    // older Test result and the "was reachable earlier" memory.
+    if (failedSshSessions.includes(h.id)) return 'error'
     const res = testResult[h.id]
-    if (res) return res.ok ? 'ok' : 'error'
+    if (res && res.kind === 'conn') return res.ok ? 'ok' : 'error'
     return wasLiveSsh.includes(h.id) ? 'ok' : 'idle'
   }
 
@@ -412,7 +437,8 @@ export default function RemoteView({
                             items={[
                               { label: 'New chat here', onClick: () => onConnectWsl(d.name, cwd || undefined) },
                               { label: cwd ? `Working dir · ${cwd}` : 'Set working dir…', onClick: () => toggleCwd(d.name) },
-                              { label: wslTesting === d.name ? 'Testing…' : 'Test', disabled: wslTesting === d.name, onClick: () => testWslDistro(d.name) },
+                              { label: wslTesting === d.name ? 'Testing…' : 'Test connection', disabled: wslTesting === d.name, onClick: () => probeWsl(d.name, 'conn') },
+                              { label: 'Check Claude Code', disabled: wslTesting === d.name, onClick: () => probeWsl(d.name, 'claude') },
                               { label: 'Hide from Usage & Projects', danger: true, onClick: () => setDistroHidden(d.name, true) }
                             ]}
                           />
@@ -505,7 +531,8 @@ export default function RemoteView({
                             triggerContent={<MoreIcon />}
                             items={[
                               { label: 'New chat here', onClick: () => onConnect(host) },
-                              { label: testing === host.id ? 'Testing…' : 'Test', disabled: testing === host.id, onClick: () => test(host.id) },
+                              { label: testing === host.id ? 'Testing…' : 'Test connection', disabled: testing === host.id, onClick: () => probeHost(host.id, 'conn') },
+                              { label: 'Check Claude Code', disabled: testing === host.id, onClick: () => probeHost(host.id, 'claude') },
                               {
                                 label: 'Edit…',
                                 onClick: () =>

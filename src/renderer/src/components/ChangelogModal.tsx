@@ -23,7 +23,8 @@ const CHANGELOG: Entry[] = [
         title: 'Features',
         items: [
           'Remote & WSL has been rebuilt. Every distro and host is one line instead of a tall card, in a column that no longer stretches its buttons to the far edge of a wide window. There is a filter box and an All / WSL / SSH switch, hidden distros collapse to a single line rather than a card each, and clicking anywhere on a row connects to it.',
-          'Each target carries a live status dot: green with a halo while you have a session open on it, plain green when it is running or has answered, and a neutral dot when it simply is not up — connecting will start it. A failed Test is the only thing that turns it red.',
+          'Each target carries a live status dot: green with a halo while a session on it is connected, plain green when it is running or has answered, and a neutral dot when it simply is not up — connecting will start it. Only something that actually failed turns it red.',
+          'Test is now two separate things. "Test connection" answers whether the box is up — it opens an SSH connection, or starts the distro, and tells you how long that took. "Check Claude Code" is the old probe, and it no longer colours the status dot: a missing CLI says nothing about whether the machine is reachable.',
           'Several sessions on the same server or distro at once. Connect opens another one every time you press it; the tab strip folds them into a single tab carrying the host name and a count, with the sessions themselves in a dropdown, so the strip never grows as you pile them up.',
           'Open sessions are visible from anywhere. The tab strip now also appears on the Remote & WSL and MCP screens, and the Servers icon in the sidebar carries a badge with how many sessions you have running.',
           'Terminals have proper colour. All sixteen ANSI colours are now set instead of falling back to xterm\'s washed-out defaults, so build logs, `ls` and deprecation warnings read the way they do in Windows Terminal — on the app\'s own warm background rather than a cold black one.',
@@ -36,6 +37,7 @@ const CHANGELOG: Entry[] = [
         title: 'Fixes',
         items: [
           'Pasting into a terminal no longer duplicates or garbles what you pasted. Ctrl+V was being handled three times over — once by the app, once by the terminal itself, and once by an invisible Edit menu — which arrived as the same text twice, one copy raw and one bracketed.',
+          'Testing an SSH host with no Claude Code installed used to report success, with "command not found" as the message. It now says the CLI is missing and gives you the command to install it.',
         ],
       },
     ],

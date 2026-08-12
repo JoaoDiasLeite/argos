@@ -20,6 +20,10 @@ interface Props {
    *  the terminal refit-on-show (see RemoteTerminal/ChatTerminal `active` prop). */
   active?: boolean
   onBack: () => void
+  /** Reports this session's connection state upward. App.tsx keeps it per session so the
+   *  Remote & WSL list's status dots reflect what actually happened — an open tab is not
+   *  evidence a host is reachable, since the connection may have been refused. */
+  onStatusChange?: (status: 'connecting' | 'connected' | 'error') => void
 }
 
 interface RunLogEntry {
@@ -75,7 +79,7 @@ function uncToPosixPath(distro: string, uncPath: string): string {
   return rest.startsWith('/') ? rest : `/${rest}`
 }
 
-export default function RemoteSessionView({ target, seq, active, onBack }: Props) {
+export default function RemoteSessionView({ target, seq, active, onBack, onStatusChange }: Props) {
   const isSsh = target.kind === 'ssh'
   // targetId is per TARGET (the run log is shared by every session on the same box, which
   // is what you want — it's that machine's command history). terminalId is per SESSION.
@@ -129,6 +133,11 @@ export default function RemoteSessionView({ target, seq, active, onBack }: Props
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSsh, isSsh ? target.host.id : target.distro])
+
+  useEffect(() => {
+    onStatusChange?.(status)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status])
 
   useEffect(() => {
     setPathInput(cwd)

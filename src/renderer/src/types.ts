@@ -1081,6 +1081,7 @@ declare global {
       sshSave: (host: SshHostInput) => Promise<SshHostPublic[]>
       sshDelete: (id: string) => Promise<SshHostPublic[]>
       sshTest: (id: string) => Promise<{ ok: boolean; message: string }>
+      sshTestClaude: (id: string) => Promise<{ ok: boolean; message: string }>
       sshKeysList: () => Promise<SshKeyInfo[]>
       sshKeysGenerate: (name: string, comment?: string) => Promise<GenerateKeyResult>
       sshKeysPublic: (privatePath: string) => Promise<string | null>
@@ -1107,6 +1108,7 @@ declare global {
       // WSL
       wslList: () => Promise<WslDistro[]>
       wslTest: (distro: string) => Promise<{ ok: boolean; message: string }>
+      wslTestClaude: (distro: string) => Promise<{ ok: boolean; message: string }>
       wslHidden: () => Promise<string[]>
       wslSetHidden: (distro: string, hidden: boolean) => Promise<string[]>
       wslHistory: (distro: string) => Promise<{ ok: boolean; commands?: string[]; error?: string }>
