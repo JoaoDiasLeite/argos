@@ -1,6 +1,6 @@
 {
   "name": "argos",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Desktop GUI for Claude",
   "main": "out/main/index.js",
   "scripts": {
