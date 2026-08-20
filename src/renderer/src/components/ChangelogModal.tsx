@@ -18,7 +18,18 @@ const CHANGELOG: Entry[] = [
     version: '1.4.0',
     date: '2026-08-20',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Claude Opus 5 is in the model picker, and new chats now start on Sonnet 5 instead of Sonnet 4.6. Chats you already have keep whatever model you picked for them.',
+          'The model list keeps itself current. On launch the app asks Anthropic\'s own model endpoint and the installed Codex CLI what exists, so a model released after this build shows up on its own — with its real name and context window, marked "new" because prices are not something either source publishes.',
+          'Discovery no longer needs an API key. It uses whatever credentials you are already signed in with, which previously meant anyone logged in the normal way got no discovery at all.',
+          'What discovery finds is remembered between launches, so opening the app offline still lists everything you saw last time instead of quietly falling back to the models baked into the build.',
+          'A price you set yourself in models.json is now used for cost, not just for the label in the picker.',
+        ],
+      },
+    ]
   },
   {
     version: '1.3.0',

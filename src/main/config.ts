@@ -19,6 +19,7 @@ export interface ModelInfo {
 }
 
 export const MODELS: ModelInfo[] = [
+  { id: 'claude-opus-5', label: 'Opus 5', inputPrice: 5, outputPrice: 25, context: '1M', provider: 'claude' },
   { id: 'claude-opus-4-8', label: 'Opus 4.8', inputPrice: 5, outputPrice: 25, context: '1M', provider: 'claude' },
   { id: 'claude-opus-4-7', label: 'Opus 4.7', inputPrice: 5, outputPrice: 25, context: '1M', provider: 'claude' },
   { id: 'claude-opus-4-6', label: 'Opus 4.6', inputPrice: 5, outputPrice: 25, context: '1M', provider: 'claude' },
@@ -42,8 +43,18 @@ export const MODELS: ModelInfo[] = [
   { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash', inputPrice: 0.5, outputPrice: 3, context: '1M', provider: 'gemini' }
 ]
 
+// Effective catalog. Starts as the bundled defaults and is replaced at launch by
+// the merged catalog from models-catalog.ts (bundled + the user's models.json +
+// live discovery), so pricing for a model we only learned about at runtime is
+// used for cost math instead of silently falling back to MODELS[0].
+let catalog: ModelInfo[] = MODELS
+
+export function setCatalog(models: ModelInfo[]): void {
+  catalog = models.length > 0 ? models : MODELS
+}
+
 export function priceFor(modelId: string): ModelInfo {
-  return MODELS.find((m) => modelId.startsWith(m.id)) ?? MODELS[0]
+  return catalog.find((m) => modelId.startsWith(m.id)) ?? MODELS[0]
 }
 
 export function providerFor(modelId: string | undefined): ProviderId {
@@ -89,7 +100,7 @@ const configPath = path.join(app.getPath('userData'), 'config.json')
 let config: AppConfig = {
   // Sonnet is the default: ~40% cheaper per token than Opus and ample for most
   // chat/coding turns. Opus/Fable remain one click away in the per-chat model picker.
-  defaultModel: 'claude-sonnet-4-6',
+  defaultModel: 'claude-sonnet-5',
   // 0 = no personal budget set (no % bar shown). These are user budgets, NOT Anthropic
   // plan limits, which are metered server-side and not readable locally.
   limits: { hourUsd: 0, sessionUsd: 0, weekUsd: 0 },

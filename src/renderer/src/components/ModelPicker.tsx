@@ -124,7 +124,7 @@ export default function ModelPicker({ models, value, onChange, compact, disabled
                 </div>
                 <div className="model-picker-item-meta">
                   {m.discovered
-                    ? 'Update available — pricing not yet catalogued'
+                    ? `${m.context !== '?' ? `${m.context} · ` : ''}new — pricing not catalogued yet`
                     : m.inputPrice === 0 && m.outputPrice === 0
                       ? 'Coming soon'
                       : `${m.context} · $${m.inputPrice}/$${m.outputPrice} per Mtok`}

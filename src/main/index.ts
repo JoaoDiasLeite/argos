@@ -402,6 +402,10 @@ app.whenReady().then(() => {
   loadAccounts()
   loadProviderAccounts()
   loadConfig()
+  // Fire and forget: builds the merged model catalog (bundled + models.json +
+  // live discovery) and publishes it to config.ts, so pricing for a model we
+  // only learn about at runtime is in place before the first turn is costed.
+  buildModelsCatalog().catch(() => {})
   startScheduler()
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
   // Before any window exists, so the default menu's clipboard accelerators never get a chance
