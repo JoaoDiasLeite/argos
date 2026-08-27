@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   boilerplateKeys,
   contentToText,
+  isInjectedUserEntry,
   meaningfulUserText,
   previewKey,
   previewRestatesTitle,
@@ -172,5 +173,43 @@ describe('boilerplateKeys', () => {
     // The caller passes one project's previews: /security-review is noise where it
     // runs weekly and a fine preview where it ran once.
     expect(boilerplateKeys([REVIEW]).size).toBe(0)
+  })
+})
+
+describe('isInjectedUserEntry', () => {
+  it('flags an entry the CLI marked as its own', () => {
+    expect(isInjectedUserEntry({ isMeta: true, message: { content: 'anything' } })).toBe(true)
+  })
+
+  it('flags a loaded skill body', () => {
+    // The real shape that turned a preview into a skill's install path.
+    expect(
+      isInjectedUserEntry({
+        message: {
+          content: [
+            { type: 'text', text: 'Base directory for this skill: /home/jdl/.claude/skills/commit' }
+          ]
+        }
+      })
+    ).toBe(true)
+  })
+
+  it('flags a pasted image and a background-task notification', () => {
+    expect(isInjectedUserEntry({ message: { content: '[Image: source: clipboard]' } })).toBe(true)
+    expect(isInjectedUserEntry({ message: { content: '<task-notification>done</task-notification>' } })).toBe(true)
+  })
+
+  it('does not flag an interruption', () => {
+    // The text is the CLI's, but the action was the owner's — it belongs to them.
+    expect(isInjectedUserEntry({ message: { content: '[Request interrupted by user]' } })).toBe(false)
+  })
+
+  it('does not flag an ordinary message', () => {
+    expect(isInjectedUserEntry({ message: { content: 'lets fix the corners' } })).toBe(false)
+    expect(isInjectedUserEntry({ isMeta: false, message: { content: 'hi' } })).toBe(false)
+  })
+
+  it('does not flag an empty entry', () => {
+    expect(isInjectedUserEntry({ message: {} })).toBe(false)
   })
 })

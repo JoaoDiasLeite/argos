@@ -60,7 +60,9 @@
 
 .peek-tags {
   display: flex;
-  align-items: center;
+  /* flex-start, not center: the inline editor is a column and would otherwise
+     centre itself against the chips row it replaces. */
+  align-items: flex-start;
   flex-wrap: wrap;
   gap: 5px;
   padding: 10px 14px 12px;
@@ -151,8 +153,12 @@
 .peek-keys {
   margin-left: auto;
   display: flex;
+  align-items: center;
   gap: 4px;
+  font-size: 10.5px;
+  color: var(--text-2);
 }
+.peek-keys-sep { opacity: 0.6; }
 
 .peek-keys kbd {
   font-family: var(--font-mono);
@@ -163,4 +169,9 @@
   border-bottom-width: 2px;
   border-radius: 3px;
   padding: 1px 5px;
+}
+
+/* The inline editor should use the panel's width, not the popover's fixed 250px. */
+.peek-tags .tag-editor.inline {
+  width: 100%;
 }

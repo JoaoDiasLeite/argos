@@ -71,6 +71,32 @@ export function meaningfulUserText(content: unknown): string {
 }
 
 /**
+ * Not every `type: "user"` entry is the owner's.
+ *
+ * The CLI records into the human's channel everything it injects into the context:
+ * the full body of a loaded skill, the `[Image: …]` line for a pasted image, the
+ * background-task notifications. None of it was typed by anyone, and taking the
+ * first of them as "what this conversation was about" produces a preview made of a
+ * skill's install path.
+ *
+ * `[Request interrupted by user]` is deliberately NOT here: the text is the CLI's
+ * but the action was the owner's, so it belongs to them.
+ */
+export function isInjectedUserEntry(obj: {
+  isMeta?: boolean
+  message?: { content?: unknown }
+}): boolean {
+  if (obj?.isMeta === true) return true
+  const text = contentToText(obj?.message?.content).trimStart()
+  if (!text) return false
+  return (
+    text.startsWith('[Image:') ||
+    text.startsWith('<task-notification>') ||
+    text.startsWith('Base directory for this skill:')
+  )
+}
+
+/**
  * The comparison key for "is this the same opening as that one".
  *
  * Case- and whitespace-insensitive, and only the first stretch: two runs of the same

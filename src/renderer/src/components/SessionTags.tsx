@@ -105,6 +105,13 @@ interface EditorProps {
   colorFor: (tag: string) => string
   onSaved: (tags: string[]) => void
   onClose: () => void
+  /**
+   * `popover` floats over a list row and closes on an outside click. `inline` sits
+   * in the flow of a panel that is already about this session, so it has no caret
+   * and does not close when you click elsewhere in that panel — clicking the panel
+   * you are editing in should not dismiss the editor.
+   */
+  variant?: 'popover' | 'inline'
 }
 
 /**
@@ -114,7 +121,14 @@ interface EditorProps {
  * how the format works anyway — so there is no save button to forget and no
  * half-applied state if the popover is dismissed.
  */
-export function TagEditor({ session, vocabulary, colorFor, onSaved, onClose }: EditorProps) {
+export function TagEditor({
+  session,
+  vocabulary,
+  colorFor,
+  onSaved,
+  onClose,
+  variant = 'popover'
+}: EditorProps) {
   const [tags, setTags] = useState<string[]>(session.tags)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
@@ -133,13 +147,13 @@ export function TagEditor({ session, vocabulary, colorFor, onSaved, onClose }: E
         onClose()
       }
     }
-    document.addEventListener('mousedown', onDown)
+    if (variant === 'popover') document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [onClose])
+  }, [onClose, variant])
 
   const commit = async (next: string[]) => {
     setBusy(true)
@@ -174,8 +188,12 @@ export function TagEditor({ session, vocabulary, colorFor, onSaved, onClose }: E
     .slice(0, 6)
 
   return (
-    <div className="tag-editor" ref={ref} onClick={(e) => e.stopPropagation()}>
-      <div className="tag-editor-head">Tags</div>
+    <div
+      className={`tag-editor ${variant}`}
+      ref={ref}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {variant === 'popover' && <div className="tag-editor-head">Tags</div>}
       {tags.length > 0 ? (
         <TagChips tags={tags} colorFor={colorFor} onRemove={(t) => commit(tags.filter((x) => x !== t))} />
       ) : (

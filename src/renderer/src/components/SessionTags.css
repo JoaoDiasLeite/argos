@@ -64,6 +64,22 @@
    width. Hanging it off the bottom of the card (top: 100%) read as an orphan
    floating over the next row — there was nothing tying it to the conversation
    it edits. */
+/* Inline: no floating, no caret, no outside-click dismissal — it lives inside a
+   panel that is already about this conversation. */
+.tag-editor.inline {
+  position: static;
+  width: auto;
+  padding: 0;
+  gap: 7px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.tag-editor.inline::before,
+.tag-editor.inline::after {
+  content: none;
+}
+
 .tag-editor {
   position: absolute;
   z-index: 40;

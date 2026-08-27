@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
 import { CCSessionMeta, SessionPeek as Peek } from '../types'
-import { TagChips } from './SessionTags'
+import { TagChips, TagEditor } from './SessionTags'
 import './SessionPeek.css'
 
 interface Props {
   session: CCSessionMeta
   colorFor: (tag: string) => string
+  vocabulary: string[]
   onResume: () => void
   onClose: () => void
-  onEditTags: () => void
+  onTagsSaved: (tags: string[]) => void
 }
 
 function fmtCost(usd: number): string {
@@ -24,9 +25,17 @@ function fmtCost(usd: number): string {
  * height leaves room for more of the ending — which is the part that answers the
  * question.
  */
-export default function SessionPeek({ session, colorFor, onResume, onClose, onEditTags }: Props) {
+export default function SessionPeek({
+  session,
+  colorFor,
+  vocabulary,
+  onResume,
+  onClose,
+  onTagsSaved
+}: Props) {
   const [peek, setPeek] = useState<Peek | null>(null)
   const [loading, setLoading] = useState(true)
+  const [editingTags, setEditingTags] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -44,6 +53,9 @@ export default function SessionPeek({ session, colorFor, onResume, onClose, onEd
       .catch(() => {
         if (!cancelled) setLoading(false)
       })
+    // Editing follows the conversation: arrowing to another one closes the editor
+    // rather than leaving it open over a session it no longer belongs to.
+    setEditingTags(false)
     return () => {
       cancelled = true
     }
@@ -72,10 +84,26 @@ export default function SessionPeek({ session, colorFor, onResume, onClose, onEd
       </div>
 
       <div className="peek-tags">
-        <TagChips tags={session.tags} colorFor={colorFor} />
-        <button className="peek-tag-add" onClick={onEditTags}>
-          {session.tags.length ? 'Edit tags' : '+ tag'}
-        </button>
+        {/* Edited here, in the panel that is already about this conversation — the
+            first version reached back into the list and opened the row's popover,
+            which put the editor at the other end of the window from the button. */}
+        {editingTags ? (
+          <TagEditor
+            variant="inline"
+            session={session}
+            vocabulary={vocabulary}
+            colorFor={colorFor}
+            onSaved={onTagsSaved}
+            onClose={() => setEditingTags(false)}
+          />
+        ) : (
+          <>
+            <TagChips tags={session.tags} colorFor={colorFor} />
+            <button className="peek-tag-add" onClick={() => setEditingTags(true)}>
+              {session.tags.length ? 'Edit tags' : '+ tag'}
+            </button>
+          </>
+        )}
       </div>
 
       <div className="peek-body">
@@ -110,9 +138,10 @@ export default function SessionPeek({ session, colorFor, onResume, onClose, onEd
           </svg>
           Resume
         </button>
-        <span className="peek-keys" aria-hidden="true">
-          <kbd>↑↓</kbd>
-          <kbd>⏎</kbd>
+        {/* Said, not implied. Bare keycaps in a corner read as buttons — they were
+            asked what they did, which is the answer. */}
+        <span className="peek-keys">
+          <kbd>↑↓</kbd> browse <span className="peek-keys-sep">·</span> <kbd>⏎</kbd> resume
         </span>
       </div>
     </aside>

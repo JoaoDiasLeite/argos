@@ -5,6 +5,7 @@ import { costFromUsage, splitCacheWrite } from './providers/cost'
 import { iterJsonl, iterJsonlEntries, sniffCwd } from './jsonl'
 import {
   boilerplateKeys,
+  isInjectedUserEntry,
   meaningfulUserText,
   previewKey,
   previewRestatesTitle,
@@ -209,6 +210,9 @@ export async function readSessionPeek(
       if (obj.type !== 'user' && obj.type !== 'assistant') continue
       if (!obj.message) continue
 
+      // A skill's body or a task notification is not what this conversation was
+      // about, and it is not where it left off either.
+      if (obj.type === 'user' && isInjectedUserEntry(obj)) continue
       const text =
         obj.type === 'user'
           ? meaningfulUserText(obj.message.content)
@@ -434,7 +438,7 @@ export async function listSessions(sourceId: string, encodedDir: string): Promis
         }
         if (obj.type === 'user' && obj.message) {
           messageCount++
-          if (!preview) {
+          if (!preview && !isInjectedUserEntry(obj)) {
             // Empty means this entry carried no prose of the owner's — a slash
             // command's own body, a loaded skill, a reminder. Falling through to the
             // next entry is what makes the preview the conversation rather than the

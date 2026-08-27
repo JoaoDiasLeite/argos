@@ -492,9 +492,16 @@ export default function ProjectsView({ onResume }: Props) {
             <SessionPeek
               session={peeked}
               colorFor={colorFor}
+              vocabulary={localVocab}
               onResume={() => onResume(peeked)}
               onClose={() => setPeeked(null)}
-              onEditTags={() => setEditingTags(peeked.sessionId)}
+              onTagsSaved={(tags) => {
+                setSessions((cur) =>
+                  cur.map((x) => (x.sessionId === peeked.sessionId ? { ...x, tags } : x))
+                )
+                setPeeked({ ...peeked, tags })
+                reloadLabels()
+              }}
             />
           )}
         </div>
