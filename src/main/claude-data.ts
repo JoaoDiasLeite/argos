@@ -1,7 +1,8 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
-import { priceFor } from './config'
+import { costFromUsage, splitCacheWrite } from './providers/cost'
+import { iterJsonl, iterJsonlEntries, sniffCwd } from './jsonl'
 import { getWslClaudeRoots } from './wsl'
 import { storeGet, storeSet } from './store'
 import { readJsonFile } from './json-file'
@@ -185,7 +186,7 @@ function decodeFallback(encoded: string): string {
   return s
 }
 
-function cwdFromSessions(dir: string): string | null {
+async function cwdFromSessions(dir: string): Promise<string | null> {
   let files: string[]
   try {
     files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))
@@ -194,16 +195,8 @@ function cwdFromSessions(dir: string): string | null {
   }
   for (const file of files) {
     try {
-      const lines = fs.readFileSync(path.join(dir, file), 'utf-8').split('\n')
-      for (const line of lines) {
-        if (!line.includes('"cwd"')) continue
-        try {
-          const obj = JSON.parse(line)
-          if (typeof obj.cwd === 'string' && obj.cwd) return obj.cwd
-        } catch {
-          /* keep scanning */
-        }
-      }
+      const cwd = await sniffCwd(path.join(dir, file))
+      if (cwd) return cwd
     } catch {
       /* next file */
     }
@@ -211,10 +204,14 @@ function cwdFromSessions(dir: string): string | null {
   return null
 }
 
-function resolveRealPath(src: ClaudeSource, encodedDir: string, pathMap: Map<string, string>): string {
+async function resolveRealPath(
+  src: ClaudeSource,
+  encodedDir: string,
+  pathMap: Map<string, string>
+): Promise<string> {
   return (
     pathMap.get(encodedDir) ??
-    cwdFromSessions(path.join(src.projectsDir, encodedDir)) ??
+    (await cwdFromSessions(path.join(src.projectsDir, encodedDir))) ??
     decodeFallback(encodedDir)
   )
 }
@@ -237,7 +234,7 @@ function parseTimestamp(v: unknown): number {
 
 // ─── Projects / sessions ────────────────────────────────────────────────────
 
-function projectsForSource(src: ClaudeSource): CCProject[] {
+async function projectsForSource(src: ClaudeSource): Promise<CCProject[]> {
   if (!fs.existsSync(src.projectsDir)) return []
   const pathMap = realPathMap(src.claudeJsonPath)
   const result: CCProject[] = []
@@ -262,7 +259,7 @@ function projectsForSource(src: ClaudeSource): CCProject[] {
       const st = safeStat(path.join(dir, f))
       if (st && st.mtimeMs > lastActive) lastActive = st.mtimeMs
     }
-    const realPath = resolveRealPath(src, entry.name, pathMap)
+    const realPath = await resolveRealPath(src, entry.name, pathMap)
     result.push({
       encodedDir: entry.name,
       realPath,
@@ -282,7 +279,7 @@ function projectsForSource(src: ClaudeSource): CCProject[] {
 export async function getAllProjects(): Promise<CCProject[]> {
   const sources = await getSources()
   const all: CCProject[] = []
-  for (const src of sources) all.push(...projectsForSource(src))
+  for (const src of sources) all.push(...(await projectsForSource(src)))
   return all.sort((a, b) => b.lastActive - a.lastActive)
 }
 
@@ -291,7 +288,7 @@ export async function listSessions(sourceId: string, encodedDir: string): Promis
   if (!src) return []
   const dir = path.join(src.projectsDir, encodedDir)
   if (!fs.existsSync(dir)) return []
-  const realPath = resolveRealPath(src, encodedDir, realPathMap(src.claudeJsonPath))
+  const realPath = await resolveRealPath(src, encodedDir, realPathMap(src.claudeJsonPath))
 
   const sessions: CCSessionMeta[] = []
   let files: string[]
@@ -311,14 +308,7 @@ export async function listSessions(sourceId: string, encodedDir: string): Promis
     let createdAt = 0
     let updatedAt = st?.mtimeMs ?? 0
     try {
-      for (const line of fs.readFileSync(full, 'utf-8').split('\n')) {
-        if (!line.trim()) continue
-        let obj: any
-        try {
-          obj = JSON.parse(line)
-        } catch {
-          continue
-        }
+      for await (const obj of iterJsonl(full)) {
         if (obj.type === 'ai-title' && obj.aiTitle) title = obj.aiTitle
         if (obj.type === 'assistant' && obj.message) {
           messageCount++
@@ -403,7 +393,7 @@ export async function searchSessions(query: string, limit = 100): Promise<Search
     }
     for (const entry of dirs) {
       if (!entry.isDirectory()) continue
-      const realPath = resolveRealPath(src, entry.name, pathMap)
+      const realPath = await resolveRealPath(src, entry.name, pathMap)
       const projectName = realPath.split(/[\\/]/).filter(Boolean).pop() ?? entry.name
       const dir = path.join(src.projectsDir, entry.name)
       let files: string[]
@@ -412,42 +402,38 @@ export async function searchSessions(query: string, limit = 100): Promise<Search
       } catch {
         continue
       }
+      const projectMatch = projectName.toLowerCase().includes(q)
       for (const file of files) {
         const sessionId = file.replace(/\.jsonl$/, '')
         const full = path.join(dir, file)
         const st = safeStat(full)
-        let content = ''
-        try {
-          content = fs.readFileSync(full, 'utf-8')
-        } catch {
-          continue
-        }
-        const projectMatch = projectName.toLowerCase().includes(q)
-        if (!projectMatch && !content.toLowerCase().includes(q)) continue
 
-        // Extract title + a snippet around the first textual match.
+        // One pass does both jobs the buffered read used to split: decide whether
+        // the session matches at all (over the serialized line, so a hit inside a
+        // tool input still counts) and collect the title/snippet/model on the way.
+        let rawMatch = false
         let title = ''
         let snippet = ''
         let updatedAt = st?.mtimeMs ?? 0
         let model: string | undefined
-        for (const line of content.split('\n')) {
-          if (!line.trim()) continue
-          let obj: any
-          try {
-            obj = JSON.parse(line)
-          } catch {
-            continue
+        try {
+          for await (const { raw, obj } of iterJsonlEntries(full)) {
+            if (!rawMatch && raw.toLowerCase().includes(q)) rawMatch = true
+            if (obj.type === 'ai-title' && obj.aiTitle) title = obj.aiTitle
+            if (obj.type === 'assistant' && obj.message?.model) model = obj.message.model
+            const ts = parseTimestamp(obj.timestamp)
+            if (ts) updatedAt = Math.max(updatedAt, ts)
+            if (!snippet && (obj.type === 'assistant' || obj.type === 'user') && obj.message) {
+              const txt = plainText(obj.message.content)
+              const idx = txt.toLowerCase().indexOf(q)
+              if (idx >= 0) snippet = txt.slice(Math.max(0, idx - 40), idx + 80).replace(/\s+/g, ' ').trim()
+            }
           }
-          if (obj.type === 'ai-title' && obj.aiTitle) title = obj.aiTitle
-          if (obj.type === 'assistant' && obj.message?.model) model = obj.message.model
-          const ts = parseTimestamp(obj.timestamp)
-          if (ts) updatedAt = Math.max(updatedAt, ts)
-          if (!snippet && (obj.type === 'assistant' || obj.type === 'user') && obj.message) {
-            const txt = plainText(obj.message.content)
-            const idx = txt.toLowerCase().indexOf(q)
-            if (idx >= 0) snippet = txt.slice(Math.max(0, idx - 40), idx + 80).replace(/\s+/g, ' ').trim()
-          }
+        } catch {
+          continue
         }
+        if (!projectMatch && !rawMatch) continue
+
         hits.push({
           sessionId,
           encodedDir: entry.name,
@@ -495,60 +481,49 @@ export async function readSession(
   const messages: CCTranscriptMessage[] = []
   const toolResults = new Map<string, { result: string; isError: boolean }>()
 
-  let lines: string[]
+  // A tool_result always appears after the tool_use it answers, so results are
+  // stitched onto the messages after the read rather than during it. That is what
+  // lets this be a single pass — the buffered version walked the whole transcript
+  // twice, once for the results and once for the messages.
   try {
-    lines = fs.readFileSync(full, 'utf-8').split('\n')
-  } catch {
-    return []
-  }
-
-  for (const line of lines) {
-    if (!line.trim()) continue
-    let obj: any
-    try {
-      obj = JSON.parse(line)
-    } catch {
-      continue
-    }
-    if (obj.type === 'user' && obj.message && Array.isArray(obj.message.content)) {
-      for (const b of obj.message.content) {
-        if (b.type === 'tool_result') {
-          const txt =
-            typeof b.content === 'string'
-              ? b.content
-              : Array.isArray(b.content)
-                ? b.content.map((c: any) => c.text ?? '').join('')
-                : ''
-          toolResults.set(b.tool_use_id, { result: txt.slice(0, 4000), isError: !!b.is_error })
+    for await (const obj of iterJsonl(full)) {
+      if (obj.type === 'user' && obj.message && Array.isArray(obj.message.content)) {
+        for (const b of obj.message.content) {
+          if (b.type === 'tool_result') {
+            const txt =
+              typeof b.content === 'string'
+                ? b.content
+                : Array.isArray(b.content)
+                  ? b.content.map((c: any) => c.text ?? '').join('')
+                  : ''
+            toolResults.set(b.tool_use_id, { result: txt.slice(0, 4000), isError: !!b.is_error })
+          }
         }
       }
+      if ((obj.type === 'assistant' || obj.type === 'user') && obj.message) {
+        const { text, thinking, tools } = blockText(obj.message.content)
+        const isToolResultOnly =
+          obj.type === 'user' &&
+          Array.isArray(obj.message.content) &&
+          obj.message.content.every((b: any) => b.type === 'tool_result')
+        if (isToolResultOnly) continue
+        if (!text && !thinking && tools.length === 0) continue
+        messages.push({
+          role: obj.type === 'assistant' ? 'assistant' : 'user',
+          text,
+          thinking: thinking || undefined,
+          toolCalls: tools,
+          timestamp: parseTimestamp(obj.timestamp)
+        })
+      }
     }
+  } catch {
+    // Unreadable transcript. Return whatever was parsed before the failure rather
+    // than nothing: a truncated conversation still reads, an empty pane doesn't.
   }
 
-  for (const line of lines) {
-    if (!line.trim()) continue
-    let obj: any
-    try {
-      obj = JSON.parse(line)
-    } catch {
-      continue
-    }
-    if ((obj.type === 'assistant' || obj.type === 'user') && obj.message) {
-      const { text, thinking, tools } = blockText(obj.message.content)
-      const isToolResultOnly =
-        obj.type === 'user' &&
-        Array.isArray(obj.message.content) &&
-        obj.message.content.every((b: any) => b.type === 'tool_result')
-      if (isToolResultOnly) continue
-      if (!text && !thinking && tools.length === 0) continue
-      messages.push({
-        role: obj.type === 'assistant' ? 'assistant' : 'user',
-        text,
-        thinking: thinking || undefined,
-        toolCalls: tools.map((t) => ({ ...t, ...(toolResults.get(t.id) ?? {}) })),
-        timestamp: parseTimestamp(obj.timestamp)
-      })
-    }
+  for (const m of messages) {
+    m.toolCalls = m.toolCalls.map((t) => ({ ...t, ...(toolResults.get(t.id) ?? {}) }))
   }
   return messages
 }
@@ -582,13 +557,13 @@ const HOUR = 3600_000
 const SESSION = 5 * HOUR
 const WEEK = 7 * 24 * HOUR
 
-function collectUsage(
+async function collectUsage(
   src: ClaudeSource,
   agg: Map<string, UsageEntry>,
   win: UsageWindows,
   now: number,
   seen: Set<string>
-): void {
+): Promise<void> {
   if (!fs.existsSync(src.projectsDir)) return
   const pathMap = realPathMap(src.claudeJsonPath)
   let dirs: fs.Dirent[]
@@ -599,7 +574,7 @@ function collectUsage(
   }
   for (const entry of dirs) {
     if (!entry.isDirectory()) continue
-    const realPath = resolveRealPath(src, entry.name, pathMap)
+    const realPath = await resolveRealPath(src, entry.name, pathMap)
     const projectName = realPath.split(/[\\/]/).filter(Boolean).pop() ?? entry.name
     const dir = path.join(src.projectsDir, entry.name)
     let files: string[]
@@ -609,81 +584,72 @@ function collectUsage(
       continue
     }
     for (const file of files) {
-      let lines: string[]
       try {
-        lines = fs.readFileSync(path.join(dir, file), 'utf-8').split('\n')
+        // Only assistant messages carry usage; the raw prefilter keeps the parse off
+        // the ~95% of lines that can't contribute, which matters because this sweeps
+        // every transcript in every project.
+        const usageOnly = { match: (raw: string) => raw.includes('"usage"') }
+        for await (const obj of iterJsonl(path.join(dir, file), usageOnly)) {
+          if (obj.type !== 'assistant' || !obj.message?.usage) continue
+          // Resume re-logs the same assistant message 2–3× (same message.id / requestId,
+          // different uuid). Count each real API response once or usage inflates ~2.3×.
+          const dedupKey = obj.message?.id ?? obj.requestId ?? obj.uuid
+          if (dedupKey) {
+            if (seen.has(dedupKey)) continue
+            seen.add(dedupKey)
+          }
+          const u = obj.message.usage
+          const inTok = u.input_tokens ?? 0
+          const outTok = u.output_tokens ?? 0
+          const { write5m, write1h } = splitCacheWrite(u)
+          const cacheRead = u.cache_read_input_tokens ?? 0
+          const cacheTok = write5m + write1h + cacheRead
+          const model = obj.message.model ?? 'unknown'
+          const cost = costFromUsage(model, u)
+          const tokens = inTok + outTok
+          const ts = parseTimestamp(obj.timestamp)
+          const day = ts ? new Date(ts).toISOString().slice(0, 10) : 'unknown'
+
+          const key = `${src.id}|${day}|${model}|${projectName}`
+          const e = agg.get(key)
+          if (e) {
+            e.inputTokens += inTok
+            e.outputTokens += outTok
+            e.cacheTokens += cacheTok
+            e.costUsd += cost
+          } else {
+            agg.set(key, {
+              day,
+              model,
+              project: projectName,
+              source: src.id,
+              inputTokens: inTok,
+              outputTokens: outTok,
+              cacheTokens: cacheTok,
+              costUsd: cost
+            })
+          }
+
+          // Rolling windows (need message-level timestamps).
+          if (ts) {
+            const age = now - ts
+            if (age <= HOUR) {
+              win.hour.costUsd += cost
+              win.hour.tokens += tokens
+            }
+            if (age <= SESSION) {
+              win.session.costUsd += cost
+              win.session.tokens += tokens
+            }
+            if (age <= WEEK) {
+              win.week.costUsd += cost
+              win.week.tokens += tokens
+            }
+          }
+        }
       } catch {
+        // Unreadable transcript — it contributes nothing and must not stop the rest.
         continue
-      }
-      for (const line of lines) {
-        if (!line.includes('"usage"')) continue
-        let obj: any
-        try {
-          obj = JSON.parse(line)
-        } catch {
-          continue
-        }
-        if (obj.type !== 'assistant' || !obj.message?.usage) continue
-        // Resume re-logs the same assistant message 2–3× (same message.id / requestId,
-        // different uuid). Count each real API response once or usage inflates ~2.3×.
-        const dedupKey = obj.message?.id ?? obj.requestId ?? obj.uuid
-        if (dedupKey) {
-          if (seen.has(dedupKey)) continue
-          seen.add(dedupKey)
-        }
-        const u = obj.message.usage
-        const inTok = u.input_tokens ?? 0
-        const outTok = u.output_tokens ?? 0
-        const cacheCreate = u.cache_creation_input_tokens ?? 0
-        const cacheRead = u.cache_read_input_tokens ?? 0
-        const cacheTok = cacheCreate + cacheRead
-        const model = obj.message.model ?? 'unknown'
-        const p = priceFor(model)
-        const cost =
-          (inTok * p.inputPrice) / 1e6 +
-          (outTok * p.outputPrice) / 1e6 +
-          (cacheCreate * p.inputPrice * 1.25) / 1e6 +
-          (cacheRead * p.inputPrice * 0.1) / 1e6
-        const tokens = inTok + outTok
-        const ts = parseTimestamp(obj.timestamp)
-        const day = ts ? new Date(ts).toISOString().slice(0, 10) : 'unknown'
-
-        const key = `${src.id}|${day}|${model}|${projectName}`
-        const e = agg.get(key)
-        if (e) {
-          e.inputTokens += inTok
-          e.outputTokens += outTok
-          e.cacheTokens += cacheTok
-          e.costUsd += cost
-        } else {
-          agg.set(key, {
-            day,
-            model,
-            project: projectName,
-            source: src.id,
-            inputTokens: inTok,
-            outputTokens: outTok,
-            cacheTokens: cacheTok,
-            costUsd: cost
-          })
-        }
-
-        // Rolling windows (need message-level timestamps).
-        if (ts) {
-          const age = now - ts
-          if (age <= HOUR) {
-            win.hour.costUsd += cost
-            win.hour.tokens += tokens
-          }
-          if (age <= SESSION) {
-            win.session.costUsd += cost
-            win.session.tokens += tokens
-          }
-          if (age <= WEEK) {
-            win.week.costUsd += cost
-            win.week.tokens += tokens
-          }
-        }
       }
     }
   }
@@ -692,7 +658,9 @@ function collectUsage(
 const USAGE_CACHE_TTL = 12 * HOUR
 // Bump when the usage computation changes so stale cached reports are discarded.
 // v2: dedupe re-logged assistant messages (was inflating cost/tokens ~2.3×).
-const USAGE_CACHE_VERSION = 2
+// v3: price cache writes by their TTL — Claude Code writes 1h entries, which cost
+//     2× input, not the flat 1.25× every write was charged at.
+const USAGE_CACHE_VERSION = 3
 
 export async function getUsage(force = false): Promise<UsageReport> {
   const now = Date.now()
@@ -709,7 +677,7 @@ export async function getUsage(force = false): Promise<UsageReport> {
   const seen = new Set<string>()
   for (const src of await getSources()) {
     try {
-      collectUsage(src, agg, win, now, seen)
+      await collectUsage(src, agg, win, now, seen)
     } catch {
       // skip unreadable source
     }

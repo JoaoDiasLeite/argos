@@ -27,6 +27,9 @@ const CHANGELOG: Entry[] = [
           'Discovery no longer needs an API key. It uses whatever credentials you are already signed in with, which previously meant anyone logged in the normal way got no discovery at all.',
           'What discovery finds is remembered between launches, so opening the app offline still lists everything you saw last time instead of quietly falling back to the models baked into the build.',
           'A price you set yourself in models.json is now used for cost, not just for the label in the picker.',
+          'Chats run with Claude Code\'s own instructions again, in the form that stays cached. They were running on tool definitions alone, and the working-directory and git-status lines that used to sit inside the cached prompt now travel outside it — so editing a file no longer throws away part of the cache and makes the next turn re-send it.',
+          'Cost is no longer understated. Cached context is written with a one-hour lifetime, which costs twice the input rate rather than the 1.25× the app was charging it at, so every figure in Usage was low by about a third.',
+          'Big conversations no longer freeze the window. Opening Projects, searching, or loading Usage used to read each transcript into memory in one go — on a long conversation that stalled everything, the sidebar and the terminal included. They are now read a line at a time, and working out which folder a project belongs to stops at the first line that says so instead of reading the whole file.',
         ],
       },
     ]
