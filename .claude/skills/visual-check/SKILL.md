@@ -68,6 +68,14 @@ Valid `-View` names: `chat`, `projects`, `agents`, `rooms`, `planner`,
   script can land on the *user's real windows* if focus ends up elsewhere.
   If you need to reach a specific screen, use `VISUAL_CHECK_VIEW` deep-linking
   (the `-View` param) instead of simulating navigation clicks.
+- **The isolated userData dir is reused, and the app restores the last view from
+  it.** `run.ps1` copies the seed into `%TEMP%\argos-visual-check\userdata` without
+  clearing what is already there, so a run that ended on some other screen leaves
+  that screen persisted — and every later `-View <name>` lands back on it, because
+  the restore happens after the deep-link IPC. The symptom is a screenshot of the
+  wrong view that is pixel-identical run after run, which reads like a stale image
+  or an orphaned instance and is neither. Fix: delete
+  `%TEMP%\argos-visual-check` before the run.
 - **A minimized/not-yet-shown window screenshots as ~160x28.** `snap.ps1`
   detects a degenerate rect (width < 300 or height < 200), calls
   `ShowWindow(hwnd, 9)` (SW_RESTORE), sleeps ~900ms, and re-measures before

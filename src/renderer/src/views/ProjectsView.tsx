@@ -3,6 +3,7 @@ import { CCProject, CCSessionMeta, SearchHit } from '../types'
 import { TagChips, TagEditor, useLabelColors } from '../components/SessionTags'
 import LabelManager from '../components/LabelManager'
 import { tagsSatisfy } from '../lib/tags'
+import { groupByAge, sortSessions, SORT_LABELS, SortMode } from '../lib/session-groups'
 import './views.css'
 import './ProjectsView.css'
 
@@ -58,6 +59,11 @@ export default function ProjectsView({ onResume }: Props) {
   const [filterTags, setFilterTags] = useState<string[]>([])
   const [filterMode, setFilterMode] = useState<'all' | 'any'>('any')
   const [showLabels, setShowLabels] = useState(false)
+  // Remembered across visits: re-picking the ordering every time you open Projects is
+  // the kind of small tax that makes a view feel unfinished.
+  const [sort, setSort] = useState<SortMode>(
+    () => (localStorage.getItem('projects.sort') as SortMode) || 'date'
+  )
   const { colorFor, vocabulary, reload: reloadLabels } = useLabelColors()
 
   const load = async () => {
@@ -113,7 +119,16 @@ export default function ProjectsView({ onResume }: Props) {
     (a, b) => a.localeCompare(b)
   )
 
-  const visibleSessions = sessions.filter((s) => tagsSatisfy(s.tags, filterTags, filterMode))
+  const visibleSessions = sortSessions(
+    sessions.filter((s) => tagsSatisfy(s.tags, filterTags, filterMode)),
+    sort
+  )
+  const groups = sort === 'date' ? groupByAge(visibleSessions) : [{ label: '', sessions: visibleSessions }]
+
+  const changeSort = (mode: SortMode) => {
+    setSort(mode)
+    localStorage.setItem('projects.sort', mode)
+  }
 
   const toggleFilter = (tag: string) =>
     setFilterTags((cur) => (cur.includes(tag) ? cur.filter((t) => t !== tag) : [...cur, tag]))
@@ -235,11 +250,26 @@ export default function ProjectsView({ onResume }: Props) {
             ) : (
               <>
                 <div className="sessions-head">
-                  <span className="sessions-count">
-                    {filterTags.length > 0
-                      ? `${visibleSessions.length} of ${sessions.length} sessions`
-                      : `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
-                  </span>
+                  <div className="sessions-head-left">
+                    <span className="sessions-count">
+                      {filterTags.length > 0
+                        ? `${visibleSessions.length} of ${sessions.length} sessions`
+                        : `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
+                    </span>
+                    <span className="sessions-sort">
+                      <select
+                        aria-label="Sort sessions"
+                        value={sort}
+                        onChange={(e) => changeSort(e.target.value as SortMode)}
+                      >
+                        {(Object.keys(SORT_LABELS) as SortMode[]).map((m) => (
+                          <option key={m} value={m}>
+                            {SORT_LABELS[m]}
+                          </option>
+                        ))}
+                      </select>
+                    </span>
+                  </div>
                   {localVocab.length > 0 && (
                     <div className="tag-filter">
                       <TagChips
@@ -277,64 +307,70 @@ export default function ProjectsView({ onResume }: Props) {
                 {visibleSessions.length === 0 ? (
                   <div className="view-empty small">No sessions carry {filterMode === 'all' ? 'all' : 'any'} of those tags.</div>
                 ) : (
-                  <div className="sessions-grid">
-                    {visibleSessions.map((s) => (
-                      <div
-                        key={s.sessionId}
-                        className={`session-card ${editingTags === s.sessionId ? 'tagging' : ''}`}
-                        onClick={() => onResume(s)}
-                      >
-                        <div className="session-card-title">{s.title}</div>
-                        {s.preview && !s.previewRedundant && (
-                          <div className="session-card-preview">{s.preview}</div>
-                        )}
-                        <TagChips tags={s.tags} colorFor={colorFor} />
-                        <div className="session-card-footer">
-                          <span className="session-card-model">{s.model ?? '—'}</span>
-                          <span className="session-card-meta">{s.messageCount} msgs</span>
-                          <span className="session-card-meta">{timeAgo(s.updatedAt)}</span>
-                        </div>
-
-                        {/* One corner cluster: what you can DO to this card. The
-                            metadata run above says what it IS. */}
-                        <div className="session-card-actions">
-                          <span className="session-card-resume">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <polygon points="5 3 19 12 5 21 5 3" />
-                            </svg>
-                            Resume
-                          </span>
-                          <button
-                            className={`session-card-tag-btn ${editingTags === s.sessionId ? 'open' : ''}`}
-                            title="Tags"
-                            aria-label={`Tags for ${s.title}`}
-                            aria-expanded={editingTags === s.sessionId}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setEditingTags(editingTags === s.sessionId ? null : s.sessionId)
+                  <div className="sessions-rows">
+                    {groups.map((group) => (
+                      <div key={group.label} className="session-group">
+                        {/* Only the date ordering has bands worth naming; a date header
+                            over a title-sorted list describes nothing. */}
+                        {sort === 'date' && <div className="session-group-head">{group.label}</div>}
+                        {group.sessions.map((s) => (
+                          <div
+                            key={s.sessionId}
+                            className={`session-row ${editingTags === s.sessionId ? 'tagging' : ''}`}
+                            onClick={() => onResume(s)}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') onResume(s)
                             }}
                           >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z" />
-                              <line x1="7" y1="7" x2="7.01" y2="7" />
-                            </svg>
-                          </button>
-                        </div>
-
-                        {editingTags === s.sessionId && (
-                          <TagEditor
-                            session={s}
-                            vocabulary={localVocab}
-                            colorFor={colorFor}
-                            onSaved={(tags) => {
-                              setSessions((cur) =>
-                                cur.map((x) => (x.sessionId === s.sessionId ? { ...x, tags } : x))
-                              )
-                              reloadLabels()
-                            }}
-                            onClose={() => setEditingTags(null)}
-                          />
-                        )}
+                            <span className="session-row-main">
+                              <span className="session-row-title" title={s.title}>
+                                {s.title}
+                              </span>
+                              <TagChips tags={s.tags} colorFor={colorFor} />
+                            </span>
+                            <span className="session-row-model">{s.model ?? '—'}</span>
+                            <span className="session-row-meta">{s.messageCount} msgs</span>
+                            <span className="session-row-meta">{timeAgo(s.updatedAt)}</span>
+                            <span className="session-row-actions">
+                              <button
+                                className={`session-row-tag-btn ${editingTags === s.sessionId ? 'open' : ''}`}
+                                title="Tags"
+                                aria-label={`Tags for ${s.title}`}
+                                aria-expanded={editingTags === s.sessionId}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setEditingTags(editingTags === s.sessionId ? null : s.sessionId)
+                                }}
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z" />
+                                  <line x1="7" y1="7" x2="7.01" y2="7" />
+                                </svg>
+                              </button>
+                              <span className="session-row-resume" aria-hidden="true">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <polygon points="5 3 19 12 5 21 5 3" />
+                                </svg>
+                              </span>
+                            </span>
+                            {editingTags === s.sessionId && (
+                              <TagEditor
+                                session={s}
+                                vocabulary={localVocab}
+                                colorFor={colorFor}
+                                onSaved={(tags) => {
+                                  setSessions((cur) =>
+                                    cur.map((x) => (x.sessionId === s.sessionId ? { ...x, tags } : x))
+                                  )
+                                  reloadLabels()
+                                }}
+                                onClose={() => setEditingTags(null)}
+                              />
+                            )}
+                          </div>
+                        ))}
                       </div>
                     ))}
                   </div>

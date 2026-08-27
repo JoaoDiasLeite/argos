@@ -350,7 +350,11 @@ export async function listSessions(sourceId: string, encodedDir: string): Promis
     let model: string | undefined
     let messageCount = 0
     let createdAt = 0
-    let updatedAt = st?.mtimeMs ?? 0
+    // The time of the last real message — NOT the file's mtime. Renaming or tagging a
+    // session appends a line, which bumps mtime, which would float a conversation
+    // nothing happened in to the top of a date-sorted list. mtime is the fallback for
+    // a transcript whose entries carry no usable timestamp.
+    let lastMessageAt = 0
     // Read in the pass that is already happening rather than via readEffectiveTags:
     // a second walk of the transcript to fetch one line would double the cost of
     // opening a project.
@@ -367,7 +371,7 @@ export async function listSessions(sourceId: string, encodedDir: string): Promis
           if (obj.message.model) model = obj.message.model
           const ts = parseTimestamp(obj.timestamp)
           if (ts && !createdAt) createdAt = ts
-          if (ts) updatedAt = Math.max(updatedAt, ts)
+          if (ts) lastMessageAt = Math.max(lastMessageAt, ts)
         }
         if (obj.type === 'user' && obj.message) {
           messageCount++
@@ -392,7 +396,7 @@ export async function listSessions(sourceId: string, encodedDir: string): Promis
       messageCount,
       model,
       createdAt: createdAt || (st?.birthtimeMs ?? 0),
-      updatedAt,
+      updatedAt: lastMessageAt || (st?.mtimeMs ?? 0),
       sourceId: src.id,
       kind: src.kind,
       distro: src.distro,
