@@ -32,6 +32,13 @@ import {
 } from './claude-data'
 import { writeSessionTags } from './tags'
 import {
+  archiveSession,
+  deleteSession,
+  moveSession,
+  renameSession,
+  unarchiveSession
+} from './session-lifecycle'
+import {
   deleteLabel,
   foldIn,
   getLabels,
@@ -1153,8 +1160,8 @@ ipcMain.handle('config:set-hooks', (_, hooks: unknown) => setClaudeHooks(hooks))
 
 ipcMain.handle('cc:sources', () => listSources())
 ipcMain.handle('cc:list-projects', () => getAllProjects())
-ipcMain.handle('cc:list-sessions', async (_, sourceId: string, encodedDir: string) => {
-  const sessions = await listSessions(sourceId, encodedDir)
+ipcMain.handle('cc:list-sessions', async (_, sourceId: string, encodedDir: string, archived = false) => {
+  const sessions = await listSessions(sourceId, encodedDir, archived)
   // Accumulate the vocabulary as we go, so a tag applied from outside the app (the
   // CLI, another tool) gets a colour the first time it is seen. Best-effort by
   // design — it must never cost the caller the session list.
@@ -1165,14 +1172,51 @@ ipcMain.handle('cc:list-sessions', async (_, sourceId: string, encodedDir: strin
   }
   return sessions
 })
-ipcMain.handle('cc:read-session', (_, sourceId: string, encodedDir: string, sessionId: string) =>
-  readSession(sourceId, encodedDir, sessionId)
+ipcMain.handle(
+  'cc:read-session',
+  (_, sourceId: string, encodedDir: string, sessionId: string, archived = false) =>
+    readSession(sourceId, encodedDir, sessionId, archived)
 )
 ipcMain.handle('cc:usage', (_, force = false) => getUsage(force))
 ipcMain.handle('cc:plan-usage', (_, force = false) => getPlanUsageForIpc(!!force))
 ipcMain.handle('cc:search', (_, query: string) => searchSessions(query))
-ipcMain.handle('cc:session-peek', (_, sourceId: string, encodedDir: string, sessionId: string) =>
-  readSessionPeek(sourceId, encodedDir, sessionId)
+ipcMain.handle(
+  'cc:session-peek',
+  (_, sourceId: string, encodedDir: string, sessionId: string, archived = false) =>
+    readSessionPeek(sourceId, encodedDir, sessionId, archived)
+)
+
+// ─── Session lifecycle ────────────────────────────────────────────────────────
+// Archiving is the reversible one and delete is not; both are file-level and go
+// through the same path guard as every other transcript write.
+
+ipcMain.handle('cc:session-archive', (_, sourceId: string, encodedDir: string, sessionId: string) =>
+  archiveSession(sourceId, encodedDir, sessionId)
+)
+ipcMain.handle('cc:session-unarchive', (_, sourceId: string, encodedDir: string, sessionId: string) =>
+  unarchiveSession(sourceId, encodedDir, sessionId)
+)
+ipcMain.handle(
+  'cc:session-delete',
+  (_, sourceId: string, encodedDir: string, sessionId: string, archived = false) =>
+    deleteSession(sourceId, encodedDir, sessionId, archived)
+)
+ipcMain.handle(
+  'cc:session-rename',
+  (_, sourceId: string, encodedDir: string, sessionId: string, title: string, archived = false) =>
+    renameSession(sourceId, encodedDir, sessionId, title, archived)
+)
+ipcMain.handle(
+  'cc:session-move',
+  (
+    _,
+    sourceId: string,
+    encodedDir: string,
+    sessionId: string,
+    toSourceId: string,
+    toEncodedDir: string,
+    archived = false
+  ) => moveSession(sourceId, encodedDir, sessionId, toSourceId, toEncodedDir, archived)
 )
 ipcMain.handle('cc:favorites', () => getFavoriteProjects())
 ipcMain.handle('cc:set-favorite', (_, sourceId: string, encodedDir: string, on: boolean) =>

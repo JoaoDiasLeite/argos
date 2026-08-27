@@ -30,7 +30,9 @@ function hitToSession(h: SearchHit): CCSessionMeta {
     // shape only exists to hand a hit to the resume path.
     tags: [],
     // The snippet is the matched text, which is the whole point of showing it.
-    previewRedundant: false
+    previewRedundant: false,
+    // Search covers active sessions only, so a hit is never an archived one.
+    archived: false
   }
 }
 
@@ -68,6 +70,7 @@ export default function ProjectsView({ onResume }: Props) {
   const [projectFilter, setProjectFilter] = useState('')
   const [favorites, setFavorites] = useState<string[]>([])
   const [peeked, setPeeked] = useState<CCSessionMeta | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
   const { colorFor, vocabulary, reload: reloadLabels } = useLabelColors()
 
   const load = async () => {
@@ -111,7 +114,7 @@ export default function ProjectsView({ onResume }: Props) {
     setLoadingSessions(true)
     setEditingTags(null)
     setPeeked(null)
-    const s = await window.electronAPI.ccListSessions(p.sourceId, p.encodedDir)
+    const s = await window.electronAPI.ccListSessions(p.sourceId, p.encodedDir, showArchived)
     setSessions(s)
     setLoadingSessions(false)
     // Listing folds newly-seen tags into the registry, so the colours may have grown.
@@ -120,9 +123,19 @@ export default function ProjectsView({ onResume }: Props) {
 
   const refreshSessions = async () => {
     if (!selected) return
-    setSessions(await window.electronAPI.ccListSessions(selected.sourceId, selected.encodedDir))
+    setSessions(
+      await window.electronAPI.ccListSessions(selected.sourceId, selected.encodedDir, showArchived)
+    )
     reloadLabels()
   }
+
+  // Switching between active and archived re-reads: they are two directories, not a
+  // flag to filter on.
+  useEffect(() => {
+    refreshSessions()
+    setPeeked(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showArchived])
 
   // The tag vocabulary offered here is the registry plus whatever is applied in this
   // project — a tag can exist on a conversation before the registry has caught up.
@@ -348,7 +361,16 @@ export default function ProjectsView({ onResume }: Props) {
               </div>
             ) : sessions.length === 0 ? (
               <div className="view-empty">
-                <span className="view-empty-msg">No sessions in this project.</span>
+                <span className="view-empty-msg">
+                  {showArchived
+                    ? 'Nothing archived in this project.'
+                    : 'No sessions in this project.'}
+                </span>
+                {showArchived && (
+                  <button className="btn-ghost small" onClick={() => setShowArchived(false)}>
+                    Back to active
+                  </button>
+                )}
               </div>
             ) : (
               <>
@@ -358,6 +380,22 @@ export default function ProjectsView({ onResume }: Props) {
                       {filterTags.length > 0
                         ? `${visibleSessions.length} of ${sessions.length} sessions`
                         : `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
+                    </span>
+                    <span className="sessions-scope" role="group" aria-label="Which sessions">
+                      <button
+                        className={showArchived ? '' : 'on'}
+                        aria-pressed={!showArchived}
+                        onClick={() => setShowArchived(false)}
+                      >
+                        Active
+                      </button>
+                      <button
+                        className={showArchived ? 'on' : ''}
+                        aria-pressed={showArchived}
+                        onClick={() => setShowArchived(true)}
+                      >
+                        Archived
+                      </button>
                     </span>
                     <span className="sessions-sort">
                       <select
@@ -494,7 +532,12 @@ export default function ProjectsView({ onResume }: Props) {
               colorFor={colorFor}
               vocabulary={localVocab}
               onResume={() => onResume(peeked)}
+              projects={projects}
               onClose={() => setPeeked(null)}
+              onChanged={() => {
+                setPeeked(null)
+                refreshSessions()
+              }}
               onTagsSaved={(tags) => {
                 setSessions((cur) =>
                   cur.map((x) => (x.sessionId === peeked.sessionId ? { ...x, tags } : x))

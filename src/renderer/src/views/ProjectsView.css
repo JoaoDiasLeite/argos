@@ -506,3 +506,28 @@
   background: var(--accent-dim);
   border-left-color: var(--accent);
 }
+
+/* Two directories, not a filter — so it reads as a place you are in, not a facet
+   you have applied. */
+.sessions-scope {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.sessions-scope button {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+  border: 0;
+  background: var(--bg-1);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.sessions-scope button.on {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+.sessions-scope button:hover:not(.on) {
+  color: var(--text-0);
+}

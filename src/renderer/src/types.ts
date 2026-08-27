@@ -224,12 +224,21 @@ export interface CCSessionMeta {
    * sessions in this project to be a template rather than a subject. Don't render it.
    */
   previewRedundant: boolean
+  /** Sitting in the project's `archived/` subdirectory rather than beside it. */
+  archived: boolean
 }
 
 /**
  * Just enough of a conversation to decide whether to reopen it. `last` is the one
  * that answers the question — where it stopped, not how it opened.
  */
+/** Outcome of an archive / rename / move / delete. Conflicts come back as values. */
+export type LifecycleResult =
+  | { ok: true }
+  | { ok: false; error: 'not-found' }
+  | { ok: false; error: 'exists' }
+  | { ok: false; error: 'failed'; message: string }
+
 export interface SessionPeek {
   first: string
   last: string
@@ -1001,7 +1010,11 @@ declare global {
       // Claude Code data
       ccSources: () => Promise<SourceInfo[]>
       ccListProjects: () => Promise<CCProject[]>
-      ccListSessions: (sourceId: string, encodedDir: string) => Promise<CCSessionMeta[]>
+      ccListSessions: (
+        sourceId: string,
+        encodedDir: string,
+        archived?: boolean
+      ) => Promise<CCSessionMeta[]>
       ccReadSession: (
         sourceId: string,
         encodedDir: string,
@@ -1015,8 +1028,27 @@ declare global {
       ccSessionPeek: (
         sourceId: string,
         encodedDir: string,
-        sessionId: string
+        sessionId: string,
+        archived?: boolean
       ) => Promise<SessionPeek | null>
+      ccSessionArchive: (s: string, d: string, id: string) => Promise<LifecycleResult>
+      ccSessionUnarchive: (s: string, d: string, id: string) => Promise<LifecycleResult>
+      ccSessionDelete: (s: string, d: string, id: string, archived?: boolean) => Promise<LifecycleResult>
+      ccSessionRename: (
+        s: string,
+        d: string,
+        id: string,
+        title: string,
+        archived?: boolean
+      ) => Promise<LifecycleResult>
+      ccSessionMove: (
+        s: string,
+        d: string,
+        id: string,
+        toSource: string,
+        toDir: string,
+        archived?: boolean
+      ) => Promise<LifecycleResult>
       ccFavorites: () => Promise<string[]>
       ccSetFavorite: (sourceId: string, encodedDir: string, on: boolean) => Promise<string[]>
       ccSetSessionTags: (

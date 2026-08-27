@@ -166,6 +166,8 @@ export interface CCSessionMeta {
    * it; the text is kept so the decision stays inspectable.
    */
   previewRedundant: boolean
+  /** Sitting in the project's `archived/` subdirectory rather than beside it. */
+  archived: boolean
 }
 
 /**
@@ -185,9 +187,10 @@ export interface SessionPeek {
 export async function readSessionPeek(
   sourceId: string,
   encodedDir: string,
-  sessionId: string
+  sessionId: string,
+  archived = false
 ): Promise<SessionPeek | null> {
-  const full = await safeSessionPath(sourceId, encodedDir, sessionId)
+  const full = await safeSessionPath(sourceId, encodedDir, sessionId, archived)
   if (!full) return null
 
   let first = ''
@@ -307,18 +310,29 @@ async function resolveRealPath(
  */
 const SAFE_ID = /^[A-Za-z0-9._-]+$/
 
+/**
+ * Archived sessions live in a subdirectory of their project, not in a database.
+ * "Archived" is therefore not a stored flag anywhere — it is where the file is, and
+ * unarchiving is the same move back.
+ */
+export const ARCHIVED_DIR = 'archived'
+
 export async function safeSessionPath(
   sourceId: string,
   encodedDir: string,
-  sessionId: string
+  sessionId: string,
+  archived = false
 ): Promise<string | null> {
   if (!SAFE_ID.test(encodedDir) || !SAFE_ID.test(sessionId)) return null
   if (encodedDir === '.' || encodedDir === '..' || sessionId === '.' || sessionId === '..') return null
   const src = await resolveSource(sourceId)
   if (!src) return null
   const base = path.resolve(src.projectsDir)
-  const full = path.resolve(path.join(base, encodedDir, `${sessionId}.jsonl`))
-  if (full !== path.join(base, encodedDir, `${sessionId}.jsonl`)) return null
+  const rel = archived
+    ? path.join(base, encodedDir, ARCHIVED_DIR, `${sessionId}.jsonl`)
+    : path.join(base, encodedDir, `${sessionId}.jsonl`)
+  const full = path.resolve(rel)
+  if (full !== rel) return null
   if (!full.startsWith(base + path.sep)) return null
   return full
 }
@@ -390,10 +404,16 @@ export async function getAllProjects(): Promise<CCProject[]> {
   return all.sort((a, b) => b.lastActive - a.lastActive)
 }
 
-export async function listSessions(sourceId: string, encodedDir: string): Promise<CCSessionMeta[]> {
+export async function listSessions(
+  sourceId: string,
+  encodedDir: string,
+  archived = false
+): Promise<CCSessionMeta[]> {
   const src = await resolveSource(sourceId)
   if (!src) return []
-  const dir = path.join(src.projectsDir, encodedDir)
+  const dir = archived
+    ? path.join(src.projectsDir, encodedDir, ARCHIVED_DIR)
+    : path.join(src.projectsDir, encodedDir)
   if (!fs.existsSync(dir)) return []
   const realPath = await resolveRealPath(src, encodedDir, realPathMap(src.claudeJsonPath))
 
@@ -409,6 +429,7 @@ export async function listSessions(sourceId: string, encodedDir: string): Promis
     const full = path.join(dir, file)
     const st = safeStat(full)
     let title = ''
+    let customTitle = ''
     let preview = ''
     let model: string | undefined
     let messageCount = 0
@@ -425,6 +446,10 @@ export async function listSessions(sourceId: string, encodedDir: string): Promis
     try {
       for await (const obj of iterJsonl(full)) {
         if (obj.type === 'ai-title' && obj.aiTitle) title = obj.aiTitle
+        // A name the owner chose beats one the model generated, and the last one
+        // wins — the same precedence the CLI uses, so a `/rename` there shows here
+        // and a rename here shows there.
+        if (obj.type === 'custom-title' && obj.customTitle) customTitle = obj.customTitle
         // Last one wins, same rule as the title.
         if (obj.type === 'custom-tags' && Array.isArray(obj.tags)) {
           tags = obj.tags.filter((t: unknown) => typeof t === 'string')
@@ -454,7 +479,7 @@ export async function listSessions(sourceId: string, encodedDir: string): Promis
       sessionId,
       encodedDir,
       realPath,
-      title: title || preview || sessionId.slice(0, 8),
+      title: customTitle || title || preview || sessionId.slice(0, 8),
       preview,
       messageCount,
       model,
@@ -464,7 +489,8 @@ export async function listSessions(sourceId: string, encodedDir: string): Promis
       kind: src.kind,
       distro: src.distro,
       tags,
-      previewRedundant: false
+      previewRedundant: false,
+      archived
     })
   }
 
@@ -606,12 +632,11 @@ function blockText(content: unknown): { text: string; thinking: string; tools: a
 export async function readSession(
   sourceId: string,
   encodedDir: string,
-  sessionId: string
+  sessionId: string,
+  archived = false
 ): Promise<CCTranscriptMessage[]> {
-  const src = await resolveSource(sourceId)
-  if (!src) return []
-  const full = path.join(src.projectsDir, encodedDir, `${sessionId}.jsonl`)
-  if (!fs.existsSync(full)) return []
+  const full = await safeSessionPath(sourceId, encodedDir, sessionId, archived)
+  if (!full || !fs.existsSync(full)) return []
   const messages: CCTranscriptMessage[] = []
   const toolResults = new Map<string, { result: string; isError: boolean }>()
 

@@ -159,8 +159,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Claude Code data
   ccSources: () => ipcRenderer.invoke('cc:sources'),
   ccListProjects: () => ipcRenderer.invoke('cc:list-projects'),
-  ccListSessions: (sourceId: string, encodedDir: string) =>
-    ipcRenderer.invoke('cc:list-sessions', sourceId, encodedDir),
+  ccListSessions: (sourceId: string, encodedDir: string, archived?: boolean) =>
+    ipcRenderer.invoke('cc:list-sessions', sourceId, encodedDir, archived),
   ccReadSession: (sourceId: string, encodedDir: string, sessionId: string) =>
     ipcRenderer.invoke('cc:read-session', sourceId, encodedDir, sessionId),
   ccUsage: (force?: boolean) => ipcRenderer.invoke('cc:usage', force),
@@ -179,8 +179,38 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   ccSearch: (query: string) => ipcRenderer.invoke('cc:search', query),
 
-  ccSessionPeek: (sourceId: string, encodedDir: string, sessionId: string) =>
-    ipcRenderer.invoke('cc:session-peek', sourceId, encodedDir, sessionId),
+  ccSessionPeek: (sourceId: string, encodedDir: string, sessionId: string, archived?: boolean) =>
+    ipcRenderer.invoke('cc:session-peek', sourceId, encodedDir, sessionId, archived),
+  ccSessionArchive: (sourceId: string, encodedDir: string, sessionId: string) =>
+    ipcRenderer.invoke('cc:session-archive', sourceId, encodedDir, sessionId),
+  ccSessionUnarchive: (sourceId: string, encodedDir: string, sessionId: string) =>
+    ipcRenderer.invoke('cc:session-unarchive', sourceId, encodedDir, sessionId),
+  ccSessionDelete: (sourceId: string, encodedDir: string, sessionId: string, archived?: boolean) =>
+    ipcRenderer.invoke('cc:session-delete', sourceId, encodedDir, sessionId, archived),
+  ccSessionRename: (
+    sourceId: string,
+    encodedDir: string,
+    sessionId: string,
+    title: string,
+    archived?: boolean
+  ) => ipcRenderer.invoke('cc:session-rename', sourceId, encodedDir, sessionId, title, archived),
+  ccSessionMove: (
+    sourceId: string,
+    encodedDir: string,
+    sessionId: string,
+    toSourceId: string,
+    toEncodedDir: string,
+    archived?: boolean
+  ) =>
+    ipcRenderer.invoke(
+      'cc:session-move',
+      sourceId,
+      encodedDir,
+      sessionId,
+      toSourceId,
+      toEncodedDir,
+      archived
+    ),
   ccFavorites: () => ipcRenderer.invoke('cc:favorites'),
   ccSetFavorite: (sourceId: string, encodedDir: string, on: boolean) =>
     ipcRenderer.invoke('cc:set-favorite', sourceId, encodedDir, on),

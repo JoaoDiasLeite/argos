@@ -16,6 +16,7 @@ function s(over: Partial<CCSessionMeta>): CCSessionMeta {
     kind: 'local',
     tags: [],
     previewRedundant: false,
+    archived: false,
     ...over
   }
 }

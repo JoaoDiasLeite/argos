@@ -156,3 +156,104 @@
 .peek-tags .tag-editor.inline {
   width: 100%;
 }
+
+/* ── Lifecycle actions ───────────────────────────────────────────────────── */
+
+/* Resume is the one thing you usually want, so it keeps the filled button and the
+   rest are icons beside it — present, but not competing. */
+.peek-more {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+}
+
+.peek-more-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.peek-more-btn:hover:not(:disabled) {
+  color: var(--text-0);
+  background: var(--bg-2);
+  border-color: var(--border-light);
+}
+.peek-more-btn.danger:hover:not(:disabled) {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 40%, transparent);
+}
+.peek-more-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.peek-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-2);
+  flex-shrink: 0;
+}
+.peek-prompt.danger {
+  border-top-color: color-mix(in srgb, var(--error) 45%, var(--border));
+}
+.peek-prompt label,
+.peek-prompt p {
+  font-size: 12px;
+  color: var(--text-1);
+  margin: 0;
+  line-height: 1.45;
+}
+.peek-prompt input,
+.peek-prompt select {
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text-0);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+}
+.peek-prompt input:focus,
+.peek-prompt select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+/* The consequence, in the same breath as the control — not in a tooltip nobody
+   opens before pressing the button. */
+.peek-prompt-note {
+  font-size: 11px !important;
+  color: var(--text-2) !important;
+}
+.peek-prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.peek .btn-primary.small,
+.peek .btn-ghost.small {
+  padding: 5px 11px;
+  font-size: 12px;
+}
+.peek .btn-primary.danger {
+  background: var(--error);
+}
+
+.peek-error {
+  font-size: 11.5px;
+  color: var(--error);
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  line-height: 1.45;
+  flex-shrink: 0;
+}
