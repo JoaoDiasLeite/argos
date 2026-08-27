@@ -907,7 +907,13 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
       settingSources: policy.settingSources,
       permissionMode: askMode ? 'default' : payload.permissionMode ?? 'acceptEdits',
       ...(canUseTool ? { canUseTool } : {}),
-      ...(payload.systemPrompt ? { systemPrompt: payload.systemPrompt } : {}),
+      // A custom agent's prompt replaces Claude Code's; otherwise take whatever
+      // the profile decided (see CLAUDE_CODE_PROMPT in ai-policy.ts).
+      ...(payload.systemPrompt
+        ? { systemPrompt: payload.systemPrompt }
+        : policy.systemPrompt
+          ? { systemPrompt: policy.systemPrompt }
+          : {}),
       ...(payload.allowedTools ? { allowedTools: payload.allowedTools } : {}),
       ...(payload.additionalDirs && payload.additionalDirs.length
         ? { additionalDirectories: payload.additionalDirs.filter((d) => fs.existsSync(d)) }

@@ -4,13 +4,16 @@ import { getConfig, providerFor, ProviderId } from './config'
  * Least-privilege policy for every AI/SDK call in the app.
  *
  * Each call site declares a capability *profile* rather than assembling raw SDK
- * options ad-hoc. The profile decides three cost/safety levers centrally:
+ * options ad-hoc. The profile decides four cost/safety levers centrally:
  *   1. which settings tiers load (user-tier plugin/skill marketplaces are the
  *      big per-turn context tax — headless work never loads them),
  *   2. which tools are reachable (mutating tools are stripped from context, not
  *      merely gated, so a bypassPermissions run cannot invoke them), and
  *   3. the model ceiling + turn cap (pure-reasoning utility calls must never
- *      burn Opus/Fable budget, and no headless run may loop unbounded).
+ *      burn Opus/Fable budget, and no headless run may loop unbounded), and
+ *   4. whether Claude Code's own system prompt loads, and in its cache-stable
+ *      form (see CLAUDE_CODE_PROMPT — user-facing chat wants it, headless
+ *      utility calls must not pay for it).
  *
  * Strict by default: profiles grant the minimum. Callers opt into more via the
  * explicit `routine-full` / `interactive-*` profiles.
@@ -51,7 +54,35 @@ export interface ResolvedPolicy {
   disallowedTools?: string[]
   /** Present only when the profile caps agentic turns. */
   maxTurns?: number
+  /** Present only when the profile wants Claude Code's own system prompt. */
+  systemPrompt?: {
+    type: 'preset'
+    preset: 'claude_code'
+    excludeDynamicSections?: boolean
+  }
 }
+
+/**
+ * Claude Code's own system prompt, minus the per-run dynamic sections (working
+ * directory, auto-memory, **git status**). Two reasons, both measured in this repo:
+ *
+ *  1. Without it the SDK sends no Claude Code prompt at all — the chat runs on tool
+ *     definitions alone and behaves unlike the CLI. It costs ~5.3k tokens, written
+ *     to cache once.
+ *  2. `excludeDynamicSections` is what makes that prefix *stable*. Git status lives
+ *     inside the cached prefix, so one edited file invalidates ~7.7k tokens and
+ *     forces a re-write at the 1h-TTL rate (2× input) on the next turn — which is
+ *     most turns, in a coding session. Measured on a dirty tree: 7,711 tokens
+ *     re-written per turn with it off, 0 with it on. The stripped context is
+ *     re-injected as the first user message, so the model still sees it.
+ *
+ * Claude-only: the preset means nothing to the Codex/Gemini engines.
+ */
+const CLAUDE_CODE_PROMPT = {
+  type: 'preset',
+  preset: 'claude_code',
+  excludeDynamicSections: true
+} as const
 
 /** Tools that mutate the filesystem or run commands. Stripped for read-only work. */
 export const MUTATING_TOOLS = [
@@ -126,13 +157,15 @@ export function resolvePolicy(input: ResolvePolicyInput): ResolvedPolicy {
     case 'interactive-chat':
       return {
         model: requestedOrDefault(requestedModel, fallback),
-        settingSources: ['project', 'local']
+        settingSources: ['project', 'local'],
+        ...(providerId === 'claude' ? { systemPrompt: CLAUDE_CODE_PROMPT } : {})
       }
 
     case 'interactive-light':
       return {
         model: requestedOrDefault(requestedModel, fallback),
-        settingSources: []
+        settingSources: [],
+        ...(providerId === 'claude' ? { systemPrompt: CLAUDE_CODE_PROMPT } : {})
       }
 
     case 'headless-reasoning':
