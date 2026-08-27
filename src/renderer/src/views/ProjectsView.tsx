@@ -26,7 +26,9 @@ function hitToSession(h: SearchHit): CCSessionMeta {
     distro: h.distro,
     // A search hit carries no tags: the search pass doesn't read them, and this
     // shape only exists to hand a hit to the resume path.
-    tags: []
+    tags: [],
+    // The snippet is the matched text, which is the whole point of showing it.
+    previewRedundant: false
   }
 }
 
@@ -283,7 +285,9 @@ export default function ProjectsView({ onResume }: Props) {
                         onClick={() => onResume(s)}
                       >
                         <div className="session-card-title">{s.title}</div>
-                        {s.preview && <div className="session-card-preview">{s.preview}</div>}
+                        {s.preview && !s.previewRedundant && (
+                          <div className="session-card-preview">{s.preview}</div>
+                        )}
                         <TagChips tags={s.tags} colorFor={colorFor} />
                         <div className="session-card-footer">
                           <span className="session-card-model">{s.model ?? '—'}</span>

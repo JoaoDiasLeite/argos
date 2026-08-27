@@ -3,6 +3,14 @@ import * as path from 'path'
 import * as os from 'os'
 import { costFromUsage, splitCacheWrite } from './providers/cost'
 import { iterJsonl, iterJsonlEntries, sniffCwd } from './jsonl'
+import {
+  boilerplateKeys,
+  meaningfulUserText,
+  previewKey,
+  previewRestatesTitle,
+  stripCommandBlocks,
+  stripReminders
+} from './transcript-text'
 import { getWslClaudeRoots } from './wsl'
 import { storeGet, storeSet } from './store'
 import { readJsonFile } from './json-file'
@@ -151,6 +159,12 @@ export interface CCSessionMeta {
   distro?: string
   /** Effective tag set — the last `custom-tags` entry in the transcript wins. */
   tags: string[]
+  /**
+   * The preview adds nothing over the title, or is an opening shared by enough
+   * sessions in this project to be a template rather than a subject. The UI hides
+   * it; the text is kept so the decision stays inspectable.
+   */
+  previewRedundant: boolean
 }
 
 export interface CCTranscriptMessage {
@@ -358,12 +372,11 @@ export async function listSessions(sourceId: string, encodedDir: string): Promis
         if (obj.type === 'user' && obj.message) {
           messageCount++
           if (!preview) {
-            const c = obj.message.content
-            if (typeof c === 'string') preview = c.slice(0, 120)
-            else if (Array.isArray(c)) {
-              const tb = c.find((b: any) => b.type === 'text' || typeof b.text === 'string')
-              if (tb) preview = String(tb.text ?? '').slice(0, 120)
-            }
+            // Empty means this entry carried no prose of the owner's — a slash
+            // command's own body, a loaded skill, a reminder. Falling through to the
+            // next entry is what makes the preview the conversation rather than the
+            // plumbing that opened it.
+            preview = meaningfulUserText(obj.message.content).slice(0, 160)
           }
         }
       }
@@ -383,9 +396,22 @@ export async function listSessions(sourceId: string, encodedDir: string): Promis
       sourceId: src.id,
       kind: src.kind,
       distro: src.distro,
-      tags
+      tags,
+      previewRedundant: false
     })
   }
+
+  // Whether a preview is worth showing can only be decided against the rest of the
+  // project: the same opening on three sessions is a command being re-run, and a line
+  // that appears on a third of the list has stopped telling any of them apart.
+  const boilerplate = boilerplateKeys(sessions.map((s) => s.preview))
+  for (const s of sessions) {
+    s.previewRedundant =
+      !s.preview ||
+      boilerplate.has(previewKey(s.preview)) ||
+      previewRestatesTitle(s.preview, s.title)
+  }
+
   return sessions.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
@@ -463,7 +489,9 @@ export async function searchSessions(query: string, limit = 100): Promise<Search
             const ts = parseTimestamp(obj.timestamp)
             if (ts) updatedAt = Math.max(updatedAt, ts)
             if (!snippet && (obj.type === 'assistant' || obj.type === 'user') && obj.message) {
-              const txt = plainText(obj.message.content)
+              // Cleaned before the match, not after: a hit inside a command block or a
+              // reminder would otherwise produce a snippet made of markup.
+              const txt = stripCommandBlocks(stripReminders(plainText(obj.message.content)))
               const idx = txt.toLowerCase().indexOf(q)
               if (idx >= 0) snippet = txt.slice(Math.max(0, idx - 40), idx + 80).replace(/\s+/g, ' ').trim()
             }

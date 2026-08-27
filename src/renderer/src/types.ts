@@ -219,6 +219,11 @@ export interface CCSessionMeta {
   distro?: string
   /** Effective tag set — the last `custom-tags` entry in the transcript wins. */
   tags: string[]
+  /**
+   * The preview adds nothing over the title, or is an opening shared by enough
+   * sessions in this project to be a template rather than a subject. Don't render it.
+   */
+  previewRedundant: boolean
 }
 
 /** Label name → colour, plus the palette new labels are drawn from. */
