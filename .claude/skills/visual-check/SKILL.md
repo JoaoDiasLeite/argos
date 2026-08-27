@@ -33,6 +33,11 @@ Valid `-View` names: `chat`, `projects`, `agents`, `rooms`, `planner`,
   `app.setPath('userData', ...)` pointed at an isolated temp dir, then (if
   `VISUAL_CHECK_VIEW` is set) sends the same `app:open-view` IPC event the
   real app uses for plan-limit notification clicks, deep-linking to that view.
+- `VISUAL_CHECK_CC_SESSION` does the same for a Claude Code conversation: set it
+  to a JSON target (`{"encodedDir":"-home-x-repo","sessionId":"<uuid>"}`) and the
+  launcher sends `app:open-cc-session`, the channel a notification click uses. The
+  conversation has to exist on disk — create a disposable project under
+  `~/.claude/projects/` for it and delete it afterwards.
 - `scripts/visual-check/seed/` holds a pre-built `config.json` (onboarding
   already marked done, dark theme) and a `sessions/demo.json` demo chat so
   the transcript isn't empty.

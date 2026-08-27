@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { CCProject, CCSessionMeta, SearchHit } from '../types'
+import { useEffect, useRef, useState } from 'react'
+import { CcSessionTarget, CCProject, CCSessionMeta, SearchHit } from '../types'
 import { TagChips, TagEditor, useLabelColors } from '../components/SessionTags'
 import LabelManager from '../components/LabelManager'
 import SessionPeek from '../components/SessionPeek'
@@ -10,6 +10,13 @@ import './ProjectsView.css'
 
 interface Props {
   onResume: (session: CCSessionMeta) => void
+  /**
+   * A conversation named from outside the app — a notification click arriving over
+   * `argos://session`. Opening it means selecting its project and putting it in the
+   * reading panel, not resuming it: a click that lands you in a running session is
+   * a decision taken with the same gesture as the action.
+   */
+  target?: CcSessionTarget | null
 }
 
 function hitToSession(h: SearchHit): CCSessionMeta {
@@ -49,7 +56,7 @@ function timeAgo(ts: number): string {
   return new Date(ts).toLocaleDateString()
 }
 
-export default function ProjectsView({ onResume }: Props) {
+export default function ProjectsView({ onResume, target }: Props) {
   const [projects, setProjects] = useState<CCProject[]>([])
   const [selected, setSelected] = useState<CCProject | null>(null)
   const [sessions, setSessions] = useState<CCSessionMeta[]>([])
@@ -71,6 +78,23 @@ export default function ProjectsView({ onResume }: Props) {
   const [favorites, setFavorites] = useState<string[]>([])
   const [peeked, setPeeked] = useState<CCSessionMeta | null>(null)
   const [showArchived, setShowArchived] = useState(false)
+  // A conversation to put in the reading panel as soon as a listing containing it
+  // arrives. Held by id rather than applied directly because switching the archived
+  // toggle re-reads the list, and whichever read finishes last would otherwise win.
+  const [pendingPeek, setPendingPeek] = useState<string | null>(null)
+  /**
+   * Which listing request is the current one.
+   *
+   * Opening the view auto-selects the first project, and reading a large one takes
+   * seconds — long enough for a notification click to arrive and pick a different
+   * one. Without this the slow read lands last and replaces the conversation the
+   * user was sent to with a list they never asked for.
+   */
+  const listingSeq = useRef(0)
+  // Read inside `load`, which captured its closure at mount — by the time the
+  // project list arrives, a deep link may have chosen for us.
+  const targetRef = useRef(target)
+  targetRef.current = target
   const { colorFor, vocabulary, reload: reloadLabels } = useLabelColors()
 
   const load = async () => {
@@ -78,7 +102,9 @@ export default function ProjectsView({ onResume }: Props) {
     const list = await window.electronAPI.ccListProjects()
     setProjects(list)
     setLoading(false)
-    if (list.length && !selected) selectProject(list[0])
+    // Opening on the first project is a default, not a decision — and a deep link is
+    // a decision, so it wins even when it arrived while this listing was in flight.
+    if (list.length && !selected && !targetRef.current) selectProject(list[0])
   }
 
   useEffect(() => {
@@ -110,11 +136,13 @@ export default function ProjectsView({ onResume }: Props) {
   }
 
   const selectProject = async (p: CCProject) => {
+    const seq = ++listingSeq.current
     setSelected(p)
     setLoadingSessions(true)
     setEditingTags(null)
     setPeeked(null)
     const s = await window.electronAPI.ccListSessions(p.sourceId, p.encodedDir, showArchived)
+    if (seq !== listingSeq.current) return
     setSessions(s)
     setLoadingSessions(false)
     // Listing folds newly-seen tags into the registry, so the colours may have grown.
@@ -123,9 +151,14 @@ export default function ProjectsView({ onResume }: Props) {
 
   const refreshSessions = async () => {
     if (!selected) return
-    setSessions(
-      await window.electronAPI.ccListSessions(selected.sourceId, selected.encodedDir, showArchived)
+    const seq = ++listingSeq.current
+    const s = await window.electronAPI.ccListSessions(
+      selected.sourceId,
+      selected.encodedDir,
+      showArchived
     )
+    if (seq !== listingSeq.current) return
+    setSessions(s)
     reloadLabels()
   }
 
@@ -136,6 +169,59 @@ export default function ProjectsView({ onResume }: Props) {
     setPeeked(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showArchived])
+
+  // Open what a deep link named. The conversation can have been archived since the
+  // notification fired, so both directories are tried before giving up — a click
+  // that silently does nothing is worse than one that lands on the wrong list.
+  useEffect(() => {
+    if (!target) return
+    let cancelled = false
+    // Claimed before the first read: whatever listing is in flight is now stale.
+    const seq = ++listingSeq.current
+    ;(async () => {
+      const list = projects.length ? projects : await window.electronAPI.ccListProjects()
+      const proj = list.find(
+        (p) =>
+          p.encodedDir === target.encodedDir && (!target.sourceId || p.sourceId === target.sourceId)
+      )
+      if (!proj || cancelled) return
+      let found = await window.electronAPI.ccListSessions(proj.sourceId, proj.encodedDir, false)
+      let archived = false
+      if (!found.some((s) => s.sessionId === target.sessionId)) {
+        const inArchive = await window.electronAPI.ccListSessions(
+          proj.sourceId,
+          proj.encodedDir,
+          true
+        )
+        if (inArchive.some((s) => s.sessionId === target.sessionId)) {
+          found = inArchive
+          archived = true
+        }
+      }
+      if (cancelled || seq !== listingSeq.current) return
+      setSelected(proj)
+      setSessions(found)
+      setLoadingSessions(false)
+      setShowArchived(archived)
+      setPendingPeek(target.sessionId)
+      reloadLabels()
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target])
+
+  // Applied here rather than at the fetch site so it survives the re-read that
+  // flipping the archived toggle triggers.
+  useEffect(() => {
+    if (!pendingPeek) return
+    const match = sessions.find((s) => s.sessionId === pendingPeek)
+    if (match) {
+      setPeeked(match)
+      setPendingPeek(null)
+    }
+  }, [sessions, pendingPeek])
 
   // The tag vocabulary offered here is the registry plus whatever is applied in this
   // project — a tag can exist on a conversation before the registry has caught up.

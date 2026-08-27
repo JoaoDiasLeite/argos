@@ -4,6 +4,7 @@ import ModelPicker from './ModelPicker'
 import { useModalA11y } from '../hooks/useModalA11y'
 import PermissionsModal from './PermissionsModal'
 import HooksModal from './HooksModal'
+import NotifyHookModal from './NotifyHookModal'
 import './SettingsModal.css'
 
 interface Props {
@@ -36,6 +37,7 @@ export default function SettingsModal({
   const [savedKey, setSavedKey] = useState(false)
   const [showPerms, setShowPerms] = useState(false)
   const [showHooks, setShowHooks] = useState(false)
+  const [showNotifyHook, setShowNotifyHook] = useState(false)
   const dialogRef = useRef<HTMLDivElement>(null)
   useModalA11y(dialogRef, onClose)
 
@@ -371,6 +373,9 @@ export default function SettingsModal({
               <button className="btn-secondary small" onClick={() => setShowHooks(true)}>
                 Hooks…
               </button>
+              <button className="btn-secondary small" onClick={() => setShowNotifyHook(true)}>
+                Session notifications…
+              </button>
               <span className="field-hint inline">
                 Edit allow / deny / ask lists and lifecycle hooks in <code className="settings-code">~/.claude/settings.json</code>.
               </span>
@@ -493,6 +498,7 @@ export default function SettingsModal({
 
       {showPerms && <PermissionsModal onClose={() => setShowPerms(false)} />}
       {showHooks && <HooksModal onClose={() => setShowHooks(false)} />}
+      {showNotifyHook && <NotifyHookModal onClose={() => setShowNotifyHook(false)} />}
     </div>
   )
 }

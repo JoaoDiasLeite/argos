@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+/** A Claude Code conversation addressed from outside the app (see notify-hook-pure.ts). */
+interface CcSessionTarget {
+  sourceId?: string
+  encodedDir: string
+  sessionId: string
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // Notifications
   notify: (title: string, body: string) => ipcRenderer.invoke('app:notify', { title, body }),
@@ -31,6 +38,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('app:open-session', fn)
     return () => ipcRenderer.removeListener('app:open-session', fn)
   },
+  // A conversation named by an `argos://session` deep link — a notification click.
+  onOpenCcSession: (cb: (target: CcSessionTarget) => void) => {
+    const fn = (_: unknown, target: CcSessionTarget) => cb(target)
+    ipcRenderer.on('app:open-cc-session', fn)
+    return () => ipcRenderer.removeListener('app:open-cc-session', fn)
+  },
+  notifyHookInfo: () => ipcRenderer.invoke('notify-hook:info'),
 
   // Quick-launcher overlay — calls made by the OVERLAY window
   overlaySubmit: (payload: { prompt: string; quick?: boolean }) =>

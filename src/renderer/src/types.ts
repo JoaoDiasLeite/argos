@@ -877,6 +877,27 @@ export interface UpdaterState {
   currentVersion: string
 }
 
+/** A Claude Code conversation addressed from outside the app — an `argos://session` link. */
+export interface CcSessionTarget {
+  sourceId?: string
+  encodedDir: string
+  sessionId: string
+}
+
+/**
+ * What the Notifications panel shows. Text only: the hook block is pasted by the
+ * user, never written by us — `~/.claude/settings.json` is their file.
+ */
+export interface NotifyHookInfo {
+  command: string
+  block: string
+  /** The same command as a session inside a WSL distro can reach it (Windows only). */
+  wslCommand: string | null
+  wslBlock: string | null
+  installed: boolean
+  settingsPath: string
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -894,6 +915,8 @@ declare global {
       onNewChat: (cb: (folderPath?: string) => void) => () => void
       onOverlayPrompt: (cb: (payload: { prompt: string; quick?: boolean }) => void) => () => void
       onOpenSession: (cb: (sessionId: string) => void) => () => void
+      onOpenCcSession: (cb: (target: CcSessionTarget) => void) => () => void
+      notifyHookInfo: () => Promise<NotifyHookInfo>
 
       // Quick-launcher overlay — calls made by the OVERLAY window
       overlaySubmit: (payload: { prompt: string; quick?: boolean }) => void

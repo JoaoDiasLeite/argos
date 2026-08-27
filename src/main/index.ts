@@ -167,6 +167,23 @@ import {
 } from './shell-integration'
 import { refreshJumpList } from './jumplist'
 import { readJsonFile } from './json-file'
+import {
+  PROTOCOL,
+  SessionTarget,
+  extractDeepLink,
+  hookSettingsBlock,
+  notifyHookCommand,
+  notifyHookInstalled,
+  notifyHookMode,
+  parseDeepLink,
+  wslHookCommand
+} from './notify-hook-pure'
+import {
+  notifyPayloadFrom,
+  runNotifyRelay,
+  runNotifyShow,
+  showHookNotification
+} from './notify-hook'
 
 let mainWindow: BrowserWindow | null = null
 // True once the user (or OS) actually intends to exit — lets the close handler
@@ -177,15 +194,57 @@ let isQuitting = false
 let hasTray = false
 let trayHintShown = false
 
+// This process was started by Claude Code's Notification hook, not by a user. It
+// runs a few lines and exits — no windows, no tray, no scheduler — so every startup
+// path below is guarded on it. See notify-hook.ts.
+const notifyMode = notifyHookMode(process.argv)
+
 // Second launches (e.g. clicking the exe while the app lives in the tray) focus
-// the running instance instead of spawning a duplicate.
-if (!app.requestSingleInstanceLock()) {
-  app.quit()
-} else {
-  app.on('second-instance', (_e, commandLine) => {
-    showMainWindow()
-    routeLaunchAction(extractLaunchAction(commandLine))
+// the running instance instead of spawning a duplicate. The hook process does its
+// own lock handling — it uses the result to find out whether Argos is running.
+if (!notifyMode) {
+  if (!app.requestSingleInstanceLock()) {
+    app.quit()
+  } else {
+    app.on('second-instance', (_e, commandLine, _cwd, additionalData) => {
+      // A notification relayed by a hook process: show it where the app already is.
+      // Emphatically without showMainWindow() — a session on another desktop asking
+      // for attention is not a reason to throw a window in front of what you are
+      // doing. That is what the click is for.
+      const relayed = notifyPayloadFrom(additionalData)
+      if (relayed) {
+        showHookNotification(relayed, () => openDeepLink(relayed.link))
+        return
+      }
+      // Windows delivers `argos://` through a second launch's argv.
+      const target = extractDeepLink(commandLine)
+      if (target) {
+        openSessionTarget(target)
+        return
+      }
+      showMainWindow()
+      routeLaunchAction(extractLaunchAction(commandLine))
+    })
+  }
+  // macOS hands protocol activations to the running app as an event rather than on
+  // a second launch's argv, so both routes have to exist.
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    const target = parseDeepLink(url)
+    if (target) openSessionTarget(target)
   })
+}
+
+/** Focus the window on a conversation a notification (or any `argos://` link) named. */
+function openSessionTarget(target: SessionTarget): void {
+  showMainWindow()
+  sendToMainWindow('app:open-cc-session', target)
+}
+
+function openDeepLink(link: string): void {
+  const target = link ? parseDeepLink(link) : null
+  if (target) openSessionTarget(target)
+  else showMainWindow()
 }
 
 function showMainWindow(): void {
@@ -413,7 +472,25 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // The hook roles end here. Nothing below this block runs in them: they must not
+  // migrate userData, repair the CLI, start the scheduler, or open a window.
+  if (notifyMode) {
+    // Matches build.appId — on Windows a toast is routed by it, so a hook process
+    // that skipped this would post a notification the OS attributes to nothing.
+    electronApp.setAppUserModelId('com.argos.app')
+    if (notifyMode.kind === 'relay') {
+      await runNotifyRelay()
+      app.exit(0)
+      return
+    }
+    if (notifyMode.kind === 'show') {
+      runNotifyShow(notifyMode.payload)
+      return
+    }
+    app.exit(0)
+    return
+  }
   // Must run before anything touches userData (ensureDirs and the load* calls below): the app
   // was previously named claude-gui, so Electron now points at a fresh, empty directory. See
   // migrate-userdata.ts — it's a copy, and it no-ops once the marker is in place.
@@ -426,6 +503,16 @@ app.whenReady().then(() => {
   // Matches build.appId. Windows ties toast notifications and jumplist entries to this id, so
   // a value that disagrees with the installed app's identity silently misroutes both.
   electronApp.setAppUserModelId('com.argos.app')
+  // `argos://session?…` — what a notification click follows. Registering it here (on
+  // every launch, it is idempotent) is what lets a click start the app when it is
+  // closed, which is the case the hook exists for. In dev the executable is
+  // electron.exe, so the app directory has to ride along or the launch boots a blank
+  // Electron instead of Argos.
+  if (is.dev && process.platform === 'win32') {
+    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [app.getAppPath()])
+  } else {
+    app.setAsDefaultProtocolClient(PROTOCOL)
+  }
   ensureDirs()
   loadAuthState()
   // A Claude Code self-update that renamed the CLI but never wrote the replacement leaves every
@@ -446,6 +533,11 @@ app.whenReady().then(() => {
   // to bind (see installApplicationMenu for why that matters to the terminals).
   installApplicationMenu()
   createWindow()
+  // A click that started the app (rather than focusing a running one) arrives here,
+  // on this launch's own argv. sendToMainWindow tolerates a renderer that is still
+  // loading, so this is safe before the window has finished painting.
+  const launchTarget = extractDeepLink(process.argv)
+  if (launchTarget) openSessionTarget(launchTarget)
   createOverlayWindow()
   createToastWindow()
   createPillWindow()
@@ -1153,6 +1245,27 @@ ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
 })
 ipcMain.handle('config:get-permissions', () => getClaudePermissions())
 ipcMain.handle('config:set-permissions', (_, perms: unknown) => setClaudePermissions(perms))
+/**
+ * Everything the Notifications panel needs to tell the user what to paste.
+ *
+ * It hands back text, and only text. `~/.claude/settings.json` is the user's file —
+ * it holds their permissions, their own hooks, their env — and a merge written by
+ * us is a merge we would have to get right every time against a schema that is not
+ * ours. The block goes on the clipboard; the edit is theirs.
+ */
+ipcMain.handle('notify-hook:info', () => {
+  const command = notifyHookCommand(process.execPath, app.isPackaged ? '' : app.getAppPath())
+  const wsl = process.platform === 'win32' ? wslHookCommand(process.execPath) : null
+  return {
+    command,
+    block: hookSettingsBlock(command),
+    wslCommand: wsl,
+    wslBlock: wsl ? hookSettingsBlock(wsl) : null,
+    installed: notifyHookInstalled(getClaudeHooks()),
+    settingsPath: path.join(os.homedir(), '.claude', 'settings.json')
+  }
+})
+
 ipcMain.handle('config:get-hooks', () => getClaudeHooks())
 ipcMain.handle('config:set-hooks', (_, hooks: unknown) => setClaudeHooks(hooks))
 

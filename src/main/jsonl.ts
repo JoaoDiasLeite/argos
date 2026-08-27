@@ -73,6 +73,48 @@ export async function* iterJsonl(file: string, opts: IterOptions = {}): AsyncGen
   for await (const entry of iterJsonlEntries(file, opts)) yield entry.obj
 }
 
+/** How much of a transcript's tail a bounded read looks at. */
+export const TAIL_BYTES = 256 * 1024
+
+/**
+ * The parseable entries in the last `maxBytes` of a transcript, oldest first.
+ *
+ * For the appended-at-the-end lines — `custom-title`, `ai-title`, `custom-tags` —
+ * where streaming from the top to find the last one would read the whole file. Some
+ * transcripts pass 100 MB, and the notification hook runs on every notification.
+ *
+ * The first line of the window is dropped whenever the window did not start at byte
+ * zero: it is a fragment of a line that began before it, and a fragment either fails
+ * to parse or, worse, parses into something that is not what was written.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function tailJsonlEntries(file: string, maxBytes = TAIL_BYTES): Promise<any[]> {
+  const handle = await fs.promises.open(file, 'r')
+  try {
+    const { size } = await handle.stat()
+    const start = Math.max(0, size - maxBytes)
+    const length = size - start
+    if (length <= 0) return []
+    const buf = Buffer.alloc(length)
+    await handle.read(buf, 0, length, start)
+    const lines = buf.toString('utf-8').split('\n')
+    if (start > 0) lines.shift()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const out: any[] = []
+    for (const line of lines) {
+      if (!line.trim()) continue
+      try {
+        out.push(JSON.parse(line))
+      } catch {
+        // Partial write or corrupt line — keep going, same rule as the streaming read.
+      }
+    }
+    return out
+  } finally {
+    await handle.close()
+  }
+}
+
 /**
  * The first `cwd` recorded in a transcript, or null.
  *

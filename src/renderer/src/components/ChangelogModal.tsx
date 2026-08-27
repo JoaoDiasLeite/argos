@@ -22,6 +22,8 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Features',
         items: [
+          'Any Claude Code session on this machine can now notify you, not just the ones started here. Wire up Claude Code’s Notification hook and a session waiting on a permission — in a console, in an editor, anywhere — says so by name: [project] conversation. Clicking the notification opens that conversation in Argos, and starts the app if it was closed.',
+          'Settings → Session notifications shows the block to paste into ~/.claude/settings.json, with a copy button and a variant for sessions running inside WSL. Argos shows it and never writes it: that file is yours, and it holds far more than this one hook.',
           'Claude Opus 5 is in the model picker, and new chats now start on Sonnet 5 instead of Sonnet 4.6. Chats you already have keep whatever model you picked for them.',
           'The model list keeps itself current. On launch the app asks Anthropic\'s own model endpoint and the installed Codex CLI what exists, so a model released after this build shows up on its own — with its real name and context window, marked "new" because prices are not something either source publishes.',
           'Discovery no longer needs an API key. It uses whatever credentials you are already signed in with, which previously meant anyone logged in the normal way got no discovery at all.',

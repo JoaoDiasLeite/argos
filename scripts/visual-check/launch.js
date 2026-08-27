@@ -19,4 +19,19 @@ if (view) {
     }
   })
 }
+// Deep-link to a Claude Code conversation, the way a notification click does.
+// VISUAL_CHECK_CC_SESSION is the JSON target: {"encodedDir":"-x","sessionId":"…"}.
+const ccSession = process.env.VISUAL_CHECK_CC_SESSION
+if (ccSession) {
+  app.whenReady().then(() => {
+    for (const delay of [6000, 10000]) {
+      setTimeout(() => {
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w.isDestroyed()) w.webContents.send('app:open-cc-session', JSON.parse(ccSession))
+        }
+      }, delay)
+    }
+  })
+}
+
 require(path.join(__dirname, '..', '..', 'out', 'main', 'index.js'))

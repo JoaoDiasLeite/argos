@@ -28,6 +28,7 @@ and why. Porting the behaviour without the rule reintroduces the bug.
 | **1** | Session tags + label vocabulary | `21c341f`, `5e89ae7` |
 | **1.5** | Projects view rework (not from FRIDAY — see below) | `b795bd6`, `c0a9ef0`, `c8c4adc`, `e3cabc2`, `2b209b2` |
 | **2** | Archive / rename / move / delete a conversation | `7d5f197` |
+| **3** | The notification hook | pending |
 
 Alongside these, two things that were not ports but came out of the same work:
 
@@ -84,6 +85,48 @@ Rules kept, each from a real FRIDAY defect:
 - **Delete is irreversible and says so**; archive is the reversible one and acts on a
   single press.
 
+### Lot 3 — the notification hook
+
+Claude Code's `Notification` hook fires for every session on the machine. Wired to
+Argos, each one names `[project] conversation` and its click opens that conversation.
+`src/main/notify-hook-pure.ts` holds everything that decides what reaches a URL or
+the user's settings; `notify-title.ts` holds the bounded transcript read.
+
+- **The hook process is not the app.** `--notify-hook` is guarded before the single
+  instance lock and returns out of `whenReady` before anything else runs — no
+  userData migration, no scheduler, no window. A hook flag with an unusable payload
+  **aborts rather than falling through**, or one malformed notification boots the
+  entire application.
+- **The lock is the question and the delivery in one call.** `requestSingleInstanceLock`
+  with the payload as `additionalData`: not getting it means Argos is running *and*
+  has just been handed the notification. Getting it means Argos is closed — so the
+  lock is **released immediately** (this process is about to exit and a real launch
+  would be waiting on it) and a detached process shows the toast instead. The relay
+  must exit: Claude Code waits for it, and a notifier that lingers stalls the CLI.
+- **A relayed notification does not raise the window.** A session on another desktop
+  asking for attention is not a reason to throw a window in front of what you are
+  doing. That is what the click is for.
+- **Sanitise what reaches the deep link** — the session id is `[0-9a-f-]` or nothing,
+  and `argos://` is re-validated on the way in as well as out: any process on the
+  machine can invoke a registered protocol.
+- **Never read a whole transcript for the title.** A bounded tail (`tailJsonlEntries`,
+  which drops the fragment its window opened on) for `custom-title` / `ai-title`, a
+  capped head for the opening message. Some of these files pass 100 MB and this runs
+  on every notification.
+- **Never edit the user's `settings.json`.** The panel shows the block and copies it.
+- **`ARGOS_NOTIFY_DRYRUN=1` prints what the hook worked out.** Everything on this
+  path is swallowed on purpose, which means a notifier that does nothing looks
+  exactly like one that was never wired up. Ported from FRIDAY's `FRIDAY_NOTIFY_DRYRUN`
+  and immediately earned it: **`process.stdin` as a stream delivers nothing in
+  Electron's main process on Windows** — no `data`, no `end` — while `readFileSync(0)`
+  returns the payload. Without the dry-run that reads as a hook that was never
+  installed.
+- **A deep link beats the view's own default.** Projects auto-selects the first
+  project, and reading a large one takes seconds — long enough for a click to arrive
+  and pick another. Listings now carry a request token, and the auto-selection stands
+  down when a target exists; without it the slow read landed last and replaced the
+  conversation the user was sent to.
+
 ### Lot 1.5 — the Projects view
 
 Not a port. Measured on `wm-project` (52 sessions): 46 distinct titles, but **33
@@ -104,22 +147,6 @@ taken with the same gesture as the action is not a decision.
 ---
 
 ## Next
-
-### Lot 3 — the notification hook · 1–2 days · independent
-
-**The best return per day on the list.** Argos notifies about its own runs; Claude
-Code's `Notification` hook fires for **any** session on the machine — a console, the
-IDE, one waiting on approval — and works with Argos closed. It reads the hook JSON on
-stdin (`cwd`, `transcript_path`, `session_id`) and names `[project] conversation`.
-
-- FRIDAY opens a `localhost` URL. Here the natural translation is a protocol registered
-  with `app.setAsDefaultProtocolClient`, so the click focuses the window on the right
-  conversation, and starts the app if it is closed.
-- **Never edit the user's `settings.json`.** Show the block to paste. It is their file.
-- **Sanitise what reaches the deep link.** FRIDAY blanks the session id unless it is
-  `[0-9a-f-]`; anything else injects parameters into the URL.
-- **Never read a whole transcript for the title.** The hook runs on every notification
-  and some files are 100 MB.
 
 ### Lot 4 — the rest of transcript fidelity · ~1 day · depends on 0
 

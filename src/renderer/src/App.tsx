@@ -18,7 +18,8 @@ import {
   PlannerTask,
   UsageLimits,
   PlanUsageReport,
-  ScheduledRun
+  ScheduledRun,
+  CcSessionTarget
 } from './types'
 import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
@@ -158,6 +159,10 @@ export default function App() {
   const [newChatNonce, setNewChatNonce] = useState(0)
   const [auth, setAuth] = useState<AuthStatus | null>(null)
   const [view, setView] = useState<View>('chat')
+  // A conversation named by a notification click (`argos://session`). Held here
+  // rather than passed straight through so a second click on the same conversation
+  // still re-opens it: the object identity is what ProjectsView reacts to.
+  const [ccTarget, setCcTarget] = useState<CcSessionTarget | null>(null)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [defaultModel, setDefaultModel] = useState('claude-opus-4-8')
   const [ui, setUi] = useState<UiPrefs | null>(null)
@@ -752,6 +757,11 @@ export default function App() {
   useEffect(() => {
     const offNewChat = window.electronAPI.onNewChat((folderPath) => createSessionRef.current(folderPath))
     const offPrompt = window.electronAPI.onOverlayPrompt((p) => startOverlayPromptRef.current(p))
+    const offCc = window.electronAPI.onOpenCcSession((target) => {
+      if (!target?.encodedDir || !target?.sessionId) return
+      setCcTarget(target)
+      setView('projects')
+    })
     const offOpen = window.electronAPI.onOpenSession((id) => {
       if (sessionsRef.current.some((s) => s.id === id)) {
         setActiveId(id)
@@ -773,6 +783,7 @@ export default function App() {
       offNewChat()
       offPrompt()
       offOpen()
+      offCc()
       offPlan()
       offView()
     }
@@ -1725,7 +1736,7 @@ export default function App() {
 
       {view === 'projects' && (
         <Suspense fallback={<ViewLoading />}>
-          <ProjectsView onResume={resumeCCSession} />
+          <ProjectsView onResume={resumeCCSession} target={ccTarget} />
         </Suspense>
       )}
       {view === 'usage' && (

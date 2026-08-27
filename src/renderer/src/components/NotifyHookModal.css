@@ -1,0 +1,82 @@
+/*
+ * Scoped to `notifyhook-`: both stylesheets land in one global sheet, so a bare
+ * class name defined in two files silently collides (see shared.css).
+ */
+
+.notifyhook-modal {
+  width: 620px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+}
+
+.notifyhook-body {
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.notifyhook-intro {
+  line-height: 1.6;
+}
+
+.notifyhook-intro code,
+.notifyhook-step code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--bg-3);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--text-1);
+}
+
+.notifyhook-status {
+  font-size: 12.5px;
+  color: var(--text-2);
+  background: var(--bg-1);
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+}
+
+.notifyhook-status.on {
+  color: var(--text-1);
+  border-left-color: var(--accent);
+}
+
+.notifyhook-step {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notifyhook-step-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.notifyhook-step-title {
+  font-size: 12.5px;
+  color: var(--text-1);
+}
+
+.notifyhook-block {
+  background: var(--bg-1);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-2);
+  overflow-x: auto;
+  white-space: pre;
+  line-height: 1.55;
+  user-select: text;
+}
