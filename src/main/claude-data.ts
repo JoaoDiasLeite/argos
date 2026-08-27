@@ -149,6 +149,8 @@ export interface CCSessionMeta {
   sourceId: string
   kind: 'local' | 'wsl'
   distro?: string
+  /** Effective tag set — the last `custom-tags` entry in the transcript wins. */
+  tags: string[]
 }
 
 export interface CCTranscriptMessage {
@@ -214,6 +216,34 @@ async function resolveRealPath(
     (await cwdFromSessions(path.join(src.projectsDir, encodedDir))) ??
     decodeFallback(encodedDir)
   )
+}
+
+/**
+ * Resolve a transcript path, or null if the ids don't address one inside their own
+ * source. Every write to a transcript must go through this.
+ *
+ * The renderer supplies `encodedDir` and `sessionId` and they reach the filesystem,
+ * so they are checked rather than trusted: no separators, no `..`, and the resolved
+ * path must still sit under the source's own projects dir. The last check is the one
+ * that matters — the charset tests are a fast reject, but a source's dir is itself
+ * built from a discovered path, so containment is verified against the real thing.
+ */
+const SAFE_ID = /^[A-Za-z0-9._-]+$/
+
+export async function safeSessionPath(
+  sourceId: string,
+  encodedDir: string,
+  sessionId: string
+): Promise<string | null> {
+  if (!SAFE_ID.test(encodedDir) || !SAFE_ID.test(sessionId)) return null
+  if (encodedDir === '.' || encodedDir === '..' || sessionId === '.' || sessionId === '..') return null
+  const src = await resolveSource(sourceId)
+  if (!src) return null
+  const base = path.resolve(src.projectsDir)
+  const full = path.resolve(path.join(base, encodedDir, `${sessionId}.jsonl`))
+  if (full !== path.join(base, encodedDir, `${sessionId}.jsonl`)) return null
+  if (!full.startsWith(base + path.sep)) return null
+  return full
 }
 
 function safeStat(p: string): fs.Stats | null {
@@ -307,9 +337,17 @@ export async function listSessions(sourceId: string, encodedDir: string): Promis
     let messageCount = 0
     let createdAt = 0
     let updatedAt = st?.mtimeMs ?? 0
+    // Read in the pass that is already happening rather than via readEffectiveTags:
+    // a second walk of the transcript to fetch one line would double the cost of
+    // opening a project.
+    let tags: string[] = []
     try {
       for await (const obj of iterJsonl(full)) {
         if (obj.type === 'ai-title' && obj.aiTitle) title = obj.aiTitle
+        // Last one wins, same rule as the title.
+        if (obj.type === 'custom-tags' && Array.isArray(obj.tags)) {
+          tags = obj.tags.filter((t: unknown) => typeof t === 'string')
+        }
         if (obj.type === 'assistant' && obj.message) {
           messageCount++
           if (obj.message.model) model = obj.message.model
@@ -344,7 +382,8 @@ export async function listSessions(sourceId: string, encodedDir: string): Promis
       updatedAt,
       sourceId: src.id,
       kind: src.kind,
-      distro: src.distro
+      distro: src.distro,
+      tags
     })
   }
   return sessions.sort((a, b) => b.updatedAt - a.updatedAt)

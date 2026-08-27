@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 import { CCProject, CCSessionMeta, SearchHit } from '../types'
+import { TagChips, TagEditor, useLabelColors } from '../components/SessionTags'
+import LabelManager from '../components/LabelManager'
+import { tagsSatisfy } from '../lib/tags'
 import './views.css'
 import './ProjectsView.css'
 
@@ -20,7 +23,10 @@ function hitToSession(h: SearchHit): CCSessionMeta {
     updatedAt: h.updatedAt,
     sourceId: h.sourceId,
     kind: h.kind,
-    distro: h.distro
+    distro: h.distro,
+    // A search hit carries no tags: the search pass doesn't read them, and this
+    // shape only exists to hand a hit to the resume path.
+    tags: []
   }
 }
 
@@ -46,6 +52,11 @@ export default function ProjectsView({ onResume }: Props) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchHit[]>([])
   const [searching, setSearching] = useState(false)
+  const [editingTags, setEditingTags] = useState<string | null>(null)
+  const [filterTags, setFilterTags] = useState<string[]>([])
+  const [filterMode, setFilterMode] = useState<'all' | 'any'>('any')
+  const [showLabels, setShowLabels] = useState(false)
+  const { colorFor, vocabulary, reload: reloadLabels } = useLabelColors()
 
   const load = async () => {
     setLoading(true)
@@ -80,10 +91,30 @@ export default function ProjectsView({ onResume }: Props) {
   const selectProject = async (p: CCProject) => {
     setSelected(p)
     setLoadingSessions(true)
+    setEditingTags(null)
     const s = await window.electronAPI.ccListSessions(p.sourceId, p.encodedDir)
     setSessions(s)
     setLoadingSessions(false)
+    // Listing folds newly-seen tags into the registry, so the colours may have grown.
+    reloadLabels()
   }
+
+  const refreshSessions = async () => {
+    if (!selected) return
+    setSessions(await window.electronAPI.ccListSessions(selected.sourceId, selected.encodedDir))
+    reloadLabels()
+  }
+
+  // The tag vocabulary offered here is the registry plus whatever is applied in this
+  // project — a tag can exist on a conversation before the registry has caught up.
+  const localVocab = Array.from(new Set([...vocabulary, ...sessions.flatMap((s) => s.tags)])).sort(
+    (a, b) => a.localeCompare(b)
+  )
+
+  const visibleSessions = sessions.filter((s) => tagsSatisfy(s.tags, filterTags, filterMode))
+
+  const toggleFilter = (tag: string) =>
+    setFilterTags((cur) => (cur.includes(tag) ? cur.filter((t) => t !== tag) : [...cur, tag]))
 
   return (
     <div className="view">
@@ -111,6 +142,13 @@ export default function ProjectsView({ onResume }: Props) {
               </button>
             )}
           </div>
+          <button className="btn-ghost" onClick={() => setShowLabels(true)} title="Labels">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z" />
+              <line x1="7" y1="7" x2="7.01" y2="7" />
+            </svg>
+            Labels
+          </button>
           <button className="btn-ghost" onClick={load} title="Refresh">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="23 4 23 10 17 10" />
@@ -193,28 +231,108 @@ export default function ProjectsView({ onResume }: Props) {
                 <span className="view-empty-msg">No sessions in this project.</span>
               </div>
             ) : (
-              <div className="sessions-grid">
-                {sessions.map((s) => (
-                  <div key={s.sessionId} className="session-card" onClick={() => onResume(s)}>
-                    <div className="session-card-title">{s.title}</div>
-                    {s.preview && <div className="session-card-preview">{s.preview}</div>}
-                    <div className="session-card-footer">
-                      <span className="session-card-model">{s.model ?? '—'}</span>
-                      <span>{s.messageCount} msgs</span>
-                      <span>{timeAgo(s.updatedAt)}</span>
-                    </div>
-                    <div className="session-card-resume">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="5 3 19 12 5 21 5 3" />
-                      </svg>
-                      Resume
-                    </div>
+              <>
+                {localVocab.length > 0 && (
+                  <div className="tag-filter">
+                    <span className="tag-filter-label">Filter</span>
+                    <TagChips
+                      tags={localVocab}
+                      colorFor={colorFor}
+                      onClick={toggleFilter}
+                      active={filterTags}
+                    />
+                    {filterTags.length > 1 && (
+                      <div className="tag-filter-mode" role="group" aria-label="Match mode">
+                        <button
+                          className={filterMode === 'any' ? 'on' : ''}
+                          onClick={() => setFilterMode('any')}
+                          aria-pressed={filterMode === 'any'}
+                        >
+                          ANY
+                        </button>
+                        <button
+                          className={filterMode === 'all' ? 'on' : ''}
+                          onClick={() => setFilterMode('all')}
+                          aria-pressed={filterMode === 'all'}
+                        >
+                          ALL
+                        </button>
+                      </div>
+                    )}
+                    {filterTags.length > 0 && (
+                      <button className="tag-filter-clear" onClick={() => setFilterTags([])}>
+                        Clear
+                      </button>
+                    )}
                   </div>
-                ))}
-              </div>
+                )}
+                {visibleSessions.length === 0 ? (
+                  <div className="view-empty small">No sessions carry {filterMode === 'all' ? 'all' : 'any'} of those tags.</div>
+                ) : (
+                  <div className="sessions-grid">
+                    {visibleSessions.map((s) => (
+                      <div key={s.sessionId} className="session-card" onClick={() => onResume(s)}>
+                        <div className="session-card-title">{s.title}</div>
+                        {s.preview && <div className="session-card-preview">{s.preview}</div>}
+                        <TagChips tags={s.tags} colorFor={colorFor} />
+                        <div className="session-card-footer">
+                          <span className="session-card-model">{s.model ?? '—'}</span>
+                          <span>{s.messageCount} msgs</span>
+                          <span>{timeAgo(s.updatedAt)}</span>
+                        </div>
+                        <button
+                          className={`session-card-tag-btn ${editingTags === s.sessionId ? 'open' : ''}`}
+                          title="Tags"
+                          aria-label={`Tags for ${s.title}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setEditingTags(editingTags === s.sessionId ? null : s.sessionId)
+                          }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z" />
+                            <line x1="7" y1="7" x2="7.01" y2="7" />
+                          </svg>
+                        </button>
+                        {editingTags === s.sessionId && (
+                          <TagEditor
+                            session={s}
+                            vocabulary={localVocab}
+                            colorFor={colorFor}
+                            onSaved={(tags) => {
+                              setSessions((cur) =>
+                                cur.map((x) => (x.sessionId === s.sessionId ? { ...x, tags } : x))
+                              )
+                              reloadLabels()
+                            }}
+                            onClose={() => setEditingTags(null)}
+                          />
+                        )}
+                        <div className="session-card-resume">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polygon points="5 3 19 12 5 21 5 3" />
+                          </svg>
+                          Resume
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
+      )}
+
+      {showLabels && (
+        <LabelManager
+          onClose={() => setShowLabels(false)}
+          onChanged={() => {
+            // A vocabulary verb rewrites tags across conversations, so the open
+            // project's list is stale the moment one runs.
+            refreshSessions()
+          }}
+        />
       )}
     </div>
   )

@@ -179,6 +179,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   ccSearch: (query: string) => ipcRenderer.invoke('cc:search', query),
 
+  // Session tags + label vocabulary
+  ccSetSessionTags: (sourceId: string, encodedDir: string, sessionId: string, tags: string[]) =>
+    ipcRenderer.invoke('cc:set-session-tags', sourceId, encodedDir, sessionId, tags),
+  ccLabels: () => ipcRenderer.invoke('cc:labels'),
+  ccLabelSetColor: (name: string, color?: string) =>
+    ipcRenderer.invoke('cc:label-set-color', name, color),
+  ccLabelUsage: (name: string) => ipcRenderer.invoke('cc:label-usage', name),
+  ccLabelRename: (from: string, to: string) => ipcRenderer.invoke('cc:label-rename', from, to),
+  ccLabelMerge: (from: string, into: string) => ipcRenderer.invoke('cc:label-merge', from, into),
+  ccLabelDelete: (name: string) => ipcRenderer.invoke('cc:label-delete', name),
+
   // MCP
   mcpList: () => ipcRenderer.invoke('mcp:list'),
   mcpUpsert: (name: string, cfg: unknown) => ipcRenderer.invoke('mcp:upsert', name, cfg),

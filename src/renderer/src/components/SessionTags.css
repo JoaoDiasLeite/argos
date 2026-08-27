@@ -1,0 +1,237 @@
+/* ── Chips ─────────────────────────────────────────────────────────────────── */
+
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: transparent;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag-chip-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tag-chip.clickable {
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s;
+}
+
+.tag-chip.clickable:hover {
+  background: var(--bg-hover);
+}
+
+/* An active filter chip is filled, so "which tags am I filtering by" reads at a
+   glance instead of needing a legend. */
+.tag-chip.clickable.on {
+  background: var(--accent-dim);
+}
+
+.tag-chip-x {
+  cursor: pointer;
+  opacity: 0.55;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 1px;
+}
+
+.tag-chip-x:hover,
+.tag-chip-x:focus-visible {
+  opacity: 1;
+}
+
+/* ── Editor popover ────────────────────────────────────────────────────────── */
+
+.tag-editor {
+  position: absolute;
+  z-index: 40;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  width: 260px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  cursor: default;
+  text-align: left;
+}
+
+.tag-editor-head {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+}
+
+.tag-editor-empty {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.tag-editor-input {
+  width: 100%;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text-0);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.tag-editor-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.tag-editor-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tag-suggest {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+  color: var(--text-1);
+  cursor: pointer;
+}
+
+.tag-suggest:hover {
+  border-color: var(--border-light);
+  color: var(--text-0);
+}
+
+.tag-editor-error {
+  font-size: 11.5px;
+  color: var(--error);
+  line-height: 1.4;
+}
+
+/* ── Row affordance ────────────────────────────────────────────────────────── */
+
+/* Actions live in a corner cluster, revealed on hover — but always visible on a
+   touch screen, where there is no hover and the action would otherwise not exist. */
+.session-card-tag-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.session-card:hover .session-card-tag-btn,
+.session-card-tag-btn:focus-visible,
+.session-card-tag-btn.open {
+  opacity: 1;
+}
+
+.session-card-tag-btn:hover,
+.session-card-tag-btn.open {
+  color: var(--text-0);
+  border-color: var(--border-light);
+  background: var(--bg-2);
+}
+
+@media (pointer: coarse) {
+  .session-card-tag-btn {
+    opacity: 1;
+  }
+}
+
+/* ── Filter bar ────────────────────────────────────────────────────────────── */
+
+.tag-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 0 12px;
+}
+
+.tag-filter-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+}
+
+.tag-filter-mode {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.tag-filter-mode button {
+  font-family: inherit;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border: 0;
+  background: var(--bg-1);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.tag-filter-mode button.on {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.tag-filter-clear {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.tag-filter-clear:hover {
+  color: var(--text-0);
+  background: var(--bg-hover);
+}

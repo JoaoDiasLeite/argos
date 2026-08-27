@@ -217,7 +217,29 @@ export interface CCSessionMeta {
   sourceId: string
   kind: 'local' | 'wsl'
   distro?: string
+  /** Effective tag set — the last `custom-tags` entry in the transcript wins. */
+  tags: string[]
 }
+
+/** Label name → colour, plus the palette new labels are drawn from. */
+export interface LabelRegistry {
+  palette: string[]
+  labels: Record<string, string>
+}
+
+export type SetTagsResult =
+  | { ok: true; tags: string[] }
+  | { ok: false; error: 'not-found' }
+  | { ok: false; error: 'invalid'; message: string }
+
+/**
+ * Renaming onto an existing label is a merge, and a merge loses a label nobody
+ * asked to lose — so it comes back as a conflict the UI turns into an explicit offer.
+ * `failed > 0` means the sweep was partial and the registry was left untouched.
+ */
+export type LabelRenameResult =
+  | { ok: true; renamed: number; failed: number }
+  | { ok: false; error: 'label-exists'; target: string; count: number }
 
 export interface SearchHit {
   sessionId: string
@@ -974,6 +996,18 @@ declare global {
       onPlanUsage: (cb: (report: PlanUsageReport) => void) => () => void
       onOpenView: (cb: (view: string) => void) => () => void
       ccSearch: (query: string) => Promise<SearchHit[]>
+      ccSetSessionTags: (
+        sourceId: string,
+        encodedDir: string,
+        sessionId: string,
+        tags: string[]
+      ) => Promise<SetTagsResult>
+      ccLabels: () => Promise<LabelRegistry>
+      ccLabelSetColor: (name: string, color?: string) => Promise<LabelRegistry>
+      ccLabelUsage: (name: string) => Promise<{ count: number }>
+      ccLabelRename: (from: string, to: string) => Promise<LabelRenameResult>
+      ccLabelMerge: (from: string, into: string) => Promise<{ merged: number; failed: number }>
+      ccLabelDelete: (name: string) => Promise<{ cleared: number; failed: number }>
 
       // MCP
       mcpList: () => Promise<McpServer[]>

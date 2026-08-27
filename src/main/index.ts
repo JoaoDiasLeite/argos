@@ -20,7 +20,25 @@ import {
 } from './auth'
 import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, setSystemPrefs, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, UsageLimits, UiPrefs, SystemPrefs } from './config'
 import { buildModelsCatalog } from './models-catalog'
-import { getAllProjects, listSessions, readSession, getUsage, listSources, searchSessions } from './claude-data'
+import {
+  getAllProjects,
+  listSessions,
+  readSession,
+  getUsage,
+  listSources,
+  searchSessions,
+  safeSessionPath
+} from './claude-data'
+import { writeSessionTags } from './tags'
+import {
+  deleteLabel,
+  foldIn,
+  getLabels,
+  labelUsage,
+  mergeLabel,
+  renameLabel,
+  setLabelColor
+} from './labels'
 import {
   listMcpServers,
   upsertGlobalMcpServer,
@@ -1126,15 +1144,56 @@ ipcMain.handle('config:set-hooks', (_, hooks: unknown) => setClaudeHooks(hooks))
 
 ipcMain.handle('cc:sources', () => listSources())
 ipcMain.handle('cc:list-projects', () => getAllProjects())
-ipcMain.handle('cc:list-sessions', (_, sourceId: string, encodedDir: string) =>
-  listSessions(sourceId, encodedDir)
-)
+ipcMain.handle('cc:list-sessions', async (_, sourceId: string, encodedDir: string) => {
+  const sessions = await listSessions(sourceId, encodedDir)
+  // Accumulate the vocabulary as we go, so a tag applied from outside the app (the
+  // CLI, another tool) gets a colour the first time it is seen. Best-effort by
+  // design — it must never cost the caller the session list.
+  try {
+    foldIn(sessions.flatMap((s) => s.tags))
+  } catch {
+    /* colours only */
+  }
+  return sessions
+})
 ipcMain.handle('cc:read-session', (_, sourceId: string, encodedDir: string, sessionId: string) =>
   readSession(sourceId, encodedDir, sessionId)
 )
 ipcMain.handle('cc:usage', (_, force = false) => getUsage(force))
 ipcMain.handle('cc:plan-usage', (_, force = false) => getPlanUsageForIpc(!!force))
 ipcMain.handle('cc:search', (_, query: string) => searchSessions(query))
+
+// ─── Session tags + the label vocabulary ──────────────────────────────────────
+//
+// Conflicts come back as values, not exceptions: each one needs a different move in
+// the UI (reload, offer a merge, report a partial sweep) and a catch would flatten
+// them into one failure.
+
+ipcMain.handle(
+  'cc:set-session-tags',
+  async (_, sourceId: string, encodedDir: string, sessionId: string, tags: unknown) => {
+    const file = await safeSessionPath(sourceId, encodedDir, sessionId)
+    if (!file) return { ok: false as const, error: 'not-found' as const }
+    try {
+      const clean = await writeSessionTags(file, sessionId, tags)
+      try {
+        foldIn(clean)
+      } catch {
+        /* colours only */
+      }
+      return { ok: true as const, tags: clean }
+    } catch (e) {
+      return { ok: false as const, error: 'invalid' as const, message: (e as Error).message }
+    }
+  }
+)
+
+ipcMain.handle('cc:labels', () => getLabels())
+ipcMain.handle('cc:label-set-color', (_, name: string, color?: string) => setLabelColor(name, color))
+ipcMain.handle('cc:label-usage', (_, name: string) => labelUsage(name))
+ipcMain.handle('cc:label-rename', (_, from: string, to: string) => renameLabel(from, to))
+ipcMain.handle('cc:label-merge', (_, from: string, into: string) => mergeLabel(from, into))
+ipcMain.handle('cc:label-delete', (_, name: string) => deleteLabel(name))
 
 // ─── MCP ────────────────────────────────────────────────────────────────────
 
