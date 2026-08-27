@@ -232,68 +232,91 @@ export default function ProjectsView({ onResume }: Props) {
               </div>
             ) : (
               <>
-                {localVocab.length > 0 && (
-                  <div className="tag-filter">
-                    <span className="tag-filter-label">Filter</span>
-                    <TagChips
-                      tags={localVocab}
-                      colorFor={colorFor}
-                      onClick={toggleFilter}
-                      active={filterTags}
-                    />
-                    {filterTags.length > 1 && (
-                      <div className="tag-filter-mode" role="group" aria-label="Match mode">
-                        <button
-                          className={filterMode === 'any' ? 'on' : ''}
-                          onClick={() => setFilterMode('any')}
-                          aria-pressed={filterMode === 'any'}
-                        >
-                          ANY
+                <div className="sessions-head">
+                  <span className="sessions-count">
+                    {filterTags.length > 0
+                      ? `${visibleSessions.length} of ${sessions.length} sessions`
+                      : `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
+                  </span>
+                  {localVocab.length > 0 && (
+                    <div className="tag-filter">
+                      <TagChips
+                        tags={localVocab}
+                        colorFor={colorFor}
+                        onClick={toggleFilter}
+                        active={filterTags}
+                      />
+                      {filterTags.length > 1 && (
+                        <div className="tag-filter-mode" role="group" aria-label="Match mode">
+                          <button
+                            className={filterMode === 'any' ? 'on' : ''}
+                            onClick={() => setFilterMode('any')}
+                            aria-pressed={filterMode === 'any'}
+                          >
+                            ANY
+                          </button>
+                          <button
+                            className={filterMode === 'all' ? 'on' : ''}
+                            onClick={() => setFilterMode('all')}
+                            aria-pressed={filterMode === 'all'}
+                          >
+                            ALL
+                          </button>
+                        </div>
+                      )}
+                      {filterTags.length > 0 && (
+                        <button className="tag-filter-clear" onClick={() => setFilterTags([])}>
+                          Clear
                         </button>
-                        <button
-                          className={filterMode === 'all' ? 'on' : ''}
-                          onClick={() => setFilterMode('all')}
-                          aria-pressed={filterMode === 'all'}
-                        >
-                          ALL
-                        </button>
-                      </div>
-                    )}
-                    {filterTags.length > 0 && (
-                      <button className="tag-filter-clear" onClick={() => setFilterTags([])}>
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                )}
+                      )}
+                    </div>
+                  )}
+                </div>
                 {visibleSessions.length === 0 ? (
                   <div className="view-empty small">No sessions carry {filterMode === 'all' ? 'all' : 'any'} of those tags.</div>
                 ) : (
                   <div className="sessions-grid">
                     {visibleSessions.map((s) => (
-                      <div key={s.sessionId} className="session-card" onClick={() => onResume(s)}>
+                      <div
+                        key={s.sessionId}
+                        className={`session-card ${editingTags === s.sessionId ? 'tagging' : ''}`}
+                        onClick={() => onResume(s)}
+                      >
                         <div className="session-card-title">{s.title}</div>
                         {s.preview && <div className="session-card-preview">{s.preview}</div>}
                         <TagChips tags={s.tags} colorFor={colorFor} />
                         <div className="session-card-footer">
                           <span className="session-card-model">{s.model ?? '—'}</span>
-                          <span>{s.messageCount} msgs</span>
-                          <span>{timeAgo(s.updatedAt)}</span>
+                          <span className="session-card-meta">{s.messageCount} msgs</span>
+                          <span className="session-card-meta">{timeAgo(s.updatedAt)}</span>
                         </div>
-                        <button
-                          className={`session-card-tag-btn ${editingTags === s.sessionId ? 'open' : ''}`}
-                          title="Tags"
-                          aria-label={`Tags for ${s.title}`}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setEditingTags(editingTags === s.sessionId ? null : s.sessionId)
-                          }}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z" />
-                            <line x1="7" y1="7" x2="7.01" y2="7" />
-                          </svg>
-                        </button>
+
+                        {/* One corner cluster: what you can DO to this card. The
+                            metadata run above says what it IS. */}
+                        <div className="session-card-actions">
+                          <span className="session-card-resume">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                            Resume
+                          </span>
+                          <button
+                            className={`session-card-tag-btn ${editingTags === s.sessionId ? 'open' : ''}`}
+                            title="Tags"
+                            aria-label={`Tags for ${s.title}`}
+                            aria-expanded={editingTags === s.sessionId}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setEditingTags(editingTags === s.sessionId ? null : s.sessionId)
+                            }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z" />
+                              <line x1="7" y1="7" x2="7.01" y2="7" />
+                            </svg>
+                          </button>
+                        </div>
+
                         {editingTags === s.sessionId && (
                           <TagEditor
                             session={s}
@@ -308,12 +331,6 @@ export default function ProjectsView({ onResume }: Props) {
                             onClose={() => setEditingTags(null)}
                           />
                         )}
-                        <div className="session-card-resume">
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polygon points="5 3 19 12 5 21 5 3" />
-                          </svg>
-                          Resume
-                        </div>
                       </div>
                     ))}
                   </div>

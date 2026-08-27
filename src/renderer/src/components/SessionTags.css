@@ -60,13 +60,17 @@
 
 /* ── Editor popover ────────────────────────────────────────────────────────── */
 
+/* Anchored just under the corner cluster it belongs to, inside the card's own
+   width. Hanging it off the bottom of the card (top: 100%) read as an orphan
+   floating over the next row — there was nothing tying it to the conversation
+   it edits. */
 .tag-editor {
   position: absolute;
   z-index: 40;
-  top: 100%;
-  right: 0;
-  margin-top: 6px;
-  width: 260px;
+  top: 38px;
+  right: 10px;
+  width: 250px;
+  max-width: calc(100% - 20px);
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -74,9 +78,32 @@
   background: var(--bg-2);
   border: 1px solid var(--border-light);
   border-radius: var(--radius);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.12),
+    0 14px 34px rgba(0, 0, 0, 0.24);
   cursor: default;
   text-align: left;
+}
+
+/* A caret pointing back at the button, so the panel reads as belonging to this
+   card rather than floating between two of them. */
+.tag-editor::before,
+.tag-editor::after {
+  content: '';
+  position: absolute;
+  right: 9px;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+}
+.tag-editor::before {
+  top: -7px;
+  border-bottom: 7px solid var(--border-light);
+}
+.tag-editor::after {
+  top: -6px;
+  border-bottom: 7px solid var(--bg-2);
 }
 
 .tag-editor-head {
@@ -140,44 +167,28 @@
 
 /* ── Row affordance ────────────────────────────────────────────────────────── */
 
-/* Actions live in a corner cluster, revealed on hover — but always visible on a
-   touch screen, where there is no hover and the action would otherwise not exist. */
+/* Sits inside .session-card-actions (ProjectsView.css), which owns the placement
+   and the reveal-on-hover. This rule is only the button's own look. */
 .session-card-tag-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 25px;
+  height: 25px;
   padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg-2);
   color: var(--text-2);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s, color 0.12s, border-color 0.12s;
-}
-
-.session-card:hover .session-card-tag-btn,
-.session-card-tag-btn:focus-visible,
-.session-card-tag-btn.open {
-  opacity: 1;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
 }
 
 .session-card-tag-btn:hover,
 .session-card-tag-btn.open {
-  color: var(--text-0);
-  border-color: var(--border-light);
-  background: var(--bg-2);
-}
-
-@media (pointer: coarse) {
-  .session-card-tag-btn {
-    opacity: 1;
-  }
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: var(--accent-dim);
 }
 
 /* ── Filter bar ────────────────────────────────────────────────────────────── */
@@ -186,15 +197,8 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 0 0 12px;
-}
-
-.tag-filter-label {
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-2);
+  gap: 6px;
+  min-width: 0;
 }
 
 .tag-filter-mode {

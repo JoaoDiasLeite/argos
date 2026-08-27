@@ -73,8 +73,10 @@
   font-size: 11px; color: var(--text-2); font-family: var(--font-mono);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* Secondary identification, repeated on every row — it reads as noise the louder
+   it is. (Was a hardcoded #4fc3f7, which also ignored the theme entirely.) */
 .project-row-acct {
-  font-size: 10.5px; color: #4fc3f7; margin-top: 2px;
+  font-size: 10.5px; color: var(--text-2); margin-top: 3px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .src-badge {
@@ -105,12 +107,15 @@
 }
 .session-card-footer { display: flex; gap: 8px; font-size: 11px; color: var(--text-2); flex-wrap: wrap; }
 .session-card-model { font-family: var(--font-mono); }
+/* Placement and reveal belong to .session-card-actions (the corner cluster, in the
+   polish layer below) — NOT here. This rule used to position it absolutely at
+   top/right 12px with opacity 0, which survived the move into the cluster because
+   the later rule didn't happen to set those properties: the pill went on sitting
+   under the tag button, invisible until hover. Style only. */
 .session-card-resume {
-  position: absolute; top: 12px; right: 12px;
   display: flex; align-items: center; gap: 3px;
-  font-size: 11px; color: var(--accent); opacity: 0; transition: opacity 0.15s;
+  font-size: 11px; color: var(--accent);
 }
-.session-card:hover .session-card-resume { opacity: 1; }
 
 /* ═══════════════════════════════════════════════════════════════════════
    Premium polish layer — layered AFTER the base rules above so
@@ -296,56 +301,118 @@
   border-top-color: color-mix(in srgb, var(--accent) 70%, var(--border));
 }
 .session-card-title {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-0);
   margin-bottom: 5px;
-  line-height: 1.35;
-  /* Reserve room so the absolutely-positioned Resume pill never overlaps the title. */
-  padding-right: 78px;
+  line-height: 1.32;
+  letter-spacing: -0.005em;
+  /* Room for the whole corner cluster (tag button + Resume pill), not just the pill. */
+  padding-right: 112px;
   /* Clamp long titles to two lines */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+/* Clamped so a long first message can't make one card twice the height of its
+   neighbours — the grid reads as a grid when the rows line up. */
 .session-card-preview {
-  font-size: 12px;
-  color: var(--text-1);
+  font-size: 11.5px;
+  color: var(--text-2);
   line-height: 1.5;
-  flex: 1;
   margin-bottom: 10px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  /* No `flex: 1` here. Growing the box raises the height the clamp cuts at, so a
+     third line showed through sliced in half. The footer's `margin-top: auto` is
+     what pushes the metadata to the bottom of the card. */
 }
 
-/* Footer chips — small tinted pills */
+/* Metadata run. Only the model is a pill: it is an identifier worth picking out.
+   Counts and dates were pills too, which put three bordered objects on every card
+   and made a wall of chrome out of the least important line. */
 .session-card-footer {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px 8px;
   align-items: center;
   margin-top: auto;
+  padding-top: 2px;
 }
-.session-card-footer > span {
+.session-card-meta {
   font-size: 10.5px;
   color: var(--text-2);
-  background: var(--bg-3);
-  border: 1px solid var(--border-light);
-  border-radius: 20px;
-  padding: 2px 7px;
   line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+/* Separator between plain metadata items, drawn rather than typed so it never
+   ends up leading or trailing the run. */
+.session-card-meta + .session-card-meta::before {
+  content: '·';
+  margin-right: 8px;
+  color: var(--border-light);
 }
 .session-card-footer .session-card-model {
   font-family: var(--font-mono);
-  color: var(--accent);
-  background: var(--accent-dim);
-  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+  font-size: 10px;
+  color: var(--text-2);
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2px 7px;
+  line-height: 1.4;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The accent belongs to things you act on or that are active — Resume, the open
+   project, a live filter chip. Tinting the model on all thirty cards spent it on
+   the one thing that is never a choice. */
+.session-card:hover .session-card-model {
+  color: var(--text-1);
+  border-color: var(--border-light);
 }
 
-/* Resume button — pill affordance visible on hover */
-.session-card-resume {
+/* Tag chips sit between the preview and the metadata run: they say what the
+   conversation IS, like the rest of that block. */
+.session-card .tag-chips {
+  margin-bottom: 9px;
+}
+
+/* Corner cluster — everything you can do to a card lives here, together. The tag
+   button used to be positioned independently and landed underneath the Resume
+   pill; one flex row means they cannot collide again. */
+.session-card-actions {
   position: absolute;
   top: 10px;
   right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  opacity: 0;
+  transform: translateY(3px);
+  transition: opacity 0.14s, transform 0.14s;
+}
+.session-card:hover .session-card-actions,
+.session-card.tagging .session-card-actions,
+.session-card-actions:focus-within {
+  opacity: 1;
+  transform: translateY(0);
+}
+/* No hover on a touch screen, so an action that only appears on hover does not
+   exist there at all. */
+@media (pointer: coarse) {
+  .session-card-actions {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.session-card-resume {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -356,14 +423,8 @@
   border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   border-radius: 20px;
   padding: 3px 9px 3px 7px;
-  opacity: 0;
-  transform: translateY(3px);
-  transition: opacity 0.14s, transform 0.14s;
+  /* The whole card is the resume affordance; this is a label for it, not a target. */
   pointer-events: none;
-}
-.session-card:hover .session-card-resume {
-  opacity: 1;
-  transform: translateY(0);
 }
 
 /* ── Sessions pane header area ───────────────────────────────────────── */
@@ -372,4 +433,25 @@
 }
 .sessions-grid {
   gap: 14px;
+}
+
+/* A header so the grid starts somewhere instead of the cards beginning abruptly
+   under the view title. Count on the left, tag filter on the right. */
+.sessions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-bottom: 12px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+}
+.sessions-count {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
