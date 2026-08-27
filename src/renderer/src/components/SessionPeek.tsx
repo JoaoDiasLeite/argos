@@ -138,11 +138,6 @@ export default function SessionPeek({
           </svg>
           Resume
         </button>
-        {/* Said, not implied. Bare keycaps in a corner read as buttons — they were
-            asked what they did, which is the answer. */}
-        <span className="peek-keys">
-          <kbd>↑↓</kbd> browse <span className="peek-keys-sep">·</span> <kbd>⏎</kbd> resume
-        </span>
       </div>
     </aside>
   )

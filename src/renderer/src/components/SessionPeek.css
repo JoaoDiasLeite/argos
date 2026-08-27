@@ -137,6 +137,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Resume alone. The arrow keys and Enter still work — a legend for them in the
+     corner read as a second pair of buttons, which is worse than not saying it. */
   padding: 12px 14px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
@@ -148,27 +150,6 @@
   gap: 6px;
   padding: 7px 14px;
   font-size: 12.5px;
-}
-
-.peek-keys {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10.5px;
-  color: var(--text-2);
-}
-.peek-keys-sep { opacity: 0.6; }
-
-.peek-keys kbd {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-2);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-bottom-width: 2px;
-  border-radius: 3px;
-  padding: 1px 5px;
 }
 
 /* The inline editor should use the panel's width, not the popover's fixed 250px. */
