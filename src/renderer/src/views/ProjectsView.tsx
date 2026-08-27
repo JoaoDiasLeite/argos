@@ -448,16 +448,16 @@ export default function ProjectsView({ onResume }: Props) {
                 {visibleSessions.length === 0 ? (
                   <div className="view-empty small">No sessions carry {filterMode === 'all' ? 'all' : 'any'} of those tags.</div>
                 ) : (
-                  <div className="sessions-rows">
+                  <div className="cc-rows">
                     {groups.map((group) => (
-                      <div key={group.label} className="session-group">
+                      <div key={group.label} className="cc-group">
                         {/* Only the date ordering has bands worth naming; a date header
                             over a title-sorted list describes nothing. */}
-                        {sort === 'date' && <div className="session-group-head">{group.label}</div>}
+                        {sort === 'date' && <div className="cc-group-head">{group.label}</div>}
                         {group.sessions.map((s) => (
                           <div
                             key={s.sessionId}
-                            className={`session-row ${editingTags === s.sessionId ? 'tagging' : ''} ${peeked?.sessionId === s.sessionId ? 'peeked' : ''}`}
+                            className={`cc-row ${editingTags === s.sessionId ? 'tagging' : ''} ${peeked?.sessionId === s.sessionId ? 'peeked' : ''}`}
                             /* A click selects and shows; resuming is the panel's
                                button, Enter, or a double click. The panel exists to
                                make the decision possible, and a decision taken with
@@ -471,18 +471,18 @@ export default function ProjectsView({ onResume }: Props) {
                               if (e.key === 'Enter') onResume(s)
                             }}
                           >
-                            <span className="session-row-main">
-                              <span className="session-row-title" title={s.title}>
+                            <span className="cc-row-main">
+                              <span className="cc-row-title" title={s.title}>
                                 {s.title}
                               </span>
                               <TagChips tags={s.tags} colorFor={colorFor} />
                             </span>
-                            <span className="session-row-model">{s.model ?? '—'}</span>
-                            <span className="session-row-meta">{s.messageCount} msgs</span>
-                            <span className="session-row-meta">{timeAgo(s.updatedAt)}</span>
-                            <span className="session-row-actions">
+                            <span className="cc-row-model">{s.model ?? '—'}</span>
+                            <span className="cc-row-meta">{s.messageCount} msgs</span>
+                            <span className="cc-row-meta">{timeAgo(s.updatedAt)}</span>
+                            <span className="cc-row-actions">
                               <button
-                                className={`session-row-tag-btn ${editingTags === s.sessionId ? 'open' : ''}`}
+                                className={`cc-row-tag-btn ${editingTags === s.sessionId ? 'open' : ''}`}
                                 title="Tags"
                                 aria-label={`Tags for ${s.title}`}
                                 aria-expanded={editingTags === s.sessionId}
@@ -496,7 +496,7 @@ export default function ProjectsView({ onResume }: Props) {
                                   <line x1="7" y1="7" x2="7.01" y2="7" />
                                 </svg>
                               </button>
-                              <span className="session-row-resume" aria-hidden="true">
+                              <span className="cc-row-resume" aria-hidden="true">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                   <polygon points="5 3 19 12 5 21 5 3" />
                                 </svg>

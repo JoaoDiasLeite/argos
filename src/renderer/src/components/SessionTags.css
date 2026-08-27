@@ -183,9 +183,9 @@
 
 /* ── Row affordance ────────────────────────────────────────────────────────── */
 
-/* Sits inside .session-card-actions (ProjectsView.css), which owns the placement
-   and the reveal-on-hover. This rule is only the button's own look. */
-.session-card-tag-btn {
+/* Sits inside .cc-row-actions (ProjectsView.css), which owns the placement and the
+   reveal-on-hover. This rule is only the button's own look. */
+.cc-row-tag-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -200,8 +200,8 @@
   transition: color 0.12s, border-color 0.12s, background 0.12s;
 }
 
-.session-card-tag-btn:hover,
-.session-card-tag-btn.open {
+.cc-row-tag-btn:hover,
+.cc-row-tag-btn.open {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 35%, transparent);
   background: var(--accent-dim);

@@ -249,18 +249,18 @@
    the metadata in alignment so "which is the long one" and "what ran on 4.7"
    read without reading each item. */
 
-.sessions-rows {
+.cc-rows {
   display: flex;
   flex-direction: column;
 }
 
-.session-group + .session-group {
+.cc-group + .cc-group {
   margin-top: 18px;
 }
 
 /* Date bands give a fifty-item list a rhythm to skip through. The rule runs to
    the end so the eye can follow it across the columns. */
-.session-group-head {
+.cc-group-head {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -270,14 +270,14 @@
   color: var(--text-2);
   padding: 10px 2px 6px;
 }
-.session-group-head::after {
+.cc-group-head::after {
   content: '';
   flex: 1;
   height: 1px;
   background: var(--border);
 }
 
-.session-row {
+.cc-row {
   position: relative;
   display: grid;
   /* Fixed widths, not `auto`. Each row is its own grid container, so `auto` sizes
@@ -292,15 +292,15 @@
   cursor: pointer;
   transition: background 0.12s, border-left-color 0.12s;
 }
-.session-row:hover,
-.session-row:focus-visible,
-.session-row.tagging {
+.cc-row:hover,
+.cc-row:focus-visible,
+.cc-row.tagging {
   background: var(--bg-1);
   border-left-color: var(--accent);
   outline: none;
 }
 
-.session-row-title {
+.cc-row-title {
   font-size: 13px;
   font-weight: 500;
   color: var(--text-0);
@@ -310,7 +310,7 @@
   min-width: 0;
 }
 
-.session-row-model {
+.cc-row-model {
   justify-self: start;
   font-family: var(--font-mono);
   font-size: 10px;
@@ -322,7 +322,7 @@
   white-space: nowrap;
 }
 
-.session-row-meta {
+.cc-row-meta {
   /* Right-aligned so the digits form a column edge, not a ragged left margin. */
   justify-self: end;
   font-size: 11px;
@@ -334,7 +334,7 @@
 
 /* The corner cluster, as a fixed cell: reserving the width means the columns to
    its left don't shift when it appears. */
-.session-row-actions {
+.cc-row-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -342,18 +342,18 @@
   opacity: 0;
   transition: opacity 0.12s;
 }
-.session-row:hover .session-row-actions,
-.session-row.tagging .session-row-actions,
-.session-row-actions:focus-within {
+.cc-row:hover .cc-row-actions,
+.cc-row.tagging .cc-row-actions,
+.cc-row-actions:focus-within {
   opacity: 1;
 }
 @media (pointer: coarse) {
-  .session-row-actions {
+  .cc-row-actions {
     opacity: 1;
   }
 }
 
-.session-row-tag-btn {
+.cc-row-tag-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -367,15 +367,15 @@
   cursor: pointer;
   transition: color 0.12s, border-color 0.12s, background 0.12s;
 }
-.session-row-tag-btn:hover,
-.session-row-tag-btn.open {
+.cc-row-tag-btn:hover,
+.cc-row-tag-btn.open {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 35%, transparent);
   background: var(--accent-dim);
 }
 
 /* The row itself resumes; this is the hint that says so, not a second target. */
-.session-row-resume {
+.cc-row-resume {
   display: flex;
   align-items: center;
   color: var(--accent);
@@ -384,7 +384,7 @@
 
 /* The tag popover is anchored to the row's action cell rather than to the card it
    used to live in. */
-.session-row .tag-editor {
+.cc-row .tag-editor {
   top: calc(100% - 4px);
   right: 8px;
 }
@@ -392,13 +392,13 @@
 /* Title and tags share one cell: both say what the conversation IS, and keeping the
    chips out of a column of their own is what lets the metadata columns stay fixed —
    a session with six tags would otherwise shift the model column on its row alone. */
-.session-row-main {
+.cc-row-main {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
-.session-row .tag-chips {
+.cc-row .tag-chips {
   flex-wrap: nowrap;
   overflow: hidden;
   flex-shrink: 0;
@@ -502,7 +502,7 @@
 
 /* The selected row keeps its marker while the preview is open, so the pane and the
    list never disagree about which conversation is on screen. */
-.session-row.peeked {
+.cc-row.peeked {
   background: var(--accent-dim);
   border-left-color: var(--accent);
 }
