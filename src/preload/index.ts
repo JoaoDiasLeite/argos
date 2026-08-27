@@ -179,6 +179,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   ccSearch: (query: string) => ipcRenderer.invoke('cc:search', query),
 
+  ccSessionPeek: (sourceId: string, encodedDir: string, sessionId: string) =>
+    ipcRenderer.invoke('cc:session-peek', sourceId, encodedDir, sessionId),
+  ccFavorites: () => ipcRenderer.invoke('cc:favorites'),
+  ccSetFavorite: (sourceId: string, encodedDir: string, on: boolean) =>
+    ipcRenderer.invoke('cc:set-favorite', sourceId, encodedDir, on),
+
   // Session tags + label vocabulary
   ccSetSessionTags: (sourceId: string, encodedDir: string, sessionId: string, tags: string[]) =>
     ipcRenderer.invoke('cc:set-session-tags', sourceId, encodedDir, sessionId, tags),

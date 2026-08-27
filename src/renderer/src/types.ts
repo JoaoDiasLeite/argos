@@ -226,6 +226,17 @@ export interface CCSessionMeta {
   previewRedundant: boolean
 }
 
+/**
+ * Just enough of a conversation to decide whether to reopen it. `last` is the one
+ * that answers the question — where it stopped, not how it opened.
+ */
+export interface SessionPeek {
+  first: string
+  last: string
+  lastRole: 'user' | 'assistant'
+  costUsd: number
+}
+
 /** Label name → colour, plus the palette new labels are drawn from. */
 export interface LabelRegistry {
   palette: string[]
@@ -1001,6 +1012,13 @@ declare global {
       onPlanUsage: (cb: (report: PlanUsageReport) => void) => () => void
       onOpenView: (cb: (view: string) => void) => () => void
       ccSearch: (query: string) => Promise<SearchHit[]>
+      ccSessionPeek: (
+        sourceId: string,
+        encodedDir: string,
+        sessionId: string
+      ) => Promise<SessionPeek | null>
+      ccFavorites: () => Promise<string[]>
+      ccSetFavorite: (sourceId: string, encodedDir: string, on: boolean) => Promise<string[]>
       ccSetSessionTags: (
         sourceId: string,
         encodedDir: string,

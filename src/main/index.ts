@@ -27,7 +27,8 @@ import {
   getUsage,
   listSources,
   searchSessions,
-  safeSessionPath
+  safeSessionPath,
+  readSessionPeek
 } from './claude-data'
 import { writeSessionTags } from './tags'
 import {
@@ -92,7 +93,15 @@ import {
 } from './remote-shell'
 import { listDistros, testDistro, testDistroClaude, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
-import { getHiddenDistros, setDistroHidden, getRoomsLayout, setRoomsLayout, RoomsLayout } from './store'
+import {
+  getHiddenDistros,
+  setDistroHidden,
+  getRoomsLayout,
+  setRoomsLayout,
+  RoomsLayout,
+  getFavoriteProjects,
+  setProjectFavorite
+} from './store'
 import {
   loadAccounts,
   listAccountStatus,
@@ -1162,6 +1171,13 @@ ipcMain.handle('cc:read-session', (_, sourceId: string, encodedDir: string, sess
 ipcMain.handle('cc:usage', (_, force = false) => getUsage(force))
 ipcMain.handle('cc:plan-usage', (_, force = false) => getPlanUsageForIpc(!!force))
 ipcMain.handle('cc:search', (_, query: string) => searchSessions(query))
+ipcMain.handle('cc:session-peek', (_, sourceId: string, encodedDir: string, sessionId: string) =>
+  readSessionPeek(sourceId, encodedDir, sessionId)
+)
+ipcMain.handle('cc:favorites', () => getFavoriteProjects())
+ipcMain.handle('cc:set-favorite', (_, sourceId: string, encodedDir: string, on: boolean) =>
+  setProjectFavorite(sourceId, encodedDir, on)
+)
 
 // ─── Session tags + the label vocabulary ──────────────────────────────────────
 //

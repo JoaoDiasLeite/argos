@@ -167,6 +167,65 @@ export interface CCSessionMeta {
   previewRedundant: boolean
 }
 
+/**
+ * Just enough of a conversation to decide whether to reopen it.
+ *
+ * `last` matters more than `first` and is the reason this exists: what a session
+ * opened with is often a slash command shared by thirty others, while where it
+ * stopped is what answers "do I need to go back in".
+ */
+export interface SessionPeek {
+  first: string
+  last: string
+  lastRole: 'user' | 'assistant'
+  costUsd: number
+}
+
+export async function readSessionPeek(
+  sourceId: string,
+  encodedDir: string,
+  sessionId: string
+): Promise<SessionPeek | null> {
+  const full = await safeSessionPath(sourceId, encodedDir, sessionId)
+  if (!full) return null
+
+  let first = ''
+  let last = ''
+  let lastRole: 'user' | 'assistant' = 'assistant'
+  let costUsd = 0
+  const seen = new Set<string>()
+
+  try {
+    for await (const obj of iterJsonl(full)) {
+      if (obj.type === 'assistant' && obj.message?.usage) {
+        // Same dedupe as the usage sweep: resume re-logs an assistant message two or
+        // three times, and without this a resumed conversation reads 2-3x its cost.
+        const key = obj.message?.id ?? obj.requestId ?? obj.uuid
+        if (!key || !seen.has(key)) {
+          if (key) seen.add(key)
+          costUsd += costFromUsage(obj.message.model ?? 'unknown', obj.message.usage)
+        }
+      }
+      if (obj.type !== 'user' && obj.type !== 'assistant') continue
+      if (!obj.message) continue
+
+      const text =
+        obj.type === 'user'
+          ? meaningfulUserText(obj.message.content)
+          : stripCommandBlocks(stripReminders(plainText(obj.message.content))).replace(/\s+/g, ' ').trim()
+      if (!text) continue
+
+      if (!first) first = text.slice(0, 400)
+      last = text.slice(0, 700)
+      lastRole = obj.type
+    }
+  } catch {
+    // A partial peek is still worth showing.
+  }
+
+  return { first, last, lastRole, costUsd }
+}
+
 export interface CCTranscriptMessage {
   role: 'user' | 'assistant'
   text: string

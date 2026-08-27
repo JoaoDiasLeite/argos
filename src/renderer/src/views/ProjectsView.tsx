@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CCProject, CCSessionMeta, SearchHit } from '../types'
 import { TagChips, TagEditor, useLabelColors } from '../components/SessionTags'
 import LabelManager from '../components/LabelManager'
+import SessionPeek from '../components/SessionPeek'
 import { tagsSatisfy } from '../lib/tags'
 import { groupByAge, sortSessions, SORT_LABELS, SortMode } from '../lib/session-groups'
 import './views.css'
@@ -64,6 +65,9 @@ export default function ProjectsView({ onResume }: Props) {
   const [sort, setSort] = useState<SortMode>(
     () => (localStorage.getItem('projects.sort') as SortMode) || 'date'
   )
+  const [projectFilter, setProjectFilter] = useState('')
+  const [favorites, setFavorites] = useState<string[]>([])
+  const [peeked, setPeeked] = useState<CCSessionMeta | null>(null)
   const { colorFor, vocabulary, reload: reloadLabels } = useLabelColors()
 
   const load = async () => {
@@ -76,6 +80,7 @@ export default function ProjectsView({ onResume }: Props) {
 
   useEffect(() => {
     load()
+    window.electronAPI.ccFavorites().then(setFavorites)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -96,10 +101,16 @@ export default function ProjectsView({ onResume }: Props) {
     return () => clearTimeout(t)
   }, [query])
 
+  const toggleFavorite = async (p: CCProject) => {
+    const key = `${p.sourceId}:${p.encodedDir}`
+    setFavorites(await window.electronAPI.ccSetFavorite(p.sourceId, p.encodedDir, !favorites.includes(key)))
+  }
+
   const selectProject = async (p: CCProject) => {
     setSelected(p)
     setLoadingSessions(true)
     setEditingTags(null)
+    setPeeked(null)
     const s = await window.electronAPI.ccListSessions(p.sourceId, p.encodedDir)
     setSessions(s)
     setLoadingSessions(false)
@@ -132,6 +143,55 @@ export default function ProjectsView({ onResume }: Props) {
 
   const toggleFilter = (tag: string) =>
     setFilterTags((cur) => (cur.includes(tag) ? cur.filter((t) => t !== tag) : [...cur, tag]))
+
+  // Pinned first, then the rest by recency. Sections are only worth labelling when
+  // both exist — see the render.
+  const matchesFilter = (p: CCProject) => {
+    const q = projectFilter.trim().toLowerCase()
+    return !q || p.name.toLowerCase().includes(q) || p.realPath.toLowerCase().includes(q)
+  }
+  const shown = projects.filter(matchesFilter)
+  const pinned = shown.filter((p) => favorites.includes(`${p.sourceId}:${p.encodedDir}`))
+  const rest = shown.filter((p) => !favorites.includes(`${p.sourceId}:${p.encodedDir}`))
+  const projectSections = [
+    ...(pinned.length ? [{ label: 'Pinned', projects: pinned }] : []),
+    ...(rest.length ? [{ label: 'Recent', projects: rest }] : [])
+  ]
+
+  /**
+   * Arrowing through the list moves the selection and the preview follows; Enter
+   * resumes. A long list is walked, not clicked through, and the preview only earns
+   * its place if reaching the next conversation costs one key.
+   */
+  const step = (delta: number) => {
+    if (!visibleSessions.length) return
+    const i = peeked ? visibleSessions.findIndex((s) => s.sessionId === peeked.sessionId) : -1
+    const next = visibleSessions[Math.max(0, Math.min(visibleSessions.length - 1, i + delta))]
+    if (next) setPeeked(next)
+  }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Never steal a key from a field, and never from the tag popover.
+      const el = e.target as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return
+      if (editingTags || showLabels || query.trim().length >= 2) return
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        step(1)
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        step(-1)
+      } else if (e.key === 'Enter' && peeked) {
+        e.preventDefault()
+        onResume(peeked)
+      } else if (e.key === 'Escape' && peeked) {
+        setPeeked(null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   return (
     <div className="view">
@@ -208,29 +268,72 @@ export default function ProjectsView({ onResume }: Props) {
       ) : (
         <div className="projects-split">
           <div className="projects-list">
-            {projects.map((p) => (
-              <button
-                key={p.encodedDir}
-                className={`project-row ${selected?.encodedDir === p.encodedDir ? 'active' : ''}`}
-                onClick={() => selectProject(p)}
-              >
-                <div className="project-row-name" title={p.realPath}>
-                  {p.name}
-                  {p.kind === 'wsl' && <span className="src-badge wsl">⊞ {p.distro}</span>}
-                </div>
-                <div className="project-row-meta">
-                  <span>{p.sessionCount} session{p.sessionCount !== 1 ? 's' : ''}</span>
-                  <span>·</span>
-                  <span>{timeAgo(p.lastActive)}</span>
-                </div>
-                <div className="project-row-path" title={p.realPath}>{p.realPath}</div>
-                {p.account?.email && (
-                  <div className="project-row-acct" title={`${p.account.email}${p.account.plan ? ` · ${p.account.plan}` : ''}`}>
-                    {p.account.email}{p.account.plan ? ` · ${p.account.plan}` : ''}
-                  </div>
+            <input
+              className="projects-filter"
+              placeholder="Filter projects…"
+              aria-label="Filter projects"
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+            />
+            {projectSections.map((section) => (
+              <div key={section.label} className="project-section">
+                {/* Only labelled when there is something to tell apart — a lone
+                    "Recent" header over the whole list says nothing. */}
+                {projectSections.length > 1 && (
+                  <div className="project-section-head">{section.label}</div>
                 )}
-              </button>
+                {section.projects.map((p) => {
+                  const key = `${p.sourceId}:${p.encodedDir}`
+                  const fav = favorites.includes(key)
+                  return (
+                    <div
+                      key={key}
+                      className={`project-row ${selected?.encodedDir === p.encodedDir && selected?.sourceId === p.sourceId ? 'active' : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      /* The path and the account moved into the tooltip: repeated on
+                         every row they were noise, and dropping them is what lets the
+                         column be narrow. Two projects can share a name, so the path
+                         still has to be reachable. */
+                      title={`${p.realPath}${p.account?.email ? `\n${p.account.email}` : ''}`}
+                      onClick={() => selectProject(p)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          selectProject(p)
+                        }
+                      }}
+                    >
+                      <div className="project-row-name">
+                        {fav && <span className="project-star-on" aria-hidden="true">★</span>}
+                        <span className="project-row-label">{p.name}</span>
+                        {p.kind === 'wsl' && <span className="src-badge wsl">{p.distro}</span>}
+                      </div>
+                      <div className="project-row-meta">
+                        <span>{p.sessionCount}</span>
+                        <span>·</span>
+                        <span>{timeAgo(p.lastActive)}</span>
+                      </div>
+                      <button
+                        className={`project-star ${fav ? 'on' : ''}`}
+                        title={fav ? 'Unpin' : 'Pin to top'}
+                        aria-label={fav ? `Unpin ${p.name}` : `Pin ${p.name} to top`}
+                        aria-pressed={fav}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleFavorite(p)
+                        }}
+                      >
+                        ★
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
             ))}
+            {projectSections.length === 0 && (
+              <div className="projects-filter-empty">No project matches.</div>
+            )}
           </div>
 
           <div className="sessions-pane">
@@ -316,10 +419,16 @@ export default function ProjectsView({ onResume }: Props) {
                         {group.sessions.map((s) => (
                           <div
                             key={s.sessionId}
-                            className={`session-row ${editingTags === s.sessionId ? 'tagging' : ''}`}
-                            onClick={() => onResume(s)}
+                            className={`session-row ${editingTags === s.sessionId ? 'tagging' : ''} ${peeked?.sessionId === s.sessionId ? 'peeked' : ''}`}
+                            /* A click selects and shows; resuming is the panel's
+                               button, Enter, or a double click. The panel exists to
+                               make the decision possible, and a decision taken with
+                               the same gesture as the action is not a decision. */
+                            onClick={() => setPeeked(s)}
+                            onDoubleClick={() => onResume(s)}
                             role="button"
                             tabIndex={0}
+                            aria-current={peeked?.sessionId === s.sessionId}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') onResume(s)
                             }}
@@ -378,6 +487,16 @@ export default function ProjectsView({ onResume }: Props) {
               </>
             )}
           </div>
+
+          {peeked && (
+            <SessionPeek
+              session={peeked}
+              colorFor={colorFor}
+              onResume={() => onResume(peeked)}
+              onClose={() => setPeeked(null)}
+              onEditTags={() => setEditingTags(peeked.sessionId)}
+            />
+          )}
         </div>
       )}
 

@@ -84,3 +84,31 @@ export function getRoomsLayout(): RoomsLayout {
 export function setRoomsLayout(layout: RoomsLayout): void {
   storeSet('rooms-layout', layout)
 }
+
+// ─── Favourite projects ───────────────────────────────────────────────────────
+
+/**
+ * Pinned projects, keyed `<sourceId>:<encodedDir>` — the same pair that addresses a
+ * project everywhere else, so a project moving between sources is a different key
+ * rather than a silently wrong one.
+ *
+ * A user preference, safe to lose: the worst case is the pins reset.
+ */
+const FAVOURITES_KEY = 'favoriteProjects'
+
+export function projectKey(sourceId: string, encodedDir: string): string {
+  return `${sourceId}:${encodedDir}`
+}
+
+export function getFavoriteProjects(): string[] {
+  const raw = storeGet<unknown>(FAVOURITES_KEY, [])
+  return Array.isArray(raw) ? raw.filter((k): k is string => typeof k === 'string') : []
+}
+
+export function setProjectFavorite(sourceId: string, encodedDir: string, on: boolean): string[] {
+  const key = projectKey(sourceId, encodedDir)
+  const cur = getFavoriteProjects().filter((k) => k !== key)
+  const next = on ? [...cur, key] : cur
+  storeSet(FAVOURITES_KEY, next)
+  return next
+}
