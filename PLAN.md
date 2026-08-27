@@ -28,7 +28,7 @@ and why. Porting the behaviour without the rule reintroduces the bug.
 | **1** | Session tags + label vocabulary | `21c341f`, `5e89ae7` |
 | **1.5** | Projects view rework (not from FRIDAY — see below) | `b795bd6`, `c0a9ef0`, `c8c4adc`, `e3cabc2`, `2b209b2` |
 | **2** | Archive / rename / move / delete a conversation | `7d5f197` |
-| **3** | The notification hook | pending |
+| **3** | The notification hook | `38f4716` |
 
 Alongside these, two things that were not ports but came out of the same work:
 
