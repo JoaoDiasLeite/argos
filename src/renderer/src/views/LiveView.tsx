@@ -1,7 +1,15 @@
-import { useEffect, useState } from 'react'
-import { LiveSession, TakeoverRefusal } from '../types'
+import { Suspense, lazy, useEffect, useState } from 'react'
+import { LiveSession, TakeoverRefusal, TerminalInfo } from '../types'
 import './views.css'
 import './LiveView.css'
+
+const ChatTerminal = lazy(() => import('../components/ChatTerminal'))
+
+const PROVIDER_LABEL: Record<TerminalInfo['provider'], string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  gemini: 'Antigravity'
+}
 
 /**
  * Local to this file on purpose — ProjectsView has its own `timeAgo`, and exporting
@@ -80,8 +88,13 @@ function takeoverRefusalMessage(error: TakeoverRefusal, detail?: string): string
 }
 
 export default function LiveView() {
+  /** Which half of the view is showing — the existing registry list, or the new grid
+   *  of live terminals. Own state, not a URL/prop: this view has no routing of its own. */
+  const [scope, setScope] = useState<'sessions' | 'terminals'>('sessions')
   const [sessions, setSessions] = useState<LiveSession[]>([])
   const [loading, setLoading] = useState(true)
+  const [terminals, setTerminals] = useState<TerminalInfo[]>([])
+  const [terminalsLoading, setTerminalsLoading] = useState(true)
   /** Row key of the one confirmation open at a time, `null` when none is. */
   const [confirmKey, setConfirmKey] = useState<string | null>(null)
   const [busyKey, setBusyKey] = useState<string | null>(null)
@@ -154,6 +167,33 @@ export default function LiveView() {
     }
   }, [])
 
+  const loadTerminals = async () => {
+    // Not yet declared on window.electronAPI's typed surface (types.ts is out of
+    // scope for this file) — the shape is mirrored above from src/main/terminal.ts.
+    const list = await window.electronAPI.terminalList()
+    setTerminals(list)
+    setTerminalsLoading(false)
+  }
+
+  useEffect(() => {
+    loadTerminals()
+    // Terminals don't appear and vanish the way a busy/idle pill flips, so a much
+    // slower interval than the sessions list is enough to keep the grid honest.
+    const t = setInterval(loadTerminals, 30000)
+    const onFocus = () => loadTerminals()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      clearInterval(t)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [])
+
+  // Also refresh right when the grid comes into view, so switching over never shows
+  // a stale list from whenever the background timer last happened to fire.
+  useEffect(() => {
+    if (scope === 'terminals') loadTerminals()
+  }, [scope])
+
   return (
     <div className="view">
       <div className="view-header">
@@ -175,7 +215,77 @@ export default function LiveView() {
         </div>
       </div>
 
-      {loading ? (
+      {/* Same shape as ProjectsView's `.projects-scope` / `.sessions-scope` toggles, but
+          its own `live-` class per convention 6 — a guard test fails on reusing theirs. */}
+      <span className="live-scope" role="group" aria-label="Which view">
+        <button
+          className={scope === 'sessions' ? 'on' : ''}
+          aria-pressed={scope === 'sessions'}
+          onClick={() => setScope('sessions')}
+        >
+          Sessions
+        </button>
+        <button
+          className={scope === 'terminals' ? 'on' : ''}
+          aria-pressed={scope === 'terminals'}
+          onClick={() => setScope('terminals')}
+        >
+          Terminals
+        </button>
+      </span>
+
+      {scope === 'terminals' ? (
+        terminalsLoading ? (
+          <div className="view-loading">
+            <div className="view-spinner" />
+            <span className="view-loading-text">Loading terminals…</span>
+          </div>
+        ) : terminals.length === 0 ? (
+          <div className="view-empty">
+            <span className="view-empty-msg">
+              No terminals running. A terminal opens from a chat — this grid shows every one
+              still alive, whether or not its chat is the one currently open.
+            </span>
+          </div>
+        ) : (
+          <div className="view-scroll">
+            <div className="live-terminal-grid">
+              {terminals.map((t) => (
+                <div key={t.id} className="live-terminal-cell">
+                  <div className="live-terminal-cell-head">
+                    <span className="live-terminal-cell-name" title={t.cwd}>
+                      {lastSegment(t.cwd)}
+                    </span>
+                    <span className="live-terminal-cell-provider">{PROVIDER_LABEL[t.provider]}</span>
+                    {(t.wslDistro || t.remoteHostId) && (
+                      <span className="live-terminal-cell-host">{t.wslDistro || t.remoteHostId}</span>
+                    )}
+                  </div>
+                  <div className="live-terminal-cell-body">
+                    <Suspense fallback={null}>
+                      <ChatTerminal
+                        terminalId={t.id}
+                        cwd={t.cwd}
+                        provider={t.provider}
+                        wslDistro={t.wslDistro}
+                        remoteHostId={t.remoteHostId}
+                        active={scope === 'terminals'}
+                        // These are pre-existing terminals the grid only observes — never
+                        // launch a CLI into one on its behalf.
+                        autoLaunchCli={false}
+                        // The grid never owns these ptys (see the module comment above
+                        // rowKey/load): it must never be the thing that ends one, so there
+                        // is no close control here and this is a no-op rather than a kill.
+                        onClose={() => {}}
+                      />
+                    </Suspense>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      ) : loading ? (
         <div className="view-loading">
           <div className="view-spinner" />
           <span className="view-loading-text">Loading live sessions…</span>

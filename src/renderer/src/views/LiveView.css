@@ -3,6 +3,98 @@
    (`.status-pill`, `.view-*`) already exists in shared.css / views.css and is reused
    rather than redefined. */
 
+/* Two scopes, same shape as ProjectsView's `.projects-scope` / `.sessions-scope` — but
+   its own class per convention 6 (a guard test enforces this): a bare class shared
+   across the two stylesheets would silently drift the moment one of them changed. */
+.live-scope {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.live-scope button {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+  border: 0;
+  background: var(--bg-1);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.live-scope button.on {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+.live-scope button:hover:not(.on) {
+  color: var(--text-0);
+}
+
+/* `repeat(auto-fill, minmax(...))` reflows on window width rather than a hand-picked
+   column count — about two columns at a typical window width, more on a wide monitor,
+   one on a narrow pane. The row height is generous on purpose: a 6-row terminal is a
+   decoration, not something you can actually work in. */
+.live-terminal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 12px;
+}
+
+.live-terminal-cell {
+  display: flex;
+  flex-direction: column;
+  height: 420px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+.live-terminal-cell-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.live-terminal-cell-name {
+  font-weight: 600;
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.live-terminal-cell-provider {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+.live-terminal-cell-host {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--text-2);
+  font-family: var(--font-mono, monospace);
+}
+
+/* `.chat-terminal` is `flex: 1 1 auto`, so it needs a flex column parent to actually
+   fill the cell's remaining height — exactly the role Chat.tsx's own wrapper plays
+   around its ChatTerminal. */
+.live-terminal-cell-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .live-rows {
   display: flex;
   flex-direction: column;

@@ -251,6 +251,22 @@ export type TakeoverResult =
   | { ok: true; pid: number }
   | { ok: false; error: TakeoverRefusal; detail?: string }
 
+/**
+ * A pty the main process is currently holding. Mirrors `TerminalInfo` in
+ * src/main/terminal.ts, which is deliberately narrower than the options a terminal
+ * was created with: this shape exists to be displayed, and carrying the environment
+ * would put an account id in the renderer for every terminal at once.
+ */
+export interface TerminalInfo {
+  id: string
+  cwd: string
+  provider: ProviderId
+  shell: 'pwsh' | 'powershell' | 'cmd' | 'unix' | 'wsl' | 'ssh'
+  wslDistro?: string
+  remoteHostId?: string
+  createdAt: number
+}
+
 export interface CCProject {
   encodedDir: string
   realPath: string
@@ -1560,6 +1576,8 @@ declare global {
       terminalResize: (id: string, cols: number, rows: number) => void
       terminalKill: (id: string) => Promise<{ ok: boolean }>
       terminalKillDeferred: (id: string) => void
+      /** The ptys this process holds, newest first. */
+      terminalList: () => Promise<TerminalInfo[]>
       terminalStartCli: (
         id: string,
         provider: ProviderId,
