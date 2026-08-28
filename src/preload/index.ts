@@ -242,6 +242,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Live sessions: `claude` processes running outside Argos, read from Claude Code's
   // own registry. Read-only — nothing here signals anything.
   ccLiveSessions: () => ipcRenderer.invoke('cc:live-sessions'),
+  ccTakeoverSession: (sourceId: string, sessionId: string, expectedPid: number) =>
+    ipcRenderer.invoke('cc:takeover-session', sourceId, sessionId, expectedPid),
 
   // Session tags + label vocabulary
   ccSetSessionTags: (sourceId: string, encodedDir: string, sessionId: string, tags: string[]) =>
@@ -410,6 +412,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('terminal:resize', id, cols, rows),
   terminalKill: (id: string) => ipcRenderer.invoke('terminal:kill', id),
   terminalKillDeferred: (id: string) => ipcRenderer.send('terminal:kill-deferred', id),
+  terminalList: () => ipcRenderer.invoke('terminal:list'),
   terminalStartCli: (id: string, provider: string, resumeSessionId?: string) =>
     ipcRenderer.invoke('terminal:start-cli', id, provider, resumeSessionId),
   onTerminalData: (cb: (data: unknown) => void) => {

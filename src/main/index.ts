@@ -39,7 +39,7 @@ import {
   unarchiveSession
 } from './session-lifecycle'
 import { deleteProject, moveProjectFolder } from './project-lifecycle'
-import { listLiveSessions } from './live-sessions'
+import { listLiveSessions, takeoverSession } from './live-sessions'
 import {
   BacklogRef,
   createTopic,
@@ -161,6 +161,7 @@ import {
   resizeTerminal,
   killTerminal,
   killTerminalDeferred,
+  listTerminals,
   startCliInTerminal,
   killAllTerminals
 } from './terminal'
@@ -1399,6 +1400,14 @@ ipcMain.handle('cc:project-move', (_, sourceId: string, encodedDir: string, toPa
 
 ipcMain.handle('cc:live-sessions', () => listLiveSessions())
 
+// The one place Argos signals a process it did not start. Every guard is in
+// takeover-pure.ts; this handler adds nothing to the decision.
+ipcMain.handle(
+  'cc:takeover-session',
+  (_, sourceId: string, sessionId: string, expectedPid: number) =>
+    takeoverSession(sourceId, sessionId, expectedPid)
+)
+
 // ─── Session tags + the label vocabulary ──────────────────────────────────────
 //
 // Conflicts come back as values, not exceptions: each one needs a different move in
@@ -1492,6 +1501,9 @@ ipcMain.on('terminal:resize', (_, id: string, cols: number, rows: number) =>
 )
 ipcMain.handle('terminal:kill', (_, id: string) => killTerminal(id))
 ipcMain.on('terminal:kill-deferred', (_, id: string) => killTerminalDeferred(id))
+// The ptys this process holds, for the terminal grid. No consumer count: unmounting
+// a terminal view never kills anything, so there is nothing to reference-count.
+ipcMain.handle('terminal:list', () => listTerminals())
 ipcMain.handle(
   'terminal:start-cli',
   (_, id: string, provider: 'claude' | 'codex' | 'gemini', resumeSessionId?: string) =>

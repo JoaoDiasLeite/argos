@@ -40,6 +40,45 @@ const outputBuffers = new Map<string, string>()
 // "the chat's environment changed, respawn it" — see createTerminal.
 const configs = new Map<string, string>()
 
+/**
+ * Enough about each live pty to describe it in a list, kept beside the pty itself so
+ * a listing never has to reach into the renderer for the labels.
+ *
+ * Deliberately not the full options object: this exists to be shown, and a listing
+ * that carried the environment would be a listing that leaked an account id into the
+ * renderer for every terminal at once.
+ */
+export interface TerminalInfo {
+  id: string
+  cwd: string
+  provider: 'claude' | 'codex' | 'gemini'
+  shell: ShellKind
+  wslDistro?: string
+  remoteHostId?: string
+  createdAt: number
+}
+const terminalInfo = new Map<string, TerminalInfo>()
+
+/**
+ * Every pty this process currently holds.
+ *
+ * Note what is NOT needed here: any notion of how many panels are watching a given
+ * terminal. FRIDAY counted sockets and closing one panel killed the stream for every
+ * other one — the defect PLAN.md's "count consumers, not sockets" rule comes from.
+ * Argos cannot have it, because unmounting a terminal view never kills anything: a
+ * pty is torn down only by an explicit Restart, deleting its chat, or app quit (see
+ * the cleanup comment in ChatTerminal). Several views can show one terminal and the
+ * last one to leave takes nothing with it.
+ */
+export function listTerminals(): TerminalInfo[] {
+  const out: TerminalInfo[] = []
+  for (const id of terminals.keys()) {
+    const info = terminalInfo.get(id)
+    if (info) out.push(info)
+  }
+  return out.sort((a, b) => b.createdAt - a.createdAt)
+}
+
 // The settings baked into a pty at spawn time (env, cwd, shell). cols/rows are deliberately
 // excluded: a resize is handled by terminal:resize and is never a reason to respawn.
 function configSignature(opts: CreateTerminalOptions): string {
@@ -300,6 +339,15 @@ export function createTerminal(
     terminals.set(id, p)
     shellKinds.set(id, kind)
     configs.set(id, sig)
+    terminalInfo.set(id, {
+      id,
+      cwd: opts.cwd ?? '',
+      provider: opts.provider ?? 'claude',
+      shell: kind,
+      wslDistro: opts.wslDistro,
+      remoteHostId: opts.remoteHostId,
+      createdAt: Date.now()
+    })
 
     return { ok: true, shell: kind, cliLaunched }
   } catch {
@@ -354,6 +402,7 @@ export function killTerminal(id: string): { ok: boolean } {
   terminals.delete(id)
   shellKinds.delete(id)
   sshMeta.delete(id)
+  terminalInfo.delete(id)
   return { ok: true }
 }
 

@@ -4,6 +4,12 @@ import * as path from 'path'
 import { getSources } from './claude-data'
 import { readJsonFile } from './json-file'
 import { isSameDomain, parseRegistryEntry, pidDomainFor } from './live-sessions-pure'
+import { readProcessIdentity } from './process-identity'
+import { TakeoverRefusal, verifyTakeover } from './takeover-pure'
+
+export type TakeoverResult =
+  | { ok: true; pid: number }
+  | { ok: false; error: TakeoverRefusal; detail?: string }
 
 /**
  * Which `claude` processes are running right now, read from Claude Code's own
@@ -161,4 +167,70 @@ export async function listLiveSessions(): Promise<LiveSession[]> {
   // Most recently active first: on a list of running things, the one that just did
   // something is the one being looked for.
   return [...found.values()].sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+// ─── Takeover ─────────────────────────────────────────────────────────────────
+
+/**
+ * Ask a `claude` process that is not our child to exit, so its conversation can be
+ * resumed here instead. One conversation, one live `claude`: two instances on one
+ * session id interleave turns and fork the `parentUuid` chain.
+ *
+ * The whole of the decision is in `verifyTakeover`, which is pure and exhaustively
+ * tested. This function's only jobs are to gather its three inputs honestly and to
+ * act on nothing but `ok: true`.
+ *
+ * **The pid comes from the registry, re-read here, never from the request.** The
+ * caller names a session and states which pid it displayed; the second is used only
+ * to refuse when the two disagree, which means the row was stale. A request that
+ * could name the number would be a request that could name any number.
+ *
+ * **A terminate, never a kill.** SIGTERM lets the CLI write its transcript out and
+ * clean up its registry entry; SIGKILL would leave both half-written, and the
+ * transcript is the thing the user is trying to get back to. If it ignores the
+ * signal, that is its right — Argos does not escalate. Escalation is how a "close
+ * this" becomes data loss.
+ */
+export async function takeoverSession(
+  sourceId: string,
+  sessionId: string,
+  expectedPid: number
+): Promise<TakeoverResult> {
+  const src = (await getSources()).find((s) => s.id === sourceId)
+  if (!src) return { ok: false, error: 'not-found' }
+
+  // Re-read rather than trusting anything the renderer holds: between the render and
+  // the click the session may have exited, restarted under a new pid, or been taken
+  // over from somewhere else.
+  const entry =
+    readEntries(registryDir(src.projectsDir))
+      .map(parseRegistryEntry)
+      .find((e): e is NonNullable<typeof e> => !!e && e.sessionId === sessionId) ?? null
+  if (!entry) return { ok: false, error: 'not-found' }
+
+  // Run the guards once with no identity first. Every refusal except `unverifiable`
+  // is reachable without knowing anything about the live process, so this decides
+  // whether the identity read happens at all — a foreign pid must never be probed,
+  // and spawning a PowerShell to ask about a number in someone else's PID space is
+  // both pointless and the first step of the mistake these guards exist to prevent.
+  //
+  // With `identity` null the verdict can never be `ok`, so `unverifiable` is exactly
+  // "everything checkable so far has passed"; that is the one case worth paying for.
+  const preflight = verifyTakeover(entry, expectedPid, ourPidDomain(), null)
+  if (!preflight.ok && preflight.error !== 'unverifiable') return preflight
+
+  const identity = await readProcessIdentity(entry.pid)
+  const verdict = verifyTakeover(entry, expectedPid, ourPidDomain(), identity)
+  if (!verdict.ok) return verdict
+
+  try {
+    process.kill(verdict.pid, 'SIGTERM')
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code
+    // ESRCH here means it exited in the moment between verification and signal —
+    // the outcome the caller wanted, reached without us.
+    if (code === 'ESRCH') return { ok: true, pid: verdict.pid }
+    return { ok: false, error: 'failed', detail: (e as Error).message }
+  }
+  return { ok: true, pid: verdict.pid }
 }

@@ -231,6 +231,26 @@ export interface LiveSession {
   foreign: boolean
 }
 
+/**
+ * Why a takeover was refused. Nine reasons rather than one boolean, because they
+ * mean genuinely different things to whoever is reading: one needs a refresh, one
+ * will never work, and one means the pid was recycled and something else holds it.
+ */
+export type TakeoverRefusal =
+  | 'not-found'
+  | 'foreign'
+  | 'pid-changed'
+  | 'no-proc-start'
+  | 'not-running'
+  | 'unverifiable'
+  | 'pid-reused'
+  | 'not-claude'
+  | 'failed'
+
+export type TakeoverResult =
+  | { ok: true; pid: number }
+  | { ok: false; error: TakeoverRefusal; detail?: string }
+
 export interface CCProject {
   encodedDir: string
   realPath: string
@@ -1300,6 +1320,16 @@ declare global {
       ccProjectDelete: (sourceId: string, encodedDir: string) => Promise<ProjectOpResult>
       /** `claude` processes live on this machine right now, read from the registry. */
       ccLiveSessions: () => Promise<LiveSession[]>
+      /**
+       * Ask a live `claude` to exit so its conversation can be resumed here.
+       * `expectedPid` is the pid the UI displayed — it is only ever used to refuse
+       * when the registry now says something else, never to choose what to signal.
+       */
+      ccTakeoverSession: (
+        sourceId: string,
+        sessionId: string,
+        expectedPid: number
+      ) => Promise<TakeoverResult>
       /** Move the project's real folder on disk, and re-key everything that named it. */
       ccProjectMove: (
         sourceId: string,
