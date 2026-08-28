@@ -30,6 +30,7 @@ and why. Porting the behaviour without the rule reintroduces the bug.
 | **2** | Archive / rename / move / delete a conversation | `7d5f197` |
 | **3** | The notification hook | `38f4716` |
 | **4** | The rest of transcript fidelity | `2006d61` |
+| **5** | Project-level lifecycle | `aaf573d`, `f08f06f` |
 
 Alongside these, two things that were not ports but came out of the same work:
 
