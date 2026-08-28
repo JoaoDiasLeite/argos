@@ -31,6 +31,7 @@ and why. Porting the behaviour without the rule reintroduces the bug.
 | **3** | The notification hook | `38f4716` |
 | **4** | The rest of transcript fidelity | `2006d61` |
 | **5** | Project-level lifecycle | `aaf573d`, `f08f06f` |
+| **6** | Backlog fused with the repo, and memory diagnostics | `40b2bc0` |
 
 Alongside these, two things that were not ports but came out of the same work:
 
