@@ -105,6 +105,11 @@ export function getFavoriteProjects(): string[] {
   return Array.isArray(raw) ? raw.filter((k): k is string => typeof k === 'string') : []
 }
 
+/** Replace the whole list — for the move, which re-keys it rather than toggling one. */
+export function setFavoriteProjects(keys: string[]): void {
+  storeSet(FAVOURITES_KEY, keys)
+}
+
 export function setProjectFavorite(sourceId: string, encodedDir: string, on: boolean): string[] {
   const key = projectKey(sourceId, encodedDir)
   const cur = getFavoriteProjects().filter((k) => k !== key)
@@ -130,6 +135,11 @@ export function getArchivedProjects(): string[] {
   return Array.isArray(raw) ? raw.filter((k): k is string => typeof k === 'string') : []
 }
 
+/** Replace the whole list — same reason as `setFavoriteProjects`. */
+export function setArchivedProjects(keys: string[]): void {
+  storeSet(ARCHIVED_KEY, keys)
+}
+
 export function setProjectArchived(sourceId: string, encodedDir: string, on: boolean): string[] {
   const key = projectKey(sourceId, encodedDir)
   const cur = getArchivedProjects().filter((k) => k !== key)
@@ -146,14 +156,31 @@ export function setProjectArchived(sourceId: string, encodedDir: string, on: boo
  * on a move — and a pin left behind by a delete resurrects a ghost row the next time
  * a directory with that name appears.
  */
-export function forgetProjectPrefs(sourceId: string, encodedDir: string): void {
+export function forgetProjectPrefs(sourceId: string, encodedDir: string, realPath?: string): void {
   const key = projectKey(sourceId, encodedDir)
   const favourites = getFavoriteProjects().filter((k) => k !== key)
   storeSet(FAVOURITES_KEY, favourites)
   const archived = getArchivedProjects().filter((k) => k !== key)
   storeSet(ARCHIVED_KEY, archived)
-  // `rooms-layout` is deliberately not touched here: it is keyed by the project's
-  // real path, not by `<sourceId>:<encodedDir>`, so forgetting it needs the
-  // path re-keying that the move-project round brings. Listed rather than omitted
-  // so the gap is visible to whoever adds the next preference.
+  // `rooms-layout` is keyed by the project's real path rather than by
+  // `<sourceId>:<encodedDir>`, so it is cleared only when the caller could resolve
+  // one. See `rekeyProjectPrefs` in project-prefs.ts for the full inventory of what
+  // names a project; these two lists plus this layout are what *filing* means, and
+  // filing for a directory that is gone is nothing but a ghost row waiting to
+  // reappear.
+  if (realPath) {
+    const layout = getRoomsLayout()
+    const gone = realPath.replace(/[\\/]+$/, '').toLowerCase()
+    const matches = (k: string): boolean => k.replace(/[\\/]+$/, '').toLowerCase() === gone
+    setRoomsLayout({
+      order: layout.order.filter((k) => !matches(k)),
+      names: Object.fromEntries(Object.entries(layout.names).filter(([k]) => !matches(k)))
+    })
+  }
+  // Deliberately NOT cleared: the `projectPath` on the records under
+  // `<userData>/sessions`, `scheduler` and `sprints`. Those point at *work*, not at
+  // filing — deleting an empty project must not delete a scheduled run or a sprint
+  // that happened to name the same folder. The move re-keys them, because the work
+  // is still there and its folder simply moved; the delete leaves them alone,
+  // because the work outlives the project row.
 }

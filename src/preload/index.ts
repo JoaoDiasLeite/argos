@@ -236,6 +236,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('cc:project-archive', sourceId, encodedDir, on),
   ccProjectDelete: (sourceId: string, encodedDir: string) =>
     ipcRenderer.invoke('cc:project-delete', sourceId, encodedDir),
+  ccProjectMove: (sourceId: string, encodedDir: string, toPath: string) =>
+    ipcRenderer.invoke('cc:project-move', sourceId, encodedDir, toPath),
 
   // Session tags + label vocabulary
   ccSetSessionTags: (sourceId: string, encodedDir: string, sessionId: string, tags: string[]) =>

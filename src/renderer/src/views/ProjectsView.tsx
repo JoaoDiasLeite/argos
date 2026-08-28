@@ -118,6 +118,14 @@ export default function ProjectsView({ onResume, target }: Props) {
   // arrives. Held by id rather than applied directly because switching the archived
   // toggle re-reads the list, and whichever read finishes last would otherwise win.
   const [pendingPeek, setPendingPeek] = useState<string | null>(null)
+  // A project to re-select once the reloaded list contains it, keyed the same way —
+  // a folder move changes `encodedDir`, the id this whole view addresses a project
+  // by, so the selection has to follow it to the NEW key rather than the old one
+  // `load()` is about to make stale. Same "apply once the listing arrives" shape as
+  // `pendingPeek` above, for the same reason: `load()` is async.
+  const [pendingSelect, setPendingSelect] = useState<{ sourceId: string; encodedDir: string } | null>(
+    null
+  )
   // Searching inside the selected project. A separate box from the one above, and a
   // narrower read: in here you are looking for a conversation you had, and matching
   // every file path the assistant touched buries it.
@@ -312,6 +320,23 @@ export default function ProjectsView({ onResume, target }: Props) {
       setPendingPeek(null)
     }
   }, [sessions, pendingPeek])
+
+  // Same shape, for a project that just moved: `load()` (called via `onChanged` right
+  // before this fires) is async, so the match has to be looked up against the
+  // reloaded `projects` this effect depends on, not the stale list from the moment
+  // of the click. `selectProject` also pulls in that project's sessions, which a
+  // bare `setSelected` would not.
+  useEffect(() => {
+    if (!pendingSelect) return
+    const match = projects.find(
+      (p) => p.sourceId === pendingSelect.sourceId && p.encodedDir === pendingSelect.encodedDir
+    )
+    if (match) {
+      selectProject(match)
+      setPendingSelect(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects, pendingSelect])
 
   // The tag vocabulary offered here is the registry plus whatever is applied in this
   // project — a tag can exist on a conversation before the registry has caught up.
@@ -585,6 +610,7 @@ export default function ProjectsView({ onResume, target }: Props) {
                           anchor={projectMenu}
                           onClose={() => setProjectMenu(null)}
                           onChanged={load}
+                          onMoved={setPendingSelect}
                         />
                       )}
                     </div>

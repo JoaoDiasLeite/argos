@@ -329,6 +329,22 @@ async function resolveRealPath(
 }
 
 /**
+ * The real folder a project's transcript directory stands for — the same value
+ * `getAllProjects` shows, resolved the same three ways.
+ *
+ * Exported so project-lifecycle.ts can ask for one project without listing every
+ * project, and kept beside `realPathMap`/`resolveRealPath` so there is still exactly
+ * one place that knows the order those fallbacks go in.
+ *
+ * For a WSL source the answer is a POSIX path, because that is what the distro's own
+ * `.claude.json` records. It is not a path Windows `fs` can open — see
+ * `posixToWslUnc`.
+ */
+export async function projectRealPath(src: ClaudeSource, encodedDir: string): Promise<string> {
+  return resolveRealPath(src, encodedDir, realPathMap(src.claudeJsonPath))
+}
+
+/**
  * Resolve a transcript path, or null if the ids don't address one inside their own
  * source. Every write to a transcript must go through this.
  *

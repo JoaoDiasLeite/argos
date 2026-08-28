@@ -38,7 +38,7 @@ import {
   renameSession,
   unarchiveSession
 } from './session-lifecycle'
-import { deleteProject } from './project-lifecycle'
+import { deleteProject, moveProjectFolder } from './project-lifecycle'
 import {
   deleteLabel,
   foldIn,
@@ -1354,6 +1354,32 @@ ipcMain.handle('cc:project-archive', (_, sourceId: string, encodedDir: string, o
 )
 ipcMain.handle('cc:project-delete', (_, sourceId: string, encodedDir: string) =>
   deleteProject(sourceId, encodedDir)
+)
+
+/**
+ * Folders a run is working in right now.
+ *
+ * Renaming a folder out from under a running chat breaks it, so the move refuses
+ * while one is in flight. This is a courtesy check, not the guarantee: a session
+ * started but never saved has no file to read a path from, and an open terminal
+ * holding the directory is invisible here entirely. The real backstop is the
+ * operating system refusing the rename, which the move reports as it comes.
+ */
+function busyProjectPaths(): string[] {
+  const out: string[] = []
+  for (const id of activeRuns.keys()) {
+    try {
+      const s = readJsonFile<{ projectPath?: string }>(path.join(sessionsDir, `${id}.json`))
+      if (s.projectPath) out.push(s.projectPath)
+    } catch {
+      // Unsaved session — nothing to read a path from.
+    }
+  }
+  return out
+}
+
+ipcMain.handle('cc:project-move', (_, sourceId: string, encodedDir: string, toPath: string) =>
+  moveProjectFolder(sourceId, encodedDir, toPath, busyProjectPaths())
 )
 
 // ─── Session tags + the label vocabulary ──────────────────────────────────────

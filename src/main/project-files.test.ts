@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { countTranscripts, removeEmptyProjectDir } from './project-files'
+import { countTranscripts, removeEmptyProjectDir, renameDir } from './project-files'
 
 let dir: string
 const made: string[] = []
@@ -106,5 +106,40 @@ describe('removeEmptyProjectDir', () => {
   it('removes a truly empty directory', async () => {
     expect(await removeEmptyProjectDir(dir)).toEqual({ ok: true })
     expect(fs.existsSync(dir)).toBe(false)
+  })
+})
+
+describe('renameDir', () => {
+  it('moves the whole tree, contents intact', async () => {
+    write('sub/a.jsonl', 'one\n')
+    expect(await renameDir(path.join(dir, 'sub'), path.join(dir, 'renamed'))).toEqual({ ok: true })
+    expect(fs.existsSync(path.join(dir, 'sub'))).toBe(false)
+    expect(fs.readFileSync(path.join(dir, 'renamed', 'a.jsonl'), 'utf-8')).toBe('one\n')
+  })
+
+  it('reports a source that is not there', async () => {
+    expect(await renameDir(path.join(dir, 'nope'), path.join(dir, 'other'))).toEqual({
+      ok: false,
+      error: 'not-found'
+    })
+  })
+
+  it('refuses an existing destination rather than merging into it', async () => {
+    // Two project trees interleaved is not something a rename can undo.
+    write('a/one.jsonl')
+    write('b/two.jsonl')
+    const res = await renameDir(path.join(dir, 'a'), path.join(dir, 'b'))
+    expect(res.ok).toBe(false)
+    expect(fs.existsSync(path.join(dir, 'a', 'one.jsonl'))).toBe(true)
+    expect(fs.existsSync(path.join(dir, 'b', 'two.jsonl'))).toBe(true)
+  })
+
+  it('fails rather than creating the destination parent', async () => {
+    // The parent is checked upstream; inventing it here would file the project
+    // somewhere the user never named.
+    write('a/one.jsonl')
+    const res = await renameDir(path.join(dir, 'a'), path.join(dir, 'missing', 'deep', 'a'))
+    expect(res.ok).toBe(false)
+    expect(fs.existsSync(path.join(dir, 'a', 'one.jsonl'))).toBe(true)
   })
 })

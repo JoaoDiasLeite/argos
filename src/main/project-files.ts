@@ -55,6 +55,30 @@ export function countTranscripts(dir: string): ProjectContents {
   }
 }
 
+/**
+ * Rename a directory, on the same volume only.
+ *
+ * Never falls back to copy-then-unlink the way `moveTranscript` does. That fallback
+ * is right for one file and wrong for a project tree: a half-finished copy of a
+ * whole folder leaves two partial trees and no way to tell which files made it. The
+ * cross-volume case is refused upstream by `verifyTarget`, so an `EXDEV` reaching
+ * here is a bug in that check — it comes back as `failed` with the message, to be
+ * seen and fixed, rather than being silently handled into a copy nobody asked for.
+ *
+ * Refuses an existing destination rather than merging into it: two project trees
+ * interleaved is not something a rename can undo.
+ */
+export async function renameDir(from: string, to: string): Promise<ProjectOpResult> {
+  if (!fs.existsSync(from)) return { ok: false, error: 'not-found' }
+  if (fs.existsSync(to)) return { ok: false, error: 'failed', message: `already exists: ${to}` }
+  try {
+    await fs.promises.rename(from, to)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: 'failed', message: (e as Error).message }
+  }
+}
+
 /** Whether any `.jsonl` exists anywhere below `dir`, at any depth. */
 function hasTranscriptAnywhere(dir: string): boolean {
   let entries: fs.Dirent[]

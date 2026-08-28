@@ -22,6 +22,9 @@
   --accent-dim: rgba(223, 122, 82, 0.17);
   --accent-hover: #ed8f6b;
   --success: #5cb37e;
+  /* Sits between success and error: a thing that worked, but not completely. Named
+     here rather than inlined at the one call site so a palette can move it. */
+  --warn: #d9a83c;
   --error: #e36460;
   --thinking: #8c7fd6;
   --thinking-bg: rgba(140, 127, 214, 0.12);
@@ -50,6 +53,7 @@
   --accent-dim: rgba(189, 93, 68, 0.13);
   --accent-hover: #aa523b;
   --success: #3a9c63;
+  --warn: #a8720f;
   --error: #cf3b3b;
   --thinking: #6a5fc0;
   --thinking-bg: rgba(106, 95, 192, 0.1);

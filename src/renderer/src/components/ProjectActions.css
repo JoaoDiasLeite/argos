@@ -109,3 +109,71 @@
   line-height: 1.4;
   padding: 4px 8px 0;
 }
+
+/* The folder-move prompt. Same card shape as .proj-actions-confirm, but neutral —
+   this one is a real filesystem move, not a destructive one, so it does not borrow
+   the delete confirmation's error-tinted border. */
+.proj-actions-move {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+}
+.proj-actions-move-current {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-1);
+  line-height: 1.45;
+}
+.proj-actions-move label {
+  font-size: 10.5px;
+  color: var(--text-2);
+}
+.proj-actions-move-row {
+  display: flex;
+  gap: 6px;
+}
+.proj-actions-move-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-0);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 7px;
+}
+.proj-actions-move-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* A success that quietly swallowed a partial failure is a lie — this is the
+   non-error tone that says the move worked but something downstream did not
+   re-key cleanly, distinct from .proj-actions-error's red. */
+.proj-actions-warn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg-1));
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border));
+  border-radius: var(--radius-sm);
+}
+.proj-actions-warn p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-1);
+  line-height: 1.45;
+}
+.proj-actions-warn-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 11px;
+  color: var(--text-1);
+  line-height: 1.5;
+}

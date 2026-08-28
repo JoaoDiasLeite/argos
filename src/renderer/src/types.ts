@@ -224,6 +224,34 @@ export interface CCProject {
  * UI, and a `catch` flattens them into one failure. `not-empty` carries the count so
  * the refusal can say what it is protecting.
  */
+/**
+ * Why a folder change was refused. Each one is a different sentence in the UI, and a
+ * single 'failed' would have flattened nine distinct refusals into one shrug.
+ */
+export type ProjectMoveRefusal =
+  | 'not-found'
+  | 'invalid-target'
+  | 'same-path'
+  | 'target-inside-source'
+  | 'target-exists'
+  | 'no-parent'
+  | 'cross-volume'
+  | 'encoded-collision'
+  | 'busy'
+  | 'failed'
+
+/**
+ * The result of changing a project's folder.
+ *
+ * `warnings` is the honest part: the two renames either both happen or both roll
+ * back, but re-keying the source's `.claude.json` and the app's own preferences is
+ * best-effort — a failure there leaves a working project with a stale pin, not a
+ * broken one, and saying so beats pretending it went perfectly.
+ */
+export type ProjectMoveResult =
+  | { ok: true; encodedDir: string; realPath: string; warnings: string[] }
+  | { ok: false; error: ProjectMoveRefusal; detail?: string }
+
 export type ProjectOpResult =
   | { ok: true }
   | { ok: false; error: 'not-found' }
@@ -1133,6 +1161,12 @@ declare global {
       ccProjectArchive: (sourceId: string, encodedDir: string, on: boolean) => Promise<string[]>
       /** Refused with `not-empty` while the project still holds any transcript. */
       ccProjectDelete: (sourceId: string, encodedDir: string) => Promise<ProjectOpResult>
+      /** Move the project's real folder on disk, and re-key everything that named it. */
+      ccProjectMove: (
+        sourceId: string,
+        encodedDir: string,
+        toPath: string
+      ) => Promise<ProjectMoveResult>
       ccSetSessionTags: (
         sourceId: string,
         encodedDir: string,
