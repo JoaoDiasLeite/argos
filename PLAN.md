@@ -29,7 +29,7 @@ and why. Porting the behaviour without the rule reintroduces the bug.
 | **1.5** | Projects view rework (not from FRIDAY — see below) | `b795bd6`, `c0a9ef0`, `c8c4adc`, `e3cabc2`, `2b209b2` |
 | **2** | Archive / rename / move / delete a conversation | `7d5f197` |
 | **3** | The notification hook | `38f4716` |
-| **4** | The rest of transcript fidelity | pending |
+| **4** | The rest of transcript fidelity | `2006d61` |
 
 Alongside these, two things that were not ports but came out of the same work:
 
