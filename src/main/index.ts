@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
+import { installContextMenu } from './context-menu'
 import { resolvePolicy } from './ai-policy'
 import { getEngine } from './providers/registry'
 import { collectText } from './providers/collect'
@@ -478,6 +479,7 @@ function createWindow(): void {
   })
 
   hardenWebContents(mainWindow)
+  installContextMenu(mainWindow)
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
