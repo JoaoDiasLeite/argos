@@ -38,6 +38,7 @@ import {
   renameSession,
   unarchiveSession
 } from './session-lifecycle'
+import { deleteProject } from './project-lifecycle'
 import {
   deleteLabel,
   foldIn,
@@ -107,7 +108,8 @@ import {
   setRoomsLayout,
   RoomsLayout,
   getFavoriteProjects,
-  setProjectFavorite
+  setProjectFavorite,
+  setProjectArchived
 } from './store'
 import {
   loadAccounts,
@@ -1339,6 +1341,19 @@ ipcMain.handle(
 ipcMain.handle('cc:favorites', () => getFavoriteProjects())
 ipcMain.handle('cc:set-favorite', (_, sourceId: string, encodedDir: string, on: boolean) =>
   setProjectFavorite(sourceId, encodedDir, on)
+)
+
+// ─── Project lifecycle ────────────────────────────────────────────────────────
+//
+// Archiving a project is a preference — organisation, not files — and orthogonal to
+// archiving a session, which moves one. Deleting a project is refused while it still
+// holds a transcript, active or archived, so it can never wipe a conversation.
+
+ipcMain.handle('cc:project-archive', (_, sourceId: string, encodedDir: string, on: boolean) =>
+  setProjectArchived(sourceId, encodedDir, on)
+)
+ipcMain.handle('cc:project-delete', (_, sourceId: string, encodedDir: string) =>
+  deleteProject(sourceId, encodedDir)
 )
 
 // ─── Session tags + the label vocabulary ──────────────────────────────────────

@@ -3,6 +3,7 @@ import { CcSessionTarget, CCProject, CCSessionMeta, SearchHit, SearchSnippet } f
 import { TagChips, TagEditor, useLabelColors } from '../components/SessionTags'
 import LabelManager from '../components/LabelManager'
 import SessionPeek from '../components/SessionPeek'
+import ProjectActions from '../components/ProjectActions'
 import { tagsSatisfy } from '../lib/tags'
 import { groupByAge, sortSessions, SORT_LABELS, SortMode } from '../lib/session-groups'
 import './views.css'
@@ -104,6 +105,15 @@ export default function ProjectsView({ onResume, target }: Props) {
   const [favorites, setFavorites] = useState<string[]>([])
   const [peeked, setPeeked] = useState<CCSessionMeta | null>(null)
   const [showArchived, setShowArchived] = useState(false)
+  // Active/Archived for the *project* column — orthogonal to `showArchived` above,
+  // which scopes the sessions inside whichever project is selected.
+  const [showArchivedProjects, setShowArchivedProjects] = useState(false)
+  // Which project's actions popover is open, and where its trigger sits. One at a
+  // time, like the tag popover. The rect travels with it because the panel is
+  // positioned `fixed` — see ProjectActions.
+  const [projectMenu, setProjectMenu] = useState<{ key: string; top: number; left: number } | null>(
+    null
+  )
   // A conversation to put in the reading panel as soon as a listing containing it
   // arrives. Held by id rather than applied directly because switching the archived
   // toggle re-reads the list, and whichever read finishes last would otherwise win.
@@ -144,6 +154,23 @@ export default function ProjectsView({ onResume, target }: Props) {
     window.electronAPI.ccFavorites().then(setFavorites)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // A project just archived (or unarchived past the other scope) drops out of the
+  // visible list on the next `load()`. Leaving the reading panel pointed at a row
+  // nobody can see is worse than clearing it — the sessions pane falls back to its
+  // "select a project" empty state.
+  useEffect(() => {
+    if (!selected) return
+    const stillListed = projects.find(
+      (p) => p.sourceId === selected.sourceId && p.encodedDir === selected.encodedDir
+    )
+    if (!stillListed || stillListed.archived !== showArchivedProjects) {
+      setSelected(null)
+      setSessions([])
+      setPeeked(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects, showArchivedProjects])
 
   // Debounced full-text search across all sources.
   useEffect(() => {
@@ -317,7 +344,12 @@ export default function ProjectsView({ onResume, target }: Props) {
     const q = projectFilter.trim().toLowerCase()
     return !q || p.name.toLowerCase().includes(q) || p.realPath.toLowerCase().includes(q)
   }
-  const shown = projects.filter(matchesFilter)
+  const hasArchivedProjects = projects.some((p) => p.archived)
+  // `hasArchivedProjects &&` is what stops the column stranding itself: unarchive the
+  // last archived project while looking at them and the toggle disappears, leaving a
+  // scope nothing can ever match.
+  const archivedScope = hasArchivedProjects && showArchivedProjects
+  const shown = projects.filter((p) => matchesFilter(p) && p.archived === archivedScope)
   const pinned = shown.filter((p) => favorites.includes(`${p.sourceId}:${p.encodedDir}`))
   const rest = shown.filter((p) => !favorites.includes(`${p.sourceId}:${p.encodedDir}`))
   const projectSections = [
@@ -342,7 +374,7 @@ export default function ProjectsView({ onResume, target }: Props) {
       // Never steal a key from a field, and never from the tag popover.
       const el = e.target as HTMLElement | null
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return
-      if (editingTags || showLabels || query.trim().length >= 2) return
+      if (editingTags || showLabels || projectMenu || query.trim().length >= 2) return
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         step(1)
@@ -441,7 +473,9 @@ export default function ProjectsView({ onResume, target }: Props) {
         </div>
       ) : (
         <div className="projects-split">
-          <div className="projects-list">
+          {/* Scrolling the column moves the row out from under a `fixed` panel, so the
+              panel goes rather than drifting away from what it acts on. */}
+          <div className="projects-list" onScroll={() => setProjectMenu(null)}>
             <input
               className="projects-filter"
               placeholder="Filter projects…"
@@ -449,6 +483,27 @@ export default function ProjectsView({ onResume, target }: Props) {
               value={projectFilter}
               onChange={(e) => setProjectFilter(e.target.value)}
             />
+            {/* Only earns its place once something is archived — an "Active/Archived"
+                toggle over a column that has never had anything filed away is a
+                control for a state that cannot occur. */}
+            {hasArchivedProjects && (
+              <span className="projects-scope" role="group" aria-label="Which projects">
+                <button
+                  className={showArchivedProjects ? '' : 'on'}
+                  aria-pressed={!showArchivedProjects}
+                  onClick={() => setShowArchivedProjects(false)}
+                >
+                  Active
+                </button>
+                <button
+                  className={showArchivedProjects ? 'on' : ''}
+                  aria-pressed={showArchivedProjects}
+                  onClick={() => setShowArchivedProjects(true)}
+                >
+                  Archived
+                </button>
+              </span>
+            )}
             {projectSections.map((section) => (
               <div key={section.label} className="project-section">
                 {/* Only labelled when there is something to tell apart — a lone
@@ -484,7 +539,14 @@ export default function ProjectsView({ onResume, target }: Props) {
                         {p.kind === 'wsl' && <span className="src-badge wsl">{p.distro}</span>}
                       </div>
                       <div className="project-row-meta">
-                        <span>{p.sessionCount}</span>
+                        {/* A bare 0 reads as a loading state; say what it means instead. */}
+                        <span>
+                          {p.sessionCount + p.archivedCount === 0
+                            ? 'Empty'
+                            : p.archivedCount
+                              ? `${p.sessionCount} · ${p.archivedCount} archived`
+                              : p.sessionCount}
+                        </span>
                         <span>·</span>
                         <span>{timeAgo(p.lastActive)}</span>
                       </div>
@@ -500,6 +562,31 @@ export default function ProjectsView({ onResume, target }: Props) {
                       >
                         ★
                       </button>
+                      <button
+                        className="project-menu-btn"
+                        title="Actions"
+                        aria-label={`Actions for ${p.name}`}
+                        aria-expanded={projectMenu?.key === key}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (projectMenu?.key === key) {
+                            setProjectMenu(null)
+                            return
+                          }
+                          const r = e.currentTarget.getBoundingClientRect()
+                          setProjectMenu({ key, top: r.bottom + 4, left: r.left })
+                        }}
+                      >
+                        ⋯
+                      </button>
+                      {projectMenu?.key === key && (
+                        <ProjectActions
+                          project={p}
+                          anchor={projectMenu}
+                          onClose={() => setProjectMenu(null)}
+                          onChanged={load}
+                        />
+                      )}
                     </div>
                   )
                 })}

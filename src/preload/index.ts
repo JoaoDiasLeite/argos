@@ -230,6 +230,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ccSetFavorite: (sourceId: string, encodedDir: string, on: boolean) =>
     ipcRenderer.invoke('cc:set-favorite', sourceId, encodedDir, on),
 
+  // Project-level lifecycle. Archiving a project is a preference — organisation, not
+  // files — and deliberately orthogonal to archiving a session, which moves one.
+  ccProjectArchive: (sourceId: string, encodedDir: string, on: boolean) =>
+    ipcRenderer.invoke('cc:project-archive', sourceId, encodedDir, on),
+  ccProjectDelete: (sourceId: string, encodedDir: string) =>
+    ipcRenderer.invoke('cc:project-delete', sourceId, encodedDir),
+
   // Session tags + label vocabulary
   ccSetSessionTags: (sourceId: string, encodedDir: string, sessionId: string, tags: string[]) =>
     ipcRenderer.invoke('cc:set-session-tags', sourceId, encodedDir, sessionId, tags),

@@ -29,7 +29,7 @@ import {
   withDecisions
 } from './ask-answers-pure'
 import { getWslClaudeRoots } from './wsl'
-import { storeGet, storeSet } from './store'
+import { getArchivedProjects, projectKey, storeGet, storeSet } from './store'
 import { readJsonFile } from './json-file'
 import { getAccounts } from './accounts'
 
@@ -152,13 +152,21 @@ export interface CCProject {
   encodedDir: string
   realPath: string
   name: string
+  /** Transcripts sitting directly in the project directory. */
   sessionCount: number
+  /** Transcripts in the project's `archived/` subdirectory. */
+  archivedCount: number
   lastActive: number
   sourceId: string
   sourceLabel: string
   kind: 'local' | 'wsl'
   distro?: string
   account?: SourceAccount
+  /**
+   * Filed away by the user — a preference, not a directory. Orthogonal to archiving
+   * a *session*, which moves a file.
+   */
+  archived: boolean
 }
 
 export interface CCSessionMeta {
@@ -280,7 +288,7 @@ function realPathMap(claudeJsonPath: string): Map<string, string> {
   return map
 }
 
-function encodePath(p: string): string {
+export function encodePath(p: string): string {
   return p.replace(/[^a-zA-Z0-9]/g, '-')
 }
 
@@ -359,6 +367,30 @@ export async function safeSessionPath(
   return full
 }
 
+/**
+ * The same guard, resolving to a project directory rather than a transcript. Every
+ * write that takes a whole project must go through this.
+ *
+ * `encodedDir` comes from the renderer and reaches the filesystem, and here it
+ * addresses a recursive delete rather than one file, so it is checked rather than
+ * trusted: no separators, no `..`, and the resolved path must still sit under the
+ * source's own projects dir. Containment is again the check that matters — the
+ * charset test is a fast reject, but the source's dir is itself built from a
+ * discovered path, so the real thing is what the result is verified against.
+ */
+export async function safeProjectDir(sourceId: string, encodedDir: string): Promise<string | null> {
+  if (!SAFE_ID.test(encodedDir)) return null
+  if (encodedDir === '.' || encodedDir === '..') return null
+  const src = await resolveSource(sourceId)
+  if (!src) return null
+  const base = path.resolve(src.projectsDir)
+  const rel = path.join(base, encodedDir)
+  const full = path.resolve(rel)
+  if (full !== rel) return null
+  if (!full.startsWith(base + path.sep)) return null
+  return full
+}
+
 function safeStat(p: string): fs.Stats | null {
   try {
     return fs.statSync(p)
@@ -377,6 +409,15 @@ function parseTimestamp(v: unknown): number {
 
 // ─── Projects / sessions ────────────────────────────────────────────────────
 
+/** `.jsonl` names in a directory; a missing one is empty, not an error. */
+function jsonlIn(dir: string): string[] {
+  try {
+    return fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))
+  } catch {
+    return []
+  }
+}
+
 async function projectsForSource(src: ClaudeSource): Promise<CCProject[]> {
   if (!fs.existsSync(src.projectsDir)) return []
   const pathMap = realPathMap(src.claudeJsonPath)
@@ -387,19 +428,25 @@ async function projectsForSource(src: ClaudeSource): Promise<CCProject[]> {
   } catch {
     return []
   }
+  const archivedProjects = new Set(getArchivedProjects())
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
     const dir = path.join(src.projectsDir, entry.name)
-    let jsonlFiles: string[]
-    try {
-      jsonlFiles = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))
-    } catch {
-      continue
-    }
-    if (jsonlFiles.length === 0) continue
+    const jsonlFiles = jsonlIn(dir)
+    const archivedFiles = jsonlIn(path.join(dir, ARCHIVED_DIR))
+    // A directory with no active transcripts is kept rather than skipped. One holding
+    // only archived ones is a real project the user filed away, and an entirely empty
+    // one is exactly the project the delete action exists to clear — hiding it made
+    // that unreachable.
     let lastActive = 0
+    // Archived transcripts count towards it too, or a project whose files are all
+    // archived sorts as if it had never been used.
     for (const f of jsonlFiles) {
       const st = safeStat(path.join(dir, f))
+      if (st && st.mtimeMs > lastActive) lastActive = st.mtimeMs
+    }
+    for (const f of archivedFiles) {
+      const st = safeStat(path.join(dir, ARCHIVED_DIR, f))
       if (st && st.mtimeMs > lastActive) lastActive = st.mtimeMs
     }
     const realPath = await resolveRealPath(src, entry.name, pathMap)
@@ -408,12 +455,14 @@ async function projectsForSource(src: ClaudeSource): Promise<CCProject[]> {
       realPath,
       name: realPath.split(/[\\/]/).filter(Boolean).pop() ?? entry.name,
       sessionCount: jsonlFiles.length,
+      archivedCount: archivedFiles.length,
       lastActive,
       sourceId: src.id,
       sourceLabel: src.label,
       kind: src.kind,
       distro: src.distro,
-      account: src.account
+      account: src.account,
+      archived: archivedProjects.has(projectKey(src.id, entry.name))
     })
   }
   return result

@@ -73,8 +73,8 @@
 .project-row-name {
   font-size: 12.5px; font-weight: 600; color: var(--text-0);
   display: flex; align-items: center; gap: 5px;
-  /* Room for the star, which sits in the corner over this line. */
-  padding-right: 18px;
+  /* Room for the star and the actions ellipsis, which sit in the corner over this line. */
+  padding-right: 36px;
 }
 .project-row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-row-meta {
@@ -474,6 +474,60 @@
   color: var(--accent);
   font-size: 9px;
   flex-shrink: 0;
+}
+
+/* The actions trigger sits beside the star, same show-on-hover/active treatment. */
+.project-menu-btn {
+  position: absolute;
+  top: 5px;
+  right: 22px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  line-height: 1;
+  font-size: 13px;
+  background: transparent;
+  border: 0;
+  color: var(--text-2);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+}
+.project-row:hover .project-menu-btn,
+.project-menu-btn:focus-visible,
+.project-menu-btn[aria-expanded='true'] {
+  opacity: 1;
+}
+.project-menu-btn:hover { color: var(--accent); }
+@media (pointer: coarse) {
+  .project-menu-btn { opacity: 1; }
+}
+
+/* Two scopes, not a facet — same shape as .sessions-scope, kept as its own class per
+   convention 6: a bare class shared across the two stylesheets would silently drift
+   the moment one of them changed independently of the other. */
+.projects-scope {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.projects-scope button {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+  border: 0;
+  background: var(--bg-1);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.projects-scope button.on {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+.projects-scope button:hover:not(.on) {
+  color: var(--text-0);
 }
 
 /* ── Three panes ─────────────────────────────────────────────────────────── */

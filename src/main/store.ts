@@ -112,3 +112,48 @@ export function setProjectFavorite(sourceId: string, encodedDir: string, on: boo
   storeSet(FAVOURITES_KEY, next)
   return next
 }
+
+// ─── Archived projects ────────────────────────────────────────────────────────
+
+/**
+ * Projects filed away by the user, keyed `<sourceId>:<encodedDir>` exactly as the
+ * favourites are.
+ *
+ * Archiving a *project* is organisation and nothing else: no file moves, and the
+ * conversations inside stay where they are. That is what separates it from archiving
+ * a *session*, which is the file sitting in `archived/`. A preference, safe to lose.
+ */
+const ARCHIVED_KEY = 'archivedProjects'
+
+export function getArchivedProjects(): string[] {
+  const raw = storeGet<unknown>(ARCHIVED_KEY, [])
+  return Array.isArray(raw) ? raw.filter((k): k is string => typeof k === 'string') : []
+}
+
+export function setProjectArchived(sourceId: string, encodedDir: string, on: boolean): string[] {
+  const key = projectKey(sourceId, encodedDir)
+  const cur = getArchivedProjects().filter((k) => k !== key)
+  const next = on ? [...cur, key] : cur
+  storeSet(ARCHIVED_KEY, next)
+  return next
+}
+
+/**
+ * Drop every preference held against a project that no longer exists.
+ *
+ * **Any new project preference must be added to both the forget-project and the
+ * move-project paths.** One that lands only in forget survives a delete and vanishes
+ * on a move — and a pin left behind by a delete resurrects a ghost row the next time
+ * a directory with that name appears.
+ */
+export function forgetProjectPrefs(sourceId: string, encodedDir: string): void {
+  const key = projectKey(sourceId, encodedDir)
+  const favourites = getFavoriteProjects().filter((k) => k !== key)
+  storeSet(FAVOURITES_KEY, favourites)
+  const archived = getArchivedProjects().filter((k) => k !== key)
+  storeSet(ARCHIVED_KEY, archived)
+  // `rooms-layout` is deliberately not touched here: it is keyed by the project's
+  // real path, not by `<sourceId>:<encodedDir>`, so forgetting it needs the
+  // path re-keying that the move-project round brings. Listed rather than omitted
+  // so the gap is visible to whoever adds the next preference.
+}

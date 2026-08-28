@@ -200,14 +200,35 @@ export interface CCProject {
   encodedDir: string
   realPath: string
   name: string
+  /** Transcripts sitting directly in the project directory. */
   sessionCount: number
+  /** Transcripts in the project's `archived/` subdirectory. */
+  archivedCount: number
   lastActive: number
   sourceId: string
   sourceLabel: string
   kind: 'local' | 'wsl'
   distro?: string
   account?: SourceAccount
+  /**
+   * Filed away by the user — a preference, not a directory. Orthogonal to archiving
+   * a *session*, which moves a file.
+   */
+  archived: boolean
 }
+
+/**
+ * What a project-level operation answers with.
+ *
+ * A conflict is a value, not a thrown error: each one needs a different move in the
+ * UI, and a `catch` flattens them into one failure. `not-empty` carries the count so
+ * the refusal can say what it is protecting.
+ */
+export type ProjectOpResult =
+  | { ok: true }
+  | { ok: false; error: 'not-found' }
+  | { ok: false; error: 'not-empty'; sessions: number; archived: number }
+  | { ok: false; error: 'failed'; message: string }
 
 export interface CCSessionMeta {
   sessionId: string
@@ -1108,6 +1129,10 @@ declare global {
       ) => Promise<LifecycleResult>
       ccFavorites: () => Promise<string[]>
       ccSetFavorite: (sourceId: string, encodedDir: string, on: boolean) => Promise<string[]>
+      /** Filing only — the flag lives in preferences, no file moves. */
+      ccProjectArchive: (sourceId: string, encodedDir: string, on: boolean) => Promise<string[]>
+      /** Refused with `not-empty` while the project still holds any transcript. */
+      ccProjectDelete: (sourceId: string, encodedDir: string) => Promise<ProjectOpResult>
       ccSetSessionTags: (
         sourceId: string,
         encodedDir: string,
