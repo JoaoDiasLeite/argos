@@ -32,6 +32,7 @@ and why. Porting the behaviour without the rule reintroduces the bug.
 | **4** | The rest of transcript fidelity | `2006d61` |
 | **5** | Project-level lifecycle | `aaf573d`, `f08f06f` |
 | **6** | Backlog fused with the repo, and memory diagnostics | `40b2bc0` |
+| **9** | Hygiene: one theme registry, static convention guards | `d7e12e2` |
 
 Alongside these, two things that were not ports but came out of the same work:
 
@@ -192,26 +193,26 @@ worked out: projects sidebar → aligned rows banded by date → a full-height r
 panel that opens on selection. Selecting stopped being resuming, because a decision
 taken with the same gesture as the action is not a decision.
 
----
-
-## Next
-
-### Lot 5 — project-level lifecycle · 2–3 days · depends on 2
+### Lot 5 — project-level lifecycle
 
 The half of Lot 2 deliberately left out.
 
 - Archive a project (a flag in preferences — organisation, not files; orthogonal to
   archiving *sessions*), delete an empty project (only when it holds no `.jsonl`,
   active **or** archived, so it can never wipe a conversation).
-- **Change a project's folder** is the heavy one: FRIDAY's `move-project.js` runs nine
-  blocks before any write, with rollback on the first two steps, re-keys eight
-  preference files, and refuses a different volume rather than copying. Worth its own
-  round.
+- **Change a project's folder** was the heavy one, and took its own round: nine checks
+  before any write, rollback on the first two only, eight preference surfaces re-keyed,
+  and a different volume refused rather than copied. The rollback line is where it is
+  because after the two renames the disk is consistent — a stale pin is recoverable by
+  hand, a folder separated from its transcripts is not.
+- **The delete's refusal is a rescan, not the count the list showed.** That count is
+  from a moment ago, and it is recursive because a `.jsonl` in an unexpected
+  subdirectory is still a conversation.
 - **The rule that matters for any new preference:** it must be added to *both* the
   forget-project and move-project paths. One that lands only in forget survives a
   delete and vanishes on a move.
 
-### Lot 6 — backlog fused with the repo, and memory diagnostics · 4–5 days · depends on 0
+### Lot 6 — the backlog the repo already has, and memory diagnostics
 
 Where FRIDAY went furthest. Argos's Planner manages tasks that exist only in Argos;
 FRIDAY's manages the `- [ ]` boxes already in the repo — and those survive the app.
@@ -231,6 +232,38 @@ FRIDAY's manages the `- [ ]` boxes already in the repo — and those survive the
 **Decide before starting:** two sources of truth for tasks is the real risk. The rule
 to adopt is that when a primary record exists in the repo, the repo wins, and Argos's
 own store shows as legacy with a migration.
+
+### Lot 9 — hygiene
+
+- A **single tested theme registry** (`lib/palettes.ts`). The plan said nine palettes;
+  there were fourteen, which is the argument. All fourteen agreed with the CSS, so this
+  was never a repair — the deliverable is `palettes.test.ts`, which reads global.css off
+  disk and checks both directions: a drifted swatch fails, and so does a palette defined
+  in CSS but never offered in the picker.
+- **The registry is necessarily a second copy.** A palette is a `[data-palette]`
+  selector and can only live in a stylesheet, but the picker needs the colours as values
+  before anything is applied. The duplication is not the defect; the duplication going
+  unchecked was.
+- **`applyTheme` was in five windows**, each with its own `'warm-rust'` literal. The
+  fifth was found only because the comment written for the fourth went looking.
+- **The terminal background stayed out.** FRIDAY has the picker, the meta theme-colour
+  and the terminal background reading from one module; Argos has no meta theme-colour,
+  and `terminal-theme.ts` documents three reasons its terminals deliberately do *not*
+  follow the app's theme. Folding it in would have been a regression dressed as tidying.
+- **Static guard tests** for conventions that have already failed once. They do not
+  catch a new case; they catch the rule being deleted, which is how these come back.
+- **A guard that fires on novel-but-fine code gets deleted**, so the CSS one is
+  calibrated: the naive check finds 89 collisions, bare-only finds 51, and after
+  exempting overrides of the base sheets and highlight.js's fixed names, twelve remain.
+  Those twelve are a **baseline — recorded debt, not approval** — and the test also
+  fails on a baseline entry that has gone stale, so a fix must shorten the list.
+- **Each guard was made to fail on purpose before being trusted.** A guard nobody has
+  seen fail is not known to work.
+
+
+---
+
+## Next
 
 ### Lot 7 — live sessions: takeover and terminal grid · 2–3 days · independent
 
@@ -257,16 +290,6 @@ expensive and the most dispensable — **only if substring search is actually fa
   config makes the index and the query disagree in silence when the model changes.
 - Local by default; a remote endpoint means conversation prose leaves the machine in
   clear text, and that is an owner-chosen exception, never a default.
-
-### Lot 9 — hygiene · 1–2 days · independent
-
-- A **single tested theme registry**. Argos has nine palettes defined only in CSS, so
-  a swatch in the picker can drift from the palette it names. FRIDAY has one module the
-  picker, the meta theme-colour and the terminal background all read from.
-- **Static guard tests** for conventions that have already failed once. They do not
-  catch a new case; they catch the rule being deleted, which is how these come back.
-
----
 
 ## Not porting
 
