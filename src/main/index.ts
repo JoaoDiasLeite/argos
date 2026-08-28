@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions, clipboard } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
@@ -362,9 +362,16 @@ function ensureDirs(): void {
  * paste handling of the same keystroke — so pasted text arrived twice, once raw and once
  * bracketed (\x1b[200~…), garbling whatever the CLI was reading. So: NO Edit roles here.
  *
- * Nothing is lost by dropping them. Chromium handles Ctrl+C/V/X/A/Z natively inside text
- * inputs and textareas without any menu accelerator, so the app's own fields are unaffected;
- * see ChatTerminal.tsx / RemoteTerminal.tsx for the terminal side of the same fix.
+ * **What WAS lost by dropping them, and how it is paid for.** This comment used to claim
+ * Chromium handles Ctrl+C/V/X/A/Z natively inside inputs without a menu accelerator. It
+ * does not: with no Edit roles anywhere, Ctrl+V was dead in every field in the app —
+ * settings, filters, the composer — and the paste event never even reached the document.
+ * The bug was invisible for as long as it was because the only report it produced was
+ * "I can't paste images", which sounded like an image problem and was not.
+ *
+ * They are not coming back, because the accelerator is exactly what fired a second paste
+ * on top of xterm's. Instead the renderer handles Ctrl+V itself (see lib/clipboard-paste.ts),
+ * which reads through the IPC below and leaves terminals to their own bracketed-paste path.
  */
 function installApplicationMenu(): void {
   const template: MenuItemConstructorOptions[] = [
@@ -2288,6 +2295,25 @@ ipcMain.handle('fs:read-dir', (_, dirPath: string) => {
   } catch (err: unknown) {
     return { error: err instanceof Error ? err.message : String(err) }
   }
+})
+
+/**
+ * The clipboard, for the renderer's own Ctrl+V handling.
+ *
+ * An image wins over text when both are present: a screenshot on the clipboard also
+ * carries a text/html fragment, and pasting that markup into a composer instead of
+ * the picture is never what was meant.
+ *
+ * Read here rather than through `navigator.clipboard` in the renderer because that
+ * one needs a permission prompt this app has no way to answer, while the main
+ * process can simply read it.
+ */
+ipcMain.handle('clipboard:read', () => {
+  const image = clipboard.readImage()
+  if (!image.isEmpty()) {
+    return { image: { mediaType: 'image/png', data: image.toPNG().toString('base64') } }
+  }
+  return { text: clipboard.readText() }
 })
 
 ipcMain.handle('fs:read-file', (_, filePath: string) => {

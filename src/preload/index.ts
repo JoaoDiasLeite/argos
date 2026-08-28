@@ -379,6 +379,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readDir: (dirPath: string) => ipcRenderer.invoke('fs:read-dir', dirPath),
   readFile: (filePath: string) => ipcRenderer.invoke('fs:read-file', filePath),
   openFolder: (defaultPath?: string) => ipcRenderer.invoke('fs:open-folder', defaultPath),
+  // The app handles Ctrl+V itself — see renderer lib/clipboard-paste.ts for why.
+  clipboardRead: () => ipcRenderer.invoke('clipboard:read'),
   fsReadText: (filePath: string) => ipcRenderer.invoke('fs:read-text', filePath),
   fsWriteFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:write-file', filePath, content),
   fsMkdir: (dirPath: string) => ipcRenderer.invoke('fs:mkdir', dirPath),

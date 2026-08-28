@@ -34,6 +34,7 @@ import ApprovalModal from './components/ApprovalModal'
 import PendingRuns, { PendingRun } from './components/PendingRuns'
 import FileEditor from './components/FileEditor'
 import { readLocalFile, writeLocalFile } from './lib/local-file-io'
+import { installClipboardPaste } from './lib/clipboard-paste'
 import { applyPalette } from './lib/palettes'
 import CheckpointsModal from './components/CheckpointsModal'
 import GitModal from './components/GitModal'
@@ -769,6 +770,9 @@ export default function App() {
         setView('chat')
       }
     })
+    // Ctrl+V is the app's own to handle: the application menu carries no Edit roles,
+    // and without them the keystroke reached nothing at all. See lib/clipboard-paste.ts.
+    const offPaste = installClipboardPaste()
     const offPlan = window.electronAPI.onPlanUsage(setPlanReport)
     // Plan-limit notification clicks navigate here; validate against real views.
     // ALL_VIEWS is the list the View type itself is derived from, so a view added to
@@ -789,6 +793,7 @@ export default function App() {
       offCc()
       offPlan()
       offView()
+      offPaste()
     }
   }, [])
 

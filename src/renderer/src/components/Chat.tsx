@@ -4,6 +4,7 @@ import MessageBubble from './MessageBubble'
 import ModelPicker from './ModelPicker'
 import ChatConfigBar from './ChatConfigBar'
 import { sessionToMarkdown } from '../lib/markdown-export'
+import { CLIPBOARD_IMAGE_EVENT, ClipboardImageDetail } from '../lib/clipboard-paste'
 import './Chat.css'
 
 // ChatTerminal pulls in @xterm/xterm + its addons (~300 kB) but is only ever
@@ -384,6 +385,30 @@ export default function Chat({
    * MIME type on it — so reading `items` alone silently dropped every pasted image
    * file, with no attachment and no message to say why.
    */
+  /**
+   * An image pasted with Ctrl+V.
+   *
+   * It arrives as a window event rather than through `onPaste` because the DOM paste
+   * event does not fire in this app at all — the application menu carries no Edit
+   * roles, so the keystroke is handled by lib/clipboard-paste.ts instead, which reads
+   * the clipboard in the main process and announces what it found.
+   *
+   * Attached only while this chat can actually take an attachment, so a paste while a
+   * run is streaming does not quietly queue one onto the next message.
+   */
+  useEffect(() => {
+    if (!ready) return
+    const onImage = (e: Event) => {
+      const { mediaType, data } = (e as CustomEvent<ClipboardImageDetail>).detail
+      setAttachments((prev) => [
+        ...prev,
+        { kind: 'image', mediaType, data, preview: `data:${mediaType};base64,${data}` }
+      ])
+    }
+    window.addEventListener(CLIPBOARD_IMAGE_EVENT, onImage)
+    return () => window.removeEventListener(CLIPBOARD_IMAGE_EVENT, onImage)
+  }, [ready])
+
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = Array.from(e.clipboardData.items)
     const images = items
