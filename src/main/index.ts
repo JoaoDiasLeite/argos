@@ -40,6 +40,16 @@ import {
 } from './session-lifecycle'
 import { deleteProject, moveProjectFolder } from './project-lifecycle'
 import {
+  BacklogRef,
+  createTopic,
+  deleteTopic,
+  duplicateTopic,
+  editTopic,
+  readBacklog,
+  setTopicDone
+} from './backlog'
+import { diagnoseMemory } from './memory-diagnostic'
+import {
   deleteLabel,
   foldIn,
   getLabels,
@@ -1537,6 +1547,37 @@ ipcMain.handle('planner:list', () => listWeeks())
 ipcMain.handle('planner:get', (_, weekStart: string) => getWeek(weekStart))
 ipcMain.handle('planner:save', (_, week: WeekPlan) => saveWeek(week))
 ipcMain.handle('planner:delete', (_, weekStart: string) => deleteWeek(weekStart))
+
+// ─── Backlog fused with the repo ──────────────────────────────────────────────
+//
+// The week planner's tasks live in userData and exist only here. These are the
+// `- [ ]` boxes already written in the project's own record: they survive this app,
+// travel with the repo, and are read by whoever opens the file. Where a project has
+// one, it is the truth and Argos's own list is legacy.
+
+ipcMain.handle('backlog:read', (_, projectPath: string) => readBacklog(projectPath))
+ipcMain.handle(
+  'backlog:create',
+  (_, projectPath: string, title: string, section?: string | null) =>
+    createTopic(projectPath, title, section ?? null)
+)
+ipcMain.handle(
+  'backlog:set-done',
+  (_, projectPath: string, ref: BacklogRef, done: boolean) => setTopicDone(projectPath, ref, done)
+)
+ipcMain.handle('backlog:edit', (_, projectPath: string, ref: BacklogRef, title: string) =>
+  editTopic(projectPath, ref, title)
+)
+ipcMain.handle('backlog:duplicate', (_, projectPath: string, ref: BacklogRef) =>
+  duplicateTopic(projectPath, ref)
+)
+ipcMain.handle('backlog:delete', (_, projectPath: string, ref: BacklogRef) =>
+  deleteTopic(projectPath, ref)
+)
+
+// Read-only. There is no write counterpart on purpose: the report names the file a
+// gap is in, and closing it is the user's edit to make.
+ipcMain.handle('memory:diagnose', (_, projectPath?: string) => diagnoseMemory(projectPath))
 
 // ─── Sprints (Scrum board / standups / burndown) ───────────────────────────────
 

@@ -19,7 +19,7 @@ import './views.css'
 import './PlannerView.css'
 import './SprintBoard.css'
 
-export type PlannerMode = 'week' | 'sprint'
+export type PlannerMode = 'week' | 'sprint' | 'backlog'
 type SprintSection = 'board' | 'standup' | 'burndown'
 
 interface SprintBoardProps {
@@ -87,10 +87,13 @@ function pointsOf(i: SprintItem): number {
 // the control sits in the same header slot regardless of the active mode.
 export function PlannerModeToggle({ mode, onMode }: { mode: PlannerMode; onMode: (m: PlannerMode) => void }) {
   return (
-    <div className="seg-control planner-mode" title="Switch between the weekly planner and the sprint board">
-      {(['week', 'sprint'] as const).map((m) => (
+    <div
+      className="seg-control planner-mode"
+      title="Switch between the weekly planner, the sprint board and the repo's own backlog"
+    >
+      {(['week', 'sprint', 'backlog'] as const).map((m) => (
         <button key={m} className={mode === m ? 'on' : ''} onClick={() => onMode(m)}>
-          {m === 'week' ? 'Week' : 'Sprint'}
+          {m === 'week' ? 'Week' : m === 'sprint' ? 'Sprint' : 'Backlog'}
         </button>
       ))}
     </div>

@@ -807,6 +807,108 @@ export interface WeekPlan {
 
 export type PlannerAssistMode = 'review' | 'draft' | 'reflect' | 'rebalance' | 'import'
 
+// ─── Backlog fused with the repo ──────────────────────────────────────────────
+// Mirror of src/main/backlog.ts — keep both in sync.
+//
+// The week planner's tasks exist only in Argos. These are the `- [ ]` boxes already
+// written in the project's own record, so they outlive the app and travel with the
+// repo. When a project has one, that file is the truth and Argos's own unscheduled
+// tasks are legacy.
+
+/** One checkbox line in the primary record. */
+export interface BacklogTopic {
+  /**
+   * 0-based line index in the file as it was last read — the address every edit
+   * tries first. Text is only the fallback, because two identical lines make text
+   * alone write to whichever came first.
+   */
+  line: number
+  /** The text after the checkbox, trimmed. */
+  title: string
+  done: boolean
+  /** Nearest heading above the line, or null when it sits before any. */
+  section: string | null
+  /** Leading whitespace, kept so an edit or a duplicate holds its nesting. */
+  indent: string
+}
+
+export interface BacklogRecord {
+  /** Absolute path of the primary record. */
+  path: string
+  /** Relative to the project root — what the UI names. */
+  relPath: string
+  topics: BacklogTopic[]
+  /**
+   * Unticked topics in the whole file. The real count, never the length of a list
+   * the UI capped for display — a backlog that says 12 when it holds 40 is worse
+   * than no count at all.
+   */
+  pending: number
+  done: number
+}
+
+/** No record is a normal state, not an error: most projects do not keep one. */
+export type BacklogReadResult =
+  | { found: true; record: BacklogRecord }
+  | { found: false; looked: string[] }
+
+/**
+ * Addressing one topic for a write. Index first, title as the fallback.
+ */
+export interface BacklogRef {
+  line: number
+  title: string
+}
+
+/**
+ * Two conflicts, deliberately distinct. `stale` means the file moved under the view
+ * and nothing matches any more — reload. `ambiguous` means more than one line
+ * matches, which is exactly the case a text `findIndex` used to silently write to
+ * the first of; it needs the user to say which, not a guess.
+ */
+export type BacklogWriteResult =
+  | { ok: true; record: BacklogRecord }
+  | { ok: false; error: 'stale' }
+  | { ok: false; error: 'ambiguous'; matches: number }
+  | { ok: false; error: 'no-record' }
+  | { ok: false; error: 'failed'; message: string }
+
+// ─── Memory diagnostics ───────────────────────────────────────────────────────
+// Mirror of src/main/memory-diagnostic.ts — keep both in sync.
+//
+// Read-only by construction: there is no write counterpart to any of this, and there
+// should not be. It reports what the three memory layers hold and what is missing;
+// fixing a gap is the user's edit to make, in the file the report names.
+
+export type MemoryLayerId = 'global' | 'project' | 'memories'
+
+export interface MemoryLayer {
+  id: MemoryLayerId
+  label: string
+  path: string
+  exists: boolean
+  /** Bytes for the two file layers; total bytes across the directory for `memories`. */
+  bytes: number
+  /** Files in the memory directory. Undefined for the single-file layers. */
+  files?: number
+}
+
+export interface MemoryGap {
+  layer: MemoryLayerId
+  /** `warn` is something actually broken; `info` is something merely absent. */
+  severity: 'info' | 'warn'
+  message: string
+}
+
+export interface MemoryReport {
+  projectPath?: string
+  layers: MemoryLayer[]
+  gaps: MemoryGap[]
+  /** 0-100, derived from the layers present and the gaps found. */
+  score: number
+  checkedAt: number
+}
+
 // ─── Sprints (Scrum board / standups / burndown) ────────────────────────────────
 // Mirror of src/main/sprints.ts — keep both in sync.
 
@@ -1203,6 +1305,32 @@ declare global {
       plannerGet: (weekStart: string) => Promise<WeekPlan>
       plannerSave: (week: WeekPlan) => Promise<WeekPlan>
       plannerDelete: (weekStart: string) => Promise<string[]>
+
+      /**
+       * The repo-backed backlog. Every write is addressed by `BacklogRef` and comes
+       * back with the whole re-read record, so the renderer never has to guess what
+       * the file looks like after its own edit.
+       */
+      backlogRead: (projectPath: string) => Promise<BacklogReadResult>
+      backlogCreate: (
+        projectPath: string,
+        title: string,
+        section?: string | null
+      ) => Promise<BacklogWriteResult>
+      backlogSetDone: (
+        projectPath: string,
+        ref: BacklogRef,
+        done: boolean
+      ) => Promise<BacklogWriteResult>
+      backlogEdit: (
+        projectPath: string,
+        ref: BacklogRef,
+        title: string
+      ) => Promise<BacklogWriteResult>
+      backlogDuplicate: (projectPath: string, ref: BacklogRef) => Promise<BacklogWriteResult>
+      backlogDelete: (projectPath: string, ref: BacklogRef) => Promise<BacklogWriteResult>
+      /** Read-only — there is no counterpart that writes. */
+      memoryDiagnose: (projectPath?: string) => Promise<MemoryReport>
       plannerAssist: (payload: {
         mode: PlannerAssistMode
         week: WeekPlan

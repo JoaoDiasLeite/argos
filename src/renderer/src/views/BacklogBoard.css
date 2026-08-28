@@ -1,0 +1,409 @@
+/* Every class here is prefixed `backlog-` and greped for first: these land in one global
+   sheet with every other view's, and `.backlog-head`/`.backlog-count`/`.backlog-tasks`
+   are already taken by the week planner's own unscheduled column. */
+
+/* ─── Header ─────────────────────────────────────────────────────────────── */
+.backlog-project-path {
+  font-size: 12px;
+  color: var(--text-2);
+  max-width: 38vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl; /* Keep the tail of a long path — the project name is at the end. */
+  text-align: left;
+}
+
+/* ─── Empty states ─────────────────────────────────────────────────────────── */
+.backlog-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+.backlog-empty-card {
+  max-width: 460px;
+  text-align: center;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px 28px;
+}
+.backlog-empty-card h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  color: var(--text-0);
+}
+.backlog-empty-card p {
+  margin: 0 0 16px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-1);
+}
+.backlog-empty-card code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background: var(--bg-2);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+.backlog-looked {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.backlog-looked-item {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text-1);
+  background: var(--bg-2);
+  border: 1px solid var(--border-light);
+  border-radius: 7px;
+  padding: 5px 10px;
+}
+
+/* ─── Layout ─────────────────────────────────────────────────────────────── */
+.backlog-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.backlog-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 1000px) {
+  .backlog-layout {
+    grid-template-columns: 1fr;
+  }
+}
+.backlog-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.backlog-aside {
+  min-width: 0;
+}
+
+/* ─── The file being edited ────────────────────────────────────────────────── */
+.backlog-file {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.backlog-file-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.backlog-file-path {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.backlog-file-meta {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.backlog-tally {
+  display: inline-flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.backlog-tally-pill {
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--accent-dim);
+  color: var(--accent-hover);
+}
+.backlog-tally-pill.done {
+  background: var(--bg-2);
+  color: var(--text-2);
+}
+
+/* ─── Conflict / error notice ──────────────────────────────────────────────── */
+.backlog-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+  color: var(--text-1);
+}
+.backlog-notice.error {
+  border-color: color-mix(in srgb, var(--error) 45%, transparent);
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  color: var(--text-0);
+}
+.backlog-notice-x {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-2);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.backlog-notice-x:hover {
+  color: var(--text-0);
+}
+
+/* ─── Sections ───────────────────────────────────────────────────────────── */
+.backlog-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.backlog-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.backlog-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-0);
+  letter-spacing: 0.01em;
+}
+.backlog-group-count {
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.backlog-topics {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ─── One checkbox line ────────────────────────────────────────────────────── */
+.backlog-topic {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--bg-1);
+  border: 1px solid var(--border-light);
+  border-radius: 9px;
+  padding: 7px 10px;
+}
+.backlog-topic:hover {
+  border-color: var(--border);
+}
+.backlog-topic-box {
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.backlog-topic-title {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13.5px;
+  color: var(--text-0);
+  cursor: text;
+}
+.backlog-topic.done .backlog-topic-title {
+  text-decoration: line-through;
+  color: var(--text-2);
+}
+.backlog-topic-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  padding: 4px 8px;
+}
+.backlog-topic-actions {
+  display: inline-flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+  flex-shrink: 0;
+}
+.backlog-topic:hover .backlog-topic-actions,
+.backlog-topic:focus-within .backlog-topic-actions {
+  opacity: 1;
+}
+.backlog-topic-btn {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.backlog-topic-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-0);
+}
+.backlog-topic-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.backlog-topic-btn.danger:hover:not(:disabled) {
+  color: var(--error);
+}
+
+/* The delete confirmation names the topic — this line lives in the user's repo. */
+.backlog-confirm {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  font-size: 12.5px;
+  color: var(--text-1);
+}
+.backlog-confirm-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+/* ─── Adding a topic ─────────────────────────────────────────────────────── */
+.backlog-add {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 3px 2px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.backlog-add:hover {
+  color: var(--accent-hover);
+}
+.backlog-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.backlog-add-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  padding: 6px 10px;
+}
+.backlog-add-file {
+  border-top: 1px solid var(--border-light);
+  padding-top: 12px;
+}
+
+/* ─── Legacy Argos tasks ───────────────────────────────────────────────────── */
+.backlog-legacy {
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--bg-1);
+}
+.backlog-legacy-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--text-1);
+}
+.backlog-legacy-head > button {
+  margin-left: auto;
+}
+.backlog-legacy-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: var(--bg-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+}
+.backlog-legacy-note {
+  margin: 8px 0 10px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.backlog-legacy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.backlog-legacy-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-2);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.backlog-legacy-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── Memory panel (collapsible, beside the record) ───────────────────────── */
+.backlog-memory {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.backlog-memory-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 11px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-0);
+  cursor: pointer;
+}
+.backlog-memory-head:hover {
+  background: var(--bg-hover);
+}
+.backlog-memory-caret {
+  color: var(--text-2);
+  font-size: 11px;
+}
+.backlog-memory-body {
+  border-top: 1px solid var(--border-light);
+  padding: 12px 14px;
+}

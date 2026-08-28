@@ -269,6 +269,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   plannerGet: (weekStart: string) => ipcRenderer.invoke('planner:get', weekStart),
   plannerSave: (week: unknown) => ipcRenderer.invoke('planner:save', week),
   plannerDelete: (weekStart: string) => ipcRenderer.invoke('planner:delete', weekStart),
+
+  // The repo-backed backlog: the `- [ ]` boxes in the project's own record, which
+  // outlive this app. Conflicts come back as values — `stale` and `ambiguous` need
+  // different moves in the UI, and a `catch` flattens them into one failure.
+  backlogRead: (projectPath: string) => ipcRenderer.invoke('backlog:read', projectPath),
+  backlogCreate: (projectPath: string, title: string, section?: string | null) =>
+    ipcRenderer.invoke('backlog:create', projectPath, title, section),
+  backlogSetDone: (projectPath: string, ref: unknown, done: boolean) =>
+    ipcRenderer.invoke('backlog:set-done', projectPath, ref, done),
+  backlogEdit: (projectPath: string, ref: unknown, title: string) =>
+    ipcRenderer.invoke('backlog:edit', projectPath, ref, title),
+  backlogDuplicate: (projectPath: string, ref: unknown) =>
+    ipcRenderer.invoke('backlog:duplicate', projectPath, ref),
+  backlogDelete: (projectPath: string, ref: unknown) =>
+    ipcRenderer.invoke('backlog:delete', projectPath, ref),
+
+  // Read-only. Deliberately no write counterpart.
+  memoryDiagnose: (projectPath?: string) => ipcRenderer.invoke('memory:diagnose', projectPath),
   plannerAssist: (payload: unknown) => ipcRenderer.invoke('planner:assist', payload),
 
   // Sprints (Scrum board / standups / burndown)

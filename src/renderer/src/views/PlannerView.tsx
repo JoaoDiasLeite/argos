@@ -4,6 +4,7 @@ import { WeekPlan, PlannerTask, WeeklyPriority, Effort, PlannerAssistMode, CCAcc
 import ModelPicker from '../components/ModelPicker'
 import AccountPicker from '../components/AccountPicker'
 import SprintBoard, { PlannerModeToggle, PlannerMode } from './SprintBoard'
+import BacklogBoard from './BacklogBoard'
 import './views.css'
 import './PlannerView.css'
 
@@ -101,10 +102,13 @@ export default function PlannerView({
   onScheduleStandup,
   streaming
 }: PlannerProps) {
-  // Week planner vs. sprint board — persisted so the Planner reopens where you left it.
-  const [mode, setMode] = useState<PlannerMode>(
-    () => (localStorage.getItem('planner.mode') === 'sprint' ? 'sprint' : 'week')
-  )
+  // Week planner vs. sprint board vs. the repo's own backlog — persisted so the Planner
+  // reopens where you left it. Every mode has to be listed here: a restore that only
+  // knows two of them silently drops the user back on the week.
+  const [mode, setMode] = useState<PlannerMode>(() => {
+    const saved = localStorage.getItem('planner.mode')
+    return saved === 'sprint' || saved === 'backlog' ? saved : 'week'
+  })
   const changeMode = (m: PlannerMode) => {
     setMode(m)
     localStorage.setItem('planner.mode', m)
@@ -380,6 +384,14 @@ export default function PlannerView({
         onStandupChat={onStandupChat}
         onScheduleStandup={onScheduleStandup}
       />
+    )
+  }
+
+  // The repo-backed backlog hands off the same way. The week stays owned here: the board
+  // gets the unscheduled tasks and a way to drop one, not the week itself.
+  if (mode === 'backlog') {
+    return (
+      <BacklogBoard mode={mode} onMode={changeMode} legacyTasks={backlog} onDropLegacyTask={deleteTask} />
     )
   }
 

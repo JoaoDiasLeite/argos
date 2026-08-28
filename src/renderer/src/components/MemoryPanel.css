@@ -1,0 +1,197 @@
+.mem-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+}
+
+.mem-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mem-panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-0);
+  margin: 0;
+}
+
+.mem-loading {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* ── Score ────────────────────────────────────────────────────────────────── */
+
+.mem-score-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.mem-score-note {
+  font-size: 12.5px;
+  color: var(--text-1);
+  line-height: 1.4;
+}
+
+.mem-ring {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+}
+
+.mem-ring-track {
+  stroke: var(--bg-3);
+}
+
+/* Colour tracks the score band, not the individual gap severities — the ring is the
+   headline number, and the gap list underneath carries the detail. */
+.mem-ring-good .mem-ring-fill {
+  stroke: var(--success);
+}
+.mem-ring-mid .mem-ring-fill {
+  stroke: var(--warn);
+}
+.mem-ring-low .mem-ring-fill {
+  stroke: var(--error);
+}
+
+.mem-ring-num {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-0);
+}
+
+/* ── Layers ───────────────────────────────────────────────────────────────── */
+
+.mem-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mem-layer {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+
+/* A layer that is not there yet is still a normal state, not a fault — it only
+   reads a shade dimmer, never in the warn/error palette. */
+.mem-layer.mem-absent {
+  opacity: 0.7;
+}
+
+.mem-layer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mem-layer-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+
+.mem-layer-state {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+
+.mem-layer-path {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.mem-layer-meta {
+  font-size: 11px;
+  color: var(--text-1);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mem-note {
+  font-size: 11.5px;
+  color: var(--text-2);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* ── Gaps ─────────────────────────────────────────────────────────────────── */
+
+.mem-empty {
+  font-size: 12.5px;
+  color: var(--success);
+  margin: 0;
+}
+
+.mem-gaps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mem-gap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  border-left: 2px solid transparent;
+  background: var(--bg-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* warn is something actually broken; info is something merely absent — the two
+   must never share a colour, or a healthy young project reads as sick. */
+.mem-gap-warn {
+  border-left-color: var(--error);
+}
+.mem-gap-info {
+  border-left-color: var(--warn);
+}
+
+.mem-gap-badge {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-top: 1px;
+}
+.mem-gap-warn .mem-gap-badge {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 16%, transparent);
+}
+.mem-gap-info .mem-gap-badge {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+}
+
+.mem-gap-msg {
+  color: var(--text-1);
+}
