@@ -5,6 +5,7 @@ import { useModalA11y } from '../hooks/useModalA11y'
 import PermissionsModal from './PermissionsModal'
 import HooksModal from './HooksModal'
 import NotifyHookModal from './NotifyHookModal'
+import { PALETTES, DEFAULT_PALETTE } from '../lib/palettes'
 import './SettingsModal.css'
 
 interface Props {
@@ -321,32 +322,17 @@ export default function SettingsModal({
             <div className="form-group">
               <label>Color theme</label>
               <div className="palette-grid">
-                {([
-                  ['warm-rust', 'Warm Rust', '#141312', '#252320', '#df7a52'],
-                  ['graphite-indigo', 'Graphite Indigo', '#121316', '#21242d', '#7c83ff'],
-                  ['midnight-violet', 'Midnight Violet', '#0f0e16', '#1e1c2b', '#a78bfa'],
-                  ['slate-teal', 'Slate Teal', '#0f1414', '#1e2726', '#2dd4bf'],
-                  ['charcoal-amber', 'Charcoal Amber', '#131211', '#242220', '#e3a857'],
-                  ['arctic-sky', 'Arctic Sky', '#0f1318', '#1d242e', '#4f9cf5'],
-                  ['rose-noir', 'Rose Noir', '#151113', '#261f23', '#ec6a93'],
-                  ['evergreen', 'Evergreen', '#0f1411', '#1d2620', '#34d27f'],
-                  ['ruby-ember', 'Ruby Ember', '#141110', '#25201f', '#e85c6b'],
-                  ['ocean-cyan', 'Ocean Cyan', '#0d1417', '#1a262b', '#25c4dd'],
-                  ['harbor', 'Harbor', '#0e1822', '#1d2c3a', '#f9c24a'],
-                  ['dusk-copper', 'Dusk Copper', '#14121a', '#27232f', '#d97c52'],
-                  ['sage-stone', 'Sage Stone', '#111412', '#20251f', '#8ac06a'],
-                  ['solar-dune', 'Solar Dune', '#181411', '#2c2520', '#f5a742']
-                ] as const).map(([id, name, b0, b1, ac]) => (
+                {PALETTES.map(({ id, name, swatch: [bg0, bg2, accent] }) => (
                   <button
                     key={id}
-                    className={`palette-swatch ${(ui.palette || 'warm-rust') === id ? 'on' : ''}`}
+                    className={`palette-swatch ${(ui.palette || DEFAULT_PALETTE) === id ? 'on' : ''}`}
                     onClick={() => onSetUi({ palette: id })}
                     title={name}
                   >
                     <span className="palette-chip">
-                      <span style={{ background: b0 }} />
-                      <span style={{ background: b1 }} />
-                      <span style={{ background: ac }} />
+                      <span style={{ background: bg0 }} />
+                      <span style={{ background: bg2 }} />
+                      <span style={{ background: accent }} />
                     </span>
                     <span className="palette-name">{name}</span>
                   </button>

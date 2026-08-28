@@ -34,6 +34,7 @@ import ApprovalModal from './components/ApprovalModal'
 import PendingRuns, { PendingRun } from './components/PendingRuns'
 import FileEditor from './components/FileEditor'
 import { readLocalFile, writeLocalFile } from './lib/local-file-io'
+import { applyPalette } from './lib/palettes'
 import CheckpointsModal from './components/CheckpointsModal'
 import GitModal from './components/GitModal'
 import CommandPalette, { CommandItem } from './components/CommandPalette'
@@ -80,8 +81,7 @@ function generateId() {
 
 function applyUi(ui: UiPrefs) {
   const root = document.documentElement
-  root.dataset.theme = ui.theme
-  root.dataset.palette = ui.palette || 'warm-rust'
+  applyPalette(root, ui.theme, ui.palette)
   root.dataset.density = ui.density
   const zoom = ui.fontSize === 'sm' ? 0.9 : ui.fontSize === 'lg' ? 1.12 : 1
   window.electronAPI.setZoom(zoom)

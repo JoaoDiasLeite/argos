@@ -1,16 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { Session } from '../types'
+import { applyPalette } from '../lib/palettes'
 
 // Quick-launcher overlay window. Summoned via a global shortcut from anywhere in
 // the OS; every action hands off to the main window and dismisses the overlay.
 
 const RECENT_COUNT = 6
-
-function applyTheme(theme: string, palette: string) {
-  const root = document.documentElement
-  root.dataset.theme = theme
-  root.dataset.palette = palette || 'warm-rust'
-}
 
 export default function Overlay() {
   const [prompt, setPrompt] = useState('')
@@ -24,7 +19,7 @@ export default function Overlay() {
       window.electronAPI.getConfig(),
       window.electronAPI.listSessions()
     ])
-    applyTheme(config.ui.theme, config.ui.palette)
+    applyPalette(document.documentElement, config.ui.theme, config.ui.palette)
     setRecent(
       [...sessions]
         .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))

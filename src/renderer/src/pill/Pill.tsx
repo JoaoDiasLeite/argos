@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { applyPalette } from '../lib/palettes'
 
 // Agent status pill window. A tiny always-on-top "picture-in-picture" surface shown
 // while a run is in flight and the main window is hidden/minimized. It reflects live
@@ -6,12 +7,6 @@ import { useState, useEffect } from 'react'
 // The main process drives it via pill:update, sending partial payloads that we merge:
 // sessionName arrives once on run start, tool updates stream in, and the state flips
 // running→done/error at the end.
-
-function applyTheme(theme: string, palette: string): void {
-  const root = document.documentElement
-  root.dataset.theme = theme
-  root.dataset.palette = palette || 'warm-rust'
-}
 
 type PillState = 'running' | 'done' | 'error'
 
@@ -28,7 +23,9 @@ export default function Pill() {
   const [data, setData] = useState<PillData>({ state: 'running', sessionName: '', tool: null })
 
   useEffect(() => {
-    window.electronAPI.getConfig().then((config) => applyTheme(config.ui.theme, config.ui.palette))
+    window.electronAPI
+      .getConfig()
+      .then((config) => applyPalette(document.documentElement, config.ui.theme, config.ui.palette))
 
     const off = window.electronAPI.onPillUpdate((update: PillUpdate) => {
       setData((prev) => ({

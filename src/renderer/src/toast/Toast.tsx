@@ -1,17 +1,12 @@
 import { useState, useEffect } from 'react'
 import { ApprovalRequest } from '../types'
+import { applyPalette } from '../lib/palettes'
 
 // Approval toast window. Shown bottom-right, always on top, whenever an agent run
 // needs tool approval while the main window is hidden/unfocused, so the run never
 // stalls invisibly. Every decision routes through the same respondApproval bridge
 // the main-window modal uses; the main process broadcasts approval:resolved to
 // keep both UIs in sync (whichever one didn't answer clears that entry).
-
-function applyTheme(theme: string, palette: string) {
-  const root = document.documentElement
-  root.dataset.theme = theme
-  root.dataset.palette = palette || 'warm-rust'
-}
 
 /** One-line human summary of the tool's most salient argument. */
 function summarize(req: ApprovalRequest): string {
@@ -42,7 +37,9 @@ export default function Toast() {
   const [queue, setQueue] = useState<ApprovalRequest[]>([])
 
   useEffect(() => {
-    window.electronAPI.getConfig().then((config) => applyTheme(config.ui.theme, config.ui.palette))
+    window.electronAPI
+      .getConfig()
+      .then((config) => applyPalette(document.documentElement, config.ui.theme, config.ui.palette))
 
     const offApproval = window.electronAPI.onToastApproval((data: ApprovalRequest) => {
       // Ignore duplicates (the same id could arrive twice on rapid re-shows).
