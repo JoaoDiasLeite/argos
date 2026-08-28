@@ -32,6 +32,7 @@ and why. Porting the behaviour without the rule reintroduces the bug.
 | **4** | The rest of transcript fidelity | `2006d61` |
 | **5** | Project-level lifecycle | `aaf573d`, `f08f06f` |
 | **6** | Backlog fused with the repo, and memory diagnostics | `40b2bc0` |
+| **7** | Live sessions: takeover and terminal grid | `7e8fbc5`, `3714ec0`, `fe19e52` |
 | **9** | Hygiene: one theme registry, static convention guards | `d7e12e2` |
 
 Alongside these, two things that were not ports but came out of the same work:
@@ -233,6 +234,47 @@ FRIDAY's manages the `- [ ]` boxes already in the repo — and those survive the
 to adopt is that when a primary record exists in the repo, the repo wins, and Argos's
 own store shows as legacy with a migration.
 
+### Lot 7 — live sessions: takeover and terminal grid
+
+Argos could list conversations but not tell which were live. Claude Code already
+knows: one `<pid>.json` per session in a registry beside the `projects/` directory
+this app reads. That file is the only source of truth — Argos never decides that some
+process *looks like* a session, because the step after knowing which process holds a
+conversation is signalling it.
+
+- **The registry carries both guards the takeover needs.** `procStart` is the
+  process's start time and it is exact — the recorded value matches
+  `(Get-Process -Id N).StartTime.ToFileTime()` digit for digit. It is kept as a
+  string: `Number()` on an 18-digit value loses the low digits to float53, turning an
+  exact guard into "close enough".
+- **`pidDomain` is the guard the plan did not know about, and the one that matters
+  most here**, because Argos reads WSL sources. A distro's registry is readable over
+  its UNC path — which is what makes this the easy mistake — but its pids are that
+  distro's. This machine lists six such sessions, with pids like 102669. Signalling
+  those numbers on the Windows side would hit unrelated processes, so a foreign entry
+  is never probed at all, not even with signal 0.
+- **Every takeover guard is in one pure function with thirteen tests**, ordered
+  cheapest and most absolute first, so the expensive identity read is never reached
+  by a session that was never eligible. The pid comes from the registry, re-read at
+  the click; the request names *which session* and never the number.
+- **Not being able to verify is a refusal, not permission.** A missing pid, a
+  timeout, an access error and any non-Windows platform all return null, and null
+  reads as `unverifiable`. A module that can only fail to rule something out cannot
+  authorise anything by accident.
+- **A terminate, never a kill, and no escalation.** SIGTERM lets the CLI write its
+  transcript and clean up its registry entry, and that transcript is the thing the
+  user is trying to get back to.
+- **The nine refusals each get their own sentence**, because several of them are the
+  safety machinery working correctly and must not read as breakage.
+- **`status` is absent for some live entries**, so absent maps to `unknown`, never to
+  idle: "it has not said" and "it says it is doing nothing" are different answers to
+  someone deciding whether to interrupt.
+- **"Count consumers, not sockets" needed no implementing.** ChatTerminal
+  deliberately leaves its pty running on unmount, so closing a view kills nothing and
+  FRIDAY's defect is structurally unavailable. What it leaves is a rule for the grid,
+  which never calls `terminalKill` and never launches a CLI into a terminal it merely
+  attached to.
+
 ### Lot 9 — hygiene
 
 - A **single tested theme registry** (`lib/palettes.ts`). The plan said nine palettes;
@@ -261,23 +303,10 @@ own store shows as legacy with a migration.
   seen fail is not known to work.
 
 
+
 ---
 
 ## Next
-
-### Lot 7 — live sessions: takeover and terminal grid · 2–3 days · independent
-
-Argos lists sessions but cannot see which are live *outside* it. FRIDAY derives that
-from Claude Code's own `~/.claude/sessions/` registry with a PID-liveness check.
-
-- **Takeover** signals a process that is not our child — the most conservative
-  treatment available: a terminate, never a kill; the pid from the registry, never from
-  the request; and only after the liveness and PID-reuse guards.
-- One conversation, one live `claude`: hide the resume affordance over a session that
-  is already live, because two instances on one sid interleave turns and fork the
-  `parentUuid` chain.
-- If several panels ever share one terminal stream, **count consumers, not sockets** —
-  FRIDAY counted sockets and closing one panel killed the stream for all of them.
 
 ### Lot 8 — semantic search · 5–7 days · optional · depends on 0
 
