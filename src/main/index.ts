@@ -1292,7 +1292,12 @@ ipcMain.handle(
 )
 ipcMain.handle('cc:usage', (_, force = false) => getUsage(force))
 ipcMain.handle('cc:plan-usage', (_, force = false) => getPlanUsageForIpc(!!force))
-ipcMain.handle('cc:search', (_, query: string) => searchSessions(query))
+// A scope narrows the sweep to one project AND narrows what counts as a hit to
+// prose — see SearchScope. The renderer passes one or it doesn't; there is no third
+// depth to pick from.
+ipcMain.handle('cc:search', (_, query: string, scope?: { sourceId: string; encodedDir: string }) =>
+  searchSessions(query, 100, scope?.sourceId && scope?.encodedDir ? scope : undefined)
+)
 ipcMain.handle(
   'cc:session-peek',
   (_, sourceId: string, encodedDir: string, sessionId: string, archived = false) =>

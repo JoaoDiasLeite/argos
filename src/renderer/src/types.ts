@@ -25,6 +25,11 @@ export interface Message {
   error?: boolean
   /** Token usage for this assistant turn (shown under the message). */
   usage?: MessageUsage
+  /**
+   * Choices the owner made in an `AskUserQuestion`. When present this turn is the
+   * decision itself — drawn as one, not as the output of a tool.
+   */
+  decisions?: AskDecision[]
 }
 
 export interface Session {
@@ -266,6 +271,13 @@ export type LabelRenameResult =
   | { ok: true; renamed: number; failed: number }
   | { ok: false; error: 'label-exists'; target: string; count: number }
 
+export interface SearchSnippet {
+  kind: 'user' | 'assistant' | 'system' | 'tool_use' | 'tool_result'
+  before: string
+  match: string
+  after: string
+}
+
 export interface SearchHit {
   sessionId: string
   encodedDir: string
@@ -279,6 +291,23 @@ export interface SearchHit {
   kind: 'local' | 'wsl'
   distro?: string
   account?: SourceAccount
+  /** Every occurrence, not just the ones a snippet was cut for. */
+  matchCount: number
+  /** The first few hits with their surroundings and the kind of text they sit in. */
+  snippets: SearchSnippet[]
+}
+
+/**
+ * One question the owner answered mid-task, read back out of an `AskUserQuestion`
+ * pair. `rejected` is derived from the options, not parsed.
+ */
+export interface AskDecision {
+  question: string
+  header: string
+  chosen: string[]
+  /** Free text the owner typed — the "Other" option. */
+  custom: string | null
+  rejected: string[]
 }
 
 export interface CCTranscriptMessage {
@@ -287,6 +316,8 @@ export interface CCTranscriptMessage {
   thinking?: string
   toolCalls: { id: string; tool: string; input: unknown; result?: string; isError?: boolean }[]
   timestamp: number
+  /** Choices the owner made, on a turn of his own. */
+  decisions?: AskDecision[]
 }
 
 export interface UsageEntry {
@@ -1047,7 +1078,10 @@ declare global {
       ccPlanUsage: (force?: boolean) => Promise<PlanUsageReport>
       onPlanUsage: (cb: (report: PlanUsageReport) => void) => () => void
       onOpenView: (cb: (view: string) => void) => () => void
-      ccSearch: (query: string) => Promise<SearchHit[]>
+      ccSearch: (
+        query: string,
+        scope?: { sourceId: string; encodedDir: string }
+      ) => Promise<SearchHit[]>
       ccSessionPeek: (
         sourceId: string,
         encodedDir: string,

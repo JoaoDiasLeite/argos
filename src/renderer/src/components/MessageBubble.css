@@ -584,3 +584,98 @@
   .message-edit,
   .msg-usage { transition: none; }
 }
+
+/* ── Decision block ───────────────────────────────────────────
+   A choice the owner made mid-task. It carries the user bubble's accent-tinted
+   surface because the decision is his — the transcript records it as tool I/O,
+   which is exactly the misattribution this block exists to undo. */
+.decision-block {
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--accent) 10%, var(--bg-2)),
+    var(--bg-2)
+  );
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg);
+  padding: 10px 14px;
+  max-width: 600px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.14), 0 4px 12px rgba(0,0,0,0.07);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+}
+
+.decision-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.decision-head {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.decision-topic {
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+.decision-question {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+  margin-bottom: 3px;
+}
+
+.decision-chosen {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 13.5px;
+  color: var(--text-0);
+  line-height: 1.55;
+}
+
+.decision-tick {
+  color: var(--accent);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+/* Marks the "Other" option: text he wrote rather than an option he picked. */
+.decision-own {
+  font-size: 10px;
+  color: var(--text-2);
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.decision-rejected {
+  margin-top: 4px;
+}
+
+.decision-rejected > summary {
+  font-size: 11.5px;
+  color: var(--text-2);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.decision-rejected > summary::-webkit-details-marker { display: none; }
+.decision-rejected > summary::before {
+  content: '▸ ';
+  color: var(--text-2);
+}
+.decision-rejected[open] > summary::before { content: '▾ '; }
+
+.decision-rejected-item {
+  font-size: 12.5px;
+  color: var(--text-2);
+  padding: 3px 0 0 14px;
+  line-height: 1.5;
+}

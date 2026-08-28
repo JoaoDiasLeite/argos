@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { Message, ToolCall } from '../types'
+import { AskDecision, Message, ToolCall } from '../types'
 import Markdown from './Markdown'
 import DiffView, { highlightBlock } from './DiffView'
 import './MessageBubble.css'
@@ -27,6 +27,54 @@ function CopyMessage({ text }: { text: string }) {
       )}
       {copied ? 'Copied' : 'Copy'}
     </button>
+  )
+}
+
+
+/**
+ * A choice the owner made mid-task, drawn as one.
+ *
+ * The exchange is recorded as a tool call and its result, which is why a viewer
+ * that knows only about tools prints a decision of his in grey monospace with
+ * nobody's name on it. What he picked is in the open; what he turned down is one
+ * disclosure away — "what were the alternatives" is often what you come back for,
+ * but not at first glance.
+ */
+function DecisionBlock({ decisions }: { decisions: AskDecision[] }) {
+  return (
+    <div className="decision-block">
+      {decisions.map((d, i) => (
+        <div key={i} className="decision-section">
+          <div className="decision-head">
+            Decision{d.header ? <span className="decision-topic"> · {d.header}</span> : null}
+          </div>
+          <div className="decision-question">{d.question}</div>
+          {d.chosen.map((c) => (
+            <div key={c} className="decision-chosen">
+              <span className="decision-tick" aria-hidden="true">✓</span>
+              {c}
+            </div>
+          ))}
+          {d.custom && (
+            <div className="decision-chosen">
+              <span className="decision-tick" aria-hidden="true">✓</span>
+              {d.custom}
+              <span className="decision-own">written in</span>
+            </div>
+          )}
+          {d.rejected.length > 0 && (
+            <details className="decision-rejected">
+              <summary>
+                {d.rejected.length} option{d.rejected.length === 1 ? '' : 's'} not taken
+              </summary>
+              {d.rejected.map((r) => (
+                <div key={r} className="decision-rejected-item">{r}</div>
+              ))}
+            </details>
+          )}
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -481,6 +529,9 @@ function fmtTok(n: number): string {
 
 export default function MessageBubble({ message, streaming, onRetry, onEditResend, onBranch }: Props) {
   const isUser = message.role === 'user'
+  // A decision turn has no prose to edit, resend or branch from — it is a record of
+  // a choice, and the affordances of a message he typed would all be lies on it.
+  const decisions = message.decisions?.length ? message.decisions : null
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(message.content)
   const editRef = useRef<HTMLTextAreaElement>(null)
@@ -526,7 +577,7 @@ export default function MessageBubble({ message, streaming, onRetry, onEditResen
         <div className="message-head">
           <span className="message-role">{isUser ? 'You' : 'Claude'}</span>
           <CopyMessage text={message.content} />
-          {onBranch && !streaming && !editing && (
+          {onBranch && !streaming && !editing && !decisions && (
             <button
               className="message-branch"
               onClick={() => onBranch(message.id)}
@@ -542,7 +593,7 @@ export default function MessageBubble({ message, streaming, onRetry, onEditResen
               Branch
             </button>
           )}
-          {isUser && !editing && (
+          {isUser && !editing && !decisions && (
             <button
               className="message-edit"
               onClick={startEdit}
@@ -597,6 +648,8 @@ export default function MessageBubble({ message, streaming, onRetry, onEditResen
               </button>
             </div>
           </div>
+        ) : decisions ? (
+          <DecisionBlock decisions={decisions} />
         ) : message.content ? (
           <div className="message-content">
             {isUser ? (

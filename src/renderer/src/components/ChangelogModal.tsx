@@ -18,7 +18,18 @@ const CHANGELOG: Entry[] = [
     version: '1.5.0',
     date: '2026-08-28',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'A question Claude asked you mid-task, and what you picked, now read as your decision instead of as tool output. The transcript records the exchange as a tool call and its result, so it used to appear as grey machine text with nobody’s name on it — it is now a turn of yours, showing what you chose, and what you turned down one click away.',
+          'If the format of those answers ever changes, the conversation falls back to the tool bubbles it showed before rather than drawing a block it half understood.',
+          'Search inside a project. The box above the session list searches only the project you have open, and only prose — what you and Claude actually said. Matching every file path Claude ever touched buries the conversation you are looking for.',
+          'Search across everything still reads tool calls and their output, and now says so: a hit is labelled when it came from a command, from a tool’s output, or from text the CLI injected, and the matched words are highlighted in place.',
+          'Searching for a decision you made now finds the conversation you made it in. Your answer was recorded as tool output, which the narrower search excludes by design — both depths now agree that a choice of yours is yours.'
+        ]
+      }
+    ]
   },
   {
     version: '1.4.0',

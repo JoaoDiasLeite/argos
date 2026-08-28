@@ -1192,7 +1192,8 @@ export default function App() {
       content: m.text,
       thinking: m.thinking,
       toolCalls: m.toolCalls,
-      timestamp: m.timestamp
+      timestamp: m.timestamp,
+      decisions: m.decisions
     }))
     const isWsl = cc.kind === 'wsl'
     // A WSL session whose recorded cwd is actually a Windows mount (/mnt/c/…, /c/Users/…)

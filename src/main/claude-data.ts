@@ -12,6 +12,22 @@ import {
   stripCommandBlocks,
   stripReminders
 } from './transcript-text'
+import {
+  Matches,
+  Segment,
+  SearchSnippet,
+  collectMatches,
+  proseSegments,
+  rawPrefilterable,
+  searchableSegments,
+  snippetText
+} from './search-pure'
+import {
+  ASK_RESULT_PREFIX,
+  AskDecision,
+  stripPreviewBlocks,
+  withDecisions
+} from './ask-answers-pure'
 import { getWslClaudeRoots } from './wsl'
 import { storeGet, storeSet } from './store'
 import { readJsonFile } from './json-file'
@@ -239,6 +255,12 @@ export interface CCTranscriptMessage {
   thinking?: string
   toolCalls: { id: string; tool: string; input: unknown; result?: string; isError?: boolean }[]
   timestamp: number
+  /**
+   * The choices the owner made in an `AskUserQuestion`, when the pair could be
+   * read. Present only on the message that carries them, and that message is the
+   * owner's turn — a decision is his, not the tool's.
+   */
+  decisions?: AskDecision[]
 }
 
 // ─── Path helpers ───────────────────────────────────────────────────────────
@@ -508,6 +530,21 @@ export async function listSessions(
   return sessions.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+/**
+ * An entry's text for the peek. Unlike `contentToText` this keeps thinking blocks:
+ * where a conversation left off is sometimes the assistant still reasoning.
+ */
+function plainText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((b: any) => (b.type === 'text' ? b.text ?? '' : b.type === 'thinking' ? b.thinking ?? '' : ''))
+      .join(' ')
+  }
+  return ''
+}
+
 export interface SearchHit {
   sessionId: string
   encodedDir: string
@@ -521,92 +558,128 @@ export interface SearchHit {
   kind: 'local' | 'wsl'
   distro?: string
   account?: SourceAccount
+  /** Every occurrence, not just the ones a snippet was cut for. */
+  matchCount: number
+  /** The first few hits with their surroundings and the kind of text they sit in. */
+  snippets: SearchSnippet[]
 }
 
-function plainText(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content
-      .map((b: any) => (b.type === 'text' ? b.text ?? '' : b.type === 'thinking' ? b.thinking ?? '' : ''))
-      .join(' ')
+/**
+ * Where a search looks, and — because of that — how deep it reads.
+ *
+ * Naming a project narrows the sweep to it *and* narrows what counts as a hit to
+ * prose. The two go together on purpose: inside one project you are looking for a
+ * conversation you had, and matching tool inputs there buries it under every file
+ * path the assistant ever touched. Across everything you are looking for anywhere a
+ * thing was mentioned at all, and a command or a result is a fair place to find it.
+ */
+export interface SearchScope {
+  sourceId: string
+  encodedDir: string
+}
+
+/** One transcript, searched. Null when nothing in it matched. */
+async function searchOneSession(
+  full: string,
+  query: string,
+  segmentsOf: (obj: any) => Segment[]
+): Promise<{ matches: Matches; title: string; model?: string; updatedAt: number } | null> {
+  const prefilter = rawPrefilterable(query)
+  const lower = query.toLowerCase()
+  const segments: Segment[] = []
+  let title = ''
+  let model: string | undefined
+  let updatedAt = 0
+  for await (const { raw, obj } of iterJsonlEntries(full)) {
+    if (obj.type === 'ai-title' && obj.aiTitle) title = obj.aiTitle
+    if (obj.type === 'custom-title' && obj.customTitle) title = obj.customTitle
+    if (obj.type === 'assistant' && obj.message?.model) model = obj.message.model
+    const ts = parseTimestamp(obj.timestamp)
+    if (ts) updatedAt = Math.max(updatedAt, ts)
+    // Building segments for a line that cannot match is most of what a sweep over
+    // every transcript would spend its time on. The test is a superset one — see
+    // rawPrefilterable for the queries it is not allowed to be used for.
+    if (prefilter && !raw.toLowerCase().includes(lower)) continue
+    segments.push(...segmentsOf(obj))
   }
-  return ''
+  const matches = collectMatches(segments, query)
+  if (!matches.matchCount) return null
+  return { matches, title, model, updatedAt }
 }
 
-/** Full-text search across every session in every source (local + WSL). */
-export async function searchSessions(query: string, limit = 100): Promise<SearchHit[]> {
-  const q = query.trim().toLowerCase()
+/**
+ * Search transcripts. Global by default; scoped to one project, and to prose, when
+ * a scope is given.
+ */
+export async function searchSessions(
+  query: string,
+  limit = 100,
+  scope?: SearchScope
+): Promise<SearchHit[]> {
+  const q = query.trim()
   if (q.length < 2) return []
-  const sources = await getSources()
+  const segmentsOf = scope ? proseSegments : searchableSegments
+  const sources = scope ? [await resolveSource(scope.sourceId)] : await getSources()
   const hits: SearchHit[] = []
 
   for (const src of sources) {
-    if (!fs.existsSync(src.projectsDir)) continue
+    if (!src || !fs.existsSync(src.projectsDir)) continue
     const pathMap = realPathMap(src.claudeJsonPath)
-    let dirs: fs.Dirent[]
-    try {
-      dirs = fs.readdirSync(src.projectsDir, { withFileTypes: true })
-    } catch {
-      continue
+    let dirNames: string[]
+    if (scope) {
+      dirNames = [scope.encodedDir]
+    } else {
+      try {
+        dirNames = fs
+          .readdirSync(src.projectsDir, { withFileTypes: true })
+          .filter((e) => e.isDirectory())
+          .map((e) => e.name)
+      } catch {
+        continue
+      }
     }
-    for (const entry of dirs) {
-      if (!entry.isDirectory()) continue
-      const realPath = await resolveRealPath(src, entry.name, pathMap)
-      const projectName = realPath.split(/[\\/]/).filter(Boolean).pop() ?? entry.name
-      const dir = path.join(src.projectsDir, entry.name)
+    for (const encodedDir of dirNames) {
+      const realPath = await resolveRealPath(src, encodedDir, pathMap)
+      const projectName = realPath.split(/[\/]/).filter(Boolean).pop() ?? encodedDir
+      const dir = path.join(src.projectsDir, encodedDir)
       let files: string[]
       try {
         files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))
       } catch {
         continue
       }
-      const projectMatch = projectName.toLowerCase().includes(q)
+      // The project's own name is a match worth returning — but only when searching
+      // across projects, where naming one is how you find it. Inside a project it
+      // would match every session in it and tell you nothing.
+      const projectMatch = !scope && projectName.toLowerCase().includes(q.toLowerCase())
       for (const file of files) {
         const sessionId = file.replace(/\.jsonl$/, '')
-        const full = path.join(dir, file)
-        const st = safeStat(full)
-
-        // One pass does both jobs the buffered read used to split: decide whether
-        // the session matches at all (over the serialized line, so a hit inside a
-        // tool input still counts) and collect the title/snippet/model on the way.
-        let rawMatch = false
-        let title = ''
-        let snippet = ''
-        let updatedAt = st?.mtimeMs ?? 0
-        let model: string | undefined
+        const fullPath = path.join(dir, file)
+        const st = safeStat(fullPath)
+        let found: Awaited<ReturnType<typeof searchOneSession>> = null
         try {
-          for await (const { raw, obj } of iterJsonlEntries(full)) {
-            if (!rawMatch && raw.toLowerCase().includes(q)) rawMatch = true
-            if (obj.type === 'ai-title' && obj.aiTitle) title = obj.aiTitle
-            if (obj.type === 'assistant' && obj.message?.model) model = obj.message.model
-            const ts = parseTimestamp(obj.timestamp)
-            if (ts) updatedAt = Math.max(updatedAt, ts)
-            if (!snippet && (obj.type === 'assistant' || obj.type === 'user') && obj.message) {
-              // Cleaned before the match, not after: a hit inside a command block or a
-              // reminder would otherwise produce a snippet made of markup.
-              const txt = stripCommandBlocks(stripReminders(plainText(obj.message.content)))
-              const idx = txt.toLowerCase().indexOf(q)
-              if (idx >= 0) snippet = txt.slice(Math.max(0, idx - 40), idx + 80).replace(/\s+/g, ' ').trim()
-            }
-          }
+          found = await searchOneSession(fullPath, q, segmentsOf)
         } catch {
           continue
         }
-        if (!projectMatch && !rawMatch) continue
+        if (!found && !projectMatch) continue
 
+        const snippets = found?.matches.snippets ?? []
         hits.push({
           sessionId,
-          encodedDir: entry.name,
+          encodedDir,
           realPath,
           projectName,
-          title: title || snippet || sessionId.slice(0, 8),
-          snippet: snippet || (projectMatch ? `(matches project ${projectName})` : ''),
-          updatedAt,
-          model,
+          title: found?.title || (snippets[0] ? snippetText(snippets[0]) : '') || sessionId.slice(0, 8),
+          snippet: snippets[0] ? snippetText(snippets[0]) : `(matches project ${projectName})`,
+          updatedAt: found?.updatedAt || st?.mtimeMs || 0,
+          model: found?.model,
           sourceId: src.id,
           kind: src.kind,
           distro: src.distro,
-          account: src.account
+          account: src.account,
+          matchCount: found?.matches.matchCount ?? 0,
+          snippets
         })
       }
     }
@@ -655,7 +728,12 @@ export async function readSession(
                 : Array.isArray(b.content)
                   ? b.content.map((c: any) => c.text ?? '').join('')
                   : ''
-            toolResults.set(b.tool_use_id, { result: txt.slice(0, 4000), isError: !!b.is_error })
+            // An AskUserQuestion answer has the chosen mockups appended to it, and
+            // those are most of its length. Cutting them first is what keeps the
+            // last question's answer inside the cap — truncated, the parser finds
+            // no anchor for it and the decision silently loses a question.
+            const body = txt.startsWith(ASK_RESULT_PREFIX) ? stripPreviewBlocks(txt) : txt
+            toolResults.set(b.tool_use_id, { result: body.slice(0, 4000), isError: !!b.is_error })
           }
         }
       }
@@ -684,7 +762,7 @@ export async function readSession(
   for (const m of messages) {
     m.toolCalls = m.toolCalls.map((t) => ({ ...t, ...(toolResults.get(t.id) ?? {}) }))
   }
-  return messages
+  return withDecisions(messages)
 }
 
 // ─── Usage ────────────────────────────────────────────────────────────────────

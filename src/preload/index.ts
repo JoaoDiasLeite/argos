@@ -191,7 +191,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('app:open-view', fn)
     return () => ipcRenderer.removeListener('app:open-view', fn)
   },
-  ccSearch: (query: string) => ipcRenderer.invoke('cc:search', query),
+  ccSearch: (query: string, scope?: { sourceId: string; encodedDir: string }) =>
+    ipcRenderer.invoke('cc:search', query, scope),
 
   ccSessionPeek: (sourceId: string, encodedDir: string, sessionId: string, archived?: boolean) =>
     ipcRenderer.invoke('cc:session-peek', sourceId, encodedDir, sessionId, archived),

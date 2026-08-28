@@ -531,3 +531,61 @@
 .sessions-scope button:hover:not(.on) {
   color: var(--text-0);
 }
+
+/* ── Search: the hit itself, and the in-project box ──────────────────────
+   Scoped names (see shared.css): both stylesheets land in one global sheet. */
+
+.search-hit-snippet mark {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text-0);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+/* Says where the match came from, and only when that is not the obvious answer:
+   the wide search reads tool calls and their output, and a hit in one of those is
+   not something anybody said. */
+.snippet-kind {
+  font-family: var(--font-sans);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 0 6px;
+  margin-right: 7px;
+  white-space: nowrap;
+}
+
+.search-hit-count {
+  font-size: 10.5px;
+  color: var(--text-2);
+  margin-top: 4px;
+}
+
+.sessions-search {
+  flex: 1;
+  min-width: 120px;
+  max-width: 260px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text-0);
+  outline: none;
+}
+.sessions-search:focus { border-color: var(--accent); }
+.sessions-search::placeholder { color: var(--text-2); }
+
+/* A row's snippet sits under the title, inside the same cell, so the metadata
+   columns stay in alignment down the list. */
+.cc-row-main { flex-wrap: wrap; }
+.cc-row-main .search-hit-snippet {
+  flex-basis: 100%;
+  margin-top: 3px;
+  font-size: 11.5px;
+  padding: 3px 7px;
+}

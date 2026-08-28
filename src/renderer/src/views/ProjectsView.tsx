@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { CcSessionTarget, CCProject, CCSessionMeta, SearchHit } from '../types'
+import { CcSessionTarget, CCProject, CCSessionMeta, SearchHit, SearchSnippet } from '../types'
 import { TagChips, TagEditor, useLabelColors } from '../components/SessionTags'
 import LabelManager from '../components/LabelManager'
 import SessionPeek from '../components/SessionPeek'
@@ -43,6 +43,32 @@ function hitToSession(h: SearchHit): CCSessionMeta {
   }
 }
 
+
+/**
+ * A hit with what surrounds it, and the kind of text it sits in.
+ *
+ * The kind is on the snippet because the two depths deliberately look at different
+ * things: across projects a match can come from a command or a tool's output, and
+ * saying so is what stops "found in this conversation" from implying someone said it.
+ */
+function Snippet({ snippet }: { snippet: SearchSnippet }) {
+  const labelled = snippet.kind === 'tool_use' || snippet.kind === 'tool_result' || snippet.kind === 'system'
+  return (
+    <div className="search-hit-snippet">
+      {labelled && <span className={`snippet-kind ${snippet.kind}`}>{SNIPPET_KIND[snippet.kind]}</span>}
+      {snippet.before}
+      <mark>{snippet.match}</mark>
+      {snippet.after}
+    </div>
+  )
+}
+
+const SNIPPET_KIND: Record<string, string> = {
+  tool_use: 'in a tool call',
+  tool_result: 'in tool output',
+  system: 'injected'
+}
+
 function timeAgo(ts: number): string {
   if (!ts) return ''
   const diff = Date.now() - ts
@@ -82,6 +108,12 @@ export default function ProjectsView({ onResume, target }: Props) {
   // arrives. Held by id rather than applied directly because switching the archived
   // toggle re-reads the list, and whichever read finishes last would otherwise win.
   const [pendingPeek, setPendingPeek] = useState<string | null>(null)
+  // Searching inside the selected project. A separate box from the one above, and a
+  // narrower read: in here you are looking for a conversation you had, and matching
+  // every file path the assistant touched buries it.
+  const [projectQuery, setProjectQuery] = useState('')
+  const [projectHits, setProjectHits] = useState<Map<string, SearchHit>>(new Map())
+  const [projectSearching, setProjectSearching] = useState(false)
   /**
    * Which listing request is the current one.
    *
@@ -212,6 +244,37 @@ export default function ProjectsView({ onResume, target }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target])
 
+  // The in-project search. Debounced like the global one, and reset by moving to
+  // another project — a query typed for one project means nothing in the next.
+  useEffect(() => {
+    setProjectQuery('')
+    setProjectHits(new Map())
+  }, [selected?.sourceId, selected?.encodedDir])
+
+  useEffect(() => {
+    const q = projectQuery.trim()
+    if (!selected || q.length < 2) {
+      setProjectHits(new Map())
+      setProjectSearching(false)
+      return
+    }
+    setProjectSearching(true)
+    let cancelled = false
+    const t = setTimeout(async () => {
+      const hits = await window.electronAPI.ccSearch(q, {
+        sourceId: selected.sourceId,
+        encodedDir: selected.encodedDir
+      })
+      if (cancelled) return
+      setProjectHits(new Map(hits.map((h) => [h.sessionId, h])))
+      setProjectSearching(false)
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(t)
+    }
+  }, [projectQuery, selected])
+
   // Applied here rather than at the fetch site so it survives the re-read that
   // flipping the archived toggle triggers.
   useEffect(() => {
@@ -229,8 +292,13 @@ export default function ProjectsView({ onResume, target }: Props) {
     (a, b) => a.localeCompare(b)
   )
 
+  const searchingHere = projectQuery.trim().length >= 2
   const visibleSessions = sortSessions(
-    sessions.filter((s) => tagsSatisfy(s.tags, filterTags, filterMode)),
+    sessions.filter(
+      (s) =>
+        tagsSatisfy(s.tags, filterTags, filterMode) &&
+        (!searchingHere || projectHits.has(s.sessionId))
+    ),
     sort
   )
   const groups = sort === 'date' ? groupByAge(visibleSessions) : [{ label: '', sessions: visibleSessions }]
@@ -348,7 +416,14 @@ export default function ProjectsView({ onResume, target }: Props) {
                 {h.kind === 'wsl' && <span className="src-badge wsl">⊞ {h.distro}</span>}
                 <span className="search-hit-date">{timeAgo(h.updatedAt)}</span>
               </div>
-              {h.snippet && <div className="search-hit-snippet">…{h.snippet}…</div>}
+              {h.snippets[0] ? (
+                <Snippet snippet={h.snippets[0]} />
+              ) : (
+                h.snippet && <div className="search-hit-snippet">{h.snippet}</div>
+              )}
+              {h.matchCount > 1 && (
+                <div className="search-hit-count">{h.matchCount} matches in this conversation</div>
+              )}
               {h.account?.email && <div className="search-hit-acct">{h.account.email}</div>}
             </div>
           ))}
@@ -483,6 +558,14 @@ export default function ProjectsView({ onResume, target }: Props) {
                         Archived
                       </button>
                     </span>
+                    <input
+                      className="sessions-search"
+                      placeholder={`Search in ${selected.name}…`}
+                      aria-label={`Search in ${selected.name}`}
+                      value={projectQuery}
+                      onChange={(e) => setProjectQuery(e.target.value)}
+                      spellCheck={false}
+                    />
                     <span className="sessions-sort">
                       <select
                         aria-label="Sort sessions"
@@ -532,7 +615,13 @@ export default function ProjectsView({ onResume, target }: Props) {
                   )}
                 </div>
                 {visibleSessions.length === 0 ? (
-                  <div className="view-empty small">No sessions carry {filterMode === 'all' ? 'all' : 'any'} of those tags.</div>
+                  <div className="view-empty small">
+                    {searchingHere
+                      ? projectSearching
+                        ? 'Searching…'
+                        : `Nothing in this project says “${projectQuery.trim()}”. The search above looks everywhere, and inside tool calls too.`
+                      : `No sessions carry ${filterMode === 'all' ? 'all' : 'any'} of those tags.`}
+                  </div>
                 ) : (
                   <div className="cc-rows">
                     {groups.map((group) => (
@@ -562,6 +651,9 @@ export default function ProjectsView({ onResume, target }: Props) {
                                 {s.title}
                               </span>
                               <TagChips tags={s.tags} colorFor={colorFor} />
+                              {searchingHere && projectHits.get(s.sessionId)?.snippets[0] && (
+                                <Snippet snippet={projectHits.get(s.sessionId)!.snippets[0]} />
+                              )}
                             </span>
                             <span className="cc-row-model">{s.model ?? '—'}</span>
                             <span className="cc-row-meta">{s.messageCount} msgs</span>

@@ -29,6 +29,7 @@ and why. Porting the behaviour without the rule reintroduces the bug.
 | **1.5** | Projects view rework (not from FRIDAY — see below) | `b795bd6`, `c0a9ef0`, `c8c4adc`, `e3cabc2`, `2b209b2` |
 | **2** | Archive / rename / move / delete a conversation | `7d5f197` |
 | **3** | The notification hook | `38f4716` |
+| **4** | The rest of transcript fidelity | pending |
 
 Alongside these, two things that were not ports but came out of the same work:
 
@@ -127,6 +128,51 @@ the user's settings; `notify-title.ts` holds the bounded transcript read.
   down when a target exists; without it the slow read landed last and replaced the
   conversation the user was sent to.
 
+### Lot 4 — the rest of transcript fidelity
+
+Half of this landed with the Projects rework, in `isInjectedUserEntry`. What was left
+was the mirror of the same problem, and the search that suffered from it.
+
+**`AskUserQuestion` answers are decisions, not tool output.** The question is a
+`tool_use` and the answer a `tool_result`, so a viewer that knows only about tools
+prints the owner's own choice as grey machine text with nobody's name on it. It is the
+exact mirror of the injected-user-entry defect: there the CLI's text was attributed to
+him, here his text is attributed to a machine.
+
+- **Anchor, don't regex.** The statements come from the `tool_use` and are matched
+  literally, quotes included. A real question was `Which entries should move to the
+  grey "system" bubble?` — a `/"([^"]+)"="([^"]+)"/` cuts it in half.
+- **Match labels longest-first, removing what matched.** A `split(', ')` is simpler
+  and wrong: a label can contain a comma (`Yes, fix everything (Recommended)` is
+  real), and a label that prefixes another (`Yes` inside `Yes, fix everything`)
+  matches twice without the removal. What is left over is the "Other" option — text
+  he typed.
+- **The tool call is dropped only when the parser returned something.** The format is
+  the harness's, not this repo's; on the day it changes the viewer must fall back to
+  the two tool bubbles rather than draw a block it half understood. `withDecisions`
+  is where that rule lives, and it is tested from both sides.
+- **Strip the mockups before the 4000-char cap.** `readSession` truncates tool
+  results, and an answer's appended previews are most of its length — truncated, the
+  last question loses its anchor and disappears from the block without a trace.
+
+**Two search depths, one collector.** `collectMatches` is the matcher; the depths
+differ only in what they feed it. `proseSegments` (per-project) is what people said;
+`searchableSegments` (global) adds tool inputs and results.
+
+- **A decision is the owner's in both depths.** Per-project excludes tool output by
+  design, and his answer *was* tool output — so searching for a decision he made did
+  not return the conversation he made it in. Both depths run the same extractor, or
+  one choice is his prose in one search and a machine's in the other.
+- **A question is indexed as prose, not as its JSON.** Indexing the raw input gives
+  snippets of `"questions":` instead of the statement he read.
+- **The raw-line prefilter is not valid for every query.** Skipping the segment build
+  for lines that cannot match is most of what makes the sweep affordable, but the raw
+  line is JSON: a quote is `\"` there and a newline is `
+`. A prefilter may only let
+  extra lines through, never drop one, so `rawPrefilterable` turns it off for those.
+- **The project's own name matches only in the global depth.** Inside one project it
+  would match every session in it and tell you nothing.
+
 ### Lot 1.5 — the Projects view
 
 Not a port. Measured on `wm-project` (52 sessions): 46 distinct titles, but **33
@@ -147,20 +193,6 @@ taken with the same gesture as the action is not a decision.
 ---
 
 ## Next
-
-### Lot 4 — the rest of transcript fidelity · ~1 day · depends on 0
-
-Half of this landed early because it was visible in the preview panel
-(`isInjectedUserEntry`). What remains:
-
-- **`AskUserQuestion` answers are decisions, not tool output.** Draw them as a choice.
-  Only replace the tool bubbles **when the parser returns something** — the format is
-  the harness's, not this repo's, and when it changes the viewer should fall back
-  rather than draw a wrong block. Anchor on the statements from the `tool_use`, and
-  match labels longest-first (a label can contain a comma, and can be a prefix of
-  another).
-- **Two search depths.** Per-project matches prose only; global matches tool inputs and
-  results too. They share one collector and differ in what they feed it.
 
 ### Lot 5 — project-level lifecycle · 2–3 days · depends on 2
 
