@@ -20,6 +20,30 @@ const BINARY_EXTENSIONS = new Set([
   'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'zip', 'exe', 'dll', 'bin'
 ])
 
+/**
+ * The image types the chat can attach, by extension.
+ *
+ * Needed because a file does not always arrive with a MIME type: a `.png` copied in
+ * Explorer and pasted here reaches the renderer with `type === ''`, and classifying
+ * by `type` alone then sent it down the text path — where the extension denylist
+ * above rejected it as "a binary file". Which it is, and which is exactly what the
+ * image path is for.
+ */
+const IMAGE_EXTENSIONS: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp'
+}
+
+/** The media type to attach this file as, or null if it is not an image. */
+function imageMediaType(file: File): string | null {
+  if (file.type.startsWith('image/')) return file.type
+  const ext = file.name.includes('.') ? file.name.split('.').pop()!.toLowerCase() : ''
+  return IMAGE_EXTENSIONS[ext] ?? null
+}
+
 // Human-readable byte size, e.g. 14560 → "14.2 KB".
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -310,12 +334,16 @@ export default function Chat({
     // Reserve remaining file slots up front (reads are async, so count optimistically).
     let fileSlots = MAX_FILE_ATTACHMENTS - attachments.filter((a) => a.kind === 'file').length
     for (const file of Array.from(files)) {
-      if (file.type.startsWith('image/')) {
+      // Classified by extension as well as MIME type — see imageMediaType. The
+      // media type stored here is what reaches the API, so it can never be the
+      // empty string the file may have arrived with.
+      const mediaType = imageMediaType(file)
+      if (mediaType) {
         const reader = new FileReader()
         reader.onload = () => {
           const result = reader.result as string
           const data = result.split(',')[1] ?? ''
-          setAttachments((prev) => [...prev, { kind: 'image', mediaType: file.type, data, preview: result }])
+          setAttachments((prev) => [...prev, { kind: 'image', mediaType, data, preview: result }])
         }
         reader.readAsDataURL(file)
         continue
@@ -348,11 +376,38 @@ export default function Chat({
     }
   }
 
+  /**
+   * Paste an image, from either of the two shapes a clipboard hands one over in.
+   *
+   * A screenshot has no file behind it and arrives only as an `image/*` item. A file
+   * copied in Explorer arrives in `files` instead, and Windows does not always put a
+   * MIME type on it — so reading `items` alone silently dropped every pasted image
+   * file, with no attachment and no message to say why.
+   */
   const handlePaste = (e: React.ClipboardEvent) => {
-    const imageItems = Array.from(e.clipboardData.items).filter((i) => i.type.startsWith('image/'))
-    if (imageItems.length === 0) return
-    e.preventDefault()
-    addFiles(imageItems.map((i) => i.getAsFile()).filter((f): f is File => !!f))
+    const items = Array.from(e.clipboardData.items)
+    const images = items
+      .filter((i) => i.type.startsWith('image/'))
+      .map((i) => i.getAsFile())
+      .filter((f): f is File => !!f)
+    if (images.length) {
+      e.preventDefault()
+      addFiles(images)
+      return
+    }
+    const files = Array.from(e.clipboardData.files)
+    if (files.length) {
+      e.preventDefault()
+      addFiles(files)
+      return
+    }
+    // Nothing usable came across. Say so only when the clipboard actually held
+    // something file-shaped: a plain text paste must stay silent, or the composer
+    // nags on every Ctrl+V. Silence here is what made a failed image paste
+    // indistinguishable from the app ignoring the keystroke entirely.
+    if (items.some((i) => i.kind === 'file')) {
+      showNotice("Couldn't read that from the clipboard — try dragging the file in instead.")
+    }
   }
 
   // ── Drag & drop files onto the chat ────────────────────────────────────────
