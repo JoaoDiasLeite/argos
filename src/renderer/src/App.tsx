@@ -27,7 +27,7 @@ import ResizeHandles from './components/ResizeHandles'
 import Chat from './components/Chat'
 import TerminalPanel from './components/TerminalPanel'
 import SettingsModal from './components/SettingsModal'
-import NavRail, { View, VIEW_GROUPS, groupOwnsView } from './components/NavRail'
+import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, groupOwnsView } from './components/NavRail'
 import ServerTabs from './components/ServerTabs'
 import ClaudeMdModal from './components/ClaudeMdModal'
 import ApprovalModal from './components/ApprovalModal'
@@ -56,6 +56,7 @@ import './styles/App.css'
 import './views/views.css'
 
 const ProjectsView = lazy(() => import('./views/ProjectsView'))
+const LiveView = lazy(() => import('./views/LiveView'))
 const AgentsView = lazy(() => import('./views/AgentsView'))
 const RoomsView = lazy(() => import('./views/RoomsView'))
 const UsageView = lazy(() => import('./views/UsageView'))
@@ -770,9 +771,11 @@ export default function App() {
     })
     const offPlan = window.electronAPI.onPlanUsage(setPlanReport)
     // Plan-limit notification clicks navigate here; validate against real views.
-    const VIEWS: View[] = ['chat', 'projects', 'agents', 'rooms', 'planner', 'scheduled', 'usage', 'mcp', 'remote']
+    // ALL_VIEWS is the list the View type itself is derived from, so a view added to
+    // the rail is reachable from a deep link without anyone remembering to add it
+    // here too — which is precisely what a second hand-written copy did not manage.
     const offView = window.electronAPI.onOpenView((v) => {
-      if ((VIEWS as string[]).includes(v)) setView(v as View)
+      if ((ALL_VIEWS as readonly string[]).includes(v)) setView(v as View)
     })
     // Prime the badge without waiting for the watcher's first (~30s) tick.
     window.electronAPI.ccPlanUsage(false).then(setPlanReport).catch(() => {})
@@ -1738,6 +1741,11 @@ export default function App() {
       {view === 'projects' && (
         <Suspense fallback={<ViewLoading />}>
           <ProjectsView onResume={resumeCCSession} target={ccTarget} />
+        </Suspense>
+      )}
+      {view === 'live' && (
+        <Suspense fallback={<ViewLoading />}>
+          <LiveView />
         </Suspense>
       )}
       {view === 'usage' && (

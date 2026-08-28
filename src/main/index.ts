@@ -39,6 +39,7 @@ import {
   unarchiveSession
 } from './session-lifecycle'
 import { deleteProject, moveProjectFolder } from './project-lifecycle'
+import { listLiveSessions } from './live-sessions'
 import {
   BacklogRef,
   createTopic,
@@ -1391,6 +1392,12 @@ function busyProjectPaths(): string[] {
 ipcMain.handle('cc:project-move', (_, sourceId: string, encodedDir: string, toPath: string) =>
   moveProjectFolder(sourceId, encodedDir, toPath, busyProjectPaths())
 )
+
+// ─── Live sessions ────────────────────────────────────────────────────────────
+// Read-only. Every field comes from Claude Code's own registry, and nothing here
+// sends a signal to anything.
+
+ipcMain.handle('cc:live-sessions', () => listLiveSessions())
 
 // ─── Session tags + the label vocabulary ──────────────────────────────────────
 //

@@ -196,6 +196,41 @@ export interface SourceInfo {
   account?: SourceAccount
 }
 
+/**
+ * A `claude` process running on this machine right now, as its own registry entry
+ * reports it.
+ *
+ * Claude Code writes one `<pid>.json` per live session under `<claude-root>/sessions`,
+ * and that file — not a scan of the process table — is where every field here comes
+ * from. Argos never guesses which process is a session.
+ */
+export interface LiveSession {
+  pid: number
+  /** The conversation this process is holding — the same id its transcript carries. */
+  sessionId: string
+  cwd: string
+  /** The registry's own name for the session, e.g. `claude-gui-26`. */
+  name: string
+  /** Absent in the registry for a session that has not reported one yet. */
+  status: 'busy' | 'idle' | 'unknown'
+  kind: string
+  version?: string
+  startedAt: number
+  updatedAt: number
+  /** Which Claude root this entry was found under. */
+  sourceId: string
+  sourceLabel: string
+  /**
+   * The entry's `pidDomain` does not match this process's own, so its `pid` is a
+   * number from another PID space — a distro's, or another user's.
+   *
+   * It is listed, because knowing the session is live is useful. It can never be
+   * signalled: the same number on this side belongs to an unrelated process, and
+   * that is the worst mistake this feature could make.
+   */
+  foreign: boolean
+}
+
 export interface CCProject {
   encodedDir: string
   realPath: string
@@ -1263,6 +1298,8 @@ declare global {
       ccProjectArchive: (sourceId: string, encodedDir: string, on: boolean) => Promise<string[]>
       /** Refused with `not-empty` while the project still holds any transcript. */
       ccProjectDelete: (sourceId: string, encodedDir: string) => Promise<ProjectOpResult>
+      /** `claude` processes live on this machine right now, read from the registry. */
+      ccLiveSessions: () => Promise<LiveSession[]>
       /** Move the project's real folder on disk, and re-key everything that named it. */
       ccProjectMove: (
         sourceId: string,

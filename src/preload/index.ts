@@ -239,6 +239,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ccProjectMove: (sourceId: string, encodedDir: string, toPath: string) =>
     ipcRenderer.invoke('cc:project-move', sourceId, encodedDir, toPath),
 
+  // Live sessions: `claude` processes running outside Argos, read from Claude Code's
+  // own registry. Read-only — nothing here signals anything.
+  ccLiveSessions: () => ipcRenderer.invoke('cc:live-sessions'),
+
   // Session tags + label vocabulary
   ccSetSessionTags: (sourceId: string, encodedDir: string, sessionId: string, tags: string[]) =>
     ipcRenderer.invoke('cc:set-session-tags', sourceId, encodedDir, sessionId, tags),

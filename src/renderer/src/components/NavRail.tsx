@@ -1,16 +1,30 @@
 import './NavRail.css'
 
-export type View =
-  | 'chat'
-  | 'projects'
-  | 'agents'
-  | 'rooms'
-  | 'planner'
-  | 'scheduled'
-  | 'usage'
-  | 'mcp'
-  | 'remote'
-  | 'remote-session'
+/**
+ * Every view, as a runtime value — and the type derived from it, not beside it.
+ *
+ * It was the other way round once: a `View` union here, and a second hand-written
+ * list in App.tsx that deep links were validated against. Adding a view to the union
+ * and the rail left it unreachable from a notification click, and nothing said so —
+ * the type checker cannot see a missing entry in a list of string literals it is not
+ * the source of. Deriving the type from the array is what makes the two impossible
+ * to disagree.
+ */
+export const ALL_VIEWS = [
+  'chat',
+  'projects',
+  'live',
+  'agents',
+  'rooms',
+  'planner',
+  'scheduled',
+  'usage',
+  'mcp',
+  'remote',
+  'remote-session'
+] as const
+
+export type View = (typeof ALL_VIEWS)[number]
 
 interface Props {
   view: View
@@ -27,6 +41,9 @@ const ICONS: Record<string, JSX.Element> = {
     <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
   ),
   projects: <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />,
+  // A pulse: the view is about what is running right now, and a heartbeat says that
+  // without borrowing the terminal glyph the Servers group already owns.
+  live: <path d="M22 12h-4l-3 9L9 3l-3 9H2" />,
   agents: (
     <>
       <rect x="3" y="11" width="18" height="10" rx="2" />
@@ -112,6 +129,7 @@ type RailEntry =
 const RAIL: RailEntry[] = [
   { kind: 'single', view: 'chat', label: 'Chat' },
   { kind: 'single', view: 'projects', label: 'Projects' },
+  { kind: 'single', view: 'live', label: 'Live' },
   { kind: 'group', group: VIEW_GROUPS[0] },
   { kind: 'group', group: VIEW_GROUPS[1] },
   { kind: 'single', view: 'usage', label: 'Usage' },
