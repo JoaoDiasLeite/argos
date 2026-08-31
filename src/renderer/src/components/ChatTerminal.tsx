@@ -143,7 +143,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     /**
      * Deliver pasted text to the pty.
      *
-     * `term.paste` wraps the text in bracketed-paste markers (`[200~` … `[201~`)
+     * `term.paste` wraps the text in bracketed-paste markers (`\x1b[200~` … `\x1b[201~`)
      * whenever xterm believes that mode is on. On the far end of a local pty that is
      * Windows ConPTY, which does not consume them — the markers came back out as input
      * and every paste arrived twice. WSL and SSH terminals reach a real pty running
@@ -159,6 +159,35 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       else term.paste(text)
     }
     pasteRef.current = pasteText
+
+    /** Alt+V, the CLI's own key for attaching the clipboard image. */
+    const ALT_V = '\x1bv'
+
+    /**
+     * Put the clipboard's image in front of the CLI.
+     *
+     * Two ways, and which one is right depends on whether the CLI can reach the
+     * clipboard itself:
+     *
+     * - **Locally it can**, so the gesture is translated into its own Alt+V and it
+     *   attaches the image properly — the transcript shows `[Image #1]`. Handing it a
+     *   file path instead worked, in the sense that the path was correct, and was
+     *   plainly worse to use.
+     * - **In a distro it often cannot** — `appendWindowsPath = false` leaves it with no
+     *   powershell.exe to read the Windows clipboard through — so Argos writes the
+     *   image into the distro's own /tmp and types that path.
+     *
+     * SSH gets neither: the file would be here and the shell is there.
+     */
+    const pasteImage = () => {
+      if (!wslDistro && !remoteHostId) {
+        window.electronAPI.terminalWrite(idRef.current, ALT_V)
+        return
+      }
+      void window.electronAPI.clipboardImageToFile(wslDistro, remoteHostId).then((r) => {
+        if (r.ok) pasteText(r.path)
+      })
+    }
 
     term.onData((d) => {
       // Typing into the terminal is what makes a chat "used". Reporting it when the pty
@@ -205,7 +234,9 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       if (wslDistro && e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'v') {
         window.electronAPI.clipboardImageToFile(wslDistro, remoteHostId).then((res) => {
           if (res.ok) pasteText(res.path)
-          else window.electronAPI.terminalWrite(idRef.current, 'v')
+          // Nothing usable on the clipboard: hand the keystroke on so the CLI answers
+          // for itself.
+          else window.electronAPI.terminalWrite(idRef.current, ALT_V)
         })
         return false
       }
@@ -228,11 +259,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
             pasteText(res.text)
             return
           }
-          if (res.image) {
-            window.electronAPI.clipboardImageToFile(wslDistro, remoteHostId).then((r) => {
-              if (r.ok) pasteText(r.path)
-            })
-          }
+          if (res.image) pasteImage()
         })
         return false
       }
@@ -270,18 +297,14 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         // open it, and its path typed. Without this, right-clicking with a screenshot
         // on the clipboard did nothing at all, because the read only ever looked at
         // text.
-        if (res.image) {
-          window.electronAPI.clipboardImageToFile(wslDistro, remoteHostId).then((r) => {
-            if (r.ok) pasteText(r.path)
-          })
-        }
+        if (res.image) pasteImage()
       })
     }
     /**
      * Keep a right-click away from the CLI.
      *
      * The CLIs turn on mouse tracking, so xterm forwards every button press to the pty
-     * as an escape sequence — visible in a trace as `[<2;x;yM`. Claude Code answers
+     * as an escape sequence — visible in a trace as `\x1b[<2;x;yM`. Claude Code answers
      * a right-click by pasting the clipboard itself. Together with our own paste below,
      * that is two pastes per click, and it was invisible in every reading of our code
      * because our half is provably correct: one event, one write.

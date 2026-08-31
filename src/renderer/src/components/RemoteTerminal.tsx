@@ -155,7 +155,7 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
      * Keep a right-click away from the CLI.
      *
      * The CLIs turn on mouse tracking, so xterm forwards every button press to the pty
-     * as an escape sequence — visible in a trace as `[<2;x;yM`. Claude Code answers
+     * as an escape sequence — visible in a trace as `\x1b[<2;x;yM`. Claude Code answers
      * a right-click by pasting the clipboard itself. Together with our own paste below,
      * that is two pastes per click, and it was invisible in every reading of our code
      * because our half is provably correct: one event, one write.
