@@ -57,17 +57,54 @@ export function insertText(text: string): void {
   document.execCommand('insertText', false, text)
 }
 
+/** The selection inside a field, as offsets. */
+function selectionOf(el: HTMLInputElement | HTMLTextAreaElement): [number, number] {
+  return [el.selectionStart ?? 0, el.selectionEnd ?? 0]
+}
+
 /**
- * Start handling Ctrl+V for the app's own fields. Returns a function that stops.
+ * Start handling the editing keys for the app's own fields. Returns a function that
+ * stops.
+ *
+ * All four are here for one reason: the application menu carries no Edit roles, and
+ * every one of those roles is also the thing that binds its accelerator. Ctrl+V was
+ * the one that got reported, but Ctrl+A, Ctrl+C and Ctrl+X went the same way and for
+ * the same reason — the report just came in as "I can't paste images", because that is
+ * the one people notice.
+ *
+ * Terminals are skipped throughout. Their keys belong to the CLI running inside them:
+ * Ctrl+A moves to the start of the line, Ctrl+C interrupts. Taking those would be a
+ * far worse bug than the one being fixed. A terminal's own "Select all" lives in its
+ * Shift+right-click menu.
  */
-export function installClipboardPaste(): () => void {
+export function installEditingKeys(): () => void {
   const onKeyDown = (e: KeyboardEvent) => {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return
-    if (e.key.toLowerCase() !== 'v') return
+    const key = e.key.toLowerCase()
+    if (key !== 'v' && key !== 'a' && key !== 'c' && key !== 'x') return
 
     const target = document.activeElement
     if (insideTerminal(target)) return
     if (!isTextField(target)) return
+
+    if (key === 'a') {
+      e.preventDefault()
+      target.select()
+      return
+    }
+
+    if (key === 'c' || key === 'x') {
+      const [start, end] = selectionOf(target)
+      // No selection means there is nothing to copy, and Ctrl+C with none is not ours
+      // to claim — let it go wherever it would have gone.
+      if (start === end) return
+      e.preventDefault()
+      void navigator.clipboard.writeText(target.value.slice(start, end)).catch(() => {})
+      // Cut deletes through insertText so the field's own undo stack survives; writing
+      // `.value` would throw both that and React's state away.
+      if (key === 'x') insertText('')
+      return
+    }
 
     // Claimed: from here on this keystroke is ours, and letting it through as well
     // would be the double paste this whole arrangement exists to avoid.
