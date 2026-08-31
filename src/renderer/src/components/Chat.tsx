@@ -38,6 +38,38 @@ const IMAGE_EXTENSIONS: Record<string, string> = {
   webp: 'image/webp'
 }
 
+/** Longest edge of a stored thumbnail, in px. Big enough to recognise a screenshot. */
+const THUMB_MAX = 320
+
+/**
+ * A small JPEG copy of an image, as a data URL, for the transcript to keep.
+ *
+ * Falls back to the original on any failure: showing a heavier image is a much
+ * smaller problem than losing it from the history, which is the bug this exists to
+ * fix.
+ */
+function makeThumbnail(dataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, THUMB_MAX / Math.max(img.width, img.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(img.width * scale))
+        canvas.height = Math.max(1, Math.round(img.height * scale))
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return resolve(dataUrl)
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/jpeg', 0.7))
+      } catch {
+        resolve(dataUrl)
+      }
+    }
+    img.onerror = () => resolve(dataUrl)
+    img.src = dataUrl
+  })
+}
+
 /** The media type to attach this file as, or null if it is not an image. */
 function imageMediaType(file: File): string | null {
   if (file.type.startsWith('image/')) return file.type
@@ -83,7 +115,9 @@ interface Props {
   onSendMessage: (
     text: string,
     images?: { mediaType: string; data: string }[],
-    files?: { name: string; content: string }[]
+    files?: { name: string; content: string }[],
+    /** Down-scaled copies for the transcript to keep — see Message.imageThumbnails. */
+    imageThumbnails?: string[]
   ) => void
   onStop: () => void
   onOpenSettings: () => void
@@ -295,16 +329,20 @@ export default function Chat({
     }
   }
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (streaming) {
       onStop()
       return
     }
     const text = input.trim()
     if (!text && attachments.length === 0) return
-    const images = attachments
-      .filter((a): a is Extract<Attachment, { kind: 'image' }> => a.kind === 'image')
-      .map((a) => ({ mediaType: a.mediaType, data: a.data }))
+    const imageAttachments = attachments.filter(
+      (a): a is Extract<Attachment, { kind: 'image' }> => a.kind === 'image'
+    )
+    const images = imageAttachments.map((a) => ({ mediaType: a.mediaType, data: a.data }))
+    // Shrunk before the send so the transcript can show what was attached without
+    // carrying the full-size copy in the session file forever.
+    const thumbnails = await Promise.all(imageAttachments.map((a) => makeThumbnail(a.preview)))
     const files = attachments
       .filter((a): a is Extract<Attachment, { kind: 'file' }> => a.kind === 'file')
       .map((a) => ({ name: a.name, content: a.content }))
@@ -316,7 +354,8 @@ export default function Chat({
     onSendMessage(
       text || fallback,
       images.length ? images : undefined,
-      files.length ? files : undefined
+      files.length ? files : undefined,
+      thumbnails.length ? thumbnails : undefined
     )
   }
 

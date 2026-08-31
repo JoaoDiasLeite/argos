@@ -598,7 +598,8 @@ export default function App() {
     (
       text: string,
       images?: { mediaType: string; data: string }[],
-      files?: { name: string; content: string }[]
+      files?: { name: string; content: string }[],
+      imageThumbnails?: string[]
     ) => {
       const session = sessions.find((s) => s.id === activeIdRef.current)
       if (!session || runningIds.has(session.id)) return
@@ -623,7 +624,15 @@ export default function App() {
         ? `${text}\n\n📎 attached: ${files.map((f) => f.name).join(', ')}`
         : text
 
-      const userMsg: Message = { id: generateId(), role: 'user', content: displayContent, timestamp: Date.now() }
+      // The thumbnails ride on the message, the full-size images only on the payload:
+      // the transcript shows what was sent without the session file carrying it.
+      const userMsg: Message = {
+        id: generateId(),
+        role: 'user',
+        content: displayContent,
+        timestamp: Date.now(),
+        ...(imageThumbnails?.length ? { imageThumbnails } : {})
+      }
       const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
 
       const updated: Session = {

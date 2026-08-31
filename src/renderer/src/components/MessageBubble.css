@@ -679,3 +679,19 @@
   padding: 3px 0 0 14px;
   line-height: 1.5;
 }
+
+/* Images attached to a user turn, shown in the transcript where they were sent.
+   These are thumbnails (see Message.imageThumbnails), so they are displayed at
+   their natural size rather than stretched to fill the bubble. */
+.msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.msg-image {
+  max-width: 220px;
+  max-height: 160px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}

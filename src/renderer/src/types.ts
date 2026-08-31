@@ -30,6 +30,16 @@ export interface Message {
    * decision itself — drawn as one, not as the output of a tool.
    */
   decisions?: AskDecision[]
+  /**
+   * Down-scaled copies of the images sent with this turn, as data URLs.
+   *
+   * Thumbnails, not the originals. The full-size base64 goes to the model and is
+   * deliberately not kept, for the same reason an attached file's contents are not:
+   * a session file is rewritten on every message, and a few megabytes of base64 in
+   * it would be paid for on every single one. Enough to see what was sent — not
+   * enough to re-send it, which the re-run path already says it does not do.
+   */
+  imageThumbnails?: string[]
 }
 
 export interface Session {

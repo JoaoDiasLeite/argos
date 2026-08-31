@@ -657,6 +657,15 @@ export default function MessageBubble({ message, streaming, onRetry, onEditResen
             ) : (
               <Markdown content={message.content} />
             )}
+            {/* What was attached, shown where it was sent. Thumbnails, so a
+                transcript with images in it stays a readable size. */}
+            {message.imageThumbnails && message.imageThumbnails.length > 0 && (
+              <div className="msg-images">
+                {message.imageThumbnails.map((src, i) => (
+                  <img key={i} className="msg-image" src={src} alt="attached image" />
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           streaming && (!message.toolCalls || message.toolCalls.length === 0) && (
