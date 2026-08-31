@@ -2310,7 +2310,12 @@ ipcMain.handle('fs:read-dir', (_, dirPath: string) => {
  * process can simply read it.
  */
 // A terminal telling us it is answering this right-click itself — see context-menu.ts.
-ipcMain.on('context-menu:claim', () => claimContextMenu())
+// Synchronous so the claim is recorded before Chromium can ask for the menu; the
+// renderer waits on `returnValue`, which is the whole point of the channel.
+ipcMain.on('context-menu:claim', (e) => {
+  claimContextMenu()
+  e.returnValue = true
+})
 
 ipcMain.handle('clipboard:read', () => {
   const image = clipboard.readImage()
