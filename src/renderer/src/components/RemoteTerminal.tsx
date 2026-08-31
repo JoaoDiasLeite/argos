@@ -151,6 +151,29 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
         // See clipboard:image-to-file.
       })
     }
+    /**
+     * Keep a right-click away from the CLI.
+     *
+     * The CLIs turn on mouse tracking, so xterm forwards every button press to the pty
+     * as an escape sequence — visible in a trace as `[<2;x;yM`. Claude Code answers
+     * a right-click by pasting the clipboard itself. Together with our own paste below,
+     * that is two pastes per click, and it was invisible in every reading of our code
+     * because our half is provably correct: one event, one write.
+     *
+     * It only showed on Windows because a WSL distro with `appendWindowsPath = false`
+     * leaves the CLI unable to reach the Windows clipboard at all — its paste failed
+     * silently there and only ours landed, which read as "WSL works".
+     *
+     * Captured on the host, so it never reaches xterm's own listeners. The `contextmenu`
+     * event still fires on the way up, so the terminal's own copy/paste behaviour is
+     * untouched — that one is deliberately ours to answer.
+     */
+    const swallowRightButton = (e: MouseEvent) => {
+      if (e.button === 2) e.stopPropagation()
+    }
+    host.addEventListener('mousedown', swallowRightButton, true)
+    host.addEventListener('mouseup', swallowRightButton, true)
+
     host.addEventListener('contextmenu', onContextMenu)
 
     termRef.current = term
@@ -171,6 +194,8 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
     return () => {
       ro.disconnect()
       host.removeEventListener('contextmenu', onContextMenu)
+      host.removeEventListener('mousedown', swallowRightButton, true)
+      host.removeEventListener('mouseup', swallowRightButton, true)
       term.dispose()
       termRef.current = null
       fitRef.current = null
