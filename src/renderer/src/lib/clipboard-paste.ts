@@ -28,12 +28,12 @@ export interface ClipboardImageDetail {
 }
 
 /** Is this element inside a terminal, which handles its own paste? */
-function insideTerminal(el: Element | null): boolean {
+export function insideTerminal(el: Element | null): boolean {
   return !!el?.closest('.xterm')
 }
 
 /** Is this somewhere text can actually be typed? */
-function isTextField(el: Element | null): el is HTMLInputElement | HTMLTextAreaElement {
+export function isTextField(el: Element | null): el is HTMLInputElement | HTMLTextAreaElement {
   if (!el) return false
   const tag = el.tagName
   if (tag === 'TEXTAREA') return true
@@ -53,7 +53,7 @@ function isTextField(el: Element | null): el is HTMLInputElement | HTMLTextAreaE
  * directly loses both — the undo history and React's own state — and a Ctrl+V that
  * cannot be undone with Ctrl+Z is its own bug report.
  */
-function insertText(text: string): void {
+export function insertText(text: string): void {
   document.execCommand('insertText', false, text)
 }
 

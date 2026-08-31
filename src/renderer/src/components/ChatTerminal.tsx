@@ -216,10 +216,9 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     // as Ctrl+V.
     const onContextMenu = (e: MouseEvent) => {
       e.preventDefault()
-      // The terminal answers this gesture itself. Without the claim the app's native
-      // menu appeared on top of the paste that just happened, and clicking its Paste
-      // pasted a second time.
-      window.electronAPI.claimContextMenu()
+      // preventDefault above is the whole signal: the app's own right-click menu
+      // (TextContextMenu) steps aside for any event already handled, so this stays
+      // the only answer to the gesture.
       if (e.shiftKey) {
         setMenuPos({ x: e.clientX, y: e.clientY })
         return

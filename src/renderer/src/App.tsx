@@ -35,6 +35,7 @@ import PendingRuns, { PendingRun } from './components/PendingRuns'
 import FileEditor from './components/FileEditor'
 import { readLocalFile, writeLocalFile } from './lib/local-file-io'
 import { installClipboardPaste } from './lib/clipboard-paste'
+import TextContextMenu from './components/TextContextMenu'
 import { applyPalette } from './lib/palettes'
 import CheckpointsModal from './components/CheckpointsModal'
 import GitModal from './components/GitModal'
@@ -1957,6 +1958,9 @@ export default function App() {
         <GitModal cwd={activeSession?.projectPath ?? ''} onClose={() => setGitOpen(false)} />
       )}
       {paletteOpen && <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />}
+      {/* Right-click for the app's own fields. Mounted once, listens on window, and
+          steps aside for anything a closer handler already answered. */}
+      <TextContextMenu />
       {accountsOpen && (
         <AccountsModal
           onClose={() => setAccountsOpen(false)}

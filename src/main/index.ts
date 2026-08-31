@@ -2,7 +2,6 @@ import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
-import { claimContextMenu, installContextMenu } from './context-menu'
 import { resolvePolicy } from './ai-policy'
 import { getEngine } from './providers/registry'
 import { collectText } from './providers/collect'
@@ -487,7 +486,6 @@ function createWindow(): void {
   })
 
   hardenWebContents(mainWindow)
-  installContextMenu(mainWindow)
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -2309,14 +2307,6 @@ ipcMain.handle('fs:read-dir', (_, dirPath: string) => {
  * one needs a permission prompt this app has no way to answer, while the main
  * process can simply read it.
  */
-// A terminal telling us it is answering this right-click itself — see context-menu.ts.
-// Synchronous so the claim is recorded before Chromium can ask for the menu; the
-// renderer waits on `returnValue`, which is the whole point of the channel.
-ipcMain.on('context-menu:claim', (e) => {
-  claimContextMenu()
-  e.returnValue = true
-})
-
 ipcMain.handle('clipboard:read', () => {
   const image = clipboard.readImage()
   if (!image.isEmpty()) {

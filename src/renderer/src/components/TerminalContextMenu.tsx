@@ -43,12 +43,12 @@ export function terminalMenuItems(term: Terminal | null): TerminalMenuItem[] {
     {
       label: 'Paste',
       onClick: () => {
-        navigator.clipboard
-          .readText()
-          .then((text) => {
-            if (text) term?.paste(text)
-          })
-          .catch(() => {})
+        // Read through the main process, not navigator.clipboard: reading needs a
+        // permission this app has no way to grant, so that path failed silently
+        // behind its own catch for as long as nobody tried this menu item.
+        void window.electronAPI.clipboardRead().then((res) => {
+          if (res.text) term?.paste(res.text)
+        })
       }
     },
     { label: 'Select all', onClick: () => term?.selectAll() },
