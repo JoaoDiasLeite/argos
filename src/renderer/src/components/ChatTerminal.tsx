@@ -137,13 +137,14 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     // Copy-on-select (like most native terminals), plus explicit Ctrl/Cmd+C when there's a
     // selection — xterm only forwards raw keystrokes as PTY input by default.
     //
-    // There is deliberately NO Ctrl/Cmd+V branch here: xterm owns paste. Its native paste
-    // path ignores this handler's return value (it never calls preventDefault), so Chromium's
-    // own paste event reached xterm's internal paste() regardless and the pasted text landed
-    // twice — once raw from us, once bracketed (\x1b[200~…) from xterm, which garbles input
-    // rather than merely duplicating it. Letting xterm handle it means one write, and
-    // bracketed-paste mode is honoured. See also the application menu in src/main/index.ts,
-    // which omits the Edit roles for the same reason.
+    // Ctrl/Cmd+V IS handled below, and the history is worth keeping, because both of the
+    // obvious answers are wrong. xterm's native paste ignores this handler's return value
+    // (it never calls preventDefault), so merely reading the clipboard here as well made
+    // every paste land twice — once raw from us, once bracketed (\x1b[200~…) from xterm,
+    // which garbles input rather than merely duplicating it. But the application menu omits
+    // the Edit roles (see src/main/index.ts), and without them Chromium's paste event never
+    // fires, so leaving it to xterm meant nothing pasted at all. The branch below calls
+    // preventDefault, which is what makes it the single path in either world.
     term.onSelectionChange(() => {
       const sel = term.getSelection()
       if (sel) navigator.clipboard.writeText(sel).catch(() => {})
@@ -175,11 +176,36 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         return false
       }
 
-      // Ctrl+V is deliberately NOT handled here. xterm already pastes it, through the
-      // same term.paste path the right-click menu uses, and adding a second read here
-      // delivered every paste twice — the exact defect that removing the menu's Edit
-      // roles was meant to cure, reintroduced from the other side. The global Ctrl+V
-      // handler skips terminals for this reason; leave the keystroke alone.
+      // Ctrl/Cmd+V. This one has been wrong in both directions, so the reasoning:
+      //
+      // xterm's own paste comes from Chromium's paste event, NOT from this handler's
+      // return value — returning false does not stop it. That is why an earlier
+      // version that only added a read here pasted everything twice, once raw and
+      // once bracketed. But the application menu carries no Edit roles (see
+      // src/main/index.ts), and without them that paste event never fires at all, so
+      // removing the read left the terminal unable to paste anything whatsoever.
+      //
+      // preventDefault settles it: it kills the native path outright, whether or not
+      // it would have fired, leaving exactly one paste — this one.
+      if (mod && e.key.toLowerCase() === 'v') {
+        e.preventDefault()
+        window.electronAPI.clipboardRead().then((res) => {
+          if (res.text) {
+            // term.paste, not a raw write: it is the only path that honours
+            // bracketed-paste mode, which is what stops a multi-line paste from
+            // being read as a series of commands.
+            term.paste(res.text)
+            return
+          }
+          if (res.image) {
+            window.electronAPI.clipboardImageToFile(wslDistro, remoteHostId).then((r) => {
+              if (r.ok) term.paste(r.path)
+            })
+          }
+        })
+        return false
+      }
+
       return true
     })
 
@@ -202,7 +228,19 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       // needs a read permission this app has no way to grant, so it failed silently
       // here for exactly as long as nobody tried right-clicking to paste.
       window.electronAPI.clipboardRead().then((res) => {
-        if (res.text) term.paste(res.text)
+        if (res.text) {
+          term.paste(res.text)
+          return
+        }
+        // An image gets the same treatment Alt+V gives it: written where the CLI can
+        // open it, and its path typed. Without this, right-clicking with a screenshot
+        // on the clipboard did nothing at all, because the read only ever looked at
+        // text.
+        if (res.image) {
+          window.electronAPI.clipboardImageToFile(wslDistro, remoteHostId).then((r) => {
+            if (r.ok) term.paste(r.path)
+          })
+        }
       })
     }
     host.addEventListener('contextmenu', onContextMenu)

@@ -86,13 +86,11 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
     // Copy-on-select (like most native terminals), plus explicit Ctrl/Cmd+C when there's a
     // selection — xterm only forwards raw keystrokes as shell input by default.
     //
-    // There is deliberately NO Ctrl/Cmd+V branch here: xterm owns paste. Its native paste
-    // path ignores this handler's return value (it never calls preventDefault), so Chromium's
-    // own paste event reached xterm's internal paste() regardless and the pasted text landed
-    // twice — once raw from us, once bracketed (\x1b[200~…) from xterm, which garbles input
-    // rather than merely duplicating it. Letting xterm handle it means one write, and
-    // bracketed-paste mode is honoured. See also the application menu in src/main/index.ts,
-    // which omits the Edit roles for the same reason.
+    // Ctrl/Cmd+V IS handled below — see the long note in ChatTerminal.tsx. Short version:
+    // xterm's native paste ignores this handler's return value, so reading the clipboard
+    // here as well pasted twice; but the application menu omits the Edit roles, so
+    // Chromium's paste event never fires and leaving it to xterm pasted nothing. The
+    // branch below calls preventDefault, which makes it the single path either way.
     term.onSelectionChange(() => {
       const sel = term.getSelection()
       if (sel) navigator.clipboard.writeText(sel).catch(() => {})
@@ -104,11 +102,20 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
         navigator.clipboard.writeText(term.getSelection()).catch(() => {})
         return false
       }
-      // Ctrl+V is deliberately NOT handled here. xterm already pastes it, through the
-      // same term.paste path the right-click menu uses, and adding a second read here
-      // delivered every paste twice — the exact defect that removing the menu's Edit
-      // roles was meant to cure, reintroduced from the other side. The global Ctrl+V
-      // handler skips terminals for this reason; leave the keystroke alone.
+      // Ctrl/Cmd+V — see the long note in ChatTerminal.tsx for why this reads the
+      // clipboard itself and calls preventDefault: xterm's native paste comes from
+      // Chromium's paste event, which does not fire in this app, and returning false
+      // alone does not stop it when it does.
+      if (mod && e.key.toLowerCase() === 'v') {
+        e.preventDefault()
+        window.electronAPI.clipboardRead().then((res) => {
+          // Text only. An image would have to be written on this machine while the
+          // shell looks for it on another — refused, see clipboard:image-to-file.
+          if (res.text) term.paste(res.text)
+        })
+        return false
+      }
+
       return true
     })
 
@@ -131,7 +138,14 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
       // needs a read permission this app has no way to grant, so it failed silently
       // here for exactly as long as nobody tried right-clicking to paste.
       window.electronAPI.clipboardRead().then((res) => {
-        if (res.text) term.paste(res.text)
+        if (res.text) {
+          term.paste(res.text)
+          return
+        }
+        // Nothing to do for an image here. The file would be written on this machine
+        // while the shell looks for it on another, so the main process refuses a
+        // remote target outright rather than typing a path that points at nothing.
+        // See clipboard:image-to-file.
       })
     }
     host.addEventListener('contextmenu', onContextMenu)
