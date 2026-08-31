@@ -155,6 +155,18 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         navigator.clipboard.writeText(term.getSelection()).catch(() => {})
         return false
       }
+      if (mod && e.key.toLowerCase() === 'v') {
+        // xterm pastes from the DOM paste event, and that event never fires in this
+        // app: the application menu carries no Edit roles, for the reason spelled out
+        // in lib/clipboard-paste.ts. So the keystroke is read here instead and handed
+        // to term.paste — the same single, bracketed-paste-aware path right-click
+        // uses. The global Ctrl+V handler deliberately skips terminals, which is what
+        // leaves this one free to be the only paste that happens.
+        window.electronAPI.clipboardRead().then((res) => {
+          if (res.text) term.paste(res.text)
+        })
+        return false
+      }
       return true
     })
 
@@ -173,12 +185,12 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         navigator.clipboard.writeText(term.getSelection()).catch(() => {})
         return
       }
-      navigator.clipboard
-        .readText()
-        .then((text) => {
-          if (text) term.paste(text)
-        })
-        .catch(() => {})
+      // Read through the main process rather than navigator.clipboard: that one
+      // needs a read permission this app has no way to grant, so it failed silently
+      // here for exactly as long as nobody tried right-clicking to paste.
+      window.electronAPI.clipboardRead().then((res) => {
+        if (res.text) term.paste(res.text)
+      })
     }
     host.addEventListener('contextmenu', onContextMenu)
 
