@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
-import { installContextMenu } from './context-menu'
+import { claimContextMenu, installContextMenu } from './context-menu'
 import { resolvePolicy } from './ai-policy'
 import { getEngine } from './providers/registry'
 import { collectText } from './providers/collect'
@@ -113,6 +113,7 @@ import {
 } from './remote-shell'
 import { listDistros, testDistro, testDistroClaude, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
+import { posixToWslUnc } from './local-fs-pure'
 import {
   getHiddenDistros,
   setDistroHidden,
@@ -2308,6 +2309,9 @@ ipcMain.handle('fs:read-dir', (_, dirPath: string) => {
  * one needs a permission prompt this app has no way to answer, while the main
  * process can simply read it.
  */
+// A terminal telling us it is answering this right-click itself — see context-menu.ts.
+ipcMain.on('context-menu:claim', () => claimContextMenu())
+
 ipcMain.handle('clipboard:read', () => {
   const image = clipboard.readImage()
   if (!image.isEmpty()) {
@@ -2342,8 +2346,13 @@ ipcMain.handle(
     const name = `argos-paste-${Date.now()}.png`
     try {
       if (wslDistro) {
-        await fs.promises.writeFile(`\\wsl.localhost\${wslDistro}\tmp\${name}`, image.toPNG())
-        return { ok: true as const, path: `/tmp/${name}` }
+        // Built with posixToWslUnc rather than by hand. Written by hand it was
+        // `\\wsl.localhost\${d}\tmp\${n}`, where JS reads `\$` as an escaped dollar —
+        // so the distro never interpolated — and `\t` as a tab. The write failed
+        // every time, and the failure looked exactly like "no image on the clipboard".
+        const posix = `/tmp/${name}`
+        await fs.promises.writeFile(posixToWslUnc(wslDistro, posix), image.toPNG())
+        return { ok: true as const, path: posix }
       }
       const full = path.join(os.tmpdir(), name)
       await fs.promises.writeFile(full, image.toPNG())

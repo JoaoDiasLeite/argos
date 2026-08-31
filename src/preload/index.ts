@@ -380,6 +380,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readFile: (filePath: string) => ipcRenderer.invoke('fs:read-file', filePath),
   openFolder: (defaultPath?: string) => ipcRenderer.invoke('fs:open-folder', defaultPath),
   // The app handles Ctrl+V itself — see renderer lib/clipboard-paste.ts for why.
+  /** "This right-click is mine" — stops the native menu appearing over a terminal. */
+  claimContextMenu: () => ipcRenderer.send('context-menu:claim'),
   clipboardRead: () => ipcRenderer.invoke('clipboard:read'),
   clipboardImageToFile: (wslDistro?: string, remoteHostId?: string) =>
     ipcRenderer.invoke('clipboard:image-to-file', wslDistro, remoteHostId),

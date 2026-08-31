@@ -1555,6 +1555,8 @@ declare global {
       readDir: (dirPath: string) => Promise<FileNode[] | { error: string }>
       readFile: (filePath: string) => Promise<{ content?: string; error?: string }>
       openFolder: (defaultPath?: string) => Promise<string | null>
+      /** "This right-click is mine" — suppresses the native context menu once. */
+      claimContextMenu: () => void
       /** What is on the clipboard: an image if there is one, else text. */
       clipboardRead: () => Promise<{
         text?: string
