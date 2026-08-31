@@ -27,10 +27,19 @@ const EDGE_MARGIN = 6
  * at render time, which is the moment the menu opens — so Copy's disabled state reflects the
  * selection as it was when the user right-clicked.
  *
- * Paste deliberately goes through term.paste rather than writing to the pty ourselves: that's
- * the same path Ctrl+V takes, and it's the only one that respects bracketed-paste mode.
+ * Paste goes through the caller's `paste`, which is the same path Ctrl+V and
+ * right-click take in that terminal — including its decision about bracketed-paste
+ * markers, which are wrong for some ends of a pty and right for others.
  */
-export function terminalMenuItems(term: Terminal | null): TerminalMenuItem[] {
+export function terminalMenuItems(
+  term: Terminal | null,
+  /**
+   * How to deliver pasted text. Supplied by the terminal because whether
+   * bracketed-paste markers may be sent depends on what is on the other end of the
+   * pty — see `pasteText` in ChatTerminal.
+   */
+  paste: (text: string) => void
+): TerminalMenuItem[] {
   return [
     {
       label: 'Copy',
@@ -47,7 +56,7 @@ export function terminalMenuItems(term: Terminal | null): TerminalMenuItem[] {
         // permission this app has no way to grant, so that path failed silently
         // behind its own catch for as long as nobody tried this menu item.
         void window.electronAPI.clipboardRead().then((res) => {
-          if (res.text) term?.paste(res.text)
+          if (res.text) paste(res.text)
         })
       }
     },

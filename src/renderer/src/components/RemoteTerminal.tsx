@@ -335,12 +335,16 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
             Reconnect
           </button>
         )}
+        {/* Paste goes through term.paste unconditionally here: an SSH terminal reaches a
+            real pty running a real shell, which consumes bracketed-paste markers correctly
+            and needs them — they are what stops a multi-line paste being executed line by
+            line. Only a local Windows pty (ConPTY) mishandles them; see ChatTerminal. */}
         {menuPos && (
           <TerminalContextMenu
             x={menuPos.x}
             y={menuPos.y}
             onClose={() => setMenuPos(null)}
-            items={terminalMenuItems(termRef.current)}
+            items={terminalMenuItems(termRef.current, (t) => termRef.current?.paste(t))}
           />
         )}
       </div>

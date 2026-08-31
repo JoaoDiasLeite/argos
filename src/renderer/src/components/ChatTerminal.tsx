@@ -72,6 +72,15 @@ function hasVisibleContent(term: Terminal): boolean {
   return false
 }
 
+/**
+ * Whether a local pty on this platform swallows bracketed-paste markers instead of
+ * consuming them. True on Windows, where a local terminal is ConPTY.
+ *
+ * WSL and SSH terminals are not local in this sense — they reach a real pty — so the
+ * decision is per-terminal, not per-platform alone. See `pasteText`.
+ */
+const LOCAL_PTY_EATS_BRACKETS_PLATFORM = navigator.userAgent.includes('Windows')
+
 function loadFontSize(): number {
   const saved = Number(localStorage.getItem(FONT_SIZE_KEY))
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
@@ -111,6 +120,9 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
   // Read from the terminal's one-shot setup effect, which can't close over a prop.
   const onActiveRef = useRef(onActive)
   onActiveRef.current = onActive
+  // The Shift+right-click menu renders outside the setup effect, so it reaches the
+  // effect's `pasteText` through a ref rather than a second copy of the same decision.
+  const pasteRef = useRef<(text: string) => void>(() => {})
 
   // Create the xterm instance once for this component's lifetime.
   useEffect(() => {
@@ -126,6 +138,28 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(host)
+    const localPtyEatsBrackets = LOCAL_PTY_EATS_BRACKETS_PLATFORM && !wslDistro && !remoteHostId
+
+    /**
+     * Deliver pasted text to the pty.
+     *
+     * `term.paste` wraps the text in bracketed-paste markers (`[200~` … `[201~`)
+     * whenever xterm believes that mode is on. On the far end of a local pty that is
+     * Windows ConPTY, which does not consume them — the markers came back out as input
+     * and every paste arrived twice. WSL and SSH terminals reach a real pty running
+     * bash, which handles them correctly and needs them: they are what stops a
+     * multi-line paste being executed line by line.
+     *
+     * Measured, not guessed: a 57-character paste produced a 69-byte write, the twelve
+     * extra bytes being exactly the two markers, and the text appeared twice on Windows
+     * and once in WSL.
+     */
+    const pasteText = (text: string) => {
+      if (localPtyEatsBrackets) window.electronAPI.terminalWrite(idRef.current, text)
+      else term.paste(text)
+    }
+    pasteRef.current = pasteText
+
     term.onData((d) => {
       // Typing into the terminal is what makes a chat "used". Reporting it when the pty
       // merely started marked every chat opened on the Terminal pane as used the instant
@@ -170,7 +204,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       // CLI still gets its own Alt+V and can say whatever it would have said.
       if (wslDistro && e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'v') {
         window.electronAPI.clipboardImageToFile(wslDistro, remoteHostId).then((res) => {
-          if (res.ok) term.paste(res.path)
+          if (res.ok) pasteText(res.path)
           else window.electronAPI.terminalWrite(idRef.current, 'v')
         })
         return false
@@ -191,15 +225,12 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         e.preventDefault()
         window.electronAPI.clipboardRead().then((res) => {
           if (res.text) {
-            // term.paste, not a raw write: it is the only path that honours
-            // bracketed-paste mode, which is what stops a multi-line paste from
-            // being read as a series of commands.
-            term.paste(res.text)
+            pasteText(res.text)
             return
           }
           if (res.image) {
             window.electronAPI.clipboardImageToFile(wslDistro, remoteHostId).then((r) => {
-              if (r.ok) term.paste(r.path)
+              if (r.ok) pasteText(r.path)
             })
           }
         })
@@ -232,7 +263,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       // here for exactly as long as nobody tried right-clicking to paste.
       window.electronAPI.clipboardRead().then((res) => {
         if (res.text) {
-          term.paste(res.text)
+          pasteText(res.text)
           return
         }
         // An image gets the same treatment Alt+V gives it: written where the CLI can
@@ -241,7 +272,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         // text.
         if (res.image) {
           window.electronAPI.clipboardImageToFile(wslDistro, remoteHostId).then((r) => {
-            if (r.ok) term.paste(r.path)
+            if (r.ok) pasteText(r.path)
           })
         }
       })
@@ -561,7 +592,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
             x={menuPos.x}
             y={menuPos.y}
             onClose={() => setMenuPos(null)}
-            items={terminalMenuItems(termRef.current)}
+            items={terminalMenuItems(termRef.current, pasteRef.current)}
           />
         )}
       </div>
