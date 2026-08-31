@@ -104,18 +104,11 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
         navigator.clipboard.writeText(term.getSelection()).catch(() => {})
         return false
       }
-      if (mod && e.key.toLowerCase() === 'v') {
-        // xterm pastes from the DOM paste event, and that event never fires in this
-        // app: the application menu carries no Edit roles, for the reason spelled out
-        // in lib/clipboard-paste.ts. So the keystroke is read here instead and handed
-        // to term.paste — the same single, bracketed-paste-aware path right-click
-        // uses. The global Ctrl+V handler deliberately skips terminals, which is what
-        // leaves this one free to be the only paste that happens.
-        window.electronAPI.clipboardRead().then((res) => {
-          if (res.text) term.paste(res.text)
-        })
-        return false
-      }
+      // Ctrl+V is deliberately NOT handled here. xterm already pastes it, through the
+      // same term.paste path the right-click menu uses, and adding a second read here
+      // delivered every paste twice — the exact defect that removing the menu's Edit
+      // roles was meant to cure, reintroduced from the other side. The global Ctrl+V
+      // handler skips terminals for this reason; leave the keystroke alone.
       return true
     })
 
