@@ -155,6 +155,26 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         navigator.clipboard.writeText(term.getSelection()).catch(() => {})
         return false
       }
+      // Alt+V is the CLI's own "paste an image" key, and inside a WSL distro it cannot
+      // work on its own: the CLI would have to reach the Windows clipboard through
+      // interop, which a distro with `appendWindowsPath = false` in its wsl.conf does
+      // not offer — the CLI then answers "no image in clipboard found", correctly, and
+      // there is nothing it can do about it.
+      //
+      // Argos is on the Windows side of that boundary and can see the clipboard, so it
+      // writes the image into the distro's own /tmp over the UNC share and types the
+      // path instead. That path works regardless of interop, which is the point.
+      //
+      // With no image on the clipboard the keystroke is forwarded on as ESC-v, so the
+      // CLI still gets its own Alt+V and can say whatever it would have said.
+      if (wslDistro && e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'v') {
+        window.electronAPI.clipboardImageToFile(wslDistro, remoteHostId).then((res) => {
+          if (res.ok) term.paste(res.path)
+          else window.electronAPI.terminalWrite(idRef.current, 'v')
+        })
+        return false
+      }
+
       // Ctrl+V is deliberately NOT handled here. xterm already pastes it, through the
       // same term.paste path the right-click menu uses, and adding a second read here
       // delivered every paste twice — the exact defect that removing the menu's Edit

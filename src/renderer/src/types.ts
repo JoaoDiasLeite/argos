@@ -1560,6 +1560,17 @@ declare global {
         text?: string
         image?: { mediaType: string; data: string }
       }>
+      /**
+       * Write the clipboard's image somewhere the terminal's CLI can open, and return
+       * that path. For a WSL chat the file goes into the distro's own /tmp.
+       */
+      clipboardImageToFile: (
+        wslDistro?: string,
+        remoteHostId?: string
+      ) => Promise<
+        | { ok: true; path: string }
+        | { ok: false; error: 'no-image' | 'remote' | 'failed'; message?: string }
+      >
       fsReadText: (
         filePath: string
       ) => Promise<{ ok: boolean; content?: string; tooLarge?: boolean; binary?: boolean; error?: string }>

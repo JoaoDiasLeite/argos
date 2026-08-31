@@ -2316,6 +2316,44 @@ ipcMain.handle('clipboard:read', () => {
   return { text: clipboard.readText() }
 })
 
+/**
+ * Put the clipboard's image somewhere the terminal's CLI can actually reach, and
+ * return the path to type at it.
+ *
+ * A WSL chat runs `claude` inside the distro, where the Windows clipboard does not
+ * exist — Alt+V there answers "no image in clipboard found", correctly, because from
+ * inside Linux there is none. Argos sits on the Windows side of that boundary and can
+ * see it, so it writes the image across and hands back a path the CLI can open.
+ *
+ * For a distro the file goes to its own `/tmp` over the UNC share rather than through
+ * `/mnt/c`: not every distro mounts the Windows drives, and the share is the same one
+ * this app already reads sessions from.
+ *
+ * SSH is refused rather than fudged. The file would land on this machine while the CLI
+ * looked for it on another, and a path that silently points at nothing is worse than a
+ * refusal that says so.
+ */
+ipcMain.handle(
+  'clipboard:image-to-file',
+  async (_, wslDistro?: string, remoteHostId?: string) => {
+    if (remoteHostId) return { ok: false as const, error: 'remote' as const }
+    const image = clipboard.readImage()
+    if (image.isEmpty()) return { ok: false as const, error: 'no-image' as const }
+    const name = `argos-paste-${Date.now()}.png`
+    try {
+      if (wslDistro) {
+        await fs.promises.writeFile(`\\wsl.localhost\${wslDistro}\tmp\${name}`, image.toPNG())
+        return { ok: true as const, path: `/tmp/${name}` }
+      }
+      const full = path.join(os.tmpdir(), name)
+      await fs.promises.writeFile(full, image.toPNG())
+      return { ok: true as const, path: full }
+    } catch (e) {
+      return { ok: false as const, error: 'failed' as const, message: (e as Error).message }
+    }
+  }
+)
+
 ipcMain.handle('fs:read-file', (_, filePath: string) => {
   try {
     return { content: fs.readFileSync(filePath, 'utf-8') }
