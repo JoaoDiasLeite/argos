@@ -104,6 +104,33 @@ describe('projectKey for a Windows drive mounted inside a distro', () => {
   })
 })
 
+describe('projectKey for the Git Bash spelling of a Windows path', () => {
+  it('groups /c/Users/me/proj with the chats that call it C:\\Users\\me\\proj', () => {
+    expect(projectKey('/c/Users/me/proj')).toBe(projectKey('C:\\Users\\me\\proj'))
+  })
+
+  it('needs no distro, and is unchanged by one', () => {
+    expect(projectKey('/c/Users/me/proj', 'Ubuntu')).toBe(projectKey('/c/Users/me/proj'))
+  })
+
+  it('covers /c/Windows and any drive letter', () => {
+    expect(canonicalProjectPath('/c/Windows/Temp')).toBe('C:\\Windows\\Temp')
+    expect(canonicalProjectPath('/d/Users/me')).toBe('D:\\Users\\me')
+  })
+
+  it('leaves a single-letter directory alone when nothing anchors it to Windows', () => {
+    // `/c/dev` is a perfectly ordinary path on a Linux box, so it stays a Linux path.
+    expect(canonicalProjectPath('/c/dev/proj')).toBe('/c/dev/proj')
+    expect(canonicalProjectPath('/c/dev/proj', 'Ubuntu')).toBe(
+      '\\\\wsl.localhost\\Ubuntu\\c\\dev\\proj'
+    )
+  })
+
+  it('does not mistake a longer first segment for a drive letter', () => {
+    expect(canonicalProjectPath('/opt/Users/me')).toBe('/opt/Users/me')
+  })
+})
+
 describe('canonicalProjectPath', () => {
   it('gives a group a Windows-reachable path, so a new chat in it has a real cwd', () => {
     expect(canonicalProjectPath('/home/jdl/dev/wm-project', 'Ubuntu-DevOps')).toBe(

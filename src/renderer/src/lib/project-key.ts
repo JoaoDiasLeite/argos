@@ -37,6 +37,18 @@ const DRIVE = /^([A-Za-z]:)(\/.*)?$/
  *  is a folder like any other. The mount root is `/mnt` unless wsl.conf says otherwise,
  *  which is rare enough not to go looking for. */
 const MNT_DRIVE = /^\/mnt\/([A-Za-z])(\/.*)?$/
+/**
+ * Git Bash / MSYS spelling of a Windows path: `/c/Users/me/proj` for `C:\Users\me\proj`.
+ * A WSL session can record it too — App.tsx calls both this and `/mnt/c/…` legacy
+ * artifacts of one.
+ *
+ * `Users`/`Windows` is not decoration, it is the entire safety argument. `/c/dev` could
+ * be a real directory on any machine, so it is left alone; a top-level single-letter
+ * directory containing `Users` or `Windows` is, in practice, only ever Windows written
+ * this way — which is why this one does not need to know whether it is looking at WSL,
+ * unlike `/mnt/c`, whose name is unremarkable on any Linux box.
+ */
+const MSYS_DRIVE = /^\/([A-Za-z])\/(Users|Windows)(\/.*)?$/i
 
 function unify(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '')
@@ -77,6 +89,14 @@ export function canonicalProjectPath(
   }
 
   if (p.startsWith('/')) {
+    // Checked before the distro is looked up, because this shape carries its own
+    // evidence: whoever wrote it — Git Bash, or a WSL session recording a mount — was
+    // naming a Windows folder, and it belongs with the chats that spell it `C:\Users\…`.
+    const msys = p.match(MSYS_DRIVE)
+    if (msys) {
+      return `${msys[1].toUpperCase()}:\\${msys[2]}${(msys[3] ?? '').replace(/\//g, '\\')}`
+    }
+
     const distro = wslDistro ?? ctx.posixDistros?.get(p.toLowerCase())
     if (!distro) return path
     // Inside a distro, /mnt/c is not a folder in that distro at all — it is the Windows
