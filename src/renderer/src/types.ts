@@ -181,6 +181,7 @@ export interface ScheduledRun {
   lastRunAt?: number
   lastResult?: { ok: boolean; summary: string; costUsd: number; at: number }
   nextRunAt?: number
+  missedRunPolicy?: 'skip' | 'run-once'
   /**
    * Explicit tool-access level for this routine.
    * 'read-only' → mutating tools (Bash, Write, Edit, etc.) are removed from context via disallowedTools.

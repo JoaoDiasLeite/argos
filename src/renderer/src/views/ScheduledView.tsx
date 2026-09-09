@@ -415,6 +415,11 @@ function RoutineEditor({ run, setRun, isExisting, models, accounts, onSave }: Ed
 
           <div className="form-group">
             <label>Cadence</label>
+            <label htmlFor="missed-run-policy">When the app was closed at the scheduled time</label>
+            <select id="missed-run-policy" className="text-input" value={run.missedRunPolicy ?? 'skip'} onChange={(e) => setRun({ ...run, missedRunPolicy: e.target.value as 'skip' | 'run-once' })}>
+              <option value="skip">Skip missed runs and wait for the next scheduled time</option>
+              <option value="run-once">Run once when the app reopens</option>
+            </select>
             <div className="cadence-row">
               <select
                 className="text-input cadence-kind"

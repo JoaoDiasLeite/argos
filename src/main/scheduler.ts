@@ -1,7 +1,7 @@
 import { app, Notification } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import * as os from 'os'
+import { scheduledWorkingDirectory, startupRunTime } from './scheduler-safety'
 import { buildSubprocessEnv } from './auth'
 import { accountConfigDir } from './accounts'
 import { readJsonFile } from './json-file'
@@ -44,6 +44,7 @@ export interface ScheduledRun {
   lastRunAt?: number
   lastResult?: { ok: boolean; summary: string; costUsd: number; at: number }
   nextRunAt?: number
+  missedRunPolicy?: 'skip' | 'run-once'
   /**
    * Explicit tool-access intent stored on the run.
    * 'read-only' → disallowedTools list is passed at execution time (enforced by SDK).
@@ -171,7 +172,7 @@ export function upsertScheduledRun(run: ScheduledRun): ScheduledRun {
 
   // Strip the deprecated allowedTools field from the persisted record.
   const { allowedTools: _dropped, ...rest } = run
-  const sanitized: ScheduledRun = { ...rest, id: safeId, cadence, name, prompt, toolAccess }
+  const sanitized: ScheduledRun = { ...rest, id: safeId, cadence, name, prompt, toolAccess, missedRunPolicy: run.missedRunPolicy === 'run-once' ? 'run-once' : 'skip' }
   writeJsonAtomic(fileFor(safeId), sanitized)
   return sanitized
 }
@@ -247,7 +248,7 @@ const MAX_SUMMARY = 4000
 const HEADLESS_TIMEOUT_MS = 30 * 60 * 1000
 
 async function executeHeadless(run: ScheduledRun): Promise<{ ok: boolean; summary: string; costUsd: number }> {
-  const cwd = run.projectPath && fs.existsSync(run.projectPath) ? run.projectPath : os.homedir()
+  const cwd = scheduledWorkingDirectory(run.projectPath)
 
   const env = buildSubprocessEnv()
   const configDir = accountConfigDir(run.accountId)
@@ -349,11 +350,14 @@ export async function runScheduledRunNow(id: string): Promise<{ ok: boolean; sum
   }
 
   const now = Date.now()
+  // A routine may have been edited, disabled or deleted while its run was active.
+  if (!fs.existsSync(p)) return result
+  const latest = readJsonFile<ScheduledRun>(p)
   const updated: ScheduledRun = {
-    ...run,
+    ...latest,
     lastRunAt: now,
     lastResult: { ...result, at: now },
-    nextRunAt: run.enabled ? computeNextRun(run, now) : run.nextRunAt
+    nextRunAt: latest.enabled ? computeNextRun(latest, now) : latest.nextRunAt
   }
   try {
     writeJsonAtomic(p, updated)
@@ -404,7 +408,7 @@ export function startScheduler(): void {
     if (!run.nextRunAt || run.nextRunAt < Date.now()) {
       const updated: ScheduledRun = {
         ...run,
-        nextRunAt: computeNextRun(run, Date.now())
+        nextRunAt: startupRunTime(run, Date.now(), computeNextRun(run, Date.now()))
       }
       try {
         writeJsonAtomic(fileFor(run.id), updated)
