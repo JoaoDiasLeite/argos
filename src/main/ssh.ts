@@ -2,6 +2,8 @@ import { app, safeStorage } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { Client, ConnectConfig } from 'ssh2'
+import { randomUUID } from 'crypto'
+import { verifyHostKey } from './ssh-trust'
 import { handleStreamLine, makeLineBuffer, StreamState } from './claude-stream'
 
 export type SshAuthType = 'password' | 'key' | 'agent'
@@ -55,10 +57,8 @@ export function listHosts(): SshHostPublic[] {
   return readHosts().map(toPublic)
 }
 
-let seq = 0
 function genId(): string {
-  seq += 1
-  return `ssh_${seq}_${(seq * 7919) % 100000}`
+  return `ssh_${randomUUID()}`
 }
 
 export function saveHost(input: SshHost): SshHostPublic[] {
@@ -89,7 +89,10 @@ export function buildConnectConfig(h: SshHost): ConnectConfig {
     host: h.host,
     port: h.port || 22,
     username: h.username,
-    readyTimeout: 20000
+    readyTimeout: 120000,
+    hostVerifier: (key: Buffer, callback: (valid: boolean) => void) => {
+      verifyHostKey(h.host, h.port || 22, key).then(callback, () => callback(false))
+    }
   }
   if (h.authType === 'password') {
     conf.password = h.password
