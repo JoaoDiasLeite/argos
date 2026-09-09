@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions, clipboard } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions, clipboard, nativeTheme } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
@@ -18,7 +18,7 @@ import {
   buildSubprocessEnv,
   AuthMode
 } from './auth'
-import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, setSystemPrefs, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, UsageLimits, UiPrefs, SystemPrefs } from './config'
+import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, reresolveUiPrefs, setSystemPrefs, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, UsageLimits, UiPrefs, UiPrefsPatch, SystemPrefs } from './config'
 import { buildModelsCatalog } from './models-catalog'
 import {
   getAllProjects,
@@ -546,6 +546,14 @@ app.whenReady().then(async () => {
   loadAccounts()
   loadProviderAccounts()
   loadConfig()
+  // Follow the OS's light/dark for `ui.mode === 'system'`. nativeTheme fires 'updated'
+  // for more than that (accent colour, high-contrast), and it fires regardless of the
+  // user's mode, so reresolveUiPrefs decides whether anything actually moved and only
+  // then does this write to disk and repaint the windows.
+  nativeTheme.on('updated', () => {
+    const { ui, changed } = reresolveUiPrefs()
+    if (changed) broadcastUiPrefs(ui)
+  })
   // Fire and forget: builds the merged model catalog (bundled + models.json +
   // live discovery) and publishes it to config.ts, so pricing for a model we
   // only learn about at runtime is in place before the first turn is costed.
@@ -1277,7 +1285,27 @@ ipcMain.handle('config:set-default-model', (_, modelId: string) => {
   return getConfig()
 })
 ipcMain.handle('config:set-limits', (_, limits: Partial<UsageLimits>) => setLimits(limits))
-ipcMain.handle('config:set-ui', (_, prefs: Partial<UiPrefs>) => setUiPrefs(prefs))
+/**
+ * Push the resolved appearance to EVERY window, not just the main one.
+ *
+ * Unlike the other pushes in this file, this one cannot go through sendToMainWindow:
+ * the overlay, the toast and the status pill each paint themselves from the same
+ * palette, and they read it exactly once when they mount. Before this, the only way
+ * they picked up a theme change was by being recreated — which is fine for a change
+ * the user just made in the main window's settings, and useless for the OS flipping
+ * to dark at sunset while all four windows are alive.
+ */
+function broadcastUiPrefs(ui: UiPrefs): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send('config:ui', ui)
+  }
+}
+
+ipcMain.handle('config:set-ui', (_, prefs: UiPrefsPatch) => {
+  const ui = setUiPrefs(prefs)
+  broadcastUiPrefs(ui)
+  return ui
+})
 ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
   const prevOpenAtLogin = getConfig().system.openAtLogin
   const prevShortcut = getConfig().system.overlayShortcut

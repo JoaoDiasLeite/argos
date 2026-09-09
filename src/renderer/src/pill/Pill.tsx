@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { applyPalette } from '../lib/palettes'
+import { applyTheme } from '../lib/theme'
 
 // Agent status pill window. A tiny always-on-top "picture-in-picture" surface shown
 // while a run is in flight and the main window is hidden/minimized. It reflects live
@@ -25,7 +25,11 @@ export default function Pill() {
   useEffect(() => {
     window.electronAPI
       .getConfig()
-      .then((config) => applyPalette(document.documentElement, config.ui.theme, config.ui.palette))
+      .then((config) => applyTheme(document.documentElement, config.ui))
+
+    // This window is created once at launch and lives as long as the app, so the
+    // mount-time read above is the only palette it would ever see. Follow the push.
+    const offUi = window.electronAPI.onUiPrefs((ui) => applyTheme(document.documentElement, ui))
 
     const off = window.electronAPI.onPillUpdate((update: PillUpdate) => {
       setData((prev) => ({
@@ -35,7 +39,10 @@ export default function Pill() {
         tool: update.tool !== undefined ? update.tool : prev.tool
       }))
     })
-    return off
+    return () => {
+      offUi()
+      off()
+    }
   }, [])
 
   const icon =

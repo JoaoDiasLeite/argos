@@ -168,6 +168,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setDefaultModel: (modelId: string) => ipcRenderer.invoke('config:set-default-model', modelId),
   setLimits: (limits: unknown) => ipcRenderer.invoke('config:set-limits', limits),
   setUiPrefs: (prefs: unknown) => ipcRenderer.invoke('config:set-ui', prefs),
+  // Broadcast to every window whenever the resolved appearance changes — including
+  // from the OS flipping light/dark while mode is 'system', which no renderer can see.
+  onUiPrefs: (cb: (ui: unknown) => void) => {
+    const fn = (_: unknown, ui: unknown) => cb(ui)
+    ipcRenderer.on('config:ui', fn)
+    return () => ipcRenderer.removeListener('config:ui', fn)
+  },
   setSystemPrefs: (prefs: unknown) => ipcRenderer.invoke('config:set-system', prefs),
 
   // Claude Code data

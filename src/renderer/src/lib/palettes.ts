@@ -219,15 +219,9 @@ export const PALETTES: readonly Palette[] = [
  */
 export const DEFAULT_PALETTE = 'warm-rust'
 
-/**
- * Put the theme and palette on a document root.
- *
- * Every renderer window — main, overlay, pill, toast — has to do this, and each one
- * used to carry its own two-line copy plus its own `'warm-rust'` literal. Five copies
- * of one fact is four chances to change the default and miss a window; the fifth was
- * found only because this comment went looking for the fourth.
- */
-export function applyPalette(root: HTMLElement, theme: string, palette: string | undefined): void {
-  root.dataset.theme = theme
-  root.dataset.palette = palette || DEFAULT_PALETTE
-}
+// Applying a palette used to live here, as `applyPalette` — two lines that every
+// renderer window had to run, gathered in one place so the `'warm-rust'` fallback was
+// written once instead of five times. It has moved to lib/theme.ts, because those two
+// lines are now the beginning of a longer answer (colour overrides, contrast, fonts,
+// sizes) and splitting that answer across two modules is how the windows drift apart.
+// This module is back to being what its name says: the registry, and the default.

@@ -1,8 +1,9 @@
-import { app } from 'electron'
+import { app, nativeTheme } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { readJsonFile } from './json-file'
+import { UiPrefs, UiPrefsPatch, applyUiPatch, migrateUiPrefs, resolveUiPrefs } from './ui-prefs-pure'
 
 export type ProviderId = 'claude' | 'codex' | 'gemini'
 
@@ -68,16 +69,10 @@ export interface UsageLimits {
   weekUsd: number
 }
 
-export interface UiPrefs {
-  theme: 'dark' | 'light'
-  /** Color palette id (see global.css [data-palette]). 'warm-rust' is the default. */
-  palette: string
-  density: 'comfortable' | 'compact'
-  fontSize: 'sm' | 'md' | 'lg'
-  onboarded: boolean
-  /** Which panel new chats open in. */
-  defaultChatView: 'chat' | 'terminal'
-}
+// The appearance model and its rules live in ui-prefs-pure.ts, which imports nothing,
+// so they can be tested without electron. Re-exported here because every existing
+// importer says `from './config'`.
+export type { UiPrefs, ThemeSettings, UiPrefsPatch } from './ui-prefs-pure'
 
 export interface SystemPrefs {
   openAtLogin: boolean
@@ -104,8 +99,33 @@ let config: AppConfig = {
   // 0 = no personal budget set (no % bar shown). These are user budgets, NOT Anthropic
   // plan limits, which are metered server-side and not readable locally.
   limits: { hourUsd: 0, sessionUsd: 0, weekUsd: 0 },
-  ui: { theme: 'dark', palette: 'warm-rust', density: 'comfortable', fontSize: 'md', onboarded: false, defaultChatView: 'chat' },
+  ui: {
+    theme: 'dark',
+    palette: 'warm-rust',
+    density: 'comfortable',
+    fontSize: 'md',
+    onboarded: false,
+    defaultChatView: 'chat'
+    // mode/light/dark are deliberately absent rather than spelled out: they get filled
+    // in by migrateUiPrefs from theme/palette, which is the same path a config written
+    // by an older build takes. One code path, exercised on every launch.
+  },
   system: { openAtLogin: false, startMinimized: false, closeToTray: true, overlayShortcut: '', explorerContextMenu: false }
+}
+
+/**
+ * Per-key backfill for `ui`, then migration, then resolution.
+ *
+ * `light`/`dark` are taken from the file or left absent — never half-seeded from the
+ * defaults. migrateUiPrefs fills an absent side in from the user's own `palette`, and
+ * it can only do that if the side is genuinely absent; a `{ palette: 'warm-rust' }`
+ * placeholder would silently hand a Gruvbox user a Warm Rust light theme.
+ */
+function loadUiPrefs(defaults: UiPrefs, loaded: Partial<UiPrefs> | undefined): UiPrefs {
+  const merged: UiPrefs = { ...defaults, ...(loaded ?? {}) }
+  merged.light = loaded?.light ? { ...loaded.light } : undefined
+  merged.dark = loaded?.dark ? { ...loaded.dark } : undefined
+  return resolveUiPrefs(migrateUiPrefs(merged), nativeTheme.shouldUseDarkColors)
 }
 
 export function loadConfig(): void {
@@ -116,14 +136,18 @@ export function loadConfig(): void {
         ...config,
         ...loaded,
         limits: { ...config.limits, ...(loaded.limits ?? {}) },
-        ui: { ...config.ui, ...(loaded.ui ?? {}) },
+        ui: loadUiPrefs(config.ui, loaded.ui),
         // Backfill for configs saved by older versions that predate `system`.
         system: { ...config.system, ...(loaded.system ?? {}) }
       }
+      return
     }
   } catch {
     // keep defaults
   }
+  // No file, or an unreadable one: the defaults still have to go through migration,
+  // so a fresh install hands the renderer the same shape a migrated config has.
+  config.ui = loadUiPrefs(config.ui, undefined)
 }
 
 function saveConfig(): void {
@@ -145,10 +169,27 @@ export function setLimits(limits: Partial<UsageLimits>): UsageLimits {
   return config.limits
 }
 
-export function setUiPrefs(prefs: Partial<UiPrefs>): UiPrefs {
-  config.ui = { ...config.ui, ...prefs }
+export function setUiPrefs(prefs: UiPrefsPatch): UiPrefs {
+  config.ui = applyUiPatch(config.ui, prefs, nativeTheme.shouldUseDarkColors)
   saveConfig()
   return config.ui
+}
+
+/**
+ * Re-resolve the computed fields against the OS's current light/dark, and say whether
+ * anything actually changed.
+ *
+ * This is what main/index.ts calls from nativeTheme's 'updated' event. The event fires
+ * for more than a light/dark flip (accent colour, high contrast), and it fires while
+ * `mode` may not be 'system' at all, so the caller needs the boolean to decide whether
+ * a broadcast and a disk write are warranted rather than firing on every tick.
+ */
+export function reresolveUiPrefs(): { ui: UiPrefs; changed: boolean } {
+  const next = resolveUiPrefs(config.ui, nativeTheme.shouldUseDarkColors)
+  const changed = next.theme !== config.ui.theme || next.palette !== config.ui.palette
+  config.ui = next
+  if (changed) saveConfig()
+  return { ui: config.ui, changed }
 }
 
 export function setSystemPrefs(prefs: Partial<SystemPrefs>): SystemPrefs {

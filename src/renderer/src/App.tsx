@@ -36,14 +36,14 @@ import FileEditor from './components/FileEditor'
 import { readLocalFile, writeLocalFile } from './lib/local-file-io'
 import { installEditingKeys } from './lib/clipboard-paste'
 import TextContextMenu from './components/TextContextMenu'
-import { applyPalette } from './lib/palettes'
+import { applyTheme, zoomFor } from './lib/theme'
 import CheckpointsModal from './components/CheckpointsModal'
 import GitModal from './components/GitModal'
 import CommandPalette, { CommandItem } from './components/CommandPalette'
 import OnboardingModal from './components/OnboardingModal'
 import AccountsModal from './components/AccountsModal'
 import ChangelogModal from './components/ChangelogModal'
-import { UiPrefs } from './types'
+import { UiPrefs, UiPrefsPatch } from './types'
 import { sessionToReplaySeed } from './lib/markdown-export'
 import { provOf, acctOf, AccountDefaults } from './lib/account-scope'
 // The secondary views below are only ever mounted once the user navigates away
@@ -82,12 +82,20 @@ function generateId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
+/**
+ * The main window's appearance. lib/theme.ts owns everything that is CSS; the two
+ * things left here are the two that are main-window-only:
+ *
+ *  - density, because [data-density] rules target chat and sidebar rows that exist in
+ *    no other window, and setting it in the overlay would silently restyle it;
+ *  - zoom, because 'app:set-zoom' zooms the main window specifically — calling it from
+ *    the overlay or the pill would resize the wrong window.
+ */
 function applyUi(ui: UiPrefs) {
   const root = document.documentElement
-  applyPalette(root, ui.theme, ui.palette)
+  applyTheme(root, ui)
   root.dataset.density = ui.density
-  const zoom = ui.fontSize === 'sm' ? 0.9 : ui.fontSize === 'lg' ? 1.12 : 1
-  window.electronAPI.setZoom(zoom)
+  window.electronAPI.setZoom(zoomFor(ui))
 }
 
 function newSession(projectPath?: string, model?: string, accountId?: string): Session {
@@ -346,6 +354,17 @@ export default function App() {
     }
     init()
   }, [refreshAuth, refreshAccounts])
+
+  // The main process pushes resolved prefs whenever they change — which includes the
+  // one change no renderer can see for itself: the OS flipping light/dark while
+  // ui.mode is 'system'. Re-applying here is also what keeps this window in step with
+  // a save made from a settings screen in any other window.
+  useEffect(() => {
+    return window.electronAPI.onUiPrefs((next) => {
+      setUi(next)
+      applyUi(next)
+    })
+  }, [])
 
   // Persist partial output periodically, including continuous streams. A recovered
   // running marker becomes "interrupted" on startup; no command is replayed.
@@ -1542,7 +1561,7 @@ export default function App() {
     await window.electronAPI.setDefaultModel(modelId)
   }
 
-  const updateUi = async (patch: Partial<UiPrefs>) => {
+  const updateUi = async (patch: UiPrefsPatch) => {
     const next = await window.electronAPI.setUiPrefs(patch)
     setUi(next)
     applyUi(next)

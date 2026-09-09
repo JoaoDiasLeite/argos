@@ -133,15 +133,71 @@ export interface UsageLimits {
   weekUsd: number
 }
 
+/**
+ * One side of the appearance model — everything that can differ between light and dark.
+ * Mirrors ThemeSettings in src/main/ui-prefs-pure.ts, which owns the rules.
+ */
+export interface ThemeSettings {
+  /** Palette id (see global.css [data-palette]). */
+  palette: string
+  /** `#rrggbb` override of the palette's own --accent. Absent = use the palette's. */
+  accent?: string
+  /** `#rrggbb` override of --bg-0; the rest of the surface ramp is derived from it. */
+  background?: string
+  /** `#rrggbb` override of --text-0; --text-1/--text-2 are derived from it. */
+  foreground?: string
+  /** 0–100, where 50 means "the palette's own separation between surfaces". */
+  contrast?: number
+  /** Semi-transparent, blurred sidebar. In-app translucency, not Windows acrylic. */
+  translucentSidebar?: boolean
+}
+
 export interface UiPrefs {
+  /**
+   * RESOLVED light/dark, not the user's setting — `mode` is that, and it can be
+   * 'system'. This is the answer after asking the OS, recomputed and persisted by
+   * setUiPrefs on every write. Everything that paints reads this (all four windows,
+   * and `[data-theme='light']` in global.css), so it is not redundant with `mode`:
+   * it is the resolved value they all need and none of them can work out alone.
+   */
   theme: 'dark' | 'light'
-  /** Color palette id (see global.css [data-palette]). 'warm-rust' is the default. */
+  /**
+   * RESOLVED palette id: whichever of `light.palette` / `dark.palette` the resolved
+   * `theme` selects. Same contract as `theme` — computed, persisted, read everywhere,
+   * never the source of truth.
+   */
   palette: string
   density: 'comfortable' | 'compact'
+  /** Legacy three-step UI scale. Superseded by `uiFontSize`, honoured when it is absent. */
   fontSize: 'sm' | 'md' | 'lg'
   onboarded: boolean
   /** Which panel new chats open in. */
   defaultChatView: 'chat' | 'terminal'
+
+  /** The source of truth for light vs dark. Absent in configs older than this system. */
+  mode?: 'system' | 'light' | 'dark'
+  light?: ThemeSettings
+  dark?: ThemeSettings
+  /**
+   * Family ids from lib/fonts.ts, or undefined/'system' for the platform default.
+   * `content` additionally accepts 'inherit', meaning "same as the UI font".
+   */
+  fonts?: { ui?: string; content?: string; code?: string }
+  /** UI scale in px, 11–20. Absent falls back to `fontSize`. */
+  uiFontSize?: number
+  /** Code/monospace size in px, 10–18. */
+  codeFontSize?: number
+}
+
+/**
+ * What may be sent to `setUiPrefs`. Not `Partial<UiPrefs>`: `light`/`dark` are patched
+ * a level deeper, and ThemeSettings.palette is required, so the most ordinary patch a
+ * settings screen makes — `{ dark: { accent: '#fff' } }` — would not typecheck.
+ * The main process merges the sides and re-resolves `theme`/`palette`.
+ */
+export type UiPrefsPatch = Partial<Omit<UiPrefs, 'light' | 'dark'>> & {
+  light?: Partial<ThemeSettings>
+  dark?: Partial<ThemeSettings>
 }
 
 export interface SystemPrefs {
@@ -1300,7 +1356,13 @@ declare global {
       getModels: () => Promise<ModelInfo[]>
       setDefaultModel: (modelId: string) => Promise<{ defaultModel: string }>
       setLimits: (limits: Partial<UsageLimits>) => Promise<UsageLimits>
-      setUiPrefs: (prefs: Partial<UiPrefs>) => Promise<UiPrefs>
+      setUiPrefs: (prefs: UiPrefsPatch) => Promise<UiPrefs>
+      /**
+       * Fires in every window whenever the resolved appearance changes — a save from
+       * the settings screen, or the OS flipping light/dark while mode is 'system'.
+       * Returns its own unsubscribe.
+       */
+      onUiPrefs: (cb: (ui: UiPrefs) => void) => () => void
       setSystemPrefs: (
         prefs: Partial<SystemPrefs>
       ) => Promise<{ system: SystemPrefs; registeredShortcut: string }>

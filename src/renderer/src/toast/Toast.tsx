@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ApprovalRequest } from '../types'
-import { applyPalette } from '../lib/palettes'
+import { applyTheme } from '../lib/theme'
 
 // Approval toast window. Shown bottom-right, always on top, whenever an agent run
 // needs tool approval while the main window is hidden/unfocused, so the run never
@@ -39,7 +39,10 @@ export default function Toast() {
   useEffect(() => {
     window.electronAPI
       .getConfig()
-      .then((config) => applyPalette(document.documentElement, config.ui.theme, config.ui.palette))
+      .then((config) => applyTheme(document.documentElement, config.ui))
+
+    // Long-lived window, one mount-time palette read: follow the push instead.
+    const offUi = window.electronAPI.onUiPrefs((ui) => applyTheme(document.documentElement, ui))
 
     const offApproval = window.electronAPI.onToastApproval((data: ApprovalRequest) => {
       // Ignore duplicates (the same id could arrive twice on rapid re-shows).
@@ -49,6 +52,7 @@ export default function Toast() {
       setQueue((prev) => prev.filter((r) => r.approvalId !== approvalId))
     })
     return () => {
+      offUi()
       offApproval()
       offResolved()
     }

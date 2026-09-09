@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Session } from '../types'
-import { applyPalette } from '../lib/palettes'
+import { applyTheme } from '../lib/theme'
 
 // Quick-launcher overlay window. Summoned via a global shortcut from anywhere in
 // the OS; every action hands off to the main window and dismisses the overlay.
@@ -19,7 +19,7 @@ export default function Overlay() {
       window.electronAPI.getConfig(),
       window.electronAPI.listSessions()
     ])
-    applyPalette(document.documentElement, config.ui.theme, config.ui.palette)
+    applyTheme(document.documentElement, config.ui)
     setRecent(
       [...sessions]
         .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
@@ -37,12 +37,17 @@ export default function Overlay() {
       refresh()
       inputRef.current?.focus()
     })
+    // refresh() re-reads the palette on every summon, so this only matters for a
+    // change that lands while the overlay is already open — but it is the same one
+    // line, and the alternative is an overlay that is a theme behind until dismissed.
+    const offUi = window.electronAPI.onUiPrefs((ui) => applyTheme(document.documentElement, ui))
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') window.electronAPI.overlayHide()
     }
     window.addEventListener('keydown', onKey)
     return () => {
       offShown()
+      offUi()
       window.removeEventListener('keydown', onKey)
     }
   }, [])

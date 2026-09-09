@@ -30,6 +30,13 @@
   --thinking-bg: rgba(140, 127, 214, 0.12);
   --font-mono: 'Menlo', 'Monaco', 'Courier New', monospace;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  /* The reading face: chat messages and rendered markdown, as opposed to the chrome
+     around them. Defaults to the UI font, so it changes nothing until a font is
+     chosen for it; applying it to those components is deliberately not done here. */
+  --font-content: var(--font-sans);
+  /* Code block size. A token rather than the literal it replaced, so lib/theme.ts can
+     write it from UiPrefs.codeFontSize; the value is what code blocks already used. */
+  --font-size-code: 13px;
   --radius: 8px;
   --radius-sm: 4px;
   --radius-lg: 12px;
@@ -529,7 +536,7 @@ a:hover { text-decoration: underline; }
 
 pre, code {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--font-size-code);
 }
 
 pre {
@@ -546,7 +553,10 @@ code:not(pre code) {
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 1px 5px;
-  font-size: 12px;
+  /* Inline code has always sat a pixel below a code block — it is set in running text
+     and a bordered chip at the block size crowds the line. Kept as a relation to the
+     token rather than a second literal, so the pref moves both together. */
+  font-size: calc(var(--font-size-code) - 1px);
 }
 
 .icon-btn {
@@ -578,4 +588,30 @@ code:not(pre code) {
   width: 1px;
   background: var(--border);
   flex-shrink: 0;
+}
+
+/* ── Translucent sidebar ──
+   Be clear about what this is: in-app translucency, not Windows acrylic. The sidebar
+   background is dropped to partial alpha and the content behind it — the app's own
+   window, not the desktop — is blurred. Real acrylic/mica means `backgroundMaterial`
+   on the BrowserWindow plus a transparent page, which is a main-process change and a
+   different visual effect; this is the version that costs nothing and works on both
+   platforms. Alpha differs by theme for the usual reason: a wash of white over a light
+   surface disappears, so light mode needs more of it to still read as a panel. */
+:root[data-translucent-sidebar='on'] .sidebar,
+:root[data-translucent-sidebar='on'] .nav-rail {
+  background: color-mix(in srgb, var(--bg-1) 72%, transparent);
+  backdrop-filter: blur(18px) saturate(140%);
+}
+:root[data-translucent-sidebar='on'][data-theme='light'] .sidebar,
+:root[data-translucent-sidebar='on'][data-theme='light'] .nav-rail {
+  background: color-mix(in srgb, var(--bg-1) 82%, transparent);
+}
+/* No blur means no translucency: a see-through panel with nothing softening what is
+   behind it reads as a rendering bug rather than an effect. Fall back to the opaque token. */
+@supports not (backdrop-filter: blur(1px)) {
+  :root[data-translucent-sidebar='on'] .sidebar,
+  :root[data-translucent-sidebar='on'] .nav-rail {
+    background: var(--bg-1);
+  }
 }
