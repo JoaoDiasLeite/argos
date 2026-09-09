@@ -196,8 +196,25 @@ export interface UiPrefs {
  * The main process merges the sides and re-resolves `theme`/`palette`.
  */
 export type UiPrefsPatch = Partial<Omit<UiPrefs, 'light' | 'dark'>> & {
-  light?: Partial<ThemeSettings>
-  dark?: Partial<ThemeSettings>
+  light?: ThemeSettingsPatch
+  dark?: ThemeSettingsPatch
+}
+
+/**
+ * One side of a patch. Mirrors ThemeSettingsPatch in src/main/ui-prefs-pure.ts.
+ *
+ * `null` clears an override. It has to be a value rather than an absent key, because
+ * a patch crosses IPC and "clear" must not depend on the serializer preserving a key
+ * whose value is undefined. `''` also clears, which is what an emptied colour input
+ * gives us.
+ */
+export type ThemeSettingsPatch = {
+  palette?: string
+  accent?: string | null
+  background?: string | null
+  foreground?: string | null
+  contrast?: number | null
+  translucentSidebar?: boolean | null
 }
 
 export interface SystemPrefs {

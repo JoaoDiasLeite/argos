@@ -9,8 +9,8 @@
 // means it needs those colours as values — a second copy, unavoidably.
 //
 // The defect this module exists to close is not the duplication itself; it is that
-// the duplication was unchecked. The picker's fourteen rows were written out inline
-// in SettingsModal.tsx, and nothing anywhere would have noticed a swatch drifting
+// the duplication was unchecked. The picker's rows were once written out inline in
+// the settings modal, and nothing anywhere would have noticed a swatch drifting
 // from the palette it names, or a palette added to the CSS and never offered in the
 // picker. `palettes.test.ts` reads global.css off disk and holds the two sides
 // together. It is the point of this module, not decoration around it — if that test

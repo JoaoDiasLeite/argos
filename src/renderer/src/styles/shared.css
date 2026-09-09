@@ -99,6 +99,11 @@
 .btn-ghost { background: var(--bg-2); color: var(--text-1); border: 1px solid var(--border); }
 .btn-ghost:hover { background: var(--bg-hover); color: var(--text-0); transform: translateY(-1px); }
 .btn-primary.small, .btn-ghost.small { padding: 5px 11px; font-size: 12px; }
+/* Slightly roomier than the other two — it was written for the Settings/Hooks rows,
+   where these buttons carry a whole sentence ("Session notifications…"). Moved here
+   from SettingsModal.css when that modal became a screen; NotifyHookModal was already
+   the second user, which is what makes this the canonical definition. */
+.btn-secondary.small { padding: 6px 14px; font-size: 12px; }
 .btn-text { font-size: 12px; color: var(--text-2); cursor: pointer; }
 .btn-text:hover { color: var(--text-0); }
 .btn-text:disabled { opacity: 0.5; cursor: default; }
@@ -136,6 +141,78 @@ select.text-input { cursor: pointer; }
 }
 .form-group.grow { flex: 1; }
 .form-group.icon-group { flex-shrink: 0; }
+
+/* The explanatory line under a control. Ten-odd components render one; its only
+   definition used to sit in SettingsModal.css, which made every other user depend on
+   a stylesheet it had nothing to do with (and which is now gone). */
+.field-hint {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+/* ── Auth option (radio card) ──
+   Shared by OnboardingModal and the Settings screen's Connection section: the same
+   two choices, offered in both places, so one definition rather than two that drift. */
+.auth-option-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-option {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.auth-option:hover { background: var(--bg-hover); }
+/* The wash was a literal rgba() of the original accent, so it stayed rust-coloured
+   under all thirty palettes. Same weight, mixed off the live accent instead. */
+.auth-option.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--bg-1)); }
+.auth-option:disabled { opacity: 0.6; cursor: default; }
+
+.auth-option-radio {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+.auth-option.selected .auth-option-radio { border-color: var(--accent); }
+.auth-option-radio span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: transparent;
+}
+.auth-option-radio span.on { background: var(--accent); }
+
+.auth-option-body { display: flex; flex-direction: column; gap: 3px; }
+
+.auth-option-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+
+.auth-option-desc {
+  font-size: 12px;
+  color: var(--text-1);
+  line-height: 1.5;
+}
 
 /* ── Toggle switch (checkbox-based) ── */
 .toggle-switch {
@@ -199,7 +276,7 @@ select.text-input { cursor: pointer; }
 }
 
 /* ── Status pill (small "ok"/"warn" indicator) ──
-   Used by SettingsModal, AccountsModal, and OnboardingModal. Named
+   Used by the Settings screen, AccountsModal, and OnboardingModal. Named
    `.status-pill` (not `.pill`) so it doesn't collide with the unrelated
    selectable-tag `.pill` in PlannerView.css. */
 .status-pill {

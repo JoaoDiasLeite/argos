@@ -26,7 +26,6 @@ import TitleBar from './components/TitleBar'
 import ResizeHandles from './components/ResizeHandles'
 import Chat from './components/Chat'
 import TerminalPanel from './components/TerminalPanel'
-import SettingsModal from './components/SettingsModal'
 import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, groupOwnsView } from './components/NavRail'
 import ServerTabs from './components/ServerTabs'
 import ClaudeMdModal from './components/ClaudeMdModal'
@@ -67,6 +66,7 @@ const PlannerView = lazy(() => import('./views/PlannerView'))
 const RemoteView = lazy(() => import('./views/RemoteView'))
 const RemoteSessionView = lazy(() => import('./views/RemoteSessionView'))
 const ScheduledView = lazy(() => import('./views/ScheduledView'))
+const SettingsView = lazy(() => import('./views/SettingsView'))
 
 /** Minimal, style-consistent fallback shown while a lazy view's chunk loads. */
 function ViewLoading() {
@@ -154,7 +154,6 @@ export default function App() {
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
   const [terminalLines, setTerminalLines] = useState<TermLine[]>([])
   const [terminalOpen, setTerminalOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [changelogOpen, setChangelogOpen] = useState(false)
   const [claudeMdOpen, setClaudeMdOpen] = useState(false)
   const [checkpointsOpen, setCheckpointsOpen] = useState(false)
@@ -170,6 +169,14 @@ export default function App() {
   const [newChatNonce, setNewChatNonce] = useState(0)
   const [auth, setAuth] = useState<AuthStatus | null>(null)
   const [view, setView] = useState<View>('chat')
+  // Where Settings' "Back to app" goes. Settings is a full screen, so it displaces
+  // whatever was showing, and the way out has to lead back there — not to Chat, which
+  // is what a hardcoded fallback would give someone who opened Settings from Usage.
+  // A ref rather than state: nothing renders from it, and it must not cause one.
+  const preSettingsView = useRef<View>('chat')
+  useEffect(() => {
+    if (view !== 'settings') preSettingsView.current = view
+  }, [view])
   // A conversation named by a notification click (`argos://session`). Held here
   // rather than passed straight through so a second click on the same conversation
   // still re-opens it: the object identity is what ProjectsView reacts to.
@@ -1604,7 +1611,7 @@ export default function App() {
       { v: 'remote', label: 'Remote & WSL' }
     ]
     for (const { v, label } of views) items.push({ id: `view:${v}`, title: `Go to ${label}`, group: 'Views', run: () => goToView(v) })
-    items.push({ id: 'settings', title: 'Open Settings', group: 'Views', run: () => setSettingsOpen(true) })
+    items.push({ id: 'settings', title: 'Open Settings', group: 'Views', run: () => setView('settings') })
     items.push({ id: 'accounts', title: 'Manage Claude accounts', group: 'Views', run: () => setAccountsOpen(true) })
     for (const s of sessions) {
       items.push({
@@ -1679,7 +1686,7 @@ export default function App() {
         <NavRail
           view={view}
           onChange={goToView}
-          onSettings={() => setSettingsOpen(true)}
+          onSettings={() => setView('settings')}
           onChangelog={() => setChangelogOpen(true)}
           serverSessionCount={serverSessions.length}
         />
@@ -1701,7 +1708,7 @@ export default function App() {
             onSetProject={setSessionProject}
             onOpenFile={setOpenFilePath}
             openFilePath={openFilePath ?? undefined}
-            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenSettings={() => setView('settings')}
             auth={auth}
             accounts={accounts}
             models={models}
@@ -1759,7 +1766,7 @@ export default function App() {
               streaming={activeStreaming}
               onSendMessage={sendMessage}
               onStop={stopMessage}
-              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenSettings={() => setView('settings')}
               ready={ready}
               models={models}
               currentModel={activeSession?.model || defaultModel}
@@ -1811,6 +1818,23 @@ export default function App() {
       {view === 'usage' && (
         <Suspense fallback={<ViewLoading />}>
           <UsageView />
+        </Suspense>
+      )}
+      {/* Owns the whole content area, its own nav column standing in for the chat
+          Sidebar. The icon rail stays put; its bottom Settings entry lights up. */}
+      {view === 'settings' && (
+        <Suspense fallback={<ViewLoading />}>
+          <SettingsView
+            auth={auth}
+            models={models}
+            defaultModel={defaultModel}
+            onSetDefaultModel={handleSetDefaultModel}
+            ui={ui}
+            onSetUi={updateUi}
+            onChanged={refreshAuth}
+            onManageAccounts={() => setAccountsOpen(true)}
+            onBack={() => setView(preSettingsView.current)}
+          />
         </Suspense>
       )}
 
@@ -1948,22 +1972,6 @@ export default function App() {
         </div>
       )}
 
-      {settingsOpen && (
-        <SettingsModal
-          auth={auth}
-          models={models}
-          defaultModel={defaultModel}
-          onSetDefaultModel={handleSetDefaultModel}
-          ui={ui}
-          onSetUi={updateUi}
-          onClose={() => setSettingsOpen(false)}
-          onChanged={refreshAuth}
-          onManageAccounts={() => {
-            setSettingsOpen(false)
-            setAccountsOpen(true)
-          }}
-        />
-      )}
       {ui && !ui.onboarded && (
         <OnboardingModal
           onFinish={async () => {

@@ -76,8 +76,28 @@ export interface UiPrefs {
  * most ordinary thing a settings screen does — would not typecheck against it.
  */
 export type UiPrefsPatch = Partial<Omit<UiPrefs, 'light' | 'dark'>> & {
-  light?: Partial<ThemeSettings>
-  dark?: Partial<ThemeSettings>
+  light?: ThemeSettingsPatch
+  dark?: ThemeSettingsPatch
+}
+
+/**
+ * One side of a patch, where `null` means "clear this override, go back to the
+ * palette's own value".
+ *
+ * `null` rather than `undefined`, and this is not pedantry: a patch crosses an IPC
+ * boundary, and "clear" must not be expressed as a key whose value is absent — the
+ * receiving end can only tell it apart from "leave alone" by `'contrast' in patch`,
+ * which is a property of the serializer rather than of the protocol. `null` survives
+ * as a value, so the intent is carried rather than inferred. Empty string still works
+ * for the colour fields, which is what an unset <input type="color"> yields.
+ */
+export type ThemeSettingsPatch = {
+  palette?: string
+  accent?: string | null
+  background?: string | null
+  foreground?: string | null
+  contrast?: number | null
+  translucentSidebar?: boolean | null
 }
 
 export const UI_FONT_SIZE_MIN = 11
@@ -134,7 +154,7 @@ export function migrateUiPrefs(ui: UiPrefs): UiPrefs {
  * "back to the palette's own colour" button. An unparseable colour is dropped on the
  * floor rather than stored — see isHexColor.
  */
-function mergeSide(current: ThemeSettings | undefined, patch: Partial<ThemeSettings> | undefined, fallbackPalette: string): ThemeSettings {
+function mergeSide(current: ThemeSettings | undefined, patch: ThemeSettingsPatch | undefined, fallbackPalette: string): ThemeSettings {
   const base: ThemeSettings = { ...(current ?? { palette: fallbackPalette }) }
   if (!patch) return base
   if (typeof patch.palette === 'string' && patch.palette) base.palette = patch.palette
@@ -142,7 +162,7 @@ function mergeSide(current: ThemeSettings | undefined, patch: Partial<ThemeSetti
   for (const key of ['accent', 'background', 'foreground'] as const) {
     if (!(key in patch)) continue
     const value = patch[key]
-    if (value === undefined || value === '') delete base[key]
+    if (value === undefined || value === null || value === '') delete base[key]
     else if (isHexColor(value)) base[key] = value.toLowerCase()
     // else: malformed, keep what was there
   }
@@ -153,7 +173,7 @@ function mergeSide(current: ThemeSettings | undefined, patch: Partial<ThemeSetti
     else base.contrast = c
   }
   if ('translucentSidebar' in patch) {
-    if (patch.translucentSidebar === undefined) delete base.translucentSidebar
+    if (patch.translucentSidebar === undefined || patch.translucentSidebar === null) delete base.translucentSidebar
     else base.translucentSidebar = !!patch.translucentSidebar
   }
   return base

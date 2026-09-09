@@ -139,6 +139,31 @@ describe('patching', () => {
     ).toEqual({ palette: 'gruvbox' })
   })
 
+  it('clears an override when the patch sets it to null', () => {
+    // The form "clear" actually takes on the wire. A settings screen sends its reset
+    // buttons across IPC, where a key whose value is `undefined` relies on the
+    // serializer keeping the key at all — so null is the signal that carries the
+    // intent instead of leaving it to be inferred from `'contrast' in patch`.
+    const start = applyUiPatch(
+      LEGACY,
+      { dark: { accent: '#abcdef', background: '#101010', contrast: 80, translucentSidebar: true } },
+      false
+    )
+    expect(start.dark).toEqual({
+      palette: 'gruvbox',
+      accent: '#abcdef',
+      background: '#101010',
+      contrast: 80,
+      translucentSidebar: true
+    })
+    const cleared = applyUiPatch(
+      start,
+      { dark: { accent: null, background: null, contrast: null, translucentSidebar: null } },
+      false
+    )
+    expect(cleared.dark).toEqual({ palette: 'gruvbox' })
+  })
+
   it('clamps the numeric fields', () => {
     expect(applyUiPatch(LEGACY, { uiFontSize: 99 }, false).uiFontSize).toBe(20)
     expect(applyUiPatch(LEGACY, { uiFontSize: 2 }, false).uiFontSize).toBe(11)

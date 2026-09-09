@@ -21,7 +21,12 @@ export const ALL_VIEWS = [
   'usage',
   'mcp',
   'remote',
-  'remote-session'
+  'remote-session',
+  // A full screen rather than a modal, so it is a view like any other — and being in
+  // this list is what makes it reachable from a deep link. It is deliberately absent
+  // from RAIL below: its entry lives at the bottom of the rail, next to Changelog,
+  // where users already look for it.
+  'settings'
 ] as const
 
 export type View = (typeof ALL_VIEWS)[number]
@@ -209,7 +214,11 @@ export default function NavRail({ view, onChange, onSettings, onChangelog, serve
           <span className="nav-item-label">Changelog</span>
         </button>
 
-        <button className="nav-item" onClick={onSettings} title="Settings">
+        <button
+          className={`nav-item ${view === 'settings' ? 'active' : ''}`}
+          onClick={onSettings}
+          title="Settings"
+        >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />

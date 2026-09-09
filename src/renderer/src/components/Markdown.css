@@ -1,6 +1,9 @@
 /* ── Markdown content ───────────────────────────────────────────────────────── */
 
 .md {
+  /* The reading face, so the Appearance panel's "Content font" is actually worth
+     setting. Defaults to var(--font-sans), i.e. no change until one is chosen. */
+  font-family: var(--font-content);
   font-size: 14px;
   line-height: 1.6;
   color: var(--text-0);
