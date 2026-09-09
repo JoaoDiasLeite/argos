@@ -103,6 +103,30 @@ describe('the palette registry matches global.css', () => {
     }
   })
 
+  it('paints each lightSwatch from that palette light block --bg-0, --bg-2 and --accent', () => {
+    // The light-chip counterpart of the dark-swatch check above: a settings screen that
+    // offers a light theme and a dark theme separately needs a light chip that is
+    // honest about the light block's colours, not a guess or a copy of the dark one.
+    const NAMES = ['--bg-0', '--bg-2', '--accent'] as const
+    for (const p of PALETTES) {
+      const body = blockFor(lightSelector(p.id))
+      expect(body, `palette '${p.id}': no light block to read lightSwatch colours from`).not.toBeNull()
+      NAMES.forEach((name, i) => {
+        const css = token(body as string, name)
+        expect(
+          css,
+          `palette '${p.id}': ${name} is not declared in its light block, so it inherits from a ` +
+            `parent selector — lightSwatch[${i}] (${p.lightSwatch[i]}) cannot be checked against a ` +
+            'value that lives elsewhere; declare the token explicitly in the light block'
+        ).not.toBeNull()
+        expect(
+          p.lightSwatch[i].toLowerCase(),
+          `palette '${p.id}': lightSwatch[${i}] is ${p.lightSwatch[i]} but ${name} in its light block is ${css}`
+        ).toBe(css)
+      })
+    }
+  })
+
   it('points DEFAULT_PALETTE at a registered palette', () => {
     // A default that is not in the list makes the picker show nothing as selected,
     // and applyPalette write an id no CSS block answers to.

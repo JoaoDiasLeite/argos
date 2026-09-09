@@ -251,6 +251,230 @@
   --accent: #c97f14; --accent-dim: rgba(201, 127, 20, 0.14); --accent-hover: #b06c0b;
 }
 
+/* GitHub — the canvas dark/light backgrounds and link-blue accent from the site itself */
+:root[data-palette='github'] {
+  --bg-0: #0d1117; --bg-1: #151b23; --bg-2: #1c2330; --bg-3: #262e3d; --bg-hover: #30394a;
+  --border: #212939; --border-light: #333d4f;
+  --text-0: #e6edf3; --text-1: #9aa4b2; --text-2: #6c7683;
+  --accent: #58a6ff; --accent-dim: rgba(88, 166, 255, 0.17); --accent-hover: #79b8ff;
+}
+:root[data-palette='github'][data-theme='light'] {
+  --bg-0: #ffffff; --bg-1: #f6f8fa; --bg-2: #eef1f4; --bg-3: #e3e8ee; --bg-hover: #eef1f4;
+  --border: #e2e5ea; --border-light: #cdd3db;
+  --text-0: #1f2328; --text-1: #57606a; --text-2: #8b949e;
+  --accent: #0969da; --accent-dim: rgba(9, 105, 218, 0.13); --accent-hover: #0757ba;
+}
+
+/* Codex — a plain, near-black terminal grey with the tool's mint-teal accent */
+:root[data-palette='codex'] {
+  --bg-0: #101113; --bg-1: #17181b; --bg-2: #1f2124; --bg-3: #292b2f; --bg-hover: #34363b;
+  --border: #26282c; --border-light: #3a3d42;
+  --text-0: #eceeef; --text-1: #a5a9ad; --text-2: #6f7377;
+  --accent: #12b886; --accent-dim: rgba(18, 184, 134, 0.16); --accent-hover: #2fcc9c;
+}
+:root[data-palette='codex'][data-theme='light'] {
+  --bg-0: #f7f8f8; --bg-1: #eff1f1; --bg-2: #e6e9e9; --bg-3: #dbdfdf; --bg-hover: #e7eaea;
+  --border: #dde0e0; --border-light: #c7cbcb;
+  --text-0: #1b1d1e; --text-1: #52565a; --text-2: #85898a;
+  --accent: #0e9670; --accent-dim: rgba(14, 150, 112, 0.13); --accent-hover: #0b7c5d;
+}
+
+/* Catppuccin — Mocha's crust/base ramp with its signature mauve accent */
+:root[data-palette='catppuccin'] {
+  --bg-0: #11111b; --bg-1: #181825; --bg-2: #1e1e2e; --bg-3: #313244; --bg-hover: #45475a;
+  --border: #2c2e40; --border-light: #45475a;
+  --text-0: #cdd6f4; --text-1: #a6adc8; --text-2: #7f849c;
+  --accent: #cba6f7; --accent-dim: rgba(203, 166, 247, 0.17); --accent-hover: #d8bdfa;
+}
+:root[data-palette='catppuccin'][data-theme='light'] {
+  --bg-0: #eff1f5; --bg-1: #e6e9ef; --bg-2: #dce0e8; --bg-3: #ccd0da; --bg-hover: #d3d7e0;
+  --border: #ccd0da; --border-light: #bcc0cc;
+  --text-0: #4c4f69; --text-1: #6c6f85; --text-2: #767992;
+  --accent: #8839ef; --accent-dim: rgba(136, 57, 239, 0.13); --accent-hover: #7228d8;
+}
+
+/* Everforest — a muted, warm-grey forest floor under a soft sage accent */
+:root[data-palette='everforest'] {
+  --bg-0: #1e2326; --bg-1: #252b2e; --bg-2: #2d3438; --bg-3: #3a4245; --bg-hover: #454e51;
+  --border: #333b3e; --border-light: #4a5357;
+  --text-0: #d3c6aa; --text-1: #9da9a0; --text-2: #6f7a72;
+  --accent: #a7c080; --accent-dim: rgba(167, 192, 128, 0.16); --accent-hover: #b9cf97;
+}
+:root[data-palette='everforest'][data-theme='light'] {
+  --bg-0: #f8f5e4; --bg-1: #f1edd8; --bg-2: #e8e3c8; --bg-3: #ddd8b8; --bg-hover: #e9e4ca;
+  --border: #ddd8bd; --border-light: #c9c4a5;
+  --text-0: #34412f; --text-1: #5c6a58; --text-2: #647159;
+  --accent: #5f8a3c; --accent-dim: rgba(95, 138, 60, 0.13); --accent-hover: #4e7530;
+}
+
+/* Gruvbox — retro warm-brown terminal grey, mustard-yellow accent instead of the expected orange */
+:root[data-palette='gruvbox'] {
+  --bg-0: #1d2021; --bg-1: #282828; --bg-2: #32302e; --bg-3: #3c3836; --bg-hover: #504945;
+  --border: #3c3836; --border-light: #504945;
+  --text-0: #ebdbb2; --text-1: #bdae93; --text-2: #8a8578;
+  --accent: #fabd2f; --accent-dim: rgba(250, 189, 47, 0.16); --accent-hover: #fbcb5c;
+}
+:root[data-palette='gruvbox'][data-theme='light'] {
+  --bg-0: #fbf1c7; --bg-1: #f2e5bc; --bg-2: #ebdbb2; --bg-3: #d5c4a1; --bg-hover: #e5d5ac;
+  --border: #d5c4a1; --border-light: #bdae93;
+  --text-0: #3c3836; --text-1: #504945; --text-2: #7c6f64;
+  --accent: #b57614; --accent-dim: rgba(181, 118, 20, 0.13); --accent-hover: #9c6510;
+}
+
+/* Linear — a near-black, faintly cool neutral behind the product's indigo-blue accent */
+:root[data-palette='linear'] {
+  --bg-0: #0e0e12; --bg-1: #16161c; --bg-2: #1e1f27; --bg-3: #292a35; --bg-hover: #333542;
+  --border: #26272f; --border-light: #3a3c48;
+  --text-0: #ecedf0; --text-1: #a5a7b3; --text-2: #6f717e;
+  --accent: #5e6ad2; --accent-dim: rgba(94, 106, 210, 0.17); --accent-hover: #7784e0;
+}
+:root[data-palette='linear'][data-theme='light'] {
+  --bg-0: #fbfbfc; --bg-1: #f4f5f8; --bg-2: #ebecf1; --bg-3: #dfe1e9; --bg-hover: #ebecf1;
+  --border: #e2e4ea; --border-light: #cbcdd9;
+  --text-0: #1b1c22; --text-1: #55586a; --text-2: #85889c;
+  --accent: #4550c8; --accent-dim: rgba(69, 80, 200, 0.13); --accent-hover: #363fb0;
+}
+
+/* Notion — plain off-black/off-white surfaces, the app's own callout blue as accent */
+:root[data-palette='notion'] {
+  --bg-0: #191919; --bg-1: #202020; --bg-2: #2a2a2a; --bg-3: #363636; --bg-hover: #414141;
+  --border: #2f2f2f; --border-light: #454545;
+  --text-0: #ededed; --text-1: #ababab; --text-2: #6f6f6f;
+  --accent: #2383e2; --accent-dim: rgba(35, 131, 226, 0.16); --accent-hover: #4996e8;
+}
+:root[data-palette='notion'][data-theme='light'] {
+  --bg-0: #ffffff; --bg-1: #f7f7f5; --bg-2: #efeeec; --bg-3: #e3e2df; --bg-hover: #efeeec;
+  --border: #e6e5e2; --border-light: #d3d1cb;
+  --text-0: #37352f; --text-1: #6b6b68; --text-2: #88877f;
+  --accent: #1a6fc4; --accent-dim: rgba(26, 111, 196, 0.13); --accent-hover: #145a9f;
+}
+
+/* One — Atom's One Dark/Light: blue-grey editor chrome, its familiar sky-blue accent */
+:root[data-palette='one'] {
+  --bg-0: #21252b; --bg-1: #282c34; --bg-2: #2c313c; --bg-3: #3a3f4b; --bg-hover: #454a56;
+  --border: #323740; --border-light: #454b57;
+  --text-0: #e6e6e6; --text-1: #abb2bf; --text-2: #6b7280;
+  --accent: #61afef; --accent-dim: rgba(97, 175, 239, 0.16); --accent-hover: #7dbdf3;
+}
+:root[data-palette='one'][data-theme='light'] {
+  --bg-0: #fafafa; --bg-1: #f0f0f1; --bg-2: #e5e5e6; --bg-3: #d7d7d8; --bg-hover: #e8e8e9;
+  --border: #dcdcdd; --border-light: #c6c6c8;
+  --text-0: #383a42; --text-1: #585c66; --text-2: #7d8592;
+  --accent: #4078f2; --accent-dim: rgba(64, 120, 242, 0.13); --accent-hover: #2f62d6;
+}
+
+/* Proof — a flat, product-grade dark neutral (no warmth, no tint) under a violet-blue accent */
+:root[data-palette='proof'] {
+  --bg-0: #121315; --bg-1: #191a1d; --bg-2: #212226; --bg-3: #2b2d33; --bg-hover: #35373e;
+  --border: #292a2f; --border-light: #3d3f47;
+  --text-0: #eceded; --text-1: #a7a9ae; --text-2: #717378;
+  --accent: #6c5ce7; --accent-dim: rgba(108, 92, 231, 0.17); --accent-hover: #8577ec;
+}
+:root[data-palette='proof'][data-theme='light'] {
+  --bg-0: #f8f8fa; --bg-1: #f1f1f5; --bg-2: #e8e8ee; --bg-3: #dcdce4; --bg-hover: #e9e9ef;
+  --border: #e0e0e8; --border-light: #c9c9d5;
+  --text-0: #1d1e24; --text-1: #55576a; --text-2: #87899c;
+  --accent: #5340c9; --accent-dim: rgba(83, 64, 201, 0.13); --accent-hover: #4432ab;
+}
+
+/* Raycast — a purple-tinted near-black launcher chrome, its red-orange brand accent */
+:root[data-palette='raycast'] {
+  --bg-0: #131217; --bg-1: #1a181f; --bg-2: #221f29; --bg-3: #2d2934; --bg-hover: #38333f;
+  --border: #28242f; --border-light: #3c3646;
+  --text-0: #eeecf1; --text-1: #aca6b5; --text-2: #766f80;
+  --accent: #ff6363; --accent-dim: rgba(255, 99, 99, 0.16); --accent-hover: #ff8080;
+}
+:root[data-palette='raycast'][data-theme='light'] {
+  --bg-0: #faf9fb; --bg-1: #f2f0f5; --bg-2: #e9e6ee; --bg-3: #ddd8e5; --bg-hover: #eae7ef;
+  --border: #e2dee8; --border-light: #cbc5d5;
+  --text-0: #221f29; --text-1: #5a5566; --text-2: #8b8598;
+  --accent: #d43f39; --accent-dim: rgba(212, 63, 57, 0.13); --accent-hover: #b8342f;
+}
+
+/* Rose Pine — the dusky navy-mauve base and rose accent of the Rosé Pine family */
+:root[data-palette='rose-pine'] {
+  --bg-0: #191724; --bg-1: #1f1d2e; --bg-2: #26233a; --bg-3: #322d4a; --bg-hover: #3d3759;
+  --border: #2a273f; --border-light: #403a5a;
+  --text-0: #e0def4; --text-1: #908caa; --text-2: #6a6688;
+  --accent: #ea9a97; --accent-dim: rgba(234, 154, 151, 0.16); --accent-hover: #f0aeab;
+}
+:root[data-palette='rose-pine'][data-theme='light'] {
+  --bg-0: #faf4ed; --bg-1: #f2ebe2; --bg-2: #e9ded2; --bg-3: #ddcec0; --bg-hover: #eee2d5;
+  --border: #e4d7ca; --border-light: #cebfa9;
+  --text-0: #423d5c; --text-1: #65618a; --text-2: #8985a8;
+  --accent: #b4637a; --accent-dim: rgba(180, 99, 122, 0.13); --accent-hover: #9c4f66;
+}
+
+/* Solarized — Ethan Schoonover's exact base03/base3 pair, its precision blue accent */
+:root[data-palette='solarized'] {
+  --bg-0: #002b36; --bg-1: #073642; --bg-2: #0e434f; --bg-3: #15505d; --bg-hover: #1c5d6b;
+  --border: #0a3e4a; --border-light: #1f5b68;
+  --text-0: #d6e0e0; --text-1: #93a1a1; --text-2: #657b83;
+  --accent: #268bd2; --accent-dim: rgba(38, 139, 210, 0.16); --accent-hover: #4098db;
+}
+:root[data-palette='solarized'][data-theme='light'] {
+  --bg-0: #fdf6e3; --bg-1: #f7f0dc; --bg-2: #eee8d5; --bg-3: #e3dcc5; --bg-hover: #efe9d7;
+  --border: #e5dfc8; --border-light: #d3ccb2;
+  --text-0: #073642; --text-1: #586e75; --text-2: #6c7f86;
+  --accent: #268bd2; --accent-dim: rgba(38, 139, 210, 0.13); --accent-hover: #1e6fa8;
+}
+
+/* Vercel — true black-and-white product chrome, the brand's electric-blue accent */
+:root[data-palette='vercel'] {
+  --bg-0: #0a0a0a; --bg-1: #111111; --bg-2: #1a1a1a; --bg-3: #242424; --bg-hover: #2e2e2e;
+  --border: #222222; --border-light: #333333;
+  --text-0: #f2f2f2; --text-1: #a0a0a0; --text-2: #707070;
+  --accent: #0070f3; --accent-dim: rgba(0, 112, 243, 0.17); --accent-hover: #3291ff;
+}
+:root[data-palette='vercel'][data-theme='light'] {
+  --bg-0: #ffffff; --bg-1: #fafafa; --bg-2: #f0f0f0; --bg-3: #e3e3e3; --bg-hover: #f0f0f0;
+  --border: #eaeaea; --border-light: #d4d4d4;
+  --text-0: #0a0a0a; --text-1: #525252; --text-2: #8a8a8a;
+  --accent: #0761d1; --accent-dim: rgba(7, 97, 209, 0.13); --accent-hover: #054fad;
+}
+
+/* VS Code Plus — the editor's own near-black chrome, its status-bar blue as accent */
+:root[data-palette='vs-code-plus'] {
+  --bg-0: #161616; --bg-1: #1e1e1e; --bg-2: #252526; --bg-3: #2d2d2e; --bg-hover: #383838;
+  --border: #2b2b2c; --border-light: #3f3f40;
+  --text-0: #e6e6e6; --text-1: #a8a8a8; --text-2: #767676;
+  --accent: #2599ff; --accent-dim: rgba(37, 153, 255, 0.16); --accent-hover: #4aa9ff;
+}
+:root[data-palette='vs-code-plus'][data-theme='light'] {
+  --bg-0: #ffffff; --bg-1: #f3f3f3; --bg-2: #eaeaea; --bg-3: #dedede; --bg-hover: #e8e8e8;
+  --border: #e5e5e5; --border-light: #d0d0d0;
+  --text-0: #1e1e1e; --text-1: #5a5a5a; --text-2: #8a8a8a;
+  --accent: #0067c0; --accent-dim: rgba(0, 103, 192, 0.13); --accent-hover: #00549e;
+}
+
+/* Xcode — a cool blue-grey IDE chrome distinct from VS Code's neutral grey, same family of blue */
+:root[data-palette='xcode'] {
+  --bg-0: #1e2128; --bg-1: #252932; --bg-2: #2d323c; --bg-3: #383e4a; --bg-hover: #434a58;
+  --border: #323844; --border-light: #454c5a;
+  --text-0: #e9edf3; --text-1: #a6afbe; --text-2: #6f7887;
+  --accent: #3574f0; --accent-dim: rgba(53, 116, 240, 0.16); --accent-hover: #5389f5;
+}
+:root[data-palette='xcode'][data-theme='light'] {
+  --bg-0: #ffffff; --bg-1: #f7f8fa; --bg-2: #eef0f4; --bg-3: #e1e5ec; --bg-hover: #eef0f4;
+  --border: #e3e7ee; --border-light: #ccd2dd;
+  --text-0: #1a1d24; --text-1: #535a68; --text-2: #868d9b;
+  --accent: #1f5bd6; --accent-dim: rgba(31, 91, 214, 0.13); --accent-hover: #1749ad;
+}
+
+/* Absolutely — a plain near-black neutral, no product to borrow from, so the accent does the work: a bold magenta */
+:root[data-palette='absolutely'] {
+  --bg-0: #141116; --bg-1: #1c1820; --bg-2: #25202b; --bg-3: #302938; --bg-hover: #3b3344;
+  --border: #2c2534; --border-light: #413849;
+  --text-0: #f0e9f0; --text-1: #b0a3b5; --text-2: #7a6d80;
+  --accent: #e0479e; --accent-dim: rgba(224, 71, 158, 0.16); --accent-hover: #ea6bb2;
+}
+:root[data-palette='absolutely'][data-theme='light'] {
+  --bg-0: #faf6fa; --bg-1: #f2ebf3; --bg-2: #e9dfec; --bg-3: #ddd0e2; --bg-hover: #eae0ed;
+  --border: #e2d5e6; --border-light: #cdb9d3;
+  --text-0: #241c26; --text-1: #5c4f61; --text-2: #8d7f92;
+  --accent: #b5288a; --accent-dim: rgba(181, 40, 138, 0.13); --accent-hover: #9a1f75;
+}
+
 /* ── Density ── */
 :root[data-density='compact'] .message-row { padding-top: 8px; padding-bottom: 8px; }
 :root[data-density='compact'] .session-item { padding: 5px 8px; }
