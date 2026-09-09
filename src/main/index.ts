@@ -120,6 +120,8 @@ import {
   getRoomsLayout,
   setRoomsLayout,
   RoomsLayout,
+  getProjectNames,
+  setProjectName,
   getFavoriteProjects,
   setProjectFavorite,
   setProjectArchived
@@ -1271,6 +1273,14 @@ ipcMain.handle('wsl:history', (_, distro: string) => wslHistory(distro))
 ipcMain.handle('rooms:get-layout', () => getRoomsLayout())
 ipcMain.handle('rooms:set-layout', (_, layout: RoomsLayout) => {
   setRoomsLayout(layout)
+  return true
+})
+
+// ─── Project names (sidebar custom display names) ─────────────────────────────
+
+ipcMain.handle('projects:get-names', () => getProjectNames())
+ipcMain.handle('projects:set-name', (_, key: string, name: string) => {
+  setProjectName(key, name)
   return true
 })
 

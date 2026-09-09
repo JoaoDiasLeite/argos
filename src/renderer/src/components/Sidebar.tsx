@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Session, AuthStatus, CCAccountStatus, ProviderAccountStatus, ProviderId, ModelInfo } from '../types'
 import { idFor as idForAccount, visibleSessions as visibleSessionsFor, AccountDefaults } from '../lib/account-scope'
+import { projectKey } from '../lib/project-key'
 import FileTree from './FileTree'
 import './Sidebar.css'
 import './AccountPicker.css'
@@ -206,6 +207,38 @@ export default function Sidebar({
   // "Show N more" expansion past GROUP_ROW_CAP — session state only, resets on reload.
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
+  // ── Custom project names (e.g. "Argos" for the claude-gui folder) ────────
+  // Keyed by projectKey() so it matches the group keying above and survives the same
+  // spelling differences. Loaded once and kept in local state; writes go through the
+  // IPC and update this state optimistically so the header doesn't wait on a
+  // round-trip to reflect what was just typed.
+  const [projectNames, setProjectNamesState] = useState<Record<string, string>>({})
+  useEffect(() => {
+    window.electronAPI.ccProjectNames().then(setProjectNamesState).catch(() => {})
+  }, [])
+  const [renamingGroupKey, setRenamingGroupKey] = useState<string | null>(null)
+  const [groupRenameDraft, setGroupRenameDraft] = useState('')
+
+  const startGroupRename = (g: { key: string; basename: string }) => {
+    setRenamingGroupKey(g.key)
+    setGroupRenameDraft(projectNames[g.key] ?? '')
+  }
+  const commitGroupRename = (g: { key: string; basename: string }) => {
+    const next = groupRenameDraft.trim()
+    setRenamingGroupKey(null)
+    const current = projectNames[g.key] ?? ''
+    if (next === current) return
+    // Optimistic: the header should show the new name immediately, not after the IPC
+    // round-trip — the write below is fire-and-forget from the UI's point of view.
+    setProjectNamesState((prev) => {
+      const nextMap = { ...prev }
+      if (next) nextMap[g.key] = next
+      else delete nextMap[g.key]
+      return nextMap
+    })
+    window.electronAPI.ccSetProjectName(g.key, next).catch(() => {})
+  }
+
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!draggingRef.current) return
     const delta = e.clientX - startXRef.current
@@ -402,18 +435,24 @@ export default function Sidebar({
   }, [visibleSessions, searchQuery])
 
   // ── Group filteredSessions by project ───────────────────────────────────
-  // Keyed by the full path (two folders can share a basename) but displayed by basename.
-  // Sessions with no projectPath land in one "No folder" group, always rendered last.
-  // Groups are ordered by their most recently updated session, descending; sessions
-  // within a group are ordered the same way.
+  // Keyed by the normalised path (projectKey — case-folded, separators unified) so the
+  // same folder reached as `...\claude-gui` from one session and `...\Claude-GUI` from
+  // another lands in one group instead of two. Displayed by basename, or the user's
+  // custom name when they've set one for this project. Sessions with no projectPath
+  // land in one "No folder" group, always rendered last. Groups are ordered by their
+  // most recently updated session, descending; sessions within a group are ordered the
+  // same way.
   type SessionGroup = { key: string; path?: string; basename: string; sessions: Session[] }
   const groups = useMemo<SessionGroup[]>(() => {
     const map = new Map<string, SessionGroup>()
     for (const s of filteredSessions) {
       const path = s.projectPath
-      const key = path || NO_FOLDER_KEY
+      const key = path ? projectKey(path) : NO_FOLDER_KEY
       let g = map.get(key)
       if (!g) {
+        // First-seen path wins for display and for "new chat in this group" — later
+        // sessions in the same group may spell the folder differently, but the group
+        // has to pick one real path to act on.
         g = {
           key,
           path,
@@ -443,7 +482,7 @@ export default function Sidebar({
   const activeGroupKey = useMemo(() => {
     const active = sessions.find((s) => s.id === activeId)
     if (!active) return null
-    return active.projectPath || NO_FOLDER_KEY
+    return active.projectPath ? projectKey(active.projectPath) : NO_FOLDER_KEY
   }, [sessions, activeId])
 
   const formatDate = (ts: number) => {
@@ -503,17 +542,17 @@ export default function Sidebar({
           </span>
         )}
         {hoveredId === s.id && (
-          <button
-            className="session-delete"
-            onClick={(e) => { e.stopPropagation(); onDeleteSession(s.id) }}
-            title="Delete"
-            aria-label="Delete session"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+            <button
+              className="session-delete"
+              onClick={(e) => { e.stopPropagation(); onDeleteSession(s.id) }}
+              title="Delete"
+              aria-label="Delete session"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
         )}
       </div>
     )
@@ -743,6 +782,10 @@ export default function Sidebar({
                   const isFullyExpanded = expandedGroups.has(g.key)
                   const visibleRows = isFullyExpanded ? g.sessions : g.sessions.slice(0, GROUP_ROW_CAP)
                   const remaining = g.sessions.length - visibleRows.length
+                  // "No folder" has no real path to key a custom name against.
+                  const canRename = !!g.path
+                  const displayName = (canRename && projectNames[g.key]) || g.basename
+                  const isRenamingGroup = renamingGroupKey === g.key
                   return (
                     <div className="session-group" key={g.key}>
                       {/* A div (not a button) so the nested "+" can be a real button —
@@ -752,8 +795,9 @@ export default function Sidebar({
                         role="button"
                         tabIndex={0}
                         aria-expanded={!isCollapsed}
-                        onClick={() => toggleGroupCollapse(g.key)}
+                        onClick={() => !isRenamingGroup && toggleGroupCollapse(g.key)}
                         onKeyDown={(e) => {
+                          if (isRenamingGroup) return
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault()
                             toggleGroupCollapse(g.key)
@@ -762,18 +806,58 @@ export default function Sidebar({
                         title={g.path || 'No folder'}
                       >
                         <span className="session-group-chevron" aria-hidden="true">{isCollapsed ? '▸' : '▾'}</span>
-                        <span className="session-group-name">{g.basename}</span>
-                        <button
-                          className="session-group-add"
-                          onClick={(e) => { e.stopPropagation(); onNewSession(g.path) }}
-                          title={`New chat in ${g.basename}`}
-                          aria-label={`New chat in ${g.basename}`}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-                            <line x1="12" y1="5" x2="12" y2="19" />
-                            <line x1="5" y1="12" x2="19" y2="12" />
-                          </svg>
-                        </button>
+                        {isRenamingGroup ? (
+                          <input
+                            className="session-rename-input session-group-rename-input"
+                            autoFocus
+                            value={groupRenameDraft}
+                            placeholder={g.basename}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setGroupRenameDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') commitGroupRename(g)
+                              else if (e.key === 'Escape') setRenamingGroupKey(null)
+                            }}
+                            onBlur={() => commitGroupRename(g)}
+                          />
+                        ) : (
+                          <span
+                            className="session-group-name"
+                            onDoubleClick={(e) => {
+                              if (!canRename) return
+                              e.stopPropagation()
+                              startGroupRename(g)
+                            }}
+                          >
+                            {displayName}
+                          </span>
+                        )}
+                        {canRename && !isRenamingGroup && (
+                          <button
+                            className="session-group-rename"
+                            onClick={(e) => { e.stopPropagation(); startGroupRename(g) }}
+                            title="Rename project (or double-click the name)"
+                            aria-label={`Rename ${displayName}`}
+                          >
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                            </svg>
+                          </button>
+                        )}
+                        {!isRenamingGroup && (
+                          <button
+                            className="session-group-add"
+                            onClick={(e) => { e.stopPropagation(); onNewSession(g.path) }}
+                            title={`New chat in ${displayName}`}
+                            aria-label={`New chat in ${displayName}`}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                              <line x1="12" y1="5" x2="12" y2="19" />
+                              <line x1="5" y1="12" x2="19" y2="12" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                       {!isCollapsed && (
                         <div className="session-group-rows">

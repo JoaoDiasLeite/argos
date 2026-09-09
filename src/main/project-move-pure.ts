@@ -186,3 +186,40 @@ export function rekeyRoomsLayout(layout: RoomsLayout, fromPath: string, toPath: 
   }
   return { order, names }
 }
+
+/**
+ * Normalise a path the same way the renderer's `projectKey()` does — case-folded,
+ * separators unified to `/`, trailing separator stripped. Duplicated rather than
+ * imported: that module lives in the renderer and pulls in nothing this process can
+ * load, and the normalisation itself is three lines not worth a shared package for.
+ */
+export function projectNameKey(p: string): string {
+  return p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+/**
+ * Re-key `project-names`, which — unlike the rooms layout — is keyed by the
+ * case-folded `projectKey()` rather than the real path, since the same folder can
+ * reach the sidebar spelled two different ways. Matching therefore has to be
+ * case-insensitive too, or a rename set against one spelling silently drops on a move
+ * that changes nothing but the folder's case.
+ */
+export function rekeyProjectNames(
+  names: Record<string, string>,
+  fromPath: string,
+  toPath: string
+): Record<string, string> {
+  const fromKey = projectNameKey(fromPath)
+  const toKey = projectNameKey(toPath)
+  const out: Record<string, string> = {}
+  // The destination's own name is claimed before anything is moved onto it. Relying on
+  // "first one wins" alone would hand the decision to whichever key JS happens to
+  // iterate first, so a name the user set for the folder being moved *into* would
+  // survive or vanish depending on insertion order — not on anything they did.
+  if (toKey !== fromKey && toKey in names) out[toKey] = names[toKey]
+  for (const [key, value] of Object.entries(names)) {
+    const next = key === fromKey ? toKey : key
+    if (!(next in out)) out[next] = value
+  }
+  return out
+}

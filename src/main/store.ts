@@ -2,6 +2,7 @@ import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { readJsonFile } from './json-file'
+import { projectNameKey } from './project-move-pure'
 
 /**
  * A tiny JSON-backed key/value store for cached values and persisted user choices
@@ -83,6 +84,39 @@ export function getRoomsLayout(): RoomsLayout {
 
 export function setRoomsLayout(layout: RoomsLayout): void {
   storeSet('rooms-layout', layout)
+}
+
+// ─── Project names (sidebar custom display names) ─────────────────────────────
+
+/**
+ * User-set display names for chat-sidebar project groups, keyed by the renderer's
+ * `projectKey()` (case-folded, separator-normalised path) rather than the raw path —
+ * the same folder can reach the sidebar spelled two different ways, and a name set
+ * against one spelling has to still apply when a session shows up with the other.
+ *
+ * A user preference, safe to lose.
+ */
+export function getProjectNames(): Record<string, string> {
+  const raw = storeGet<unknown>('project-names', {})
+  return raw && typeof raw === 'object'
+    ? Object.fromEntries(
+        Object.entries(raw as Record<string, unknown>).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+      )
+    : {}
+}
+
+export function setProjectName(key: string, name: string): void {
+  const names = getProjectNames()
+  const trimmed = name.trim()
+  // An empty name means "go back to the folder's own name", not "call it nothing".
+  if (trimmed) names[key] = trimmed
+  else delete names[key]
+  storeSet('project-names', names)
+}
+
+/** Replace the whole map — for the move, which re-keys it rather than setting one name. */
+export function setProjectNames(names: Record<string, string>): void {
+  storeSet('project-names', names)
 }
 
 // ─── Favourite projects ───────────────────────────────────────────────────────
@@ -176,6 +210,12 @@ export function forgetProjectPrefs(sourceId: string, encodedDir: string, realPat
       order: layout.order.filter((k) => !matches(k)),
       names: Object.fromEntries(Object.entries(layout.names).filter(([k]) => !matches(k)))
     })
+    // `project-names` is keyed by the renderer's projectKey() (separators unified to
+    // `/` as well as case-folded), so the match has to normalise the same way rather
+    // than reusing `matches` above, which only strips a trailing separator.
+    const goneNameKey = projectNameKey(realPath)
+    const projectNames = getProjectNames()
+    setProjectNames(Object.fromEntries(Object.entries(projectNames).filter(([k]) => k !== goneNameKey)))
   }
   // Deliberately NOT cleared: the `projectPath` on the records under
   // `<userData>/sessions`, `scheduler` and `sprints`. Those point at *work*, not at

@@ -375,6 +375,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   roomsGetLayout: () => ipcRenderer.invoke('rooms:get-layout'),
   roomsSetLayout: (layout: unknown) => ipcRenderer.invoke('rooms:set-layout', layout),
 
+  // Project names (sidebar custom display names, keyed by projectKey())
+  ccProjectNames: () => ipcRenderer.invoke('projects:get-names'),
+  ccSetProjectName: (key: string, name: string) => ipcRenderer.invoke('projects:set-name', key, name),
+
   // Git
   gitStatus: (cwd: string) => ipcRenderer.invoke('git:status', cwd),
   gitDiff: (cwd: string, filePath: string, staged: boolean) =>

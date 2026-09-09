@@ -322,6 +322,36 @@
   background: var(--bg-3);
 }
 
+/* Same footprint and hover-reveal as .session-group-add — sits just before it so the
+   two read as one cluster of header actions. */
+.session-group-rename {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--text-2);
+  opacity: 0;
+  transition: color 0.14s, background 0.14s, opacity 0.1s;
+}
+.session-group-header:hover .session-group-rename,
+.session-group-header:focus-visible .session-group-rename {
+  opacity: 1;
+}
+.session-group-rename:hover { color: var(--accent); background: var(--accent-dim); }
+
+/* The header's own name span, in edit mode — borrows .session-rename-input's metrics
+   (see below) but needs the group name's flex-grow to keep the input from collapsing
+   to the width of whatever was typed. */
+.session-group-rename-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .session-group-rows {
   /* Indent rows slightly under their group header so the hierarchy reads. */
   padding-left: 8px;

@@ -1642,6 +1642,10 @@ declare global {
       roomsGetLayout: () => Promise<RoomsLayout>
       roomsSetLayout: (layout: RoomsLayout) => Promise<boolean>
 
+      // Project names (sidebar custom display names, keyed by projectKey())
+      ccProjectNames: () => Promise<Record<string, string>>
+      ccSetProjectName: (key: string, name: string) => Promise<boolean>
+
       // Git
       gitStatus: (cwd: string) => Promise<GitStatus>
       gitDiff: (cwd: string, filePath: string, staged: boolean) => Promise<string>

@@ -2,14 +2,16 @@ import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { readJsonFile, writeJsonFileAtomic } from './json-file'
-import { rekeyProjectKeys, rekeyProjectPath, rekeyRoomsLayout } from './project-move-pure'
+import { rekeyProjectKeys, rekeyProjectNames, rekeyProjectPath, rekeyRoomsLayout } from './project-move-pure'
 import {
   getArchivedProjects,
   getFavoriteProjects,
+  getProjectNames,
   getRoomsLayout,
   projectKey,
   setArchivedProjects,
   setFavoriteProjects,
+  setProjectNames,
   setRoomsLayout
 } from './store'
 
@@ -32,6 +34,9 @@ import {
  *     handled by the caller in project-lifecycle.ts, because it needs the source's
  *     own config path. Listed here so the inventory is complete rather than
  *     accidentally seven items long.
+ *  9. `store.json` → `project-names{}` — the sidebar's custom project display names,
+ *     keyed by the renderer's `projectKey()` (case-folded, `/`-normalised path)
+ *     rather than the real path, so matching on a move has to be case-insensitive too.
  *
  * The decisions live in project-move-pure.ts and are tested there; this module is
  * the thin writing half, which is what makes having no test for it acceptable.
@@ -104,6 +109,11 @@ export function rekeyProjectPrefs(args: {
     setRoomsLayout(rekeyRoomsLayout(getRoomsLayout(), fromPath, toPath))
   } catch (e) {
     warnings.push(`rooms layout: ${(e as Error).message}`)
+  }
+  try {
+    setProjectNames(rekeyProjectNames(getProjectNames(), fromPath, toPath))
+  } catch (e) {
+    warnings.push(`project names: ${(e as Error).message}`)
   }
   for (const dir of pathRecordDirs()) {
     try {

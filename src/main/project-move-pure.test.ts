@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   isInside,
   rekeyProjectKeys,
+  rekeyProjectNames,
   rekeyProjectPath,
   rekeyRoomsLayout,
   sameVolume,
@@ -241,5 +242,33 @@ describe('rekeyRoomsLayout', () => {
   it('leaves an untouched layout equal to what it was', () => {
     const layout = { order: ['C:\\dev\\other'], names: { 'C:\\dev\\other': 'Other' } }
     expect(rekeyRoomsLayout(layout, 'C:\\dev\\foo', 'C:\\dev\\bar')).toEqual(layout)
+  })
+})
+
+describe('rekeyProjectNames', () => {
+  it('rewrites a name keyed by the exact folder', () => {
+    expect(rekeyProjectNames({ 'c:/dev/foo': 'Argos' }, 'C:\\dev\\foo', 'C:\\dev\\bar')).toEqual({
+      'c:/dev/bar': 'Argos'
+    })
+  })
+
+  it('matches case-insensitively, since the stored key is already case-folded', () => {
+    // The folder on disk was renamed to a different case only — same project, so the
+    // custom name must survive rather than silently vanishing.
+    expect(rekeyProjectNames({ 'c:/dev/claude-gui': 'Argos' }, 'C:\\dev\\Claude-GUI', 'C:\\dev\\claude-gui')).toEqual(
+      { 'c:/dev/claude-gui': 'Argos' }
+    )
+  })
+
+  it('leaves a name for a different project alone', () => {
+    expect(rekeyProjectNames({ 'c:/dev/other': 'Other' }, 'C:\\dev\\foo', 'C:\\dev\\bar')).toEqual({
+      'c:/dev/other': 'Other'
+    })
+  })
+
+  it('does not duplicate a name the destination already had', () => {
+    expect(
+      rekeyProjectNames({ 'c:/dev/foo': 'Foo', 'c:/dev/bar': 'Bar' }, 'C:\\dev\\foo', 'C:\\dev\\bar')
+    ).toEqual({ 'c:/dev/bar': 'Bar' })
   })
 })
