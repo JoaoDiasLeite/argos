@@ -151,7 +151,10 @@ describe('contrast with no background override', () => {
     // #252320, which is what a contrast slider on an untouched preset means.
     expect(props.get('--bg-0')).toBe('#141312')
     expect(parseInt((props.get('--bg-2') as string).slice(1, 3), 16)).toBeGreaterThan(0x25)
-    expect(props.get('--text-1')).toBeTruthy()
+    // ...and the typography is left alone: contrast moves surfaces only, so a palette
+    // with no foreground override keeps the text ramp its own stylesheet already set.
+    expect(props.get('--text-1')).toBeUndefined()
+    expect(props.get('--text-2')).toBeUndefined()
   })
 
   it('leaves the ramp alone when the read-back comes up empty', () => {

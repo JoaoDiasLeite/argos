@@ -127,8 +127,9 @@ const FALLBACK_BG: Rgb = { r: 20, g: 19, b: 18 }
  * user has not customised shows its real background, real second surface and real
  * accent, while --bg-1/--border/--text-* are derived from --bg-0 the way surfaceRamp
  * derives them. The moment the user sets a background or moves contrast, the engine
- * derives the whole ramp too — from these same functions — and the preview becomes
- * exactly what the app will paint.
+ * derives the surfaces too — from these same functions — and the preview becomes
+ * exactly what the app will paint. Contrast is a surface control only: it is not an
+ * input to the text ramp here, because it is not one in the engine either.
  */
 function paintFor(theme: Side, side: ThemeSettings | undefined): PreviewPaint {
   const palette = PALETTES.find((p) => p.id === (side?.palette || DEFAULT_PALETTE)) ?? PALETTES[0]
@@ -146,7 +147,9 @@ function paintFor(theme: Side, side: ThemeSettings | undefined): PreviewPaint {
   // the better of the two standard inks on its background — which is what every one of
   // those CSS blocks picked by hand anyway.
   const fgBase = (side?.foreground ? parseHex(side.foreground) : null) ?? parseHex(readableOn(bgBase))!
-  const text = textRamp(fgBase, theme, side?.contrast)
+  // No contrast here, deliberately: the engine keeps it off the text ramp, so passing it
+  // would make the preview show typography the app will never paint.
+  const text = textRamp(fgBase, theme)
 
   const accentBase = (side?.accent ? parseHex(side.accent) : null) ?? parseHex(swatchAccent) ?? bgBase
   const accent = accentRamp(accentBase, theme)

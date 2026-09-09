@@ -58,7 +58,6 @@ export const MANAGED_VARS = [
 /** The palette's own values, read back off the stylesheet. Any of them may be missing. */
 export interface PaletteBase {
   bg0?: string
-  text0?: string
 }
 
 export interface ThemePlan {
@@ -74,8 +73,8 @@ export interface ThemePlan {
  *
  * `base` matters for one case only, and it is the case that is easy to get wrong:
  * `contrast` has to work on a preset the user has not otherwise touched, which means
- * re-deriving the ramp from the palette's *own* --bg-0 / --text-0 rather than from an
- * override that does not exist.
+ * re-deriving the surface ramp from the palette's *own* --bg-0 rather than from an
+ * override that does not exist. It never touches the text ramp.
  */
 export function planTheme(ui: UiPrefs, base: PaletteBase = {}): ThemePlan {
   const theme: 'dark' | 'light' = ui.theme === 'light' ? 'light' : 'dark'
@@ -91,10 +90,11 @@ export function planTheme(ui: UiPrefs, base: PaletteBase = {}): ThemePlan {
   const wantsSurfaces = !!bgOverride || side?.contrast !== undefined
   if (wantsSurfaces && bgBase) Object.assign(vars, surfaceRamp(bgBase, theme, side?.contrast))
 
+  // Text. Only a foreground override derives this ramp: `contrast` is deliberately not
+  // an input here, so the slider moves the surfaces apart and leaves the typography
+  // exactly where the palette put it.
   const fgOverride = side?.foreground ? parseHex(side.foreground) : null
-  const fgBase = fgOverride ?? (base.text0 ? parseHex(base.text0) : null)
-  const wantsText = !!fgOverride || side?.contrast !== undefined
-  if (wantsText && fgBase) Object.assign(vars, textRamp(fgBase, theme, side?.contrast))
+  if (fgOverride) Object.assign(vars, textRamp(fgOverride, theme))
 
   const accent = side?.accent ? parseHex(side.accent) : null
   if (accent) Object.assign(vars, accentRamp(accent, theme))
@@ -155,7 +155,7 @@ function readPaletteBase(root: HTMLElement): PaletteBase {
     const value = style.getPropertyValue(name).trim()
     return value ? value : undefined
   }
-  return { bg0: read('--bg-0'), text0: read('--text-0') }
+  return { bg0: read('--bg-0') }
 }
 
 /**

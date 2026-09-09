@@ -187,16 +187,15 @@ export function surfaceRamp(base: Rgb, theme: 'dark' | 'light', contrast?: numbe
 /**
  * --text-1 / --text-2 from a base --text-0.
  *
- * Contrast works the *other* way round on text: raising it should pull the secondary
- * text back toward the primary, not push it further into the background. Hence
- * `2 - scale`, clamped — at contrast 100 the clamp is what stops --text-1, --text-2
- * and --text-0 from collapsing into one indistinguishable colour and destroying the
- * hierarchy the UI leans on.
+ * There is deliberately no contrast input here. The slider is a surface control: it
+ * spreads --bg-0..--bg-3 and leaves the type hierarchy exactly where the palette put
+ * it. An earlier version did tighten the muted steps toward the primary, which meant
+ * a control labelled for surfaces quietly restyled every piece of secondary text in
+ * the app — so the knob was removed rather than left for a caller to find.
  */
-export function textRamp(base: Rgb, theme: 'dark' | 'light', contrast?: number): TextRamp {
-  const fade = Math.max(0.35, Math.min(1.65, 2 - contrastScale(contrast)))
+export function textRamp(base: Rgb, theme: 'dark' | 'light'): TextRamp {
   const step = (amount: number): string =>
-    toHex(theme === 'dark' ? darken(base, amount * fade) : lighten(base, amount * fade))
+    toHex(theme === 'dark' ? darken(base, amount) : lighten(base, amount))
   return {
     '--text-0': toHex(base),
     '--text-1': step(TEXT_STEPS.text1),

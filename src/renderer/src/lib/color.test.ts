@@ -224,15 +224,14 @@ describe('the text ramp', () => {
     expect(channelsWithin(dark['--text-2'], '#7c766e', 14)).toBe(true)
   })
 
-  it('pulls secondary text toward primary as contrast rises', () => {
-    const base = rgb('#efece8')
-    const mid = textRamp(base, 'dark', 50)
-    const high = textRamp(base, 'dark', 100)
-    expect(luminance(rgb(high['--text-2']))).toBeGreaterThan(luminance(rgb(mid['--text-2'])))
-    // …but never all the way: three identical text colours would erase the hierarchy
-    // the whole UI reads by, so the fade is clamped short of zero.
-    expect(high['--text-1']).not.toBe(high['--text-0'])
-    expect(high['--text-2']).not.toBe(high['--text-1'])
+  it('keeps three distinguishable steps', () => {
+    // The hierarchy the whole UI reads by: primary, secondary and tertiary text must
+    // never collapse into one another, in either mode.
+    for (const [base, mode] of [['#efece8', 'dark'], ['#2a2622', 'light']] as const) {
+      const ramp = textRamp(rgb(base), mode)
+      expect(ramp['--text-1']).not.toBe(ramp['--text-0'])
+      expect(ramp['--text-2']).not.toBe(ramp['--text-1'])
+    }
   })
 })
 
