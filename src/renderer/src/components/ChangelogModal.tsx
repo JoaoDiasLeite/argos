@@ -15,6 +15,42 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '1.6.0',
+    date: '2026-09-09',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Settings is a screen now, not one long modal. A list of sections down the left — Appearance, General, Connection, System, About — and Back to app returns you to whatever you were looking at, not to a new chat.',
+          'A light theme and a dark theme, chosen separately. Picking Gruvbox for the evening no longer means Gruvbox at ten in the morning: each side keeps its own palette, and Mode decides which one is showing — or hands that decision to Windows.',
+          'Sixteen more palettes, so thirty in all: GitHub, Codex, Catppuccin, Everforest, Gruvbox, Linear, Notion, One, Proof, Raycast, Rose Pine, Solarized, Vercel, VS Code Plus, Xcode and Absolutely. Every one of them was checked against the contrast standard in both modes rather than eyeballed, and four had their muted text darkened because it failed.',
+          'Override a palette instead of settling for it. Accent, background and foreground each sit at Default until you say otherwise, and everything else follows: set a background and the whole ladder of surfaces, borders and hovers is derived from it; set a foreground and the two muted text steps come with it.',
+          'A contrast slider, for a palette you like except for how close its surfaces sit. It works on a preset you have not otherwise touched, which is the whole point of it.',
+          'Choose the interface font, the reading font for messages, and the font for code, each from what is actually installed — the list is filtered by measuring text, so it cannot offer you a font your machine would silently replace. Interface and code sizes are sliders in px.',
+          'Both themes are previewed side by side while you edit them, in a small mock of the app itself, down to a diff in a code block. The preview of the theme you are not currently using is real: it is computed with the same maths that paints the app, not borrowed from the theme on screen.',
+          'A translucent sidebar, if you want one. Be told what it is: the panel goes partly transparent over the app’s own window, which is not the Windows acrylic effect — that needs a different kind of window and may follow.',
+          'When Mode follows the system, the app now actually follows it. Windows switching to dark at dusk repaints the main window, the quick launcher, the toast and the status pill — those three used to read the theme once when they opened and never look again.',
+          'A Review panel in a chat, behind the ⋯ menu: what the working tree has changed, the commands this session ran and how they ended, and the restore timeline — next to the conversation they are about, and visible while a run is going. Each of those was a separate modal you could not have open at the same time as anything else.',
+          'A routine that came due while Argos was closed can now run when you reopen it, instead of always being skipped. Per routine, because a five-minute poll and a daily report do not want the same answer.',
+          'A remote or WSL run asks once, up front, showing the machine, the folder and the fact that per-tool approvals do not exist on that transport. Approvals for the chat you are looking at now appear inside it rather than as a window over it — including when the terminal panel is open, which is where they used to be unreachable.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'A conversation over SSH, and every remote file browse, now verifies the machine it is talking to. There was no host-key check at all: whatever answered the address was trusted, and the credentials went to it. First contact shows you the fingerprint in the same form ssh-keygen prints; a key that changes afterwards is refused outright rather than offered as a choice you could click past.',
+          'Restore points stop overwriting each other. Their ids came from a counter that restarted with the app, so the first checkpoint of today took the place of the first checkpoint of yesterday.',
+          'A restore can no longer delete a file it never managed to read. An unreadable file was recorded as one that did not exist, which is the same thing a snapshot says about a file you had not created yet — and restoring then acted on it. Snapshots now say which of the two it was, keep binaries intact, and a restore shows you exactly what it would write, delete or leave alone before it does anything. If the files moved under it since that preview, it asks again instead of proceeding.',
+          'A scheduled run whose project folder is missing now stops and says so. It used to fall back to your home directory and run there — an unattended agent with write access, pointed somewhere nobody chose.',
+          'Choosing WSL or an SSH host no longer turns off your approval prompts behind your back. The reason it did was real — those transports cannot pause at each tool — but silently flipping a permission you set is not the way to say so.',
+          'A crash mid-answer no longer takes the answer with it. The transcript is written as it streams rather than at the end of a turn, each write lands whole instead of possibly truncated, and a conversation that was running when the app died reopens as interrupted rather than pretending to still be live. A save that fails now says so in the chat instead of being dropped.',
+          'A terminal that fails to start says why, and which shell and folder it was trying. “Failed to start terminal.” was the entire message, whether the shell was missing, the folder was unreachable, or the saved server had been deleted.'
+        ]
+      }
+    ]
+  },
+  {
     version: '1.5.0',
     date: '2026-08-31',
     tag: 'latest',
