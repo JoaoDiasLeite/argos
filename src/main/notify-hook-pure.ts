@@ -275,11 +275,13 @@ export function wslHookCommand(exePath: string): string | null {
 }
 
 /**
- * The `settings.json` fragment to paste.
+ * The `settings.json` fragment shown as the manual fallback (WSL, or if the writer
+ * declines).
  *
- * Printed, never written. `~/.claude/settings.json` is the user's file and holds
- * far more than this one hook; a merge written by us is a merge we would have to be
- * right about every time, against a schema that is not ours.
+ * The primary path now writes this same shape through `setClaudeHooks`, which
+ * validates and merges rather than overwrites; this block stays for the case that
+ * writer can't reach — a WSL distro's own settings.json — and as a copy-paste escape
+ * hatch everywhere else.
  */
 export function hookSettingsBlock(command: string): string {
   return JSON.stringify(
@@ -308,4 +310,94 @@ export function notifyHookInstalled(hooks: unknown): boolean {
     if (!Array.isArray(inner)) return false
     return inner.some((h) => str((h as { command?: unknown })?.command).includes(NOTIFY_FLAG))
   })
+}
+
+/**
+ * One `{ type: 'command', command }` entry, in the shape `settings.json` stores.
+ *
+ * Open-ended on purpose. These objects are round-tripped through this module on the
+ * way back into the user's own file, and Claude Code's schema is not ours: it already
+ * carries `timeout`, and will carry fields this build has never heard of. Narrowing
+ * them to the two keys we care about would quietly delete the rest.
+ */
+export interface NotifyHookCommand {
+  type: 'command'
+  command: string
+  [extra: string]: unknown
+}
+
+/** One `Notification` array element: a matcher plus its commands, open-ended for the
+ *  same round-tripping reason as `NotifyHookCommand` above. */
+export interface NotifyHookEntry {
+  matcher?: string
+  hooks: NotifyHookCommand[]
+  [extra: string]: unknown
+}
+
+/**
+ * The subset of `settings.json`'s `hooks` object this feature touches.
+ *
+ * Only `Notification` — `setClaudeHooks` merges this in at the top level and leaves
+ * every other event key in the file exactly as it found it, so nothing else needs a
+ * shape here.
+ */
+export type NotifyHooksPatch = { Notification: NotifyHookEntry[] }
+
+/**
+ * The existing `Notification` entries out of whatever `settings.json` actually
+ * parsed to. Anything that doesn't match the expected shape is dropped rather than
+ * carried through malformed: `setClaudeHooks`'s own `coerceHooks` would reject it
+ * anyway, and this function has no error channel to report it on.
+ */
+function existingNotificationEntries(hooks: unknown): NotifyHookEntry[] {
+  if (!hooks || typeof hooks !== 'object') return []
+  const entries = (hooks as Record<string, unknown>).Notification
+  if (!Array.isArray(entries)) return []
+  const out: NotifyHookEntry[] = []
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue
+    const e = entry as Record<string, unknown>
+    if (!Array.isArray(e.hooks)) continue
+    const cmds: NotifyHookCommand[] = []
+    for (const h of e.hooks) {
+      const command = (h as { command?: unknown })?.command
+      if (typeof command !== 'string' || !command.trim()) continue
+      // Spread first: everything the user had on this hook survives, and only the two
+      // fields this module is responsible for are asserted over it.
+      cmds.push({ ...(h as Record<string, unknown>), type: 'command', command })
+    }
+    if (cmds.length === 0) continue
+    // Same reason as the commands above — an entry may carry keys we do not model.
+    const result: NotifyHookEntry = { ...e, hooks: cmds }
+    if (typeof e.matcher !== 'string') delete result.matcher
+    out.push(result)
+  }
+  return out
+}
+
+/**
+ * The user's `Notification` hook entries, with ours wired in.
+ *
+ * Idempotent by design: run this twice with the same `command` and the second run
+ * changes nothing, because the first run's entry is found and matched rather than
+ * duplicated. Run it once after an install moved (a new exe path) and the one entry
+ * is updated in place — same reason `notifyHookInstalled` matches on `NOTIFY_FLAG`
+ * rather than the whole command. Everything else the user wrote under `Notification`
+ * survives untouched, in order.
+ */
+export function withNotifyHook(hooks: unknown, command: string): NotifyHooksPatch {
+  const entries = existingNotificationEntries(hooks)
+  let matched = false
+  const next = entries.map((entry) => ({
+    ...entry,
+    hooks: entry.hooks.map((h) => {
+      if (!h.command.includes(NOTIFY_FLAG)) return h
+      matched = true
+      return { ...h, command }
+    })
+  }))
+  if (!matched) {
+    next.push({ matcher: '', hooks: [{ type: 'command', command }] })
+  }
+  return { Notification: next }
 }

@@ -10,21 +10,41 @@ interface Props {
 /**
  * How to wire Claude Code's `Notification` hook to Argos.
  *
- * This panel shows and never writes. `~/.claude/settings.json` holds the user's
- * permissions, their own hooks and their environment; a block merged into it by us
- * is a merge we would have to get right every time, against a schema that is not
- * ours. So the block goes on the clipboard and the edit stays theirs.
+ * "Enable notifications" writes it: it hands `~/.claude/settings.json` to
+ * `setClaudeHooks` (main/config.ts), which merges by event key — the user's own
+ * hooks under other events, and any `Notification` entries that aren't ours, are
+ * left exactly as found — and refuses to touch the file if it can't parse it. The
+ * copy-block section stays as the manual alternative, and is the only path on WSL:
+ * a distro has its own settings.json on the other side of the filesystem boundary,
+ * which this writer does not reach.
  */
 export default function NotifyHookModal({ onClose }: Props) {
   const [info, setInfo] = useState<NotifyHookInfo | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [showWsl, setShowWsl] = useState(false)
+  const [installing, setInstalling] = useState(false)
+  const [installError, setInstallError] = useState<string | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
   useModalA11y(dialogRef, onClose)
 
   useEffect(() => {
     window.electronAPI.notifyHookInfo().then(setInfo)
   }, [])
+
+  const install = async () => {
+    setInstalling(true)
+    setInstallError(null)
+    try {
+      const result = await window.electronAPI.notifyHookInstall()
+      if (!result.ok) {
+        setInstallError(result.error ?? 'Could not write settings.json')
+        return
+      }
+      setInfo(result)
+    } finally {
+      setInstalling(false)
+    }
+  }
 
   const copy = async (what: string, text: string) => {
     try {
@@ -68,15 +88,32 @@ export default function NotifyHookModal({ onClose }: Props) {
           {info && (
             <>
               <div className={`notifyhook-status ${info.installed ? 'on' : ''}`}>
-                {info.installed
-                  ? 'The hook is wired up in your settings.'
-                  : 'Not wired up yet — paste the block below.'}
+                <span>
+                  {info.installed
+                    ? 'The hook is wired up in your settings.'
+                    : 'Not wired up yet.'}
+                </span>
+                {info.installed ? (
+                  <button className="btn-text" onClick={install} disabled={installing}>
+                    {installing ? 'Re-wiring…' : 'Re-wire'}
+                  </button>
+                ) : (
+                  <button className="btn-primary small" onClick={install} disabled={installing}>
+                    {installing ? 'Enabling…' : 'Enable notifications'}
+                  </button>
+                )}
               </div>
+
+              {installError && (
+                <div className="notifyhook-error" role="alert">
+                  {installError} — you can still paste the block below by hand.
+                </div>
+              )}
 
               <div className="notifyhook-step">
                 <div className="notifyhook-step-head">
                   <span className="notifyhook-step-title">
-                    Add to <code>{info.settingsPath}</code>
+                    Or add to <code>{info.settingsPath}</code> yourself
                   </span>
                   <button className="btn-secondary small" onClick={() => copy('block', info.block)}>
                     {copied === 'block' ? 'Copied' : 'Copy block'}
@@ -84,8 +121,7 @@ export default function NotifyHookModal({ onClose }: Props) {
                 </div>
                 <pre className="notifyhook-block">{info.block}</pre>
                 <p className="field-hint">
-                  Merge it into the <code>hooks</code> object you already have — Argos does not
-                  edit this file.
+                  Merge it into the <code>hooks</code> object you already have.
                 </p>
               </div>
 

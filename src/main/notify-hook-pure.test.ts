@@ -16,6 +16,7 @@ import {
   parseHookInput,
   projectLabel,
   sanitizeSessionId,
+  withNotifyHook,
   wslHookCommand
 } from './notify-hook-pure'
 
@@ -235,6 +236,80 @@ describe('notifyHookInstalled', () => {
   })
 })
 
+describe('withNotifyHook', () => {
+  const CMD = '"D:\\Argos\\Argos.exe" --notify-hook'
+
+  it('adds the entry when hooks is empty or absent', () => {
+    expect(withNotifyHook({}, CMD)).toEqual({
+      Notification: [{ matcher: '', hooks: [{ type: 'command', command: CMD }] }]
+    })
+    expect(withNotifyHook(undefined, CMD)).toEqual({
+      Notification: [{ matcher: '', hooks: [{ type: 'command', command: CMD }] }]
+    })
+    expect(withNotifyHook(null, CMD)).toEqual({
+      Notification: [{ matcher: '', hooks: [{ type: 'command', command: CMD }] }]
+    })
+  })
+
+  it('leaves the user\'s own Notification entries untouched, in order, and appends ours', () => {
+    const existing = {
+      Notification: [
+        { matcher: '', hooks: [{ type: 'command', command: 'notify-send hi' }] },
+        { matcher: 'Bash', hooks: [{ type: 'command', command: 'log-bash.sh' }] }
+      ]
+    }
+    expect(withNotifyHook(existing, CMD)).toEqual({
+      Notification: [
+        ...existing.Notification,
+        { matcher: '', hooks: [{ type: 'command', command: CMD }] }
+      ]
+    })
+  })
+
+  it('updates an already-installed hook in place when the exe path moved, staying one entry', () => {
+    const existing = {
+      Notification: [
+        { matcher: '', hooks: [{ type: 'command', command: '"C:\\Old\\Argos.exe" --notify-hook' }] }
+      ]
+    }
+    const result = withNotifyHook(existing, CMD)
+    expect(result.Notification).toHaveLength(1)
+    expect(result.Notification).toEqual([{ matcher: '', hooks: [{ type: 'command', command: CMD }] }])
+  })
+
+  it('updates in place even alongside unrelated entries, without touching those', () => {
+    const existing = {
+      Notification: [
+        { matcher: '', hooks: [{ type: 'command', command: 'notify-send hi' }] },
+        { matcher: '', hooks: [{ type: 'command', command: '"C:\\Old\\Argos.exe" --notify-hook' }] }
+      ]
+    }
+    const result = withNotifyHook(existing, CMD)
+    expect(result.Notification).toEqual([
+      { matcher: '', hooks: [{ type: 'command', command: 'notify-send hi' }] },
+      { matcher: '', hooks: [{ type: 'command', command: CMD }] }
+    ])
+  })
+
+  it('is idempotent: running it twice with the same command changes nothing further', () => {
+    const once = withNotifyHook({}, CMD)
+    const twice = withNotifyHook(once, CMD)
+    expect(twice).toEqual(once)
+  })
+
+  it('treats a malformed hooks value as empty rather than throwing', () => {
+    expect(withNotifyHook('not an object', CMD)).toEqual({
+      Notification: [{ matcher: '', hooks: [{ type: 'command', command: CMD }] }]
+    })
+    expect(withNotifyHook({ Notification: 'not an array' }, CMD)).toEqual({
+      Notification: [{ matcher: '', hooks: [{ type: 'command', command: CMD }] }]
+    })
+    expect(withNotifyHook({ Notification: [{ hooks: 'nope' }, 42, null] }, CMD)).toEqual({
+      Notification: [{ matcher: '', hooks: [{ type: 'command', command: CMD }] }]
+    })
+  })
+})
+
 describe('the payload handed to the detached process', () => {
   const payload = { title: '[argos] Hi', body: 'needs you', link: `argos://session?dir=-ok&sid=${SID}`, urgent: true }
 
@@ -290,5 +365,43 @@ describe('isUrgent', () => {
     expect(isUrgent('permission_prompt')).toBe(true)
     expect(isUrgent('idle')).toBe(false)
     expect(isUrgent('')).toBe(false)
+  })
+})
+
+describe('withNotifyHook round-tripping the user own entries', () => {
+  it('keeps fields on a hook this build does not model', () => {
+    // These objects go back into the user's settings.json. Claude Code's schema is not
+    // ours — `timeout` exists today and more will follow — so rebuilding a hook from
+    // just the two fields we care about would delete the rest of theirs.
+    const hooks = {
+      Notification: [
+        { matcher: 'Bash', hooks: [{ type: 'command', command: 'their-notifier.exe', timeout: 30 }] }
+      ]
+    }
+    const out = withNotifyHook(hooks, 'C:/argos/Argos.exe --notify-hook')
+    expect(out.Notification[0].hooks[0]).toMatchObject({
+      type: 'command',
+      command: 'their-notifier.exe',
+      timeout: 30
+    })
+  })
+
+  it('keeps unmodelled fields on the entry itself, and on ours when it is updated', () => {
+    const hooks = {
+      Notification: [
+        {
+          matcher: '',
+          continueOnError: true,
+          hooks: [{ type: 'command', command: 'C:/old/Argos.exe --notify-hook', timeout: 5 }]
+        }
+      ]
+    }
+    const out = withNotifyHook(hooks, 'C:/new/Argos.exe --notify-hook')
+    expect(out.Notification).toHaveLength(1)
+    expect(out.Notification[0].continueOnError).toBe(true)
+    expect(out.Notification[0].hooks[0]).toMatchObject({
+      command: 'C:/new/Argos.exe --notify-hook',
+      timeout: 5
+    })
   })
 })

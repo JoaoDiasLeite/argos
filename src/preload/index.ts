@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('app:open-cc-session', fn)
   },
   notifyHookInfo: () => ipcRenderer.invoke('notify-hook:info'),
+  notifyHookInstall: () => ipcRenderer.invoke('notify-hook:install'),
 
   // Quick-launcher overlay — calls made by the OVERLAY window
   overlaySubmit: (payload: { prompt: string; quick?: boolean }) =>

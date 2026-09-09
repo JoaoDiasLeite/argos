@@ -1233,8 +1233,8 @@ export interface CcSessionTarget {
 }
 
 /**
- * What the Notifications panel shows. Text only: the hook block is pasted by the
- * user, never written by us — `~/.claude/settings.json` is their file.
+ * What the Notifications panel shows: the block to paste manually, and whether the
+ * hook is already wired up (however it got there — by the install button or by hand).
  */
 export interface NotifyHookInfo {
   command: string
@@ -1244,6 +1244,12 @@ export interface NotifyHookInfo {
   wslBlock: string | null
   installed: boolean
   settingsPath: string
+}
+
+/** `notifyHookInfo`'s shape, plus the outcome of the write `notifyHookInstall` attempted. */
+export interface NotifyHookInstallResult extends NotifyHookInfo {
+  ok: boolean
+  error?: string
 }
 
 declare global {
@@ -1265,6 +1271,7 @@ declare global {
       onOpenSession: (cb: (sessionId: string) => void) => () => void
       onOpenCcSession: (cb: (target: CcSessionTarget) => void) => () => void
       notifyHookInfo: () => Promise<NotifyHookInfo>
+      notifyHookInstall: () => Promise<NotifyHookInstallResult>
 
       // Quick-launcher overlay — calls made by the OVERLAY window
       overlaySubmit: (payload: { prompt: string; quick?: boolean }) => void

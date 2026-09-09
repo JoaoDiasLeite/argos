@@ -192,6 +192,7 @@ import {
   notifyHookInstalled,
   notifyHookMode,
   parseDeepLink,
+  withNotifyHook,
   wslHookCommand
 } from './notify-hook-pure'
 import {
@@ -1357,6 +1358,29 @@ ipcMain.handle('notify-hook:info', () => {
     wslCommand: wsl,
     wslBlock: wsl ? hookSettingsBlock(wsl) : null,
     installed: notifyHookInstalled(getClaudeHooks()),
+    settingsPath: path.join(os.homedir(), '.claude', 'settings.json')
+  }
+})
+
+/**
+ * Wires the hook in, through the same validating writer the Permissions and Hooks
+ * panels already use — `setClaudeHooks` merges by event key (unknown events, and any
+ * other `Notification` entries the user wrote, are carried through untouched) and
+ * refuses to touch a settings.json it can't parse. `withNotifyHook` is what decides
+ * *what* to merge: add if missing, update in place if the exe path moved.
+ */
+ipcMain.handle('notify-hook:install', () => {
+  const command = notifyHookCommand(process.execPath, app.isPackaged ? '' : app.getAppPath())
+  const wsl = process.platform === 'win32' ? wslHookCommand(process.execPath) : null
+  const result = setClaudeHooks(withNotifyHook(getClaudeHooks(), command))
+  return {
+    ok: result.ok,
+    error: result.error,
+    command,
+    block: hookSettingsBlock(command),
+    wslCommand: wsl,
+    wslBlock: wsl ? hookSettingsBlock(wsl) : null,
+    installed: notifyHookInstalled(result.ok ? (result.hooks ?? {}) : getClaudeHooks()),
     settingsPath: path.join(os.homedir(), '.claude', 'settings.json')
   }
 })
