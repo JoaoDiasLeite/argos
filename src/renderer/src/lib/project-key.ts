@@ -33,6 +33,10 @@ export interface ProjectKeyContext {
 /** `//wsl.localhost/<distro>/rest` or the older `//wsl$/<distro>/rest`, slash-normalised. */
 const WSL_UNC = /^\/\/wsl(?:\.localhost|\$)\/([^/]+)(\/.*)?$/i
 const DRIVE = /^([A-Za-z]:)(\/.*)?$/
+/** WSL's mount of a Windows drive: `/mnt/c/dev/x`. Only a single letter — `/mnt/cdrom`
+ *  is a folder like any other. The mount root is `/mnt` unless wsl.conf says otherwise,
+ *  which is rare enough not to go looking for. */
+const MNT_DRIVE = /^\/mnt\/([A-Za-z])(\/.*)?$/
 
 function unify(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+$/, '')
@@ -74,7 +78,15 @@ export function canonicalProjectPath(
 
   if (p.startsWith('/')) {
     const distro = wslDistro ?? ctx.posixDistros?.get(p.toLowerCase())
-    return distro ? toUnc(distro, p) : path
+    if (!distro) return path
+    // Inside a distro, /mnt/c is not a folder in that distro at all — it is the Windows
+    // C: drive, reached through the mount. So it belongs with the Windows chats working
+    // in the same place, not under a \\wsl.localhost heading of its own. Requiring the
+    // distro to be known is what makes this safe: on a plain Linux host reached over
+    // SSH, /mnt/c really is just a mount point, and nothing here should touch it.
+    const mnt = p.match(MNT_DRIVE)
+    if (mnt) return `${mnt[1].toUpperCase()}:${(mnt[2] ?? '/').replace(/\//g, '\\')}`
+    return toUnc(distro, p)
   }
 
   return path

@@ -74,6 +74,36 @@ describe('projectKey across the ways one WSL folder is addressed', () => {
   })
 })
 
+describe('projectKey for a Windows drive mounted inside a distro', () => {
+  it('puts /mnt/c with the Windows chats in that same folder, not under the distro', () => {
+    expect(projectKey('/mnt/c/dev/proj', 'Ubuntu')).toBe(projectKey('C:\\dev\\proj'))
+  })
+
+  it('is the same folder whichever distro it was mounted in', () => {
+    expect(projectKey('/mnt/c/dev/proj', 'Ubuntu')).toBe(projectKey('/mnt/c/dev/proj', 'Debian'))
+  })
+
+  it('handles the drive root, and folds its case', () => {
+    expect(canonicalProjectPath('/mnt/c', 'Ubuntu')).toBe('C:\\')
+    expect(projectKey('/mnt/C/dev/proj', 'Ubuntu')).toBe(projectKey('c:/dev/proj'))
+  })
+
+  it('leaves a real folder that merely starts with /mnt alone', () => {
+    expect(canonicalProjectPath('/mnt/cdrom/proj', 'Ubuntu')).toBe(
+      '\\\\wsl.localhost\\Ubuntu\\mnt\\cdrom\\proj'
+    )
+    expect(canonicalProjectPath('/mnt/data/proj', 'Ubuntu')).toBe(
+      '\\\\wsl.localhost\\Ubuntu\\mnt\\data\\proj'
+    )
+  })
+
+  it('leaves /mnt/c on a machine that is not a distro exactly as it was', () => {
+    // An SSH host's own mount point. Nothing here knows it to be WSL, so nothing here
+    // is entitled to call it a Windows drive.
+    expect(canonicalProjectPath('/mnt/c/dev/proj')).toBe('/mnt/c/dev/proj')
+  })
+})
+
 describe('canonicalProjectPath', () => {
   it('gives a group a Windows-reachable path, so a new chat in it has a real cwd', () => {
     expect(canonicalProjectPath('/home/jdl/dev/wm-project', 'Ubuntu-DevOps')).toBe(
