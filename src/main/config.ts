@@ -335,14 +335,23 @@ export function setClaudePermissions(raw: unknown): WriteResult & { permissions?
 
 // ─── Hooks ────────────────────────────────────────────────────────────────────
 
+/**
+ * Open-ended on purpose, both of these. What comes through here is read out of the
+ * user's own `settings.json` and written straight back into it, and Claude Code's hook
+ * schema is not ours to pin down: `timeout` is already in it, and more will follow.
+ * Modelling only the fields this app reads would turn every save into a silent delete
+ * of the ones it does not.
+ */
 export interface ClaudeHookCommand {
   type: 'command'
   command: string
+  [extra: string]: unknown
 }
 
 export interface ClaudeHookEntry {
   matcher?: string
   hooks: ClaudeHookCommand[]
+  [extra: string]: unknown
 }
 
 export type ClaudeHooks = Record<string, ClaudeHookEntry[]>
@@ -380,12 +389,13 @@ function coerceHooks(raw: unknown): ClaudeHooks {
         if (typeof c.command !== 'string' || !c.command.trim()) {
           throw new Error(`hooks.${event}[${i}].hooks[${j}].command must be a non-empty string`)
         }
-        return { type: 'command' as const, command: c.command.trim() }
+        // Spread first, then assert the two fields this validator is responsible for:
+        // everything else the user had on the hook rides along untouched.
+        return { ...c, type: 'command' as const, command: c.command.trim() }
       })
-      const hookEntry: ClaudeHookEntry = { hooks: cmds }
-      if (typeof e.matcher === 'string' && e.matcher.trim()) {
-        hookEntry.matcher = e.matcher.trim()
-      }
+      const hookEntry: ClaudeHookEntry = { ...e, hooks: cmds }
+      if (typeof e.matcher === 'string' && e.matcher.trim()) hookEntry.matcher = e.matcher.trim()
+      else delete hookEntry.matcher
       return hookEntry
     })
   }
