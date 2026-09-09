@@ -142,3 +142,36 @@ export function isSameDomain(entryDomain: string, ourDomain: string): boolean {
   if (!entryDomain || !ourDomain) return false
   return entryDomain.toLowerCase() === ourDomain.toLowerCase()
 }
+
+/**
+ * The machine-id half of a Linux-shaped pid domain, e.g.
+ * `linux:06178f3711d44ca1ab0929a257093c5b:pid:[4026532245]` →
+ * `06178f3711d44ca1ab0929a257093c5b`.
+ *
+ * Anything that is not that shape — including the `win32:...` domains this same
+ * registry holds — returns null rather than a guess, because a machine-id mismatch is
+ * about to decide whether a WSL entry is kept or dropped, and a malformed match would
+ * silently turn into "keep everything from every distro".
+ */
+export function linuxMachineId(pidDomain: string): string | null {
+  const m = /^linux:([0-9a-f]+):/i.exec(pidDomain)
+  return m ? m[1].toLowerCase() : null
+}
+
+/**
+ * Field 22 (`starttime`) of a `/proc/<pid>/stat` line, as the raw digit string.
+ *
+ * Field 2 (`comm`, the executable name in parentheses) can itself contain spaces and
+ * `)` — a process can be named `my ) proc` — so the only safe way to find where the
+ * fixed-width fields resume is the *last* `)` in the line, never the first. Everything
+ * after it, split on whitespace, starts at field 3, which puts `starttime` at index 19.
+ * Returned unparsed for the same reason `RegistryEntry.procStart` is: a starttime this
+ * large can exceed float53, and comparing it as a string is the only exact comparison.
+ */
+export function procStartFromStat(stat: string): string | null {
+  const close = stat.lastIndexOf(')')
+  if (close === -1) return null
+  const rest = stat.slice(close + 1).trim().split(/\s+/)
+  const starttime = rest[19]
+  return starttime && /^\d+$/.test(starttime) ? starttime : null
+}

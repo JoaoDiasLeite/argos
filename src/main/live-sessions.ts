@@ -3,7 +3,14 @@ import * as os from 'os'
 import * as path from 'path'
 import { getSources } from './claude-data'
 import { readJsonFile } from './json-file'
-import { isSameDomain, parseRegistryEntry, pidDomainFor } from './live-sessions-pure'
+import {
+  isSameDomain,
+  linuxMachineId,
+  parseRegistryEntry,
+  pidDomainFor,
+  procStartFromStat,
+  type RegistryEntry
+} from './live-sessions-pure'
 import { readProcessIdentity } from './process-identity'
 import { TakeoverRefusal, verifyTakeover } from './takeover-pure'
 
@@ -101,6 +108,76 @@ function readEntries(dir: string): unknown[] {
 }
 
 /**
+ * Which of a WSL source's registry entries name a process that is actually running,
+ * checked against the distro's own `/proc` rather than assumed from the registry file
+ * outliving it.
+ *
+ * A foreign pid must still never be *signalled* — that guard is unchanged. But a WSL
+ * distro's filesystem is mounted right here at `\\wsl.localhost\<distro>`, and its
+ * `/proc` is a plain, cheap `fs` read, not a signal into our PID space. So instead of
+ * listing every entry on the strength of a file that may have outlived its process by
+ * months, each one is checked against the PID space it actually names.
+ */
+async function liveWslEntries(distro: string, entries: RegistryEntry[]): Promise<RegistryEntry[]> {
+  const root = `\\\\wsl.localhost\\${distro}`
+
+  let machineId: string | null = null
+  try {
+    machineId = (await fs.promises.readFile(path.join(root, 'etc', 'machine-id'), 'utf8'))
+      .trim()
+      .toLowerCase()
+  } catch {
+    // Unreadable machine-id just means the identity check is skipped, not that the
+    // distro is unreachable — the /proc read below is the one that decides that.
+  }
+
+  let pids: Set<string>
+  try {
+    pids = new Set(
+      (await fs.promises.readdir(path.join(root, 'proc'))).filter((n) => /^\d+$/.test(n))
+    )
+  } catch {
+    // An unreachable or stopped distro has no live claude. Returning every entry
+    // unchecked here is exactly the bug being fixed — months of dead registry files
+    // read as running rows — so an unreadable /proc means none of them are live.
+    return []
+  }
+
+  const checks = await Promise.all(
+    entries.map(async (entry): Promise<RegistryEntry | null> => {
+      const entryMachineId = linuxMachineId(entry.pidDomain)
+      if (entryMachineId !== null && machineId !== null && entryMachineId !== machineId) {
+        return null
+      }
+
+      const pidStr = String(entry.pid)
+      if (!pids.has(pidStr)) return null
+
+      const procDir = path.join(root, 'proc', pidStr)
+      if (entry.procStart) {
+        try {
+          const stat = await fs.promises.readFile(path.join(procDir, 'stat'), 'utf8')
+          if (procStartFromStat(stat) !== entry.procStart) return null
+        } catch {
+          return null
+        }
+      } else {
+        try {
+          const comm = (await fs.promises.readFile(path.join(procDir, 'comm'), 'utf8')).trim()
+          if (comm !== 'claude' && comm !== 'node') return null
+        } catch {
+          return null
+        }
+      }
+
+      return entry
+    })
+  )
+
+  return checks.filter((e): e is RegistryEntry => e !== null)
+}
+
+/**
  * Every live session across every configured source.
  *
  * **`procStart` is deliberately not verified here.** The registry records the
@@ -128,17 +205,22 @@ export async function listLiveSessions(): Promise<LiveSession[]> {
   }
 
   for (const src of sources) {
-    for (const raw of readEntries(registryDir(src.projectsDir))) {
-      const entry = parseRegistryEntry(raw)
-      if (!entry) continue
+    let entries = readEntries(registryDir(src.projectsDir))
+      .map(parseRegistryEntry)
+      .filter((e): e is RegistryEntry => e !== null)
 
+    if (src.kind === 'wsl' && src.distro) {
+      entries = await liveWslEntries(src.distro, entries)
+    }
+
+    for (const entry of entries) {
       const foreign = !isSameDomain(entry.pidDomain, ourDomain)
-      // A foreign pid is never probed. In our PID space that same number belongs to
-      // an unrelated process — probing it asks a question about the wrong thing, and
-      // answering it would report a stranger as a live Claude session. A WSL source's
-      // registry is readable over its UNC path precisely because it is right there,
-      // which is what makes this the easy mistake to make. Such an entry is listed on
-      // the strength of its own file, and can never be signalled.
+      // A foreign pid is never signalled. In our PID space that same number belongs
+      // to an unrelated process — `process.kill` on it would land on a stranger, not
+      // the session it claims to be. A WSL source's own `/proc` is a different story:
+      // it is a plain file read of the distro's own PID space, not a signal into
+      // ours, which is why `liveWslEntries` above can check those entries for real
+      // instead of listing every one on the strength of a file that outlived it.
       if (!foreign && !pidExists(entry.pid)) continue
 
       // Keyed by source too: two sources can hold entries for the same pid number,

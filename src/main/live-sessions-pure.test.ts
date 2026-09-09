@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { isSameDomain, parseRegistryEntry, pidDomainFor } from './live-sessions-pure'
+import {
+  isSameDomain,
+  linuxMachineId,
+  parseRegistryEntry,
+  pidDomainFor,
+  procStartFromStat
+} from './live-sessions-pure'
 
 /**
  * A real registry file from this machine, verbatim apart from the socket path. Every
@@ -158,5 +164,55 @@ describe('isSameDomain', () => {
     expect(isSameDomain('', 'win32:joao-leite')).toBe(false)
     expect(isSameDomain('win32:joao-leite', '')).toBe(false)
     expect(isSameDomain('', '')).toBe(false)
+  })
+})
+
+describe('linuxMachineId', () => {
+  it('reads the machine-id out of a real WSL pid domain', () => {
+    expect(linuxMachineId('linux:06178f3711d44ca1ab0929a257093c5b:pid:[4026532245]')).toBe(
+      '06178f3711d44ca1ab0929a257093c5b'
+    )
+  })
+
+  it('returns null for a domain that is not the linux shape', () => {
+    expect(linuxMachineId('win32:joao-leite')).toBeNull()
+  })
+
+  it('returns null for an empty string', () => {
+    expect(linuxMachineId('')).toBeNull()
+  })
+})
+
+describe('procStartFromStat', () => {
+  // A real /proc/<pid>/stat line from a WSL distro on this machine.
+  const REAL_STAT =
+    '106381 (claude) S 60945 106381 60945 34824 106381 4194304 339085 1872852 102 4971 12430 4077 3118 1388 20 0 23 0 266801 5736427520 76337 18446744073709551615 26319360 87422288 140723438040560 0 0 0 0 4096 2072145151 0 0 0 17 9 0 0 0 0 0 87426384 217989120 376877056 140723438046951 140723438047003 140723438047003 140723438051292 0'
+
+  it('reads field 22 (starttime) from a real stat line', () => {
+    expect(procStartFromStat(REAL_STAT)).toBe('266801')
+  })
+
+  it('returns the value as a string, not a number', () => {
+    // Same float53 reasoning as RegistryEntry.procStart: assert it round-trips a
+    // starttime too large for Number to represent exactly.
+    const huge = REAL_STAT.replace('266801', '134324039312837109')
+    const result = procStartFromStat(huge)
+    expect(result).toBe('134324039312837109')
+    expect(String(Number(result))).not.toBe(result)
+  })
+
+  it('handles a comm containing spaces and a closing paren', () => {
+    // After the last ')': "S" is field 3 (state), so the fields below start at field
+    // 4 — starttime is field 22, i.e. index 22 - 4 = 18 into this array.
+    const fields = Array(40).fill('0')
+    fields[18] = '266801'
+    const line = `1234 (my ) proc) S ${fields.join(' ')}`
+    expect(procStartFromStat(line)).toBe('266801')
+  })
+
+  it('returns null for a truncated or garbage line', () => {
+    expect(procStartFromStat('')).toBeNull()
+    expect(procStartFromStat('not a stat line at all')).toBeNull()
+    expect(procStartFromStat('106381 (claude) S 1 2 3')).toBeNull()
   })
 })
