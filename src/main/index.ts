@@ -24,6 +24,7 @@ import {
   getAllProjects,
   listSessions,
   readSession,
+  readChatTranscript,
   getUsage,
   listSources,
   searchSessions,
@@ -36,6 +37,7 @@ import {
   deleteSession,
   moveSession,
   renameSession,
+  renameChatSession,
   unarchiveSession
 } from './session-lifecycle'
 import { deleteProject, moveProjectFolder } from './project-lifecycle'
@@ -1419,6 +1421,13 @@ ipcMain.handle(
   (_, sourceId: string, encodedDir: string, sessionId: string, archived = false) =>
     readSession(sourceId, encodedDir, sessionId, archived)
 )
+// Terminal-driven chats address a transcript by cwd + session id rather than by
+// source/encodedDir — see readChatTranscript's own doc comment for the resolution.
+ipcMain.handle(
+  'cc:chat-transcript',
+  (_, cwd: string, sessionId: string, preferSourceId?: string) =>
+    readChatTranscript(cwd, sessionId, preferSourceId)
+)
 ipcMain.handle('cc:usage', (_, force = false) => getUsage(force))
 ipcMain.handle('cc:plan-usage', (_, force = false) => getPlanUsageForIpc(!!force))
 // A scope narrows the sweep to one project AND narrows what counts as a hit to
@@ -1452,6 +1461,11 @@ ipcMain.handle(
   'cc:session-rename',
   (_, sourceId: string, encodedDir: string, sessionId: string, title: string, archived = false) =>
     renameSession(sourceId, encodedDir, sessionId, title, archived)
+)
+ipcMain.handle(
+  'cc:chat-rename',
+  (_, cwd: string, sessionId: string, title: string, preferSourceId?: string) =>
+    renameChatSession(cwd, sessionId, title, preferSourceId)
 )
 ipcMain.handle(
   'cc:session-move',

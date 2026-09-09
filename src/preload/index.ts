@@ -185,6 +185,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('cc:list-sessions', sourceId, encodedDir, archived),
   ccReadSession: (sourceId: string, encodedDir: string, sessionId: string) =>
     ipcRenderer.invoke('cc:read-session', sourceId, encodedDir, sessionId),
+  ccChatTranscript: (cwd: string, sessionId: string, preferSourceId?: string) =>
+    ipcRenderer.invoke('cc:chat-transcript', cwd, sessionId, preferSourceId),
   ccUsage: (force?: boolean) => ipcRenderer.invoke('cc:usage', force),
   ccPlanUsage: (force?: boolean) => ipcRenderer.invoke('cc:plan-usage', force),
   // Live plan-usage updates pushed from the main-process watcher.
@@ -217,6 +219,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     title: string,
     archived?: boolean
   ) => ipcRenderer.invoke('cc:session-rename', sourceId, encodedDir, sessionId, title, archived),
+  ccChatRename: (cwd: string, sessionId: string, title: string, preferSourceId?: string) =>
+    ipcRenderer.invoke('cc:chat-rename', cwd, sessionId, title, preferSourceId),
   ccSessionMove: (
     sourceId: string,
     encodedDir: string,

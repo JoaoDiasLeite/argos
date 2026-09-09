@@ -236,6 +236,18 @@ export default function Chat({
     if (session.id in termOpenById) return
     setTermOpenById((prev) => ({ ...prev, [session.id]: defaultChatView === 'terminal' }))
   }, [session, defaultChatView, termOpenById])
+  // Name the Claude Code session this chat's terminal is about to start, before it starts.
+  // Left to the CLI, that id is invented inside the pty and never told to anyone: the chat
+  // stays "New chat" forever, nothing of the conversation reaches Argos, and reopening it
+  // starts a stranger rather than resuming. Deciding the id here is what makes the rest —
+  // the title, the transcript, whether it is running — findable at all.
+  const chatId = session?.id
+  const hasClaudeId = !!session?.claudeSessionId
+  const hasTerminalId = !!session?.terminalSessionId
+  useEffect(() => {
+    if (!termOpen || !chatId || hasClaudeId || hasTerminalId) return
+    onPatchSession({ terminalSessionId: crypto.randomUUID() })
+  }, [termOpen, chatId, hasClaudeId, hasTerminalId, onPatchSession])
   // When App deliberately moves you to a new chat, show the composer even if the "open new
   // chats in" pref says Terminal. Otherwise the jump is invisible: you were looking at a
   // terminal and you'd still be looking at one, so switching account appears to do nothing.
@@ -808,7 +820,7 @@ export default function Chat({
             provider={terminalProvider}
             wslDistro={session.wslDistro}
             remoteHostId={session.remoteHostId}
-            resumeSessionId={session.claudeSessionId}
+            resumeSessionId={session.claudeSessionId || session.terminalSessionId}
             onClose={toggleTerminal}
             onActive={() => {
               if (!session.hasTerminalActivity) onPatchSession({ hasTerminalActivity: true })

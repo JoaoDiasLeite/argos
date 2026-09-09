@@ -767,6 +767,112 @@ function blockText(content: unknown): { text: string; thinking: string; tools: a
   return { text, thinking, tools }
 }
 
+/**
+ * Locate which source and project directory hold a chat's transcript. Exported so
+ * `renameChatSession` (session-lifecycle.ts) can resolve a chat the same way
+ * `readChatTranscript` does, without a second copy of this search — it lives here
+ * rather than there because session-lifecycle.ts already imports from this file, and
+ * the reverse import would be a cycle.
+ *
+ * A chat that runs in WSL can only have written into that distro's own source — a
+ * local chat's transcript is never found in one, and scanning a WSL source's project
+ * directory means directory listings over the 9p share for nothing. So `preferSourceId`
+ * starting with `wsl:` narrows the search to just that source; otherwise every
+ * `kind === 'wsl'` source is skipped entirely.
+ *
+ * Within the remaining candidates (preferred source first), the cwd Argos recorded is
+ * tried first because it's right almost always and costs one stat. Only when nothing
+ * is there does this fall back to scanning each candidate's whole `projectsDir` for a
+ * subdirectory holding `<sessionId>.jsonl` — the CLI may have been launched from a
+ * different folder than Argos has on file (a git worktree, say). A session id is a
+ * uuid, so a hit anywhere is still the right conversation.
+ */
+export async function resolveChatSource(
+  cwd: string,
+  sessionId: string,
+  preferSourceId?: string
+): Promise<{ sourceId: string; encodedDir: string } | null> {
+  try {
+    const all = await getSources()
+    const candidates = preferSourceId?.startsWith('wsl:')
+      ? all.filter((s) => s.id === preferSourceId)
+      : all.filter((s) => s.kind !== 'wsl')
+    candidates.sort((a, b) => (a.id === preferSourceId ? -1 : b.id === preferSourceId ? 1 : 0))
+
+    const encodedCwd = encodePath(cwd)
+    for (const src of candidates) {
+      const direct = await safeSessionPath(src.id, encodedCwd, sessionId)
+      if (direct && fs.existsSync(direct)) return { sourceId: src.id, encodedDir: encodedCwd }
+    }
+    for (const src of candidates) {
+      if (!fs.existsSync(src.projectsDir)) continue
+      let entries: fs.Dirent[]
+      try {
+        entries = fs.readdirSync(src.projectsDir, { withFileTypes: true })
+      } catch {
+        continue
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        const full = await safeSessionPath(src.id, entry.name, sessionId)
+        if (full && fs.existsSync(full)) return { sourceId: src.id, encodedDir: entry.name }
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+export interface ChatTranscript {
+  sourceId: string
+  encodedDir: string
+  title: string
+  messages: CCTranscriptMessage[]
+}
+
+/**
+ * The terminal-driven counterpart to `resumeCCSession`'s data source: given the cwd
+ * and session id a terminal chat pinned before its CLI even launched, find whatever
+ * transcript that produced (if any) and read it whole.
+ *
+ * Never throws — an unreadable or not-yet-existent transcript is exactly the steady
+ * state right after a terminal chat starts, so callers see it as `null`, not a
+ * rejected promise.
+ */
+export async function readChatTranscript(
+  cwd: string,
+  sessionId: string,
+  preferSourceId?: string
+): Promise<ChatTranscript | null> {
+  try {
+    const loc = await resolveChatSource(cwd, sessionId, preferSourceId)
+    if (!loc) return null
+    const { sourceId, encodedDir } = loc
+    const full = await safeSessionPath(sourceId, encodedDir, sessionId)
+    let aiTitle = ''
+    let customTitle = ''
+    if (full) {
+      try {
+        for await (const obj of iterJsonl(full)) {
+          if (obj.type === 'ai-title' && obj.aiTitle) aiTitle = obj.aiTitle
+          // Last one wins, same precedence listSessions applies — a `/rename` in the
+          // CLI shows up here and a rename here would show up there.
+          if (obj.type === 'custom-title' && obj.customTitle) customTitle = obj.customTitle
+        }
+      } catch {
+        // Whatever title was read before the failure still stands.
+      }
+    }
+    const messages = await readSession(sourceId, encodedDir, sessionId)
+    // Empty, never a fallback to the session id — the caller needs to be able to tell
+    // "not titled yet" from "titled".
+    return { sourceId, encodedDir, title: customTitle || aiTitle || '', messages }
+  } catch {
+    return null
+  }
+}
+
 export async function readSession(
   sourceId: string,
   encodedDir: string,

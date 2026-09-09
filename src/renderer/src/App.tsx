@@ -690,6 +690,9 @@ export default function App() {
         ...session,
         name: session.messages.length === 0 && session.name === 'New chat' ? text.slice(0, 40) : session.name,
         messages: [...session.messages, userMsg, assistantMsg],
+        // Argos's own record takes over from here — the terminal sync must not
+        // re-import over it and lose this turn's streaming state.
+        ccSynced: false,
         updatedAt: Date.now()
       }
 
@@ -992,8 +995,13 @@ export default function App() {
     )
     // A chat driven purely from the embedded terminal never goes through the normal
     // agent:send → saveSession path, so without this it'd vanish on restart even after
-    // hasTerminalActivity makes it visible in the sidebar for the rest of this run.
-    if (patch.hasTerminalActivity && patched) window.electronAPI.saveSession(patched)
+    // hasTerminalActivity makes it visible in the sidebar for the rest of this run. The
+    // terminal's session id has to survive the same way and for a sharper reason: it is
+    // the only record of which Claude Code conversation that terminal started, and losing
+    // it means the chat can never be matched back to its own transcript.
+    if ((patch.hasTerminalActivity || patch.terminalSessionId) && patched) {
+      window.electronAPI.saveSession(patched)
+    }
   }
 
   const setSessionModel = (modelId: string) => {
@@ -1297,6 +1305,117 @@ export default function App() {
     setTerminalLines([])
     addTerm({ kind: 'info', text: `resuming ${isWsl ? cc.distro + ' ' : ''}session ${cc.sessionId.slice(0, 8)}` })
   }
+
+  // Pull each terminal-driven chat's transcript in from disk once the CLI it launched
+  // has actually written one. A chat qualifies while it's still showing nothing of its
+  // own (`ccSynced`, or never had any messages to begin with) — the moment a turn goes
+  // through Argos's composer this stops touching that chat, so a re-import can never
+  // clobber streaming state the transcript file doesn't carry.
+  const syncTerminalChats = useCallback(async () => {
+    const candidates = sessionsRef.current.filter(
+      (s) =>
+        s.projectPath &&
+        (s.claudeSessionId || s.terminalSessionId) &&
+        s.hasTerminalActivity &&
+        (s.messages.length === 0 || s.ccSynced)
+    )
+    for (const s of candidates) {
+      const sessionId = (s.claudeSessionId || s.terminalSessionId) as string
+      const prefer = s.wslDistro ? `wsl:${s.wslDistro}` : undefined
+      const transcript = await window.electronAPI.ccChatTranscript(s.projectPath as string, sessionId, prefer)
+      if (!transcript) continue
+
+      const nameFromTitle = transcript.title && s.name === 'New chat' ? transcript.title : undefined
+      const messagesChanged = transcript.messages.length !== s.messages.length
+      const sessionIdChanged = s.claudeSessionId !== sessionId
+      const syncedChanged = s.ccSynced !== true
+      // A tick where the transcript hasn't grown, the id was already promoted, no
+      // title landed and the flag is already set would still produce a *new* session
+      // object every time this runs — and this runs on a timer, which would re-save
+      // every terminal chat forever for no reason.
+      if (!messagesChanged && !sessionIdChanged && !nameFromTitle && !syncedChanged) continue
+
+      setSessions((prev) =>
+        prev.map((cur) => {
+          if (cur.id !== s.id) return cur
+          return {
+            ...cur,
+            ...(messagesChanged
+              ? {
+                  messages: transcript.messages.map((m) => ({
+                    id: generateId(),
+                    role: m.role,
+                    content: m.text,
+                    thinking: m.thinking,
+                    toolCalls: m.toolCalls,
+                    timestamp: m.timestamp,
+                    decisions: m.decisions
+                  })),
+                  // Sorted on in the sidebar, so a terminal chat that has been talking
+                  // for an hour must not still sort as of the moment it was created.
+                  updatedAt:
+                    transcript.messages[transcript.messages.length - 1]?.timestamp || Date.now()
+                }
+              : {}),
+            claudeSessionId: sessionId,
+            ...(nameFromTitle ? { name: nameFromTitle } : {}),
+            ccSynced: true,
+            // The terminal wrote new turns while this chat wasn't the one on screen —
+            // reads activeIdRef (not activeId) because syncTerminalChats has no deps
+            // and would otherwise close over whichever chat was active when it was
+            // first created.
+            ...(messagesChanged &&
+            transcript.messages.length > s.messages.length &&
+            s.id !== activeIdRef.current
+              ? { unread: true }
+              : {})
+          }
+        })
+      )
+    }
+  }, [])
+
+  // Pull terminal chats' transcripts in on the cadence a terminal-driven conversation
+  // actually changes on: right away and whenever the user switches to look at one (this
+  // effect covers both — it runs on mount too), and otherwise every 12s so a chat left
+  // running in the background still catches up. Reads sessions through sessionsRef
+  // (inside syncTerminalChats itself) rather than closing over `sessions`, same as the
+  // other interval effects in this file.
+  useEffect(() => {
+    syncTerminalChats()
+  }, [activeId, syncTerminalChats])
+  useEffect(() => {
+    const timer = setInterval(() => {
+      syncTerminalChats()
+    }, 12000)
+    return () => clearInterval(timer)
+  }, [syncTerminalChats])
+
+  /**
+   * Rename a chat from the sidebar.
+   *
+   * The name is Argos's, but a chat with a Claude Code conversation behind it gets the
+   * same title written into that transcript — the same line `/rename` writes — so the
+   * two never disagree about what the conversation is called. That write is best-effort:
+   * the chat is renamed here whether or not a transcript exists to carry it.
+   */
+  const renameSessionById = useCallback((id: string, name: string) => {
+    let patched: Session | undefined
+    setSessions((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s
+        patched = { ...s, name, updatedAt: Date.now() }
+        return patched
+      })
+    )
+    if (!patched) return
+    window.electronAPI.saveSession(patched)
+    const ccId = patched.claudeSessionId || patched.terminalSessionId
+    if (ccId && patched.projectPath) {
+      const prefer = patched.wslDistro ? `wsl:${patched.wslDistro}` : undefined
+      window.electronAPI.ccChatRename(patched.projectPath, ccId, name, prefer)
+    }
+  }, [])
 
   // Run a custom agent
   const runAgent = (agent: AgentDef) => {
@@ -1704,6 +1823,7 @@ export default function App() {
             onNewSession={createSession}
             onNewQuickChat={createQuickChat}
             onDeleteSession={deleteSession}
+            onRenameSession={renameSessionById}
             projectPath={activeSession?.projectPath}
             onSetProject={setSessionProject}
             onOpenFile={setOpenFilePath}

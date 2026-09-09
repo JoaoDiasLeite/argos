@@ -298,8 +298,8 @@ export function createTerminal(
       // the launch command into it afterwards. Non-interactive mode prints no banner (no
       // "Windows PowerShell / Copyright…") and no command echo, so the very first pty
       // output is the CLI itself — nothing for the loading overlay to have to hide.
-      const resumeId = safeResumeId(opts.resumeSessionId) || ''
-      const cliCmd = buildCliInvocation(kind, provider, resumeId, id)
+      const sessionId = safeResumeId(opts.resumeSessionId) || ''
+      const cliCmd = buildCliInvocation(kind, provider, sessionId, id)
       if (cliCmd) {
         if (kind === 'pwsh' || kind === 'powershell') {
           shellArgs = ['-NoLogo', '-NoProfile', '-Command', cliCmd]
@@ -477,21 +477,30 @@ function quoteUnix(token: string): string {
 function buildCliInvocation(
   kind: ShellKind,
   provider: 'claude' | 'codex' | 'gemini',
-  resumeId: string,
+  sessionId: string,
   id: string
 ): string | null {
   if (kind !== 'pwsh' && kind !== 'powershell' && kind !== 'cmd' && kind !== 'unix') return null
 
   if (provider === 'claude') {
+    // Pin the chat's identity with a three-step chain, not just a resume-or-fresh pair:
+    // `--resume` fails on a session id nothing has written yet, and `--session-id` fails on
+    // one that already exists, so trying both covers whichever direction this id is in. The
+    // trailing bare `claude` is only for a CLI too old to know `--session-id` — it still
+    // gets a working terminal instead of an error, just without the pinned id.
     if (kind === 'pwsh' || kind === 'powershell') {
-      return resumeId
-        ? `& $env:CLAUDE_BIN --resume ${resumeId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN }`
+      return sessionId
+        ? `& $env:CLAUDE_BIN --resume ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN --session-id ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN } }`
         : `& $env:CLAUDE_BIN`
     }
     if (kind === 'cmd') {
-      return resumeId ? `"%CLAUDE_BIN%" --resume ${resumeId} || "%CLAUDE_BIN%"` : `"%CLAUDE_BIN%"`
+      return sessionId
+        ? `"%CLAUDE_BIN%" --resume ${sessionId} || "%CLAUDE_BIN%" --session-id ${sessionId} || "%CLAUDE_BIN%"`
+        : `"%CLAUDE_BIN%"`
     }
-    return resumeId ? `"$CLAUDE_BIN" --resume ${resumeId} || "$CLAUDE_BIN"` : `"$CLAUDE_BIN"`
+    return sessionId
+      ? `"$CLAUDE_BIN" --resume ${sessionId} || "$CLAUDE_BIN" --session-id ${sessionId} || "$CLAUDE_BIN"`
+      : `"$CLAUDE_BIN"`
   }
 
   if (provider === 'gemini') {
@@ -521,23 +530,25 @@ function buildCliInvocation(
 
 // Build the shell-specific command line that launches claude, clearing the shell's
 // screen first (so the shell banner and the echoed launch command never show through the
-// loading overlay) and, when resuming a session, chaining a no-resume fallback at the
-// shell level: `claude --resume <id>` exits non-zero on a missing/incompatible session, so
-// `|| claude` (or the shell's equivalent) relaunches fresh immediately, all before the
-// overlay is ever lifted. Shared by the initial launch in startCliInTerminal below.
-function claudeLaunchCommand(kind: ShellKind, id: string, resumeId: string): string {
+// loading overlay) and, when the chat has an id, pinning the CLI to it — see the chain in
+// buildCliInvocation above for why it is resume-then-create-then-bare rather than a pair.
+// All of it happens at the shell level, before the overlay is ever lifted. Shared by the
+// initial launch in startCliInTerminal below.
+function claudeLaunchCommand(kind: ShellKind, id: string, sessionId: string): string {
   if (kind === 'pwsh' || kind === 'powershell') {
-    return resumeId
-      ? `Clear-Host; & $env:CLAUDE_BIN --resume ${resumeId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN }\r`
+    return sessionId
+      ? `Clear-Host; & $env:CLAUDE_BIN --resume ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN --session-id ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN } }\r`
       : `Clear-Host; & $env:CLAUDE_BIN\r`
   }
   if (kind === 'cmd') {
-    return resumeId
-      ? `cls & "%CLAUDE_BIN%" --resume ${resumeId} || "%CLAUDE_BIN%"\r`
+    return sessionId
+      ? `cls & "%CLAUDE_BIN%" --resume ${sessionId} || "%CLAUDE_BIN%" --session-id ${sessionId} || "%CLAUDE_BIN%"\r`
       : `cls & "%CLAUDE_BIN%"\r`
   }
   if (kind === 'wsl') {
-    return resumeId ? `clear; claude --resume ${resumeId} || claude\n` : `clear; claude\n`
+    return sessionId
+      ? `clear; claude --resume ${sessionId} || claude --session-id ${sessionId} || claude\n`
+      : `clear; claude\n`
   }
   if (kind === 'ssh') {
     // Remote box has no CLAUDE_BIN — use the host's configured claude path (or bare
@@ -545,15 +556,14 @@ function claudeLaunchCommand(kind: ShellKind, id: string, resumeId: string): str
     const meta = sshMeta.get(id)
     const bin = meta?.claudePath || 'claude'
     const cd = meta?.remotePath ? `cd ${quoteUnix(meta.remotePath)} && ` : ''
-    if (!resumeId) return `clear; ${cd}${bin}\n`
-    // Wrap the resume-or-fallback pair in parens so it runs as a single unit after the
-    // one-time cd, rather than re-prefixing cd onto the fallback too.
-    return cd
-      ? `clear; ${cd}( ${bin} --resume ${resumeId} || ${bin} )\n`
-      : `clear; ${bin} --resume ${resumeId} || ${bin}\n`
+    if (!sessionId) return `clear; ${cd}${bin}\n`
+    // Wrap the whole chain in parens so it runs as a single unit after the one-time cd,
+    // rather than re-prefixing cd onto each fallback.
+    const chain = `${bin} --resume ${sessionId} || ${bin} --session-id ${sessionId} || ${bin}`
+    return cd ? `clear; ${cd}( ${chain} )\n` : `clear; ${chain}\n`
   }
-  return resumeId
-    ? `clear; "$CLAUDE_BIN" --resume ${resumeId} || "$CLAUDE_BIN"\n`
+  return sessionId
+    ? `clear; "$CLAUDE_BIN" --resume ${sessionId} || "$CLAUDE_BIN" --session-id ${sessionId} || "$CLAUDE_BIN"\n`
     : `clear; "$CLAUDE_BIN"\n`
 }
 
@@ -570,11 +580,11 @@ export function startCliInTerminal(
   launched.add(id)
   try {
     if (provider === 'claude') {
-      // Resume the chat's own Claude Code session when we have its id, else start fresh.
-      // The resume-or-fallback logic lives entirely in the shell command line now (see
-      // claudeLaunchCommand) — no need to watch the pty's output from here.
-      const resume = safeResumeId(resumeSessionId) || ''
-      p.write(claudeLaunchCommand(kind, id, resume))
+      // Pin the CLI to the chat's own Claude Code session id when we have one, else start
+      // fresh. Which of resume and create applies is decided by the shell command line
+      // itself (see claudeLaunchCommand) — no need to watch the pty's output from here.
+      const sessionId = safeResumeId(resumeSessionId) || ''
+      p.write(claudeLaunchCommand(kind, id, sessionId))
       return { ok: true }
     }
 

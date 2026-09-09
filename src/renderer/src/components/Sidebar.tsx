@@ -66,6 +66,10 @@ interface Props {
   onNewSession: (projectPath?: string) => void
   onNewQuickChat?: () => void
   onDeleteSession: (id: string) => void
+  /** Rename a chat. The name is the app's, but when the chat has a Claude Code session
+   *  behind it the same title is written into that transcript too, so the two never
+   *  disagree about what the conversation is called. */
+  onRenameSession: (id: string, name: string) => void
   projectPath?: string
   onSetProject: (path: string) => void
   /** Opens a file from the Files tab in the editor. */
@@ -140,6 +144,7 @@ export default function Sidebar({
   onNewSession,
   onNewQuickChat,
   onDeleteSession,
+  onRenameSession,
   projectPath,
   onSetProject,
   onOpenFile,
@@ -163,6 +168,11 @@ export default function Sidebar({
   defaultAccountId
 }: Props) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  /** The one row being renamed in place, and the text typed into it. A chat's name was
+   *  previously only ever set from its first prompt, so a conversation the CLI titled
+   *  badly — or never titled at all — could not be corrected from the list it appears in. */
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
   // App-level account picker (the account row). Only toggles when there's more than
   // one account and the row is in the ready state; otherwise the row opens Settings.
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
@@ -494,11 +504,47 @@ export default function Sidebar({
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
   }
 
+  const startRename = (s: Session) => {
+    setRenamingId(s.id)
+    // Seeded with the real name, not the "New chat" placeholder — the placeholder is what
+    // you are trying to get rid of, so handing it back as the text to edit is busywork.
+    setRenameDraft(s.name === 'New chat' ? '' : s.name)
+  }
+
+  const commitRename = (s: Session) => {
+    const next = renameDraft.trim()
+    setRenamingId(null)
+    // An empty box means "leave it alone", not "call this chat nothing".
+    if (next && next !== s.name) onRenameSession(s.id, next)
+  }
+
+  // The same row, in edit mode. Rendered instead of the normal one rather than swapping the
+  // name span in place, so the hover buttons and the click-to-select handler are simply not
+  // there while typing — a stray click inside the input would otherwise switch chats.
+  const renderRenameRow = (s: Session) => (
+    <div key={s.id} className={`session-row renaming ${s.id === activeId ? 'active' : ''}`}>
+      <span className="session-dot idle" />
+      <input
+        className="session-rename-input"
+        autoFocus
+        value={renameDraft}
+        placeholder={s.name || 'New chat'}
+        onChange={(e) => setRenameDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commitRename(s)
+          else if (e.key === 'Escape') setRenamingId(null)
+        }}
+        onBlur={() => commitRename(s)}
+      />
+    </div>
+  )
+
   // A plain one-line row: leading status dot, name, optional inline model/account
-  // badges (only when the session diverges from the app defaults), and a hover delete
-  // button. `showProject` renders the project chip too — used only in the flattened
+  // badges (only when the session diverges from the app defaults), and hover rename and
+  // delete buttons. `showProject` renders the project chip too — used only in the flattened
   // search view, where there's no group header to say which folder a hit belongs to.
   const renderSessionRow = (s: Session, showProject = false) => {
+    if (renamingId === s.id) return renderRenameRow(s)
     // Status dot: approval waiting > running > last-message error. At most one.
     const lastMsg = s.messages[s.messages.length - 1]
     const status = attentionIds.has(s.id)
@@ -529,7 +575,12 @@ export default function Sidebar({
       >
         {/* Neutral quiet dot when there's no status, so names stay left-aligned. */}
         <span className={`session-dot ${status || 'idle'}`} title={statusTitle} />
-        <span className="session-row-name">{s.name || 'New chat'}</span>
+        <span
+          className="session-row-name"
+          onDoubleClick={(e) => { e.stopPropagation(); startRename(s) }}
+        >
+          {s.name || 'New chat'}
+        </span>
         {showProject && s.projectPath && (
           <span className="session-project" title={s.projectPath}>
             {s.projectPath.split(/[\\/]/).filter(Boolean).pop()}
@@ -542,6 +593,18 @@ export default function Sidebar({
           </span>
         )}
         {hoveredId === s.id && (
+          <>
+            <button
+              className="session-rename"
+              onClick={(e) => { e.stopPropagation(); startRename(s) }}
+              title="Rename (or double-click the name)"
+              aria-label="Rename session"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
             <button
               className="session-delete"
               onClick={(e) => { e.stopPropagation(); onDeleteSession(s.id) }}
@@ -553,6 +616,7 @@ export default function Sidebar({
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
+          </>
         )}
       </div>
     )

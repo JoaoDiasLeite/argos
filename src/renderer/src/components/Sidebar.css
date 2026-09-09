@@ -468,6 +468,36 @@
 }
 .session-delete:hover { color: var(--error); background: rgba(224, 82, 82, 0.12); }
 
+/* Same footprint as the delete button — they sit side by side on hover, so anything
+   else would make the row's right edge jump between the two. */
+.session-rename {
+  color: var(--text-2);
+  border-radius: 4px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: color 0.14s, background 0.14s;
+}
+.session-rename:hover { color: var(--accent); background: var(--accent-dim); }
+
+/* The row in edit mode. It borrows the row's own metrics so the name does not shift
+   sideways the moment you start typing over it. */
+.session-rename-input {
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-0);
+  background: var(--bg-0);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 5px;
+  outline: none;
+}
+
 .session-badge {
   font-size: 10px;
   line-height: 1;

@@ -1,6 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import { ARCHIVED_DIR, safeSessionPath } from './claude-data'
+import { ARCHIVED_DIR, resolveChatSource, safeSessionPath } from './claude-data'
 import { appendTitle, deleteTranscript, FileOpResult, moveTranscript } from './session-files'
 
 /**
@@ -63,6 +63,24 @@ export async function renameSession(
   const file = await safeSessionPath(sourceId, encodedDir, sessionId, archived)
   if (!file) return { ok: false, error: 'not-found' }
   return appendTitle(file, sessionId, title)
+}
+
+/**
+ * Rename a chat addressed the way `readChatTranscript` (claude-data.ts) is — by cwd
+ * and session id rather than by source/encodedDir — so the terminal sync can rename a
+ * chat it only ever knew as "the session this cwd's CLI was told to use". Lives here
+ * rather than in claude-data.ts because that module can't import this one back
+ * (renameSession is here, and session-lifecycle.ts already imports from claude-data.ts).
+ */
+export async function renameChatSession(
+  cwd: string,
+  sessionId: string,
+  title: string,
+  preferSourceId?: string
+): Promise<LifecycleResult> {
+  const loc = await resolveChatSource(cwd, sessionId, preferSourceId)
+  if (!loc) return { ok: false, error: 'not-found' }
+  return renameSession(loc.sourceId, loc.encodedDir, sessionId, title)
 }
 
 /**

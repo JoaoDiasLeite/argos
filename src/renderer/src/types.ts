@@ -78,6 +78,23 @@ export interface Session {
    *  chat driven entirely from the terminal (no `messages`) visible in the sidebar and
    *  persisted to disk — see visibleSessions() in lib/account-scope.ts. */
   hasTerminalActivity?: boolean
+  /**
+   * The Claude Code session id this chat's embedded terminal was told to use, assigned
+   * before the CLI launches so Argos owns the link from the start rather than watching a
+   * conversation it has no name for.
+   *
+   * Kept separate from `claudeSessionId` on purpose. That one is handed to the engine as
+   * `resume`, and resuming an id no session has written yet fails the whole run — so an
+   * id that is only a *plan* cannot live in that field. It is promoted to
+   * `claudeSessionId` once a transcript for it actually exists on disk.
+   */
+  terminalSessionId?: string
+  /** True while this chat's messages are a copy of its Claude Code transcript rather than
+   *  Argos's own record of the turns it ran. Set by the terminal sync, cleared the moment a
+   *  turn is sent from Argos's composer — from then on Argos's transcript is the one being
+   *  written to and re-importing over it would throw away streaming state, tool calls and
+   *  errors the CLI's own record does not carry. */
+  ccSynced?: boolean
   /** Which Claude Code account (login) this chat runs under. Undefined = default account. */
   accountId?: string
   accountName?: string
@@ -523,6 +540,13 @@ export interface CCTranscriptMessage {
   timestamp: number
   /** Choices the owner made, on a turn of his own. */
   decisions?: AskDecision[]
+}
+
+export interface ChatTranscript {
+  sourceId: string
+  encodedDir: string
+  title: string
+  messages: CCTranscriptMessage[]
 }
 
 export interface UsageEntry {
@@ -1404,6 +1428,11 @@ declare global {
         encodedDir: string,
         sessionId: string
       ) => Promise<CCTranscriptMessage[]>
+      ccChatTranscript: (
+        cwd: string,
+        sessionId: string,
+        preferSourceId?: string
+      ) => Promise<ChatTranscript | null>
       ccUsage: (force?: boolean) => Promise<UsageReport>
       ccPlanUsage: (force?: boolean) => Promise<PlanUsageReport>
       onPlanUsage: (cb: (report: PlanUsageReport) => void) => () => void
@@ -1427,6 +1456,12 @@ declare global {
         id: string,
         title: string,
         archived?: boolean
+      ) => Promise<LifecycleResult>
+      ccChatRename: (
+        cwd: string,
+        sessionId: string,
+        title: string,
+        preferSourceId?: string
       ) => Promise<LifecycleResult>
       ccSessionMove: (
         s: string,
