@@ -135,11 +135,12 @@ type RailEntry =
   | { kind: 'single'; view: View; label: string }
   | { kind: 'group'; group: ViewGroup }
 
+// Live and Agents are kept out of the rail for now — the views, their routing and
+// everything that reaches them from elsewhere are untouched, so putting either entry
+// back is a matter of restoring its line here.
 const RAIL: RailEntry[] = [
   { kind: 'single', view: 'chat', label: 'Chat' },
   { kind: 'single', view: 'projects', label: 'Projects' },
-  { kind: 'single', view: 'live', label: 'Live' },
-  { kind: 'group', group: VIEW_GROUPS[0] },
   { kind: 'group', group: VIEW_GROUPS[1] },
   { kind: 'single', view: 'usage', label: 'Usage' },
   { kind: 'group', group: VIEW_GROUPS[2] }

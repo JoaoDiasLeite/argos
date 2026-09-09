@@ -20,6 +20,12 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'Changes',
+        items: [
+          'Live and Agents are not in the rail for now. Nothing about either was removed — the views are still there, still work, and the command palette still opens them — they are just not taking up a place in the rail while they are being worked on.'
+        ]
+      },
+      {
         title: 'Fixes',
         items: [
           'One folder is one project again, this time for a folder inside WSL. The same directory reaches the sidebar three ways — `/home/me/proj` from a chat running in the distro, `\\\\wsl.localhost\\Ubuntu\\home\\me\\proj` from the Windows side, and `Z:\\home\\me\\proj` when that root is mapped to a drive letter — and every spelling opened a heading of its own, all with the same name. They fold onto the UNC one now, chosen because it is the spelling both sides can use: Windows opens it directly, and anything launched inside the distro translates it back first. So the group’s “+” gives you a chat with a working directory that exists, whichever kind of chat sat in the group before it.',
