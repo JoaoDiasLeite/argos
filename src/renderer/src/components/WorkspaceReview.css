@@ -1,0 +1,19 @@
+/* Shrinks before the transcript does, down to min-width: a fixed, unshrinkable 310px
+   left the chat column with almost nothing in a narrow window. Below that the row
+   clips rather than reflows — the panel is a toggle, and closing it is the answer. */
+.workspace-review { flex: 0 1 310px; min-width: 250px; border-left: 1px solid var(--border); background: var(--bg-1); padding: 16px; overflow: auto; color: var(--text-0); font-size: 13px; }
+.workspace-review h4 { margin: 22px 0 8px; font-size: 12px; font-weight: 600; }
+.workspace-review h4 span { color: var(--text-1); font-weight: 400; }
+.wr-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; overflow-wrap: anywhere; }
+.wr-note { color: var(--text-1); font-size: 12px; line-height: 1.6; margin: 8px 0 12px; }
+.wr-error { color: var(--error); overflow-wrap: anywhere; }
+.wr-file { display: flex; justify-content: space-between; gap: 10px; width: 100%; padding: 10px 6px; text-align: left; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-0); }
+.wr-file span:first-child { overflow-wrap: anywhere; min-width: 0; }
+.wr-file span:last-child { color: var(--text-1); flex-shrink: 0; }
+.wr-file:hover, .wr-file.selected { background: var(--bg-hover); }
+.wr-diff, .wr-command pre { font: 12px/1.6 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; background: var(--bg-0); padding: 10px; margin: 8px 0; }
+.wr-diff-block { margin: 12px 0; }
+.wr-command { border-bottom: 1px solid var(--border); padding: 9px 0; }
+.wr-command summary { cursor: pointer; overflow-wrap: anywhere; }
+.wr-command summary span { display: block; color: var(--text-1); font-size: 11px; margin-top: 4px; }
+.workspace-review > .btn-secondary { margin-top: 10px; }

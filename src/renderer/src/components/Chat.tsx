@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useRef, useState, lazy, Suspense } from 'react'
-import { Session, ModelInfo, Attachment, SlashCommand, ProviderId } from '../types'
+import { Session, ModelInfo, Attachment, SlashCommand, ProviderId, ApprovalRequest } from '../types'
 import MessageBubble from './MessageBubble'
 import ModelPicker from './ModelPicker'
 import ChatConfigBar from './ChatConfigBar'
+import ApprovalModal from './ApprovalModal'
 import { sessionToMarkdown } from '../lib/markdown-export'
 import { CLIPBOARD_IMAGE_EVENT, ClipboardImageDetail } from '../lib/clipboard-paste'
 import './Chat.css'
@@ -11,6 +12,11 @@ import './Chat.css'
 // rendered once the user opens the embedded terminal (`termOpen`, default
 // false) — so it's loaded lazily instead of bundled into the initial chunk.
 const ChatTerminal = lazy(() => import('./ChatTerminal'))
+
+// WorkspaceReview pulls in its own git-status/diff/checkpoint plumbing and is only
+// ever rendered once the user opens the review panel (`reviewOpen`, default false)
+// — same lazy-loading rationale as ChatTerminal above.
+const WorkspaceReview = lazy(() => import('./WorkspaceReview'))
 
 // ── Text-file attachment limits & heuristics ─────────────────────────────────
 const MAX_FILE_ATTACHMENTS = 5
@@ -112,6 +118,11 @@ function contextTokens(session?: Session): number | null {
 interface Props {
   session?: Session
   streaming: boolean
+  /** Non-empty when the last autosave of this session's transcript failed. */
+  saveError: string
+  /** The approval (if any) queued for this chat, rendered inline instead of as a global modal. */
+  approval?: ApprovalRequest
+  onApproval: (approvalId: string, allow: boolean) => void
   onSendMessage: (
     text: string,
     images?: { mediaType: string; data: string }[],
@@ -155,6 +166,9 @@ interface Props {
 export default function Chat({
   session,
   streaming,
+  saveError,
+  approval,
+  onApproval,
   onSendMessage,
   onStop,
   onOpenSettings,
@@ -207,6 +221,15 @@ export default function Chat({
     if (!session) return
     setTermOpenById((prev) => ({ ...prev, [session.id]: !prev[session.id] }))
   }
+  // Per-chat "Review" panel toggle (working-tree diff / checkpoints), keyed by session id
+  // the same way termOpenById is. Unlike the terminal, it has no "default view" pref to
+  // seed from — it starts closed for every chat until the user asks for it.
+  const [reviewOpenById, setReviewOpenById] = useState<Record<string, boolean>>({})
+  const reviewOpen = !!session && !!reviewOpenById[session.id]
+  const toggleReview = () => {
+    if (!session) return
+    setReviewOpenById((prev) => ({ ...prev, [session.id]: !prev[session.id] }))
+  }
   // Seed a session's terminal state from the "default view" pref the first time it's seen.
   useEffect(() => {
     if (!session) return
@@ -238,6 +261,11 @@ export default function Chat({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pickerListRef = useRef<HTMLDivElement>(null)
+  const approvalRef = useRef<HTMLDivElement>(null)
+  // The save-error banner has no real "resolved" signal from the caller (saveError just
+  // clears itself once a save succeeds), so "dismiss" only has to mean "stop showing me
+  // *this* failure" — tracked by comparing against the last message the user waved away.
+  const [dismissedSaveError, setDismissedSaveError] = useState('')
 
   // ── Slash-command picker ──────────────────────────────────────────────────
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([])
@@ -305,6 +333,12 @@ export default function Chat({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [session?.messages])
+
+  // A fresh approval is easy to miss if the transcript is long and scrolled up — pull
+  // it into view the moment it shows up, same as a new message would be.
+  useEffect(() => {
+    if (approval) approvalRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [approval?.approvalId])
 
   const handleCopyMarkdown = () => {
     if (!session) return
@@ -680,6 +714,13 @@ export default function Chat({
                 <div className="header-menu-divider" />
                 <button onClick={() => { setExportMenuOpen(false); onOpenGit() }}>Git…</button>
                 <button onClick={() => { setExportMenuOpen(false); onOpenCheckpoints() }}>Checkpoints…</button>
+                <button
+                  disabled={!session}
+                  aria-pressed={reviewOpen}
+                  onClick={() => { setExportMenuOpen(false); toggleReview() }}
+                >
+                  {reviewOpen ? 'Review ✓' : 'Review'}
+                </button>
                 <button onClick={() => { setExportMenuOpen(false); onOpenClaudeMd() }}>Edit {CONTEXT_FILE[activeProvider]}</button>
               </div>
             )}
@@ -687,6 +728,32 @@ export default function Chat({
         </div>
       )}
 
+      {/* Row below the floating actions: the transcript/composer column, plus the optional
+          Review side panel. Kept as a flex row (rather than folding Review into the same
+          column) so the panel gets its own independent scroll and never has to fight the
+          transcript for height. */}
+      <div className="chat-body">
+      <div className="chat-main">
+      {saveError && dismissedSaveError !== saveError && (
+        <div className="save-error-banner" role="alert">
+          <span className="save-error-text">
+            This chat's transcript couldn't be saved to disk — recent messages may be lost if
+            the app closes. {/* The caller hands us a stringified Error; its "Error: " prefix
+            is noise in a sentence the user reads. */}
+            ({saveError.replace(/^Error:\s*/, '')})
+          </span>
+          <button
+            className="save-error-dismiss"
+            onClick={() => setDismissedSaveError(saveError)}
+            title="Dismiss"
+            aria-label="Dismiss this warning"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      )}
       <div className="chat-messages" style={termOpen ? { display: 'none' } : undefined}>
         {isEmpty ? (
           <div className="chat-empty">
@@ -748,6 +815,19 @@ export default function Chat({
             }}
           />
         </Suspense>
+      )}
+
+      {/* Rendered outside the composer's display:none wrapper below — a run in a chat
+          with the terminal open still needs approving, and it has nowhere else to show
+          up (the global modal is deliberately suppressed for the chat on screen). */}
+      {session && approval && (
+        <div ref={approvalRef} className="chat-approval-inline">
+          <ApprovalModal
+            request={approval}
+            onDecide={(allow) => onApproval(approval.approvalId, allow)}
+            inline
+          />
+        </div>
       )}
 
       <div className="chat-input-area" style={termOpen ? { display: 'none' } : undefined}>
@@ -997,6 +1077,20 @@ export default function Chat({
           </div>
         )}
       </div>
+      </div>
+      </div>
+
+      {session && reviewOpen && (
+        <Suspense fallback={null}>
+          <WorkspaceReview
+            key={session.id}
+            session={session}
+            streaming={streaming}
+            onGit={onOpenGit}
+            onCheckpoints={onOpenCheckpoints}
+          />
+        </Suspense>
+      )}
       </div>
     </div>
   )

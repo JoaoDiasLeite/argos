@@ -81,3 +81,7 @@
   border-radius: 3px;
   padding: 0 4px;
 }
+.approval-inline { padding: 12px 20px; flex-shrink: 0; max-height: 45%; overflow: auto; }
+.approval-inline .approval-modal { width: 100%; max-width: none; max-height: none; border: 1px solid var(--accent); box-shadow: none; }
+.approval-inline .modal-header h3 { flex-wrap: wrap; }
+.approval-inline .approval-command p { margin: 8px 0; overflow-wrap: anywhere; }

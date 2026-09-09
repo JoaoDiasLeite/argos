@@ -10,32 +10,45 @@ interface Props {
   // Optional session label, shown small in the header — used by the Rooms inline flow
   // where more than one session may have pending approvals.
   sessionName?: string
+  inline?: boolean
 }
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
 }
 
-export default function ApprovalModal({ request, onDecide, sessionName }: Props) {
+export default function ApprovalModal({ request, onDecide, sessionName, inline = false }: Props) {
   const { tool, input } = request
   const dialogRef = useRef<HTMLDivElement>(null)
   // Esc is handled by the existing keydown handler (deny), so we pass escapeToClose: false
   // to avoid a double call. Focus trap + focus-restore still apply.
-  useModalA11y(dialogRef, () => onDecide(false), { escapeToClose: false })
+  useModalA11y(dialogRef, () => onDecide(false), { escapeToClose: false, enabled: !inline })
 
   // Keyboard: Enter = allow, Esc = deny.
   useEffect(() => {
+    if (inline) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onDecide(true)
       else if (e.key === 'Escape') onDecide(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onDecide])
+  }, [onDecide, inline])
 
   const filePath = str(input.file_path || input.path)
 
   const renderBody = () => {
+    if (tool === 'RemoteRun') return <div className="approval-command">
+      <p>{str(input.permissions)}</p>
+      {/* Two separate <pre>s rather than one with an embedded "\n" — a template-literal
+          "\n" inside JSX text renders as the two literal characters, not a line break,
+          which used to run target and folder together on one line. Labelled because
+          this is the one dialog standing between a headless remote run and the user's
+          files, and a bare hostname next to a bare path invites mixing them up. */}
+      <pre><strong>Target:</strong> {str(input.target)}</pre>
+      <pre><strong>Folder:</strong> {str(input.folder)}</pre>
+      <p>{str(input.prompt)}</p>
+    </div>
     if (tool === 'Edit') {
       return <DiffView oldText={str(input.old_string)} newText={str(input.new_string)} filePath={filePath} />
     }
@@ -66,21 +79,21 @@ export default function ApprovalModal({ request, onDecide, sessionName }: Props)
   }
 
   const verb =
-    tool === 'Bash' ? 'run a command' : tool === 'Write' ? 'create / overwrite a file' : 'edit a file'
+    tool === 'RemoteRun' ? 'start a remote run' : tool === 'Bash' ? 'run a command' : tool === 'Write' ? 'create / overwrite a file' : 'use a tool'
 
   return (
-    <div className="modal-backdrop">
+    <div className={inline ? 'approval-inline' : 'modal-backdrop'}>
       <div
         className="modal approval-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="approval-modal-title"
+        role={inline ? 'region' : 'dialog'}
+        aria-modal={inline ? undefined : true}
+        aria-labelledby={`approval-${request.approvalId}`}
         tabIndex={-1}
         ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
-          <h3 id="approval-modal-title">
+          <h3 id={`approval-${request.approvalId}`}>
             <span className="approval-tool">{tool}</span> wants to {verb}
           </h3>
           {sessionName && <div className="approval-session">{sessionName}</div>}
@@ -89,10 +102,10 @@ export default function ApprovalModal({ request, onDecide, sessionName }: Props)
         <div className="approval-body">{renderBody()}</div>
         <div className="modal-footer approval-footer">
           <button className="btn-secondary" onClick={() => onDecide(false)}>
-            Deny <span className="kbd">Esc</span>
+            Deny {!inline && <span className="kbd">Esc</span>}
           </button>
           <button className="btn-primary" onClick={() => onDecide(true)}>
-            Allow <span className="kbd">⌘↵</span>
+            Allow once {!inline && <span className="kbd">Ctrl/⌘↵</span>}
           </button>
         </div>
       </div>

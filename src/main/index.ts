@@ -902,6 +902,30 @@ function nextApprovalId(): string {
   return `appr_${approvalSeq}_${approvalSeq * 2654435761 % 1000000}`
 }
 
+function requestToolApproval(appSessionId: string, tool: string, input: Record<string, unknown>, signal: AbortSignal): Promise<ApprovalDecision> {
+  if (signal.aborted) return Promise.resolve({ allow: false })
+  const approvalId = nextApprovalId()
+  return new Promise((resolve) => {
+    const finish = (decision: ApprovalDecision) => {
+      signal.removeEventListener('abort', onAbort)
+      pendingApprovals.delete(approvalId)
+      resolveApprovalEverywhere(approvalId)
+      resolve(decision)
+    }
+    const onAbort = () => finish({ allow: false })
+    pendingApprovals.set(approvalId, finish)
+    signal.addEventListener('abort', onAbort, { once: true })
+    const req = { appSessionId, approvalId, tool, input }
+    send('agent:approval-request', req)
+    if (mainWindowInactive()) {
+      toastApprovals.add(approvalId)
+      sendToToast('toast:approval', req)
+      showToast()
+      flagAttention('approval')
+    }
+  })
+}
+
 ipcMain.handle(
   'agent:approval-response',
   (_, payload: { approvalId: string; allow: boolean; updatedInput?: Record<string, unknown> }) => {
@@ -922,6 +946,26 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
   // Remote/WSL runs take a plain prompt string (no structured image path), so fold any
   // attached text files straight into the prompt text here.
   const promptWithFiles = appendFiles(prompt, payload.files)
+
+  // Headless remote transports cannot pause at individual tools. Ask for the
+  // whole run explicitly, without changing the session's permission preference.
+  if ((payload.remoteHostId || payload.wslDistro) && payload.approvalMode !== 'auto') {
+    const gate = new AbortController()
+    activeRuns.set(appSessionId, gate)
+    updateRunIndicators()
+    const decision = await requestToolApproval(appSessionId, 'RemoteRun', {
+      target: payload.wslDistro || payload.remoteHostId,
+      folder: projectPath || 'Remote home directory',
+      prompt,
+      permissions: 'This run can edit files. Per-tool approvals are unavailable on this transport; commands follow the remote CLI policy.'
+    }, gate.signal)
+    activeRuns.delete(appSessionId)
+    updateRunIndicators()
+    if (!decision.allow || gate.signal.aborted) {
+      send('agent:error', { appSessionId, error: 'Remote run was not approved.' })
+      return
+    }
+  }
 
   // Remote host: drive the remote machine's Claude Code over SSH instead of the local SDK.
   if (payload.remoteHostId) {
@@ -2397,7 +2441,10 @@ ipcMain.handle('session:list', () => {
     return fs
       .readdirSync(sessionsDir)
       .filter((f) => f.endsWith('.json'))
-      .map((f) => readJsonFile<any>(path.join(sessionsDir, f)))
+      .flatMap((f) => {
+        try { return [readJsonFile<any>(path.join(sessionsDir, f))] }
+        catch { console.warn(`[sessions] Could not read ${f}`); return [] }
+      })
       .sort((a, b) => b.updatedAt - a.updatedAt)
   } catch {
     return []
@@ -2409,7 +2456,9 @@ ipcMain.handle('session:save', (_, session: unknown) => {
   if (typeof s.id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(s.id) || s.id.length === 0 || s.id.length > 128) {
     return { success: false, reason: 'invalid-id' }
   }
-  fs.writeFileSync(path.join(sessionsDir, `${s.id}.json`), JSON.stringify(session, null, 2))
+  const filename = path.join(sessionsDir, `${s.id}.json`)
+  fs.writeFileSync(`${filename}.tmp`, JSON.stringify(session, null, 2))
+  fs.renameSync(`${filename}.tmp`, filename)
   // Keep the "Recent projects" Jump List current. Debounced inside refreshJumpList,
   // so the burst of saves during a streaming turn only rebuilds once.
   refreshJumpList()

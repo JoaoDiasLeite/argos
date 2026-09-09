@@ -134,7 +134,6 @@ export default function ChatConfigBar({ session, onPatch, disabled }: Props) {
       wslDistro: d.name,
       remoteHostId: undefined,
       remoteHostName: `WSL · ${d.name}`,
-      autoApprove: true,
       // WSL folders live in the distro, not the Windows FS — clear a Windows path.
       projectPath: undefined,
       useWorktree: false
@@ -146,7 +145,6 @@ export default function ChatConfigBar({ session, onPatch, disabled }: Props) {
       remoteHostId: h.id,
       remoteHostName: h.name,
       wslDistro: undefined,
-      autoApprove: true,
       projectPath: h.remotePath ?? undefined,
       useWorktree: false
     })

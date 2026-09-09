@@ -16,6 +16,7 @@ function getFocusable(el: HTMLElement): HTMLElement[] {
 }
 
 interface Options {
+  enabled?: boolean
   /** When true the hook will call onClose on Escape. Defaults to true. */
   escapeToClose?: boolean
 }
@@ -23,11 +24,11 @@ interface Options {
 export function useModalA11y(
   ref: RefObject<HTMLElement | null>,
   onClose: (() => void) | null,
-  { escapeToClose = true }: Options = {}
+  { escapeToClose = true, enabled = true }: Options = {}
 ) {
   useEffect(() => {
     const dialog = ref.current
-    if (!dialog) return
+    if (!dialog || !enabled) return
 
     // Remember what was focused before the modal opened.
     const previouslyFocused = document.activeElement as HTMLElement | null
@@ -77,5 +78,5 @@ export function useModalA11y(
       previouslyFocused?.focus()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [enabled])
 }

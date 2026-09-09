@@ -43,6 +43,7 @@ export interface Message {
 }
 
 export interface Session {
+  runState?: 'running' | 'idle' | 'interrupted'
   id: string
   name: string
   messages: Message[]

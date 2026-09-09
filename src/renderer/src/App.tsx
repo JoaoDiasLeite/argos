@@ -205,6 +205,7 @@ export default function App() {
 
   // Add/remove a session id from the running set (immutable Set updates).
   const startRun = useCallback((sid: string) => {
+    setSessions((prev) => prev.map((s) => s.id === sid ? { ...s, runState: 'running' } : s))
     setRunningIds((prev) => {
       const next = new Set(prev)
       next.add(sid)
@@ -212,6 +213,7 @@ export default function App() {
     })
   }, [])
   const endRun = useCallback((sid: string) => {
+    setSessions((prev) => prev.map((s) => s.id === sid ? { ...s, runState: 'idle' } : s))
     setRunningIds((prev) => {
       if (!prev.has(sid)) return prev
       const next = new Set(prev)
@@ -338,12 +340,34 @@ export default function App() {
       // No auto-created blank draft: with no saved chats the main area shows the
       // welcome pane until the user explicitly starts one.
       if (saved.length > 0) {
-        setSessions(saved)
+        setSessions(saved.map((s) => s.runState === 'running' ? { ...s, runState: 'interrupted' as const } : s))
         setActiveId(saved[0].id)
       }
     }
     init()
   }, [refreshAuth, refreshAccounts])
+
+  // Persist partial output periodically, including continuous streams. A recovered
+  // running marker becomes "interrupted" on startup; no command is replayed.
+  const savedSessionsRef = useRef(new Map<string, Session>())
+  const [saveError, setSaveError] = useState('')
+  useEffect(() => {
+    const timer = setInterval(() => {
+      for (const session of sessionsRef.current) {
+        if (!session.messages.length && !session.hasTerminalActivity) continue
+        if (savedSessionsRef.current.get(session.id) === session) continue
+        savedSessionsRef.current.set(session.id, session)
+        window.electronAPI.saveSession(session).then((result) => {
+          if (!result.success) throw new Error('Session could not be saved')
+          setSaveError('')
+        }).catch((error) => {
+          savedSessionsRef.current.delete(session.id)
+          setSaveError(String(error))
+        })
+      }
+    }, 1500)
+    return () => clearInterval(timer)
+  }, [])
 
   const appendToLastAssistant = (sid: string, update: (m: Message) => Message) => {
     setSessions((prev) =>
@@ -1364,7 +1388,6 @@ export default function App() {
     s.name = `${host.name} (remote)`
     s.remoteHostId = host.id
     s.remoteHostName = host.name
-    s.autoApprove = true // remote runs are headless; no interactive approval channel
     setSessions((prev) => [s, ...prev])
     setActiveId(s.id)
     setView('chat')
@@ -1376,7 +1399,6 @@ export default function App() {
     s.name = `${distro} (WSL)`
     s.wslDistro = distro
     s.remoteHostName = `WSL · ${distro}`
-    s.autoApprove = true
     setSessions((prev) => [s, ...prev])
     setActiveId(s.id)
     setView('chat')
@@ -1711,6 +1733,9 @@ export default function App() {
               </div>
             )}
             <Chat
+              saveError={saveError}
+              approval={approvalQueue.find((r) => r.appSessionId === activeSession?.id)}
+              onApproval={respondApprovalById}
               session={activeSession}
               streaming={activeStreaming}
               onSendMessage={sendMessage}
@@ -1935,7 +1960,7 @@ export default function App() {
           onClose={() => setClaudeMdOpen(false)}
         />
       )}
-      {view !== 'rooms' && approvalQueue.length > 0 && (
+      {view !== 'rooms' && approvalQueue.length > 0 && !(view === 'chat' && approvalQueue[0].appSessionId === activeId) && (
         <ApprovalModal request={approvalQueue[0]} onDecide={respondApproval} />
       )}
       {openFilePath && (

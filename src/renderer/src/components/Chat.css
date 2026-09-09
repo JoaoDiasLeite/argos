@@ -6,6 +6,26 @@
   position: relative;
 }
 
+/* ── Body row: transcript/composer column + optional Review side panel ── */
+/* A row rather than folding Review into the same column, so the panel gets its own
+   independent scroll (WorkspaceReview.css already sizes itself as a fixed-width,
+   self-scrolling aside) and never has to fight the transcript for height. */
+.chat-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+.chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  /* Floor rather than 0: with the Review panel open, an unbounded shrink let the
+     transcript collapse to a sliver in a narrow window. */
+  min-width: 260px;
+  overflow: hidden;
+}
+
 /* ── Drag & drop overlay ──────────────────────────────────── */
 .chat-drop-overlay {
   position: absolute;
@@ -630,6 +650,55 @@
   color: var(--text-0);
   background: var(--bg-hover);
   transform: none;
+}
+
+/* ── Save-failure banner ── */
+/* Same shape as .long-session-banner (rounded strip, inline dismiss ×) but tinted for
+   an error rather than a suggestion — this one means the transcript itself is at risk,
+   not just expensive to keep re-sending. Sits above the scrolling transcript (not
+   inside it) so it stays visible regardless of scroll position. */
+.save-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 12px 24px 0;
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+}
+.save-error-text {
+  flex: 1;
+  min-width: 200px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-1);
+}
+.save-error-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  padding: 0;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.save-error-dismiss:hover { color: var(--text-0); background: var(--bg-hover); }
+
+/* ── Inline approval (see ApprovalModal's `inline` prop) ── */
+/* Lives directly above the composer, outside the composer's own display:none wrapper,
+   so a run started from the embedded terminal can still be approved once that panel
+   is open and the composer itself is hidden. */
+.chat-approval-inline {
+  flex-shrink: 0;
+  padding: 0 24px;
+  margin-top: 12px;
 }
 
 /* ── Header overflow menu (⋯) ────────────────────────────────────────────── */
