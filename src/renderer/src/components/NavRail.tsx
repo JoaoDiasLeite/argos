@@ -39,6 +39,10 @@ interface Props {
   /** Open Remote/WSL sessions — surfaced as a badge on the Servers entry so they
       stay discoverable from anywhere in the app. */
   serverSessionCount?: number
+  /** Chats currently running (Argos's own runs plus any the live registry reports
+      busy) — the same badge as Servers, on the Chat entry, so a run finishing in a
+      chat you've navigated away from is still visible from anywhere in the app. */
+  chatRunningCount?: number
 }
 
 const ICONS: Record<string, JSX.Element> = {
@@ -141,7 +145,14 @@ const RAIL: RailEntry[] = [
   { kind: 'group', group: VIEW_GROUPS[2] }
 ]
 
-export default function NavRail({ view, onChange, onSettings, onChangelog, serverSessionCount = 0 }: Props) {
+export default function NavRail({
+  view,
+  onChange,
+  onSettings,
+  onChangelog,
+  serverSessionCount = 0,
+  chatRunningCount = 0
+}: Props) {
   return (
     <div className="nav-rail">
       <div className="nav-logo">
@@ -165,6 +176,14 @@ export default function NavRail({ view, onChange, onSettings, onChangelog, serve
                   {ICONS[entry.view]}
                 </svg>
                 <span className="nav-item-label">{entry.label}</span>
+                {entry.view === 'chat' && chatRunningCount > 0 && (
+                  <span
+                    className="nav-item-badge"
+                    aria-label={`${chatRunningCount} chat${chatRunningCount === 1 ? '' : 's'} running`}
+                  >
+                    {chatRunningCount}
+                  </span>
+                )}
               </button>
             )
           }

@@ -261,6 +261,21 @@ export default function App() {
   }
   const trackedFiles = (sessionId: string) => [...(modifiedFilesRef.current.get(sessionId) ?? [])]
 
+  // Clear a chat's unread flag the moment it becomes the one on screen, regardless of
+  // which of the many setActiveId call sites got it there (sidebar click, opening from
+  // Projects, a fork, …) — a single effect on activeId covers all of them instead of
+  // threading a "mark read" call through every entry point. Persists on its own: the
+  // save-on-change effect below picks up the new object reference.
+  useEffect(() => {
+    setSessions((prev) => {
+      const idx = prev.findIndex((s) => s.id === activeId)
+      if (idx === -1 || !prev[idx].unread) return prev
+      const next = [...prev]
+      next[idx] = { ...next[idx], unread: false }
+      return next
+    })
+  }, [activeId])
+
   const activeSession = sessions.find((s) => s.id === activeId)
   // The open file belongs to the chat's project tree, so it goes stale the moment we point at
   // a different folder or leave the chat view (where the Files tab lives) entirely.
@@ -540,7 +555,10 @@ export default function App() {
             inputTokens: (s.inputTokens ?? 0) + (data.inputTokens ?? 0),
             outputTokens: (s.outputTokens ?? 0) + (data.outputTokens ?? 0),
             cacheReadTokens: (s.cacheReadTokens ?? 0) + (data.cacheReadTokens ?? 0),
-            cacheCreationTokens: (s.cacheCreationTokens ?? 0) + (data.cacheCreationTokens ?? 0)
+            cacheCreationTokens: (s.cacheCreationTokens ?? 0) + (data.cacheCreationTokens ?? 0),
+            // The turn finished while this chat wasn't the one on screen — same signal
+            // as a terminal chat's transcript catching up in the background.
+            ...(s.id !== activeIdRef.current ? { unread: true } : {})
           }
         })
         const session = updated.find((s) => s.id === data.appSessionId)
@@ -1417,6 +1435,58 @@ export default function App() {
     }
   }, [])
 
+  /**
+   * Claude Code session ids the live registry currently reports as busy.
+   *
+   * A chat driven from the embedded terminal never goes through `startRun`, so nothing
+   * in Argos knew whether it was working or sitting idle — the list looked the same
+   * either way. The registry does know, and now that each terminal chat pins its own
+   * session id, its rows can be matched back to chats.
+   */
+  const [liveBusyIds, setLiveBusyIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    let alive = true
+    const poll = async () => {
+      try {
+        const live = await window.electronAPI.ccLiveSessions()
+        if (!alive) return
+        setLiveBusyIds((prev) => {
+          const next = new Set(live.filter((l) => l.status === 'busy').map((l) => l.sessionId))
+          // Same-contents check: a fresh Set every few seconds would re-render the whole
+          // sidebar on a tick where nothing actually changed.
+          if (next.size === prev.size && [...next].every((id) => prev.has(id))) return prev
+          return next
+        })
+      } catch {
+        // A registry that can't be read just means no extra rows light up.
+      }
+    }
+    poll()
+    const timer = setInterval(poll, 6000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [])
+
+  /**
+   * What the sidebar shows as running: Argos's own in-flight runs, plus any chat whose
+   * Claude Code session the registry reports busy.
+   *
+   * Deliberately NOT fed back into `runningIds` itself. That set also gates whether a
+   * turn can be sent, and a terminal chat being busy is not a reason to refuse the
+   * composer — this is a display, not a lock.
+   */
+  const displayRunningIds = useMemo(() => {
+    if (!liveBusyIds.size) return runningIds
+    const out = new Set(runningIds)
+    for (const s of sessions) {
+      const ccId = s.claudeSessionId || s.terminalSessionId
+      if (ccId && liveBusyIds.has(ccId)) out.add(s.id)
+    }
+    return out
+  }, [runningIds, liveBusyIds, sessions])
+
   // Run a custom agent
   const runAgent = (agent: AgentDef) => {
     const s: Session = {
@@ -1808,6 +1878,7 @@ export default function App() {
           onSettings={() => setView('settings')}
           onChangelog={() => setChangelogOpen(true)}
           serverSessionCount={serverSessions.length}
+          chatRunningCount={displayRunningIds.size}
         />
 
       {view === 'chat' && (
@@ -1815,7 +1886,7 @@ export default function App() {
           <Sidebar
             sessions={sessions}
             activeId={activeId}
-            runningIds={runningIds}
+            runningIds={displayRunningIds}
             attentionIds={attentionIds}
             tab={sidebarTab}
             onTabChange={setSidebarTab}

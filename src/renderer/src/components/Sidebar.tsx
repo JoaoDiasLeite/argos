@@ -567,7 +567,7 @@ export default function Sidebar({
     return (
       <div
         key={s.id}
-        className={`session-row ${s.id === activeId ? 'active' : ''}`}
+        className={`session-row ${s.id === activeId ? 'active' : ''} ${status === 'running' ? 'running' : ''} ${status === 'attention' ? 'attention' : ''}`}
         onClick={() => onSelectSession(s.id)}
         onMouseEnter={() => setHoveredId(s.id)}
         onMouseLeave={() => setHoveredId(null)}
@@ -576,7 +576,7 @@ export default function Sidebar({
         {/* Neutral quiet dot when there's no status, so names stay left-aligned. */}
         <span className={`session-dot ${status || 'idle'}`} title={statusTitle} />
         <span
-          className="session-row-name"
+          className={`session-row-name ${s.unread ? 'unread' : ''}`}
           onDoubleClick={(e) => { e.stopPropagation(); startRename(s) }}
         >
           {s.name || 'New chat'}
@@ -592,6 +592,8 @@ export default function Sidebar({
             {accountLabel && <span className="session-badge account">{accountLabel}</span>}
           </span>
         )}
+        {/* Hidden on hover — the rename/delete buttons take the same right-edge space. */}
+        {s.unread && hoveredId !== s.id && <span className="session-unread-dot" aria-hidden="true" title="Unread" />}
         {hoveredId === s.id && (
           <>
             <button

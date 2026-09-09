@@ -110,6 +110,10 @@ export interface Session {
    * copied message (the branch point) in this session's transcript.
    */
   branchedFrom?: { name: string; atMessageId: string }
+  /** True when this chat's message list grew while it was not the one on screen — a
+   *  response arrived (or a terminal transcript caught up) that nobody has looked at
+   *  yet. Cleared the moment the chat is selected. */
+  unread?: boolean
   /** Accumulated usage across this chat's turns. */
   costUsd?: number
   inputTokens?: number

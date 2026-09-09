@@ -401,6 +401,22 @@
   text-overflow: ellipsis;
 }
 
+.session-row-name.unread {
+  font-weight: 600;
+  color: var(--text-0);
+}
+
+/* Small filled dot marking a chat whose output nobody has looked at yet. Sits at the
+   row's right edge — hidden while the row is hovered (see renderSessionRow) because
+   the rename/delete buttons take that exact space. */
+.session-unread-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
 .session-row-badges {
   display: flex;
   align-items: center;
@@ -496,6 +512,64 @@
   border-radius: 4px;
   padding: 1px 5px;
   outline: none;
+}
+
+/* ── Running: a border that travels around the row ────────── */
+/* The dot alone was too easy to miss — a chat working away in a terminal looked exactly
+   like one sitting idle. A moving edge is visible from the corner of the eye, which is
+   the whole job: you should be able to tell without reading anything.
+
+   Drawn as a conic gradient in the padding box and masked down to the 1px frame, so it
+   is a border rather than a glow and costs one compositor-driven rotation. */
+@property --session-trace-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.session-row.running::before,
+.session-row.attention::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--session-trace-angle),
+    transparent 0deg 250deg,
+    var(--session-trace-color) 330deg,
+    transparent 360deg
+  );
+  /* Paint the padding ring only: the two masks cover the whole box and the content box,
+     and excluding one from the other leaves exactly the 1px frame between them. */
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: session-row-trace 2.6s linear infinite;
+  pointer-events: none;
+}
+.session-row.running { --session-trace-color: var(--accent); }
+/* Waiting on you outranks merely working, and says so in the same amber as its dot. */
+.session-row.attention { --session-trace-color: #e2b341; }
+
+/* The row you are looking at does not need to shout: the trace exists to catch your
+   eye from across the list, and the chat that is already on screen is the one place
+   that job is already done. */
+.session-row.active::before { display: none; }
+
+@keyframes session-row-trace {
+  to { --session-trace-angle: 360deg; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* No travel, but the row still has to read as different from an idle one — so the
+     gradient stops moving and settles into a plain tinted frame. */
+  .session-row.running::before,
+  .session-row.attention::before {
+    animation: none;
+    background: var(--session-trace-color);
+    opacity: 0.55;
+  }
 }
 
 .session-badge {
