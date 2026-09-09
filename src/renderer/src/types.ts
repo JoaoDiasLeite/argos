@@ -1098,6 +1098,10 @@ export interface TerminalCreateResult {
   /** The reused pty's buffered output, for the fresh xterm instance to replay before any
    *  live chunk arrives. Only present on the reuse path. */
   buffer?: string
+  /** Why the terminal couldn't start, for the renderer to show verbatim. Only on `ok: false` —
+   *  a bare "Failed to start terminal." leaves nothing to act on (a missing shell, an
+   *  unreachable cwd and a deleted SSH host all look identical). */
+  error?: string
 }
 
 export interface TerminalDataEvent {

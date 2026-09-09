@@ -484,7 +484,9 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       .then((res) => {
         if (!res.ok) {
           replayedRef.current = true
-          term.write('\r\n\x1b[31mFailed to start terminal.\x1b[0m\r\n')
+          term.write(
+            `\r\n\x1b[31mFailed to start terminal${res.error ? `: ${res.error}` : '.'}\x1b[0m\r\n`
+          )
           setStarting(false)
           return
         }

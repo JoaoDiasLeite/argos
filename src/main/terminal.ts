@@ -175,8 +175,15 @@ export function createTerminal(
   opts: CreateTerminalOptions,
   onData: (id: string, data: string) => void,
   onExit: (id: string, exitCode: number) => void
-): { ok: boolean; shell?: string; cliLaunched?: boolean; reused?: boolean; buffer?: string } {
-  if (!isSafeId(id)) return { ok: false }
+): {
+  ok: boolean
+  shell?: string
+  cliLaunched?: boolean
+  reused?: boolean
+  buffer?: string
+  error?: string
+} {
+  if (!isSafeId(id)) return { ok: false, error: `Invalid terminal id: ${String(id)}` }
 
   const pendingKill = pendingKills.get(id)
   if (pendingKill) {
@@ -209,6 +216,10 @@ export function createTerminal(
   launched.delete(id)
   // Fresh spawn — any buffer left over from a previous pty on this id is stale history.
   outputBuffers.delete(id)
+
+  // What we were about to run, kept outside the try so the catch below can name it: node-pty
+  // messages ("File not found:") say nothing about which shell or directory they refer to.
+  let attempted = ''
 
   try {
     const env: Record<string, string> = { ...buildSubprocessEnv() }
@@ -246,7 +257,12 @@ export function createTerminal(
       // meaningless on the remote box, so leave it unset; the remote's own PATH/login
       // resolves the CLI.
       const ssh = getSshTerminalCommand(opts.remoteHostId)
-      if (!ssh) return { ok: false }
+      if (!ssh) {
+        return {
+          ok: false,
+          error: `No stored SSH host for id ${opts.remoteHostId} — it may have been deleted in Servers.`
+        }
+      }
       shell = ssh.shell
       shellArgs = ssh.args
       kind = 'ssh'
@@ -301,13 +317,21 @@ export function createTerminal(
 
     const cliLaunched = launched.has(id)
 
-    const p = pty.spawn(shell, shellArgs, {
-      name: 'xterm-color',
-      cols,
-      rows,
-      cwd: spawnCwd,
-      env
-    })
+    let p: pty.IPty
+    attempted = `${shell} in ${spawnCwd}`
+    try {
+      p = pty.spawn(shell, shellArgs, { name: 'xterm-color', cols, rows, cwd: spawnCwd, env })
+    } catch (err) {
+      // conpty resolves the shell by name through the pty's own PATH, so a shell `where`
+      // claimed to exist can still fail here — a Store app-execution alias for pwsh is a
+      // reparse-point stub that spawns as "File not found". Fall back to the shell Windows
+      // always ships rather than leaving the chat with no terminal at all.
+      if (kind !== 'pwsh') throw err
+      pwshAvailable = false
+      shell = 'powershell.exe'
+      kind = 'powershell'
+      p = pty.spawn(shell, shellArgs, { name: 'xterm-color', cols, rows, cwd: spawnCwd, env })
+    }
 
     p.onData((d) => {
       // A superseded pty (replaced above because the environment changed) can still flush a
@@ -350,8 +374,10 @@ export function createTerminal(
     })
 
     return { ok: true, shell: kind, cliLaunched }
-  } catch {
-    return { ok: false }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.trim() : String(err)
+    const reason = msg.replace(/:$/, '') || 'the shell could not be spawned'
+    return { ok: false, error: attempted ? `${reason} (${attempted})` : reason }
   }
 }
 
