@@ -319,8 +319,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkpointCreate: (sessionId: string, label: string, files: string[], messageCount: number) =>
     ipcRenderer.invoke('checkpoint:create', sessionId, label, files, messageCount),
   checkpointList: (sessionId: string) => ipcRenderer.invoke('checkpoint:list', sessionId),
-  checkpointRestore: (sessionId: string, id: string) =>
-    ipcRenderer.invoke('checkpoint:restore', sessionId, id),
+  checkpointPreview: (sessionId: string, id: string) => ipcRenderer.invoke('checkpoint:preview', sessionId, id),
+  checkpointRestore: (sessionId: string, id: string, token: string) =>
+    ipcRenderer.invoke('checkpoint:restore', sessionId, id, token),
   checkpointDelete: (sessionId: string, id: string) =>
     ipcRenderer.invoke('checkpoint:delete', sessionId, id),
   checkpointCompare: (sessionId: string, idA: string, idB: string) =>

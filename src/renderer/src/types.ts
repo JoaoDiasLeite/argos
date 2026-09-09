@@ -630,6 +630,12 @@ export interface CheckpointMeta {
 export interface RestoreResult {
   restored: number
   safetyCheckpointId: string | null
+  errors: { path: string; error: string }[]
+}
+
+export interface RestorePreview {
+  token: string
+  files: { path: string; action: 'write' | 'delete' | 'skip' | 'unchanged'; error?: string }[]
 }
 
 export interface CheckpointFileDiff {
@@ -1497,7 +1503,8 @@ declare global {
         messageCount: number
       ) => Promise<CheckpointMeta>
       checkpointList: (sessionId: string) => Promise<CheckpointMeta[]>
-      checkpointRestore: (sessionId: string, id: string) => Promise<RestoreResult>
+      checkpointPreview: (sessionId: string, id: string) => Promise<RestorePreview>
+      checkpointRestore: (sessionId: string, id: string, token: string) => Promise<RestoreResult>
       checkpointDelete: (sessionId: string, id: string) => Promise<CheckpointMeta[]>
       checkpointCompare: (sessionId: string, idA: string, idB: string) => Promise<CheckpointDiff>
       checkpointSavePatch: (

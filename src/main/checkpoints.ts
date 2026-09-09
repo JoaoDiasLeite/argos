@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
+import { randomUUID, createHash } from 'crypto'
 import { readJsonFile } from './json-file'
 
 // ─── ID safety ─────────────────────────────────────────────────────────────
@@ -20,6 +21,9 @@ export interface CheckpointFile {
   path: string
   content: string
   existed: boolean
+  state?: 'file' | 'missing' | 'unreadable'
+  encoding?: 'base64'
+  error?: string
 }
 
 export interface Checkpoint {
@@ -49,10 +53,8 @@ function sessionDir(sessionId: string): string {
   return dir
 }
 
-let seq = 0
 function genId(): string {
-  seq += 1
-  return `cp_${seq}_${(seq * 99991) % 1000000}`
+  return `cp_${randomUUID()}`
 }
 
 function snapshotFiles(files: string[]): CheckpointFile[] {
@@ -62,14 +64,16 @@ function snapshotFiles(files: string[]): CheckpointFile[] {
     if (seen.has(p)) continue
     seen.add(p)
     try {
-      if (fs.existsSync(p) && fs.statSync(p).isFile()) {
-        out.push({ path: p, content: fs.readFileSync(p, 'utf-8'), existed: true })
+      const stat = fs.lstatSync(p)
+      if (!stat.isFile()) throw new Error('Not a regular file (links and directories are not restored)')
+      if (stat.size > 20 * 1024 * 1024) throw new Error('File exceeds the 20 MB checkpoint limit')
+      out.push({ path: p, content: fs.readFileSync(p).toString('base64'), existed: true, state: 'file', encoding: 'base64' })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        out.push({ path: p, content: '', existed: false, state: 'missing' })
       } else {
-        out.push({ path: p, content: '', existed: false })
+        out.push({ path: p, content: '', existed: false, state: 'unreadable', error: String(error) })
       }
-    } catch {
-      // unreadable — record as non-existing so restore is a no-op
-      out.push({ path: p, content: '', existed: false })
     }
   }
   return out
@@ -105,7 +109,7 @@ export function createCheckpoint(
     messageCount,
     files: snapshotFiles(files)
   }
-  fs.writeFileSync(path.join(sessionDir(sessionId), `${cp.id}.json`), JSON.stringify(cp))
+  fs.writeFileSync(path.join(sessionDir(sessionId), `${cp.id}.json`), JSON.stringify(cp), { flag: 'wx' })
   return toMeta(cp)
 }
 
@@ -139,12 +143,35 @@ function read(sessionId: string, id: string): Checkpoint | null {
 export interface RestoreResult {
   restored: number
   safetyCheckpointId: string | null
+  errors: { path: string; error: string }[]
 }
 
-export function restoreCheckpoint(sessionId: string, id: string, createdAt: number): RestoreResult {
-  if (!isSafeId(sessionId) || !isSafeId(id)) return { restored: 0, safetyCheckpointId: null }
+function fileBytes(f: CheckpointFile): Buffer {
+  return Buffer.from(f.content, f.encoding === 'base64' ? 'base64' : 'utf8')
+}
+
+export function previewRestore(sessionId: string, id: string) {
   const cp = read(sessionId, id)
-  if (!cp) return { restored: 0, safetyCheckpointId: null }
+  if (!cp || !Array.isArray(cp.files)) throw new Error('Checkpoint not found or invalid')
+  const current = snapshotFiles(cp.files.map((f) => f.path))
+  const token = createHash('sha256').update(JSON.stringify({ cp, current })).digest('hex')
+  const files = cp.files.map((f, i) => {
+    const now = current[i]
+    const error = f.state === 'unreadable' ? f.error || 'Snapshot was unreadable'
+      : !f.existed && f.state !== 'missing' ? 'Legacy snapshot cannot distinguish a missing file from an unreadable file'
+      : now?.state === 'unreadable' ? now.error || 'Current file is unreadable' : undefined
+    const unchanged = !error && (f.existed
+      ? now?.existed && fileBytes(f).equals(fileBytes(now))
+      : now?.state === 'missing')
+    return { path: f.path, action: error ? 'skip' as const : unchanged ? 'unchanged' as const : f.existed ? 'write' as const : 'delete' as const, error }
+  })
+  return { token, files }
+}
+
+export function restoreCheckpoint(sessionId: string, id: string, createdAt: number, previewToken?: string): RestoreResult {
+  const preview = previewRestore(sessionId, id)
+  if (!previewToken || previewToken !== preview.token) throw new Error('Files changed since the preview. Preview the restore again.')
+  const cp = read(sessionId, id)!
 
   // Safety net: snapshot the CURRENT state of these files before overwriting, so the
   // restore itself can be undone.
@@ -157,21 +184,25 @@ export function restoreCheckpoint(sessionId: string, id: string, createdAt: numb
   )
 
   let restored = 0
-  for (const f of cp.files) {
+  const errors: RestoreResult['errors'] = []
+  for (const [i, f] of cp.files.entries()) {
+    const entry = preview.files[i]
+    if (entry.action === 'skip') { errors.push({ path: f.path, error: entry.error! }); continue }
+    if (entry.action === 'unchanged') continue
     try {
       if (f.existed) {
         fs.mkdirSync(path.dirname(f.path), { recursive: true })
-        fs.writeFileSync(f.path, f.content)
+        fs.writeFileSync(f.path, fileBytes(f))
         restored++
       } else if (fs.existsSync(f.path)) {
         fs.unlinkSync(f.path)
         restored++
       }
-    } catch {
-      // skip files we can't write
+    } catch (error) {
+      errors.push({ path: f.path, error: String(error) })
     }
   }
-  return { restored, safetyCheckpointId: safety.id }
+  return { restored, safetyCheckpointId: safety.id, errors }
 }
 
 export function deleteCheckpoint(sessionId: string, id: string): CheckpointMeta[] {
@@ -246,10 +277,10 @@ export function compareCheckpoints(
     const cpB = read(sessionId, idB)
     if (!cpB) return { files: [] }
     for (const f of cpB.files) allPaths.add(f.path)
-    bMap = new Map(cpB.files.map((f) => [f.path, f.existed ? safeSnapshotContent(f.content) : '']))
+    bMap = new Map(cpB.files.filter((f) => f.state !== 'unreadable').map((f) => [f.path, f.existed ? safeSnapshotContent(fileBytes(f).toString('utf8')) : '']))
   }
 
-  const aMap = new Map(cpA.files.map((f) => [f.path, f.existed ? safeSnapshotContent(f.content) : '']))
+  const aMap = new Map(cpA.files.filter((f) => f.state !== 'unreadable').map((f) => [f.path, f.existed ? safeSnapshotContent(fileBytes(f).toString('utf8')) : '']))
 
   const files: CheckpointFileDiff[] = []
   for (const p of allPaths) {

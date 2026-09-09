@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { CheckpointMeta, CheckpointDiff } from '../types'
+import { CheckpointMeta, CheckpointDiff, RestorePreview } from '../types'
 import { useModalA11y } from '../hooks/useModalA11y'
 import DiffView from './DiffView'
 import './CheckpointsModal.css'
@@ -28,6 +28,7 @@ export default function CheckpointsModal({ sessionId, trackedFileCount, onClose,
   const [label, setLabel] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+  const [preview, setPreview] = useState<(RestorePreview & { id: string }) | null>(null)
   const [tab, setTab] = useState<Tab>('timeline')
 
   // Compare state
@@ -56,20 +57,30 @@ export default function CheckpointsModal({ sessionId, trackedFileCount, onClose,
 
   const create = async () => {
     setBusy(true)
-    await onCreate(label.trim() || 'Manual checkpoint')
-    setLabel('')
-    await load()
-    setBusy(false)
+    try {
+      await onCreate(label.trim() || 'Manual checkpoint')
+      setLabel('')
+      await load()
+    } catch (error) { setNotice(String(error)) } finally { setBusy(false) }
+  }
+
+  const prepareRestore = async (id: string) => {
+    setBusy(true)
+    setPreview(null)
+    try { setPreview({ ...await window.electronAPI.checkpointPreview(sessionId, id), id }) }
+    catch (error) { setNotice(String(error)) } finally { setBusy(false) }
   }
 
   const restore = async (id: string) => {
+    if (!preview || preview.id !== id) return
     setBusy(true)
-    const res = await window.electronAPI.checkpointRestore(sessionId, id)
-    await load()
-    setBusy(false)
-    setNotice(`Restored ${res.restored} file${res.restored !== 1 ? 's' : ''}. A safety checkpoint was saved.`)
-    onRestored()
-    setTimeout(() => setNotice(''), 4000)
+    try {
+      const res = await window.electronAPI.checkpointRestore(sessionId, id, preview.token)
+      await load()
+      setPreview(null)
+      setNotice(`Restored ${res.restored} files. ${res.safetyCheckpointId ? 'Safety checkpoint saved.' : ''} ${res.errors.map((e) => `${e.path}: ${e.error}`).join('; ')}`)
+      onRestored()
+    } catch (error) { setNotice(String(error)); setPreview(null) } finally { setBusy(false) }
   }
 
   const del = async (id: string) => {
@@ -162,7 +173,16 @@ export default function CheckpointsModal({ sessionId, trackedFileCount, onClose,
               Restoring rewrites those files (and auto-saves a safety checkpoint first).
             </p>
 
-            {notice && <div className="cp-notice">{notice}</div>}
+            {notice && <div className="cp-notice" role="status">{notice}</div>}
+            {preview && <div className="cp-restore-preview">
+              <strong>Restore preview</strong>
+              <p>These actions replace the current files. A safety checkpoint is saved first.</p>
+              {preview.files.map((f) => <div key={f.path}><b>{f.action}</b> · {f.path}{f.error && <span> — {f.error}</span>}</div>)}
+              <div className="cp-compare-actions">
+                <button className="btn-primary" disabled={busy || !preview.files.some((f) => f.action === 'write' || f.action === 'delete')} onClick={() => restore(preview.id)}>Apply restore</button>
+                <button className="btn-ghost" disabled={busy} onClick={() => setPreview(null)}>Cancel</button>
+              </div>
+            </div>}
 
             <div className="checkpoint-list">
               {list.length === 0 ? (
@@ -177,8 +197,8 @@ export default function CheckpointsModal({ sessionId, trackedFileCount, onClose,
                         {timeStr(c.createdAt)} · {c.fileCount} file{c.fileCount !== 1 ? 's' : ''}
                       </div>
                     </div>
-                    <button className="btn-ghost small" onClick={() => restore(c.id)} disabled={busy}>
-                      Restore
+                    <button className="btn-ghost small" onClick={() => prepareRestore(c.id)} disabled={busy}>
+                      Preview restore
                     </button>
                     <button className="btn-text danger" onClick={() => del(c.id)}>Delete</button>
                   </div>

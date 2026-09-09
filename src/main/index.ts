@@ -72,6 +72,7 @@ import {
   createCheckpoint,
   listCheckpoints,
   restoreCheckpoint,
+  previewRestore,
   deleteCheckpoint,
   compareCheckpoints,
   exportPatch
@@ -2231,8 +2232,9 @@ ipcMain.handle(
     createCheckpoint(sessionId, label, files, messageCount, Date.now())
 )
 ipcMain.handle('checkpoint:list', (_, sessionId: string) => listCheckpoints(sessionId))
-ipcMain.handle('checkpoint:restore', (_, sessionId: string, id: string) =>
-  restoreCheckpoint(sessionId, id, Date.now())
+ipcMain.handle('checkpoint:preview', (_, sessionId: string, id: string) => previewRestore(sessionId, id))
+ipcMain.handle('checkpoint:restore', (_, sessionId: string, id: string, token: string) =>
+  restoreCheckpoint(sessionId, id, Date.now(), token)
 )
 ipcMain.handle('checkpoint:delete', (_, sessionId: string, id: string) =>
   deleteCheckpoint(sessionId, id)
