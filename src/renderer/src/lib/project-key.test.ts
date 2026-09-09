@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { projectKey } from './project-key'
+import {
+  buildPosixDistroMap,
+  canonicalProjectPath,
+  legacyProjectKey,
+  projectKey
+} from './project-key'
 
 describe('projectKey', () => {
   it('treats backslash and forward slash separators as the same path', () => {
@@ -17,5 +22,91 @@ describe('projectKey', () => {
 
   it('returns an empty string for an empty path', () => {
     expect(projectKey('')).toBe('')
+  })
+})
+
+describe('projectKey across the ways one WSL folder is addressed', () => {
+  const UNC = '\\\\wsl.localhost\\Ubuntu-DevOps\\home\\jdl\\dev\\wm-project'
+  const POSIX = '/home/jdl/dev/wm-project'
+  const ctx = { driveMap: { 'z:': 'Ubuntu-DevOps' } }
+
+  it('folds a POSIX path onto the UNC one when the chat names its distro', () => {
+    expect(projectKey(POSIX, 'Ubuntu-DevOps')).toBe(projectKey(UNC))
+  })
+
+  it('folds a drive letter mapped to that distro onto the UNC one', () => {
+    expect(projectKey('Z:\\home\\jdl\\dev\\wm-project', undefined, ctx)).toBe(projectKey(UNC))
+  })
+
+  it('folds the older \\\\wsl$ prefix onto \\\\wsl.localhost', () => {
+    expect(projectKey('\\\\wsl$\\Ubuntu-DevOps\\home\\jdl\\dev\\wm-project')).toBe(projectKey(UNC))
+  })
+
+  it('folds a distro-less POSIX path in on the evidence of a chat that names one', () => {
+    const posixDistros = buildPosixDistroMap([
+      { projectPath: POSIX, wslDistro: 'Ubuntu-DevOps' },
+      { projectPath: POSIX }
+    ])
+    expect(projectKey(POSIX, undefined, { posixDistros })).toBe(projectKey(UNC))
+  })
+
+  it('keeps the same path in two different distros apart', () => {
+    expect(projectKey(POSIX, 'Ubuntu')).not.toBe(projectKey(POSIX, 'Ubuntu-DevOps'))
+  })
+
+  it('leaves an unmapped drive letter and an unattributable POSIX path alone', () => {
+    expect(projectKey('Y:\\home\\jdl\\dev\\wm-project', undefined, ctx)).toBe(
+      'y:/home/jdl/dev/wm-project'
+    )
+    expect(projectKey(POSIX)).toBe(POSIX)
+  })
+
+  it('groups all four spellings of one real folder together', () => {
+    const sessions = [
+      { projectPath: POSIX, wslDistro: 'Ubuntu-DevOps' },
+      { projectPath: POSIX },
+      { projectPath: UNC, wslDistro: 'Ubuntu-DevOps' },
+      { projectPath: 'Z:\\home\\jdl\\dev\\wm-project' }
+    ]
+    const full = { ...ctx, posixDistros: buildPosixDistroMap(sessions) }
+    const keys = new Set(sessions.map((s) => projectKey(s.projectPath, s.wslDistro, full)))
+    expect(keys.size).toBe(1)
+  })
+})
+
+describe('canonicalProjectPath', () => {
+  it('gives a group a Windows-reachable path, so a new chat in it has a real cwd', () => {
+    expect(canonicalProjectPath('/home/jdl/dev/wm-project', 'Ubuntu-DevOps')).toBe(
+      '\\\\wsl.localhost\\Ubuntu-DevOps\\home\\jdl\\dev\\wm-project'
+    )
+  })
+
+  it('leaves an ordinary Windows path exactly as it was', () => {
+    expect(canonicalProjectPath('C:\\dev\\claude-gui')).toBe('C:\\dev\\claude-gui')
+  })
+})
+
+describe('buildPosixDistroMap', () => {
+  it('drops a path two distros both claim, rather than guessing between them', () => {
+    const map = buildPosixDistroMap([
+      { projectPath: '/home/me/proj', wslDistro: 'Ubuntu' },
+      { projectPath: '/home/me/proj', wslDistro: 'Debian' }
+    ])
+    expect(map.has('/home/me/proj')).toBe(false)
+  })
+
+  it('ignores sessions with no distro, and Windows paths', () => {
+    const map = buildPosixDistroMap([
+      { projectPath: '/home/me/proj' },
+      { projectPath: 'C:\\dev\\x', wslDistro: 'Ubuntu' }
+    ])
+    expect(map.size).toBe(0)
+  })
+})
+
+describe('legacyProjectKey', () => {
+  it('is the pre-WSL-folding key, so a name filed under it can still be found', () => {
+    expect(legacyProjectKey('/home/jdl/dev/wm-project')).toBe('/home/jdl/dev/wm-project')
+    expect(legacyProjectKey('C:\\dev\\Claude-GUI\\')).toBe('c:/dev/claude-gui')
   })
 })

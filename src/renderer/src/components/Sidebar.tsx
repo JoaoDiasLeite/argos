@@ -2,7 +2,13 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Session, AuthStatus, CCAccountStatus, ProviderAccountStatus, ProviderId, ModelInfo } from '../types'
 import { idFor as idForAccount, visibleSessions as visibleSessionsFor, AccountDefaults } from '../lib/account-scope'
-import { projectKey } from '../lib/project-key'
+import {
+  buildPosixDistroMap,
+  canonicalProjectPath,
+  legacyProjectKey,
+  projectKey,
+  ProjectKeyContext
+} from '../lib/project-key'
 import FileTree from './FileTree'
 import './Sidebar.css'
 import './AccountPicker.css'
@@ -444,6 +450,20 @@ export default function Sidebar({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleSessions, searchQuery])
 
+  // ── What it takes to recognise one WSL folder under all its addresses ────
+  // The drive map is read once: mappings change when someone runs `net use`, which is
+  // not something worth polling a PowerShell call for. `posixDistros` is built from
+  // every session rather than the filtered ones, so narrowing a search cannot quietly
+  // split a group by removing the chat that identified its distro.
+  const [wslDriveMap, setWslDriveMap] = useState<Record<string, string>>({})
+  useEffect(() => {
+    window.electronAPI.wslDriveMap?.().then(setWslDriveMap).catch(() => {})
+  }, [])
+  const keyCtx = useMemo<ProjectKeyContext>(
+    () => ({ driveMap: wslDriveMap, posixDistros: buildPosixDistroMap(sessions) }),
+    [wslDriveMap, sessions]
+  )
+
   // ── Group filteredSessions by project ───────────────────────────────────
   // Keyed by the normalised path (projectKey — case-folded, separators unified) so the
   // same folder reached as `...\claude-gui` from one session and `...\Claude-GUI` from
@@ -452,24 +472,40 @@ export default function Sidebar({
   // land in one "No folder" group, always rendered last. Groups are ordered by their
   // most recently updated session, descending; sessions within a group are ordered the
   // same way.
-  type SessionGroup = { key: string; path?: string; basename: string; sessions: Session[] }
+  type SessionGroup = {
+    key: string
+    path?: string
+    basename: string
+    sessions: Session[]
+    /** Keys this group's folder used to be filed under — see `displayName` below. */
+    legacyKeys: string[]
+  }
   const groups = useMemo<SessionGroup[]>(() => {
     const map = new Map<string, SessionGroup>()
     for (const s of filteredSessions) {
       const path = s.projectPath
-      const key = path ? projectKey(path) : NO_FOLDER_KEY
+      const key = path ? projectKey(path, s.wslDistro, keyCtx) : NO_FOLDER_KEY
       let g = map.get(key)
       if (!g) {
-        // First-seen path wins for display and for "new chat in this group" — later
-        // sessions in the same group may spell the folder differently, but the group
-        // has to pick one real path to act on.
+        // Not the first-seen path but the canonical one: sessions in this group may each
+        // spell the folder differently, and the group has to pick one real path to act
+        // on. For a WSL folder that is the UNC spelling, which is the only one a plain
+        // Windows chat started from the group's "+" could actually use as a cwd.
+        const canonical = path ? canonicalProjectPath(path, s.wslDistro, keyCtx) : undefined
         g = {
           key,
-          path,
-          basename: path ? path.split(/[\\/]/).filter(Boolean).pop() || path : 'No folder',
-          sessions: []
+          path: canonical,
+          basename: canonical
+            ? canonical.split(/[\\/]/).filter(Boolean).pop() || canonical
+            : 'No folder',
+          sessions: [],
+          legacyKeys: []
         }
         map.set(key, g)
+      }
+      if (path) {
+        const legacy = legacyProjectKey(path)
+        if (legacy !== key && !g.legacyKeys.includes(legacy)) g.legacyKeys.push(legacy)
       }
       g.sessions.push(s)
     }
@@ -483,7 +519,7 @@ export default function Sidebar({
       return bLatest - aLatest
     })
     return list
-  }, [filteredSessions])
+  }, [filteredSessions, keyCtx])
 
   // The group holding the active chat is always rendered expanded, regardless of
   // stored collapse state — you should never be looking at a chat hidden in a
@@ -492,8 +528,8 @@ export default function Sidebar({
   const activeGroupKey = useMemo(() => {
     const active = sessions.find((s) => s.id === activeId)
     if (!active) return null
-    return active.projectPath ? projectKey(active.projectPath) : NO_FOLDER_KEY
-  }, [sessions, activeId])
+    return active.projectPath ? projectKey(active.projectPath, active.wslDistro, keyCtx) : NO_FOLDER_KEY
+  }, [sessions, activeId, keyCtx])
 
   const formatDate = (ts: number) => {
     const d = new Date(ts)
@@ -850,7 +886,12 @@ export default function Sidebar({
                   const remaining = g.sessions.length - visibleRows.length
                   // "No folder" has no real path to key a custom name against.
                   const canRename = !!g.path
-                  const displayName = (canRename && projectNames[g.key]) || g.basename
+                  // A name set before this folder's addresses were folded together is
+                  // filed under the key one of its spellings used to have. Read through to
+                  // those; a rename always writes the current key, so they only ever fade.
+                  const customName =
+                    projectNames[g.key] ?? g.legacyKeys.map((k) => projectNames[k]).find(Boolean)
+                  const displayName = (canRename && customName) || g.basename
                   const isRenamingGroup = renamingGroupKey === g.key
                   return (
                     <div className="session-group" key={g.key}>

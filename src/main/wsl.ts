@@ -453,6 +453,43 @@ export function uncToWslPath(p: string | undefined): string | null {
   return '/' + m[1].replace(/\\/g, '/')
 }
 
+/**
+ * Drive letters mapped to a WSL distro's root, as `{ 'z:': 'Ubuntu-DevOps' }`.
+ *
+ * `net use` would answer this too, but its columns are localised and its rows wrap, so
+ * a long distro name could break the parse on one machine and not another. `Get-PSDrive`
+ * is asked for exactly the two fields we want, in a shape we choose.
+ *
+ * Used by the sidebar to recognise that `Z:\home\me\proj` and
+ * `\\wsl.localhost\Ubuntu-DevOps\home\me\proj` are the same project.
+ */
+export function listWslDriveMap(): Promise<Record<string, string>> {
+  if (!isWindows) return Promise.resolve({})
+  return new Promise((resolve) => {
+    execFile(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        "Get-PSDrive -PSProvider FileSystem | Where-Object DisplayRoot | ForEach-Object { $_.Name + '=' + $_.DisplayRoot }"
+      ],
+      { windowsHide: true, timeout: 10_000 },
+      (err, stdout) => {
+        if (err && !stdout) return resolve({})
+        const map: Record<string, string> = {}
+        for (const line of String(stdout).split(/\r?\n/)) {
+          // `Z=\\wsl.localhost\Ubuntu-DevOps` — anything not pointing at a distro root
+          // (an ordinary SMB share, say) is none of this map's business.
+          const m = line.trim().match(/^([A-Za-z])=\\\\wsl(?:\.localhost|\$)\\([^\\]+)\\?$/i)
+          if (m) map[`${m[1].toLowerCase()}:`] = m[2]
+        }
+        resolve(map)
+      }
+    )
+  })
+}
+
 export function stopWsl(appSessionId: string): boolean {
   const child = activeProcs.get(appSessionId)
   if (child) {

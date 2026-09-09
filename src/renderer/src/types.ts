@@ -1676,6 +1676,8 @@ declare global {
       wslHidden: () => Promise<string[]>
       wslSetHidden: (distro: string, hidden: boolean) => Promise<string[]>
       wslHistory: (distro: string) => Promise<{ ok: boolean; commands?: string[]; error?: string }>
+      /** Drive letters mapped to a WSL distro root: `{ 'z:': 'Ubuntu' }`. */
+      wslDriveMap: () => Promise<Record<string, string>>
 
       // Rooms (persisted board layout: room order + custom names)
       roomsGetLayout: () => Promise<RoomsLayout>
