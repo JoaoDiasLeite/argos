@@ -15,6 +15,34 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '1.7.0',
+    date: '2026-09-09',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Rename a conversation from the chat list — double-click its name, or use the pencil. A chat was named once, from its first prompt, and after that you were stuck with it. When the chat has a Claude Code conversation behind it the same title is written there too, so the two never disagree.',
+          'A chat that is working now says so from across the room: an accent border travels around its row in the list, amber when it is waiting on you. It reads the same registry Live sessions does, so a chat busy in its terminal — never something Argos itself was running — finally looks different from one sitting idle.',
+          'A chat that answered while you were elsewhere says so: its name goes bold and an accent dot sits at the end of the row until you open it. A finished run and an idle chat used to be the same row, so the only way to find out whether the thing you walked away from had replied was to click it.',
+          'The Chat entry in the rail carries a count of the chats currently running, the same badge Servers already had. It counts the ones the live registry reports busy too, so a chat working away in its terminal is included rather than only the runs Argos started itself.',
+          'Name a project whatever you call it. Double-click a project heading in the chat list, or use the pencil — the folder stays claude-gui and the heading says Argos. The name is filed with the project, so it survives moving the folder and is forgotten when you forget the project.',
+          'Notifications can be switched on from the panel that explains them. It used to hand you a block of JSON and leave the edit to you, which is why most people reading that panel still had no notifications. The block is still there for the WSL case and for anyone who would rather paste it, but the button writes it through the same validating merge the Hooks panel uses.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'A chat you drive from the embedded terminal is a real chat now. It used to be a ghost: the CLI invented a session id inside the pty and told nobody, so the chat stayed called “New chat” forever, none of the conversation reached Argos, and reopening it started a stranger instead of resuming. Argos now decides that id before the CLI launches, then reads the conversation back — the title Claude Code gave it, and the whole transcript, so closing the terminal leaves you looking at what was said.',
+          'Live sessions stops listing sessions that ended months ago. A WSL row was shown on the strength of its registry file alone — and those files outlive the process that wrote them, so one distro here contributed forty-one rows for one running claude. Each is now checked against that distro’s own /proc, matching the recorded start time exactly so a recycled pid cannot pass for the session that used to hold it.',
+          'One folder is one project again. The chat list keyed its groups by the exact path string a session recorded, so the same folder reached as claude-gui by one session and Claude-GUI by another split into two headings with the same name — on a filesystem where those are the same directory.',
+          'Saving a hook no longer quietly drops the parts of it this app does not model. Anything beyond the command itself — a timeout, or whatever a later Claude Code adds — was rebuilt away every time the Hooks panel wrote, deleting settings you had put there by hand.',
+          'The chat you are already looking at stops running its border animation. The travelling edge exists to catch your eye from across the list, which is not a job that needs doing on the one row already on screen.'
+        ]
+      }
+    ]
+  },
+  {
     version: '1.6.0',
     date: '2026-09-09',
     tag: 'latest',
