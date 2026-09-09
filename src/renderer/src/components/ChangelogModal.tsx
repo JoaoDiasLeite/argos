@@ -15,6 +15,20 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '1.8.0',
+    date: '2026-09-09',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'One folder is one project again, this time for a folder inside WSL. The same directory reaches the sidebar three ways — `/home/me/proj` from a chat running in the distro, `\\\\wsl.localhost\\Ubuntu\\home\\me\\proj` from the Windows side, and `Z:\\home\\me\\proj` when that root is mapped to a drive letter — and every spelling opened a heading of its own, all with the same name. They fold onto the UNC one now, chosen because it is the spelling both sides can use: Windows opens it directly, and anything launched inside the distro translates it back first. So the group’s “+” gives you a chat with a working directory that exists, whichever kind of chat sat in the group before it.',
+          'A chat that recorded a bare POSIX path and no distro of its own still joins its group, on the evidence of another chat in the same folder that named one. A path two distros both claim is left where it is rather than guessed at — merging two folders that are not the same folder is the worse mistake.'
+        ]
+      }
+    ]
+  },
+  {
     version: '1.7.0',
     date: '2026-09-09',
     tag: 'latest',
