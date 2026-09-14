@@ -15,9 +15,40 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '1.8.0',
+    date: '2026-09-14',
+    tag: 'latest',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Argos opens on Home. It answers the question you actually arrive with — what needs me now — across every chat at once: approvals waiting on you, chats and CLI sessions running, projects with uncommitted work, how much of the plan is left, and the last few conversations with their closing line. The chat you were in is one click away in the rail, where it always was.',
+          'A place to type on the landing screen. Write the prompt and press Start; the three pills under it choose where it lands — project, model, account. The project list offers projects already opened here, plus one entry that picks a new folder.',
+          'The counters in the Home header are buttons. Each jumps to the section it counts and flashes it, and says the whole sentence on hover, rather than being a number with no way through.',
+          'Codex conversations appear in Projects, beside the Claude Code ones. A folder worked on with both CLIs showed half its history and hid the other half. They share the same path encoding, so one folder is one row whichever CLI wrote the transcript.',
+          'Filter Projects by account. Chats from a work login, a personal one and Codex sat mixed together with nothing to tell them apart. The filter is by account, not by machine — the local machine and two WSL distros under one login are one entry — and each session says which account it came from when that tells you something.',
+          'A project is called what you call it: the name you gave it, then the repository’s own name, then the folder’s. The folder here is claude-gui and the repository is argos, and until now every list said claude-gui. The Sidebar, Projects and Home all ask the same place, so a rename in one shows up in the others.',
+          'The Review panel remembers being open. Whether the diff sits beside the transcript is a working preference, and reopening it on every launch was the kind of friction that teaches people not to use a feature.',
+          'The Review panel says what a restore point holds. It named a checkpoint and nothing else; it now says when it was taken, how many files it covers, and answers the only question worth asking before restoring — how many files would actually change — without leaving the panel.',
+          'Checks that are running are separated from checks that finished. One list showing the command running now among the last five that already ran made the live one hard to find.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'One row per project in the Projects list. The same folder was listed several times over — Claude-GUI twice, jdl three times — because a Windows path, its Git Bash spelling and the three ways to address a WSL directory all counted as different projects. The chat list had already been taught this; the project list had not.',
+          'Move and delete reach every directory a project is recorded under, so “delete project” no longer leaves the project on screen. With an account filter on they reach that account’s directories and not the ones the filter is hiding.',
+          'Unarchiving a project works when it is recorded more than once. Unarchiving one directory while a sibling stayed archived left the project in the Archived tab, looking like the click did nothing.',
+          'A Codex session cannot be resumed by the Claude Code CLI, and Argos no longer pretends otherwise: double-click, Enter and the Resume button open the transcript for reading, and the button says why.',
+          'One slow repository no longer holds every row of Home’s project list in its spinner. They resolved together or not at all, so a WSL path or a drive that had gone away left the whole list looking broken rather than partly late.',
+          'Today’s spend is today’s. The daily totals were keyed off UTC, so between local midnight and UTC midnight the figure was yesterday’s.'
+        ]
+      }
+    ]
+  },
+  {
     version: '1.7.1',
     date: '2026-09-09',
-    tag: 'latest',
     sections: [
       {
         title: 'Changes',
