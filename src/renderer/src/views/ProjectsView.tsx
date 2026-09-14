@@ -302,6 +302,38 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   targetRef.current = target
   const { colorFor, vocabulary, reload: reloadLabels } = useLabelColors()
 
+  // The names the user gave their accounts, by email. Argos stores these itself (see
+  // accounts.ts and provider-accounts.ts) and the account switcher shows them — "Work",
+  // "Personal". A transcript source cannot supply them: the default account has no
+  // `account:*` source of its own, so deriving a label from the source alone left the
+  // filter saying "joao.leite" for the account this app calls Work.
+  const [accountNames, setAccountNames] = useState<Record<string, string>>({})
+  useEffect(() => {
+    let cancelled = false
+    const collect = async () => {
+      const out: Record<string, string> = {}
+      const add = (list: { name: string; email?: string }[]) => {
+        for (const a of list) {
+          const email = a.email?.trim().toLowerCase()
+          // First writer wins: Claude is read before the other providers, and an email
+          // shared across providers is one identity here either way.
+          if (email && a.name && !out[email]) out[email] = a.name
+        }
+      }
+      const claude = await window.electronAPI.accountsList().catch(() => null)
+      if (claude) add(claude.accounts)
+      for (const provider of ['codex', 'gemini'] as const) {
+        const res = await window.electronAPI.providerAccountsList(provider).catch(() => null)
+        if (res) add(res.accounts)
+      }
+      if (!cancelled) setAccountNames(out)
+    }
+    collect()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   // The options the filter offers: one per account identity actually present (see
   // `identityOf`), not one per source — a folder reached from Local and two WSL
   // distros under the same login is one account, not three. Grouped by identity
@@ -326,11 +358,16 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       const named = members
         .filter((m) => m.sourceId.startsWith('account:') && m.sourceLabel)
         .sort((a, b) => a.sourceId.localeCompare(b.sourceId))
-      const label = named[0]?.sourceLabel || (email ? email.split('@')[0] : members[0].sourceLabel)
+      // The account's own name first — it is what the switcher shows and what the user
+      // typed. Then a source that names the account, then the email, then the source.
+      const label =
+        (email ? accountNames[email] : undefined) ||
+        named[0]?.sourceLabel ||
+        (email ? email.split('@')[0] : members[0].sourceLabel)
       options.push({ identity, label, sub: email && email !== label ? email : undefined })
     }
     return options.sort((a, b) => a.label.localeCompare(b.label))
-  }, [projects])
+  }, [projects, accountNames])
   // A filter persisted from a previous run can name an identity that no longer
   // exists (an account removed, a distro unregistered) — fall back to 'all' rather
   // than scope every group down to zero members.
