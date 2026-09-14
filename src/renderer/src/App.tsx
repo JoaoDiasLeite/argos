@@ -54,7 +54,9 @@ import type {
   HomeSpend,
   HomeRoutine,
   HomeRecent,
-  HomeStart
+  HomeStart,
+  HomeStartChoice,
+  HomeStartOptions
 } from './views/HomeView'
 import { projectKey, canonicalProjectPath, buildPosixDistroMap, ProjectKeyContext } from './lib/project-key'
 import { projectDisplayName, projectDisplayNames, RepoName } from './lib/project-name'
@@ -832,14 +834,23 @@ export default function App() {
   // If a run is already in progress or auth is missing, the prompt is preserved as a
   // failed turn (error + Retry) instead of being silently dropped.
   const startOverlayPrompt = useCallback(
-    (payload: { prompt: string; quick?: boolean }) => {
+    (payload: {
+      prompt: string
+      quick?: boolean
+      // Home's start box passes an explicit choice (project/model/account) that overrides
+      // what would otherwise be inferred from the active session — the tray and quick
+      // launcher never pass these, so they keep deducing from the active session as before.
+      projectPath?: string
+      modelId?: string
+      accountId?: string
+    }) => {
       const prompt = payload.prompt.trim()
       if (!prompt) return
       const base = sessionsRef.current.find((s) => s.id === activeIdRef.current)
       const s = newSession(
-        base?.projectPath,
-        payload.quick ? 'claude-haiku-4-5' : defaultModel,
-        base?.accountId ?? defaultAccountId
+        payload.projectPath ?? base?.projectPath,
+        payload.modelId ?? (payload.quick ? 'claude-haiku-4-5' : defaultModel),
+        payload.accountId ?? base?.accountId ?? defaultAccountId
       )
       s.name = prompt.slice(0, 40)
 
@@ -1895,9 +1906,13 @@ export default function App() {
         : defaultProvider === 'gemini'
           ? geminiAccounts.find((a) => a.id === geminiDefaultAccountId)?.name
           : accounts.find((a) => a.id === acctId)?.name
+    const modelId = defaultModel
     return {
+      projectPath: base?.projectPath,
       projectName: base?.projectPath ? resolveHomeProjectName(base.projectPath, base.wslDistro) : undefined,
-      modelLabel: models.find((m) => m.id === defaultModel)?.label,
+      modelId,
+      modelLabel: models.find((m) => m.id === modelId)?.label,
+      accountId: acctId,
       accountName
     }
   }, [
@@ -1914,6 +1929,45 @@ export default function App() {
     defaultAccountId,
     resolveHomeProjectName
   ])
+
+  // Projects the start box can offer: only ones already opened in this app (never a disk
+  // scan), newest-session-first — the same recency HomeRecent uses.
+  //
+  // Deduped by projectKey, not by the raw path: the same folder is recorded under more
+  // than one spelling, and a picker offering `claude-gui` and `Claude-GUI` as two choices
+  // would be asking the user to pick between a folder and itself.
+  const homeStartOptions = useMemo<HomeStartOptions>(() => {
+    const seen = new Set<string>()
+    const projects: { path: string; name: string }[] = []
+    for (const s of [...sessions].sort((a, b) => b.updatedAt - a.updatedAt)) {
+      if (!s.projectPath) continue
+      const key = projectKey(s.projectPath, s.wslDistro, homeKeyCtx)
+      if (seen.has(key)) continue
+      seen.add(key)
+      projects.push({ path: s.projectPath, name: resolveHomeProjectName(s.projectPath, s.wslDistro) })
+    }
+    return {
+      projects,
+      models: models.filter((m) => m.provider === defaultProvider).map((m) => ({ id: m.id, label: m.label })),
+      accounts: accounts.map((a) => ({ id: a.id, name: a.name }))
+    }
+  }, [sessions, homeKeyCtx, resolveHomeProjectName, models, defaultProvider, accounts])
+
+  const onHomePickFolder = useCallback(async () => {
+    return window.electronAPI.openFolder()
+  }, [])
+
+  const onHomeStart = useCallback(
+    (prompt: string, choice: HomeStartChoice) => {
+      startOverlayPrompt({
+        prompt,
+        projectPath: choice.projectPath,
+        modelId: choice.modelId,
+        accountId: choice.accountId
+      })
+    },
+    [startOverlayPrompt]
+  )
 
   // Review an approval, or jump to the routine that failed — the two kinds of row Home's
   // attention list can hold (see homeAttention above; the `routine:` prefix is what
@@ -2451,8 +2505,10 @@ export default function App() {
             routines={homeRoutines}
             recent={homeRecent}
             start={homeStart}
+            startOptions={homeStartOptions}
             onAct={onHomeAct}
-            onStart={(prompt) => startOverlayPrompt({ prompt })}
+            onStart={onHomeStart}
+            onPickFolder={onHomePickFolder}
             onOpenSession={(id) => {
               setActiveId(id)
               setView('chat')

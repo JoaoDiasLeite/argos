@@ -28,6 +28,46 @@
   background: color-mix(in srgb, var(--warn) 10%, var(--bg-2));
 }
 
+/* Chips are buttons now — they jump to their section. Keep the same pill look,
+   just make the interactivity legible on hover/focus. */
+.home-chip--link {
+  cursor: pointer;
+  transition: border-color 0.14s, background 0.14s;
+}
+.home-chip--link:hover,
+.home-chip--link:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.home-chip--warn.home-chip--link:hover,
+.home-chip--warn.home-chip--link:focus-visible {
+  border-color: color-mix(in srgb, var(--warn) 65%, var(--border));
+}
+
+/* Brief highlight a chip's target section gets after being jumped to. The class
+   is added/removed by JS on a ~1.5s timer; the animation just renders that window,
+   so reduced motion drops the fade but the highlight (and its timed removal) still
+   happens — nothing to skip on the JS side. */
+.home-section--flash {
+  animation: home-section-flash 1.5s ease-out;
+}
+@keyframes home-section-flash {
+  from {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);
+    border-radius: var(--radius);
+  }
+  to {
+    box-shadow: 0 0 0 3px transparent;
+    border-radius: var(--radius);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-section--flash {
+    animation: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);
+    border-radius: var(--radius);
+  }
+}
+
 /* ── Start box ── */
 .home-start {
   max-width: 1180px;
@@ -69,8 +109,8 @@
   min-width: 0;
 }
 
-/* Informative only — these never act as controls, they just say where the prompt
-   below will land. */
+/* Each pill is now a control that opens a menu (see PillPicker in HomeView.tsx) —
+   same rounded chip look as before, plus a chevron and hover/focus affordance. */
 .home-start-chip {
   padding: 2px 8px;
   border-radius: 999px;
@@ -79,8 +119,82 @@
   background: var(--bg-3);
 }
 
+.home-start-chip--btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.14s, color 0.14s;
+}
+.home-start-chip--btn:hover,
+.home-start-chip--btn[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--text-0);
+}
+.home-start-chip--btn svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
 .home-start-btn {
   flex-shrink: 0;
+}
+
+.home-pill-wrap {
+  display: contents;
+}
+
+.home-pill-menu {
+  /* Fixed + portaled to <body>, same scheme as ModelPicker, so a menu opened from
+     a pill inside the scrolling view can't get clipped by that scroll container. */
+  min-width: 200px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  padding: 4px;
+  z-index: 200;
+}
+
+.home-pill-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.home-pill-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--text-0);
+  transition: background 0.1s;
+}
+.home-pill-item:hover,
+.home-pill-item:focus-visible {
+  background: var(--bg-hover);
+}
+.home-pill-item.selected {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+.home-pill-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-pill-item--action {
+  color: var(--accent);
+}
+
+.home-pill-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
 }
 
 /* ── Two-column layout ──

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import './views.css'
 import './HomeView.css'
 
@@ -60,9 +61,24 @@ export interface HomeRecent {
 }
 
 export interface HomeStart {
+  projectPath?: string
   projectName?: string
+  modelId?: string
   modelLabel?: string
+  accountId?: string
   accountName?: string
+}
+
+export interface HomeStartChoice {
+  projectPath?: string
+  modelId?: string
+  accountId?: string
+}
+
+export interface HomeStartOptions {
+  projects: { path: string; name: string }[]
+  models: { id: string; label: string }[]
+  accounts: { id: string; name: string }[]
 }
 
 interface Props {
@@ -74,8 +90,10 @@ interface Props {
   routines: HomeRoutine[]
   recent: HomeRecent[]
   start: HomeStart
+  startOptions: HomeStartOptions
   onAct: (id: string) => void
-  onStart: (prompt: string) => void
+  onStart: (prompt: string, choice: HomeStartChoice) => void
+  onPickFolder: () => Promise<string | null>
   onOpenSession: (id: string) => void
   onOpenRepo: (key: string) => void
   onOpenUsage: () => void
@@ -204,6 +222,22 @@ function ScheduleIcon() {
   )
 }
 
+function ChevronIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  )
+}
+
 /** Inline SVG mini bar chart for the last N days of spend — no charting library, just
  *  a percentage-based viewBox so it scales with the card regardless of rendered width. */
 function SpendChart({ days }: { days: HomeSpend['days'] }) {
@@ -247,6 +281,184 @@ function AttentionIcon({ kind, mono }: { kind: HomeAttention['kind']; mono?: boo
   return <DocIcon />
 }
 
+interface PillItem {
+  key: string
+  label: string
+}
+
+// Where the (portaled) menu should sit, in viewport coordinates. Anchored to the
+// pill's left edge, opens upward when there isn't enough room below — same scheme
+// as ModelPicker, so menus never get clipped by the view's scroll container.
+interface MenuPos {
+  top?: number
+  bottom?: number
+  left: number
+  maxHeight: number
+}
+
+/** The house picker pattern (see ModelPicker): a button that portals a fixed-position
+ *  menu to <body>, closes on outside click / Escape / scroll / resize, and returns
+ *  focus to the button on close so keyboard use isn't stranded in a detached portal. */
+function PillPicker({
+  buttonLabel,
+  ariaLabel,
+  items,
+  selectedKey,
+  onSelect,
+  footerLabel,
+  onFooter
+}: {
+  buttonLabel: string
+  ariaLabel: string
+  items: PillItem[]
+  selectedKey: string | undefined
+  onSelect: (key: string) => void
+  footerLabel?: string
+  onFooter?: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState<MenuPos | null>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  const close = (returnFocus: boolean) => {
+    setOpen(false)
+    if (returnFocus) btnRef.current?.focus()
+  }
+
+  const toggle = () => {
+    if (open) {
+      close(false)
+      return
+    }
+    const anchor = btnRef.current
+    if (!anchor) return
+    const r = anchor.getBoundingClientRect()
+    const spaceBelow = window.innerHeight - r.bottom - 12
+    const openUp = spaceBelow < 200 && r.top > spaceBelow
+    setMenuPos({
+      left: Math.max(8, r.left),
+      ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
+      maxHeight: Math.max(160, (openUp ? r.top : spaceBelow) - 8)
+    })
+    setOpen(true)
+  }
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return
+      close(false)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        close(true)
+      }
+    }
+    const onScroll = (e: Event) => {
+      if (e.target instanceof Node && menuRef.current?.contains(e.target)) return
+      close(false)
+    }
+    const onResize = () => close(false)
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onResize)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onResize)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  const moveFocus = (dir: 1 | -1) => {
+    const focusable = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('.home-pill-item') ?? [])
+    if (focusable.length === 0) return
+    const idx = focusable.indexOf(document.activeElement as HTMLButtonElement)
+    const next = idx === -1 ? 0 : (idx + dir + focusable.length) % focusable.length
+    focusable[next]?.focus()
+  }
+
+  return (
+    <div className="home-pill-wrap">
+      <button
+        ref={btnRef}
+        type="button"
+        className="home-start-chip home-start-chip--btn"
+        onClick={toggle}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        {buttonLabel}
+        <ChevronIcon />
+      </button>
+      {open &&
+        menuPos &&
+        createPortal(
+          <div
+            className="home-pill-menu"
+            ref={menuRef}
+            role="menu"
+            aria-label={ariaLabel}
+            style={{
+              position: 'fixed',
+              top: menuPos.top,
+              bottom: menuPos.bottom,
+              left: menuPos.left,
+              maxHeight: menuPos.maxHeight,
+              overflowY: 'auto'
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault()
+                moveFocus(e.key === 'ArrowDown' ? 1 : -1)
+              }
+            }}
+          >
+            {items.length === 0 && <div className="home-pill-empty">Nothing yet</div>}
+            {items.map((it) => (
+              <button
+                key={it.key}
+                type="button"
+                className={`home-pill-item ${it.key === selectedKey ? 'selected' : ''}`}
+                role="menuitemradio"
+                aria-checked={it.key === selectedKey}
+                onClick={() => {
+                  onSelect(it.key)
+                  close(true)
+                }}
+              >
+                <span className="home-pill-item-label">{it.label}</span>
+                {it.key === selectedKey && <CheckIcon />}
+              </button>
+            ))}
+            {footerLabel && onFooter && (
+              <>
+                <div className="home-pill-sep" />
+                <button
+                  type="button"
+                  className="home-pill-item home-pill-item--action"
+                  role="menuitem"
+                  onClick={() => {
+                    onFooter()
+                    close(true)
+                  }}
+                >
+                  {footerLabel}
+                </button>
+              </>
+            )}
+          </div>,
+          document.body
+        )}
+    </div>
+  )
+}
+
 export default function HomeView({
   attention,
   running,
@@ -256,14 +468,80 @@ export default function HomeView({
   routines,
   recent,
   start,
+  startOptions,
   onAct,
   onStart,
+  onPickFolder,
   onOpenSession,
   onOpenRepo,
   onOpenUsage,
   onOpenScheduled
 }: Props) {
   const [prompt, setPrompt] = useState('')
+
+  // Local choice, seeded from `start`. Each field tracks whether the user has
+  // touched it (`touchedRef`): an untouched field keeps following `start` as it
+  // changes underneath (e.g. the active session changes, bringing new defaults),
+  // but a field the user already picked must NOT be clobbered by that — the sync
+  // effect below only overwrites fields still marked untouched.
+  const [choice, setChoice] = useState<HomeStartChoice>({
+    projectPath: start.projectPath,
+    modelId: start.modelId,
+    accountId: start.accountId
+  })
+  const touchedRef = useRef({ projectPath: false, modelId: false, accountId: false })
+
+  useEffect(() => {
+    setChoice((prev) => ({
+      projectPath: touchedRef.current.projectPath ? prev.projectPath : start.projectPath,
+      modelId: touchedRef.current.modelId ? prev.modelId : start.modelId,
+      accountId: touchedRef.current.accountId ? prev.accountId : start.accountId
+    }))
+  }, [start.projectPath, start.modelId, start.accountId])
+
+  function pick(key: keyof HomeStartChoice, value: string) {
+    touchedRef.current[key] = true
+    setChoice((prev) => ({ ...prev, [key]: value }))
+  }
+
+  // Folders picked via "New project…" this session, so they show up in the list
+  // (and stay selected) even though they're not in `startOptions.projects` yet.
+  const [extraProjects, setExtraProjects] = useState<{ path: string; name: string }[]>([])
+
+  async function handleNewProject() {
+    const path = await onPickFolder()
+    if (!path) return
+    const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path
+    setExtraProjects((prev) => (prev.some((p) => p.path === path) ? prev : [...prev, { path, name }]))
+    touchedRef.current.projectPath = true
+    setChoice((prev) => ({ ...prev, projectPath: path }))
+  }
+
+  const projectItems = useMemo<PillItem[]>(() => {
+    const seen = new Set<string>()
+    const out: PillItem[] = []
+    for (const p of [...startOptions.projects, ...extraProjects]) {
+      if (seen.has(p.path)) continue
+      seen.add(p.path)
+      out.push({ key: p.path, label: p.name })
+    }
+    return out
+  }, [startOptions.projects, extraProjects])
+
+  const modelItems = useMemo<PillItem[]>(
+    () => startOptions.models.map((m) => ({ key: m.id, label: m.label })),
+    [startOptions.models]
+  )
+  const accountItems = useMemo<PillItem[]>(
+    () => startOptions.accounts.map((a) => ({ key: a.id, label: a.name })),
+    [startOptions.accounts]
+  )
+
+  const projectLabel =
+    projectItems.find((p) => p.key === choice.projectPath)?.label ?? start.projectName ?? 'Project'
+  const modelLabel = modelItems.find((m) => m.key === choice.modelId)?.label ?? start.modelLabel ?? 'Model'
+  const accountLabel =
+    accountItems.find((a) => a.key === choice.accountId)?.label ?? start.accountName ?? 'Account'
 
   const nothing =
     attention.length === 0 &&
@@ -285,9 +563,39 @@ export default function HomeView({
   function submitStart() {
     const trimmed = prompt.trim()
     if (!trimmed) return
-    onStart(trimmed)
+    onStart(trimmed, choice)
+    // The choice itself is kept on purpose — someone who just picked a project is
+    // likely about to start something else in the same one.
     setPrompt('')
   }
+
+  // Header chips jump to their section and give it a brief highlight, so "N need
+  // you" etc. actually lead somewhere instead of just naming a count.
+  const attentionSectionRef = useRef<HTMLElement>(null)
+  const runningSectionRef = useRef<HTMLElement>(null)
+  const reposSectionRef = useRef<HTMLElement>(null)
+  const [flash, setFlash] = useState<'attention' | 'running' | 'dirty' | null>(null)
+  const flashTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (flashTimeout.current) clearTimeout(flashTimeout.current)
+    }
+  }, [])
+
+  function jumpTo(section: 'attention' | 'running' | 'dirty', ref: { current: HTMLElement | null }) {
+    ref.current?.scrollIntoView({ block: 'nearest' })
+    if (flashTimeout.current) clearTimeout(flashTimeout.current)
+    setFlash(section)
+    flashTimeout.current = setTimeout(() => setFlash(null), 1500)
+  }
+
+  const attentionPhrase =
+    attention.length === 1 ? 'One item needs you' : `${attention.length} items need you`
+  const runningPhrase =
+    running.length === 1 ? 'One session is running' : `${running.length} sessions are running`
+  const dirtyPhrase =
+    dirtyCount === 1 ? 'One project has uncommitted changes' : `${dirtyCount} projects have uncommitted changes`
 
   return (
     <div className="view">
@@ -298,15 +606,37 @@ export default function HomeView({
         </div>
         <div className="home-header-chips">
           {attention.length > 0 && (
-            <span className="home-chip home-chip--warn">
+            <button
+              type="button"
+              className="home-chip home-chip--warn home-chip--link"
+              onClick={() => jumpTo('attention', attentionSectionRef)}
+              title={attentionPhrase}
+              aria-label={attentionPhrase}
+            >
               {attention.length === 1 ? '1 needs you' : `${attention.length} need you`}
-            </span>
+            </button>
           )}
           {running.length > 0 && (
-            <span className="home-chip">{running.length === 1 ? '1 running' : `${running.length} running`}</span>
+            <button
+              type="button"
+              className="home-chip home-chip--link"
+              onClick={() => jumpTo('running', runningSectionRef)}
+              title={runningPhrase}
+              aria-label={runningPhrase}
+            >
+              {running.length === 1 ? '1 running' : `${running.length} running`}
+            </button>
           )}
           {dirtyCount > 0 && (
-            <span className="home-chip">{dirtyCount === 1 ? '1 dirty' : `${dirtyCount} dirty`}</span>
+            <button
+              type="button"
+              className="home-chip home-chip--link"
+              onClick={() => jumpTo('dirty', reposSectionRef)}
+              title={dirtyPhrase}
+              aria-label={dirtyPhrase}
+            >
+              {dirtyCount === 1 ? '1 with changes' : `${dirtyCount} with changes`}
+            </button>
           )}
         </div>
       </div>
@@ -329,9 +659,33 @@ export default function HomeView({
             />
             <div className="home-start-row">
               <div className="home-start-chips">
-                {start.projectName && <span className="home-start-chip">{start.projectName}</span>}
-                {start.modelLabel && <span className="home-start-chip">{start.modelLabel}</span>}
-                {start.accountName && <span className="home-start-chip">{start.accountName}</span>}
+                <PillPicker
+                  buttonLabel={projectLabel}
+                  ariaLabel="Project"
+                  items={projectItems}
+                  selectedKey={choice.projectPath}
+                  onSelect={(key) => pick('projectPath', key)}
+                  footerLabel="New project…"
+                  onFooter={handleNewProject}
+                />
+                {startOptions.models.length > 0 && (
+                  <PillPicker
+                    buttonLabel={modelLabel}
+                    ariaLabel="Model"
+                    items={modelItems}
+                    selectedKey={choice.modelId}
+                    onSelect={(key) => pick('modelId', key)}
+                  />
+                )}
+                {startOptions.accounts.length > 0 && (
+                  <PillPicker
+                    buttonLabel={accountLabel}
+                    ariaLabel="Account"
+                    items={accountItems}
+                    selectedKey={choice.accountId}
+                    onSelect={(key) => pick('accountId', key)}
+                  />
+                )}
               </div>
               <button
                 className="btn-primary home-start-btn"
@@ -353,7 +707,11 @@ export default function HomeView({
           <div className="home-grid">
             <div className="home-col">
               {attention.length > 0 && (
-                <section className="home-section home-section--attention" aria-label="Needs you">
+                <section
+                  ref={attentionSectionRef}
+                  className={`home-section home-section--attention ${flash === 'attention' ? 'home-section--flash' : ''}`}
+                  aria-label="Needs you"
+                >
                   <h2 className="home-section-title">Needs you</h2>
                   <div className="home-attention-block">
                     {attention.map((a) => (
@@ -382,7 +740,11 @@ export default function HomeView({
               )}
 
               {running.length > 0 && (
-                <section className="home-section" aria-label="Running">
+                <section
+                  ref={runningSectionRef}
+                  className={`home-section ${flash === 'running' ? 'home-section--flash' : ''}`}
+                  aria-label="Running"
+                >
                   <h2 className="home-section-title">Running</h2>
                   <div className="home-list">
                     {running.map((r) => {
@@ -519,7 +881,11 @@ export default function HomeView({
               )}
 
               {repos.length > 0 && (
-                <section className="home-section" aria-label="Uncommitted work">
+                <section
+                  ref={reposSectionRef}
+                  className={`home-section ${flash === 'dirty' ? 'home-section--flash' : ''}`}
+                  aria-label="Uncommitted work"
+                >
                   <h2 className="home-section-title">Uncommitted work</h2>
                   <div className="home-list">
                     {repos.map((r) => (
