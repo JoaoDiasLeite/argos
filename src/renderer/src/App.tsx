@@ -57,6 +57,7 @@ import type {
   HomeStart
 } from './views/HomeView'
 import { projectKey, canonicalProjectPath, buildPosixDistroMap, ProjectKeyContext } from './lib/project-key'
+import { cadenceSummary } from './lib/cadence'
 // The secondary views below are only ever mounted once the user navigates away
 // from the default 'chat' view, so they're loaded lazily (React.lazy) instead
 // of statically imported. That keeps their code — and the vendor libraries
@@ -1602,24 +1603,6 @@ export default function App() {
     return [...approvals, ...failedRoutines]
   }, [approvalQueue, sessions, homeScheduledRuns])
 
-  // Same cadence wording as ScheduledView's own cadenceSummary — kept as a second copy
-  // rather than importing it because it isn't exported there, but it reads the exact
-  // same ScheduledCadence shape.
-  const cadenceLabel = (cadence: ScheduledRun['cadence']): string => {
-    if (cadence.kind === 'interval') {
-      const mins = cadence.everyMinutes
-      if (mins < 60) return `Every ${mins} min`
-      const h = mins / 60
-      return `Every ${h % 1 === 0 ? h : h.toFixed(1)} hour${h !== 1 ? 's' : ''}`
-    }
-    if (cadence.kind === 'daily') return `Daily at ${cadence.time}`
-    if (cadence.kind === 'weekly') {
-      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-      return `Weekly · ${days[cadence.day]} at ${cadence.time}`
-    }
-    return 'Unknown cadence'
-  }
-
   const homeRoutines = useMemo<HomeRoutine[]>(
     () =>
       homeScheduledRuns
@@ -1630,7 +1613,7 @@ export default function App() {
           id: run.id,
           name: run.name,
           nextRunAt: run.nextRunAt,
-          cadence: cadenceLabel(run.cadence)
+          cadence: cadenceSummary(run.cadence)
         })),
     [homeScheduledRuns]
   )

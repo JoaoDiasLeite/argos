@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { CCAccountStatus, ModelInfo, ScheduledCadence, ScheduledRun } from '../types'
 import ModelPicker from '../components/ModelPicker'
 import { useModalA11y } from '../hooks/useModalA11y'
+import { cadenceSummary, DAY_NAMES } from '../lib/cadence'
 import './views.css'
 import './ScheduledView.css'
 
@@ -12,7 +13,6 @@ interface Props {
   defaultAccountId: string
 }
 
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 /** "read-only" — mutating tools blocked via disallowedTools at execution time. "full" — no restriction. */
 type ToolPreset = 'read-only' | 'full'
@@ -44,18 +44,6 @@ function emptyRun(defaultModel: string, defaultAccountId: string): ScheduledRun 
     // Default new routines to read-only for safety
     toolAccess: 'read-only'
   }
-}
-
-function cadenceSummary(cadence: ScheduledCadence): string {
-  if (cadence.kind === 'interval') {
-    const mins = cadence.everyMinutes
-    if (mins < 60) return `Every ${mins} min`
-    const h = mins / 60
-    return `Every ${h % 1 === 0 ? h : h.toFixed(1)} hour${h !== 1 ? 's' : ''}`
-  }
-  if (cadence.kind === 'daily') return `Daily at ${cadence.time}`
-  if (cadence.kind === 'weekly') return `Weekly · ${DAY_NAMES[cadence.day]} at ${cadence.time}`
-  return 'Unknown cadence'
 }
 
 function relativeTime(ms: number): string {
