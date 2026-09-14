@@ -42,11 +42,33 @@ namespace VisualCheck
 
         [DllImport("user32.dll")]
         public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        public static extern bool SetProcessDPIAware();
+
+        [DllImport("user32.dll")]
+        public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
     }
 }
 '@
 
 Add-Type -AssemblyName System.Drawing
+
+# Windows PowerShell is DPI-unaware, so on a scaled display GetWindowRect hands back
+# VIRTUALISED (logical) coordinates while PrintWindow draws in physical pixels. The
+# bitmap then gets sized 1400x900 for a window that paints 2100x1350, and the capture
+# is the top-left corner of the window with the right-hand side silently cut off —
+# which reads as a broken layout and is not one. Declaring awareness first makes the
+# rect physical, so the bitmap matches what PrintWindow will draw.
+#
+# Per-monitor-v2 (-4) is the right context on a multi-monitor setup with mixed scaling;
+# SetProcessDPIAware is the fallback for hosts too old for it. Both return false if the
+# awareness is already set for this process, which is fine — it only has to be set once.
+try {
+  [void][VisualCheck.Win32]::SetProcessDpiAwarenessContext([IntPtr]::new(-4))
+} catch {
+  try { [void][VisualCheck.Win32]::SetProcessDPIAware() } catch {}
+}
 
 function Get-MainWindowHandle([int]$ProcId) {
   $proc = Get-Process -Id $ProcId -ErrorAction Stop
