@@ -89,6 +89,26 @@
   flex-shrink: 0;
 }
 .src-badge.wsl { background: rgba(79,195,247,0.14); color: #4fc3f7; }
+/* Same pill vocabulary as the WSL badge, in the accent color used everywhere else in
+   this column, so it reads as "more info" rather than a new kind of tag. */
+.src-badge.multi {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+/* Marks which account a session row belongs to — only shown when the list actually
+   mixes accounts (see `showSessionAccounts` in ProjectsView.tsx), so it stays quiet
+   (muted, not accent-colored) rather than compete with the tag chips beside it. */
+.src-badge.acct {
+  background: var(--bg-3);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90px;
+}
 
 .sessions-pane { flex: 1; overflow-y: auto; padding: 16px 20px; }
 /* ── Search results ──────────────────────────────────────────────────── */
@@ -420,6 +440,25 @@
 }
 .projects-filter::placeholder { color: var(--text-2); }
 .projects-filter:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+/* Same field styling as .projects-filter directly below it — a select rather than a
+   button group (see .projects-scope/.sessions-scope) because the option count is
+   open-ended, not a fixed pair. */
+.projects-source-filter {
+  width: 100%;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text-0);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 5px 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.projects-source-filter:focus {
   outline: none;
   border-color: var(--accent);
 }

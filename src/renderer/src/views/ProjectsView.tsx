@@ -137,15 +137,90 @@ function groupProjects(list: CCProject[]): ProjectGroup[] {
  * aside, which acts on the whole group by key). Most-recently-active is the member
  * most likely to be the one the user means "the project" by right now.
  */
-function primaryMember(g: ProjectGroup): CCProject {
-  return g.members.reduce((best, m) => (m.lastActive > best.lastActive ? m : best), g.members[0])
+function primaryOfMembers(members: CCProject[]): CCProject {
+  return members.reduce((best, m) => (m.lastActive > best.lastActive ? m : best), members[0])
 }
 
-function groupFavoriteKeys(g: ProjectGroup): string[] {
-  return g.members.map((m) => `${m.sourceId}:${m.encodedDir}`)
+function primaryMember(g: ProjectGroup): CCProject {
+  return primaryOfMembers(g.members)
+}
+
+function groupFavoriteKeys(members: CCProject[]): string[] {
+  return members.map((m) => `${m.sourceId}:${m.encodedDir}`)
+}
+
+/**
+ * A source's account identity: two sources are "the same account" iff they report
+ * the same (normalised) email — a local install and two WSL distros logged into the
+ * same Claude account are one identity, even though they're three distinct
+ * `sourceId`s. A source with no email can't be merged with anything, so it is its
+ * own identity, keyed by its `sourceId`.
+ */
+function identityOf(p: CCProject): string {
+  const email = p.account?.email?.trim().toLowerCase()
+  return email || p.sourceId
+}
+
+/**
+ * An account option offered by the filter above the project list — one per identity
+ * (see `identityOf`) actually present among the loaded projects, never from a fixed
+ * roster: a Gemini or other-provider account will show up here the day one exists,
+ * with no code here needing to know its name in advance.
+ */
+interface AccountOption {
+  identity: string
+  label: string
+  /** The account email, shown as a legend — only when it adds information the label
+   *  doesn't already carry (an identity with no email has nothing more to show). */
+  sub?: string
+}
+
+/**
+ * Narrows a group down to the members that belong to the given account identity,
+ * recomputing every count from just those members — a group's session total,
+ * last-active date and WSL badges all have to describe what is actually about to be
+ * listed under this filter, not the whole folder. `archived` is the one field left
+ * alone: filing away is a preference about the folder itself, not about one
+ * account's view of it, so a group archived under a member the filter currently
+ * hides must still read as archived rather than silently reappearing as active.
+ *
+ * Returns null when no member of the group matches — the caller drops the group
+ * entirely rather than show an empty row.
+ */
+function scopeGroup(g: ProjectGroup, identity: string): ProjectGroup | null {
+  if (identity === 'all') return g
+  const members = g.members.filter((m) => identityOf(m) === identity)
+  if (!members.length) return null
+  return {
+    key: g.key,
+    members,
+    sessionCount: members.reduce((n, m) => n + m.sessionCount, 0),
+    archivedCount: members.reduce((n, m) => n + m.archivedCount, 0),
+    lastActive: members.reduce((n, m) => Math.max(n, m.lastActive), 0),
+    archived: g.archived,
+    distros: Array.from(
+      new Set(members.filter((m) => m.kind === 'wsl' && m.distro).map((m) => m.distro as string))
+    )
+  }
+}
+
+function scopeGroups(list: CCProject[], identity: string): ProjectGroup[] {
+  return groupProjects(list)
+    .map((g) => scopeGroup(g, identity))
+    .filter((g): g is ProjectGroup => g !== null)
 }
 
 export default function ProjectsView({ onResume, target, focus }: Props) {
+  // Only Claude Code transcripts can be resumed: `claude --resume` is handed the session
+  // id verbatim, and a Codex uuid means nothing to it. The main process already refuses
+  // to rename, archive, move or delete one; this is the reading side of the same rule.
+  // Opening the peek instead is not a consolation prize — reading is what is actually
+  // available, and doing nothing on a double-click would just look broken.
+  const canResume = (s: CCSessionMeta): boolean => s.provider !== 'codex'
+  const resumeOrPeek = (s: CCSessionMeta): void => {
+    if (canResume(s)) onResume(s)
+    else setPeeked(s)
+  }
   const [projects, setProjects] = useState<CCProject[]>([])
   const [selected, setSelected] = useState<ProjectGroup | null>(null)
   const [sessions, setSessions] = useState<CCSessionMeta[]>([])
@@ -164,6 +239,16 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     () => (localStorage.getItem('projects.sort') as SortMode) || 'date'
   )
   const [projectFilter, setProjectFilter] = useState('')
+  // Which account identity (see `identityOf`) the project column is scoped to —
+  // persisted like `sort` above: it's the same kind of small per-visit tax to keep
+  // re-picking it. 'all' is the initial state and needs no storage entry of its own.
+  const [accountFilter, setAccountFilterState] = useState<string>(
+    () => localStorage.getItem('projects.accountFilter') || 'all'
+  )
+  const setAccountFilter = (identity: string) => {
+    setAccountFilterState(identity)
+    localStorage.setItem('projects.accountFilter', identity)
+  }
   const [favorites, setFavorites] = useState<string[]>([])
   // Rename precedence (custom name > repo name > basename) is shared with the
   // Sidebar via project-name.ts; `custom` is keyed by the same projectKey the
@@ -217,8 +302,81 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   targetRef.current = target
   const { colorFor, vocabulary, reload: reloadLabels } = useLabelColors()
 
-  // One row per real folder, not per spelling — see `groupProjects`.
-  const projectGroups = useMemo(() => groupProjects(projects), [projects])
+  // The options the filter offers: one per account identity actually present (see
+  // `identityOf`), not one per source — a folder reached from Local and two WSL
+  // distros under the same login is one account, not three. Grouped by identity
+  // first so a label can be picked from whichever `account:*` source names it,
+  // wherever in the list that source happens to appear.
+  const accountOptions = useMemo<AccountOption[]>(() => {
+    const byIdentity = new Map<string, CCProject[]>()
+    for (const p of projects) {
+      const id = identityOf(p)
+      const members = byIdentity.get(id)
+      if (members) members.push(p)
+      else byIdentity.set(id, [p])
+    }
+    const options: AccountOption[] = []
+    for (const [identity, members] of byIdentity) {
+      const email = members.find((m) => m.account?.email)?.account?.email
+      // Prefer the label an `account:*` source gives this identity — the name the
+      // user themselves picked for the account — over a WSL/local source's own
+      // label, which just names the machine. If more than one `account:*` source
+      // somehow disagrees on the label for one identity, pick deterministically by
+      // `sourceId` so the option's wording never flickers between renders.
+      const named = members
+        .filter((m) => m.sourceId.startsWith('account:') && m.sourceLabel)
+        .sort((a, b) => a.sourceId.localeCompare(b.sourceId))
+      const label = named[0]?.sourceLabel || (email ? email.split('@')[0] : members[0].sourceLabel)
+      options.push({ identity, label, sub: email && email !== label ? email : undefined })
+    }
+    return options.sort((a, b) => a.label.localeCompare(b.label))
+  }, [projects])
+  // A filter persisted from a previous run can name an identity that no longer
+  // exists (an account removed, a distro unregistered) — fall back to 'all' rather
+  // than scope every group down to zero members.
+  const effectiveAccountFilter =
+    accountFilter === 'all' || accountOptions.some((o) => o.identity === accountFilter)
+      ? accountFilter
+      : 'all'
+  // `CCSessionMeta` (unlike `CCProject`) carries only `sourceId`, not the account
+  // object identity is derived from — so a session's identity has to be looked up
+  // via the source it came from, resolved once per `projects` list.
+  const identityBySource = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const p of projects) map.set(p.sourceId, identityOf(p))
+    return map
+  }, [projects])
+  const labelByIdentity = useMemo(
+    () => new Map(accountOptions.map((o) => [o.identity, o.label])),
+    [accountOptions]
+  )
+  const sessionIdentity = (s: CCSessionMeta): string => identityBySource.get(s.sourceId) ?? s.sourceId
+  const sessionAccountLabel = (s: CCSessionMeta): string => {
+    const identity = sessionIdentity(s)
+    return labelByIdentity.get(identity) ?? identity
+  }
+
+  // One row per real folder, not per spelling — see `groupProjects`. Grouped from
+  // every project regardless of the account filter: favorites and ProjectActions (see
+  // `fullMembersByKey` below) act on the whole folder, not on whichever slice of it
+  // the filter currently shows.
+  const allGroups = useMemo(() => groupProjects(projects), [projects])
+  // The list actually rendered — each group narrowed to the current account filter
+  // (see `scopeGroup`), and dropped entirely once nothing in it matches.
+  const projectGroups = useMemo(
+    () =>
+      allGroups
+        .map((g) => scopeGroup(g, effectiveAccountFilter))
+        .filter((g): g is ProjectGroup => g !== null),
+    [allGroups, effectiveAccountFilter]
+  )
+  // Every member of a group, ignoring the account filter. Used ONLY where a whole-folder
+  // reading is the right one; the destructive actions deliberately do not use it.
+  const fullMembersByKey = useMemo(
+    () => new Map(allGroups.map((g) => [g.key, g.members])),
+    [allGroups]
+  )
+  const membersOf = (g: ProjectGroup): CCProject[] => fullMembersByKey.get(g.key) ?? g.members
   // Name precedence (custom > repo > basename), with homonym disambiguation, computed
   // over every group so two DIFFERENT folders that happen to share a name still tell
   // apart even while one of them is filtered out of view.
@@ -241,7 +399,16 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     // a decision, so it wins even when it arrived while this listing was in flight.
     // Grouped fresh from `list` rather than read off the `projectGroups` memo: that
     // memo reflects the *previous* render's `projects` state until this update lands.
-    const firstGroup = groupProjects(list)[0]
+    // Scoped by the current filter too — auto-selecting a project the filter would
+    // immediately hide defeats the point of picking one. Normalised against THIS
+    // fresh list rather than trusting `accountOptions` (computed off the `projects`
+    // state, which is still one render behind): a filter persisted from a previous
+    // run that named a since-removed identity must fall back to 'all' here too, or
+    // this would silently pick nothing at all.
+    const knownIdentities = new Set(list.map(identityOf))
+    const effectiveFilter =
+      accountFilter === 'all' || knownIdentities.has(accountFilter) ? accountFilter : 'all'
+    const firstGroup = scopeGroups(list, effectiveFilter)[0]
     if (firstGroup && !selected && !targetRef.current) selectProject(firstGroup)
   }
 
@@ -267,6 +434,17 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectGroups, showArchivedProjects])
 
+  // The filter above can narrow (or restore) which members belong to the selected
+  // group without making it disappear outright — that case is the effect above's job.
+  // Here, re-list so the sessions pane (and the header's own count) follow the new
+  // scope instead of quietly continuing to show a stale, wider set of sessions.
+  useEffect(() => {
+    if (!selected) return
+    const match = projectGroups.find((g) => g.key === selected.key)
+    if (match) selectProject(match)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountFilter])
+
   // Debounced full-text search across all sources.
   useEffect(() => {
     const q = query.trim()
@@ -284,7 +462,11 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     return () => clearTimeout(t)
   }, [query])
 
-  const isGroupFavorite = (g: ProjectGroup) => groupFavoriteKeys(g).some((k) => favorites.includes(k))
+  // Favorites, like archiving, are a preference about the folder — not about
+  // whichever slice of its members the account filter currently shows — so both read
+  // from `membersOf`, the FULL member list, rather than the (possibly scoped) `g`.
+  const isGroupFavorite = (g: ProjectGroup) =>
+    groupFavoriteKeys(membersOf(g)).some((k) => favorites.includes(k))
 
   const toggleFavorite = async (g: ProjectGroup) => {
     const next = !isGroupFavorite(g)
@@ -293,7 +475,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     // write's returned list already includes the ones before it, and the state we end
     // on reflects all of them rather than whichever call happened to finish last.
     let result = favorites
-    for (const m of g.members) {
+    for (const m of membersOf(g)) {
       result = await window.electronAPI.ccSetFavorite(m.sourceId, m.encodedDir, next)
     }
     setFavorites(result)
@@ -354,17 +536,23 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       if (!proj || cancelled) return
       const group = groupProjects(list).find((g) => g.key === projectKey(proj.realPath, proj.distro))
       if (!group || cancelled) return
-      let found = await listGroupSessions(group, false)
+      // A notification click is a decision, not a default — the account filter must
+      // not be able to silently swallow it. Widen back to All when the filtered view
+      // would otherwise hide every member of the project it points at.
+      const scoped = scopeGroup(group, accountFilter)
+      if (!scoped) setAccountFilter('all')
+      const useGroup = scoped ?? group
+      let found = await listGroupSessions(useGroup, false)
       let archived = false
       if (!found.some((s) => s.sessionId === target.sessionId)) {
-        const inArchive = await listGroupSessions(group, true)
+        const inArchive = await listGroupSessions(useGroup, true)
         if (inArchive.some((s) => s.sessionId === target.sessionId)) {
           found = inArchive
           archived = true
         }
       }
       if (cancelled || seq !== listingSeq.current) return
-      setSelected(group)
+      setSelected(useGroup)
       setSessions(found)
       setLoadingSessions(false)
       setShowArchived(archived)
@@ -388,7 +576,11 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       if (cancelled) return
       const group = groupProjects(list).find((g) => g.key === focus.key)
       if (!group || cancelled) return
-      selectProject(group)
+      // Same reasoning as the deep-link effect above: a click from Home must not be
+      // hidden by a filter that happens to exclude every member of that project.
+      const scoped = scopeGroup(group, accountFilter)
+      if (!scoped) setAccountFilter('all')
+      selectProject(scoped ?? group)
     })()
     return () => {
       cancelled = true
@@ -479,6 +671,12 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     sort
   )
   const groups = sort === 'date' ? groupByAge(visibleSessions) : [{ label: '', sessions: visibleSessions }]
+  // A per-row account badge only earns its place when it disambiguates something —
+  // if every visible session belongs to the same account, tagging each one is pure
+  // noise. Same condition Sidebar.tsx applies to its own session badges (model/
+  // account only render when a session diverges from what the rest of the list
+  // already implies).
+  const showSessionAccounts = new Set(visibleSessions.map(sessionIdentity)).size > 1
 
   const changeSort = (mode: SortMode) => {
     setSort(mode)
@@ -560,7 +758,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
         step(-1)
       } else if (e.key === 'Enter' && peeked) {
         e.preventDefault()
-        onResume(peeked)
+        resumeOrPeek(peeked)
       } else if (e.key === 'Escape' && peeked) {
         setPeeked(null)
       }
@@ -653,6 +851,23 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
           {/* Scrolling the column moves the row out from under a `fixed` panel, so the
               panel goes rather than drifting away from what it acts on. */}
           <div className="projects-list" onScroll={() => setProjectMenu(null)}>
+            {/* Only earns its place once there is a choice to make — a lone "Local"
+                setup has nothing for this control to do. */}
+            {accountOptions.length > 1 && (
+              <select
+                className="projects-source-filter"
+                aria-label="Filter projects by account"
+                value={effectiveAccountFilter}
+                onChange={(e) => setAccountFilter(e.target.value)}
+              >
+                <option value="all">All accounts</option>
+                {accountOptions.map((o) => (
+                  <option key={o.identity} value={o.identity}>
+                    {o.sub ? `${o.label} — ${o.sub}` : o.label}
+                  </option>
+                ))}
+              </select>
+            )}
             <input
               className="projects-filter"
               placeholder="Filter projects…"
@@ -694,12 +909,27 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                   const name = nameOf(g)
                   // Actions that need one concrete CCProject (rename via the menu's
                   // archive/move/delete, see ProjectActions) act on whichever member
-                  // was active most recently — the member the user is most likely to
-                  // mean by "this project" right now.
-                  const primary = primaryMember(g)
+                  // was active most recently across the WHOLE folder, not just the
+                  // members the account filter currently shows — archiving, moving and
+                  // deleting are folder-wide operations, and the "most recent" member
+                  // to default to shouldn't change just because the filter narrowed.
+                  // What the actions act on is what the row is showing. With an account
+                  // filter on, `g.members` is that account's slice — deleting or moving
+                  // the directories of an account the filter has hidden would be acting
+                  // outside what the screen says is there. With no filter, this is every
+                  // member, which is the same list as before.
+                  const actionMembers = g.members
+                  const primary = primaryOfMembers(actionMembers)
                   const accountEmails = Array.from(
                     new Set(g.members.map((m) => m.account?.email).filter((e): e is string => !!e))
                   )
+                  // Distinct ACCOUNTS among the members actually shown right now — a
+                  // group only mixes accounts visibly while the filter is "All"
+                  // (scoping to one account leaves a group with members from that one
+                  // account only), so this doubles as the "is this a mixed group" flag.
+                  // Sources, not accounts, would over-count: a folder opened from Local
+                  // and two WSL distros under the same login is one account.
+                  const visibleAccountCount = new Set(g.members.map(identityOf)).size
                   return (
                     <div
                       key={key}
@@ -729,6 +959,18 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                         {g.distros.map((d) => (
                           <span key={d} className="src-badge wsl">{d}</span>
                         ))}
+                        {/* The tooltip already lists every account's email; this is the
+                            only thing on the row itself that says there's more than
+                            one — a small counter rather than spelling it out, since
+                            the row has no room to spare. */}
+                        {visibleAccountCount > 1 && (
+                          <span
+                            className="src-badge multi"
+                            title={`${visibleAccountCount} accounts: ${accountEmails.join(', ')}`}
+                          >
+                            ×{visibleAccountCount}
+                          </span>
+                        )}
                       </div>
                       <div className="project-row-meta">
                         {/* A bare 0 reads as a loading state; say what it means instead. */}
@@ -774,7 +1016,9 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                       {projectMenu?.key === key && (
                         <ProjectActions
                           project={primary}
-                          siblings={g.members.map((m) => ({ sourceId: m.sourceId, encodedDir: m.encodedDir }))}
+                          // Every member of the folder, not just the ones the account
+                          // filter shows — see the comment on `primary` above.
+                          siblings={actionMembers.map((m) => ({ sourceId: m.sourceId, encodedDir: m.encodedDir }))}
                           anchor={projectMenu}
                           onClose={() => setProjectMenu(null)}
                           onChanged={load}
@@ -919,18 +1163,25 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                                make the decision possible, and a decision taken with
                                the same gesture as the action is not a decision. */
                             onClick={() => setPeeked(s)}
-                            onDoubleClick={() => onResume(s)}
+                            onDoubleClick={() => resumeOrPeek(s)}
                             role="button"
                             tabIndex={0}
                             aria-current={peeked?.sessionId === s.sessionId}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') onResume(s)
+                              if (e.key === 'Enter') resumeOrPeek(s)
                             }}
                           >
                             <span className="cc-row-main">
                               <span className="cc-row-title" title={s.title}>
                                 {s.title}
                               </span>
+                              {/* Only earns its place when the visible list actually
+                                  mixes accounts — see `showSessionAccounts` above. */}
+                              {showSessionAccounts && (
+                                <span className="src-badge acct" title={sessionAccountLabel(s)}>
+                                  {sessionAccountLabel(s)}
+                                </span>
+                              )}
                               <TagChips tags={s.tags} colorFor={colorFor} />
                               {searchingHere && projectHits.get(s.sessionId)?.snippets[0] && (
                                 <Snippet snippet={projectHits.get(s.sessionId)!.snippets[0]} />
@@ -991,6 +1242,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
               colorFor={colorFor}
               vocabulary={localVocab}
               onResume={() => onResume(peeked)}
+              resumable={canResume(peeked)}
               projects={projects}
               onClose={() => setPeeked(null)}
               onChanged={() => {

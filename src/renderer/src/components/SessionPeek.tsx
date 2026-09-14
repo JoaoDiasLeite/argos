@@ -9,6 +9,12 @@ interface Props {
   vocabulary: string[]
   projects: CCProject[]
   onResume: () => void
+  /**
+   * False when this transcript was not written by Claude Code — `claude --resume` does
+   * not know a Codex session id, so resuming would start a chat the CLI then rejects.
+   * Reading it still works, which is what this panel is for.
+   */
+  resumable?: boolean
   onClose: () => void
   onTagsSaved: (tags: string[]) => void
   /** Something on disk changed — the list has to be read again. */
@@ -36,6 +42,7 @@ export default function SessionPeek({
   vocabulary,
   projects,
   onResume,
+  resumable = true,
   onClose,
   onTagsSaved,
   onChanged
@@ -287,7 +294,12 @@ export default function SessionPeek({
       {error && <div className="peek-error">{error}</div>}
 
       <div className="peek-actions">
-        <button className="btn-primary" onClick={onResume}>
+        <button
+          className="btn-primary"
+          onClick={onResume}
+          disabled={!resumable}
+          title={resumable ? undefined : 'Written by Codex — the Claude Code CLI cannot resume it'}
+        >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <polygon points="5 3 19 12 5 21 5 3" />
           </svg>
