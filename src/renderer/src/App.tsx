@@ -218,6 +218,9 @@ export default function App() {
   // rather than passed straight through so a second click on the same conversation
   // still re-opens it: the object identity is what ProjectsView reacts to.
   const [ccTarget, setCcTarget] = useState<CcSessionTarget | null>(null)
+  // The project Home asked Projects to open, by the same key Home groups repo rows by.
+  // Stamped so clicking the same row twice, with a detour in between, still lands.
+  const [projectFocus, setProjectFocus] = useState<{ key: string; at: number } | null>(null)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [defaultModel, setDefaultModel] = useState('claude-opus-4-8')
   const [ui, setUi] = useState<UiPrefs | null>(null)
@@ -2387,7 +2390,10 @@ export default function App() {
               setActiveId(id)
               setView('chat')
             }}
-            onOpenRepo={() => setView('projects')}
+            onOpenRepo={(key) => {
+              setProjectFocus({ key, at: Date.now() })
+              setView('projects')
+            }}
             onOpenUsage={() => setView('usage')}
             onOpenScheduled={() => setView('scheduled')}
           />
@@ -2395,7 +2401,7 @@ export default function App() {
       )}
       {view === 'projects' && (
         <Suspense fallback={<ViewLoading />}>
-          <ProjectsView onResume={resumeCCSession} target={ccTarget} />
+          <ProjectsView onResume={resumeCCSession} target={ccTarget} focus={projectFocus} />
         </Suspense>
       )}
       {view === 'live' && (

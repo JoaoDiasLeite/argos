@@ -5,6 +5,7 @@ import LabelManager from '../components/LabelManager'
 import SessionPeek from '../components/SessionPeek'
 import ProjectActions from '../components/ProjectActions'
 import { tagsSatisfy } from '../lib/tags'
+import { projectKey } from '../lib/project-key'
 import { groupByAge, sortSessions, SORT_LABELS, SortMode } from '../lib/session-groups'
 import './views.css'
 import './ProjectsView.css'
@@ -18,6 +19,13 @@ interface Props {
    * a decision taken with the same gesture as the action.
    */
   target?: CcSessionTarget | null
+  /**
+   * A project named from the Home view, as the normalised key Home groups its repo
+   * rows by. Carries an `at` stamp so asking for the same project twice — leave for
+   * another one, come back, click the same row — still counts as a new request; the
+   * key alone would compare equal and the second click would do nothing.
+   */
+  focus?: { key: string; at: number } | null
 }
 
 function hitToSession(h: SearchHit): CCSessionMeta {
@@ -83,7 +91,7 @@ function timeAgo(ts: number): string {
   return new Date(ts).toLocaleDateString()
 }
 
-export default function ProjectsView({ onResume, target }: Props) {
+export default function ProjectsView({ onResume, target, focus }: Props) {
   const [projects, setProjects] = useState<CCProject[]>([])
   const [selected, setSelected] = useState<CCProject | null>(null)
   const [sessions, setSessions] = useState<CCSessionMeta[]>([])
@@ -278,6 +286,25 @@ export default function ProjectsView({ onResume, target }: Props) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target])
+
+  // Select the project Home pointed at. Matching is by projectKey, not by raw path:
+  // the same folder reaches this list spelled differently depending on which source
+  // recorded it, which is the whole reason that key exists.
+  useEffect(() => {
+    if (!focus) return
+    let cancelled = false
+    ;(async () => {
+      const list = projects.length ? projects : await window.electronAPI.ccListProjects()
+      if (cancelled) return
+      const proj = list.find((p) => projectKey(p.realPath, p.distro) === focus.key)
+      if (!proj || cancelled) return
+      selectProject(proj)
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus])
 
   // The in-project search. Debounced like the global one, and reset by moving to
   // another project — a query typed for one project means nothing in the next.
