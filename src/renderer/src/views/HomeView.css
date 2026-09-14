@@ -199,45 +199,34 @@
   margin: 4px 2px;
 }
 
-/* ── Responsive column layout ──
-   Three source-order groups — a (Needs you, Running), b (Pick up where you left
-   off), c (Plan & spend, Next up, Uncommitted work, Recent projects) — reassigned
-   to grid columns purely by breakpoint, never duplicated in the DOM.
-   Below 900px: one column, a/b/c stacked in source order.
-   900–1500px: two columns, a alone in the first, b+c sharing the second (in source
-   order) — this is the layout the view shipped with before three columns existed.
-   Above 1500px: a wide window finally gets a third column instead of sitting half
-   empty at a 1180px cap. */
+/* ── Column layout ──
+   Three source-order groups: a (Needs you, Running), b (Pick up where you left off),
+   c (Plan & spend, Next up, Uncommitted work, Recent projects).
+
+   Flex, not a fixed grid template: a column is only rendered when it has sections in
+   it, and fixed tracks kept the space of the ones that were not there — an empty first
+   column left a third of the window blank, which is the ordinary state of this view
+   rather than a rare one. Flex items divide what there is between however many turned
+   up. */
 .home-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 26px;
 }
-.home-col-a { grid-column: 1; }
-.home-col-b,
-.home-col-c { grid-column: 2; }
-
-@media (min-width: 1500px) {
-  .home-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr);
-  }
-  .home-col-b { grid-column: 2; }
-  .home-col-c { grid-column: 3; }
+.home-col {
+  /* min-width: 0 so a nowrap line inside truncates instead of widening the column. */
+  flex: 1 1 380px;
+  min-width: 0;
 }
+/* Slightly greedier when it is there: approvals and running rows carry the longest
+   lines, and it is the column you read first. */
+.home-col-a { flex-grow: 1.3; }
 
 @media (max-width: 900px) {
-  .home-grid {
-    grid-template-columns: 1fr;
+  .home-col {
+    flex-basis: 100%;
   }
-  .home-col-a,
-  .home-col-b,
-  .home-col-c {
-    grid-column: 1;
-  }
-}
-
-.home-col {
-  min-width: 0;
 }
 
 .home-section {

@@ -567,6 +567,15 @@ export default function HomeView({
     start.accountId ??
     'Account'
 
+  // Whether each column has anything in it. A column with no sections still held its
+  // track and left a third of the window blank — and an empty first column is the
+  // ordinary case, not the exception: most of the time nothing is waiting on you and
+  // nothing is running. An absent column is not rendered at all.
+  const hasAttentionCol = attention.length > 0 || running.length > 0
+  const hasRecentCol = recent.length > 0
+  const hasSideCol =
+    plans.length > 0 || spend !== null || routines.length > 0 || repos.length > 0 || recentProjects.length > 0
+
   const nothing =
     attention.length === 0 &&
     running.length === 0 &&
@@ -736,6 +745,7 @@ export default function HomeView({
                1500px, folding to 2 (b+c share a column) then 1 below that — see the
                `.home-col-*` rules in HomeView.css. Never duplicate a section to hide one
                copy per breakpoint; only the grid-column assignment changes. */}
+            {hasAttentionCol && (
             <div className="home-col home-col-a">
               {attention.length > 0 && (
                 <section
@@ -809,7 +819,9 @@ export default function HomeView({
                 </section>
               )}
             </div>
+            )}
 
+            {hasRecentCol && (
             <div className="home-col home-col-b">
               {recent.length > 0 && (
                 <section className="home-section" aria-label="Pick up where you left off">
@@ -840,7 +852,9 @@ export default function HomeView({
                 </section>
               )}
             </div>
+            )}
 
+            {hasSideCol && (
             <div className="home-col home-col-c">
               {(plans.length > 0 || spend !== null) && (
                 <section className="home-section" aria-label="Plan and spend">
@@ -984,6 +998,7 @@ export default function HomeView({
                 </section>
               )}
             </div>
+            )}
           </div>
           )}
         </div>
