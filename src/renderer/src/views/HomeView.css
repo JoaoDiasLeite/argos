@@ -70,7 +70,7 @@
 
 /* ── Start box ── */
 .home-start {
-  max-width: 1180px;
+  max-width: 1500px;
   margin: 0 0 26px;
   padding: 14px 16px;
   border: 1px solid var(--border);
@@ -197,19 +197,41 @@
   margin: 4px 2px;
 }
 
-/* ── Two-column layout ──
-   The reason for this redesign: the old single 760px column left half of a wide
-   window empty. 1.5fr/1fr gives "Needs you"/"Running"/recent room to breathe while
-   plan, spend and scheduled work stay a scannable side rail. */
+/* ── Responsive column layout ──
+   Three source-order groups — a (Needs you, Running), b (Pick up where you left
+   off), c (Plan & spend, Next up, Uncommitted work, Recent projects) — reassigned
+   to grid columns purely by breakpoint, never duplicated in the DOM.
+   Below 900px: one column, a/b/c stacked in source order.
+   900–1500px: two columns, a alone in the first, b+c sharing the second (in source
+   order) — this is the layout the view shipped with before three columns existed.
+   Above 1500px: a wide window finally gets a third column instead of sitting half
+   empty at a 1180px cap. */
 .home-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
   gap: 26px;
-  max-width: 1180px;
+  max-width: 1500px;
 }
+.home-col-a { grid-column: 1; }
+.home-col-b,
+.home-col-c { grid-column: 2; }
+
+@media (min-width: 1500px) {
+  .home-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr);
+  }
+  .home-col-b { grid-column: 2; }
+  .home-col-c { grid-column: 3; }
+}
+
 @media (max-width: 900px) {
   .home-grid {
     grid-template-columns: 1fr;
+  }
+  .home-col-a,
+  .home-col-b,
+  .home-col-c {
+    grid-column: 1;
   }
 }
 
@@ -509,13 +531,6 @@
   align-items: center;
 }
 
-.home-repo-clean {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--text-2);
-  opacity: 0.8;
-}
-
 .home-repo-loading {
   flex-shrink: 0;
   display: flex;
@@ -525,6 +540,14 @@
   font-size: 11.5px;
   color: var(--error);
   margin-top: 2px;
+}
+
+/* ── Recent projects ── */
+.home-project-time {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-2);
 }
 
 /* ── Pick up where you left off ── */

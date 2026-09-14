@@ -50,6 +50,7 @@ import type {
   HomeAttention,
   HomeRunning,
   HomeRepo,
+  HomeProject,
   HomePlan,
   HomeSpend,
   HomeRoutine,
@@ -1619,7 +1620,10 @@ export default function App() {
         // main process) can actually stat — a bare POSIX path is not a place Windows can
         // look. An ordinary Windows path already round-trips through canonicalProjectPath
         // unchanged, so this is a no-op for the common case.
-        path: canonicalProjectPath(v.path, v.wslDistro, homeKeyCtx)
+        path: canonicalProjectPath(v.path, v.wslDistro, homeKeyCtx),
+        // Carried forward for homeRecentProjects' lastUsed, so that memo doesn't have to
+        // re-scan `sessions` to recover what this one already computed.
+        updatedAt: v.updatedAt
       }))
   }, [sessions, homeKeyCtx])
 
@@ -1791,19 +1795,39 @@ export default function App() {
   // Row names come from the same resolver as the rest of Home/Sidebar (rename > repo
   // name > basename), disambiguated by parent folder on collisions — replacing the local
   // labelFor() this used to have, which only knew about basenames.
-  const homeRepos = useMemo<HomeRepo[]>(() => {
+  //
+  // homeRepoEntries splits into two Home sections rather than one: `repos` for folders
+  // known to have uncommitted work (or that failed to report status at all), and
+  // `recentProjects` for everything else — clean repos and ones still loading. A loading
+  // row can't be asserted to have changes yet, so it can never land in `repos`; it shows
+  // up as a loading `recentProjects` row until gitStatus settles one way or the other.
+  const [homeRepos, homeRecentProjects] = useMemo<[HomeRepo[], HomeProject[]]>(() => {
     const names = projectDisplayNames(homeRepoEntries, { custom: homeProjectNames, repos: homeRepoNames })
-    return homeRepoEntries.map((e) => {
+    const repos: HomeRepo[] = []
+    const recentProjects: HomeProject[] = []
+    for (const e of homeRepoEntries) {
       const status = homeRepoStatus[e.key]
-      return {
-        key: e.key,
-        name: names.get(e.key) ?? basename(e.path),
-        branch: status?.branch,
-        fileCount: status?.fileCount ?? 0,
-        loading: status?.loading,
-        error: status?.error
+      const name = names.get(e.key) ?? basename(e.path)
+      if ((status?.fileCount ?? 0) > 0 || status?.error) {
+        repos.push({
+          key: e.key,
+          name,
+          branch: status?.branch,
+          fileCount: status?.fileCount ?? 0,
+          error: status?.error
+        })
+      } else {
+        recentProjects.push({
+          key: e.key,
+          name,
+          branch: status?.branch,
+          lastUsed: e.updatedAt,
+          loading: status?.loading
+        })
       }
-    })
+    }
+    recentProjects.sort((a, b) => b.lastUsed - a.lastUsed)
+    return [repos, recentProjects]
   }, [homeRepoEntries, homeProjectNames, homeRepoNames, homeRepoStatus])
 
   // Same window key (`five_hour`) the sidebar's own plan badge reads (see accountUsage
@@ -2500,6 +2524,7 @@ export default function App() {
             attention={homeAttention}
             running={homeRunning}
             repos={homeRepos}
+            recentProjects={homeRecentProjects}
             plans={homePlans}
             spend={homeSpend}
             routines={homeRoutines}

@@ -32,6 +32,16 @@ export interface HomeRepo {
   error?: string
 }
 
+/** A clean-or-unknown project — everything `repos` no longer carries once it's
+ *  filtered down to just what's actually dirty (see the `repos` prop below). */
+export interface HomeProject {
+  key: string
+  name: string
+  branch?: string
+  lastUsed: number
+  loading?: boolean
+}
+
 export interface HomePlan {
   accountKey: string
   accountName: string
@@ -85,6 +95,7 @@ interface Props {
   attention: HomeAttention[]
   running: HomeRunning[]
   repos: HomeRepo[]
+  recentProjects: HomeProject[]
   plans: HomePlan[]
   spend: HomeSpend | null
   routines: HomeRoutine[]
@@ -463,6 +474,7 @@ export default function HomeView({
   attention,
   running,
   repos,
+  recentProjects,
   plans,
   spend,
   routines,
@@ -539,19 +551,34 @@ export default function HomeView({
 
   const projectLabel =
     projectItems.find((p) => p.key === choice.projectPath)?.label ?? start.projectName ?? 'Project'
-  const modelLabel = modelItems.find((m) => m.key === choice.modelId)?.label ?? start.modelLabel ?? 'Model'
+  // Falling back to the bare word "Model" says nothing — the pill is there to name what
+  // the prompt will run on. The id is uglier than a label and still tells you which one,
+  // and only shows while the model catalogue has not loaded yet.
+  const modelLabel =
+    modelItems.find((m) => m.key === choice.modelId)?.label ??
+    start.modelLabel ??
+    choice.modelId ??
+    start.modelId ??
+    'Model'
   const accountLabel =
-    accountItems.find((a) => a.key === choice.accountId)?.label ?? start.accountName ?? 'Account'
+    accountItems.find((a) => a.key === choice.accountId)?.label ??
+    start.accountName ??
+    choice.accountId ??
+    start.accountId ??
+    'Account'
 
   const nothing =
     attention.length === 0 &&
     running.length === 0 &&
     repos.length === 0 &&
+    recentProjects.length === 0 &&
     plans.length === 0 &&
     spend === null &&
     routines.length === 0 &&
     recent.length === 0
 
+  // `repos` is already filtered to just what's dirty or errored (no more "clean" rows
+  // here) — this still guards on fileCount in case a caller passes a stale zero.
   const dirtyCount = repos.filter((r) => !r.loading && !r.error && r.fileCount > 0).length
   const todayLabel = new Date().toLocaleDateString([], {
     weekday: 'long',
@@ -705,7 +732,11 @@ export default function HomeView({
             </div>
           ) : (
           <div className="home-grid">
-            <div className="home-col">
+            {/* Three source-order groups (a/b/c), reflowed by CSS alone: 3 columns above
+               1500px, folding to 2 (b+c share a column) then 1 below that — see the
+               `.home-col-*` rules in HomeView.css. Never duplicate a section to hide one
+               copy per breakpoint; only the grid-column assignment changes. */}
+            <div className="home-col home-col-a">
               {attention.length > 0 && (
                 <section
                   ref={attentionSectionRef}
@@ -777,7 +808,9 @@ export default function HomeView({
                   </div>
                 </section>
               )}
+            </div>
 
+            <div className="home-col home-col-b">
               {recent.length > 0 && (
                 <section className="home-section" aria-label="Pick up where you left off">
                   <h2 className="home-section-title">Pick up where you left off</h2>
@@ -808,7 +841,7 @@ export default function HomeView({
               )}
             </div>
 
-            <div className="home-col">
+            <div className="home-col home-col-c">
               {(plans.length > 0 || spend !== null) && (
                 <section className="home-section" aria-label="Plan and spend">
                   <h2 className="home-section-title">Plan &amp; spend</h2>
@@ -905,13 +938,45 @@ export default function HomeView({
                           <span className="home-repo-loading">
                             <span className="view-spinner small" />
                           </span>
-                        ) : r.error ? null : r.fileCount === 0 ? (
-                          <span className="home-repo-clean">clean</span>
-                        ) : (
+                        ) : r.error ? null : (
                           <button className="btn-ghost small" onClick={() => onOpenRepo(r.key)}>
                             <FolderIcon />
                             {r.fileCount === 1 ? '1 file' : `${r.fileCount} files`}
                           </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {recentProjects.length > 0 && (
+                <section className="home-section" aria-label="Recent projects">
+                  <h2 className="home-section-title">Recent projects</h2>
+                  <div className="home-list">
+                    {recentProjects.map((p) => (
+                      <div
+                        key={p.key}
+                        className="home-row home-project-row clickable"
+                        onClick={() => onOpenRepo(p.key)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') onOpenRepo(p.key)
+                        }}
+                      >
+                        <div className="home-row-main">
+                          <div className="home-row-top">
+                            <span className="home-row-name">{p.name}</span>
+                            {p.branch && <span className="home-row-project">{p.branch}</span>}
+                          </div>
+                        </div>
+                        {p.loading ? (
+                          <span className="home-repo-loading">
+                            <span className="view-spinner small" />
+                          </span>
+                        ) : (
+                          <span className="home-project-time">{timeAgo(p.lastUsed)}</span>
                         )}
                       </div>
                     ))}
