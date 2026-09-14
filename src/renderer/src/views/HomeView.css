@@ -4,45 +4,147 @@
    that rule lives in a component's own stylesheet, and a view that borrows it renders
    correctly only for as long as that component happens to be mounted. */
 
-/* Same states as the chat list's dot, and the same amber, because they flag the same
-   two conditions — a run in flight, and a run parked on an approval. */
-.home-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+/* ── Header ── */
+.home-header-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
 }
-.home-dot.running {
-  background: var(--accent);
-  animation: home-dot-pulse 1.4s ease-in-out infinite;
+
+.home-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-1);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  white-space: nowrap;
 }
-.home-dot.attention { background: #e2b341; }
-@keyframes home-dot-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
+.home-chip--warn {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg-2));
 }
-@media (prefers-reduced-motion: reduce) {
-  .home-dot.running { animation: none; }
+
+/* ── Start box ── */
+.home-start {
+  max-width: 1180px;
+  margin: 0 0 26px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+
+.home-start-input {
+  width: 100%;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-0);
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.5;
+}
+.home-start-input::placeholder {
+  color: var(--text-2);
+}
+
+.home-start-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.home-start-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Informative only — these never act as controls, they just say where the prompt
+   below will land. */
+.home-start-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--bg-3);
+}
+
+.home-start-btn {
+  flex-shrink: 0;
+}
+
+/* ── Two-column layout ──
+   The reason for this redesign: the old single 760px column left half of a wide
+   window empty. 1.5fr/1fr gives "Needs you"/"Running"/recent room to breathe while
+   plan, spend and scheduled work stay a scannable side rail. */
+.home-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 26px;
+  max-width: 1180px;
+}
+@media (max-width: 900px) {
+  .home-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.home-col {
+  min-width: 0;
 }
 
 .home-section {
-  max-width: 760px;
   margin-bottom: 26px;
+  min-width: 0;
 }
-.home-section:last-child {
+.home-col > .home-section:last-child {
   margin-bottom: 0;
 }
 
 .home-section-title {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--text-1);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-2);
   margin-bottom: 10px;
 }
 
-/* The only tinted block in the view on purpose — see the spec: colour here is
-   reserved for the one thing that's actually waiting on a person. */
+.home-section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.home-section-title-row .home-section-title {
+  margin-bottom: 0;
+}
+
+.home-section-action {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  transition: color 0.14s;
+}
+.home-section-action:hover {
+  color: var(--accent);
+}
+
+/* The only tinted block in the view on purpose — colour here is reserved for the
+   one thing that's actually waiting on a person. */
 .home-section--attention .home-section-title {
   color: var(--warn);
 }
@@ -57,7 +159,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-1);
@@ -103,29 +205,52 @@
   flex-shrink: 0;
 }
 
-/* ── Needs you ── */
-.home-approval-row {
-  /* Amber border only — same restraint as .pending-run.attention, so the whole
-     block doesn't turn into a wash of colour. */
-  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+/* ── Needs you ──
+   A single tinted block (not one card per row) so the amber reads as one alert
+   surface, with individual rows separated by hairlines inside it. */
+.home-attention-block {
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warn) 6%, var(--bg-1));
+  overflow: hidden;
 }
 
-.home-approval-cmd {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
+.home-attention-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+}
+.home-attention-row + .home-attention-row {
+  border-top: 1px solid color-mix(in srgb, var(--warn) 25%, var(--border));
+}
+
+.home-attention-icon {
+  flex-shrink: 0;
+  display: flex;
+  color: var(--warn);
+}
+
+.home-attention-detail {
+  font-size: 12px;
   color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.home-attention-detail.mono {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
 
-/* Deliberately never labelled "Approve" — see the component doc comment: this
-   button only opens the chat where the diff/command is actually visible. */
-.home-review-btn {
+.home-attention-meta {
+  font-size: 11px;
+  color: var(--text-2);
+  opacity: 0.8;
+}
+
+.home-attention-btn {
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 /* ── Running ── */
@@ -171,6 +296,100 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Plan & spend ── */
+.home-plan-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  text-align: left;
+  transition: border-color 0.14s, background 0.14s;
+}
+.home-plan-card:hover,
+.home-plan-card:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--bg-2);
+}
+
+.home-plan-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.home-plan-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.home-plan-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+
+.home-plan-percent {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-0);
+  font-variant-numeric: tabular-nums;
+}
+
+.home-plan-nodata {
+  font-size: 11px;
+  color: var(--text-2);
+  opacity: 0.8;
+}
+
+.home-plan-bar-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.home-plan-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.home-plan-sub {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.home-plan-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 2px 0;
+}
+
+.home-spend-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.home-spend-chart {
+  display: block;
+  width: 100%;
+  height: 26px;
+}
+
+/* ── Next up ── */
+.home-routine-sub {
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
 /* ── Uncommitted work ── */
 .home-repo-row {
   align-items: center;
@@ -194,55 +413,6 @@
   margin-top: 2px;
 }
 
-/* ── Usage cards ── */
-.home-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 10px;
-}
-
-.home-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-1);
-  text-align: left;
-  transition: border-color 0.14s, background 0.14s;
-}
-.home-card:hover,
-.home-card:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-  background: var(--bg-2);
-}
-
-.home-card-label {
-  font-size: 11.5px;
-  color: var(--text-2);
-}
-
-.home-card-value {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--text-0);
-  font-variant-numeric: tabular-nums;
-}
-
-.home-card-sub {
-  font-size: 11px;
-  color: var(--text-2);
-}
-
-.home-card-stale {
-  font-size: 10px;
-  color: var(--text-2);
-  opacity: 0.75;
-  font-style: italic;
-}
-
 /* ── Pick up where you left off ── */
 .home-recent-time {
   margin-left: auto;
@@ -257,4 +427,26 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Same states as the chat list's dot, and the same amber, because they flag the same
+   two conditions — a run in flight, and a run parked on an approval. */
+.home-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.home-dot.running {
+  background: var(--accent);
+  animation: home-dot-pulse 1.4s ease-in-out infinite;
+}
+.home-dot.attention { background: #e2b341; }
+@keyframes home-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-dot.running { animation: none; }
 }

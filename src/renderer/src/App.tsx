@@ -46,7 +46,17 @@ import ChangelogModal from './components/ChangelogModal'
 import { UiPrefs, UiPrefsPatch } from './types'
 import { sessionToReplaySeed } from './lib/markdown-export'
 import { provOf, acctOf, AccountDefaults } from './lib/account-scope'
-import type { HomeApproval, HomeRunning, HomeRepo, HomePlan, HomeRecent } from './views/HomeView'
+import type {
+  HomeAttention,
+  HomeRunning,
+  HomeRepo,
+  HomePlan,
+  HomeSpend,
+  HomeRoutine,
+  HomeRecent,
+  HomeStart
+} from './views/HomeView'
+import { projectKey, canonicalProjectPath, buildPosixDistroMap, ProjectKeyContext } from './lib/project-key'
 // The secondary views below are only ever mounted once the user navigates away
 // from the default 'chat' view, so they're loaded lazily (React.lazy) instead
 // of statically imported. That keeps their code — and the vendor libraries
@@ -211,6 +221,10 @@ export default function App() {
   const [defaultModel, setDefaultModel] = useState('claude-opus-4-8')
   const [ui, setUi] = useState<UiPrefs | null>(null)
   const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([])
+  // When each approvalId entered the queue, for Home's "since" — ApprovalRequest itself
+  // carries no timestamp, and reading Date.now() at render time would restart the count
+  // on every re-render instead of showing how long it has actually been pending.
+  const approvalSinceRef = useRef<Map<string, number>>(new Map())
   const [accounts, setAccounts] = useState<CCAccountStatus[]>([])
   const [defaultAccountId, setDefaultAccountId] = useState('default')
   const [codexAccounts, setCodexAccounts] = useState<ProviderAccountStatus[]>([])
@@ -605,6 +619,7 @@ export default function App() {
     })
 
     const offApproval = window.electronAPI.onApprovalRequest((data: ApprovalRequest) => {
+      approvalSinceRef.current.set(data.approvalId, Date.now())
       setApprovalQueue((prev) => [...prev, data])
     })
 
@@ -619,6 +634,7 @@ export default function App() {
     // An approval answered elsewhere (e.g. the always-on-top toast while this
     // window was hidden) — drop it here so the modal doesn't linger unanswered.
     const offResolved = window.electronAPI.onApprovalResolved((approvalId: string) => {
+      approvalSinceRef.current.delete(approvalId)
       setApprovalQueue((prev) => prev.filter((r) => r.approvalId !== approvalId))
     })
 
@@ -641,6 +657,7 @@ export default function App() {
     if (!req) return
     window.electronAPI.respondApproval({ approvalId, allow })
     addTermFor(req.appSessionId, { kind: allow ? 'info' : 'error', text: `${allow ? 'allowed' : 'denied'} ${req.tool}` })
+    approvalSinceRef.current.delete(approvalId)
     setApprovalQueue((prev) => prev.filter((r) => r.approvalId !== approvalId))
   }
 
@@ -1524,29 +1541,98 @@ export default function App() {
   // git status) — Home is reachable from anywhere, so nothing here should poll when
   // nobody is looking at it.
 
-  const homeApprovals = useMemo<HomeApproval[]>(
-    () =>
-      approvalQueue.map((r) => {
-        const session = sessions.find((s) => s.id === r.appSessionId)
-        const input = r.input
-        // Same reading ApprovalModal uses for its own body, so the two surfaces never
-        // disagree about what a pending request is asking for.
-        const target =
-          r.tool === 'Bash'
-            ? str(input.command)
-            : input.file_path || input.path
-              ? str(input.file_path ?? input.path)
-              : str(input.target ?? input.prompt ?? input.permissions ?? '')
+  // Fed by schedulerList() only while Home is visible (see the effect below) — kept as
+  // state rather than a memo because it comes from a fetch, not from state Argos already
+  // holds.
+  const [homeScheduledRuns, setHomeScheduledRuns] = useState<ScheduledRun[]>([])
+  useEffect(() => {
+    if (view !== 'home') return
+    let cancelled = false
+    window.electronAPI
+      .schedulerList()
+      .then((runs) => {
+        if (!cancelled) setHomeScheduledRuns(runs)
+      })
+      .catch(() => {
+        if (!cancelled) setHomeScheduledRuns([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [view])
+
+  const homeAttention = useMemo<HomeAttention[]>(() => {
+    const approvals: HomeAttention[] = approvalQueue.map((r) => {
+      const session = sessions.find((s) => s.id === r.appSessionId)
+      const input = r.input
+      // Same reading ApprovalModal uses for its own body, so the two surfaces never
+      // disagree about what a pending request is asking for.
+      const target =
+        r.tool === 'Bash'
+          ? str(input.command)
+          : input.file_path || input.path
+            ? str(input.file_path ?? input.path)
+            : str(input.target ?? input.prompt ?? input.permissions ?? '')
+      return {
+        id: r.approvalId,
+        kind: 'approval',
+        title: session?.name ?? 'Chat',
+        detail: target,
+        mono: r.tool === 'Bash',
+        context: session?.projectPath ? basename(session.projectPath) : undefined,
+        since: approvalSinceRef.current.get(r.approvalId),
+        actionLabel: 'Review'
+      }
+    })
+    const failedRoutines: HomeAttention[] = homeScheduledRuns
+      .filter((run) => run.lastResult && !run.lastResult.ok)
+      .map((run) => {
+        const summary = run.lastResult!.summary
+        const detail = summary.length > 90 ? `${summary.slice(0, 90)}…` : summary
         return {
-          approvalId: r.approvalId,
-          sessionId: r.appSessionId,
-          sessionName: session?.name ?? 'Chat',
-          projectName: session?.projectPath ? basename(session.projectPath) : undefined,
-          tool: r.tool,
-          target
+          id: `routine:${run.id}`,
+          kind: 'routine',
+          title: `${run.name} failed`,
+          detail,
+          context: run.projectPath ? `routine · ${basename(run.projectPath)}` : 'routine',
+          since: run.lastResult!.at,
+          actionLabel: 'Open'
         }
-      }),
-    [approvalQueue, sessions]
+      })
+    return [...approvals, ...failedRoutines]
+  }, [approvalQueue, sessions, homeScheduledRuns])
+
+  // Same cadence wording as ScheduledView's own cadenceSummary — kept as a second copy
+  // rather than importing it because it isn't exported there, but it reads the exact
+  // same ScheduledCadence shape.
+  const cadenceLabel = (cadence: ScheduledRun['cadence']): string => {
+    if (cadence.kind === 'interval') {
+      const mins = cadence.everyMinutes
+      if (mins < 60) return `Every ${mins} min`
+      const h = mins / 60
+      return `Every ${h % 1 === 0 ? h : h.toFixed(1)} hour${h !== 1 ? 's' : ''}`
+    }
+    if (cadence.kind === 'daily') return `Daily at ${cadence.time}`
+    if (cadence.kind === 'weekly') {
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+      return `Weekly · ${days[cadence.day]} at ${cadence.time}`
+    }
+    return 'Unknown cadence'
+  }
+
+  const homeRoutines = useMemo<HomeRoutine[]>(
+    () =>
+      homeScheduledRuns
+        .filter((run) => run.enabled && run.nextRunAt !== undefined)
+        .sort((a, b) => (a.nextRunAt as number) - (b.nextRunAt as number))
+        .slice(0, 3)
+        .map((run) => ({
+          id: run.id,
+          name: run.name,
+          nextRunAt: run.nextRunAt,
+          cadence: cadenceLabel(run.cadence)
+        })),
+    [homeScheduledRuns]
   )
 
   const homeRunning = useMemo<HomeRunning[]>(() => {
@@ -1576,52 +1662,86 @@ export default function App() {
     return [...chats, ...cli]
   }, [sessions, runningIds, attentionIds, liveSessions, models, defaultModel])
 
-  // Distinct project paths in use, most-recently-updated first — capped at 5 so the
-  // Home repo list stays a glance, not a second Projects view.
-  const homeRepoPaths = useMemo(() => {
-    const latest = new Map<string, number>()
+  // Drive-letter → distro map, for resolving a session's projectPath to the same
+  // projectKey the Sidebar groups by (see keyCtx there) — fetched once, not gated on
+  // `view`, since it's cheap and the Sidebar is mounted the whole time anyway.
+  const [homeWslDriveMap, setHomeWslDriveMap] = useState<Record<string, string>>({})
+  useEffect(() => {
+    window.electronAPI.wslDriveMap?.().then(setHomeWslDriveMap).catch(() => {})
+  }, [])
+  const homeKeyCtx = useMemo<ProjectKeyContext>(
+    () => ({ driveMap: homeWslDriveMap, posixDistros: buildPosixDistroMap(sessions) }),
+    [homeWslDriveMap, sessions]
+  )
+
+  // One row per projectKey (not per raw path spelling — see project-key.ts), most
+  // recently updated first, capped at 5 so the Home repo list stays a glance rather
+  // than a second Projects view.
+  const homeRepoEntries = useMemo(() => {
+    const latest = new Map<string, { path: string; wslDistro?: string; updatedAt: number }>()
     for (const s of sessions) {
       if (!s.projectPath) continue
-      const prev = latest.get(s.projectPath)
-      if (prev === undefined || s.updatedAt > prev) latest.set(s.projectPath, s.updatedAt)
+      const key = projectKey(s.projectPath, s.wslDistro, homeKeyCtx)
+      const prev = latest.get(key)
+      if (prev === undefined || s.updatedAt > prev.updatedAt) {
+        latest.set(key, { path: s.projectPath, wslDistro: s.wslDistro, updatedAt: s.updatedAt })
+      }
     }
-    return [...latest.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([p]) => p)
-  }, [sessions])
+    return [...latest.entries()]
+      .sort((a, b) => b[1].updatedAt - a[1].updatedAt)
+      .slice(0, 5)
+      .map(([key, v]) => ({
+        key,
+        // The canonical spelling, not whichever raw path the latest session happened to
+        // record: gitStatus needs one real filesystem location for the group, and for a
+        // WSL folder the UNC form is the one a plain Windows process (this renderer's
+        // main process) can actually stat — a bare POSIX path is not a place Windows can
+        // look. An ordinary Windows path already round-trips through canonicalProjectPath
+        // unchanged, so this is a no-op for the common case.
+        path: canonicalProjectPath(v.path, v.wslDistro, homeKeyCtx)
+      }))
+  }, [sessions, homeKeyCtx])
 
   const [homeRepos, setHomeRepos] = useState<HomeRepo[]>([])
   useEffect(() => {
     if (view !== 'home') return
     let cancelled = false
+    const allPaths = homeRepoEntries.map((e) => e.path)
     setHomeRepos(
-      homeRepoPaths.map((p) => ({ path: p, name: labelFor(p, homeRepoPaths), fileCount: 0, loading: true }))
+      homeRepoEntries.map((e) => ({
+        key: e.key,
+        name: labelFor(e.path, allPaths),
+        fileCount: 0,
+        loading: true
+      }))
     )
     // Each row settles on its own. One Promise.all resolved them all or none, so a single
     // slow gitStatus — a WSL path, a drive that has gone away — held every row in its
     // spinner, and the list looked broken rather than partly late.
-    for (const p of homeRepoPaths) {
+    for (const entry of homeRepoEntries) {
       window.electronAPI
-        .gitStatus(p)
+        .gitStatus(entry.path)
         .then<HomeRepo>((status) => ({
-          path: p,
-          name: labelFor(p, homeRepoPaths),
+          key: entry.key,
+          name: labelFor(entry.path, allPaths),
           branch: status.branch,
           fileCount: status.files.length
         }))
         .catch<HomeRepo>(() => ({
-          path: p,
-          name: labelFor(p, homeRepoPaths),
+          key: entry.key,
+          name: labelFor(entry.path, allPaths),
           fileCount: 0,
           error: 'Could not read status'
         }))
         .then((row) => {
           if (cancelled) return
-          setHomeRepos((prev) => prev.map((r) => (r.path === p ? row : r)))
+          setHomeRepos((prev) => prev.map((r) => (r.key === entry.key ? row : r)))
         })
     }
     return () => {
       cancelled = true
     }
-  }, [view, homeRepoPaths])
+  }, [view, homeRepoEntries])
 
   // Same window key (`five_hour`) the sidebar's own plan badge reads (see accountUsage
   // above) — one interpretation of AccountPlanUsage.windows, not a second one for Home.
@@ -1665,6 +1785,97 @@ export default function App() {
         }),
     [sessions]
   )
+
+  const [homeSpend, setHomeSpend] = useState<HomeSpend | null>(null)
+  useEffect(() => {
+    if (view !== 'home') return
+    let cancelled = false
+    // `false`: same cache-first read UsageView does for its instant paint — Home has no
+    // more reason than that view does to force ccUsage's (heavy) refetch on every visit.
+    window.electronAPI
+      .ccUsage(false)
+      .then((report) => {
+        if (cancelled) return
+        if (report.entries.length === 0) {
+          setHomeSpend(null)
+          return
+        }
+        const byDay = new Map<string, number>()
+        for (const e of report.entries) {
+          if (e.day === 'unknown') continue
+          byDay.set(e.day, (byDay.get(e.day) ?? 0) + e.costUsd)
+        }
+        // `day` is a plain YYYY-MM-DD string, and UsageView builds its own keys from the
+        // LOCAL date (its `ymd`), not from toISOString — which is UTC, and would call the
+        // hour between local and UTC midnight yesterday.
+        const pad = (v: number) => String(v).padStart(2, '0')
+        const dayKey = (ts: number) => {
+          const d = new Date(ts)
+          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+        }
+        const todayKey = dayKey(Date.now())
+        const days: { day: string; costUsd: number }[] = []
+        for (let i = 13; i >= 0; i--) {
+          const d = dayKey(Date.now() - i * 86400_000)
+          days.push({ day: d, costUsd: byDay.get(d) ?? 0 })
+        }
+        setHomeSpend({ today: byDay.get(todayKey) ?? 0, days })
+      })
+      .catch(() => {
+        if (!cancelled) setHomeSpend(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [view])
+
+  const homeStart = useMemo<HomeStart>(() => {
+    // The chips describe where the prompt will actually land, so they read the same
+    // source startOverlayPrompt does: the ACTIVE session, which is what it seeds the new
+    // chat from — folder and account both — before falling back to the defaults. Reading
+    // the most recently updated session instead would label the box with a project the
+    // chat is not going to open in.
+    const base = sessions.find((s) => s.id === activeId)
+    const acctId = base?.accountId ?? defaultAccountId
+    const accountName =
+      defaultProvider === 'codex'
+        ? codexAccounts.find((a) => a.id === codexDefaultAccountId)?.name
+        : defaultProvider === 'gemini'
+          ? geminiAccounts.find((a) => a.id === geminiDefaultAccountId)?.name
+          : accounts.find((a) => a.id === acctId)?.name
+    return {
+      projectName: base?.projectPath ? basename(base.projectPath) : undefined,
+      modelLabel: models.find((m) => m.id === defaultModel)?.label,
+      accountName
+    }
+  }, [
+    sessions,
+    activeId,
+    models,
+    defaultModel,
+    defaultProvider,
+    codexAccounts,
+    codexDefaultAccountId,
+    geminiAccounts,
+    geminiDefaultAccountId,
+    accounts,
+    defaultAccountId
+  ])
+
+  // Review an approval, or jump to the routine that failed — the two kinds of row Home's
+  // attention list can hold (see homeAttention above; the `routine:` prefix is what
+  // that id was namespaced with, to keep it out of the approvalId space).
+  const onHomeAct = (id: string) => {
+    if (id.startsWith('routine:')) {
+      setView('scheduled')
+      return
+    }
+    const req = approvalQueue.find((r) => r.approvalId === id)
+    if (req) {
+      setActiveId(req.appSessionId)
+      setView('chat')
+    }
+  }
 
   // Run a custom agent
   const runAgent = (agent: AgentDef) => {
@@ -2179,19 +2390,23 @@ export default function App() {
       {view === 'home' && (
         <Suspense fallback={<ViewLoading />}>
           <HomeView
-            approvals={homeApprovals}
+            attention={homeAttention}
             running={homeRunning}
             repos={homeRepos}
             plans={homePlans}
-            todayCost={null}
-            todayChats={null}
+            spend={homeSpend}
+            routines={homeRoutines}
             recent={homeRecent}
+            start={homeStart}
+            onAct={onHomeAct}
+            onStart={(prompt) => startOverlayPrompt({ prompt })}
             onOpenSession={(id) => {
               setActiveId(id)
               setView('chat')
             }}
             onOpenRepo={() => setView('projects')}
             onOpenUsage={() => setView('usage')}
+            onOpenScheduled={() => setView('scheduled')}
           />
         </Suspense>
       )}
