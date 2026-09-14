@@ -17,3 +17,10 @@
 .wr-command summary { cursor: pointer; overflow-wrap: anywhere; }
 .wr-command summary span { display: block; color: var(--text-1); font-size: 11px; margin-top: 4px; }
 .workspace-review > .btn-secondary { margin-top: 10px; }
+.wr-running-title, .wr-subhead { font-size: 11px; font-weight: 600; color: var(--text-1); margin: 10px 0 4px; }
+.wr-running-item { display: flex; align-items: center; gap: 8px; font: 12px/1.6 var(--font-mono); padding: 4px 0; overflow-wrap: anywhere; }
+.wr-pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex-shrink: 0; animation: wr-pulse 1.2s ease-in-out infinite; }
+@keyframes wr-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .wr-pulse { animation: none; } }
+.wr-restore-preview { margin: 8px 0 12px; }
+.wr-restore-preview .wr-note { margin: 4px 0; }
