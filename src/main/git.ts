@@ -140,6 +140,98 @@ export async function createWorktree(
   return { ok: true, path: wtPath, branch }
 }
 
+export interface RepoName {
+  /** Basename of the origin remote's URL, without a trailing `.git`. */
+  remote?: string
+  /** Basename of the repository root (`git rev-parse --show-toplevel`). */
+  toplevel?: string
+}
+
+/**
+ * Basename of a remote URL's path, independent of which of the three forms git accepts
+ * it came in as: an HTTPS/ssh/git/file URL with a scheme, the SSH scp-like shorthand
+ * (`user@host:owner/repo.git`, which is not a URL — `new URL()` rejects it), or a plain
+ * local filesystem path. Exported (rather than folded into getRepoName) so the three
+ * forms can be unit-tested without shelling out to git.
+ */
+export function repoNameFromRemoteUrl(url: string): string | undefined {
+  const trimmed = url.trim()
+  if (!trimmed) return undefined
+
+  let pathPart: string
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
+    // Has a scheme (https://, ssh://, git://, file://, ...): let URL do the parsing.
+    try {
+      pathPart = new URL(trimmed).pathname
+    } catch {
+      pathPart = trimmed
+    }
+  } else if (/^[^/\\@]+@[^/\\:]+:/.test(trimmed)) {
+    // SSH scp-like shorthand ("git@host:owner/repo.git"): path is everything after
+    // the colon. Guarded on a leading "user@host" so a Windows drive letter like
+    // "C:\repo" (no "@") doesn't get misread as this form.
+    pathPart = trimmed.slice(trimmed.indexOf(':') + 1)
+  } else {
+    // Local filesystem path, absolute or relative, Windows or POSIX.
+    pathPart = trimmed
+  }
+
+  const normalized = pathPart.replace(/\\/g, '/').replace(/\/+$/, '')
+  const segments = normalized.split('/').filter(Boolean)
+  const last = segments[segments.length - 1]
+  if (!last) return undefined
+  return last.replace(/\.git$/, '')
+}
+
+const repoNameCache = new Map<string, RepoName>()
+
+/** Drops all cached repo-name lookups; not time-based since a repo's identity rarely changes. */
+export function clearRepoNameCache(): void {
+  repoNameCache.clear()
+}
+
+/**
+ * Repo identity for display purposes: the origin remote's basename (if a remote is
+ * configured) and the basename of the working tree's toplevel. Cached per `cwd` since
+ * this is asked for on every project every time a view opens, and a repo's name is
+ * effectively static. Never throws — a missing folder or a non-repo both resolve to
+ * `{}` so a stale project among many doesn't break the rest of the batch.
+ */
+export async function getRepoName(cwd: string): Promise<RepoName> {
+  const cached = repoNameCache.get(cwd)
+  if (cached) return cached
+
+  if (!cwd || !fs.existsSync(cwd)) {
+    const empty: RepoName = {}
+    repoNameCache.set(cwd, empty)
+    return empty
+  }
+
+  const inside = await git(cwd, ['rev-parse', '--is-inside-work-tree'])
+  if (inside.stdout.trim() !== 'true') {
+    const empty: RepoName = {}
+    repoNameCache.set(cwd, empty)
+    return empty
+  }
+
+  const result: RepoName = {}
+
+  const remoteRes = await git(cwd, ['config', '--get', 'remote.origin.url'])
+  if (remoteRes.code === 0 && remoteRes.stdout.trim()) {
+    result.remote = repoNameFromRemoteUrl(remoteRes.stdout.trim())
+  }
+
+  const toplevelRes = await git(cwd, ['rev-parse', '--show-toplevel'])
+  if (toplevelRes.code === 0 && toplevelRes.stdout.trim()) {
+    // git always emits forward slashes here, even on Windows.
+    const segments = toplevelRes.stdout.trim().split('/').filter(Boolean)
+    result.toplevel = segments[segments.length - 1]
+  }
+
+  repoNameCache.set(cwd, result)
+  return result
+}
+
 export interface GitCommit {
   hash: string
   /** ISO date "YYYY-MM-DD". */

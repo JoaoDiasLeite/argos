@@ -79,7 +79,17 @@ import {
   compareCheckpoints,
   exportPatch
 } from './checkpoints'
-import { getStatus, getDiff, stageFile, unstageFile, stageAll, commit, getLog, createWorktree } from './git'
+import {
+  getStatus,
+  getDiff,
+  stageFile,
+  unstageFile,
+  stageAll,
+  commit,
+  getLog,
+  createWorktree,
+  getRepoName
+} from './git'
 import { listCommands } from './commands'
 import {
   listHosts,
@@ -2390,6 +2400,7 @@ ipcMain.handle(
 // ─── Git ──────────────────────────────────────────────────────────────────────
 
 ipcMain.handle('git:status', (_, cwd: string) => getStatus(cwd))
+ipcMain.handle('git:repo-name', (_, cwd: string) => getRepoName(cwd))
 ipcMain.handle('git:diff', (_, cwd: string, filePath: string, staged: boolean) =>
   getDiff(cwd, filePath, staged)
 )

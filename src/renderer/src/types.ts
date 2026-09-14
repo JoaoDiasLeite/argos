@@ -767,6 +767,13 @@ export interface GitStatus {
   behind: number
 }
 
+export interface RepoName {
+  /** Basename of the origin remote's URL, without a trailing `.git`. */
+  remote?: string
+  /** Basename of the repository root (`git rev-parse --show-toplevel`). */
+  toplevel?: string
+}
+
 export interface ImageAttachment {
   kind: 'image'
   mediaType: string
@@ -1689,6 +1696,7 @@ declare global {
 
       // Git
       gitStatus: (cwd: string) => Promise<GitStatus>
+      gitRepoName: (cwd: string) => Promise<RepoName>
       gitDiff: (cwd: string, filePath: string, staged: boolean) => Promise<string>
       gitStage: (cwd: string, filePath: string) => Promise<GitStatus>
       gitUnstage: (cwd: string, filePath: string) => Promise<GitStatus>

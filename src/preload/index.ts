@@ -386,6 +386,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Git
   gitStatus: (cwd: string) => ipcRenderer.invoke('git:status', cwd),
+  gitRepoName: (cwd: string) => ipcRenderer.invoke('git:repo-name', cwd),
   gitDiff: (cwd: string, filePath: string, staged: boolean) =>
     ipcRenderer.invoke('git:diff', cwd, filePath, staged),
   gitStage: (cwd: string, filePath: string) => ipcRenderer.invoke('git:stage', cwd, filePath),
