@@ -69,8 +69,10 @@
 }
 
 /* ── Start box ── */
+/* No width cap: the view fills the window it is given. A cap centred the content and
+   left a band of empty space on a full screen, which is what the three-column
+   breakpoint below exists to avoid in the first place. */
 .home-start {
-  max-width: 1500px;
   margin: 0 0 26px;
   padding: 14px 16px;
   border: 1px solid var(--border);
@@ -210,7 +212,6 @@
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
   gap: 26px;
-  max-width: 1500px;
 }
 .home-col-a { grid-column: 1; }
 .home-col-b,
