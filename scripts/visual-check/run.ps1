@@ -16,12 +16,25 @@
 
 .PARAMETER SkipBuild
   Skip the `electron-vite build` step (use the existing out/ bundle as-is).
+
+.PARAMETER Wide
+  Widen the window before capturing, for layouts whose breakpoints sit above the
+  default window size (Home opens a third column past 1500px). The switch alone gives
+  1900x1150. Pair it with -Size WIDTHxHEIGHT for another size.
+
+.PARAMETER Size
+  Window size for -Wide, as "WIDTHxHEIGHT". Ignored without -Wide.
 #>
 param(
   [string]$View,
   [string]$OutFile,
   [switch]$KeepOpen,
-  [switch]$SkipBuild
+  [switch]$SkipBuild,
+  [switch]$Wide,
+  # Only read when -Wide is present. A single [string]$Wide would have been neater,
+  # but PowerShell demands an argument for a string parameter, so `-Wide` on its own
+  # would be a parse error rather than the common case.
+  [string]$Size
 )
 
 $ErrorActionPreference = 'Stop'
@@ -74,6 +87,13 @@ if ($View) {
   $env:VISUAL_CHECK_VIEW = $View
 } else {
   Remove-Item Env:\VISUAL_CHECK_VIEW -ErrorAction SilentlyContinue
+}
+
+if ($Wide) {
+  $env:VISUAL_CHECK_WIDE = if ($Size) { $Size } else { '1900x1150' }
+  Write-Host "== Window will be sized to $env:VISUAL_CHECK_WIDE"
+} else {
+  Remove-Item Env:\VISUAL_CHECK_WIDE -ErrorAction SilentlyContinue
 }
 
 $viewLabel = if ($View) { $View } else { '<default>' }

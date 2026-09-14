@@ -46,6 +46,17 @@ namespace VisualCheck
         [DllImport("user32.dll")]
         public static extern bool SetProcessDPIAware();
 
+        public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+        [DllImport("user32.dll")]
+        public static extern bool IsWindowVisible(IntPtr hWnd);
+
         [DllImport("user32.dll")]
         public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
     }
@@ -70,7 +81,35 @@ try {
   try { [void][VisualCheck.Win32]::SetProcessDPIAware() } catch {}
 }
 
+# The biggest visible top-level window belonging to the process.
+#
+# Not `Process.MainWindowHandle`: Electron apps here also open small always-on-top
+# helpers (the pill, the overlay), and which of them Windows calls "main" changes with
+# z-order — maximising the real window was enough to make it hand back a 969x651 helper
+# instead. Area is the reliable discriminator: the window worth capturing is the one
+# the app draws its UI in, and that is always the largest.
 function Get-MainWindowHandle([int]$ProcId) {
+  $best = [IntPtr]::Zero
+  $bestArea = 0
+  $callback = [VisualCheck.Win32+EnumWindowsProc]{
+    param($hWnd, $lParam)
+    $owner = 0
+    [void][VisualCheck.Win32]::GetWindowThreadProcessId($hWnd, [ref]$owner)
+    if ($owner -ne $ProcId) { return $true }
+    if (-not [VisualCheck.Win32]::IsWindowVisible($hWnd)) { return $true }
+    $r = New-Object VisualCheck.RECT
+    [void][VisualCheck.Win32]::GetWindowRect($hWnd, [ref]$r)
+    $area = ($r.Right - $r.Left) * ($r.Bottom - $r.Top)
+    if ($area -gt $bestArea) {
+      $script:bestArea = $area
+      $script:best = $hWnd
+    }
+    return $true
+  }
+  [void][VisualCheck.Win32]::EnumWindows($callback, [IntPtr]::Zero)
+  if ($best -ne [IntPtr]::Zero) { return $best }
+  # Nothing enumerated (the window may not be up yet) — fall back to what the process
+  # itself reports, which is what this used to do outright.
   $proc = Get-Process -Id $ProcId -ErrorAction Stop
   $proc.Refresh()
   return $proc.MainWindowHandle

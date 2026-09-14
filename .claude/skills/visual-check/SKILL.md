@@ -20,7 +20,8 @@ This builds the app, launches an isolated instance, waits for it to render,
 screenshots it to `scripts/visual-check/visual-check.png`, and kills the
 instance. Pass a different `-View` to land on a specific screen, `-OutFile
 <path>` to change where the PNG goes, `-KeepOpen` to leave the instance
-running for manual poking, or `-SkipBuild` to reuse the existing `out/`
+running for manual poking, `-Wide` to capture at 1900x1150 (or `-Wide -Size WxH`)
+for layouts whose breakpoints sit above the default window, or `-SkipBuild` to reuse the existing `out/`
 bundle (much faster — use this if you haven't changed anything since the
 last build, or already ran `npx electron-vite build` yourself).
 
@@ -87,6 +88,14 @@ Valid `-View` names: `chat`, `projects`, `agents`, `rooms`, `planner`,
   enough that the second send arrives with no margin and the screenshot shows the
   default view. It looks like the deep link is broken and is not — build once
   (`npx electron-vite build`) and pass `-SkipBuild` for deep-linked checks.
+- **The capture picks the biggest window, not `MainWindowHandle`.** The app also opens
+  small always-on-top helpers (pill, overlay), and which of them Windows calls the main
+  window changes with z-order — enough that resizing the real one handed back a 969x651
+  helper instead. `snap.ps1` enumerates the process's visible top-level windows and takes
+  the largest, falling back to `MainWindowHandle` if none enumerate.
+- **`-Wide` sets bounds; it does not maximise.** `win.maximize()` is not honoured by this
+  window — the capture comes back unchanged — while `setBounds` takes. The launcher
+  applies it twice (t+5s, t+9s) for the same reason the deep link is sent twice.
 - **A minimized/not-yet-shown window screenshots as ~160x28.** `snap.ps1`
   detects a degenerate rect (width < 300 or height < 200), calls
   `ShowWindow(hwnd, 9)` (SW_RESTORE), sleeps ~900ms, and re-measures before
