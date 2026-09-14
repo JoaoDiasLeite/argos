@@ -192,7 +192,9 @@ export default function App() {
   // forward even when the "open new chats in" pref is Terminal (see Chat's effect).
   const [newChatNonce, setNewChatNonce] = useState(0)
   const [auth, setAuth] = useState<AuthStatus | null>(null)
-  const [view, setView] = useState<View>('chat')
+  // Home is where the app opens: it answers "what needs me now" before you have to
+  // pick a chat, and it is the one view whose content is about every chat at once.
+  const [view, setView] = useState<View>('home')
   // Where Settings' "Back to app" goes. Settings is a full screen, so it displaces
   // whatever was showing, and the way out has to lead back there — not to Chat, which
   // is what a hardcoded fallback would give someone who opened Settings from Usage.
