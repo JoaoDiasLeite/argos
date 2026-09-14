@@ -9,6 +9,7 @@ import {
   projectKey,
   ProjectKeyContext
 } from '../lib/project-key'
+import { projectDisplayName, RepoName } from '../lib/project-name'
 import FileTree from './FileTree'
 import './Sidebar.css'
 import './AccountPicker.css'
@@ -232,6 +233,11 @@ export default function Sidebar({
   useEffect(() => {
     window.electronAPI.ccProjectNames().then(setProjectNamesState).catch(() => {})
   }, [])
+  // ── Repo names (e.g. the git remote's name, when it differs from the folder) ──
+  // Fetched once per group's canonical path — the main process caches the git calls,
+  // so this is not polling. Keyed by projectKey so it lines up with `projectNames`;
+  // a folder that fails (not a repo, git missing, etc.) just keeps showing its basename.
+  const [repoNames, setRepoNames] = useState<Record<string, RepoName>>({})
   const [renamingGroupKey, setRenamingGroupKey] = useState<string | null>(null)
   const [groupRenameDraft, setGroupRenameDraft] = useState('')
 
@@ -520,6 +526,26 @@ export default function Sidebar({
     })
     return list
   }, [filteredSessions, keyCtx])
+
+  // Ask git for each group's repo name once its canonical path is known. Fire-and-forget
+  // per group so one folder failing (not a repo, git missing, …) can't hold up the rest.
+  //
+  // What is already asked lives in a ref, not in `repoNames`: keying the skip on the
+  // state would make the first answer re-run this effect while the other groups are
+  // still in flight and none of them are in the map yet, so every one of them would be
+  // asked again — once per answer that arrives.
+  const repoAsked = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    for (const g of groups) {
+      if (!g.path || repoAsked.current.has(g.key)) continue
+      repoAsked.current.add(g.key)
+      const key = g.key
+      window.electronAPI
+        .gitRepoName(g.path)
+        .then((repo) => setRepoNames((prev) => ({ ...prev, [key]: repo })))
+        .catch(() => repoAsked.current.delete(key))
+    }
+  }, [groups])
 
   // The group holding the active chat is always rendered expanded, regardless of
   // stored collapse state — you should never be looking at a chat hidden in a
@@ -891,7 +917,15 @@ export default function Sidebar({
                   // those; a rename always writes the current key, so they only ever fade.
                   const customName =
                     projectNames[g.key] ?? g.legacyKeys.map((k) => projectNames[k]).find(Boolean)
-                  const displayName = (canRename && customName) || g.basename
+                  const displayName =
+                    canRename && customName
+                      ? customName
+                      : g.path
+                        ? projectDisplayName(g.key, g.path, {
+                            custom: customName ? { [g.key]: customName } : undefined,
+                            repos: { [g.key]: repoNames[g.key] ?? {} }
+                          })
+                        : g.basename
                   const isRenamingGroup = renamingGroupKey === g.key
                   return (
                     <div className="session-group" key={g.key}>

@@ -57,6 +57,7 @@ import type {
   HomeStart
 } from './views/HomeView'
 import { projectKey, canonicalProjectPath, buildPosixDistroMap, ProjectKeyContext } from './lib/project-key'
+import { projectDisplayName, projectDisplayNames, RepoName } from './lib/project-name'
 import { cadenceSummary } from './lib/cadence'
 // The secondary views below are only ever mounted once the user navigates away
 // from the default 'chat' view, so they're loaded lazily (React.lazy) instead
@@ -100,17 +101,6 @@ function generateId() {
 // for s.projectPath elsewhere) — kept as a helper here since Home needs it in several places.
 function basename(p: string): string {
   return p.split(/[\\/]/).filter(Boolean).pop() ?? p
-}
-
-/** A repo's display name. Two checkouts can share a basename (a Windows path and its
- *  WSL spelling, api/ and web/ under one product): when they do, the row keeps the
- *  parent folder too, because two identical rows say less than one. */
-function labelFor(path: string, all: string[]): string {
-  const name = basename(path)
-  const clashes = all.filter((p) => p !== path && basename(p) === name).length > 0
-  if (!clashes) return name
-  const parent = basename(path.slice(0, path.length - name.length).replace(/[\/]+$/, ''))
-  return parent ? `${parent}/${name}` : path
 }
 
 function str(v: unknown): string {
@@ -1565,6 +1555,105 @@ export default function App() {
     }
   }, [view])
 
+  // Drive-letter → distro map, for resolving a session's projectPath to the same
+  // projectKey the Sidebar groups by (see keyCtx there) — fetched once, not gated on
+  // `view`, since it's cheap and the Sidebar is mounted the whole time anyway.
+  const [homeWslDriveMap, setHomeWslDriveMap] = useState<Record<string, string>>({})
+  useEffect(() => {
+    window.electronAPI.wslDriveMap?.().then(setHomeWslDriveMap).catch(() => {})
+  }, [])
+  const homeKeyCtx = useMemo<ProjectKeyContext>(
+    () => ({ driveMap: homeWslDriveMap, posixDistros: buildPosixDistroMap(sessions) }),
+    [homeWslDriveMap, sessions]
+  )
+
+  // Custom project names (renames) — the same source the Sidebar reads, fetched only
+  // while Home is visible so nothing here polls when nobody is looking at it.
+  const [homeProjectNames, setHomeProjectNames] = useState<Record<string, string>>({})
+  useEffect(() => {
+    if (view !== 'home') return
+    let cancelled = false
+    window.electronAPI
+      .ccProjectNames()
+      .then((names) => {
+        if (!cancelled) setHomeProjectNames(names)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [view])
+
+  // One row per projectKey (not per raw path spelling — see project-key.ts), most
+  // recently updated first, capped at 5 so the Home repo list stays a glance rather
+  // than a second Projects view.
+  const homeRepoEntries = useMemo(() => {
+    const latest = new Map<string, { path: string; wslDistro?: string; updatedAt: number }>()
+    for (const s of sessions) {
+      if (!s.projectPath) continue
+      const key = projectKey(s.projectPath, s.wslDistro, homeKeyCtx)
+      const prev = latest.get(key)
+      if (prev === undefined || s.updatedAt > prev.updatedAt) {
+        latest.set(key, { path: s.projectPath, wslDistro: s.wslDistro, updatedAt: s.updatedAt })
+      }
+    }
+    return [...latest.entries()]
+      .sort((a, b) => b[1].updatedAt - a[1].updatedAt)
+      .slice(0, 5)
+      .map(([key, v]) => ({
+        key,
+        // The canonical spelling, not whichever raw path the latest session happened to
+        // record: gitStatus needs one real filesystem location for the group, and for a
+        // WSL folder the UNC form is the one a plain Windows process (this renderer's
+        // main process) can actually stat — a bare POSIX path is not a place Windows can
+        // look. An ordinary Windows path already round-trips through canonicalProjectPath
+        // unchanged, so this is a no-op for the common case.
+        path: canonicalProjectPath(v.path, v.wslDistro, homeKeyCtx)
+      }))
+  }, [sessions, homeKeyCtx])
+
+  // Repo names (git remote, else toplevel) for the folders in homeRepoEntries — fetched
+  // once per key while Home is visible; the main process caches the underlying git
+  // calls, so re-running this effect on a later homeRepoEntries change is not polling.
+  // A folder that fails (not a repo, git missing, a WSL drive that's gone away) just
+  // keeps resolving to its basename.
+  const [homeRepoNames, setHomeRepoNames] = useState<Record<string, RepoName>>({})
+  // What has already been asked lives in a ref, not in `homeRepoNames`: keying the skip
+  // on the state would re-run this effect on the first answer, while the other folders
+  // are still in flight and none of them are in the map — so each of them would be asked
+  // again, once per answer that lands.
+  const homeRepoAsked = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (view !== 'home') return
+    let cancelled = false
+    for (const entry of homeRepoEntries) {
+      if (homeRepoAsked.current.has(entry.key)) continue
+      homeRepoAsked.current.add(entry.key)
+      const key = entry.key
+      window.electronAPI
+        .gitRepoName(entry.path)
+        .then((repo) => {
+          if (cancelled) return
+          setHomeRepoNames((prev) => ({ ...prev, [key]: repo }))
+        })
+        .catch(() => homeRepoAsked.current.delete(key))
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [view, homeRepoEntries])
+
+  // The one name resolver Home uses everywhere a session's or routine's project shows
+  // up outside the repo list itself — same precedence as the Sidebar (rename > repo name
+  // > basename), so a folder renamed to "argos" reads as "argos" throughout the app.
+  const resolveHomeProjectName = useCallback(
+    (path: string, wslDistro?: string) => {
+      const key = projectKey(path, wslDistro, homeKeyCtx)
+      return projectDisplayName(key, path, { custom: homeProjectNames, repos: homeRepoNames })
+    },
+    [homeKeyCtx, homeProjectNames, homeRepoNames]
+  )
+
   const homeAttention = useMemo<HomeAttention[]>(() => {
     const approvals: HomeAttention[] = approvalQueue.map((r) => {
       const session = sessions.find((s) => s.id === r.appSessionId)
@@ -1583,7 +1672,9 @@ export default function App() {
         title: session?.name ?? 'Chat',
         detail: target,
         mono: r.tool === 'Bash',
-        context: session?.projectPath ? basename(session.projectPath) : undefined,
+        context: session?.projectPath
+          ? resolveHomeProjectName(session.projectPath, session.wslDistro)
+          : undefined,
         since: approvalSinceRef.current.get(r.approvalId),
         actionLabel: 'Review'
       }
@@ -1598,13 +1689,13 @@ export default function App() {
           kind: 'routine',
           title: `${run.name} failed`,
           detail,
-          context: run.projectPath ? `routine · ${basename(run.projectPath)}` : 'routine',
+          context: run.projectPath ? `routine · ${resolveHomeProjectName(run.projectPath)}` : 'routine',
           since: run.lastResult!.at,
           actionLabel: 'Open'
         }
       })
     return [...approvals, ...failedRoutines]
-  }, [approvalQueue, sessions, homeScheduledRuns])
+  }, [approvalQueue, sessions, homeScheduledRuns, resolveHomeProjectName])
 
   const homeRoutines = useMemo<HomeRoutine[]>(
     () =>
@@ -1648,58 +1739,17 @@ export default function App() {
     return [...chats, ...cli]
   }, [sessions, runningIds, attentionIds, liveSessions, models, defaultModel])
 
-  // Drive-letter → distro map, for resolving a session's projectPath to the same
-  // projectKey the Sidebar groups by (see keyCtx there) — fetched once, not gated on
-  // `view`, since it's cheap and the Sidebar is mounted the whole time anyway.
-  const [homeWslDriveMap, setHomeWslDriveMap] = useState<Record<string, string>>({})
-  useEffect(() => {
-    window.electronAPI.wslDriveMap?.().then(setHomeWslDriveMap).catch(() => {})
-  }, [])
-  const homeKeyCtx = useMemo<ProjectKeyContext>(
-    () => ({ driveMap: homeWslDriveMap, posixDistros: buildPosixDistroMap(sessions) }),
-    [homeWslDriveMap, sessions]
-  )
-
-  // One row per projectKey (not per raw path spelling — see project-key.ts), most
-  // recently updated first, capped at 5 so the Home repo list stays a glance rather
-  // than a second Projects view.
-  const homeRepoEntries = useMemo(() => {
-    const latest = new Map<string, { path: string; wslDistro?: string; updatedAt: number }>()
-    for (const s of sessions) {
-      if (!s.projectPath) continue
-      const key = projectKey(s.projectPath, s.wslDistro, homeKeyCtx)
-      const prev = latest.get(key)
-      if (prev === undefined || s.updatedAt > prev.updatedAt) {
-        latest.set(key, { path: s.projectPath, wslDistro: s.wslDistro, updatedAt: s.updatedAt })
-      }
-    }
-    return [...latest.entries()]
-      .sort((a, b) => b[1].updatedAt - a[1].updatedAt)
-      .slice(0, 5)
-      .map(([key, v]) => ({
-        key,
-        // The canonical spelling, not whichever raw path the latest session happened to
-        // record: gitStatus needs one real filesystem location for the group, and for a
-        // WSL folder the UNC form is the one a plain Windows process (this renderer's
-        // main process) can actually stat — a bare POSIX path is not a place Windows can
-        // look. An ordinary Windows path already round-trips through canonicalProjectPath
-        // unchanged, so this is a no-op for the common case.
-        path: canonicalProjectPath(v.path, v.wslDistro, homeKeyCtx)
-      }))
-  }, [sessions, homeKeyCtx])
-
-  const [homeRepos, setHomeRepos] = useState<HomeRepo[]>([])
+  // gitStatus per homeRepoEntries, kept apart from name resolution below: this effect
+  // should only re-run when the entries themselves change, not every time a repo name
+  // or rename arrives, or it would restart every row's spinner mid-flight.
+  const [homeRepoStatus, setHomeRepoStatus] = useState<
+    Record<string, { branch?: string; fileCount: number; loading?: boolean; error?: string }>
+  >({})
   useEffect(() => {
     if (view !== 'home') return
     let cancelled = false
-    const allPaths = homeRepoEntries.map((e) => e.path)
-    setHomeRepos(
-      homeRepoEntries.map((e) => ({
-        key: e.key,
-        name: labelFor(e.path, allPaths),
-        fileCount: 0,
-        loading: true
-      }))
+    setHomeRepoStatus(
+      Object.fromEntries(homeRepoEntries.map((e) => [e.key, { fileCount: 0, loading: true }]))
     )
     // Each row settles on its own. One Promise.all resolved them all or none, so a single
     // slow gitStatus — a WSL path, a drive that has gone away — held every row in its
@@ -1707,27 +1757,43 @@ export default function App() {
     for (const entry of homeRepoEntries) {
       window.electronAPI
         .gitStatus(entry.path)
-        .then<HomeRepo>((status) => ({
-          key: entry.key,
-          name: labelFor(entry.path, allPaths),
-          branch: status.branch,
-          fileCount: status.files.length
-        }))
-        .catch<HomeRepo>(() => ({
-          key: entry.key,
-          name: labelFor(entry.path, allPaths),
-          fileCount: 0,
-          error: 'Could not read status'
-        }))
-        .then((row) => {
+        .then((status) => {
           if (cancelled) return
-          setHomeRepos((prev) => prev.map((r) => (r.key === entry.key ? row : r)))
+          setHomeRepoStatus((prev) => ({
+            ...prev,
+            [entry.key]: { branch: status.branch, fileCount: status.files.length }
+          }))
+        })
+        .catch(() => {
+          if (cancelled) return
+          setHomeRepoStatus((prev) => ({
+            ...prev,
+            [entry.key]: { fileCount: 0, error: 'Could not read status' }
+          }))
         })
     }
     return () => {
       cancelled = true
     }
   }, [view, homeRepoEntries])
+
+  // Row names come from the same resolver as the rest of Home/Sidebar (rename > repo
+  // name > basename), disambiguated by parent folder on collisions — replacing the local
+  // labelFor() this used to have, which only knew about basenames.
+  const homeRepos = useMemo<HomeRepo[]>(() => {
+    const names = projectDisplayNames(homeRepoEntries, { custom: homeProjectNames, repos: homeRepoNames })
+    return homeRepoEntries.map((e) => {
+      const status = homeRepoStatus[e.key]
+      return {
+        key: e.key,
+        name: names.get(e.key) ?? basename(e.path),
+        branch: status?.branch,
+        fileCount: status?.fileCount ?? 0,
+        loading: status?.loading,
+        error: status?.error
+      }
+    })
+  }, [homeRepoEntries, homeProjectNames, homeRepoNames, homeRepoStatus])
 
   // Same window key (`five_hour`) the sidebar's own plan badge reads (see accountUsage
   // above) — one interpretation of AccountPlanUsage.windows, not a second one for Home.
@@ -1764,12 +1830,12 @@ export default function App() {
           return {
             id: s.id,
             name: s.name,
-            projectName: s.projectPath ? basename(s.projectPath) : undefined,
+            projectName: s.projectPath ? resolveHomeProjectName(s.projectPath, s.wslDistro) : undefined,
             updatedAt: s.updatedAt,
             preview
           }
         }),
-    [sessions]
+    [sessions, resolveHomeProjectName]
   )
 
   const [homeSpend, setHomeSpend] = useState<HomeSpend | null>(null)
@@ -1830,7 +1896,7 @@ export default function App() {
           ? geminiAccounts.find((a) => a.id === geminiDefaultAccountId)?.name
           : accounts.find((a) => a.id === acctId)?.name
     return {
-      projectName: base?.projectPath ? basename(base.projectPath) : undefined,
+      projectName: base?.projectPath ? resolveHomeProjectName(base.projectPath, base.wslDistro) : undefined,
       modelLabel: models.find((m) => m.id === defaultModel)?.label,
       accountName
     }
@@ -1845,7 +1911,8 @@ export default function App() {
     geminiAccounts,
     geminiDefaultAccountId,
     accounts,
-    defaultAccountId
+    defaultAccountId,
+    resolveHomeProjectName
   ])
 
   // Review an approval, or jump to the routine that failed — the two kinds of row Home's
