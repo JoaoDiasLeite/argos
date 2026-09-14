@@ -172,6 +172,9 @@ interface CodexAccountEmails {
 
 const NO_CODEX_ACCOUNTS: CodexAccountEmails = { byId: new Map() }
 
+/** The source id of the default CODEX_HOME; a per-account home is `codex:<accountId>`. */
+const CODEX_SOURCE_ID = 'codex'
+
 /**
  * A source's account identity: two sources are "the same account" iff they report
  * the same (normalised) email — a local install and two WSL distros logged into the
@@ -345,6 +348,12 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   // and `identityOf`. Starts empty, so until this lands every Codex project's
   // identity is just its `sourceId`, same as before this feature existed.
   const [codexAccounts, setCodexAccounts] = useState<CodexAccountEmails>(NO_CODEX_ACCOUNTS)
+  // The name of the Codex account behind each Codex source id, taken straight from the
+  // stored account rather than by way of its email. A Codex account record holds only
+  // { id, name, configDir } — the email comes from a live `codex login status` spawn,
+  // so an identity resolved through the email reads "Codex" whenever that spawn is slow,
+  // fails, or the CLI is signed out. The name is on disk and always there.
+  const [codexSourceNames, setCodexSourceNames] = useState<Record<string, string>>({})
   useEffect(() => {
     let cancelled = false
     const collect = async () => {
@@ -360,6 +369,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       const claude = await window.electronAPI.accountsList().catch(() => null)
       if (claude) add(claude.accounts)
       let codex: CodexAccountEmails = NO_CODEX_ACCOUNTS
+      let codexNames: Record<string, string> = {}
       for (const provider of ['codex', 'gemini'] as const) {
         const res = await window.electronAPI.providerAccountsList(provider).catch(() => null)
         if (!res) continue
@@ -374,11 +384,19 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
             if (a.isDefault) defaultEmail = email
           }
           codex = { byId, defaultEmail }
+          const names: Record<string, string> = {}
+          for (const a of res.accounts) {
+            if (!a.name) continue
+            // `codex` is the default CODEX_HOME; a non-default account keeps its own.
+            names[a.isDefault ? CODEX_SOURCE_ID : `${CODEX_SOURCE_ID}:${a.id}`] = a.name
+          }
+          codexNames = names
         }
       }
       if (!cancelled) {
         setAccountNames(out)
         setCodexAccounts(codex)
+        setCodexSourceNames(codexNames)
       }
     }
     collect()
@@ -431,12 +449,13 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       // typed. Then a source that names the account, then the email, then the source.
       const label =
         (email ? accountNames[email] : undefined) ||
+        codexSourceNames[identity] ||
         named[0]?.sourceLabel ||
         (email ? email.split('@')[0] : members[0].sourceLabel)
       options.push({ identity, label, sub: email && email !== label ? email : undefined })
     }
     return options.sort((a, b) => a.label.localeCompare(b.label))
-  }, [projects, accountNames, codexAccounts])
+  }, [projects, accountNames, codexAccounts, codexSourceNames])
   // A filter persisted from a previous run can name an identity that no longer
   // exists (an account removed, a distro unregistered) — fall back to 'all' rather
   // than scope every group down to zero members.
