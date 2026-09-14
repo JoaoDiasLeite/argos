@@ -1,0 +1,260 @@
+/* Home — a presentation-only dashboard view. All classes scoped `home-` (convention 6,
+   see LiveView.css). The view-level vocabulary (`.view-*`) comes from views.css, which
+   every view already shares. The status dot is deliberately NOT Sidebar's `.session-dot`:
+   that rule lives in a component's own stylesheet, and a view that borrows it renders
+   correctly only for as long as that component happens to be mounted. */
+
+/* Same states as the chat list's dot, and the same amber, because they flag the same
+   two conditions — a run in flight, and a run parked on an approval. */
+.home-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.home-dot.running {
+  background: var(--accent);
+  animation: home-dot-pulse 1.4s ease-in-out infinite;
+}
+.home-dot.attention { background: #e2b341; }
+@keyframes home-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-dot.running { animation: none; }
+}
+
+.home-section {
+  max-width: 760px;
+  margin-bottom: 26px;
+}
+.home-section:last-child {
+  margin-bottom: 0;
+}
+
+.home-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin-bottom: 10px;
+}
+
+/* The only tinted block in the view on purpose — see the spec: colour here is
+   reserved for the one thing that's actually waiting on a person. */
+.home-section--attention .home-section-title {
+  color: var(--warn);
+}
+
+.home-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.home-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+
+.home-row.clickable {
+  cursor: pointer;
+  transition: border-color 0.14s, background 0.14s;
+}
+.home-row.clickable:hover,
+.home-row.clickable:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--bg-2);
+}
+
+.home-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.home-row-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.home-row-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-row-project {
+  font-size: 11px;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+
+/* ── Needs you ── */
+.home-approval-row {
+  /* Amber border only — same restraint as .pending-run.attention, so the whole
+     block doesn't turn into a wash of colour. */
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+}
+
+.home-approval-cmd {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Deliberately never labelled "Approve" — see the component doc comment: this
+   button only opens the chat where the diff/command is actually visible. */
+.home-review-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Running ── */
+.home-running-row {
+  gap: 10px;
+}
+.home-running-row.attention {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
+}
+.home-running-row.clickable .home-row-name {
+  cursor: pointer;
+}
+
+.home-running-kind {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+.home-running-spacer {
+  flex: 1;
+}
+
+.home-running-detail {
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+.home-running-duration {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Uncommitted work ── */
+.home-repo-row {
+  align-items: center;
+}
+
+.home-repo-clean {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  opacity: 0.8;
+}
+
+.home-repo-loading {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.home-repo-error {
+  font-size: 11.5px;
+  color: var(--error);
+  margin-top: 2px;
+}
+
+/* ── Usage cards ── */
+.home-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.home-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  text-align: left;
+  transition: border-color 0.14s, background 0.14s;
+}
+.home-card:hover,
+.home-card:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--bg-2);
+}
+
+.home-card-label {
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.home-card-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-0);
+  font-variant-numeric: tabular-nums;
+}
+
+.home-card-sub {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.home-card-stale {
+  font-size: 10px;
+  color: var(--text-2);
+  opacity: 0.75;
+  font-style: italic;
+}
+
+/* ── Pick up where you left off ── */
+.home-recent-time {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.home-recent-preview {
+  font-size: 12px;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

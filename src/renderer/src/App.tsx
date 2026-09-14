@@ -19,7 +19,8 @@ import {
   UsageLimits,
   PlanUsageReport,
   ScheduledRun,
-  CcSessionTarget
+  CcSessionTarget,
+  LiveSession
 } from './types'
 import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
@@ -45,6 +46,7 @@ import ChangelogModal from './components/ChangelogModal'
 import { UiPrefs, UiPrefsPatch } from './types'
 import { sessionToReplaySeed } from './lib/markdown-export'
 import { provOf, acctOf, AccountDefaults } from './lib/account-scope'
+import type { HomeApproval, HomeRunning, HomeRepo, HomePlan, HomeRecent } from './views/HomeView'
 // The secondary views below are only ever mounted once the user navigates away
 // from the default 'chat' view, so they're loaded lazily (React.lazy) instead
 // of statically imported. That keeps their code — and the vendor libraries
@@ -67,6 +69,7 @@ const RemoteView = lazy(() => import('./views/RemoteView'))
 const RemoteSessionView = lazy(() => import('./views/RemoteSessionView'))
 const ScheduledView = lazy(() => import('./views/ScheduledView'))
 const SettingsView = lazy(() => import('./views/SettingsView'))
+const HomeView = lazy(() => import('./views/HomeView'))
 
 /** Minimal, style-consistent fallback shown while a lazy view's chunk loads. */
 function ViewLoading() {
@@ -80,6 +83,16 @@ function ViewLoading() {
 
 function generateId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
+}
+
+// Same split as the sidebar's project-path subtitle (App.tsx already does this inline
+// for s.projectPath elsewhere) — kept as a helper here since Home needs it in several places.
+function basename(p: string): string {
+  return p.split(/[\\/]/).filter(Boolean).pop() ?? p
+}
+
+function str(v: unknown): string {
+  return typeof v === 'string' ? v : v == null ? '' : String(v)
 }
 
 /**
@@ -1444,12 +1457,17 @@ export default function App() {
    * session id, its rows can be matched back to chats.
    */
   const [liveBusyIds, setLiveBusyIds] = useState<Set<string>>(new Set())
+  // Raw registry rows, kept alongside liveBusyIds so Home's "running" list can show
+  // CLI sessions by name/source rather than just gating a busy id — same poll, no
+  // second timer.
+  const [liveSessions, setLiveSessions] = useState<LiveSession[]>([])
   useEffect(() => {
     let alive = true
     const poll = async () => {
       try {
         const live = await window.electronAPI.ccLiveSessions()
         if (!alive) return
+        setLiveSessions(live)
         setLiveBusyIds((prev) => {
           const next = new Set(live.filter((l) => l.status === 'busy').map((l) => l.sessionId))
           // Same-contents check: a fresh Set every few seconds would re-render the whole
@@ -1486,6 +1504,141 @@ export default function App() {
     }
     return out
   }, [runningIds, liveBusyIds, sessions])
+
+  // ─── Home view data ────────────────────────────────────────────────────────
+  // Everything below is either derived from state Argos already keeps (approvals,
+  // running, plans, recent) or fetched only while Home is the visible view (repos'
+  // git status) — Home is reachable from anywhere, so nothing here should poll when
+  // nobody is looking at it.
+
+  const homeApprovals = useMemo<HomeApproval[]>(
+    () =>
+      approvalQueue.map((r) => {
+        const session = sessions.find((s) => s.id === r.appSessionId)
+        const input = r.input
+        // Same reading ApprovalModal uses for its own body, so the two surfaces never
+        // disagree about what a pending request is asking for.
+        const target =
+          r.tool === 'Bash'
+            ? str(input.command)
+            : input.file_path || input.path
+              ? str(input.file_path ?? input.path)
+              : str(input.target ?? input.prompt ?? input.permissions ?? '')
+        return {
+          approvalId: r.approvalId,
+          sessionId: r.appSessionId,
+          sessionName: session?.name ?? 'Chat',
+          projectName: session?.projectPath ? basename(session.projectPath) : undefined,
+          tool: r.tool,
+          target
+        }
+      }),
+    [approvalQueue, sessions]
+  )
+
+  const homeRunning = useMemo<HomeRunning[]>(() => {
+    const chats: HomeRunning[] = sessions
+      .filter((s) => runningIds.has(s.id))
+      .map((s) => ({
+        kind: 'chat',
+        id: s.id,
+        name: s.name,
+        detail: models.find((m) => m.id === (s.model || defaultModel))?.label,
+        attention: attentionIds.has(s.id)
+      }))
+    // A chat already covers its own Claude Code session, so the matching CLI row (same
+    // correspondence displayRunningIds uses above) would just be the same run twice.
+    const linkedCcIds = new Set(
+      sessions.flatMap((s) => [s.claudeSessionId, s.terminalSessionId]).filter((id): id is string => !!id)
+    )
+    const cli: HomeRunning[] = liveSessions
+      .filter((l) => l.status === 'busy' && !linkedCcIds.has(l.sessionId))
+      .map((l) => ({
+        kind: 'cli',
+        id: l.sessionId,
+        name: l.name,
+        detail: l.sourceLabel,
+        startedAt: l.startedAt
+      }))
+    return [...chats, ...cli]
+  }, [sessions, runningIds, attentionIds, liveSessions, models, defaultModel])
+
+  // Distinct project paths in use, most-recently-updated first — capped at 5 so the
+  // Home repo list stays a glance, not a second Projects view.
+  const homeRepoPaths = useMemo(() => {
+    const latest = new Map<string, number>()
+    for (const s of sessions) {
+      if (!s.projectPath) continue
+      const prev = latest.get(s.projectPath)
+      if (prev === undefined || s.updatedAt > prev) latest.set(s.projectPath, s.updatedAt)
+    }
+    return [...latest.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([p]) => p)
+  }, [sessions])
+
+  const [homeRepos, setHomeRepos] = useState<HomeRepo[]>([])
+  useEffect(() => {
+    if (view !== 'home') return
+    let cancelled = false
+    setHomeRepos(homeRepoPaths.map((p) => ({ path: p, name: basename(p), fileCount: 0, loading: true })))
+    Promise.all(
+      homeRepoPaths.map(async (p): Promise<HomeRepo> => {
+        try {
+          const status = await window.electronAPI.gitStatus(p)
+          return { path: p, name: basename(p), branch: status.branch, fileCount: status.files.length }
+        } catch {
+          return { path: p, name: basename(p), fileCount: 0, error: 'Could not read status' }
+        }
+      })
+    ).then((results) => {
+      if (!cancelled) setHomeRepos(results)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [view, homeRepoPaths])
+
+  // Same window key (`five_hour`) the sidebar's own plan badge reads (see accountUsage
+  // above) — one interpretation of AccountPlanUsage.windows, not a second one for Home.
+  const homePlans = useMemo<HomePlan[]>(() => {
+    if (!planReport) return []
+    return planReport.accounts.map((acc) => {
+      const w = acc.windows.find((win) => win.key === 'five_hour')
+      return {
+        accountKey: acc.accountKey,
+        accountName: acc.accountName,
+        percent: w ? w.utilization : null,
+        resetsAt: w?.resetsAt,
+        stale: acc.stale
+      }
+    })
+  }, [planReport])
+
+  const homeRecent = useMemo<HomeRecent[]>(
+    () =>
+      sessions
+        .filter((s) => s.messages.length > 0)
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, 3)
+        .map((s) => {
+          const last = s.messages[s.messages.length - 1]
+          // The transcript is markdown; a one-line preview that keeps the fences and
+          // hashes reads as noise, so the marks come out before the truncation.
+          const flat = last.content
+            .replace(/```[\s\S]*?```/g, ' ')
+            .replace(/[#*`>]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim()
+          const preview = flat.length > 120 ? `${flat.slice(0, 120)}…` : flat
+          return {
+            id: s.id,
+            name: s.name,
+            projectName: s.projectPath ? basename(s.projectPath) : undefined,
+            updatedAt: s.updatedAt,
+            preview
+          }
+        }),
+    [sessions]
+  )
 
   // Run a custom agent
   const runAgent = (agent: AgentDef) => {
@@ -1879,6 +2032,7 @@ export default function App() {
           onChangelog={() => setChangelogOpen(true)}
           serverSessionCount={serverSessions.length}
           chatRunningCount={displayRunningIds.size}
+          attentionCount={approvalQueue.length}
         />
 
       {view === 'chat' && (
@@ -1996,6 +2150,25 @@ export default function App() {
         </>
       )}
 
+      {view === 'home' && (
+        <Suspense fallback={<ViewLoading />}>
+          <HomeView
+            approvals={homeApprovals}
+            running={homeRunning}
+            repos={homeRepos}
+            plans={homePlans}
+            todayCost={null}
+            todayChats={null}
+            recent={homeRecent}
+            onOpenSession={(id) => {
+              setActiveId(id)
+              setView('chat')
+            }}
+            onOpenRepo={() => setView('projects')}
+            onOpenUsage={() => setView('usage')}
+          />
+        </Suspense>
+      )}
       {view === 'projects' && (
         <Suspense fallback={<ViewLoading />}>
           <ProjectsView onResume={resumeCCSession} target={ccTarget} />

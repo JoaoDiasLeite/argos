@@ -11,6 +11,7 @@ import './NavRail.css'
  * to disagree.
  */
 export const ALL_VIEWS = [
+  'home',
   'chat',
   'projects',
   'live',
@@ -43,9 +44,13 @@ interface Props {
       busy) — the same badge as Servers, on the Chat entry, so a run finishing in a
       chat you've navigated away from is still visible from anywhere in the app. */
   chatRunningCount?: number
+  /** Approvals waiting across all sessions — badged on the Home entry so the app's
+      landing point always shows whether something needs attention. */
+  attentionCount?: number
 }
 
 const ICONS: Record<string, JSX.Element> = {
+  home: <path d="M3 11.5 12 4l9 7.5M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10" />,
   chat: (
     <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
   ),
@@ -139,6 +144,7 @@ type RailEntry =
 // everything that reaches them from elsewhere are untouched, so putting either entry
 // back is a matter of restoring its line here.
 const RAIL: RailEntry[] = [
+  { kind: 'single', view: 'home', label: 'Home' },
   { kind: 'single', view: 'chat', label: 'Chat' },
   { kind: 'single', view: 'projects', label: 'Projects' },
   { kind: 'group', group: VIEW_GROUPS[1] },
@@ -152,7 +158,8 @@ export default function NavRail({
   onSettings,
   onChangelog,
   serverSessionCount = 0,
-  chatRunningCount = 0
+  chatRunningCount = 0,
+  attentionCount = 0
 }: Props) {
   return (
     <div className="nav-rail">
@@ -183,6 +190,14 @@ export default function NavRail({
                     aria-label={`${chatRunningCount} chat${chatRunningCount === 1 ? '' : 's'} running`}
                   >
                     {chatRunningCount}
+                  </span>
+                )}
+                {entry.view === 'home' && attentionCount > 0 && (
+                  <span
+                    className="nav-item-badge"
+                    aria-label={`${attentionCount} approval${attentionCount === 1 ? '' : 's'} waiting`}
+                  >
+                    {attentionCount}
                   </span>
                 )}
               </button>
