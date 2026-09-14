@@ -163,7 +163,31 @@ interface Props {
   onPatchSession: (patch: Partial<Session>) => void
 }
 
-export default function Chat({
+const REVIEW_OPEN_KEY = 'argos.reviewOpenById'
+
+/** Reads the persisted set of chats with the Review panel open. Storage can be
+ *  unavailable or hold something else entirely; a panel preference is never worth
+ *  failing a render over, so anything unreadable is treated as "none open". */
+function readReviewOpen(): Record<string, boolean> {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(REVIEW_OPEN_KEY) || '{}')
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return parsed as Record<string, boolean>
+  } catch {
+    return {}
+  }
+}
+
+function writeReviewOpen(map: Record<string, boolean>): void {
+  try {
+    localStorage.setItem(REVIEW_OPEN_KEY, JSON.stringify(map))
+  } catch {
+    // Quota or a locked-down storage: the panel just forgets, which is survivable.
+  }
+}
+
+export default function Chat(
+{
   session,
   streaming,
   saveError,
@@ -223,12 +247,21 @@ export default function Chat({
   }
   // Per-chat "Review" panel toggle (working-tree diff / checkpoints), keyed by session id
   // the same way termOpenById is. Unlike the terminal, it has no "default view" pref to
-  // seed from — it starts closed for every chat until the user asks for it.
-  const [reviewOpenById, setReviewOpenById] = useState<Record<string, boolean>>({})
+  // seed from — it starts closed for every chat until the user asks for it, and then
+  // stays open for that chat across restarts: it is a working preference, not a mode.
+  // Only the open ones are stored; keeping the false entries would grow the record by a
+  // key for every chat ever opened, and it would never shrink.
+  const [reviewOpenById, setReviewOpenById] = useState<Record<string, boolean>>(readReviewOpen)
   const reviewOpen = !!session && !!reviewOpenById[session.id]
   const toggleReview = () => {
     if (!session) return
-    setReviewOpenById((prev) => ({ ...prev, [session.id]: !prev[session.id] }))
+    setReviewOpenById((prev) => {
+      const next = { ...prev }
+      if (prev[session.id]) delete next[session.id]
+      else next[session.id] = true
+      writeReviewOpen(next)
+      return next
+    })
   }
   // Seed a session's terminal state from the "default view" pref the first time it's seen.
   useEffect(() => {
