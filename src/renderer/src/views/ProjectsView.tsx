@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
-import { CcSessionTarget, CCProject, CCSessionMeta, SearchHit, SearchSnippet } from '../types'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { CcSessionTarget, CCProject, CCSessionMeta, RepoName, SearchHit, SearchSnippet } from '../types'
 import { TagChips, TagEditor, useLabelColors } from '../components/SessionTags'
 import LabelManager from '../components/LabelManager'
 import SessionPeek from '../components/SessionPeek'
 import ProjectActions from '../components/ProjectActions'
 import { tagsSatisfy } from '../lib/tags'
-import { projectKey } from '../lib/project-key'
+import { canonicalProjectPath, projectKey } from '../lib/project-key'
+import { projectDisplayNames } from '../lib/project-name'
 import { groupByAge, sortSessions, SORT_LABELS, SortMode } from '../lib/session-groups'
 import './views.css'
 import './ProjectsView.css'
@@ -91,9 +92,62 @@ function timeAgo(ts: number): string {
   return new Date(ts).toLocaleDateString()
 }
 
+/**
+ * The same folder can show up as several `CCProject` rows — different casing,
+ * different WSL addressing (see project-key.ts). A group is one folder, holding
+ * every spelling that reached the app as a member: the row shown to the user sums
+ * their counts and acts on all of them where an action can sensibly mean "this
+ * folder", and falls back to one representative member where it can't (see
+ * `primaryMember` below).
+ */
+interface ProjectGroup {
+  key: string
+  members: CCProject[]
+  sessionCount: number
+  archivedCount: number
+  lastActive: number
+  // True if ANY member is archived/favorited — those preferences are stored per
+  // member (`sourceId:encodedDir`), and a folder that reached the sidebar from two
+  // addresses only needs one of them filed away to read as "archived" here.
+  archived: boolean
+  distros: string[]
+}
+
+function groupProjects(list: CCProject[]): ProjectGroup[] {
+  const map = new Map<string, ProjectGroup>()
+  for (const p of list) {
+    const key = projectKey(p.realPath, p.distro)
+    let g = map.get(key)
+    if (!g) {
+      g = { key, members: [], sessionCount: 0, archivedCount: 0, lastActive: 0, archived: false, distros: [] }
+      map.set(key, g)
+    }
+    g.members.push(p)
+    g.sessionCount += p.sessionCount
+    g.archivedCount += p.archivedCount
+    g.lastActive = Math.max(g.lastActive, p.lastActive)
+    g.archived = g.archived || p.archived
+    if (p.kind === 'wsl' && p.distro && !g.distros.includes(p.distro)) g.distros.push(p.distro)
+  }
+  return Array.from(map.values())
+}
+
+/**
+ * The member to act on when an action needs exactly one `CCProject` (rename target
+ * aside, which acts on the whole group by key). Most-recently-active is the member
+ * most likely to be the one the user means "the project" by right now.
+ */
+function primaryMember(g: ProjectGroup): CCProject {
+  return g.members.reduce((best, m) => (m.lastActive > best.lastActive ? m : best), g.members[0])
+}
+
+function groupFavoriteKeys(g: ProjectGroup): string[] {
+  return g.members.map((m) => `${m.sourceId}:${m.encodedDir}`)
+}
+
 export default function ProjectsView({ onResume, target, focus }: Props) {
   const [projects, setProjects] = useState<CCProject[]>([])
-  const [selected, setSelected] = useState<CCProject | null>(null)
+  const [selected, setSelected] = useState<ProjectGroup | null>(null)
   const [sessions, setSessions] = useState<CCSessionMeta[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingSessions, setLoadingSessions] = useState(false)
@@ -111,6 +165,14 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   )
   const [projectFilter, setProjectFilter] = useState('')
   const [favorites, setFavorites] = useState<string[]>([])
+  // Rename precedence (custom name > repo name > basename) is shared with the
+  // Sidebar via project-name.ts; `custom` is keyed by the same projectKey the
+  // Sidebar renames under, so a rename made in either place shows in both.
+  const [customNames, setCustomNames] = useState<Record<string, string>>({})
+  // Filled in lazily, one gitRepoName call per VISIBLE group (see the effect below) —
+  // a folder with no repo answer yet just shows its basename until it resolves.
+  const [repoNames, setRepoNames] = useState<Record<string, RepoName>>({})
+  const fetchedRepoKeys = useRef<Set<string>>(new Set())
   const [peeked, setPeeked] = useState<CCSessionMeta | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   // Active/Archived for the *project* column — orthogonal to `showArchived` above,
@@ -155,6 +217,21 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   targetRef.current = target
   const { colorFor, vocabulary, reload: reloadLabels } = useLabelColors()
 
+  // One row per real folder, not per spelling — see `groupProjects`.
+  const projectGroups = useMemo(() => groupProjects(projects), [projects])
+  // Name precedence (custom > repo > basename), with homonym disambiguation, computed
+  // over every group so two DIFFERENT folders that happen to share a name still tell
+  // apart even while one of them is filtered out of view.
+  const displayNames = useMemo(
+    () =>
+      projectDisplayNames(
+        projectGroups.map((g) => ({ key: g.key, path: primaryMember(g).realPath })),
+        { custom: customNames, repos: repoNames }
+      ),
+    [projectGroups, customNames, repoNames]
+  )
+  const nameOf = (g: ProjectGroup): string => displayNames.get(g.key) ?? primaryMember(g).name
+
   const load = async () => {
     setLoading(true)
     const list = await window.electronAPI.ccListProjects()
@@ -162,12 +239,16 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     setLoading(false)
     // Opening on the first project is a default, not a decision — and a deep link is
     // a decision, so it wins even when it arrived while this listing was in flight.
-    if (list.length && !selected && !targetRef.current) selectProject(list[0])
+    // Grouped fresh from `list` rather than read off the `projectGroups` memo: that
+    // memo reflects the *previous* render's `projects` state until this update lands.
+    const firstGroup = groupProjects(list)[0]
+    if (firstGroup && !selected && !targetRef.current) selectProject(firstGroup)
   }
 
   useEffect(() => {
     load()
     window.electronAPI.ccFavorites().then(setFavorites)
+    window.electronAPI.ccProjectNames().then(setCustomNames).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -177,16 +258,14 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   // "select a project" empty state.
   useEffect(() => {
     if (!selected) return
-    const stillListed = projects.find(
-      (p) => p.sourceId === selected.sourceId && p.encodedDir === selected.encodedDir
-    )
+    const stillListed = projectGroups.find((g) => g.key === selected.key)
     if (!stillListed || stillListed.archived !== showArchivedProjects) {
       setSelected(null)
       setSessions([])
       setPeeked(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, showArchivedProjects])
+  }, [projectGroups, showArchivedProjects])
 
   // Debounced full-text search across all sources.
   useEffect(() => {
@@ -205,18 +284,35 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     return () => clearTimeout(t)
   }, [query])
 
-  const toggleFavorite = async (p: CCProject) => {
-    const key = `${p.sourceId}:${p.encodedDir}`
-    setFavorites(await window.electronAPI.ccSetFavorite(p.sourceId, p.encodedDir, !favorites.includes(key)))
+  const isGroupFavorite = (g: ProjectGroup) => groupFavoriteKeys(g).some((k) => favorites.includes(k))
+
+  const toggleFavorite = async (g: ProjectGroup) => {
+    const next = !isGroupFavorite(g)
+    // The pin is stored per member (`sourceId:encodedDir`), so pinning the group means
+    // writing it for every member — done one at a time (not Promise.all) so each
+    // write's returned list already includes the ones before it, and the state we end
+    // on reflects all of them rather than whichever call happened to finish last.
+    let result = favorites
+    for (const m of g.members) {
+      result = await window.electronAPI.ccSetFavorite(m.sourceId, m.encodedDir, next)
+    }
+    setFavorites(result)
   }
 
-  const selectProject = async (p: CCProject) => {
+  // A group can be several spellings of one folder — list every member's sessions and
+  // concatenate, then sort the merged list the way a single project's list always was.
+  const listGroupSessions = (g: ProjectGroup, archived: boolean): Promise<CCSessionMeta[]> =>
+    Promise.all(
+      g.members.map((m) => window.electronAPI.ccListSessions(m.sourceId, m.encodedDir, archived))
+    ).then((lists) => lists.flat().sort((a, b) => b.updatedAt - a.updatedAt))
+
+  const selectProject = async (g: ProjectGroup) => {
     const seq = ++listingSeq.current
-    setSelected(p)
+    setSelected(g)
     setLoadingSessions(true)
     setEditingTags(null)
     setPeeked(null)
-    const s = await window.electronAPI.ccListSessions(p.sourceId, p.encodedDir, showArchived)
+    const s = await listGroupSessions(g, showArchived)
     if (seq !== listingSeq.current) return
     setSessions(s)
     setLoadingSessions(false)
@@ -227,11 +323,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   const refreshSessions = async () => {
     if (!selected) return
     const seq = ++listingSeq.current
-    const s = await window.electronAPI.ccListSessions(
-      selected.sourceId,
-      selected.encodedDir,
-      showArchived
-    )
+    const s = await listGroupSessions(selected, showArchived)
     if (seq !== listingSeq.current) return
     setSessions(s)
     reloadLabels()
@@ -260,21 +352,19 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
           p.encodedDir === target.encodedDir && (!target.sourceId || p.sourceId === target.sourceId)
       )
       if (!proj || cancelled) return
-      let found = await window.electronAPI.ccListSessions(proj.sourceId, proj.encodedDir, false)
+      const group = groupProjects(list).find((g) => g.key === projectKey(proj.realPath, proj.distro))
+      if (!group || cancelled) return
+      let found = await listGroupSessions(group, false)
       let archived = false
       if (!found.some((s) => s.sessionId === target.sessionId)) {
-        const inArchive = await window.electronAPI.ccListSessions(
-          proj.sourceId,
-          proj.encodedDir,
-          true
-        )
+        const inArchive = await listGroupSessions(group, true)
         if (inArchive.some((s) => s.sessionId === target.sessionId)) {
           found = inArchive
           archived = true
         }
       }
       if (cancelled || seq !== listingSeq.current) return
-      setSelected(proj)
+      setSelected(group)
       setSessions(found)
       setLoadingSessions(false)
       setShowArchived(archived)
@@ -296,9 +386,9 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     ;(async () => {
       const list = projects.length ? projects : await window.electronAPI.ccListProjects()
       if (cancelled) return
-      const proj = list.find((p) => projectKey(p.realPath, p.distro) === focus.key)
-      if (!proj || cancelled) return
-      selectProject(proj)
+      const group = groupProjects(list).find((g) => g.key === focus.key)
+      if (!group || cancelled) return
+      selectProject(group)
     })()
     return () => {
       cancelled = true
@@ -311,7 +401,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   useEffect(() => {
     setProjectQuery('')
     setProjectHits(new Map())
-  }, [selected?.sourceId, selected?.encodedDir])
+  }, [selected?.key])
 
   useEffect(() => {
     const q = projectQuery.trim()
@@ -323,12 +413,15 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     setProjectSearching(true)
     let cancelled = false
     const t = setTimeout(async () => {
-      const hits = await window.electronAPI.ccSearch(q, {
-        sourceId: selected.sourceId,
-        encodedDir: selected.encodedDir
-      })
+      // One search per member, merged — a hit filed under a sibling spelling of this
+      // same folder still has to surface here.
+      const results = await Promise.all(
+        selected.members.map((m) =>
+          window.electronAPI.ccSearch(q, { sourceId: m.sourceId, encodedDir: m.encodedDir })
+        )
+      )
       if (cancelled) return
-      setProjectHits(new Map(hits.map((h) => [h.sessionId, h])))
+      setProjectHits(new Map(results.flat().map((h) => [h.sessionId, h])))
       setProjectSearching(false)
     }, 250)
     return () => {
@@ -358,12 +451,17 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     const match = projects.find(
       (p) => p.sourceId === pendingSelect.sourceId && p.encodedDir === pendingSelect.encodedDir
     )
-    if (match) {
-      selectProject(match)
+    if (!match) return
+    // A move usually changes the moved member's projectKey (it is a genuinely
+    // different real path now), so look its GROUP up fresh rather than assume it is
+    // still the one `selected` pointed at.
+    const group = projectGroups.find((g) => g.key === projectKey(match.realPath, match.distro))
+    if (group) {
+      selectProject(group)
       setPendingSelect(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, pendingSelect])
+  }, [projects, projectGroups, pendingSelect])
 
   // The tag vocabulary offered here is the registry plus whatever is applied in this
   // project — a tag can exist on a conversation before the registry has caught up.
@@ -392,22 +490,49 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
 
   // Pinned first, then the rest by recency. Sections are only worth labelling when
   // both exist — see the render.
-  const matchesFilter = (p: CCProject) => {
+  const matchesFilter = (g: ProjectGroup) => {
     const q = projectFilter.trim().toLowerCase()
-    return !q || p.name.toLowerCase().includes(q) || p.realPath.toLowerCase().includes(q)
+    if (!q) return true
+    return (
+      nameOf(g).toLowerCase().includes(q) ||
+      g.members.some((m) => m.realPath.toLowerCase().includes(q))
+    )
   }
-  const hasArchivedProjects = projects.some((p) => p.archived)
+  const hasArchivedProjects = projectGroups.some((g) => g.archived)
   // `hasArchivedProjects &&` is what stops the column stranding itself: unarchive the
   // last archived project while looking at them and the toggle disappears, leaving a
   // scope nothing can ever match.
   const archivedScope = hasArchivedProjects && showArchivedProjects
-  const shown = projects.filter((p) => matchesFilter(p) && p.archived === archivedScope)
-  const pinned = shown.filter((p) => favorites.includes(`${p.sourceId}:${p.encodedDir}`))
-  const rest = shown.filter((p) => !favorites.includes(`${p.sourceId}:${p.encodedDir}`))
+  const shown = projectGroups.filter((g) => matchesFilter(g) && g.archived === archivedScope)
+  const pinned = shown.filter(isGroupFavorite)
+  const rest = shown.filter((g) => !isGroupFavorite(g))
   const projectSections = [
     ...(pinned.length ? [{ label: 'Pinned', projects: pinned }] : []),
     ...(rest.length ? [{ label: 'Recent', projects: rest }] : [])
   ]
+
+  // Ask git for a repo name — one call per group, not per member — but only for the
+  // groups actually on screen right now: walking every WSL distro's git binary for
+  // rows nobody is looking at would make Refresh (and the archived toggle) noticeably
+  // slower for no visible gain. The list paints immediately with whatever name it
+  // already has and quietly upgrades to the repo name once this resolves.
+  const shownKey = shown.map((g) => g.key).join('|')
+  useEffect(() => {
+    const targets = shown.filter((g) => !fetchedRepoKeys.current.has(g.key))
+    if (!targets.length) return
+    for (const g of targets) fetchedRepoKeys.current.add(g.key)
+    for (const g of targets) {
+      const primary = primaryMember(g)
+      const cwd = canonicalProjectPath(primary.realPath, primary.distro)
+      window.electronAPI
+        .gitRepoName(cwd)
+        .then((repo) => setRepoNames((prev) => ({ ...prev, [g.key]: repo })))
+        // A folder with no repo (or a git call that failed) just keeps showing its
+        // basename — one miss here must never take the others down with it.
+        .catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shownKey])
 
   /**
    * Arrowing through the list moves the selection and the preview follows; Enter
@@ -563,53 +688,68 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                 {projectSections.length > 1 && (
                   <div className="project-section-head">{section.label}</div>
                 )}
-                {section.projects.map((p) => {
-                  const key = `${p.sourceId}:${p.encodedDir}`
-                  const fav = favorites.includes(key)
+                {section.projects.map((g) => {
+                  const key = g.key
+                  const fav = isGroupFavorite(g)
+                  const name = nameOf(g)
+                  // Actions that need one concrete CCProject (rename via the menu's
+                  // archive/move/delete, see ProjectActions) act on whichever member
+                  // was active most recently — the member the user is most likely to
+                  // mean by "this project" right now.
+                  const primary = primaryMember(g)
+                  const accountEmails = Array.from(
+                    new Set(g.members.map((m) => m.account?.email).filter((e): e is string => !!e))
+                  )
                   return (
                     <div
                       key={key}
-                      className={`project-row ${selected?.encodedDir === p.encodedDir && selected?.sourceId === p.sourceId ? 'active' : ''}`}
+                      className={`project-row ${selected?.key === g.key ? 'active' : ''}`}
                       role="button"
                       tabIndex={0}
                       /* The path and the account moved into the tooltip: repeated on
                          every row they were noise, and dropping them is what lets the
                          column be narrow. Two projects can share a name, so the path
-                         still has to be reachable. */
-                      title={`${p.realPath}${p.account?.email ? `\n${p.account.email}` : ''}`}
-                      onClick={() => selectProject(p)}
+                         still has to be reachable. A group can hold more than one real
+                         path spelling, so every member's is listed. */
+                      title={`${g.members.map((m) => m.realPath).join('\n')}${
+                        accountEmails.length ? `\n${accountEmails.join(', ')}` : ''
+                      }`}
+                      onClick={() => selectProject(g)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault()
-                          selectProject(p)
+                          selectProject(g)
                         }
                       }}
                     >
                       <div className="project-row-name">
                         {fav && <span className="project-star-on" aria-hidden="true">★</span>}
-                        <span className="project-row-label">{p.name}</span>
-                        {p.kind === 'wsl' && <span className="src-badge wsl">{p.distro}</span>}
+                        <span className="project-row-label">{name}</span>
+                        {/* One badge per distro seen among the members, never repeated. */}
+                        {g.distros.map((d) => (
+                          <span key={d} className="src-badge wsl">{d}</span>
+                        ))}
                       </div>
                       <div className="project-row-meta">
                         {/* A bare 0 reads as a loading state; say what it means instead. */}
                         <span>
-                          {p.sessionCount + p.archivedCount === 0
+                          {g.sessionCount + g.archivedCount === 0
                             ? 'Empty'
-                            : p.archivedCount
-                              ? `${p.sessionCount} · ${p.archivedCount} archived`
-                              : p.sessionCount}
+                            : g.archivedCount
+                              ? `${g.sessionCount} · ${g.archivedCount} archived`
+                              : g.sessionCount}
                         </span>
                         <span>·</span>
-                        <span>{timeAgo(p.lastActive)}</span>
+                        <span>{timeAgo(g.lastActive)}</span>
                       </div>
                       <button
                         className={`project-star ${fav ? 'on' : ''}`}
                         title={fav ? 'Unpin' : 'Pin to top'}
-                        aria-label={fav ? `Unpin ${p.name}` : `Pin ${p.name} to top`}
+                        aria-label={fav ? `Unpin ${name}` : `Pin ${name} to top`}
                         aria-pressed={fav}
                         onClick={(e) => {
                           e.stopPropagation()
-                          toggleFavorite(p)
+                          toggleFavorite(g)
                         }}
                       >
                         ★
@@ -617,7 +757,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                       <button
                         className="project-menu-btn"
                         title="Actions"
-                        aria-label={`Actions for ${p.name}`}
+                        aria-label={`Actions for ${name}`}
                         aria-expanded={projectMenu?.key === key}
                         onClick={(e) => {
                           e.stopPropagation()
@@ -633,7 +773,8 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                       </button>
                       {projectMenu?.key === key && (
                         <ProjectActions
-                          project={p}
+                          project={primary}
+                          siblings={g.members.map((m) => ({ sourceId: m.sourceId, encodedDir: m.encodedDir }))}
                           anchor={projectMenu}
                           onClose={() => setProjectMenu(null)}
                           onChanged={load}
@@ -700,8 +841,8 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                     </span>
                     <input
                       className="sessions-search"
-                      placeholder={`Search in ${selected.name}…`}
-                      aria-label={`Search in ${selected.name}`}
+                      placeholder={`Search in ${nameOf(selected)}…`}
+                      aria-label={`Search in ${nameOf(selected)}`}
                       value={projectQuery}
                       onChange={(e) => setProjectQuery(e.target.value)}
                       spellCheck={false}

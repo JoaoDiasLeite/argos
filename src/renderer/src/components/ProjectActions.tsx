@@ -5,6 +5,17 @@ import './ProjectActions.css'
 interface Props {
   project: CCProject
   /**
+   * Every transcript directory that resolves to this same project — one folder can be
+   * addressed under more than one of them (a Windows path and its Git Bash spelling, a
+   * WSL directory reached three ways), and the list shows them as one row.
+   *
+   * Archiving is a preference and applies to all of them, or unarchiving one member of
+   * a group that has another still archived looks like the click did nothing. Move and
+   * delete are filesystem operations on one directory and stay that way — they just say
+   * so when there is more than one.
+   */
+  siblings?: { sourceId: string; encodedDir: string }[]
+  /**
    * Where the trigger button is on screen, in viewport coordinates.
    *
    * The popover is positioned `fixed` from this rather than absolutely inside the
@@ -73,7 +84,7 @@ function baseName(path: string): string {
  * Only one of the move and delete prompts is ever open — opening either closes the
  * other, the same "one open thing at a time" rule the tag popover follows.
  */
-export default function ProjectActions({ project, anchor, onChanged, onMoved, onClose }: Props) {
+export default function ProjectActions({ project, siblings, anchor, onChanged, onMoved, onClose }: Props) {
   const [panel, setPanel] = useState<'delete' | 'move' | null>(null)
   const [moveDraft, setMoveDraft] = useState('')
   // Set once a move succeeds with something downstream left unfixed. Kept separate
@@ -114,9 +125,15 @@ export default function ProjectActions({ project, anchor, onChanged, onMoved, on
     }
   }, [onClose])
 
+  const members = siblings?.length ? siblings : [{ sourceId, encodedDir }]
+
   const doArchiveToggle = async () => {
     setBusy(true)
-    await window.electronAPI.ccProjectArchive(sourceId, encodedDir, !archived)
+    // Sequentially, not Promise.all: each write reads and rewrites the same stored list,
+    // and concurrent writers would race to a value that drops some of them.
+    for (const m of members) {
+      await window.electronAPI.ccProjectArchive(m.sourceId, m.encodedDir, !archived)
+    }
     setBusy(false)
     onChanged()
     onClose()
@@ -289,6 +306,12 @@ export default function ProjectActions({ project, anchor, onChanged, onMoved, on
                 Browse…
               </button>
             </div>
+            {members.length > 1 && (
+              <p className="proj-actions-note">
+                This project is recorded under {members.length} directories — the same folder
+                addressed more than one way. Moving acts on the one shown above.
+              </p>
+            )}
             <p className="proj-actions-note">
               Browse picks the parent folder to move into — the move requires the
               destination itself not to exist, so the current folder name is appended
@@ -322,6 +345,13 @@ export default function ProjectActions({ project, anchor, onChanged, onMoved, on
             folder, plus this project's pin and archived flag. Nothing inside the real
             project folder on disk is touched.
           </p>
+          {members.length > 1 && (
+            <p className="proj-actions-note">
+              This project is recorded under {members.length} directories — the same folder
+              addressed more than one way. This acts on the one shown above; the others stay
+              as they are.
+            </p>
+          )}
           <div className="proj-actions-confirm-actions">
             <button className="btn-ghost small" onClick={() => setPanel(null)} disabled={busy}>
               Cancel
