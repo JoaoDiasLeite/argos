@@ -32,6 +32,16 @@ import { getWslClaudeRoots } from './wsl'
 import { getArchivedProjects, projectKey, storeGet, storeSet } from './store'
 import { readJsonFile } from './json-file'
 import { getAccounts } from './accounts'
+import { getProviderAccounts } from './provider-accounts'
+import { encodeProjectPath } from './codex-data-pure'
+import {
+  CodexSource,
+  codexProjects,
+  codexSessions,
+  codexSources,
+  codexTranscript,
+  invalidateCodexScan
+} from './codex-data'
 
 // ─── Sources (local + WSL distros) ──────────────────────────────────────────
 
@@ -41,14 +51,31 @@ export interface SourceAccount {
   plan?: string
 }
 
+/**
+ * Which CLI wrote the transcripts a source holds.
+ *
+ * Absent means 'claude' everywhere it is optional — the field was added when Codex
+ * transcripts joined the Projects view, and nothing that predates it is Codex.
+ */
+export type SourceProvider = 'claude' | 'codex'
+
 export interface ClaudeSource {
-  id: string // 'local' | 'wsl:<distro>'
-  label: string // 'Local' | distro name
+  id: string // 'local' | 'account:<id>' | 'wsl:<distro>' | 'codex' | 'codex:<id>'
+  label: string // 'Local' | distro name | 'Codex'
   kind: 'local' | 'wsl'
   distro?: string
   projectsDir: string
   claudeJsonPath: string
   account?: SourceAccount
+  provider: SourceProvider
+  /**
+   * Set only when `provider === 'codex'`. Codex stores nothing under `projectsDir`
+   * — it has no per-project directory at all — so every path in this file that walks
+   * one has to hand a Codex source to codex-data.ts instead. Carrying the reader's
+   * own source object is what makes that a one-line delegation rather than a second
+   * copy of the discovery.
+   */
+  codex?: CodexSource
 }
 
 function readAccount(claudeJsonPath: string): SourceAccount | undefined {
@@ -78,7 +105,28 @@ export function localSource(): ClaudeSource {
     kind: 'local',
     projectsDir: path.join(os.homedir(), '.claude', 'projects'),
     claudeJsonPath,
-    account: readAccount(claudeJsonPath)
+    account: readAccount(claudeJsonPath),
+    provider: 'claude'
+  }
+}
+
+/**
+ * A Codex home dressed as a source.
+ *
+ * `projectsDir` and `claudeJsonPath` are filled with the Codex paths that stand in
+ * the same relation — the sessions root and the thread-name index — so nothing
+ * downstream ever holds an empty string, but neither is read through the Claude Code
+ * layout: every walk of `projectsDir` in this file returns early for a Codex source.
+ */
+function codexAsSource(src: CodexSource): ClaudeSource {
+  return {
+    id: src.id,
+    label: src.label,
+    kind: 'local',
+    projectsDir: src.sessionsDir,
+    claudeJsonPath: src.indexPath,
+    provider: 'codex',
+    codex: src
   }
 }
 
@@ -88,6 +136,9 @@ let sourceCache: { at: number; sources: ClaudeSource[] } | null = null
 export async function getSources(force = false): Promise<ClaudeSource[]> {
   const now = Date.now()
   if (!force && sourceCache && now - sourceCache.at < 30000) return sourceCache.sources
+  // A forced re-probe is the user asking for fresh data, and the Codex reader keeps a
+  // cache of its own that would otherwise outlive it by up to 30s.
+  if (force) invalidateCodexScan()
   const sources: ClaudeSource[] = [localSource()]
   // Each non-default account runs with CLAUDE_CONFIG_DIR pointed at its own configDir
   // (see accounts.ts), so its transcripts land under <configDir>/projects rather than
@@ -102,8 +153,22 @@ export async function getSources(force = false): Promise<ClaudeSource[]> {
       kind: 'local',
       projectsDir: path.join(account.configDir, 'projects'),
       claudeJsonPath,
-      account: readAccount(claudeJsonPath)
+      account: readAccount(claudeJsonPath),
+      provider: 'claude'
     })
+  }
+  // Codex homes, discovered the same way and just as cheaply — `codexSources` only
+  // stats each candidate's `sessions/` dir. A machine without Codex adds no rows.
+  // Each non-default Codex account keeps its own CODEX_HOME with its own `sessions/`
+  // tree (see provider-accounts.ts), so its conversations are invisible unless its
+  // home is listed too — the same reason the Claude accounts are walked above.
+  try {
+    const codexAccounts = getProviderAccounts('codex')
+      .filter((a) => a.configDir)
+      .map((a) => ({ id: a.id, name: a.name, home: a.configDir as string }))
+    for (const src of codexSources(codexAccounts)) sources.push(codexAsSource(src))
+  } catch {
+    // A broken Codex install must never cost the Claude Code sources.
   }
   try {
     for (const root of await getWslClaudeRoots()) {
@@ -114,7 +179,8 @@ export async function getSources(force = false): Promise<ClaudeSource[]> {
         distro: root.distro,
         projectsDir: root.projectsDir,
         claudeJsonPath: root.claudeJsonPath,
-        account: readAccount(root.claudeJsonPath)
+        account: readAccount(root.claudeJsonPath),
+        provider: 'claude'
       })
     }
   } catch {
@@ -129,12 +195,22 @@ export async function resolveSource(id: string): Promise<ClaudeSource | null> {
   return (await getSources()).find((s) => s.id === id) ?? null
 }
 
+/**
+ * The Codex reader's own source for this id, or null if the id names a Claude Code
+ * one. The single place the "is this Codex" question is asked by the read paths.
+ */
+async function resolveCodexFor(sourceId: string): Promise<CodexSource | null> {
+  const src = await resolveSource(sourceId)
+  return src?.provider === 'codex' ? (src.codex ?? null) : null
+}
+
 export interface SourceInfo {
   id: string
   label: string
   kind: 'local' | 'wsl'
   distro?: string
   account?: SourceAccount
+  provider?: SourceProvider
 }
 export async function listSources(): Promise<SourceInfo[]> {
   return (await getSources(true)).map((s) => ({
@@ -142,7 +218,8 @@ export async function listSources(): Promise<SourceInfo[]> {
     label: s.label,
     kind: s.kind,
     distro: s.distro,
-    account: s.account
+    account: s.account,
+    provider: s.provider
   }))
 }
 
@@ -162,6 +239,8 @@ export interface CCProject {
   kind: 'local' | 'wsl'
   distro?: string
   account?: SourceAccount
+  /** Which CLI wrote this project's transcripts. Absent means Claude Code. */
+  provider?: SourceProvider
   /**
    * Filed away by the user — a preference, not a directory. Orthogonal to archiving
    * a *session*, which moves a file.
@@ -182,6 +261,14 @@ export interface CCSessionMeta {
   sourceId: string
   kind: 'local' | 'wsl'
   distro?: string
+  /**
+   * Which CLI wrote this transcript. Absent means Claude Code.
+   *
+   * Load-bearing, not decoration: a `codex` session is NOT resumable by the Claude
+   * Code CLI — its id means nothing to `claude --resume` — so anything that reopens a
+   * session has to branch on this rather than assume.
+   */
+  provider?: SourceProvider
   /** Effective tag set — the last `custom-tags` entry in the transcript wins. */
   tags: string[]
   /**
@@ -214,6 +301,21 @@ export async function readSessionPeek(
   sessionId: string,
   archived = false
 ): Promise<SessionPeek | null> {
+  // Codex keeps its transcripts in a date tree, so `safeSessionPath` refuses them by
+  // design. Peeking still has to work, or every Codex row in Projects opens an empty
+  // panel — the cost is 0 because Codex logs no per-message usage.
+  const codex = await resolveCodexFor(sourceId)
+  if (codex) {
+    const messages = await codexTranscript(codex, sessionId)
+    const texts = messages.filter((m) => m.text)
+    const lastMessage = texts[texts.length - 1]
+    return {
+      first: texts[0]?.text.slice(0, 400) ?? '',
+      last: lastMessage?.text.slice(0, 700) ?? '',
+      lastRole: lastMessage?.role ?? 'assistant',
+      costUsd: 0
+    }
+  }
   const full = await safeSessionPath(sourceId, encodedDir, sessionId, archived)
   if (!full) return null
 
@@ -288,8 +390,14 @@ function realPathMap(claudeJsonPath: string): Map<string, string> {
   return map
 }
 
+/**
+ * The canonical implementation lives in codex-data-pure.ts, and this is the name the
+ * rest of the app already calls it by. Both readers have to agree exactly — a folder
+ * opened in Codex and in Claude Code must produce the same `encodedDir`, or Projects
+ * shows it twice — and only a pure module is reachable from a unit test.
+ */
 export function encodePath(p: string): string {
-  return p.replace(/[^a-zA-Z0-9]/g, '-')
+  return encodeProjectPath(p)
 }
 
 function decodeFallback(encoded: string): string {
@@ -373,6 +481,10 @@ export async function safeSessionPath(
   if (encodedDir === '.' || encodedDir === '..' || sessionId === '.' || sessionId === '..') return null
   const src = await resolveSource(sourceId)
   if (!src) return null
+  // A Codex transcript is not at `<projectsDir>/<encodedDir>/<id>.jsonl` — it is in a
+  // date tree, and nothing in this file writes to one. Refusing outright is what keeps
+  // a rename or an archive from half-working against a path that does not exist.
+  if (src.provider === 'codex') return null
   const base = path.resolve(src.projectsDir)
   const rel = archived
     ? path.join(base, encodedDir, ARCHIVED_DIR, `${sessionId}.jsonl`)
@@ -399,6 +511,8 @@ export async function safeProjectDir(sourceId: string, encodedDir: string): Prom
   if (encodedDir === '.' || encodedDir === '..') return null
   const src = await resolveSource(sourceId)
   if (!src) return null
+  // No such thing as a Codex project directory — see `safeSessionPath`.
+  if (src.provider === 'codex') return null
   const base = path.resolve(src.projectsDir)
   const rel = path.join(base, encodedDir)
   const full = path.resolve(rel)
@@ -435,6 +549,16 @@ function jsonlIn(dir: string): string[] {
 }
 
 async function projectsForSource(src: ClaudeSource): Promise<CCProject[]> {
+  // Codex derives its projects from the cwd on each transcript's first line rather
+  // than from directories — a different reader entirely, same returned shape. Filing
+  // a project away is a preference of Argos's, not of either CLI's, so it is applied
+  // here for both.
+  if (src.provider === 'codex' && src.codex) {
+    const archivedProjects = new Set(getArchivedProjects())
+    const projects = await codexProjects(src.codex)
+    for (const p of projects) p.archived = archivedProjects.has(projectKey(src.id, p.encodedDir))
+    return projects
+  }
   if (!fs.existsSync(src.projectsDir)) return []
   const pathMap = realPathMap(src.claudeJsonPath)
   const result: CCProject[] = []
@@ -487,7 +611,16 @@ async function projectsForSource(src: ClaudeSource): Promise<CCProject[]> {
 export async function getAllProjects(): Promise<CCProject[]> {
   const sources = await getSources()
   const all: CCProject[] = []
-  for (const src of sources) all.push(...(await projectsForSource(src)))
+  for (const src of sources) {
+    try {
+      all.push(...(await projectsForSource(src)))
+    } catch {
+      // One source's read error must not empty the whole list. The Codex reader
+      // deliberately lets a read error propagate rather than reporting a session as
+      // absent (see PLAN.md "Lot 0"), and this is the boundary that failure stops
+      // at: its own rows go missing, every other source still lists.
+    }
+  }
   return all.sort((a, b) => b.lastActive - a.lastActive)
 }
 
@@ -498,6 +631,7 @@ export async function listSessions(
 ): Promise<CCSessionMeta[]> {
   const src = await resolveSource(sourceId)
   if (!src) return []
+  if (src.provider === 'codex' && src.codex) return codexSessions(src.codex, encodedDir, archived)
   const dir = archived
     ? path.join(src.projectsDir, encodedDir, ARCHIVED_DIR)
     : path.join(src.projectsDir, encodedDir)
@@ -689,6 +823,11 @@ export async function searchSessions(
 
   for (const src of sources) {
     if (!src || !fs.existsSync(src.projectsDir)) continue
+    // Codex's sessions root looks walkable but its subdirectories are dates, not
+    // projects — reading it here would produce hits filed under a project called
+    // "2026". Searching Codex transcripts is worth doing and is not done yet; saying
+    // so is better than returning nonsense.
+    if (src.provider === 'codex') continue
     const pathMap = realPathMap(src.claudeJsonPath)
     let dirNames: string[]
     if (scope) {
@@ -794,9 +933,12 @@ export async function resolveChatSource(
 ): Promise<{ sourceId: string; encodedDir: string } | null> {
   try {
     const all = await getSources()
+    // A chat Argos launched is always a `claude` process, so a Codex source can never
+    // hold its transcript — and its sessions root would be walked for nothing.
+    const claudeOnly = all.filter((s) => s.provider !== 'codex')
     const candidates = preferSourceId?.startsWith('wsl:')
-      ? all.filter((s) => s.id === preferSourceId)
-      : all.filter((s) => s.kind !== 'wsl')
+      ? claudeOnly.filter((s) => s.id === preferSourceId)
+      : claudeOnly.filter((s) => s.kind !== 'wsl')
     candidates.sort((a, b) => (a.id === preferSourceId ? -1 : b.id === preferSourceId ? 1 : 0))
 
     const encodedCwd = encodePath(cwd)
@@ -879,6 +1021,10 @@ export async function readSession(
   sessionId: string,
   archived = false
 ): Promise<CCTranscriptMessage[]> {
+  // Same reason as `readSessionPeek`: Codex transcripts are not addressable through
+  // `safeSessionPath`, and a Codex conversation still has to be readable.
+  const codex = await resolveCodexFor(sourceId)
+  if (codex) return codexTranscript(codex, sessionId)
   const full = await safeSessionPath(sourceId, encodedDir, sessionId, archived)
   if (!full || !fs.existsSync(full)) return []
   const messages: CCTranscriptMessage[] = []
@@ -972,6 +1118,9 @@ async function collectUsage(
   now: number,
   seen: Set<string>
 ): Promise<void> {
+  // Codex records no per-message token usage in its rollouts — its plan usage comes
+  // from `codex app-server` instead (codex-usage.ts). Nothing here to collect.
+  if (src.provider === 'codex') return
   if (!fs.existsSync(src.projectsDir)) return
   const pathMap = realPathMap(src.claudeJsonPath)
   let dirs: fs.Dirent[]

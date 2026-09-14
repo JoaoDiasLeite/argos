@@ -294,12 +294,21 @@ export interface SourceAccount {
   plan?: string
 }
 
+/**
+ * Which CLI wrote the transcripts behind a source, project or session.
+ *
+ * Optional everywhere it appears, and absent means 'claude' — the field arrived with
+ * the Codex reader and nothing that predates it is Codex.
+ */
+export type SourceProvider = 'claude' | 'codex'
+
 export interface SourceInfo {
   id: string
   label: string
   kind: 'local' | 'wsl'
   distro?: string
   account?: SourceAccount
+  provider?: SourceProvider
 }
 
 /**
@@ -387,6 +396,8 @@ export interface CCProject {
   kind: 'local' | 'wsl'
   distro?: string
   account?: SourceAccount
+  /** Which CLI wrote this project's transcripts. Absent means Claude Code. */
+  provider?: SourceProvider
   /**
    * Filed away by the user — a preference, not a directory. Orthogonal to archiving
    * a *session*, which moves a file.
@@ -448,6 +459,14 @@ export interface CCSessionMeta {
   sourceId: string
   kind: 'local' | 'wsl'
   distro?: string
+  /**
+   * Which CLI wrote this transcript. Absent means Claude Code.
+   *
+   * Load-bearing, not decoration: a `codex` session is NOT resumable by the Claude
+   * Code CLI — `claude --resume` does not know its id — so anything that reopens a
+   * session must branch on this instead of assuming.
+   */
+  provider?: SourceProvider
   /** Effective tag set — the last `custom-tags` entry in the transcript wins. */
   tags: string[]
   /**
