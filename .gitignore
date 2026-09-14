@@ -8,3 +8,4 @@ release/
 *.tsbuildinfo
 .tsbuild/
 scripts/visual-check/*.png
+work/
