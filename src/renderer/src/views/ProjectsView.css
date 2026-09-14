@@ -89,13 +89,6 @@
   flex-shrink: 0;
 }
 .src-badge.wsl { background: rgba(79,195,247,0.14); color: #4fc3f7; }
-/* Same pill vocabulary as the WSL badge, in the accent color used everywhere else in
-   this column, so it reads as "more info" rather than a new kind of tag. */
-.src-badge.multi {
-  background: var(--accent-dim);
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-}
 /* Marks which account a session row belongs to — only shown when the list actually
    mixes accounts (see `showSessionAccounts` in ProjectsView.tsx), so it stays quiet
    (muted, not accent-colored) rather than compete with the tag chips beside it. */

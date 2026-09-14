@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CcSessionTarget, CCProject, CCSessionMeta, RepoName, SearchHit, SearchSnippet } from '../types'
+import {
+  CcSessionTarget,
+  CCProject,
+  CCSessionMeta,
+  RepoName,
+  SearchHit,
+  SearchSnippet,
+  SourceProvider
+} from '../types'
 import { TagChips, TagEditor, useLabelColors } from '../components/SessionTags'
 import LabelManager from '../components/LabelManager'
 import SessionPeek from '../components/SessionPeek'
@@ -150,15 +158,40 @@ function groupFavoriteKeys(members: CCProject[]): string[] {
 }
 
 /**
+ * Codex email lookups, keyed the two ways a Codex `CCProject.sourceId` names an
+ * account: `byId` for `'codex:<accountId>'`, `defaultEmail` for the bare `'codex'`
+ * source (the default CODEX_HOME, i.e. whichever account is marked `isDefault`).
+ * A Codex project's own `account` field is always empty — the main process would
+ * need to spawn the CLI per account to fill it in — so this is built in the
+ * renderer from `providerAccountsList('codex')`, which already has the answer.
+ */
+interface CodexAccountEmails {
+  byId: Map<string, string>
+  defaultEmail?: string
+}
+
+const NO_CODEX_ACCOUNTS: CodexAccountEmails = { byId: new Map() }
+
+/**
  * A source's account identity: two sources are "the same account" iff they report
  * the same (normalised) email — a local install and two WSL distros logged into the
  * same Claude account are one identity, even though they're three distinct
  * `sourceId`s. A source with no email can't be merged with anything, so it is its
  * own identity, keyed by its `sourceId`.
+ *
+ * Codex is the one provider whose `CCProject` never carries `account` itself (see
+ * `CodexAccountEmails` above), so its identity is resolved from the passed-in map
+ * instead — falling back to the raw `sourceId`, same as any other emailless source,
+ * until that map has loaded.
  */
-function identityOf(p: CCProject): string {
+function identityOf(p: CCProject, codex: CodexAccountEmails): string {
   const email = p.account?.email?.trim().toLowerCase()
-  return email || p.sourceId
+  if (email) return email
+  if (p.sourceId === 'codex') return codex.defaultEmail ?? p.sourceId
+  if (p.sourceId.startsWith('codex:')) {
+    return codex.byId.get(p.sourceId.slice('codex:'.length)) ?? p.sourceId
+  }
+  return p.sourceId
 }
 
 /**
@@ -187,9 +220,9 @@ interface AccountOption {
  * Returns null when no member of the group matches — the caller drops the group
  * entirely rather than show an empty row.
  */
-function scopeGroup(g: ProjectGroup, identity: string): ProjectGroup | null {
+function scopeGroup(g: ProjectGroup, identity: string, codex: CodexAccountEmails): ProjectGroup | null {
   if (identity === 'all') return g
-  const members = g.members.filter((m) => identityOf(m) === identity)
+  const members = g.members.filter((m) => identityOf(m, codex) === identity)
   if (!members.length) return null
   return {
     key: g.key,
@@ -204,9 +237,9 @@ function scopeGroup(g: ProjectGroup, identity: string): ProjectGroup | null {
   }
 }
 
-function scopeGroups(list: CCProject[], identity: string): ProjectGroup[] {
+function scopeGroups(list: CCProject[], identity: string, codex: CodexAccountEmails): ProjectGroup[] {
   return groupProjects(list)
-    .map((g) => scopeGroup(g, identity))
+    .map((g) => scopeGroup(g, identity, codex))
     .filter((g): g is ProjectGroup => g !== null)
 }
 
@@ -308,6 +341,10 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   // `account:*` source of its own, so deriving a label from the source alone left the
   // filter saying "joao.leite" for the account this app calls Work.
   const [accountNames, setAccountNames] = useState<Record<string, string>>({})
+  // Filled in from the same fetch as `accountNames` below — see `CodexAccountEmails`
+  // and `identityOf`. Starts empty, so until this lands every Codex project's
+  // identity is just its `sourceId`, same as before this feature existed.
+  const [codexAccounts, setCodexAccounts] = useState<CodexAccountEmails>(NO_CODEX_ACCOUNTS)
   useEffect(() => {
     let cancelled = false
     const collect = async () => {
@@ -322,17 +359,49 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       }
       const claude = await window.electronAPI.accountsList().catch(() => null)
       if (claude) add(claude.accounts)
+      let codex: CodexAccountEmails = NO_CODEX_ACCOUNTS
       for (const provider of ['codex', 'gemini'] as const) {
         const res = await window.electronAPI.providerAccountsList(provider).catch(() => null)
-        if (res) add(res.accounts)
+        if (!res) continue
+        add(res.accounts)
+        if (provider === 'codex') {
+          const byId = new Map<string, string>()
+          let defaultEmail: string | undefined
+          for (const a of res.accounts) {
+            const email = a.email?.trim().toLowerCase()
+            if (!email) continue
+            byId.set(a.id, email)
+            if (a.isDefault) defaultEmail = email
+          }
+          codex = { byId, defaultEmail }
+        }
       }
-      if (!cancelled) setAccountNames(out)
+      if (!cancelled) {
+        setAccountNames(out)
+        setCodexAccounts(codex)
+      }
     }
     collect()
     return () => {
       cancelled = true
     }
   }, [])
+
+  // `codexAccounts` arrives async, well after the account filter may already be set
+  // to a Codex project's raw `sourceId` (either persisted from a previous visit, or
+  // picked by the user before this fetch resolved). The moment the map lands,
+  // `identityOf` starts resolving that same project to an email instead — and
+  // `effectiveAccountFilter` below would then silently widen to "All" because the
+  // old sourceId-shaped value stopped matching any option. Migrate the filter
+  // forward to the newly-resolved identity instead, so the selection still means
+  // the same account rather than quietly reverting.
+  useEffect(() => {
+    const match = projects.find(
+      (p) => p.sourceId === accountFilter && identityOf(p, codexAccounts) !== accountFilter
+    )
+    if (match) setAccountFilter(identityOf(match, codexAccounts))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codexAccounts, projects])
 
   // The options the filter offers: one per account identity actually present (see
   // `identityOf`), not one per source — a folder reached from Local and two WSL
@@ -342,7 +411,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   const accountOptions = useMemo<AccountOption[]>(() => {
     const byIdentity = new Map<string, CCProject[]>()
     for (const p of projects) {
-      const id = identityOf(p)
+      const id = identityOf(p, codexAccounts)
       const members = byIdentity.get(id)
       if (members) members.push(p)
       else byIdentity.set(id, [p])
@@ -367,7 +436,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       options.push({ identity, label, sub: email && email !== label ? email : undefined })
     }
     return options.sort((a, b) => a.label.localeCompare(b.label))
-  }, [projects, accountNames])
+  }, [projects, accountNames, codexAccounts])
   // A filter persisted from a previous run can name an identity that no longer
   // exists (an account removed, a distro unregistered) — fall back to 'all' rather
   // than scope every group down to zero members.
@@ -380,17 +449,66 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   // via the source it came from, resolved once per `projects` list.
   const identityBySource = useMemo(() => {
     const map = new Map<string, string>()
-    for (const p of projects) map.set(p.sourceId, identityOf(p))
+    for (const p of projects) map.set(p.sourceId, identityOf(p, codexAccounts))
     return map
-  }, [projects])
+  }, [projects, codexAccounts])
   const labelByIdentity = useMemo(
     () => new Map(accountOptions.map((o) => [o.identity, o.label])),
     [accountOptions]
   )
+  // The provider(s) seen under each identity, used only to disambiguate the BADGE
+  // (see `badgeLabelByIdentity`) — the select doesn't need it, since its option
+  // already shows the email alongside the name.
+  const providersByIdentity = useMemo(() => {
+    const map = new Map<string, Set<SourceProvider>>()
+    for (const p of projects) {
+      const id = identityOf(p, codexAccounts)
+      let set = map.get(id)
+      if (!set) {
+        set = new Set()
+        map.set(id, set)
+      }
+      set.add(p.provider ?? 'claude')
+    }
+    return map
+  }, [projects, codexAccounts])
+  const PROVIDER_NAME: Record<SourceProvider, string> = { claude: 'Claude', codex: 'Codex' }
+  // A badge shows only the account name (no email, unlike the select), so two
+  // DIFFERENT accounts named the same thing ("Work" on both Claude and Codex) would
+  // otherwise be indistinguishable there. Append the owning provider only to the
+  // identities actually colliding on label — and only if that still tells them
+  // apart; if two colliding identities also share a provider, leave the plain label
+  // rather than invent a third disambiguator (see the module docstring rules).
+  const badgeLabelByIdentity = useMemo(() => {
+    const byLabel = new Map<string, AccountOption[]>()
+    for (const o of accountOptions) {
+      const list = byLabel.get(o.label)
+      if (list) list.push(o)
+      else byLabel.set(o.label, [o])
+    }
+    const map = new Map<string, string>()
+    for (const [label, opts] of byLabel) {
+      if (opts.length === 1) {
+        map.set(opts[0].identity, label)
+        continue
+      }
+      const candidates = opts.map((o) => {
+        const providers = Array.from(providersByIdentity.get(o.identity) ?? [])
+        const provider = providers.sort()[0]
+        return { identity: o.identity, text: provider ? `${label} · ${PROVIDER_NAME[provider]}` : label }
+      })
+      const counts = new Map<string, number>()
+      for (const c of candidates) counts.set(c.text, (counts.get(c.text) ?? 0) + 1)
+      for (const c of candidates) {
+        map.set(c.identity, (counts.get(c.text) ?? 0) > 1 ? label : c.text)
+      }
+    }
+    return map
+  }, [accountOptions, providersByIdentity])
   const sessionIdentity = (s: CCSessionMeta): string => identityBySource.get(s.sourceId) ?? s.sourceId
   const sessionAccountLabel = (s: CCSessionMeta): string => {
     const identity = sessionIdentity(s)
-    return labelByIdentity.get(identity) ?? identity
+    return badgeLabelByIdentity.get(identity) ?? labelByIdentity.get(identity) ?? identity
   }
 
   // One row per real folder, not per spelling — see `groupProjects`. Grouped from
@@ -403,9 +521,9 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   const projectGroups = useMemo(
     () =>
       allGroups
-        .map((g) => scopeGroup(g, effectiveAccountFilter))
+        .map((g) => scopeGroup(g, effectiveAccountFilter, codexAccounts))
         .filter((g): g is ProjectGroup => g !== null),
-    [allGroups, effectiveAccountFilter]
+    [allGroups, effectiveAccountFilter, codexAccounts]
   )
   // Every member of a group, ignoring the account filter. Used ONLY where a whole-folder
   // reading is the right one; the destructive actions deliberately do not use it.
@@ -442,10 +560,10 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     // state, which is still one render behind): a filter persisted from a previous
     // run that named a since-removed identity must fall back to 'all' here too, or
     // this would silently pick nothing at all.
-    const knownIdentities = new Set(list.map(identityOf))
+    const knownIdentities = new Set(list.map((p) => identityOf(p, codexAccounts)))
     const effectiveFilter =
       accountFilter === 'all' || knownIdentities.has(accountFilter) ? accountFilter : 'all'
-    const firstGroup = scopeGroups(list, effectiveFilter)[0]
+    const firstGroup = scopeGroups(list, effectiveFilter, codexAccounts)[0]
     if (firstGroup && !selected && !targetRef.current) selectProject(firstGroup)
   }
 
@@ -576,7 +694,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       // A notification click is a decision, not a default — the account filter must
       // not be able to silently swallow it. Widen back to All when the filtered view
       // would otherwise hide every member of the project it points at.
-      const scoped = scopeGroup(group, accountFilter)
+      const scoped = scopeGroup(group, accountFilter, codexAccounts)
       if (!scoped) setAccountFilter('all')
       const useGroup = scoped ?? group
       let found = await listGroupSessions(useGroup, false)
@@ -615,7 +733,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       if (!group || cancelled) return
       // Same reasoning as the deep-link effect above: a click from Home must not be
       // hidden by a filter that happens to exclude every member of that project.
-      const scoped = scopeGroup(group, accountFilter)
+      const scoped = scopeGroup(group, accountFilter, codexAccounts)
       if (!scoped) setAccountFilter('all')
       selectProject(scoped ?? group)
     })()
@@ -960,13 +1078,6 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                   const accountEmails = Array.from(
                     new Set(g.members.map((m) => m.account?.email).filter((e): e is string => !!e))
                   )
-                  // Distinct ACCOUNTS among the members actually shown right now — a
-                  // group only mixes accounts visibly while the filter is "All"
-                  // (scoping to one account leaves a group with members from that one
-                  // account only), so this doubles as the "is this a mixed group" flag.
-                  // Sources, not accounts, would over-count: a folder opened from Local
-                  // and two WSL distros under the same login is one account.
-                  const visibleAccountCount = new Set(g.members.map(identityOf)).size
                   return (
                     <div
                       key={key}
@@ -996,18 +1107,6 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                         {g.distros.map((d) => (
                           <span key={d} className="src-badge wsl">{d}</span>
                         ))}
-                        {/* The tooltip already lists every account's email; this is the
-                            only thing on the row itself that says there's more than
-                            one — a small counter rather than spelling it out, since
-                            the row has no room to spare. */}
-                        {visibleAccountCount > 1 && (
-                          <span
-                            className="src-badge multi"
-                            title={`${visibleAccountCount} accounts: ${accountEmails.join(', ')}`}
-                          >
-                            ×{visibleAccountCount}
-                          </span>
-                        )}
                       </div>
                       <div className="project-row-meta">
                         {/* A bare 0 reads as a loading state; say what it means instead. */}
