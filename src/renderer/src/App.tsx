@@ -91,6 +91,17 @@ function basename(p: string): string {
   return p.split(/[\\/]/).filter(Boolean).pop() ?? p
 }
 
+/** A repo's display name. Two checkouts can share a basename (a Windows path and its
+ *  WSL spelling, api/ and web/ under one product): when they do, the row keeps the
+ *  parent folder too, because two identical rows say less than one. */
+function labelFor(path: string, all: string[]): string {
+  const name = basename(path)
+  const clashes = all.filter((p) => p !== path && basename(p) === name).length > 0
+  if (!clashes) return name
+  const parent = basename(path.slice(0, path.length - name.length).replace(/[\/]+$/, ''))
+  return parent ? `${parent}/${name}` : path
+}
+
 function str(v: unknown): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
 }
@@ -1579,19 +1590,32 @@ export default function App() {
   useEffect(() => {
     if (view !== 'home') return
     let cancelled = false
-    setHomeRepos(homeRepoPaths.map((p) => ({ path: p, name: basename(p), fileCount: 0, loading: true })))
-    Promise.all(
-      homeRepoPaths.map(async (p): Promise<HomeRepo> => {
-        try {
-          const status = await window.electronAPI.gitStatus(p)
-          return { path: p, name: basename(p), branch: status.branch, fileCount: status.files.length }
-        } catch {
-          return { path: p, name: basename(p), fileCount: 0, error: 'Could not read status' }
-        }
-      })
-    ).then((results) => {
-      if (!cancelled) setHomeRepos(results)
-    })
+    setHomeRepos(
+      homeRepoPaths.map((p) => ({ path: p, name: labelFor(p, homeRepoPaths), fileCount: 0, loading: true }))
+    )
+    // Each row settles on its own. One Promise.all resolved them all or none, so a single
+    // slow gitStatus — a WSL path, a drive that has gone away — held every row in its
+    // spinner, and the list looked broken rather than partly late.
+    for (const p of homeRepoPaths) {
+      window.electronAPI
+        .gitStatus(p)
+        .then<HomeRepo>((status) => ({
+          path: p,
+          name: labelFor(p, homeRepoPaths),
+          branch: status.branch,
+          fileCount: status.files.length
+        }))
+        .catch<HomeRepo>(() => ({
+          path: p,
+          name: labelFor(p, homeRepoPaths),
+          fileCount: 0,
+          error: 'Could not read status'
+        }))
+        .then((row) => {
+          if (cancelled) return
+          setHomeRepos((prev) => prev.map((r) => (r.path === p ? row : r)))
+        })
+    }
     return () => {
       cancelled = true
     }
