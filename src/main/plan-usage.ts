@@ -6,6 +6,7 @@ import { listConfigDirs, listAccountStatus } from './accounts'
 import { getWslCredentialsPaths } from './wsl'
 import { updateTrayTooltip } from './tray'
 import { readJsonFile } from './json-file'
+import { nextAlert, type AlertState } from './plan-alerts-pure'
 
 // Real plan usage straight from Anthropic, the way community HUDs (claude-hud,
 // claudeline, ccusage-style statuslines) do it: GET api.anthropic.com/api/oauth/usage
@@ -445,15 +446,9 @@ export async function getPlanUsage(force = false): Promise<PlanUsageReport> {
 
 // ─── Watcher: periodic refresh + tray tooltip + threshold notifications ─────────
 
-// Threshold-crossing latches, keyed by `${accountKey}:${windowKey}:${threshold}`. A latch
-// prevents re-notifying for a threshold already reported; it re-arms when utilization drops
-// below (threshold − 5) or the window's resetsAt changes (a new window period began).
-interface Latch {
-  armed: boolean
-  resetsAt?: string
-}
-const latches = new Map<string, Latch>()
-const THRESHOLDS = [85, 95]
+// What each window has already been notified about, keyed by `${accountKey}:${windowKey}`.
+// The rule itself (one notification per threshold per window) lives in plan-alerts-pure.ts.
+const alertStates = new Map<string, AlertState>()
 const NOTIFY_WINDOW_KEYS = new Set(['five_hour', 'seven_day'])
 
 function windowLabelForTooltip(key: string): string {
@@ -490,31 +485,20 @@ function checkThresholds(report: PlanUsageReport, showMain: () => void): void {
     if (acc.status !== 'ok' || acc.stale) continue
     for (const w of acc.windows) {
       if (!NOTIFY_WINDOW_KEYS.has(w.key)) continue
-      for (const threshold of THRESHOLDS) {
-        const latchKey = `${acc.accountKey}:${w.key}:${threshold}`
-        const latch = latches.get(latchKey) ?? { armed: true, resetsAt: w.resetsAt }
-        // Re-arm if the window rolled over (new reset time) or dropped back below the
-        // threshold's hysteresis band — so a fresh climb can notify again.
-        if (latch.resetsAt !== w.resetsAt || w.utilization < threshold - 5) {
-          latch.armed = true
-          latch.resetsAt = w.resetsAt
-        }
-        if (latch.armed && w.utilization >= threshold) {
-          latch.armed = false
-          latch.resetsAt = w.resetsAt
-          const reset = fmtResetShort(w.resetsAt)
-          const body =
-            `${windowLabelForTooltip(w.key)} window ${w.utilization.toFixed(0)}% used` +
-            (reset ? ` · ${reset}` : '')
-          try {
-            const n = new Notification({ title: `Plan limit warning — ${acc.accountName}`, body })
-            n.on('click', () => showMain())
-            n.show()
-          } catch {
-            // Notifications are best-effort — never let one throw into the watcher.
-          }
-        }
-        latches.set(latchKey, latch)
+      const stateKey = `${acc.accountKey}:${w.key}`
+      const { notify, state } = nextAlert(alertStates.get(stateKey), w.utilization, w.resetsAt)
+      alertStates.set(stateKey, state)
+      if (notify === null) continue
+      const reset = fmtResetShort(w.resetsAt)
+      const body =
+        `${windowLabelForTooltip(w.key)} window ${w.utilization.toFixed(0)}% used` +
+        (reset ? ` · ${reset}` : '')
+      try {
+        const n = new Notification({ title: `Plan limit warning — ${acc.accountName}`, body })
+        n.on('click', () => showMain())
+        n.show()
+      } catch {
+        // Notifications are best-effort — never let one throw into the watcher.
       }
     }
   }
