@@ -51,12 +51,40 @@
 .search-hit-acct { font-size: 10.5px; color: var(--text-2); margin-top: 4px; }
 
 .projects-split { flex: 1; display: flex; overflow: hidden; }
-.projects-list {
-  width: 210px;
-  flex-shrink: 0;
+/* Holds the width (set inline, draggable) and anchors the handle. Separate from the
+   column below because that one scrolls, and an absolutely positioned handle inside a
+   scroll container scrolls away with the content. */
+.projects-list-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  overflow: hidden;
   border-right: 1px solid var(--border);
+}
+.projects-list {
+  flex: 1;
+  min-width: 0;
   overflow-y: auto;
   padding: 10px 8px;
+}
+
+/* Drag handle on the column's right border — same footprint and hover treatment as
+   Sidebar.tsx's .sidebar-resize-handle. */
+.projects-list-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 5px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 0.15s;
+}
+.projects-list-resize-handle:hover,
+.projects-list-resize-handle:active {
+  background: var(--accent);
+  opacity: 0.35;
 }
 /* Two lines, not four. The path and the account went to the tooltip: repeated down
    twenty rows they were the loudest thing in the column, and dropping them is what

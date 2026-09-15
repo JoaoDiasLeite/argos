@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CcSessionTarget,
   CCProject,
@@ -36,6 +36,13 @@ interface Props {
    */
   focus?: { key: string; at: number } | null
 }
+
+// Project list column resize — same shape as Sidebar.tsx's own resize handle
+// (MIN_WIDTH/MAX_WIDTH/STORAGE_KEY, drag handlers, cleanup on unmount).
+const LIST_MIN_WIDTH = 160
+const LIST_MAX_WIDTH = 400
+const LIST_DEFAULT_WIDTH = 210
+const LIST_WIDTH_STORAGE_KEY = 'projects.listWidth'
 
 function hitToSession(h: SearchHit): CCSessionMeta {
   return {
@@ -258,6 +265,58 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     else setPeeked(s)
   }
   const [projects, setProjects] = useState<CCProject[]>([])
+  // The project list column's width. An invalid or out-of-range stored value falls
+  // back to the default rather than applying a bogus width — see Sidebar.tsx.
+  const [listWidth, setListWidth] = useState<number>(() => {
+    const stored = localStorage.getItem(LIST_WIDTH_STORAGE_KEY)
+    if (stored) {
+      const parsed = parseInt(stored, 10)
+      if (!isNaN(parsed)) return Math.min(LIST_MAX_WIDTH, Math.max(LIST_MIN_WIDTH, parsed))
+    }
+    return LIST_DEFAULT_WIDTH
+  })
+  const listDraggingRef = useRef(false)
+  const listStartXRef = useRef(0)
+  const listStartWidthRef = useRef(0)
+
+  const handleListResizeMouseMove = useCallback((e: MouseEvent) => {
+    if (!listDraggingRef.current) return
+    const delta = e.clientX - listStartXRef.current
+    const next = Math.min(LIST_MAX_WIDTH, Math.max(LIST_MIN_WIDTH, listStartWidthRef.current + delta))
+    setListWidth(next)
+  }, [])
+
+  const handleListResizeMouseUp = useCallback(() => {
+    if (!listDraggingRef.current) return
+    listDraggingRef.current = false
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+    setListWidth((w) => {
+      localStorage.setItem(LIST_WIDTH_STORAGE_KEY, String(w))
+      return w
+    })
+    window.removeEventListener('mousemove', handleListResizeMouseMove)
+    window.removeEventListener('mouseup', handleListResizeMouseUp)
+  }, [handleListResizeMouseMove])
+
+  const handleListResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    listDraggingRef.current = true
+    listStartXRef.current = e.clientX
+    listStartWidthRef.current = listWidth
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+    window.addEventListener('mousemove', handleListResizeMouseMove)
+    window.addEventListener('mouseup', handleListResizeMouseUp)
+  }, [listWidth, handleListResizeMouseMove, handleListResizeMouseUp])
+
+  useEffect(() => {
+    return () => {
+      window.removeEventListener('mousemove', handleListResizeMouseMove)
+      window.removeEventListener('mouseup', handleListResizeMouseUp)
+    }
+  }, [handleListResizeMouseMove, handleListResizeMouseUp])
+
   const [selected, setSelected] = useState<ProjectGroup | null>(null)
   const [sessions, setSessions] = useState<CCSessionMeta[]>([])
   const [loading, setLoading] = useState(true)
@@ -557,7 +616,14 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   const displayNames = useMemo(
     () =>
       projectDisplayNames(
-        projectGroups.map((g) => ({ key: g.key, path: primaryMember(g).realPath })),
+        // The CANONICAL path, not the recorded one: three `jdl` groups in three WSL
+        // distros all record the identical `/home/jdl`, and only the canonical spelling
+        // carries the distro that tells them apart. Naming from realPath left them three
+        // rows called `jdl` with nothing to choose between.
+        projectGroups.map((g) => {
+          const p = primaryMember(g)
+          return { key: g.key, path: canonicalProjectPath(p.realPath, p.distro) }
+        }),
         { custom: customNames, repos: repoNames }
       ),
     [projectGroups, customNames, repoNames]
@@ -1024,6 +1090,11 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
         <div className="projects-split">
           {/* Scrolling the column moves the row out from under a `fixed` panel, so the
               panel goes rather than drifting away from what it acts on. */}
+          {/* The width and the drag handle belong to this wrapper, not to the scrolling
+             column inside it: a handle positioned against a scroll container rides the
+             content and is gone as soon as the list is scrolled. Sidebar.tsx gets away
+             with the handle inside because there the scroll lives in a child. */}
+          <div className="projects-list-wrap" style={{ width: listWidth }}>
           <div className="projects-list" onScroll={() => setProjectMenu(null)}>
             {/* Only earns its place once there is a choice to make — a lone "Local"
                 setup has nothing for this control to do. */}
@@ -1188,6 +1259,13 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
             {projectSections.length === 0 && (
               <div className="projects-filter-empty">No project matches.</div>
             )}
+          </div>
+            {/* Not a keyboard control — aria-hidden, like Sidebar.tsx's own handle. */}
+            <div
+              className="projects-list-resize-handle"
+              onMouseDown={handleListResizeMouseDown}
+              aria-hidden="true"
+            />
           </div>
 
           <div className="sessions-pane">
