@@ -143,6 +143,12 @@ interface Props {
   /** The app's mode (ui.workMode). 'terminal' means this chat IS a terminal: no
    *  composer, no transcript, and no way to toggle back. 'chat' never offers one. */
   mode: 'chat' | 'terminal'
+  /** In terminal mode, a prompt to type into the CLI once it is up — Home's start box
+   *  hands one over so "start this here" lands in the terminal rather than nowhere. */
+  initialTerminalPrompt?: string
+  /** Fired once that prompt has been sent, so App can forget it (it must not be
+   *  replayed if the terminal restarts). */
+  onInitialTerminalPromptSent?: () => void
   /** Bumped by App whenever it deliberately lands you on a new chat (switching account,
    *  returning to the chat view) — drives the composer's accent sweep. */
   newChatNonce: number
@@ -204,6 +210,8 @@ export default function Chat(
   terminalProvider,
   terminalAccountId,
   mode,
+  initialTerminalPrompt,
+  onInitialTerminalPromptSent,
   newChatNonce,
   onOpenClaudeMd,
   autoApprove,
@@ -824,6 +832,8 @@ export default function Chat(
             wslDistro={session.wslDistro}
             remoteHostId={session.remoteHostId}
             resumeSessionId={session.claudeSessionId || session.terminalSessionId}
+            initialPrompt={initialTerminalPrompt}
+            onInitialPromptSent={onInitialTerminalPromptSent}
             closable={false}
             onActive={() => {
               if (!session.hasTerminalActivity) onPatchSession({ hasTerminalActivity: true })

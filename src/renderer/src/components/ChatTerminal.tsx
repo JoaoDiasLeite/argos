@@ -36,6 +36,10 @@ interface Props {
    *  to close back to, so the × would only strand the user. */
   closable?: boolean
   onClose?: () => void
+  /** Typed into the CLI, with Enter, once it is up. Sent at most once per mount (see
+   *  sentPromptRef) so a Restart doesn't silently re-run the task. */
+  initialPrompt?: string
+  onInitialPromptSent?: () => void
   /** Fired once the PTY has actually launched, so the host can mark this chat as having
    *  real activity (see Session.hasTerminalActivity) even though no `messages` exist. */
   onActive?: () => void
@@ -60,6 +64,11 @@ const STARTING_BACKSTOP_MS = 8000
 // for seconds over an already-usable CLI. A tiny grace after the first visible glyph lets
 // xterm paint that frame under the overlay so the reveal doesn't flash a blank frame first.
 const REVEAL_PAINT_GRACE_MS = 120
+
+// How long after the reveal a seeded prompt waits before being typed. The CLI has painted
+// by then, but claude and codex both bind their input a frame or two later, and anything
+// sent before that is swallowed with no trace.
+const INITIAL_PROMPT_DELAY_MS = 500
 
 // Whether the terminal's current viewport has any real (non-whitespace) glyphs painted.
 // Escape-only output — cursor hide/show, screen clear, colour resets — leaves every line's
@@ -89,7 +98,7 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, autoLaunchCli = true, active, closable = true, onClose, onActive }: Props) {
+export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, autoLaunchCli = true, active, closable = true, onClose, onActive, initialPrompt, onInitialPromptSent }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -115,6 +124,14 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
   // Debounced "output went quiet" timer, (re)armed by every data chunk while awaiting
   // reveal; fires setStarting(false) once REVEAL_QUIET_MS passes with no further output.
   const quietTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  // The seeded prompt and its one-shot latch. Refs, not props read directly: the terminal's
+  // setup effect runs once per mount and cannot close over a prop that arrives later.
+  const promptRef = useRef(initialPrompt)
+  promptRef.current = initialPrompt
+  const onPromptSentRef = useRef(onInitialPromptSent)
+  onPromptSentRef.current = onInitialPromptSent
+  const sentPromptRef = useRef(false)
+  const promptTimerRef = useRef<ReturnType<typeof setTimeout>>()
   // A pty outlives this component (see the effect cleanup below), so remounting reattaches to
   // a live one and replays its buffered scrollback. Live chunks that land before that replay
   // is written have to wait in `queuedData`, or they'd paint ahead of the history they follow.
@@ -432,6 +449,22 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       clearTimeout(quietTimerRef.current)
       awaitingRevealRef.current = false
       termRef.current?.focus()
+      sendInitialPrompt()
+    }
+
+    // The prompt Home handed over, typed into the CLI as if you had typed it. Deliberately
+    // after reveal and after a further beat: reveal means "the CLI has painted", not "its
+    // input is listening", and a TUI that is still mounting drops what it is sent. One shot
+    // per mount, and only once — a Restart relaunches the CLI, and re-running the task
+    // behind the user's back is not what restarting a terminal means.
+    function sendInitialPrompt(): void {
+      const text = promptRef.current
+      if (!text || sentPromptRef.current) return
+      sentPromptRef.current = true
+      promptTimerRef.current = setTimeout(() => {
+        window.electronAPI.terminalWrite(terminalId, text + '\r')
+        onPromptSentRef.current?.()
+      }, INITIAL_PROMPT_DELAY_MS)
     }
 
     const writeChunk = (data: string): void => {
@@ -556,6 +589,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     return () => {
       if (autoStartTimer) clearTimeout(autoStartTimer)
       if (redrawTimer) clearTimeout(redrawTimer)
+      clearTimeout(promptTimerRef.current)
       clearTimeout(backstopTimer)
       clearTimeout(quietTimerRef.current)
       awaitingRevealRef.current = false

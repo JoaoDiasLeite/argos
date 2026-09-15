@@ -221,6 +221,19 @@ export default function App() {
   // change shape (the chat pane, the sidebar's actions, Home's start box, approvals)
   // agrees on it — see ui-prefs-pure.ts for what the two modes mean.
   const workMode = ui?.workMode ?? 'chat'
+  // Prompts waiting to be typed into a chat's terminal, by session id. In terminal mode
+  // "start this" cannot post a message into a transcript that does not exist, so the text
+  // is parked here and ChatTerminal types it into the CLI once that CLI is up. Cleared as
+  // soon as it is sent: a restart must not re-run the task.
+  const [terminalPrompts, setTerminalPrompts] = useState<Record<string, string>>({})
+  const clearTerminalPrompt = useCallback((sid: string) => {
+    setTerminalPrompts((prev) => {
+      if (!(sid in prev)) return prev
+      const next = { ...prev }
+      delete next[sid]
+      return next
+    })
+  }, [])
   const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([])
   // When each approvalId entered the queue, for Home's "since" — ApprovalRequest itself
   // carries no timestamp, and reading Date.now() at render time would restart the count
@@ -845,6 +858,19 @@ export default function App() {
       )
       s.name = prompt.slice(0, 40)
 
+      // Terminal mode: no transcript to post into and no run for Argos to drive. The chat
+      // is created the same way — folder, model and account all still decided here, and
+      // they are what the CLI launches under — and the prompt is handed to the terminal to
+      // type. `ready` is not consulted: signing in is the CLI's business in this mode.
+      if (workMode === 'terminal') {
+        setSessions((prev) => [s, ...prev])
+        setActiveId(s.id)
+        setView('chat')
+        setTerminalPrompts((prev) => ({ ...prev, [s.id]: prompt }))
+        window.electronAPI.saveSession(s)
+        return
+      }
+
       const userMsg: Message = { id: generateId(), role: 'user', content: prompt, timestamp: Date.now() }
       const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
 
@@ -874,7 +900,7 @@ export default function App() {
       addTermFor(s.id, { kind: 'user', text: prompt.slice(0, 120) })
       window.electronAPI.sendAgent(buildAgentPayload(s, prompt))
     },
-    [defaultModel, defaultAccountId, ready, startRun, addTermFor, buildAgentPayload]
+    [defaultModel, defaultAccountId, ready, workMode, startRun, addTermFor, buildAgentPayload]
   )
   const startOverlayPromptRef = useRef(startOverlayPrompt)
   startOverlayPromptRef.current = startOverlayPrompt
@@ -2581,6 +2607,10 @@ export default function App() {
               terminalProvider={activeChatProvider}
               terminalAccountId={activeChatAccountId}
               mode={workMode}
+              initialTerminalPrompt={activeId ? terminalPrompts[activeId] : undefined}
+              onInitialTerminalPromptSent={() => {
+                if (activeId) clearTerminalPrompt(activeId)
+              }}
               newChatNonce={newChatNonce}
               onOpenClaudeMd={() => setClaudeMdOpen(true)}
               autoApprove={activeSession?.autoApprove ?? false}
