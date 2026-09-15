@@ -15,10 +15,21 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
-    version: '1.8.1',
+    version: '1.9.0',
     date: '2026-09-15',
-    tag: 'new',
+    tag: 'latest',
     sections: [
+      {
+        title: 'Features',
+        items: [
+          'Sprints can be closed. “Complete sprint” sits in the sprint’s ⋯ menu and opens on the numbers — points and items done, what is left — then asks the only question closing a sprint really poses: where the unfinished work goes. Hand it to a sprint already on the board, roll it into a new one that starts the day after this one ended, or leave it on the record. The closed sprint keeps a Completed badge, its board turns read-only until you reopen it, and it drops to a Completed group at the bottom of the sprint switcher instead of sitting above the sprint you are actually working in.',
+          'The sprint importer also fetches pending merge requests. It is now “Import from GitLab” (or GitHub) in the sprint’s ⋯ menu, with a picker for issues, merge requests, or both — pending meaning open: not yet merged or closed, drafts included. Each merge request arrives with its reference, its source → target branches, whether it is a draft, and whether it is still waiting on review, so a sprint can hold the work that is finished-but-not-landed and not only the work not started. A mixed list tags which rows are which.',
+          'Imported items carry their forge reference. The card shows #481 or !49 next to the points, and the item opens with its kind, its reference and a link straight to the issue or merge request — before, the number was buried in the notes text and there was no way back to GitLab. Items imported earlier still show theirs: the reference is read back out of the notes when the field is missing.',
+          'The sprint importer speaks GitHub as well as GitLab. Which one a sprint talks to comes from the project’s own git remote — including self-hosted installs on their own domains — and the forge with an MCP configured decides the rest; with both configured, the remote breaks the tie. Every noun follows: pull requests on GitHub, merge requests on GitLab, in the picker, the buttons and the item detail. One caveat the app now handles rather than hides: GitHub numbers issues and pull requests in one sequence, so a bare #49 there cannot say which it points at — imported rows have to state their kind, and one that doesn’t is kept rather than filed under a guess.',
+          'Wording that said “Claude” where any provider could be running no longer does. Routines execute under whichever model you pick — Claude, Codex or Antigravity — and so do agent suggestions and the sprint board’s standup and import, but the copy and the error messages still named one of the three. The week planner’s assist keeps saying Claude, because it genuinely is Claude-only.',
+          'The start box on Home offers every provider, not just Claude. It was filtered to the default provider’s models with a Claude-only account list beside them — a restriction with nothing behind it, since a chat started there runs through the same engine lookup as any other. The model pill now groups Claude, Codex and Antigravity, the account pill follows whichever provider you pick rather than offering a login that cannot run the model, and a Codex or Antigravity prompt no longer refuses to start on a signed-out Claude. Settings says which logins live where too: Connection is the Anthropic one, Accounts covers all three.'
+        ]
+      },
       {
         title: 'Fixes',
         items: [
@@ -30,7 +41,6 @@ const CHANGELOG: Entry[] = [
   {
     version: '1.8.0',
     date: '2026-09-14',
-    tag: 'latest',
     sections: [
       {
         title: 'Features',
