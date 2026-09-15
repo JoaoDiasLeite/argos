@@ -393,6 +393,10 @@ export default function SettingsView({
           {section === 'connection' && (
             <>
               <h1 className="settings-title">Connection</h1>
+              <p className="settings-lead">
+                How this app reaches Anthropic. Codex and Antigravity sign in through their own
+                CLIs — add those logins under Accounts below.
+              </p>
 
               <div className="auth-option-group">
                 <button
@@ -443,9 +447,10 @@ export default function SettingsView({
               <section className="settings-card">
                 <div className="settings-row">
                   <div className="settings-row-text">
-                    <span className="settings-row-label">Claude accounts</span>
+                    <span className="settings-row-label">Accounts</span>
                     <span className="settings-row-hint">
-                      Add more Claude logins and switch which one a chat runs under.
+                      Add Claude, Codex and Antigravity logins, and switch which one a chat runs
+                      under.
                     </span>
                   </div>
                   <button className="btn-primary small" onClick={onManageAccounts}>

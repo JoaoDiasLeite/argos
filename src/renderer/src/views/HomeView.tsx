@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
+import { ProviderId } from '../types'
 import './views.css'
 import './HomeView.css'
 
@@ -87,8 +88,10 @@ export interface HomeStartChoice {
 
 export interface HomeStartOptions {
   projects: { path: string; name: string }[]
-  models: { id: string; label: string }[]
-  accounts: { id: string; name: string }[]
+  /** Every model the catalog knows, across providers — grouped in the pill. */
+  models: { id: string; label: string; provider: ProviderId }[]
+  /** Every logged-in account, across providers. Filtered to the chosen model's. */
+  accounts: { id: string; name: string; provider: ProviderId }[]
 }
 
 interface Props {
@@ -292,9 +295,19 @@ function AttentionIcon({ kind, mono }: { kind: HomeAttention['kind']; mono?: boo
   return <DocIcon />
 }
 
+/** Providers in the order the pill lists them, with the names users know them by. */
+const PROVIDER_ORDER: ProviderId[] = ['claude', 'codex', 'gemini']
+const PROVIDER_LABELS: Record<ProviderId, string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  gemini: 'Antigravity'
+}
+
 interface PillItem {
   key: string
   label: string
+  /** Optional heading rendered above the first item of each run. */
+  group?: string
 }
 
 // Where the (portaled) menu should sit, in viewport coordinates. Anchored to the
@@ -431,21 +444,25 @@ function PillPicker({
             }}
           >
             {items.length === 0 && <div className="home-pill-empty">Nothing yet</div>}
-            {items.map((it) => (
-              <button
-                key={it.key}
-                type="button"
-                className={`home-pill-item ${it.key === selectedKey ? 'selected' : ''}`}
-                role="menuitemradio"
-                aria-checked={it.key === selectedKey}
-                onClick={() => {
-                  onSelect(it.key)
-                  close(true)
-                }}
-              >
-                <span className="home-pill-item-label">{it.label}</span>
-                {it.key === selectedKey && <CheckIcon />}
-              </button>
+            {items.map((it, i) => (
+              <div key={it.key} className="home-pill-row">
+                {it.group && it.group !== items[i - 1]?.group && (
+                  <span className="home-pill-group">{it.group}</span>
+                )}
+                <button
+                  type="button"
+                  className={`home-pill-item ${it.key === selectedKey ? 'selected' : ''}`}
+                  role="menuitemradio"
+                  aria-checked={it.key === selectedKey}
+                  onClick={() => {
+                    onSelect(it.key)
+                    close(true)
+                  }}
+                >
+                  <span className="home-pill-item-label">{it.label}</span>
+                  {it.key === selectedKey && <CheckIcon />}
+                </button>
+              </div>
             ))}
             {footerLabel && onFooter && (
               <>
@@ -541,13 +558,34 @@ export default function HomeView({
   }, [startOptions.projects, extraProjects])
 
   const modelItems = useMemo<PillItem[]>(
-    () => startOptions.models.map((m) => ({ key: m.id, label: m.label })),
+    () =>
+      [...startOptions.models]
+        .sort((a, b) => PROVIDER_ORDER.indexOf(a.provider) - PROVIDER_ORDER.indexOf(b.provider))
+        .map((m) => ({ key: m.id, label: m.label, group: PROVIDER_LABELS[m.provider] })),
     [startOptions.models]
   )
+
+  // An account only means anything next to a model from the same provider — a Codex
+  // login cannot run Opus. The pill therefore shows the chosen model's provider only.
+  const chosenProvider: ProviderId =
+    startOptions.models.find((m) => m.id === choice.modelId)?.provider ?? 'claude'
   const accountItems = useMemo<PillItem[]>(
-    () => startOptions.accounts.map((a) => ({ key: a.id, label: a.name })),
-    [startOptions.accounts]
+    () =>
+      startOptions.accounts
+        .filter((a) => a.provider === chosenProvider)
+        .map((a) => ({ key: a.id, label: a.name })),
+    [startOptions.accounts, chosenProvider]
   )
+
+  // Switching to another provider's model invalidates the selected account, so the
+  // account moves with it rather than silently staying on a login that cannot run.
+  const pickModel = (modelId: string) => {
+    pick('modelId', modelId)
+    const provider = startOptions.models.find((m) => m.id === modelId)?.provider ?? 'claude'
+    if (provider === chosenProvider) return
+    const first = startOptions.accounts.find((a) => a.provider === provider)
+    if (first) pick('accountId', first.id)
+  }
 
   const projectLabel =
     projectItems.find((p) => p.key === choice.projectPath)?.label ?? start.projectName ?? 'Project'
@@ -710,7 +748,7 @@ export default function HomeView({
                     ariaLabel="Model"
                     items={modelItems}
                     selectedKey={choice.modelId}
-                    onSelect={(key) => pick('modelId', key)}
+                    onSelect={(key) => pickModel(key)}
                   />
                 )}
                 {startOptions.accounts.length > 0 && (

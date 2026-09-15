@@ -859,10 +859,15 @@ export default function App() {
       const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
 
       // Each overlay prompt starts a FRESH session, so other in-flight runs no longer
-      // block it — concurrent runs are supported. Only missing auth blocks.
-      const blocked = !ready
-        ? 'Not signed in — connect Claude Code or an API key in Settings, then press Retry.'
-        : null
+      // block it — concurrent runs are supported. Only missing auth blocks, and only
+      // Anthropic auth: a Codex or Antigravity run has nothing to do with `ready`, and
+      // used to be refused on a signed-out Claude.
+      const runModelId = s.model ?? defaultModel
+      const runProvider = models.find((m) => runModelId.startsWith(m.id))?.provider ?? 'claude'
+      const blocked =
+        runProvider === 'claude' && !ready
+          ? 'Not signed in — connect Claude Code or an API key in Settings, then press Retry.'
+          : null
 
       s.messages = blocked
         ? [userMsg, { ...assistantMsg, content: blocked, error: true }]
@@ -1970,12 +1975,20 @@ export default function App() {
       seen.add(key)
       projects.push({ path: s.projectPath, name: resolveHomeProjectName(s.projectPath, s.wslDistro) })
     }
+    // Every provider, not just the default one: the start box is where a run is chosen,
+    // and a chat started here goes through the same engine lookup as any other, so
+    // limiting it to Claude was a restriction with nothing behind it. The pill keeps
+    // model and account on the same provider — see HomeView's `pickModel`.
     return {
       projects,
-      models: models.filter((m) => m.provider === defaultProvider).map((m) => ({ id: m.id, label: m.label })),
-      accounts: accounts.map((a) => ({ id: a.id, name: a.name }))
+      models: models.map((m) => ({ id: m.id, label: m.label, provider: m.provider })),
+      accounts: [
+        ...accounts.map((a) => ({ id: a.id, name: a.name, provider: 'claude' as const })),
+        ...codexAccounts.filter((a) => a.loggedIn).map((a) => ({ id: a.id, name: a.name, provider: 'codex' as const })),
+        ...geminiAccounts.filter((a) => a.loggedIn).map((a) => ({ id: a.id, name: a.name, provider: 'gemini' as const }))
+      ]
     }
-  }, [sessions, homeKeyCtx, resolveHomeProjectName, models, defaultProvider, accounts])
+  }, [sessions, homeKeyCtx, resolveHomeProjectName, models, accounts, codexAccounts, geminiAccounts])
 
   const onHomePickFolder = useCallback(async () => {
     return window.electronAPI.openFolder()

@@ -252,3 +252,13 @@
   }
   .settings-select { width: 100%; }
 }
+
+/* One line of orientation under a section title, where the section covers less than
+   its name suggests (Connection is Anthropic-only; the other CLIs sign in elsewhere). */
+.settings-lead {
+  margin: -8px 0 18px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  max-width: 62ch;
+}
