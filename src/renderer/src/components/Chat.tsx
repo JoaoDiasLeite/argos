@@ -264,11 +264,13 @@ export default function Chat(
       return next
     })
   }
-  // Name the Claude Code session this chat's terminal is about to start, before it starts.
-  // Left to the CLI, that id is invented inside the pty and never told to anyone: the chat
-  // stays "New chat" forever, nothing of the conversation reaches Argos, and reopening it
-  // starts a stranger rather than resuming. Deciding the id here is what makes the rest —
-  // the title, the transcript, whether it is running — findable at all.
+  // Backfill for chats that predate newSession handing every chat an id of its own.
+  // Naming the session before the CLI does is what makes the title, the transcript and
+  // the running dot findable at all — left to the CLI, that id is invented inside the pty
+  // and never told to anyone. This cannot be the only place it happens, though: the
+  // terminal is created on the same render that mounts it, so an id patched in from here
+  // lands after the CLI has already been launched without one. New chats arrive with
+  // theirs already set (see newSession) and never reach this.
   const chatId = session?.id
   const hasClaudeId = !!session?.claudeSessionId
   const hasTerminalId = !!session?.terminalSessionId

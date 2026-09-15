@@ -138,6 +138,15 @@ function newSession(projectPath?: string, model?: string, accountId?: string): S
     // MCP off by default: loading every configured MCP server injects all their tool
     // schemas into every turn's context. Toggle it on per-chat when a chat needs them.
     useMcp: false,
+    // Name the Claude Code session this chat would start in a terminal, here, at birth —
+    // not later, from the chat pane. The terminal is created during the chat's first
+    // render, and a session id patched in from an effect arrives after that spawn has
+    // already happened: the CLI starts bare, invents an id nobody told Argos about, and
+    // the chat can never be matched back to it (no title, no transcript, and the sidebar
+    // never shows it running). Deciding it up front removes the race instead of narrowing
+    // it. Costs nothing when the chat never opens a terminal — an id nothing writes to is
+    // an id nothing looks for. `claudeSessionId` still wins wherever both exist.
+    terminalSessionId: crypto.randomUUID(),
     createdAt: now,
     updatedAt: now
   }
