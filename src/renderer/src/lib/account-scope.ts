@@ -110,3 +110,37 @@ export function visibleSessions(
       (originOf(s) !== null || acctOf(s, models, defaults) === currentAccountId)
   )
 }
+
+/**
+ * The provider and account a chat puts the sidebar on while it is the active chat.
+ *
+ * Mirrors App's scopeAccountId: a chat with an origin does not move the sidebar onto
+ * the account it carries, so it scopes to that provider's default instead.
+ */
+export function scopeOf(s: Session, models: ModelInfo[], defaults: AccountDefaults): string {
+  const p = provOf(models, s.model)
+  if (!originOf(s)) return `${p}:${acctOf(s, models, defaults)}`
+  const fallback =
+    p === 'codex' ? defaults.codexDefaultAccountId : p === 'gemini' ? defaults.geminiDefaultAccountId : defaults.defaultAccountId
+  return `${p}:${fallback ?? 'default'}`
+}
+
+/**
+ * The chat to land on after the active one is closed, or undefined for the welcome pane.
+ *
+ * Only a chat that keeps the sidebar where it is. The active chat decides which account
+ * the sidebar shows, so falling through to whatever chat happens to be first moved you
+ * onto another account just for closing one — and switching accounts is always a
+ * deliberate act, never a side effect.
+ */
+export function nextChatAfterClose(
+  closed: Session,
+  remaining: Session[],
+  models: ModelInfo[],
+  defaults: AccountDefaults
+): Session | undefined {
+  const scope = scopeOf(closed, models, defaults)
+  return remaining.find(
+    (s) => (s.messages.length > 0 || s.hasTerminalActivity) && scopeOf(s, models, defaults) === scope
+  )
+}

@@ -45,7 +45,7 @@ import AccountsModal from './components/AccountsModal'
 import ChangelogModal from './components/ChangelogModal'
 import { UiPrefs, UiPrefsPatch } from './types'
 import { sessionToReplaySeed } from './lib/markdown-export'
-import { provOf, acctOf, originOf, AccountDefaults } from './lib/account-scope'
+import { provOf, acctOf, originOf, nextChatAfterClose, AccountDefaults } from './lib/account-scope'
 import type {
   HomeAttention,
   HomeRunning,
@@ -1081,8 +1081,14 @@ export default function App() {
     await window.electronAPI.deleteSession(id)
     setSessions((prev) => {
       const next = prev.filter((s) => s.id !== id)
-      // Deleting the last chat lands back on the welcome pane — no auto-draft.
-      if (activeId === id) setActiveId(next.length > 0 ? next[0].id : '')
+      const closed = prev.find((s) => s.id === id)
+      // Land on another chat of the same account, or the welcome pane — no auto-draft.
+      // Never the first chat in the list: the active chat decides the sidebar's account,
+      // so that would switch accounts just for closing a chat.
+      if (activeId === id) {
+        const defaults: AccountDefaults = { defaultAccountId, codexDefaultAccountId, geminiDefaultAccountId }
+        setActiveId((closed && nextChatAfterClose(closed, next, models, defaults)?.id) || '')
+      }
       return next
     })
   }

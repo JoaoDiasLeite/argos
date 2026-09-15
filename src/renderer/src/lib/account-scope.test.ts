@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { acctOf, idFor, originOf, provOf, visibleSessions, AccountDefaults } from './account-scope'
+import { acctOf, idFor, nextChatAfterClose, originOf, provOf, visibleSessions, AccountDefaults } from './account-scope'
 import { ModelInfo, Session } from '../types'
 
 // Minimal model catalog — only the fields provOf reads (id, provider).
@@ -198,5 +198,44 @@ describe('visibleSessions', () => {
     expect(currentCodexId).toBe('codex-work')
     const result = visibleSessions(allSessions, models, 'codex', currentCodexId, defaults)
     expect(result.map((s) => s.id)).toEqual(['x2'])
+  })
+})
+
+describe('nextChatAfterClose', () => {
+  const defaults: AccountDefaults = { defaultAccountId: 'personal' }
+
+  it('stays on the closed chat’s account rather than taking the first chat in the list', () => {
+    const closed = makeSession({ id: 'closed', model: 'claude-opus-4-8', accountId: 'work' })
+    const other = makeSession({ id: 'other', model: 'claude-opus-4-8', accountId: 'personal' })
+    const same = makeSession({ id: 'same', model: 'claude-opus-4-8', accountId: 'work' })
+    expect(nextChatAfterClose(closed, [other, same], models, defaults)?.id).toBe('same')
+  })
+
+  it('lands on nothing when no other chat is on that account', () => {
+    const closed = makeSession({ id: 'closed', model: 'claude-opus-4-8', accountId: 'work' })
+    const other = makeSession({ id: 'other', model: 'claude-opus-4-8', accountId: 'personal' })
+    expect(nextChatAfterClose(closed, [other], models, defaults)).toBeUndefined()
+  })
+
+  it('does not cross providers', () => {
+    const closed = makeSession({ id: 'closed', model: 'claude-opus-4-8', accountId: 'default' })
+    const codex = makeSession({ id: 'codex', model: 'codex-mini', codexAccountId: 'default' })
+    expect(nextChatAfterClose(closed, [codex], models, {})).toBeUndefined()
+  })
+
+  it('skips blank drafts the sidebar does not list', () => {
+    const closed = makeSession({ id: 'closed', model: 'claude-opus-4-8', accountId: 'work' })
+    const draft = makeSession({ id: 'draft', model: 'claude-opus-4-8', accountId: 'work', messages: [] })
+    const terminal = makeSession({ id: 'term', model: 'claude-opus-4-8', accountId: 'work', messages: [], hasTerminalActivity: true })
+    expect(nextChatAfterClose(closed, [draft, terminal], models, defaults)?.id).toBe('term')
+  })
+
+  it('lands on a WSL chat only when it leaves the sidebar on the same account', () => {
+    // A WSL chat scopes the sidebar to the default account, whatever id it carries.
+    const wsl = makeSession({ id: 'wsl', model: 'claude-opus-4-8', accountId: 'work', wslDistro: 'Ubuntu' })
+    const onWork = makeSession({ id: 'w', model: 'claude-opus-4-8', accountId: 'work' })
+    const onPersonal = makeSession({ id: 'p', model: 'claude-opus-4-8', accountId: 'personal' })
+    expect(nextChatAfterClose(onWork, [wsl], models, defaults)).toBeUndefined()
+    expect(nextChatAfterClose(onPersonal, [wsl], models, defaults)?.id).toBe('wsl')
   })
 })
