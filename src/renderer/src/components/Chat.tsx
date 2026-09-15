@@ -140,10 +140,11 @@ interface Props {
   terminalProvider: ProviderId
   /** The account (for terminalProvider) this chat is bound to — forwarded to ChatTerminal. */
   terminalAccountId?: string
-  /** Which panel a chat opens in the first time it's seen (the "Open new chats in" pref). */
-  defaultChatView: 'chat' | 'terminal'
+  /** The app's mode (ui.workMode). 'terminal' means this chat IS a terminal: no
+   *  composer, no transcript, and no way to toggle back. 'chat' never offers one. */
+  mode: 'chat' | 'terminal'
   /** Bumped by App whenever it deliberately lands you on a new chat (switching account,
-   *  returning to the chat view) — forces the composer into view. See the effect below. */
+   *  returning to the chat view) — drives the composer's accent sweep. */
   newChatNonce: number
   onOpenClaudeMd: () => void
   autoApprove: boolean
@@ -202,7 +203,7 @@ export default function Chat(
   onModelChange,
   terminalProvider,
   terminalAccountId,
-  defaultChatView,
+  mode,
   newChatNonce,
   onOpenClaudeMd,
   autoApprove,
@@ -233,22 +234,14 @@ export default function Chat(
     codex: 'AGENTS.md',
     gemini: 'GEMINI.md'
   }
-  // Per-chat terminal toggle, keyed by session id so each chat remembers its own state.
-  const [termOpenById, setTermOpenById] = useState<Record<string, boolean>>({})
-  // Fall back to the "open new chats in" pref for sessions not yet in the map, so a
-  // brand-new terminal session renders the terminal on its first paint instead of
-  // flashing the chat welcome/picker screen while the seeding effect below catches up.
-  const termOpen = !!session && (session.id in termOpenById
-    ? termOpenById[session.id]
-    : defaultChatView === 'terminal')
-  const toggleTerminal = () => {
-    if (!session) return
-    setTermOpenById((prev) => ({ ...prev, [session.id]: !prev[session.id] }))
-  }
-  // Per-chat "Review" panel toggle (working-tree diff / checkpoints), keyed by session id
-  // the same way termOpenById is. Unlike the terminal, it has no "default view" pref to
-  // seed from — it starts closed for every chat until the user asks for it, and then
-  // stays open for that chat across restarts: it is a working preference, not a mode.
+  // Which pane this chat is, decided by the app's mode alone. There is deliberately no
+  // per-chat override any more: the two modes are whole working surfaces, and a chat that
+  // could be flipped between them left the terminal-mode user with a composer that has no
+  // business existing (and the chat-mode user with a pane the mode says is not there).
+  const termOpen = !!session && mode === 'terminal'
+  // Per-chat "Review" panel toggle (working-tree diff / checkpoints), keyed by session id.
+  // Unlike the terminal, which the app's mode decides outright, this is per chat and stays
+  // open for that chat across restarts: it is a working preference, not a mode.
   // Only the open ones are stored; keeping the false entries would grow the record by a
   // key for every chat ever opened, and it would never shrink.
   const [reviewOpenById, setReviewOpenById] = useState<Record<string, boolean>>(readReviewOpen)
@@ -263,12 +256,6 @@ export default function Chat(
       return next
     })
   }
-  // Seed a session's terminal state from the "default view" pref the first time it's seen.
-  useEffect(() => {
-    if (!session) return
-    if (session.id in termOpenById) return
-    setTermOpenById((prev) => ({ ...prev, [session.id]: defaultChatView === 'terminal' }))
-  }, [session, defaultChatView, termOpenById])
   // Name the Claude Code session this chat's terminal is about to start, before it starts.
   // Left to the CLI, that id is invented inside the pty and never told to anyone: the chat
   // stays "New chat" forever, nothing of the conversation reaches Argos, and reopening it
@@ -281,15 +268,12 @@ export default function Chat(
     if (!termOpen || !chatId || hasClaudeId || hasTerminalId) return
     onPatchSession({ terminalSessionId: crypto.randomUUID() })
   }, [termOpen, chatId, hasClaudeId, hasTerminalId, onPatchSession])
-  // When App deliberately moves you to a new chat, show the composer even if the "open new
-  // chats in" pref says Terminal. Otherwise the jump is invisible: you were looking at a
-  // terminal and you'd still be looking at one, so switching account appears to do nothing.
-  // Runs on nonce changes only — a plain chat switch keeps whatever pane that chat was on.
+  // When App deliberately moves you to a new chat, put the caret in the composer. The
+  // accent sweep that goes with it is driven by remounting the band (see the composer
+  // markup), not from here. In terminal mode there is no composer to focus — the terminal
+  // takes focus itself once the CLI is up.
   useEffect(() => {
-    if (!session || newChatNonce === 0) return
-    setTermOpenById((prev) => ({ ...prev, [session.id]: false }))
-    // …and put the caret in the composer. The accent sweep that goes with it is driven by
-    // remounting the band (see the composer markup), not from here.
+    if (!session || newChatNonce === 0 || mode === 'terminal') return
     textareaRef.current?.focus()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newChatNonce])
@@ -720,20 +704,6 @@ export default function Chat(
           renders its own close control to get you back to the chat. */}
       {!termOpen && (
         <div className={`chat-float-actions ${exportMenuOpen ? 'open' : ''}`}>
-          <button
-            className={`header-icon-btn ${termOpen ? 'term-active' : ''}`}
-            onClick={toggleTerminal}
-            title="Terminal for this chat"
-            aria-label="Terminal for this chat"
-            aria-pressed={termOpen}
-            disabled={!session}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="2" y="4" width="20" height="16" rx="2" />
-              <polyline points="6 9 10 12 6 15" />
-              <line x1="12" y1="15" x2="16" y2="15" />
-            </svg>
-          </button>
           <div className="header-menu-wrap" style={{ position: 'relative' }}>
             <button
               className="header-icon-btn"
@@ -854,7 +824,7 @@ export default function Chat(
             wslDistro={session.wslDistro}
             remoteHostId={session.remoteHostId}
             resumeSessionId={session.claudeSessionId || session.terminalSessionId}
-            onClose={toggleTerminal}
+            closable={false}
             onActive={() => {
               if (!session.hasTerminalActivity) onPatchSession({ hasTerminalActivity: true })
             }}
@@ -865,7 +835,7 @@ export default function Chat(
       {/* Rendered outside the composer's display:none wrapper below — a run in a chat
           with the terminal open still needs approving, and it has nowhere else to show
           up (the global modal is deliberately suppressed for the chat on screen). */}
-      {session && approval && (
+      {session && approval && mode === 'chat' && (
         <div ref={approvalRef} className="chat-approval-inline">
           <ApprovalModal
             request={approval}

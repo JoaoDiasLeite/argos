@@ -345,21 +345,23 @@ export default function SettingsView({
 
                     <div className="settings-row">
                       <div className="settings-row-text">
-                        <span className="settings-row-label">Open new chats in</span>
+                        <span className="settings-row-label">Mode</span>
                         <span className="settings-row-hint">
-                          Which panel a brand-new chat lands in.
+                          Chat gives you Argos&rsquo;s own composer and transcript. Terminal runs
+                          every chat as the CLI itself — no composer, no Quick chat. Also on the
+                          toggle at the top of the sidebar.
                         </span>
                       </div>
                       <div className="seg-control">
                         <button
-                          className={ui.defaultChatView === 'chat' ? 'on' : ''}
-                          onClick={() => onSetUi({ defaultChatView: 'chat' })}
+                          className={ui.workMode === 'chat' ? 'on' : ''}
+                          onClick={() => onSetUi({ workMode: 'chat' })}
                         >
                           Chat
                         </button>
                         <button
-                          className={ui.defaultChatView === 'terminal' ? 'on' : ''}
-                          onClick={() => onSetUi({ defaultChatView: 'terminal' })}
+                          className={ui.workMode === 'terminal' ? 'on' : ''}
+                          onClick={() => onSetUi({ workMode: 'terminal' })}
                         >
                           Terminal
                         </button>

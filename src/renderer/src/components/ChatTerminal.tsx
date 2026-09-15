@@ -32,7 +32,10 @@ interface Props {
    *  when it's shown again. Does NOT remount the terminal — that would kill its live PTY
    *  and scrollback, defeating the whole point of keeping it mounted in the background. */
   active?: boolean
-  onClose: () => void
+  /** Hidden when the host owns this pane outright (terminal mode) — there is nothing
+   *  to close back to, so the × would only strand the user. */
+  closable?: boolean
+  onClose?: () => void
   /** Fired once the PTY has actually launched, so the host can mark this chat as having
    *  real activity (see Session.hasTerminalActivity) even though no `messages` exist. */
   onActive?: () => void
@@ -86,7 +89,7 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, autoLaunchCli = true, active, onClose, onActive }: Props) {
+export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, autoLaunchCli = true, active, closable = true, onClose, onActive }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -611,11 +614,13 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
           >
             Restart
           </button>
-          <button className="chat-terminal-btn icon" onClick={onClose} title="Close terminal" aria-label="Close terminal">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+          {closable && (
+            <button className="chat-terminal-btn icon" onClick={onClose} title="Close terminal" aria-label="Close terminal">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
       <div className="chat-terminal-host-wrap">

@@ -105,7 +105,7 @@ let config: AppConfig = {
     density: 'comfortable',
     fontSize: 'md',
     onboarded: false,
-    defaultChatView: 'chat'
+    workMode: 'chat'
     // mode/light/dark are deliberately absent rather than spelled out: they get filled
     // in by migrateUiPrefs from theme/palette, which is the same path a config written
     // by an older build takes. One code path, exercised on every launch.

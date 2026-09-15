@@ -67,6 +67,10 @@ interface Props {
   attentionIds: Set<string>
   tab: 'files' | 'sessions'
   onTabChange: (tab: 'files' | 'sessions') => void
+  /** The app's mode (ui.workMode) and its switch. Lives here, above the chat list,
+   *  because this is the surface the mode changes most. */
+  mode: 'chat' | 'terminal'
+  onModeChange: (mode: 'chat' | 'terminal') => void
   onSelectSession: (id: string) => void
   /** Starts a new chat. Pass a folder path to scope it to a project's group (the
    *  per-group `+` button); the sidebar header `+` calls this with no argument. */
@@ -147,6 +151,8 @@ export default function Sidebar({
   attentionIds,
   tab,
   onTabChange,
+  mode,
+  onModeChange,
   onSelectSession,
   onNewSession,
   onNewQuickChat,
@@ -808,6 +814,35 @@ export default function Sidebar({
           )}
       </div>
 
+      {/* Chat or terminal, for the whole app — not a per-chat view. Sits above the
+          Chats/Files tabs because it decides what those chats even are. */}
+      <div className="sidebar-mode" role="group" aria-label="Mode">
+        <button
+          className={`sidebar-mode-btn ${mode === 'chat' ? 'on' : ''}`}
+          onClick={() => onModeChange('chat')}
+          aria-pressed={mode === 'chat'}
+          title="Chat — Argos's own composer and transcript"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 11.5a8.38 8.38 0 0 1-9 8.5 9.8 9.8 0 0 1-4-.9L3 21l1.9-4.6A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.5 8.5 0 0 1 21 11.5z" />
+          </svg>
+          Chat
+        </button>
+        <button
+          className={`sidebar-mode-btn ${mode === 'terminal' ? 'on' : ''}`}
+          onClick={() => onModeChange('terminal')}
+          aria-pressed={mode === 'terminal'}
+          title="Terminal — every chat runs as the CLI itself"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="2" y="4" width="20" height="16" rx="2" />
+            <polyline points="6 9 10 12 6 15" />
+            <line x1="12" y1="15" x2="16" y2="15" />
+          </svg>
+          Terminal
+        </button>
+      </div>
+
       <div className="sidebar-tabs">
         <button
           className={`sidebar-tab ${tab === 'sessions' ? 'active' : ''}`}
@@ -835,7 +870,7 @@ export default function Sidebar({
             </svg>
             New chat
           </button>
-          {onNewQuickChat && (
+          {onNewQuickChat && mode === 'chat' && (
             <button
               className="sidebar-action"
               onClick={onNewQuickChat}

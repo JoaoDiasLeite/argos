@@ -193,7 +193,7 @@ export interface UiPrefs {
   fontSize: 'sm' | 'md' | 'lg'
   onboarded: boolean
   /** Which panel new chats open in. */
-  defaultChatView: 'chat' | 'terminal'
+  workMode: 'chat' | 'terminal'
 
   /** The source of truth for light vs dark. Absent in configs older than this system. */
   mode?: 'system' | 'light' | 'dark'

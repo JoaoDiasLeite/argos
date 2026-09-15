@@ -50,8 +50,14 @@ export interface UiPrefs {
    */
   fontSize: 'sm' | 'md' | 'lg'
   onboarded: boolean
-  /** Which panel new chats open in. */
-  defaultChatView: 'chat' | 'terminal'
+  /**
+   * Chat or terminal: which of the two the whole app works in. Not a per-chat panel —
+   * in 'terminal' every chat IS a terminal (no composer, no transcript) and the things
+   * that only make sense against Argos's own engine are gone from the chat surface; in
+   * 'chat' the embedded terminal is not offered at all. Named `workMode` rather than the
+   * old `defaultChatView` because it no longer decides where a chat merely STARTS.
+   */
+  workMode: 'chat' | 'terminal'
 
   /** The source of truth for light vs dark. Absent in configs older than this system. */
   mode?: 'system' | 'light' | 'dark'
@@ -140,6 +146,13 @@ function clampInt(value: unknown, min: number, max: number): number | undefined 
  */
 export function migrateUiPrefs(ui: UiPrefs): UiPrefs {
   const next: UiPrefs = { ...ui }
+  // `defaultChatView` said which panel a NEW chat opened in; `workMode` says which of the
+  // two the app works in. Carrying the value over keeps a config that said Terminal
+  // opening terminals — the promotion is in what the rest of the UI now does with it.
+  if (next.workMode !== 'chat' && next.workMode !== 'terminal') {
+    const legacy = (ui as { defaultChatView?: unknown }).defaultChatView
+    next.workMode = legacy === 'terminal' ? 'terminal' : 'chat'
+  }
   if (next.mode !== 'system' && next.mode !== 'light' && next.mode !== 'dark') {
     next.mode = next.theme === 'light' ? 'light' : 'dark'
   }

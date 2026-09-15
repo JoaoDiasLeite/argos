@@ -217,6 +217,10 @@ export default function App() {
   const [models, setModels] = useState<ModelInfo[]>([])
   const [defaultModel, setDefaultModel] = useState('claude-opus-4-8')
   const [ui, setUi] = useState<UiPrefs | null>(null)
+  // Chat or terminal, for the whole app. Read in one place so every surface that has to
+  // change shape (the chat pane, the sidebar's actions, Home's start box, approvals)
+  // agrees on it — see ui-prefs-pure.ts for what the two modes mean.
+  const workMode = ui?.workMode ?? 'chat'
   const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([])
   // When each approvalId entered the queue, for Home's "since" — ApprovalRequest itself
   // carries no timestamp, and reading Date.now() at render time would restart the count
@@ -2384,7 +2388,11 @@ export default function App() {
   const paletteItems: CommandItem[] = useMemo(() => {
     const items: CommandItem[] = []
     items.push({ id: 'new', title: 'New chat', group: 'Actions', subtitle: '⌘N', run: createSession })
-    items.push({ id: 'new-quick', title: 'Quick chat (cheapest model)', group: 'Actions', run: createQuickChat })
+    // Quick chat is Argos's own engine on the cheapest model — meaningless in terminal
+    // mode, where the CLI chooses its own.
+    if (workMode === 'chat') {
+      items.push({ id: 'new-quick', title: 'Quick chat (cheapest model)', group: 'Actions', run: createQuickChat })
+    }
     const views: { v: View; label: string }[] = [
       { v: 'chat', label: 'Chat' },
       { v: 'projects', label: 'Projects' },
@@ -2431,7 +2439,7 @@ export default function App() {
     }
     return items
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, models, accounts])
+  }, [sessions, models, accounts, workMode])
 
   // What the Remote & WSL list's SSH dots are allowed to claim. A host counts as reachable
   // only once one of its sessions has actually connected; a host whose sessions have all
@@ -2488,6 +2496,8 @@ export default function App() {
             attentionIds={attentionIds}
             tab={sidebarTab}
             onTabChange={setSidebarTab}
+            mode={workMode}
+            onModeChange={(m) => updateUi({ workMode: m })}
             onSelectSession={setActiveId}
             onNewSession={createSession}
             onNewQuickChat={createQuickChat}
@@ -2525,10 +2535,18 @@ export default function App() {
                   <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
                 <h2>How can I help?</h2>
-                <p>Start a new chat, or pick one from the sidebar.</p>
+                <p>
+                  {workMode === 'terminal'
+                    ? 'Start a new terminal, or pick a chat from the sidebar.'
+                    : 'Start a new chat, or pick one from the sidebar.'}
+                </p>
                 <div className="welcome-actions">
-                  <button className="btn-primary" onClick={createSession}>New chat</button>
-                  <button className="welcome-quick" onClick={createQuickChat}>Quick chat</button>
+                  <button className="btn-primary" onClick={createSession}>
+                    {workMode === 'terminal' ? 'New terminal' : 'New chat'}
+                  </button>
+                  {workMode === 'chat' && (
+                    <button className="welcome-quick" onClick={createQuickChat}>Quick chat</button>
+                  )}
                 </div>
               </div>
             ) : (
@@ -2562,7 +2580,7 @@ export default function App() {
               onModelChange={setSessionModel}
               terminalProvider={activeChatProvider}
               terminalAccountId={activeChatAccountId}
-              defaultChatView={ui?.defaultChatView ?? 'chat'}
+              mode={workMode}
               newChatNonce={newChatNonce}
               onOpenClaudeMd={() => setClaudeMdOpen(true)}
               autoApprove={activeSession?.autoApprove ?? false}
@@ -2805,7 +2823,10 @@ export default function App() {
           onClose={() => setClaudeMdOpen(false)}
         />
       )}
-      {view !== 'rooms' && approvalQueue.length > 0 && !(view === 'chat' && approvalQueue[0].appSessionId === activeId) && (
+      {/* Suppressed only where Chat renders the same request inline — which it does in
+          chat mode alone. In terminal mode the chat pane is a terminal, so a run Argos
+          itself is driving (Planner, Rooms, a routine) has nowhere else to ask. */}
+      {view !== 'rooms' && approvalQueue.length > 0 && !(view === 'chat' && workMode === 'chat' && approvalQueue[0].appSessionId === activeId) && (
         <ApprovalModal request={approvalQueue[0]} onDecide={respondApproval} />
       )}
       {openFilePath && (
