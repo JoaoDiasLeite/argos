@@ -18,7 +18,14 @@ const CHANGELOG: Entry[] = [
     version: '1.9.1',
     date: '2026-09-15',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'The Projects list shows a project’s name and nothing else. Projects that shared a name had started arriving with a parent folder in front of it — Ubuntu/jdl, Ubuntu-DevOps/wm-project, X:/infra-automations — which made the list harder to read than the ambiguity it was solving. The distro badge beside the name, and the full path on hover, still tell two projects of the same name apart.'
+        ]
+      }
+    ]
   },
   {
     version: '1.9.0',

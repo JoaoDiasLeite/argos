@@ -14,7 +14,7 @@ import SessionPeek from '../components/SessionPeek'
 import ProjectActions from '../components/ProjectActions'
 import { tagsSatisfy } from '../lib/tags'
 import { canonicalProjectPath, projectKey } from '../lib/project-key'
-import { projectDisplayNames } from '../lib/project-name'
+import { projectDisplayName } from '../lib/project-name'
 import { groupByAge, sortSessions, SORT_LABELS, SortMode } from '../lib/session-groups'
 import './views.css'
 import './ProjectsView.css'
@@ -610,21 +610,17 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     [allGroups]
   )
   const membersOf = (g: ProjectGroup): CCProject[] => fullMembersByKey.get(g.key) ?? g.members
-  // Name precedence (custom > repo > basename), with homonym disambiguation, computed
-  // over every group so two DIFFERENT folders that happen to share a name still tell
-  // apart even while one of them is filtered out of view.
+  // Name precedence (custom > repo > basename) and nothing more: no parent-folder prefix
+  // on homonyms. `Ubuntu/jdl` and `X:/infra-automations` read as noise here, and the row
+  // already carries a distro badge and a path tooltip that tell homonyms apart.
   const displayNames = useMemo(
     () =>
-      projectDisplayNames(
-        // The CANONICAL path, not the recorded one: three `jdl` groups in three WSL
-        // distros all record the identical `/home/jdl`, and only the canonical spelling
-        // carries the distro that tells them apart. Naming from realPath left them three
-        // rows called `jdl` with nothing to choose between.
+      new Map(
         projectGroups.map((g) => {
           const p = primaryMember(g)
-          return { key: g.key, path: canonicalProjectPath(p.realPath, p.distro) }
-        }),
-        { custom: customNames, repos: repoNames }
+          const path = canonicalProjectPath(p.realPath, p.distro)
+          return [g.key, projectDisplayName(g.key, path, { custom: customNames, repos: repoNames })]
+        })
       ),
     [projectGroups, customNames, repoNames]
   )
