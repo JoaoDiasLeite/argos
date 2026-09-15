@@ -17,13 +17,29 @@ const CHANGELOG: Entry[] = [
   {
     version: '1.9.2',
     date: '2026-09-15',
-    tag: 'new',
-    sections: []
+    tag: 'latest',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Argos works in one of two modes: Chat or Terminal. Until now “open new chats in” only chose which panel a new chat landed in, and every chat carried its own toggle on top of that — so a terminal user still had a composer, a model picker and a Quick chat the CLI decides for itself, and could be dropped back into a transcript by opening a chat from anywhere else. The switch sits above the Chats/Files tabs, and in Settings. In Terminal every chat is the CLI, with no composer and no way to flip a single chat back; in Chat the embedded terminal is not offered at all. A config that already said Terminal carries over.',
+          'A prompt started outside the chat view lands in the terminal when that is the mode. Home’s start box, the tray and the quick launcher all used to post a message into a transcript and let Argos drive the run — which, in Terminal mode, meant it landed nowhere. The chat is created exactly as before, with the folder, model and account you chose, and the prompt is typed into the CLI once it is up. Once per terminal: restarting one does not silently re-run the task.',
+          'The bar of chats still working says which account each is on. With runs on more than one account, or a single run on something other than the account you are using, the name was missing from the one place that lists them all.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'The bar of chats still working counts chats driven from the embedded terminal. It only knew about runs Argos itself had started, so a terminal chat was missing from exactly the strip you use to find your way back to it — even while the rail badge and the sidebar dot showed it working.',
+          'A chat that runs inside a WSL distro, or on a remote host, is labelled by where it runs instead of by an account it never used. Every chat is created carrying an account id, but one running against a CLI login inside a distro is not on that account at all, and both the working-chats bar and the chat list were naming it.',
+          'The chat list no longer hides a WSL or SSH chat behind the account picker. Filing those chats under the account they merely carry cut both ways: the chat vanished from every account’s list but one, and opening it dragged the whole sidebar onto that account — hiding the local chats of the account you were actually working in, on nothing more than which chat you last clicked.'
+        ]
+      }
+    ]
   },
   {
     version: '1.9.1',
     date: '2026-09-15',
-    tag: 'latest',
     sections: [
       {
         title: 'Fixes',
