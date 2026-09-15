@@ -1862,8 +1862,12 @@ export default function App() {
   )
 
   const homeRunning = useMemo<HomeRunning[]>(() => {
+    // displayRunningIds, not runningIds: a chat driven from the embedded terminal never
+    // goes through startRun, and the CLI row that would have covered it is filtered out
+    // just below as a duplicate — so keying off Argos's own runs dropped exactly those
+    // chats off this list entirely.
     const chats: HomeRunning[] = sessions
-      .filter((s) => runningIds.has(s.id))
+      .filter((s) => displayRunningIds.has(s.id))
       .map((s) => ({
         kind: 'chat',
         id: s.id,
@@ -1886,7 +1890,7 @@ export default function App() {
         startedAt: l.startedAt
       }))
     return [...chats, ...cli]
-  }, [sessions, runningIds, attentionIds, liveSessions, models, defaultModel])
+  }, [sessions, displayRunningIds, attentionIds, liveSessions, models, defaultModel])
 
   // gitStatus per homeRepoEntries, kept apart from name resolution below: this effect
   // should only re-run when the entries themselves change, not every time a repo name
