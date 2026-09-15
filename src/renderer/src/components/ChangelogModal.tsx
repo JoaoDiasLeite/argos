@@ -17,13 +17,28 @@ const CHANGELOG: Entry[] = [
   {
     version: '1.9.3',
     date: '2026-09-15',
-    tag: 'new',
-    sections: []
+    tag: 'latest',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'A chat whose terminal started Claude Code without the chat’s own session id finds its way back to it. When the launch fell through to a bare claude — a CLI too old for --session-id, or a terminal started by an older build — the CLI picked an id Argos was never told, and the chat lost its title, transcript and running dot for good. Argos now matches the claude process running under that chat’s terminal and adopts its id. Local shells only, and when two sessions share one terminal it adopts neither rather than guess.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'Entering the chat view no longer creates a chat. In Terminal mode a chat is a CLI process starting in some folder, so merely passing through the view spawned a terminal nobody asked for and filled the sidebar with chats never started on purpose. A chat is created when New chat is pressed; arriving at the view shows the chat you were in, or the welcome pane. Picking an account follows the same rule.',
+          'A new chat names its Claude Code session before its terminal starts. The id used to arrive a moment after the CLI had already been launched without one, so the chat could never be matched back to its session — no title, no transcript, no running dot.',
+          'A new chat’s terminal no longer opens with a red “No conversation found with session ID”. The launch tried to resume the chat’s session before creating it, and a brand-new chat has nothing to resume; it now creates first and still falls back to resuming.',
+          'A chat driven from the terminal shows in Home’s running list. The list only knew Argos’s own runs and dropped the matching CLI row as a duplicate, so a busy terminal chat appeared in neither half.'
+        ]
+      }
+    ]
   },
   {
     version: '1.9.2',
     date: '2026-09-15',
-    tag: 'latest',
     sections: [
       {
         title: 'Features',
