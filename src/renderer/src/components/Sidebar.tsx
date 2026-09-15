@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Session, AuthStatus, CCAccountStatus, ProviderAccountStatus, ProviderId, ModelInfo } from '../types'
-import { idFor as idForAccount, visibleSessions as visibleSessionsFor, AccountDefaults } from '../lib/account-scope'
+import { idFor as idForAccount, originOf, visibleSessions as visibleSessionsFor, AccountDefaults } from '../lib/account-scope'
 import {
   buildPosixDistroMap,
   canonicalProjectPath,
@@ -627,11 +627,19 @@ export default function Sidebar({
         : status === 'running' ? 'Running'
           : status === 'error' ? 'Ended with an error' : undefined
     const modelLabel = s.model && s.model !== defaultModel ? shortModelLabel(s.model) : null
-    const accountLabel = accounts.length > 1 && s.accountId && s.accountId !== defaultAccountId
-      ? (s.accountName || accounts.find((a) => a.id === s.accountId)?.name || null)
-      : null
+    // Where it runs beats which account it carries: a chat inside a distro or on a remote
+    // host runs against the CLI login that lives there, so naming the managed account it
+    // was created with would be a badge that is simply untrue (see originOf).
+    const origin = originOf(s)
+    const accountLabel = origin
+      ? origin.short
+      : accounts.length > 1 && s.accountId && s.accountId !== defaultAccountId
+        ? (s.accountName || accounts.find((a) => a.id === s.accountId)?.name || null)
+        : null
     // Date and project path moved off the visible row and into its tooltip.
-    const rowTitle = [s.name || 'New chat', s.projectPath, formatDate(s.updatedAt)].filter(Boolean).join(' — ')
+    const rowTitle = [s.name || 'New chat', origin?.label, s.projectPath, formatDate(s.updatedAt)]
+      .filter(Boolean)
+      .join(' — ')
     return (
       <div
         key={s.id}

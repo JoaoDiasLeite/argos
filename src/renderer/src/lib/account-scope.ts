@@ -35,6 +35,38 @@ export function acctOf(s: Session, models: ModelInfo[], defaults: AccountDefault
       : (s.accountId ?? defaults.defaultAccountId ?? 'default')
 }
 
+/**
+ * Where a chat actually runs, when that is somewhere other than "this machine, under a
+ * managed account": a WSL distro, or a remote SSH host.
+ *
+ * This exists because `acctOf` cannot tell the truth about those chats. Argos's account
+ * ids name logins IT manages (see accounts.ts); a chat inside a distro or on a box over
+ * SSH runs against whatever CLI login lives THERE — Claude Code files those under their
+ * own source ids, 'wsl:<distro>' and friends (see main/claude-data.ts). So a WSL chat
+ * carries an accountId only because every session is created with one, and `acctOf`
+ * dutifully resolves it (or the default) to an account the run never touched. Anywhere a
+ * chat's origin is shown to the user, ask this first and only fall back to the account.
+ *
+ * `key` is for comparing origins, `label` for showing one, and `short` for showing one
+ * where the row is already fighting for width — a chat-list row, where the name is what
+ * matters and a full "WSL · Ubuntu-DevOps" pushes it down to an ellipsis. Null means an
+ * ordinary local chat, where the managed account IS the answer.
+ */
+export function originOf(s: Session): { key: string; label: string; short: string } | null {
+  if (s.wslDistro) {
+    return {
+      key: `wsl:${s.wslDistro}`,
+      label: s.remoteHostName || `WSL · ${s.wslDistro}`,
+      short: s.wslDistro
+    }
+  }
+  if (s.remoteHostId) {
+    const name = s.remoteHostName || 'Remote'
+    return { key: `ssh:${s.remoteHostId}`, label: name, short: name }
+  }
+  return null
+}
+
 // The account currently IN EFFECT for `provider`: the active chat's account when
 // `provider` is the one currently selected, falling back to that provider's default.
 // Opening a chat bound to another account (e.g. from Projects) therefore moves the

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { acctOf, idFor, provOf, visibleSessions, AccountDefaults } from './account-scope'
+import { acctOf, idFor, originOf, provOf, visibleSessions, AccountDefaults } from './account-scope'
 import { ModelInfo, Session } from '../types'
 
 // Minimal model catalog — only the fields provOf reads (id, provider).
@@ -30,6 +30,42 @@ describe('provOf', () => {
   it('falls back to claude for an unknown/undefined model id', () => {
     expect(provOf(models, undefined)).toBe('claude')
     expect(provOf(models, 'some-unlisted-model')).toBe('claude')
+  })
+})
+
+describe('originOf', () => {
+  it('names a WSL chat by its distro, not by the account it was created with', () => {
+    // The whole point: this chat HAS an accountId (every session does), and it is
+    // irrelevant — the CLI inside the distro runs against the login that lives there.
+    const s = makeSession({ id: 'a', accountId: 'work', wslDistro: 'Ubuntu-DevOps' })
+    expect(originOf(s)).toEqual({
+      key: 'wsl:Ubuntu-DevOps',
+      label: 'WSL · Ubuntu-DevOps',
+      // The chat list shows this one: there, the distro alone already says "not local",
+      // and the four characters of "WSL · " cost the chat's name an ellipsis.
+      short: 'Ubuntu-DevOps'
+    })
+  })
+
+  it('prefers the name the chat was given over one built from the distro', () => {
+    const s = makeSession({ id: 'a', wslDistro: 'Ubuntu', remoteHostName: 'WSL · Ubuntu' })
+    expect(originOf(s)?.label).toBe('WSL · Ubuntu')
+  })
+
+  it('names an SSH chat by its host', () => {
+    const s = makeSession({ id: 'a', remoteHostId: 'h1', remoteHostName: 'build-box' })
+    expect(originOf(s)).toEqual({ key: 'ssh:h1', label: 'build-box', short: 'build-box' })
+  })
+
+  it('falls back to a generic label for a host with no name', () => {
+    expect(originOf(makeSession({ id: 'a', remoteHostId: 'h1' }))?.label).toBe('Remote')
+  })
+
+  it('gives two distros two different keys, and a local chat none at all', () => {
+    expect(originOf(makeSession({ id: 'a', wslDistro: 'Ubuntu' }))?.key).not.toBe(
+      originOf(makeSession({ id: 'b', wslDistro: 'Debian' }))?.key
+    )
+    expect(originOf(makeSession({ id: 'c', accountId: 'work' }))).toBeNull()
   })
 })
 

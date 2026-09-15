@@ -622,7 +622,9 @@
 }
 
 .session-badge.account {
-  max-width: 80px;
+  /* Wider than a bare account name needs: this badge also carries an origin
+     ("WSL · Ubuntu-DevOps"), and clipping that to 80px hides the distro. */
+  max-width: 120px;
 }
 
 /* ── Explore all chats ────────────────────────────────────── */

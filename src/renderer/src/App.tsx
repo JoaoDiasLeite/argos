@@ -45,7 +45,7 @@ import AccountsModal from './components/AccountsModal'
 import ChangelogModal from './components/ChangelogModal'
 import { UiPrefs, UiPrefsPatch } from './types'
 import { sessionToReplaySeed } from './lib/markdown-export'
-import { provOf, acctOf, AccountDefaults } from './lib/account-scope'
+import { provOf, acctOf, originOf, AccountDefaults } from './lib/account-scope'
 import type {
   HomeAttention,
   HomeRunning,
@@ -1584,8 +1584,17 @@ export default function App() {
     // chat is never labelled with an account it isn't running on.
     // Keyed by provider too: 'default' means a different login on Codex than it does on
     // Claude, so two runs sharing the bare id are still two accounts.
+    //
+    // …except where the chat does not run under a managed account at all. A chat inside a
+    // WSL distro, or on a box over SSH, runs against the CLI login that lives THERE, and
+    // labelling it with the account it happens to carry states something false. originOf
+    // answers first, and its key joins the same set, so a distro counts as its own origin
+    // when deciding whether the bar spans more than one.
+    const origins = running.map((s) => originOf(s))
     const acctIds = running.map((s) => acctOf(s, models, defaults))
-    const acctKeys = running.map((s, i) => `${provOf(models, s.model)}:${acctIds[i]}`)
+    const acctKeys = running.map(
+      (s, i) => origins[i]?.key ?? `${provOf(models, s.model)}:${acctIds[i]}`
+    )
     // The sidebar is scoped to ONE provider+account, so a run on another account is
     // invisible there — this bar is the only place it shows up at all. Name the account
     // when that matters: the runs span more than one, or a single run is on an account
@@ -1593,6 +1602,13 @@ export default function App() {
     // you're already using would just be noise on every pill.
     const spansAccounts = new Set(acctKeys).size > 1
     return running.map((s, i) => {
+      // A run somewhere other than this machine is always named, span or no span: "it is
+      // working" and "it is working inside Ubuntu-DevOps" are different facts, and the
+      // second is the one you need to go and look in the right place.
+      const origin = origins[i]
+      if (origin) {
+        return { id: s.id, name: s.name, attention: attentionIds.has(s.id), account: origin.label }
+      }
       const acctId = acctIds[i]
       const provider = provOf(models, s.model)
       const list =

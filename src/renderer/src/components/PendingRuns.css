@@ -67,7 +67,7 @@
    one is first seen. */
 .pending-run-account {
   flex-shrink: 0;
-  max-width: 90px;
+  max-width: 130px;
   padding: 1px 5px;
   border: 1px solid var(--border-light);
   border-radius: 4px;
