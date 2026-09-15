@@ -131,28 +131,55 @@ describe('projectDisplayNames', () => {
     expect(names.get('k1')).toBe('api')
     expect(names.get('k2')).toBe('api')
   })
+
+  it('keeps the plain name for two different keys that share an identical path', () => {
+    const names = projectDisplayNames([
+      { key: 'k1', path: 'C:\\dev\\jdl' },
+      { key: 'k2', path: 'C:\\dev\\jdl' }
+    ])
+    expect(names.get('k1')).toBe('jdl')
+    expect(names.get('k2')).toBe('jdl')
+  })
 })
 
-describe('projectDisplayNames — a prefix that settles nothing', () => {
-  it('leaves the plain name when every candidate prefix is the same', () => {
-    // Three `jdl` checkouts, each at `home/jdl` in a different distro: prefixing turns
-    // three ambiguous rows into three identically ambiguous longer rows.
-    const names = projectDisplayNames([
-      { key: 'a', path: '//wsl.localhost/Ubuntu/home/jdl' },
-      { key: 'b', path: '//wsl.localhost/Ubuntu-DevOps/home/jdl' },
-      { key: 'c', path: '/home/jdl' }
-    ])
-    expect(names.get('a')).toBe('jdl')
-    expect(names.get('b')).toBe('jdl')
-    expect(names.get('c')).toBe('jdl')
-  })
-
-  it('still prefixes when the parents do tell them apart', () => {
+describe('projectDisplayNames — disambiguating past the immediate parent', () => {
+  it('still prefixes with just the parent when that already tells them apart', () => {
     const names = projectDisplayNames([
       { key: 'a', path: '/src/wm/api' },
       { key: 'b', path: '/src/other/api' }
     ])
     expect(names.get('a')).toBe('wm/api')
     expect(names.get('b')).toBe('other/api')
+  })
+
+  it('climbs past a parent that settles nothing to find one that does', () => {
+    // Three `jdl` checkouts: two WSL distros and one local Windows folder. `a` and `b`
+    // share a `home` parent, so theirs settles nothing and the distro above it separates
+    // them; `c` needs no climbing, its own parent is already unlike the others. Each
+    // entry takes the closest level that works for it, not one imposed on the group.
+    const names = projectDisplayNames([
+      { key: 'a', path: '\\\\wsl.localhost\\Ubuntu\\home\\jdl' },
+      { key: 'b', path: '\\\\wsl.localhost\\Ubuntu-DevOps\\home\\jdl' },
+      { key: 'c', path: 'C:\\Users\\Joao\\jdl' }
+    ])
+    expect(names.get('a')).toBe('Ubuntu/jdl')
+    expect(names.get('b')).toBe('Ubuntu-DevOps/jdl')
+    expect(names.get('c')).toBe('Joao/jdl')
+  })
+
+  it('names the entries it can, even when a sibling cannot be named', () => {
+    // The real case: three `jdl` groups, each a different WSL distro, and only the
+    // canonical path carries the distro — `c` was recorded as a bare POSIX path and runs
+    // out of segments before any distinguishing level. `a` and `b` are still named,
+    // because all three staying ambiguous on account of one that cannot be helped is
+    // worse than two of the three reading clearly.
+    const names = projectDisplayNames([
+      { key: 'a', path: '//wsl.localhost/Ubuntu/home/jdl' },
+      { key: 'b', path: '//wsl.localhost/Ubuntu-DevOps/home/jdl' },
+      { key: 'c', path: '/home/jdl' }
+    ])
+    expect(names.get('a')).toBe('Ubuntu/jdl')
+    expect(names.get('b')).toBe('Ubuntu-DevOps/jdl')
+    expect(names.get('c')).toBe('jdl')
   })
 })

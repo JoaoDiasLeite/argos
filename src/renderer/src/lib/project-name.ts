@@ -40,14 +40,39 @@ function basename(path: string): string {
   return name || path
 }
 
-/** The basename of a path's *parent* folder, or '' when there isn't one. */
-function parentBasename(path: string): string {
-  const p = path.replace(/\\/g, '/').replace(/\/+$/, '')
-  const idx = p.lastIndexOf('/')
-  if (idx <= 0) return ''
-  const parent = p.slice(0, idx)
-  const pIdx = parent.lastIndexOf('/')
-  return pIdx >= 0 ? parent.slice(pIdx + 1) : parent
+/** A path split into non-empty segments, treating both `\` and `/` as separators. */
+function pathSegments(path: string): string[] {
+  return path.split(/[\\/]+/).filter(Boolean)
+}
+
+/**
+ * Given the segments of every path in a colliding group, find the closest ancestor
+ * level that reads differently for all of them — index 1 is the immediate parent,
+ * 2 the grandparent, and so on (0, the folder itself, is never tried: it's what
+ * collided in the first place). Returns null when no level separates every entry,
+ * either because two paths are identical all the way up or because a shorter path
+ * runs out of segments before the others do — in both cases inventing a prefix
+ * would either do nothing or apply to only some of the rows.
+ */
+/**
+ * The closest ancestor level whose segment tells THIS path apart from every other in
+ * the group, or null when no level does.
+ *
+ * Per entry rather than one level for the whole group, because the group often cannot
+ * agree on one. Three checkouts of `jdl` in three WSL distros record the identical
+ * `/home/jdl`, and only the canonical path carries the distro — so one of them may have
+ * a distinguishing ancestor while another, recorded as a bare POSIX path, has none. The
+ * ones that can be named unambiguously should be, rather than all of them staying
+ * ambiguous because one cannot.
+ */
+function separatingLevel(segs: string[], others: string[][]): number | null {
+  for (let level = 1; level < segs.length; level++) {
+    const mine = segs[segs.length - 1 - level]
+    if (mine === undefined) break
+    const clash = others.some((o) => o[o.length - 1 - level] === mine)
+    if (!clash) return level
+  }
+  return null
 }
 
 /** A whitespace-only custom name is what the rename UI saves for "no name set". */
@@ -109,22 +134,25 @@ export function projectDisplayNames(
       continue
     }
     const derived = sharing.filter((k) => !byKey.get(k)!.isCustom)
-    // Only prefix when the prefix actually separates them. Three checkouts of `jdl`,
-    // each under a `home` in a different distro, all become `home/jdl` — the same
-    // ambiguity, now harder to read. Where the parent settles nothing, the plain name
-    // is the better of two ambiguous answers, and the row has other things (a distro
-    // badge, a path tooltip) that do tell them apart.
-    const candidates = derived.map((k) => {
-      const e = byKey.get(k)!
-      const parent = parentBasename(e.path)
-      return parent ? `${parent}/${e.name}` : e.name
-    })
-    if (new Set(candidates).size !== candidates.length) {
+    // The immediate parent often settles nothing — three checkouts of `jdl`,
+    // each under a `home` in a different WSL distro, all become `home/jdl`, the same
+    // ambiguity, now harder to read. So climb past it: find the closest ancestor level
+    // that reads differently for every colliding entry, and use only that one segment
+    // as the prefix (not everything in between — `Ubuntu/jdl`, not `Ubuntu/home/jdl`).
+    // When no level separates them all, the plain name is the better of two ambiguous
+    // answers, and the row has other things (a distro badge, a path tooltip) that do.
+    const segsByKey = new Map(derived.map((k) => [k, pathSegments(byKey.get(k)!.path)]))
+    const segs = segsByKey.get(key)!
+    const others = derived.filter((k) => k !== key).map((k) => segsByKey.get(k)!)
+    const level = separatingLevel(segs, others)
+    // No ancestor of this one reads differently from the rest: the plain name is the
+    // better of two ambiguous answers, and the row still has a distro badge and a path
+    // tooltip that do tell them apart.
+    if (level === null) {
       result.set(key, v.name)
       continue
     }
-    const parent = parentBasename(v.path)
-    result.set(key, parent ? `${parent}/${v.name}` : v.name)
+    result.set(key, `${segs[segs.length - 1 - level]}/${v.name}`)
   }
   return result
 }
