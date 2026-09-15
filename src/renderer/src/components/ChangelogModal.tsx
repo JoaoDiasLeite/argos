@@ -15,6 +15,19 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '1.8.1',
+    date: '2026-09-15',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'Home stops leaving a column-wide gap down the left of the window. The columns were fixed tracks, so one with nothing in it kept its share of the width — and with nothing waiting on you and nothing running, which is the ordinary state of the view rather than a rare one, the first column was blank and everything else sat squeezed to the right of it. A column with no sections is no longer drawn, and the ones left divide the width between however many turned up.'
+        ]
+      }
+    ]
+  },
+  {
     version: '1.8.0',
     date: '2026-09-14',
     tag: 'latest',
