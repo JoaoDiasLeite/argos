@@ -17,13 +17,20 @@ const CHANGELOG: Entry[] = [
   {
     version: '1.9.4',
     date: '2026-09-15',
-    tag: 'new',
-    sections: []
+    tag: 'latest',
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'A plan limit warning fires once per window instead of on every refresh. Near or past a limit, the same “Plan limit warning” arrived every ten minutes, and in pairs once past 95% — one per threshold, word for word the same. Each window now warns once at 85% and once at 95%, a jump straight to the limit sends a single warning, and a new window starts over.',
+          'Closing a chat no longer switches you to another account. The open chat decides which account the sidebar is on, and closing it opened whichever chat was first in the list — often one on a different account, so the whole sidebar moved with it. It now opens the next chat on the same account, or the welcome pane when there is none. Switching accounts only ever happens when you pick one.'
+        ]
+      }
+    ]
   },
   {
     version: '1.9.3',
     date: '2026-09-15',
-    tag: 'latest',
     sections: [
       {
         title: 'Features',
