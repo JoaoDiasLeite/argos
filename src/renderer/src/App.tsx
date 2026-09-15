@@ -328,20 +328,6 @@ export default function App() {
     () => new Set(approvalQueue.map((r) => r.appSessionId)),
     [approvalQueue]
   )
-  // Chats still working, for the window-wide pending bar. The chat you're already looking at
-  // is left out — its own header already shows it streaming, so listing it is just noise.
-  const pendingRuns = useMemo<PendingRun[]>(
-    () =>
-      sessions
-        .filter(
-          (s) =>
-            runningIds.has(s.id) &&
-            !dismissedRunIds.has(s.id) &&
-            !(view === 'chat' && s.id === activeId)
-        )
-        .map((s) => ({ id: s.id, name: s.name, attention: attentionIds.has(s.id) })),
-    [sessions, runningIds, dismissedRunIds, attentionIds, view, activeId]
-  )
 
   const dismissRun = useCallback((sid: string) => {
     setDismissedRunIds((prev) => new Set(prev).add(sid))
@@ -1545,6 +1531,35 @@ export default function App() {
     }
     return out
   }, [runningIds, liveBusyIds, sessions])
+
+  // Chats still working, for the window-wide pending bar. Reads displayRunningIds, not
+  // runningIds: a chat driven from the embedded terminal never goes through startRun, so
+  // keying off Argos's own runs alone left the strip empty for exactly the chats you most
+  // need to find your way back to. The chat you're already looking at is left out — its own
+  // header already shows it streaming, so listing it is just noise.
+  const pendingRuns = useMemo<PendingRun[]>(
+    () =>
+      sessions
+        .filter(
+          (s) =>
+            displayRunningIds.has(s.id) &&
+            !dismissedRunIds.has(s.id) &&
+            !(view === 'chat' && s.id === activeId)
+        )
+        .map((s) => ({ id: s.id, name: s.name, attention: attentionIds.has(s.id) })),
+    [sessions, displayRunningIds, dismissedRunIds, attentionIds, view, activeId]
+  )
+
+  // endRun forgets a dismissal once Argos's own run finishes, but a terminal chat never
+  // reaches endRun. Clear dismissals for anything that stopped running, so the chat's next
+  // burst of work surfaces again instead of staying hidden for the rest of the session.
+  useEffect(() => {
+    setDismissedRunIds((prev) => {
+      if (prev.size === 0) return prev
+      const next = new Set([...prev].filter((id) => displayRunningIds.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [displayRunningIds])
 
   // ─── Home view data ────────────────────────────────────────────────────────
   // Everything below is either derived from state Argos already keeps (approvals,
