@@ -114,7 +114,7 @@ export default function AgentsView({ models, defaultModel, onRun }: Props) {
     }
     const clean = sanitizeSuggestions(res.data)
     if (clean.length === 0) {
-      setSuggestError('Claude didn’t return any usable suggestions. Try again.')
+      setSuggestError('The model didn’t return any usable suggestions. Try again.')
       setSuggestions(null)
       return
     }

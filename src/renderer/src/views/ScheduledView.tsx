@@ -301,7 +301,7 @@ function RoutineEditor({ run, setRun, isExisting, models, accounts, onSave }: Ed
             <div className="routine-warning-text">
               <strong>Routines run autonomously with no approval prompts.</strong>{' '}
               Each run executes the prompt in the background, on a timer, without asking for
-              confirmation. Use the access level below to limit what Claude can do.
+              confirmation. Use the access level below to limit what the agent can do.
             </div>
           </div>
 
@@ -322,7 +322,7 @@ function RoutineEditor({ run, setRun, isExisting, models, accounts, onSave }: Ed
               className="text-input textarea"
               rows={4}
               value={run.prompt}
-              placeholder="What should Claude do each time this runs?"
+              placeholder="What should the agent do each time this runs?"
               onChange={(e) => setRun({ ...run, prompt: e.target.value })}
             />
           </div>

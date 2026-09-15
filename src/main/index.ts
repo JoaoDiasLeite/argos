@@ -1692,7 +1692,7 @@ ipcMain.handle(
         permissionMode: 'bypassPermissions'
       })
       const { text, isError, errorText } = await collectText(stream)
-      if (isError) return { ok: false as const, error: errorText || 'Claude returned an error.' }
+      if (isError) return { ok: false as const, error: errorText || 'The model returned an error.' }
       return { ok: true as const, summary: text.trim() }
     } catch (err: unknown) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
@@ -1927,12 +1927,12 @@ ipcMain.handle(
 
       const { text, costUsd, isError, errorText } = await collectText(stream)
 
-      if (isError) return { ok: false as const, error: errorText || 'Claude returned an error.', costUsd }
+      if (isError) return { ok: false as const, error: errorText || 'The model returned an error.', costUsd }
       try {
         const data = extractJson(text)
         return { ok: true as const, data, costUsd }
       } catch {
-        return { ok: false as const, error: 'Could not parse Claude’s response as JSON.', raw: text, costUsd }
+        return { ok: false as const, error: 'Could not parse the model’s response as JSON.', raw: text, costUsd }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -2020,12 +2020,12 @@ ipcMain.handle(
         permissionMode: 'bypassPermissions'
       })
       const { text, costUsd, isError, errorText } = await collectText(stream)
-      if (isError) return { ok: false as const, error: errorText || 'Claude returned an error.', costUsd, commitCount: commits.length }
+      if (isError) return { ok: false as const, error: errorText || 'The model returned an error.', costUsd, commitCount: commits.length }
       try {
         const data = extractJson(text)
         return { ok: true as const, data, costUsd, commitCount: commits.length }
       } catch {
-        return { ok: false as const, error: 'Could not parse Claude’s response as JSON.', raw: text, costUsd, commitCount: commits.length }
+        return { ok: false as const, error: 'Could not parse the model’s response as JSON.', raw: text, costUsd, commitCount: commits.length }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -2261,7 +2261,7 @@ function buildHistoryDigest(): { digest: string; sessionCount: number } {
 }
 
 function buildAgentSuggestPrompt(digest: string): string {
-  return `You are helping configure reusable "agents" inside a Claude Code GUI. Each agent is a saved preset with a name, icon, system prompt, and a set of allowed tools, that the user can launch for recurring kinds of work.
+  return `You are helping configure reusable "agents" inside a desktop GUI for coding CLIs (Claude Code, Codex and Antigravity). Each agent is a saved preset with a name, icon, system prompt, and a set of allowed tools, that the user can launch for recurring kinds of work.
 
 Below is a digest of the user's recent chat sessions (project name, session name, their first prompt, and which tools were used). Based on real patterns in this history, propose 3-5 agent definitions the user would plausibly reuse. Be specific to what they actually do — do not propose generic-sounding agents unrelated to the digest.
 
@@ -2304,12 +2304,12 @@ ipcMain.handle('agents:suggest', async (_, payload: { accountId?: string } = {})
 
     const { text, costUsd, isError, errorText } = await collectText(stream)
 
-    if (isError) return { ok: false as const, error: errorText || 'Claude returned an error.', costUsd }
+    if (isError) return { ok: false as const, error: errorText || 'The model returned an error.', costUsd }
     try {
       const data = extractJson(text)
       return { ok: true as const, data, costUsd }
     } catch {
-      return { ok: false as const, error: 'Could not parse Claude’s response as JSON.', costUsd }
+      return { ok: false as const, error: 'Could not parse the model’s response as JSON.', costUsd }
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
