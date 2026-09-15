@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updaterState: () => ipcRenderer.invoke('updater:state'),
   updaterCheck: () => ipcRenderer.invoke('updater:check'),
   updaterInstall: () => ipcRenderer.invoke('updater:install'),
+
+  // Dev instance (npm run dev)
+  devIsDev: () => ipcRenderer.invoke('dev:is-dev'),
+  devSyncFromProd: () => ipcRenderer.invoke('dev:sync-from-prod'),
   onUpdaterEvent: (cb: (data: unknown) => void) => {
     const fn = (_: unknown, data: unknown) => cb(data)
     ipcRenderer.on('updater:event', fn)

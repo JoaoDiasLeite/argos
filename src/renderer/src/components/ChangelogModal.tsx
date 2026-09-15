@@ -20,6 +20,14 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'Development',
+        items: [
+          '`npm run dev` runs beside the installed Argos. The two shared one data directory, and with it the single-instance lock, so a dev launch found the installed app holding it and quit. Dev now keeps its own directory, seeded from the installed app’s on its first launch — Claude and Codex logins stay shared rather than copied, and scheduled routines are left behind so none fires twice. A second dev launch says it is exiting instead of silently returning to the prompt.',
+          'A “Sync with Argos” button beside the title, in dev only, replaces dev’s copy of the data with a fresh one from the installed app and reloads. It asks once before overwriting.',
+          'Dev opens its window and quits when closed, whatever the copied Start minimized and Close to tray settings say — its tray icon looks exactly like the installed app’s. It also no longer claims argos:// links, which sent the installed app’s notification clicks to the dev build.'
+        ]
+      },
+      {
         title: 'Fixes',
         items: [
           'The Projects list shows a project’s name and nothing else. Projects that shared a name had started arriving with a parent folder in front of it — Ubuntu/jdl, Ubuntu-DevOps/wm-project, X:/infra-automations — which made the list harder to read than the ambiguity it was solving. The distro badge beside the name, and the full path on hover, still tell two projects of the same name apart.'

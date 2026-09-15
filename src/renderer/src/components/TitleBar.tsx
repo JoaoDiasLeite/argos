@@ -33,6 +33,30 @@ export default function TitleBar({ maximized }: Props) {
     }
   }, [])
 
+  // Dev only: copy the installed app's data over this instance's, which is otherwise a
+  // snapshot from the first dev launch. Two clicks, since it discards dev's own changes.
+  const [isDev, setIsDev] = useState(false)
+  const [sync, setSync] = useState<'idle' | 'confirm' | 'syncing' | 'failed'>('idle')
+  useEffect(() => {
+    window.electronAPI.devIsDev().then(setIsDev)
+  }, [])
+  useEffect(() => {
+    if (sync !== 'confirm' && sync !== 'failed') return
+    const t = setTimeout(() => setSync('idle'), 4000)
+    return () => clearTimeout(t)
+  }, [sync])
+  const onSync = async () => {
+    if (sync === 'syncing') return
+    if (sync !== 'confirm') return setSync('confirm')
+    setSync('syncing')
+    // On success the window reloads, so only failure comes back to this component.
+    const r = await window.electronAPI.devSyncFromProd()
+    if (!r.ok) {
+      console.error('[dev-sync]', r.error)
+      setSync('failed')
+    }
+  }
+
   return (
     <div className="titlebar" onDoubleClick={toggleMaximize}>
       <div className="titlebar-brand">
@@ -43,6 +67,40 @@ export default function TitleBar({ maximized }: Props) {
           </svg>
         </span>
         <span className="titlebar-title">Argos</span>
+        {isDev && (
+          <button
+            className={`titlebar-dev-sync${sync === 'confirm' ? ' confirm' : ''}`}
+            onClick={onSync}
+            onDoubleClick={(e) => e.stopPropagation()}
+            disabled={sync === 'syncing'}
+            title="Replace this dev instance's data with a fresh copy of the installed Argos's"
+          >
+            <svg
+              className={sync === 'syncing' ? 'spinning' : undefined}
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3.5 12a8.5 8.5 0 0 1 15.2-5.2" />
+              <path d="M19.5 2.5v4.8h-4.8" />
+              <path d="M20.5 12a8.5 8.5 0 0 1-15.2 5.2" />
+              <path d="M4.5 21.5v-4.8h4.8" />
+            </svg>
+            {sync === 'confirm'
+              ? 'Overwrite dev data?'
+              : sync === 'syncing'
+                ? 'Syncing…'
+                : sync === 'failed'
+                  ? 'Sync failed'
+                  : 'Sync with Argos'}
+          </button>
+        )}
       </div>
 
       <div className="titlebar-drag" />

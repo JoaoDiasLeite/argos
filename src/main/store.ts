@@ -37,6 +37,12 @@ export function storeGet<T>(key: string, fallback: T): T {
   return key in data ? (data[key] as T) : fallback
 }
 
+/** Forget what was read, so the next access reads store.json again. */
+export function reloadStore(): void {
+  data = {}
+  loaded = false
+}
+
 export function storeSet(key: string, value: unknown): void {
   ensureLoaded()
   data[key] = value

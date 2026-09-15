@@ -1,3 +1,5 @@
+// First, before anything reads userData: dev moves it aside. See dev-instance.ts.
+import { isDevInstance, syncDevFromProd } from './dev-instance'
 import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions, clipboard, nativeTheme } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -144,7 +146,8 @@ import {
   setProjectName,
   getFavoriteProjects,
   setProjectFavorite,
-  setProjectArchived
+  setProjectArchived,
+  reloadStore
 } from './store'
 import {
   loadAccounts,
@@ -243,6 +246,11 @@ const notifyMode = notifyHookMode(process.argv)
 // own lock handling — it uses the result to find out whether Argos is running.
 if (!notifyMode) {
   if (!app.requestSingleInstanceLock()) {
+    // Otherwise a second `npm run dev` just returns to the prompt, under a screen of
+    // Chromium cache errors from the directory the running instance holds.
+    if (isDevInstance) {
+      console.log('[dev] Argos dev is already running (focused its window); this launch exits.')
+    }
     app.quit()
   } else {
     app.on('second-instance', (_e, commandLine, _cwd, additionalData) => {
@@ -450,8 +458,10 @@ function createWindow(): void {
   // item) or the user's "start minimized to tray" preference skips the initial show().
   // Guard on hasTray too, and fall back to showing after a grace period below, so the
   // app can never end up stranded with no window and no tray to bring one back.
+  // Not the preference in dev: it arrives copied from prod, and a dev window that starts
+  // hidden sits behind a tray icon indistinguishable from prod's.
   const startHidden =
-    (process.argv.includes('--hidden') || getConfig().system.startMinimized)
+    process.argv.includes('--hidden') || (!isDevInstance && getConfig().system.startMinimized)
   mainWindow.on('ready-to-show', () => {
     if (startHidden && hasTray) return
     mainWindow!.show()
@@ -483,7 +493,9 @@ function createWindow(): void {
     // Close-to-tray only engages when a tray exists AND the user hasn't opted out via
     // settings. Otherwise treat this like a real quit so the app fully exits instead
     // of lingering invisibly with no way back in.
-    if (!hasTray || !getConfig().system.closeToTray) {
+    // Dev always quits on close, for the same reason it never starts hidden: closing the
+    // window should end the `npm run dev`, not leave it in a look-alike tray icon.
+    if (!hasTray || isDevInstance || !getConfig().system.closeToTray) {
       isQuitting = true
       return
     }
@@ -551,14 +563,10 @@ app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.argos.app')
   // `argos://session?…` — what a notification click follows. Registering it here (on
   // every launch, it is idempotent) is what lets a click start the app when it is
-  // closed, which is the case the hook exists for. In dev the executable is
-  // electron.exe, so the app directory has to ride along or the launch boots a blank
-  // Electron instead of Argos.
-  if (is.dev && process.platform === 'win32') {
-    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [app.getAppPath()])
-  } else {
-    app.setAsDefaultProtocolClient(PROTOCOL)
-  }
+  // closed, which is the case the hook exists for. Not in dev: the registration is
+  // machine-wide, and a dev launch taking it would send the installed app's
+  // notification clicks to this checkout's electron.exe.
+  if (!is.dev) app.setAsDefaultProtocolClient(PROTOCOL)
   ensureDirs()
   loadAuthState()
   // A Claude Code self-update that renamed the CLI but never wrote the replacement leaves every
@@ -773,6 +781,24 @@ ipcMain.handle('app:notify', (_, payload: { title: string; body: string }) => {
 ipcMain.handle('updater:state', () => getUpdaterState())
 ipcMain.handle('updater:check', () => checkNow())
 ipcMain.handle('updater:install', () => quitAndInstall())
+
+// ─── Dev instance ───────────────────────────────────────────────────────────
+
+ipcMain.handle('dev:is-dev', () => isDevInstance)
+// Re-copies prod's data over dev's (see dev-instance.ts), reloads the modules that keep
+// it in memory, then reloads the window so the renderer reads it all again.
+ipcMain.handle('dev:sync-from-prod', () => {
+  const result = syncDevFromProd()
+  if (!result.migrated) return { ok: false, error: result.detail ?? 'nothing was copied' }
+  loadAuthState()
+  loadAccounts()
+  loadProviderAccounts()
+  loadConfig()
+  reloadStore()
+  if (result.detail) console.log(`[dev-userdata] ${result.detail}`)
+  setTimeout(() => mainWindow?.webContents.reload(), 50)
+  return { ok: true }
+})
 
 // ─── Auth IPC ───────────────────────────────────────────────────────────────
 

@@ -1351,6 +1351,10 @@ declare global {
       updaterState: () => Promise<UpdaterState>
       updaterCheck: () => Promise<UpdaterState>
       updaterInstall: () => Promise<void>
+
+      // Dev instance (npm run dev)
+      devIsDev: () => Promise<boolean>
+      devSyncFromProd: () => Promise<{ ok: boolean; error?: string }>
       onUpdaterEvent: (cb: (data: UpdaterState) => void) => () => void
 
       // Tray / quick-launcher overlay — events received by the MAIN window
