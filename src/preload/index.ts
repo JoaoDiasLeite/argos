@@ -258,6 +258,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Live sessions: `claude` processes running outside Argos, read from Claude Code's
   // own registry. Read-only — nothing here signals anything.
   ccLiveSessions: () => ipcRenderer.invoke('cc:live-sessions'),
+  ccAdoptSessions: (terminalIds: string[]) => ipcRenderer.invoke('cc:adopt-sessions', terminalIds),
   ccTakeoverSession: (sourceId: string, sessionId: string, expectedPid: number) =>
     ipcRenderer.invoke('cc:takeover-session', sourceId, sessionId, expectedPid),
 

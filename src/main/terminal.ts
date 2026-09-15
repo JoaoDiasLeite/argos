@@ -79,6 +79,27 @@ export function listTerminals(): TerminalInfo[] {
   return out.sort((a, b) => b.createdAt - a.createdAt)
 }
 
+/**
+ * The pid of each named terminal's own pty process, for local shells only.
+ *
+ * Local only because this number is only useful next to this machine's process table:
+ * a WSL or SSH terminal's CLI runs in a PID space where the same number belongs to an
+ * unrelated process, and reading it as a relationship is exactly the mistake the
+ * foreign-pid guards elsewhere exist to prevent. An id with no live pty is left out
+ * rather than reported as 0.
+ */
+export function localTerminalPids(ids: string[]): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const id of ids) {
+    if (!isSafeId(id)) continue
+    const kind = shellKinds.get(id)
+    if (kind !== 'pwsh' && kind !== 'powershell' && kind !== 'cmd' && kind !== 'unix') continue
+    const pid = terminals.get(id)?.pid
+    if (typeof pid === 'number' && pid > 0) out.set(id, pid)
+  }
+  return out
+}
+
 // The settings baked into a pty at spawn time (env, cwd, shell). cols/rows are deliberately
 // excluded: a resize is handled by terminal:resize and is never a reason to respawn.
 function configSignature(opts: CreateTerminalOptions): string {

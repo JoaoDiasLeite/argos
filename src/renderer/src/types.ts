@@ -1552,6 +1552,12 @@ declare global {
       /** `claude` processes live on this machine right now, read from the registry. */
       ccLiveSessions: () => Promise<LiveSession[]>
       /**
+       * The session id of the `claude` running under each of these chat terminals,
+       * keyed by terminal id and omitted where there is nothing to adopt. For chats
+       * whose CLI started without the id the chat had picked for it.
+       */
+      ccAdoptSessions: (terminalIds: string[]) => Promise<Record<string, string>>
+      /**
        * Ask a live `claude` to exit so its conversation can be resumed here.
        * `expectedPid` is the pid the UI displayed — it is only ever used to refuse
        * when the registry now says something else, never to choose what to signal.

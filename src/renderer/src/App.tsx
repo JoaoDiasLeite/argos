@@ -62,6 +62,7 @@ import type {
 import { projectKey, canonicalProjectPath, buildPosixDistroMap, ProjectKeyContext } from './lib/project-key'
 import { projectDisplayName, projectDisplayNames, RepoName } from './lib/project-name'
 import { cadenceSummary } from './lib/cadence'
+import { chatTerminalId } from './lib/terminal-id'
 // The secondary views below are only ever mounted once the user navigates away
 // from the default 'chat' view, so they're loaded lazily (React.lazy) instead
 // of statically imported. That keeps their code — and the vendor libraries
@@ -125,6 +126,12 @@ function applyUi(ui: UiPrefs) {
   root.dataset.density = ui.density
   window.electronAPI.setZoom(zoomFor(ui))
 }
+
+/**
+ * How long before a chat that could not be matched to a live CLI is tried again. Well
+ * above the registry poll: adoption is a repair, not a heartbeat.
+ */
+const ADOPT_RETRY_MS = 60_000
 
 function newSession(projectPath?: string, model?: string, accountId?: string): Session {
   const now = Date.now()
@@ -1070,7 +1077,7 @@ export default function App() {
   const deleteSession = async (id: string) => {
     // Chat terminals outlive their pane (see ChatTerminal's effect cleanup), so deleting the
     // chat is what finally tears its pty down — otherwise it would linger until app quit.
-    await window.electronAPI.terminalKill(`chatterm_${id}`)
+    await window.electronAPI.terminalKill(chatTerminalId(id))
     await window.electronAPI.deleteSession(id)
     setSessions((prev) => {
       const next = prev.filter((s) => s.id !== id)
@@ -1526,6 +1533,23 @@ export default function App() {
   }, [])
 
   /**
+   * Bind a chat to the Claude Code session its terminal turned out to be running.
+   *
+   * Written straight to disk as well as to state: this is the only record of which
+   * conversation that terminal holds, and a repair that lasts until the next restart is
+   * not a repair. Only ever `terminalSessionId` — see the adoption effect for why a chat
+   * with a `claudeSessionId` is left alone.
+   */
+  const adoptSessionId = useCallback((id: string, ccId: string) => {
+    // The save is built from the ref, not from inside the updater: this runs from a
+    // promise callback, where React may defer the updater past the save line.
+    const current = sessionsRef.current.find((s) => s.id === id)
+    if (!current) return
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, terminalSessionId: ccId } : s)))
+    window.electronAPI.saveSession({ ...current, terminalSessionId: ccId })
+  }, [])
+
+  /**
    * Claude Code session ids the live registry currently reports as busy.
    *
    * A chat driven from the embedded terminal never goes through `startRun`, so nothing
@@ -1563,6 +1587,66 @@ export default function App() {
       clearInterval(timer)
     }
   }, [])
+
+  /**
+   * Adopt the CLI a chat's terminal actually started, when the id the chat picked for it
+   * did not take.
+   *
+   * A chat names its session before launching (see newSession), so this normally has
+   * nothing to do. The launch chain can still fall through to a bare `claude` — a CLI too
+   * old to know `--session-id`, or a terminal started by a build that predates the
+   * pinning — and then the CLI invents an id the app was never told. The chat is left
+   * holding an id that names no live process: no transcript, no title, no running dot,
+   * and no way back, because nothing about that chat ever changes again.
+   *
+   * The link is descent: the pty is our own child, so the `claude` under it is that
+   * chat's and nothing else is. Main does the matching (session-adoption.ts) and refuses
+   * to guess when two live sessions share one terminal.
+   *
+   * Only for chats with no `claudeSessionId` of their own. A chat that has one launched
+   * its terminal with `--resume` against a real conversation; rewriting its identity from
+   * the process table, on the strength of a resume that appears to have failed, risks
+   * pointing it at someone else's transcript to fix a missing dot.
+   */
+  const adoptTriedRef = useRef<Map<string, number>>(new Map())
+  useEffect(() => {
+    if (!liveSessions.length) return
+    const claimedBy = (ccId: string | undefined): boolean =>
+      !!ccId &&
+      sessionsRef.current.some((s) => s.claudeSessionId === ccId || s.terminalSessionId === ccId)
+    // Nothing unclaimed is running, so nothing can be adopted — leave without paying for
+    // the process-table read this would otherwise lead to.
+    if (!liveSessions.some((l) => !l.foreign && !claimedBy(l.sessionId))) return
+
+    const now = Date.now()
+    const orphans = sessionsRef.current.filter(
+      (s) =>
+        s.hasTerminalActivity &&
+        !s.claudeSessionId &&
+        !s.wslDistro &&
+        !s.remoteHostId &&
+        !liveSessions.some((l) => l.sessionId === s.terminalSessionId) &&
+        // Throttled per chat, well above the 6s poll: a chat whose terminal is closed
+        // stays orphaned forever by definition, and retrying it every tick would make a
+        // permanent background cost out of a one-off repair.
+        now - (adoptTriedRef.current.get(s.id) ?? 0) > ADOPT_RETRY_MS
+    )
+    if (!orphans.length) return
+    for (const s of orphans) adoptTriedRef.current.set(s.id, now)
+
+    const chatOf = new Map(orphans.map((s) => [chatTerminalId(s.id), s.id]))
+    window.electronAPI.ccAdoptSessions([...chatOf.keys()]).then((found) => {
+      for (const [terminalId, ccId] of Object.entries(found)) {
+        const chatId = chatOf.get(terminalId)
+        // Re-checked here rather than above: this resolves a round later, and a chat
+        // that claimed this id in the meantime (a transcript sync landing, say) owns it.
+        if (!chatId || claimedBy(ccId)) continue
+        adoptSessionId(chatId, ccId)
+      }
+    }).catch(() => {
+      // Nothing adopted this round; the throttle above decides when to try again.
+    })
+  }, [liveSessions, adoptSessionId])
 
   /**
    * What the sidebar shows as running: Argos's own in-flight runs, plus any chat whose

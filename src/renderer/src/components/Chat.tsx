@@ -6,6 +6,7 @@ import ChatConfigBar from './ChatConfigBar'
 import ApprovalModal from './ApprovalModal'
 import { sessionToMarkdown } from '../lib/markdown-export'
 import { CLIPBOARD_IMAGE_EVENT, ClipboardImageDetail } from '../lib/clipboard-paste'
+import { chatTerminalId } from '../lib/terminal-id'
 import './Chat.css'
 
 // ChatTerminal pulls in @xterm/xterm + its addons (~300 kB) but is only ever
@@ -827,7 +828,7 @@ export default function Chat(
         <Suspense fallback={null}>
           <ChatTerminal
             key={session.id}
-            terminalId={`chatterm_${session.id}`}
+            terminalId={chatTerminalId(session.id)}
             cwd={session.projectPath}
             accountId={terminalAccountId}
             provider={terminalProvider}
