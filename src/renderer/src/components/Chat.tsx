@@ -833,7 +833,10 @@ export default function Chat(
             provider={terminalProvider}
             wslDistro={session.wslDistro}
             remoteHostId={session.remoteHostId}
-            resumeSessionId={session.claudeSessionId || session.terminalSessionId}
+            /* Two ids, two intentions: resume the conversation this chat already has,
+               or create one under the id it reserved before ever starting. */
+            resumeSessionId={session.claudeSessionId}
+            pinSessionId={session.terminalSessionId}
             initialPrompt={initialTerminalPrompt}
             onInitialPromptSent={onInitialTerminalPromptSent}
             closable={false}

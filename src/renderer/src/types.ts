@@ -1247,8 +1247,12 @@ export interface TerminalCreateOptions {
   remoteHostId?: string
   /** Which CLI this terminal is for. Defaults to 'claude'. */
   provider?: ProviderId
-  /** The chat's Claude Code session id — resumed when launching claude (local shells only). */
+  /** The chat's Claude Code session id, when a conversation already exists under it —
+   *  launching claude resumes it. */
   resumeSessionId?: string
+  /** The id reserved for a conversation that does not exist yet — launching claude
+   *  creates under it (--session-id) instead of failing to resume it. */
+  pinSessionId?: string
   cols: number
   rows: number
 }
@@ -1825,7 +1829,8 @@ declare global {
       terminalStartCli: (
         id: string,
         provider: ProviderId,
-        resumeSessionId?: string
+        resumeSessionId?: string,
+        pinSessionId?: string
       ) => Promise<{ ok: boolean }>
       onTerminalData: (cb: (data: TerminalDataEvent) => void) => () => void
       onTerminalExit: (cb: (data: TerminalExitEvent) => void) => () => void

@@ -440,8 +440,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   terminalKill: (id: string) => ipcRenderer.invoke('terminal:kill', id),
   terminalKillDeferred: (id: string) => ipcRenderer.send('terminal:kill-deferred', id),
   terminalList: () => ipcRenderer.invoke('terminal:list'),
-  terminalStartCli: (id: string, provider: string, resumeSessionId?: string) =>
-    ipcRenderer.invoke('terminal:start-cli', id, provider, resumeSessionId),
+  terminalStartCli: (
+    id: string,
+    provider: string,
+    resumeSessionId?: string,
+    pinSessionId?: string
+  ) => ipcRenderer.invoke('terminal:start-cli', id, provider, resumeSessionId, pinSessionId),
   onTerminalData: (cb: (data: unknown) => void) => {
     const fn = (_: unknown, data: unknown) => cb(data)
     ipcRenderer.on('terminal:data', fn)

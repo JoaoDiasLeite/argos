@@ -20,8 +20,13 @@ interface Props {
   remoteHostId?: string
   /** Which CLI to launch — the chat's provider. */
   provider: ProviderId
-  /** The chat's Claude Code session id — resumed when launching claude. */
+  /** The chat's Claude Code session id, when a conversation already exists under it —
+   *  launching claude resumes it. */
   resumeSessionId?: string
+  /** The id this chat reserved before its first conversation. Launching claude creates
+   *  under it. Kept apart from resumeSessionId because the two ask the CLI for opposite
+   *  things, and guessing wrong prints an error into the terminal before recovering. */
+  pinSessionId?: string
   /** Whether to auto-launch the provider CLI once the PTY is up (default true). Set false
    *  for a plain-shell session (e.g. Remote Session's terminal pane) — the PTY is still
    *  created and the loader still gates on real output, but nothing is typed into it. */
@@ -98,7 +103,7 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, autoLaunchCli = true, active, closable = true, onClose, onActive, initialPrompt, onInitialPromptSent }: Props) {
+export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onActive, initialPrompt, onInitialPromptSent }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -106,6 +111,8 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
   // Keep the latest resume id available to the auto-launch timer below.
   const resumeRef = useRef(resumeSessionId)
   resumeRef.current = resumeSessionId
+  const pinRef = useRef(pinSessionId)
+  pinRef.current = pinSessionId
   // Auto-launch claude when the terminal opens; skipped for an explicit "Restart".
   const autoStartRef = useRef(true)
   const [exited, setExited] = useState(false)
@@ -514,6 +521,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         remoteHostId,
         provider,
         resumeSessionId: resumeRef.current,
+        pinSessionId: pinRef.current,
         cols,
         rows
       })
@@ -576,7 +584,12 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
             // Arm the reveal gate right as we launch — the very next data chunk (the
             // launch command's own shell echo) starts the quiet timer above.
             awaitingRevealRef.current = true
-            window.electronAPI.terminalStartCli(terminalId, provider, resumeRef.current)
+            window.electronAPI.terminalStartCli(
+              terminalId,
+              provider,
+              resumeRef.current,
+              pinRef.current
+            )
           }, 600)
         } else {
           // Bare shell (an explicit Restart on wsl/ssh): no loader is shown, so focus now

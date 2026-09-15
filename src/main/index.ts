@@ -1655,6 +1655,7 @@ ipcMain.handle(
       remoteHostId?: string
       provider?: 'claude' | 'codex' | 'gemini'
       resumeSessionId?: string
+      pinSessionId?: string
       cols: number
       rows: number
     }
@@ -1680,8 +1681,13 @@ ipcMain.on('terminal:kill-deferred', (_, id: string) => killTerminalDeferred(id)
 ipcMain.handle('terminal:list', () => listTerminals())
 ipcMain.handle(
   'terminal:start-cli',
-  (_, id: string, provider: 'claude' | 'codex' | 'gemini', resumeSessionId?: string) =>
-    startCliInTerminal(id, provider, resumeSessionId)
+  (
+    _,
+    id: string,
+    provider: 'claude' | 'codex' | 'gemini',
+    resumeSessionId?: string,
+    pinSessionId?: string
+  ) => startCliInTerminal(id, provider, resumeSessionId, pinSessionId)
 )
 
 // ─── Remote shell (Remote Session SSH terminal, over the SFTP connection) ──────

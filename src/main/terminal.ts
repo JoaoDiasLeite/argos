@@ -120,8 +120,12 @@ export interface CreateTerminalOptions {
   remoteHostId?: string
   /** Which CLI this terminal is for. Defaults to 'claude'. */
   provider?: 'claude' | 'codex' | 'gemini'
-  /** The chat's Claude Code session id — resumed when launching claude (local shells only). */
+  /** The chat's Claude Code session id, when it HAS one — a conversation already exists
+   *  under it, so launching claude should resume it. */
   resumeSessionId?: string
+  /** The id this chat has reserved for a conversation that does not exist yet. Launching
+   *  claude should CREATE under it (--session-id), not try to resume it. */
+  pinSessionId?: string
   cols: number
   rows: number
 }
@@ -298,8 +302,11 @@ export function createTerminal(
       // the launch command into it afterwards. Non-interactive mode prints no banner (no
       // "Windows PowerShell / Copyright…") and no command echo, so the very first pty
       // output is the CLI itself — nothing for the loading overlay to have to hide.
-      const sessionId = safeResumeId(opts.resumeSessionId) || ''
-      const cliCmd = buildCliInvocation(kind, provider, sessionId, id)
+      // Resume what exists; create what doesn't. Both arrive as ids and look alike, so
+      // which one the caller sent is the only thing that says which way round to try.
+      const resumeId = safeResumeId(opts.resumeSessionId) || ''
+      const pinId = resumeId ? '' : safeResumeId(opts.pinSessionId) || ''
+      const cliCmd = buildCliInvocation(kind, provider, resumeId || pinId, id, !resumeId && !!pinId)
       if (cliCmd) {
         if (kind === 'pwsh' || kind === 'powershell') {
           shellArgs = ['-NoLogo', '-NoProfile', '-Command', cliCmd]
@@ -478,7 +485,8 @@ function buildCliInvocation(
   kind: ShellKind,
   provider: 'claude' | 'codex' | 'gemini',
   sessionId: string,
-  id: string
+  id: string,
+  createFirst = false
 ): string | null {
   if (kind !== 'pwsh' && kind !== 'powershell' && kind !== 'cmd' && kind !== 'unix') return null
 
@@ -488,18 +496,27 @@ function buildCliInvocation(
     // one that already exists, so trying both covers whichever direction this id is in. The
     // trailing bare `claude` is only for a CLI too old to know `--session-id` — it still
     // gets a working terminal instead of an error, just without the pinned id.
+    //
+    // `createFirst` decides which end of the chain is tried first, and it is not a
+    // micro-optimisation: the step that loses prints its refusal into the terminal before
+    // the next one runs, so a brand-new chat led with --resume greeted the user with a red
+    // “No conversation found with session ID: …” every single time. Leading with the step
+    // expected to succeed keeps the fallback for what it is — a fallback.
+    const [first, second] = createFirst
+      ? ['--session-id', '--resume']
+      : ['--resume', '--session-id']
     if (kind === 'pwsh' || kind === 'powershell') {
       return sessionId
-        ? `& $env:CLAUDE_BIN --resume ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN --session-id ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN } }`
+        ? `& $env:CLAUDE_BIN ${first} ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN ${second} ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN } }`
         : `& $env:CLAUDE_BIN`
     }
     if (kind === 'cmd') {
       return sessionId
-        ? `"%CLAUDE_BIN%" --resume ${sessionId} || "%CLAUDE_BIN%" --session-id ${sessionId} || "%CLAUDE_BIN%"`
+        ? `"%CLAUDE_BIN%" ${first} ${sessionId} || "%CLAUDE_BIN%" ${second} ${sessionId} || "%CLAUDE_BIN%"`
         : `"%CLAUDE_BIN%"`
     }
     return sessionId
-      ? `"$CLAUDE_BIN" --resume ${sessionId} || "$CLAUDE_BIN" --session-id ${sessionId} || "$CLAUDE_BIN"`
+      ? `"$CLAUDE_BIN" ${first} ${sessionId} || "$CLAUDE_BIN" ${second} ${sessionId} || "$CLAUDE_BIN"`
       : `"$CLAUDE_BIN"`
   }
 
@@ -534,20 +551,30 @@ function buildCliInvocation(
 // buildCliInvocation above for why it is resume-then-create-then-bare rather than a pair.
 // All of it happens at the shell level, before the overlay is ever lifted. Shared by the
 // initial launch in startCliInTerminal below.
-function claudeLaunchCommand(kind: ShellKind, id: string, sessionId: string): string {
+function claudeLaunchCommand(
+  kind: ShellKind,
+  id: string,
+  sessionId: string,
+  createFirst = false
+): string {
+  // Same ordering question as buildCliInvocation, for the same reason: whichever step
+  // goes first prints its refusal into the terminal when it is the wrong one.
+  const [first, second] = createFirst
+    ? ['--session-id', '--resume']
+    : ['--resume', '--session-id']
   if (kind === 'pwsh' || kind === 'powershell') {
     return sessionId
-      ? `Clear-Host; & $env:CLAUDE_BIN --resume ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN --session-id ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN } }\r`
+      ? `Clear-Host; & $env:CLAUDE_BIN ${first} ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN ${second} ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN } }\r`
       : `Clear-Host; & $env:CLAUDE_BIN\r`
   }
   if (kind === 'cmd') {
     return sessionId
-      ? `cls & "%CLAUDE_BIN%" --resume ${sessionId} || "%CLAUDE_BIN%" --session-id ${sessionId} || "%CLAUDE_BIN%"\r`
+      ? `cls & "%CLAUDE_BIN%" ${first} ${sessionId} || "%CLAUDE_BIN%" ${second} ${sessionId} || "%CLAUDE_BIN%"\r`
       : `cls & "%CLAUDE_BIN%"\r`
   }
   if (kind === 'wsl') {
     return sessionId
-      ? `clear; claude --resume ${sessionId} || claude --session-id ${sessionId} || claude\n`
+      ? `clear; claude ${first} ${sessionId} || claude ${second} ${sessionId} || claude\n`
       : `clear; claude\n`
   }
   if (kind === 'ssh') {
@@ -559,18 +586,19 @@ function claudeLaunchCommand(kind: ShellKind, id: string, sessionId: string): st
     if (!sessionId) return `clear; ${cd}${bin}\n`
     // Wrap the whole chain in parens so it runs as a single unit after the one-time cd,
     // rather than re-prefixing cd onto each fallback.
-    const chain = `${bin} --resume ${sessionId} || ${bin} --session-id ${sessionId} || ${bin}`
+    const chain = `${bin} ${first} ${sessionId} || ${bin} ${second} ${sessionId} || ${bin}`
     return cd ? `clear; ${cd}( ${chain} )\n` : `clear; ${chain}\n`
   }
   return sessionId
-    ? `clear; "$CLAUDE_BIN" --resume ${sessionId} || "$CLAUDE_BIN" --session-id ${sessionId} || "$CLAUDE_BIN"\n`
+    ? `clear; "$CLAUDE_BIN" ${first} ${sessionId} || "$CLAUDE_BIN" ${second} ${sessionId} || "$CLAUDE_BIN"\n`
     : `clear; "$CLAUDE_BIN"\n`
 }
 
 export function startCliInTerminal(
   id: string,
   provider: 'claude' | 'codex' | 'gemini',
-  resumeSessionId?: string
+  resumeSessionId?: string,
+  pinSessionId?: string
 ): { ok: boolean } {
   if (!isSafeId(id)) return { ok: false }
   const p = terminals.get(id)
@@ -583,8 +611,9 @@ export function startCliInTerminal(
       // Pin the CLI to the chat's own Claude Code session id when we have one, else start
       // fresh. Which of resume and create applies is decided by the shell command line
       // itself (see claudeLaunchCommand) — no need to watch the pty's output from here.
-      const sessionId = safeResumeId(resumeSessionId) || ''
-      p.write(claudeLaunchCommand(kind, id, sessionId))
+      const resumeId = safeResumeId(resumeSessionId) || ''
+      const pinId = resumeId ? '' : safeResumeId(pinSessionId) || ''
+      p.write(claudeLaunchCommand(kind, id, resumeId || pinId, !resumeId && !!pinId))
       return { ok: true }
     }
 
