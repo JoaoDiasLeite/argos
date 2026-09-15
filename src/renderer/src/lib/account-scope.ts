@@ -89,6 +89,13 @@ export function idFor(
 // accountId fall under that provider's machine-default account ('default'), same as
 // `acctOf` resolves. Everything (across accounts) remains reachable via
 // "Explore all chats" → Projects.
+//
+// A chat with an ORIGIN (see originOf) is the exception, and skips the account half of
+// that: it runs against a CLI login inside a distro or on a remote host, so it belongs to
+// no managed account at all and filing it under one only decides which account's list it
+// vanishes from. It stays visible whichever account is selected, and its row says where it
+// runs, so the two kinds are never confusable. The provider half still applies — a Codex
+// account's list is no place for a chat on a Claude model, wherever it runs.
 export function visibleSessions(
   sessions: Session[],
   models: ModelInfo[],
@@ -100,6 +107,6 @@ export function visibleSessions(
     (s) =>
       (s.messages.length > 0 || s.hasTerminalActivity) &&
       provOf(models, s.model) === selectedProvider &&
-      acctOf(s, models, defaults) === currentAccountId
+      (originOf(s) !== null || acctOf(s, models, defaults) === currentAccountId)
   )
 }

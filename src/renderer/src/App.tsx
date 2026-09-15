@@ -1135,6 +1135,13 @@ export default function App() {
       : activeChatProvider === 'gemini'
         ? (activeSession?.geminiAccountId ?? geminiDefaultAccountId)
         : (activeSession?.accountId ?? defaultAccountId)
+  // Which account the SIDEBAR is scoped to while this chat is open. Normally the chat's
+  // own, so opening one bound to another account moves the whole sidebar onto it. But a
+  // chat that runs inside a distro or on a remote host isn't on that account at all — it
+  // only carries the id it was created with — and letting it drag the scope there hid
+  // every local chat of the account you were actually using, on nothing more than which
+  // chat you had clicked. Undefined means "whatever this provider's default is".
+  const scopeAccountId = activeSession && originOf(activeSession) ? undefined : activeChatAccountId
   const firstModelForProvider = (provider: ProviderId): string | undefined =>
     models.find((m) => m.provider === provider)?.id
   // Cheapest released model of a provider (by input+output price), for Quick chat.
@@ -2554,7 +2561,7 @@ export default function App() {
             accounts={accounts}
             models={models}
             selectedProvider={activeChatProvider}
-            selectedAccountId={activeChatAccountId}
+            selectedAccountId={scopeAccountId}
             codexAccounts={codexAccounts}
             geminiAccounts={geminiAccounts}
             codexDefaultAccountId={codexDefaultAccountId}

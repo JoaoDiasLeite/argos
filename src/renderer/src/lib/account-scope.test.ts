@@ -136,6 +136,16 @@ describe('visibleSessions', () => {
   const draftChat = makeSession({ id: 'd1', model: 'claude-opus-4-8', messages: [] })
   const allSessions = [claudeDefaultChat, claudePersonalChat, codexBoundChat, codexUnboundChat, draftChat]
 
+  // Runs inside a distro, on a Claude model, carrying an accountId it does not use.
+  const wslChat = makeSession({
+    id: 'w1',
+    model: 'claude-opus-4-8',
+    accountId: 'claude-personal',
+    wslDistro: 'Ubuntu-DevOps'
+  })
+  const sshChat = makeSession({ id: 's1', model: 'claude-opus-4-8', remoteHostId: 'h1' })
+  const codexWslChat = makeSession({ id: 'w2', model: 'codex-mini', wslDistro: 'Ubuntu-DevOps' })
+
   it('1) no active chat: scopes to the selected provider default account, excluding drafts', () => {
     const currentClaudeId = idFor('claude', 'claude', undefined, defaults.defaultAccountId)
     const result = visibleSessions(allSessions, models, 'claude', currentClaudeId, defaults)
@@ -152,6 +162,35 @@ describe('visibleSessions', () => {
     const currentCodexId = idFor('codex', 'codex', 'codex-side', defaults.codexDefaultAccountId)
     const result = visibleSessions(allSessions, models, 'codex', currentCodexId, defaults)
     expect(result.map((s) => s.id)).toEqual(['x1'])
+  })
+
+  it('shows a WSL chat whichever account is selected', () => {
+    // It carries claude-personal and runs on neither that nor claude-work. Filing it under
+    // an account would only pick which list it disappears from; the row says 'Ubuntu-DevOps'
+    // either way, so there is nothing to confuse it with.
+    const withOrigins = [...allSessions, wslChat, sshChat]
+    const onWork = visibleSessions(withOrigins, models, 'claude', 'claude-work', defaults)
+    const onPersonal = visibleSessions(withOrigins, models, 'claude', 'claude-personal', defaults)
+    expect(onWork.map((s) => s.id)).toEqual(['c1', 'w1', 's1'])
+    expect(onPersonal.map((s) => s.id)).toEqual(['c2', 'w1', 's1'])
+  })
+
+  it('still scopes an origin chat by provider', () => {
+    // Where it runs is not which CLI it runs: a Codex account's list is no place for a
+    // Claude chat, distro or no distro.
+    const withOrigins = [...allSessions, wslChat, codexWslChat]
+    const onClaude = visibleSessions(withOrigins, models, 'claude', 'claude-work', defaults)
+    const onCodex = visibleSessions(withOrigins, models, 'codex', 'codex-work', defaults)
+    expect(onClaude.map((s) => s.id)).toContain('w1')
+    expect(onClaude.map((s) => s.id)).not.toContain('w2')
+    expect(onCodex.map((s) => s.id)).toContain('w2')
+    expect(onCodex.map((s) => s.id)).not.toContain('w1')
+  })
+
+  it('keeps an origin draft out of the list like any other draft', () => {
+    const draft = makeSession({ id: 'w3', model: 'claude-opus-4-8', wslDistro: 'Ubuntu', messages: [] })
+    const result = visibleSessions([...allSessions, draft], models, 'claude', 'claude-work', defaults)
+    expect(result.map((s) => s.id)).not.toContain('w3')
   })
 
   it('4) unbound legacy Codex chat scopes under the Codex default account (the regression fix)', () => {
