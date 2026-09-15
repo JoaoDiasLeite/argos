@@ -6,6 +6,9 @@ export interface PendingRun {
   name: string
   /** True when the run is parked on a tool approval rather than just thinking. */
   attention?: boolean
+  /** Account the run is billed to, set only when it disambiguates — see App.tsx's
+      pendingRuns. Undefined means "the account you're already on". */
+  account?: string
 }
 
 interface Props {
@@ -37,9 +40,16 @@ export default function PendingRuns({ runs, onOpen, onDismiss }: Props) {
           <button
             className="pending-run-open"
             onClick={() => onOpen(r.id)}
-            title={r.attention ? `${r.name} — waiting for your approval` : `Go to ${r.name}`}
+            title={[
+              r.name,
+              r.account ? `on ${r.account}` : null,
+              r.attention ? 'waiting for your approval' : null
+            ]
+              .filter(Boolean)
+              .join(' — ')}
           >
             {r.name}
+            {r.account && <span className="pending-run-account">{r.account}</span>}
             {r.attention && <span className="pending-run-note">needs approval</span>}
           </button>
           <button

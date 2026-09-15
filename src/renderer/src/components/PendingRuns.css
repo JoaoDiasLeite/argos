@@ -61,6 +61,24 @@
 
 .pending-run-open:hover { color: var(--accent); }
 
+/* Which account the run is on, when the bar spans more than one. Borrows
+   .session-badge's chip so an account reads the same here as in the chat list —
+   the sidebar is scoped to one account, so this bar is where a run on another
+   one is first seen. */
+.pending-run-account {
+  flex-shrink: 0;
+  max-width: 90px;
+  padding: 1px 5px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-size: 10px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .pending-run-note {
   color: #e2b341;
   font-size: 11px;

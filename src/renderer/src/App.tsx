@@ -1537,18 +1537,66 @@ export default function App() {
   // keying off Argos's own runs alone left the strip empty for exactly the chats you most
   // need to find your way back to. The chat you're already looking at is left out — its own
   // header already shows it streaming, so listing it is just noise.
-  const pendingRuns = useMemo<PendingRun[]>(
-    () =>
-      sessions
-        .filter(
-          (s) =>
-            displayRunningIds.has(s.id) &&
-            !dismissedRunIds.has(s.id) &&
-            !(view === 'chat' && s.id === activeId)
-        )
-        .map((s) => ({ id: s.id, name: s.name, attention: attentionIds.has(s.id) })),
-    [sessions, displayRunningIds, dismissedRunIds, attentionIds, view, activeId]
-  )
+  const pendingRuns = useMemo<PendingRun[]>(() => {
+    const defaults: AccountDefaults = {
+      defaultAccountId,
+      codexDefaultAccountId,
+      geminiDefaultAccountId
+    }
+    const running = sessions.filter(
+      (s) =>
+        displayRunningIds.has(s.id) &&
+        !dismissedRunIds.has(s.id) &&
+        !(view === 'chat' && s.id === activeId)
+    )
+    // Which account each run is actually billed to, resolved exactly the way the run
+    // itself resolves it (acctOf mirrors buildAgentPayload's fallbacks), so an unbound
+    // chat is never labelled with an account it isn't running on.
+    // Keyed by provider too: 'default' means a different login on Codex than it does on
+    // Claude, so two runs sharing the bare id are still two accounts.
+    const acctIds = running.map((s) => acctOf(s, models, defaults))
+    const acctKeys = running.map((s, i) => `${provOf(models, s.model)}:${acctIds[i]}`)
+    // The sidebar is scoped to ONE provider+account, so a run on another account is
+    // invisible there — this bar is the only place it shows up at all. Name the account
+    // when that matters: the runs span more than one, or a single run is on an account
+    // other than the current default. Naming it when every run is on the one account
+    // you're already using would just be noise on every pill.
+    const spansAccounts = new Set(acctKeys).size > 1
+    return running.map((s, i) => {
+      const acctId = acctIds[i]
+      const provider = provOf(models, s.model)
+      const list =
+        provider === 'codex' ? codexAccounts : provider === 'gemini' ? geminiAccounts : accounts
+      const isDefault =
+        acctId ===
+        (provider === 'codex'
+          ? codexDefaultAccountId
+          : provider === 'gemini'
+            ? geminiDefaultAccountId
+            : defaultAccountId)
+      const name = list.find((a) => a.id === acctId)?.name ?? s.accountName
+      return {
+        id: s.id,
+        name: s.name,
+        attention: attentionIds.has(s.id),
+        account: spansAccounts || (!isDefault && list.length > 1) ? name : undefined
+      }
+    })
+  }, [
+    sessions,
+    displayRunningIds,
+    dismissedRunIds,
+    attentionIds,
+    view,
+    activeId,
+    models,
+    accounts,
+    defaultAccountId,
+    codexAccounts,
+    codexDefaultAccountId,
+    geminiAccounts,
+    geminiDefaultAccountId
+  ])
 
   // endRun forgets a dismissal once Argos's own run finishes, but a terminal chat never
   // reaches endRun. Clear dismissals for anything that stopped running, so the chat's next
