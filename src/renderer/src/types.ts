@@ -1143,9 +1143,26 @@ export interface SprintItem {
   completedAt?: number | null
   /** The status this item held before its current one — lets un-checking 'done' restore it. */
   prevStatus?: ItemStatus | null
+  /** Imported reference: `#481`, or `!49` for a GitLab merge request. */
+  ref?: string | null
+  /**
+   * Issue or change request. Authoritative: on GitHub the reference cannot be read
+   * back to a kind, since issues and pull requests share one numbering sequence.
+   */
+  kind?: 'issue' | 'merge-request' | null
+  /** Which forge it came from. Absent means GitLab — nothing else wrote these. */
+  forge?: Forge | null
+  /** The issue/MR/PR web URL, for the link on the item. */
+  url?: string | null
 }
 
-/** Cached GitLab backfill so re-opening the importer doesn't re-hit the MCP each time. */
+/** What a backfill goes looking for: issues, pending change requests, or both. */
+export type BackfillKind = 'issues' | 'merge-requests' | 'both'
+
+/** The code-hosting forges the sprint importer can read. */
+export type Forge = 'gitlab' | 'github'
+
+/** Cached forge backfill so re-opening the importer doesn't re-hit the MCP each time. */
 export interface SprintBackfillCache {
   fetchedAt: number
   project?: string
@@ -1153,7 +1170,24 @@ export interface SprintBackfillCache {
   source?: string
   note?: string
   openIssueCount?: number | null
-  items: { title: string; points?: number | null; notes?: string }[]
+  openMrCount?: number | null
+  /** Which fetch produced `items` — switching kind in the importer invalidates them. */
+  kind?: BackfillKind
+  /** The forge the last fetch ran against. */
+  forge?: Forge
+  items: BackfillRow[]
+}
+
+/** One fetched forge row, before it becomes a sprint item. */
+export interface BackfillRow {
+  title: string
+  points?: number | null
+  notes?: string
+  kind?: 'issue' | 'merge-request'
+  /** `#481` for an issue, `!49` for a merge request. */
+  ref?: string
+  /** The issue/MR web URL. */
+  url?: string
 }
 
 export interface DailyStandup {
@@ -1178,7 +1212,7 @@ export interface Sprint {
   standups: DailyStandup[]
   /** Project folder standups/metrics default to (for git-log digest). */
   projectPath?: string
-  /** Last GitLab backfill result, cached so the importer opens instantly. */
+  /** Last forge backfill result, cached so the importer opens instantly. */
   backfillCache?: SprintBackfillCache
   createdAt: number
   updatedAt: number
@@ -1620,20 +1654,29 @@ declare global {
         instructions?: string
         model?: string
         accountId?: string
-        /** When true, only resolve which GitLab project the MCP is attributed to. */
+        /** When true, only resolve which repository the MCP is attributed to. */
         probe?: boolean
+        /** Issues, pending change requests, or both. Defaults to issues. */
+        kind?: BackfillKind
+        /** Overrides the forge derived from the project's git remote. */
+        forge?: Forge
       }) => Promise<{
         ok: boolean
         data?: {
-          items?: { title: string; points?: number | null; notes?: string }[]
+          items?: BackfillRow[]
           project?: string
           projectId?: number | string | null
           url?: string
           openIssueCount?: number | null
+          openMrCount?: number | null
+          /** Which forge the run actually used. */
+          forge?: Forge
           source?: string
           note?: string
         }
         error?: string
+        /** The run worked, but not entirely — e.g. the forge handed back the wrong kind. */
+        warning?: string
         raw?: string
         costUsd: number
       }>

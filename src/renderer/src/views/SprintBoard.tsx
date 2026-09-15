@@ -4,6 +4,9 @@ import {
   Sprint,
   SprintItem,
   SprintBackfillCache,
+  BackfillKind,
+  BackfillRow,
+  Forge,
   DailyStandup,
   ItemStatus,
   SprintStatus,
@@ -13,6 +16,7 @@ import {
   ProviderId
 } from '../types'
 import Menu, { MoreIcon, CaretDownIcon } from '../components/Menu'
+import { originOf, kindLabel, FORGE_NAMES } from '../lib/sprint-origin'
 import ModelPicker from '../components/ModelPicker'
 import AccountPicker, { AccountPickerItem } from '../components/AccountPicker'
 import './views.css'
@@ -79,8 +83,35 @@ const STATUS_LABELS: Record<SprintStatus, string> = {
   completed: 'Completed'
 }
 
+/**
+ * The forge a sprint talks to: whatever its last import used, else GitLab. The probe
+ * corrects it from the project's git remote as soon as the importer opens.
+ */
+function forgeOf(sprint: Sprint | null): Forge {
+  return sprint?.backfillCache?.forge ?? 'gitlab'
+}
+
 function pointsOf(i: SprintItem): number {
   return typeof i.points === 'number' && i.points > 0 ? i.points : 0
+}
+
+// What happens to the unfinished items when a sprint is completed.
+type CarryChoice =
+  | { kind: 'keep' }
+  | { kind: 'existing'; sprintId: string }
+  | { kind: 'new'; name: string }
+
+const dayMs = 86_400_000
+/** Inclusive length of a sprint in days — reused for the sprint that follows it. */
+function sprintLengthDays(s: Sprint): number {
+  const n = Math.round((parseYmd(s.endDate).getTime() - parseYmd(s.startDate).getTime()) / dayMs) + 1
+  return n > 0 ? n : 14
+}
+
+/** "Sprint 3 — Checkout" → "Sprint 4 — Checkout"; falls back to a plain count. */
+function nextSprintName(prev: string, count: number): string {
+  const m = prev.match(/(\d+)/)
+  return m ? prev.replace(/\d+/, String(Number(m[1]) + 1)) : `Sprint ${count + 1}`
 }
 
 // Shared Week|Sprint segmented toggle — rendered by both PlannerView and SprintBoard so
@@ -121,6 +152,7 @@ export default function SprintBoard({
   const [overCol, setOverCol] = useState<ItemStatus | null>(null)
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [sprintModal, setSprintModal] = useState<'new' | 'edit' | null>(null)
+  const [completeOpen, setCompleteOpen] = useState(false)
   const [backfillOpen, setBackfillOpen] = useState(false)
   const [standupDate, setStandupDate] = useState(() => ymd(new Date()))
   // Which section of the sprint is shown — persisted like the Week/Sprint mode.
@@ -194,9 +226,24 @@ export default function SprintBoard({
     saveTimer.current = setTimeout(() => window.electronAPI.sprintSave(next), 350)
   }
 
-  // Mutate the active sprint immutably, then persist.
+  // Write several sprints at once (sprint completion moves items between two of them).
+  // The debounced `persist` keeps a single timer, so a second call would swallow the
+  // first — these go straight to disk instead.
+  const persistAll = (next: Sprint[]) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    setSprints((prev) => {
+      const byId = new Map(next.map((s) => [s.id, s]))
+      const merged = prev.map((s) => byId.get(s.id) ?? s)
+      const added = next.filter((s) => !prev.some((p) => p.id === s.id))
+      return [...added, ...merged]
+    })
+    next.forEach((s) => window.electronAPI.sprintSave(s))
+  }
+
+  // Mutate the active sprint immutably, then persist. A completed sprint is a closed
+  // record — every board edit routes through here, so locking it here locks all of them.
   const mutate = (fn: (s: Sprint) => Sprint) => {
-    if (!active) return
+    if (!active || active.status === 'completed') return
     persist(fn(active))
   }
 
@@ -227,7 +274,12 @@ export default function SprintBoard({
     setActiveId(s.id)
     setSprintModal(null)
   }
-  const patchSprint = (patch: Partial<Sprint>) => mutate((s) => ({ ...s, ...patch }))
+  // Sprint-level fields (name, dates, status…) stay editable even once completed —
+  // that's how a sprint gets reopened.
+  const patchSprint = (patch: Partial<Sprint>) => {
+    if (!active) return
+    persist({ ...active, ...patch })
+  }
   const deleteSprint = async () => {
     if (!active) return
     const list = await window.electronAPI.sprintDelete(active.id)
@@ -235,6 +287,58 @@ export default function SprintBoard({
     setActiveId(list[0]?.id ?? '')
     setSprintModal(null)
   }
+
+  // ─── Closing a sprint ─────────────────────────────────────────────────────
+  // Completing marks the sprint done and decides what happens to the items that
+  // didn't make it: leave them on the record, hand them to an existing sprint, or
+  // roll them into a fresh one that starts the day after this one ended.
+  const completeSprint = (carry: CarryChoice) => {
+    if (!active) return
+    const unfinished = active.items.filter((i) => i.status !== 'done')
+    const closed: Sprint = { ...active, status: 'completed' as SprintStatus, updatedAt: Date.now() }
+
+    if (carry.kind === 'keep' || unfinished.length === 0) {
+      persistAll([closed])
+      setCompleteOpen(false)
+      return
+    }
+
+    // Carried items start over in the receiving sprint: no completion stamp, and no
+    // "previous status" pointing back at a column in the sprint they just left.
+    const carried = unfinished.map((i) => ({ ...i, completedAt: null, prevStatus: null }))
+    closed.items = active.items.filter((i) => i.status === 'done')
+
+    if (carry.kind === 'existing') {
+      const target = sprints.find((s) => s.id === carry.sprintId)
+      if (!target) return
+      const next: Sprint = { ...target, items: [...target.items, ...carried], updatedAt: Date.now() }
+      persistAll([closed, next])
+      setCompleteOpen(false)
+      setActiveId(next.id)
+      return
+    }
+
+    const now = Date.now()
+    const start = addDays(active.endDate, 1)
+    const created: Sprint = {
+      id: uid(),
+      name: carry.name.trim() || nextSprintName(active.name, sprints.length),
+      goal: '',
+      startDate: start,
+      endDate: addDays(start, sprintLengthDays(active) - 1),
+      status: 'active',
+      projectPath: active.projectPath,
+      items: carried,
+      standups: [],
+      createdAt: now,
+      updatedAt: now
+    }
+    persistAll([closed, created])
+    setCompleteOpen(false)
+    setActiveId(created.id)
+  }
+
+  const reopenSprint = () => patchSprint({ status: 'active' })
 
   // ─── Item CRUD ────────────────────────────────────────────────────────────
   const addItem = (status: ItemStatus, title: string) => {
@@ -281,8 +385,8 @@ export default function SprintBoard({
   // Persist the last GitLab backfill so re-opening the importer is instant.
   const cacheBackfill = (cache: SprintBackfillCache) => mutate((s) => ({ ...s, backfillCache: cache }))
 
-  // Append imported issues (from the GitLab backfill) as fresh To-do items.
-  const addBacklogItems = (rows: { title: string; points?: number | null; notes?: string }[]) =>
+  // Append imported issues / change requests (from the forge backfill) as fresh To-do items.
+  const addBacklogItems = (rows: BackfillRow[], forge: Forge) =>
     mutate((s) => ({
       ...s,
       items: [
@@ -293,6 +397,10 @@ export default function SprintBoard({
           notes: r.notes?.trim() || null,
           status: 'todo' as ItemStatus,
           points: typeof r.points === 'number' && r.points > 0 ? r.points : null,
+          ref: r.ref?.trim() || null,
+          kind: r.kind ?? null,
+          forge,
+          url: r.url?.trim() || null,
           createdAt: Date.now(),
           completedAt: null
         }))
@@ -399,6 +507,8 @@ export default function SprintBoard({
   }, [active])
 
   const editingItem = active?.items.find((i) => i.id === editingItemId) ?? null
+  // A completed sprint is a closed record — the board stops taking edits until reopened.
+  const locked = active?.status === 'completed'
 
   return (
     <div className="view">
@@ -407,7 +517,10 @@ export default function SprintBoard({
           <PlannerModeToggle mode={mode} onMode={onMode} />
           {active && (
             <div>
-              <h1 className="sprint-title">{active.name}</h1>
+              <h1 className="sprint-title">
+                {active.name}
+                {locked && <span className="sprint-badge completed">Completed</span>}
+              </h1>
               <p className="view-sub">
                 {parseYmd(active.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                 {' – '}
@@ -435,7 +548,16 @@ export default function SprintBoard({
               triggerContent={<MoreIcon />}
               align="right"
               items={[
-                { label: 'Backfill from GitLab', icon: <ImportIcon />, onClick: () => setBackfillOpen(true) },
+                ...(locked
+                  ? [{ label: 'Reopen sprint', icon: <ReopenIcon />, onClick: reopenSprint }]
+                  : [
+                      {
+                        label: `Import from ${FORGE_NAMES[forgeOf(active)]}`,
+                        icon: <ImportIcon />,
+                        onClick: () => setBackfillOpen(true)
+                      },
+                      { label: 'Complete sprint', icon: <FlagIcon />, onClick: () => setCompleteOpen(true) }
+                    ]),
                 { label: 'Sprint settings', icon: <GearIcon />, onClick: () => setSprintModal('edit') }
               ]}
             />
@@ -490,6 +612,15 @@ export default function SprintBoard({
             </div>
           </div>
 
+          {locked && (
+            <div className="sprint-closed-banner">
+              <span>
+                This sprint is completed — the board is read-only. Reopen it to change anything.
+              </span>
+              <button className="assist-btn" onClick={reopenSprint}>Reopen sprint</button>
+            </div>
+          )}
+
           {active.goal?.trim() && (
             <div className="sprint-goal">
               <span className="planner-label">Sprint goal</span>
@@ -508,7 +639,7 @@ export default function SprintBoard({
 
           {/* Kanban board */}
           {section === 'board' && (
-          <div className="sprint-board">
+          <div className={`sprint-board ${locked ? 'locked' : ''}`}>
             {COLUMNS.map((col) => {
               const colItems = stats.byCol(col.status)
               const pts = colItems.reduce((n, i) => n + pointsOf(i), 0)
@@ -533,7 +664,7 @@ export default function SprintBoard({
                 >
                   <div className="sprint-col-head">
                     <label className="sprint-col-check-wrap">
-                      {col.status !== 'done' && (
+                      {col.status !== 'done' && !locked && (
                         <input
                           type="checkbox"
                           className="sprint-col-check"
@@ -555,6 +686,7 @@ export default function SprintBoard({
                       <ItemCard
                         key={i.id}
                         item={i}
+                        locked={locked}
                         onDragStart={() => setDrag(i.id)}
                         onDragEnd={() => {
                           setDrag(null)
@@ -565,7 +697,7 @@ export default function SprintBoard({
                         onDelete={() => deleteItem(i.id)}
                       />
                     ))}
-                    <AddItemInline onAdd={(t) => addItem(col.status, t)} />
+                    {!locked && <AddItemInline onAdd={(t) => addItem(col.status, t)} />}
                   </div>
                 </div>
               )
@@ -577,6 +709,7 @@ export default function SprintBoard({
 
           {section === 'standup' && (
           <StandupSection
+            locked={locked}
             date={standupDate}
             onDate={setStandupDate}
             standup={standupFor(standupDate)}
@@ -616,6 +749,7 @@ export default function SprintBoard({
       {editingItem && (
         <ItemModal
           item={editingItem}
+          locked={locked}
           onPatch={(patch) => updateItem(editingItem.id, patch)}
           onDelete={() => {
             deleteItem(editingItem.id)
@@ -625,12 +759,22 @@ export default function SprintBoard({
         />
       )}
 
+      {completeOpen && active && (
+        <CompleteSprintModal
+          sprint={active}
+          targets={sprints.filter((s) => s.id !== active.id && s.status !== 'completed')}
+          suggestedName={nextSprintName(active.name, sprints.length)}
+          onComplete={completeSprint}
+          onClose={() => setCompleteOpen(false)}
+        />
+      )}
+
       {backfillOpen && active && (
         <BacklogBackfillModal
           sprint={active}
           model={runModel}
           accountId={runAccountId}
-          onAdd={addBacklogItems}
+          onAdd={(rows) => addBacklogItems(rows, forgeOf(active))}
           onCache={cacheBackfill}
           onClose={() => setBackfillOpen(false)}
         />
@@ -679,12 +823,17 @@ function SprintSwitcher({
         </>
       }
       align="right"
-      items={sprints.map((s) => ({
-        label: s.name,
-        icon: <span className={`sprint-status-dot ${s.status}`} title={STATUS_LABELS[s.status]} />,
-        active: s.id === activeId,
-        onClick: () => onSelect(s.id)
-      }))}
+      items={[...sprints]
+        // Open sprints first, completed ones parked underneath — a closed sprint is
+        // history, not something you want at the top of the list every day.
+        .sort((a, b) => Number(a.status === 'completed') - Number(b.status === 'completed'))
+        .map((s) => ({
+          label: s.name,
+          group: s.status === 'completed' ? 'Completed' : 'Open',
+          icon: <span className={`sprint-status-dot ${s.status}`} title={STATUS_LABELS[s.status]} />,
+          active: s.id === activeId,
+          onClick: () => onSelect(s.id)
+        }))}
     />
   )
 }
@@ -692,6 +841,8 @@ function SprintSwitcher({
 // ─── Item card ──────────────────────────────────────────────────────────────
 function ItemCard(props: {
   item: SprintItem
+  /** The sprint is completed: show the card, take no edits. */
+  locked?: boolean
   onDragStart: () => void
   onDragEnd: () => void
   onOpen: () => void
@@ -699,6 +850,7 @@ function ItemCard(props: {
   onDelete: () => void
 }) {
   const i = props.item
+  const origin = originOf(i)
   const advanceTitle =
     i.status === 'done'
       ? 'Move back a step'
@@ -708,41 +860,52 @@ function ItemCard(props: {
   return (
     <div
       className={`sprint-item ${i.status === 'done' ? 'done' : ''}`}
-      draggable
+      draggable={!props.locked}
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = 'move'
         props.onDragStart()
       }}
       onDragEnd={props.onDragEnd}
       onClick={props.onOpen}
-      title="Click to edit · drag to move"
+      title={props.locked ? 'Click to view · sprint completed' : 'Click to edit · drag to move'}
     >
       <div className="sprint-item-main">
         <button
           className={`task-check ${i.status === 'done' ? 'on' : ''} ${i.status === 'in-progress' ? 'partial' : ''}`}
+          disabled={props.locked}
           onClick={(e) => {
             e.stopPropagation()
             props.onAdvance()
           }}
-          title={advanceTitle}
+          title={props.locked ? '' : advanceTitle}
         >
           {i.status === 'done' ? '✓' : ''}
         </button>
         <span className="sprint-item-title">{i.title}</span>
-        <button
-          className="task-del"
-          onClick={(e) => {
-            e.stopPropagation()
-            props.onDelete()
-          }}
-          title="Delete"
-        >
-          ×
-        </button>
+        {!props.locked && (
+          <button
+            className="task-del"
+            onClick={(e) => {
+              e.stopPropagation()
+              props.onDelete()
+            }}
+            title="Delete"
+          >
+            ×
+          </button>
+        )}
       </div>
-      {pointsOf(i) > 0 && (
+      {(pointsOf(i) > 0 || origin) && (
         <div className="sprint-item-meta">
-          <span className="sprint-points">{pointsOf(i)} pts</span>
+          {origin && (
+            <span
+              className={`sprint-ref ${origin.kind}`}
+              title={`${kindLabel(origin.forge, origin.kind)} on ${FORGE_NAMES[origin.forge]}`}
+            >
+              {origin.ref}
+            </span>
+          )}
+          {pointsOf(i) > 0 && <span className="sprint-points">{pointsOf(i)} pts</span>}
         </div>
       )}
     </div>
@@ -773,15 +936,156 @@ function AddItemInline({ onAdd }: { onAdd: (t: string) => void }) {
   )
 }
 
+// ─── Complete sprint modal ────────────────────────────────────────────────────
+// Closing a sprint is the moment you decide what happens to the work that did not
+// land, so the dialog leads with the numbers and then asks exactly that.
+function CompleteSprintModal(props: {
+  sprint: Sprint
+  /** Sprints the leftovers can be handed to (everything open but this one). */
+  targets: Sprint[]
+  suggestedName: string
+  onComplete: (carry: CarryChoice) => void
+  onClose: () => void
+}) {
+  const s = props.sprint
+  const unfinished = s.items.filter((i) => i.status !== 'done')
+  const total = s.items.reduce((n, i) => n + pointsOf(i), 0)
+  const donePts = s.items.filter((i) => i.status === 'done').reduce((n, i) => n + pointsOf(i), 0)
+  const leftPts = unfinished.reduce((n, i) => n + pointsOf(i), 0)
+
+  type Kind = 'keep' | 'existing' | 'new'
+  const [kind, setKind] = useState<Kind>(props.targets.length > 0 ? 'existing' : 'new')
+  const [targetId, setTargetId] = useState(props.targets[0]?.id ?? '')
+  const [newName, setNewName] = useState(props.suggestedName)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  const confirm = () => {
+    if (unfinished.length === 0 || kind === 'keep') return props.onComplete({ kind: 'keep' })
+    if (kind === 'existing') {
+      if (!targetId) return
+      return props.onComplete({ kind: 'existing', sprintId: targetId })
+    }
+    props.onComplete({ kind: 'new', name: newName })
+  }
+
+  const choices: { kind: Kind; label: string; hint: string; hidden?: boolean }[] = [
+    {
+      kind: 'existing',
+      label: 'Move to an existing sprint',
+      hint: 'Hand them to a sprint already on the board.',
+      hidden: props.targets.length === 0
+    },
+    {
+      kind: 'new',
+      label: 'Move to a new sprint',
+      hint: `Starts ${addDays(s.endDate, 1)}, same length as this one.`
+    },
+    { kind: 'keep', label: 'Leave them here', hint: 'They stay on the closed sprint as a record.' }
+  ]
+
+  return createPortal(
+    <div className="task-modal-overlay" onClick={props.onClose}>
+      <div className="task-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="task-modal-head">
+          <span className="task-modal-heading">Complete sprint</span>
+          <button className="chip-x lg" onClick={props.onClose}>×</button>
+        </div>
+        <div className="task-modal-body">
+          <div className="sprint-close-summary">
+            <div>
+              <strong>{donePts}</strong>
+              <span>/{total} pts done</span>
+            </div>
+            <div>
+              <strong>{s.items.length - unfinished.length}</strong>
+              <span>/{s.items.length} items done</span>
+            </div>
+            <div className={unfinished.length ? 'warn' : ''}>
+              <strong>{unfinished.length}</strong>
+              <span>unfinished{leftPts > 0 ? ` · ${leftPts} pts` : ''}</span>
+            </div>
+          </div>
+
+          {unfinished.length === 0 ? (
+            <p className="sprint-close-note">Everything landed — nothing to carry over.</p>
+          ) : (
+            <div className="task-modal-field">
+              <span className="task-modal-label">Unfinished items</span>
+              <div className="sprint-close-choices">
+                {choices
+                  .filter((c) => !c.hidden)
+                  .map((c) => (
+                    <label key={c.kind} className={`sprint-close-choice ${kind === c.kind ? 'on' : ''}`}>
+                      <input
+                        type="radio"
+                        name="carry"
+                        checked={kind === c.kind}
+                        onChange={() => setKind(c.kind)}
+                      />
+                      <span className="sprint-close-choice-body">
+                        <span className="sprint-close-choice-label">{c.label}</span>
+                        <span className="sprint-close-choice-hint">{c.hint}</span>
+                      </span>
+                    </label>
+                  ))}
+              </div>
+
+              {kind === 'existing' && props.targets.length > 0 && (
+                <div className="pill-row sprint-close-targets">
+                  {props.targets.map((t) => (
+                    <button
+                      key={t.id}
+                      className={`pill ${targetId === t.id ? 'on' : ''}`}
+                      onClick={() => setTargetId(t.id)}
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {kind === 'new' && (
+                <input
+                  className="text-input sprint-close-name"
+                  value={newName}
+                  placeholder="Next sprint name"
+                  onChange={(e) => setNewName(e.target.value)}
+                />
+              )}
+            </div>
+          )}
+        </div>
+        <div className="task-modal-foot">
+          <button className="btn-text" onClick={props.onClose}>Cancel</button>
+          <button className="assist-btn primary" onClick={confirm}>
+            {unfinished.length === 0 || kind === 'keep'
+              ? 'Complete sprint'
+              : `Complete & move ${unfinished.length} item${unfinished.length === 1 ? '' : 's'}`}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 // ─── Item editor modal ────────────────────────────────────────────────────────
 const POINT_CHOICES = [1, 2, 3, 5, 8, 13]
 function ItemModal(props: {
   item: SprintItem
+  /** The sprint is completed: the item opens for reading only. */
+  locked?: boolean
   onPatch: (patch: Partial<SprintItem>) => void
   onDelete: () => void
   onClose: () => void
 }) {
   const i = props.item
+  const locked = !!props.locked
+  const origin = originOf(i)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose()
     window.addEventListener('keydown', onKey)
@@ -791,7 +1095,7 @@ function ItemModal(props: {
     <div className="task-modal-overlay" onClick={props.onClose}>
       <div className="task-modal" onClick={(e) => e.stopPropagation()}>
         <div className="task-modal-head">
-          <span className="task-modal-heading">Edit item</span>
+          <span className="task-modal-heading">{locked ? 'Item' : 'Edit item'}</span>
           <button className="chip-x lg" onClick={props.onClose}>×</button>
         </div>
         <div className="task-modal-body">
@@ -800,9 +1104,26 @@ function ItemModal(props: {
             rows={2}
             value={i.title}
             placeholder="Item title"
-            autoFocus
+            autoFocus={!locked}
+            readOnly={locked}
             onChange={(e) => props.onPatch({ title: e.target.value })}
           />
+
+          {origin && (
+            <div className="task-modal-field">
+              <span className="task-modal-label">{kindLabel(origin.forge, origin.kind)}</span>
+              <div className="sprint-origin-row">
+                <span className={`sprint-ref ${origin.kind}`}>{origin.ref}</span>
+                {i.url ? (
+                  <a className="sprint-origin-link" href={i.url} target="_blank" rel="noreferrer">
+                    Open in {FORGE_NAMES[origin.forge]}
+                  </a>
+                ) : (
+                  <span className="sprint-origin-hint">No link — re-import to pick one up</span>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="task-modal-field">
             <span className="task-modal-label">Status</span>
@@ -811,6 +1132,7 @@ function ItemModal(props: {
                 <button
                   key={c.status}
                   className={`pill ${i.status === c.status ? 'on' : ''}`}
+                  disabled={locked}
                   onClick={() => props.onPatch({ status: c.status })}
                 >
                   {c.label}
@@ -822,13 +1144,18 @@ function ItemModal(props: {
           <div className="task-modal-field">
             <span className="task-modal-label">Story points</span>
             <div className="pill-row">
-              <button className={`pill ${!i.points ? 'on' : ''}`} onClick={() => props.onPatch({ points: null })}>
+              <button
+                className={`pill ${!i.points ? 'on' : ''}`}
+                disabled={locked}
+                onClick={() => props.onPatch({ points: null })}
+              >
                 —
               </button>
               {POINT_CHOICES.map((p) => (
                 <button
                   key={p}
                   className={`pill ${i.points === p ? 'on' : ''}`}
+                  disabled={locked}
                   onClick={() => props.onPatch({ points: p })}
                 >
                   {p}
@@ -844,13 +1171,20 @@ function ItemModal(props: {
               rows={3}
               value={i.notes ?? ''}
               placeholder="Optional detail, acceptance criteria…"
+              readOnly={locked}
               onChange={(e) => props.onPatch({ notes: e.target.value || null })}
             />
           </div>
         </div>
         <div className="task-modal-foot">
-          <button className="btn-text danger" onClick={props.onDelete}>Delete item</button>
-          <button className="assist-btn primary" onClick={props.onClose}>Done</button>
+          {locked ? (
+            <span className="task-modal-note">Sprint completed — read only</span>
+          ) : (
+            <button className="btn-text danger" onClick={props.onDelete}>Delete item</button>
+          )}
+          <button className="assist-btn primary" onClick={props.onClose}>
+            {locked ? 'Close' : 'Done'}
+          </button>
         </div>
       </div>
     </div>,
@@ -1037,6 +1371,8 @@ function fmtDate(dateStr: string): string {
 }
 
 function StandupSection(props: {
+  /** The sprint is completed: the standups are history, not a form. */
+  locked?: boolean
   date: string
   onDate: (d: string) => void
   standup: DailyStandup
@@ -1067,6 +1403,7 @@ function StandupSection(props: {
       <div className="standup-head">
         <span className="planner-label">Daily standup</span>
         <div className="standup-head-right">
+          {!props.locked && (
           <div className="assist-runwith standup-runwith">
             <div className="assist-runwith-field">
               <span className="assist-runwith-label">Account</span>
@@ -1084,6 +1421,8 @@ function StandupSection(props: {
               <ModelPicker models={props.runModels} value={props.runModel} onChange={props.onPickRunModel} disabled={props.genBusy} />
             </div>
           </div>
+          )}
+          {!props.locked && (
           <div className="sb-split">
             <button
               className="assist-btn primary sb-split-main"
@@ -1114,6 +1453,7 @@ function StandupSection(props: {
               />
             )}
           </div>
+          )}
           <div className="standup-datenav">
             {!isToday && (
               <button className="btn-ghost small" onClick={() => props.onDate(today)}>
@@ -1143,18 +1483,21 @@ function StandupSection(props: {
           label="Yesterday"
           hint="What did you get done?"
           value={s.yesterday}
+          readOnly={props.locked}
           onChange={(v) => props.onPatch({ yesterday: v })}
         />
         <StandupField
           label="Today"
           hint="What are you working on?"
           value={s.today}
+          readOnly={props.locked}
           onChange={(v) => props.onPatch({ today: v })}
         />
         <StandupField
           label="Blockers"
           hint="Anything in the way?"
           value={s.blockers}
+          readOnly={props.locked}
           onChange={(v) => props.onPatch({ blockers: v })}
           tone="warn"
         />
@@ -1169,6 +1512,7 @@ function StandupSection(props: {
                 key={h.date}
                 standup={h}
                 active={h.date === props.date}
+                locked={props.locked}
                 onEdit={() => props.onEditHistory(h.date)}
                 onDelete={() => props.onDeleteHistory(h.date)}
               />
@@ -1184,6 +1528,7 @@ function StandupField(props: {
   label: string
   hint: string
   value: string
+  readOnly?: boolean
   onChange: (v: string) => void
   tone?: 'warn'
 }) {
@@ -1195,6 +1540,7 @@ function StandupField(props: {
         rows={4}
         placeholder={props.hint}
         value={props.value}
+        readOnly={props.readOnly}
         onChange={(e) => props.onChange(e.target.value)}
       />
     </div>
@@ -1204,6 +1550,8 @@ function StandupField(props: {
 function StandupHistoryCard(props: {
   standup: DailyStandup
   active: boolean
+  /** The sprint is completed: keep the entry, drop the delete. */
+  locked?: boolean
   onEdit: () => void
   onDelete: () => void
 }) {
@@ -1226,16 +1574,18 @@ function StandupHistoryCard(props: {
         >
           Edit
         </button>
-        <button
-          className="task-del"
-          onClick={(e) => {
-            e.stopPropagation()
-            props.onDelete()
-          }}
-          title="Delete standup"
-        >
-          ×
-        </button>
+        {!props.locked && (
+          <button
+            className="task-del"
+            onClick={(e) => {
+              e.stopPropagation()
+              props.onDelete()
+            }}
+            title="Delete standup"
+          >
+            ×
+          </button>
+        )}
       </div>
       {open && (
         <div className="standup-hcard-body">
@@ -1372,6 +1722,20 @@ function relBackfillTime(ms: number): string {
   return `${Math.round(diff / 86_400_000)}d ago`
 }
 
+/** The picker's labels, in the forge's own vocabulary. */
+function kindLabels(forge: Forge): Record<BackfillKind, string> {
+  return {
+    issues: 'Issues',
+    'merge-requests': forge === 'github' ? 'Pull requests' : 'Merge requests',
+    both: 'Both'
+  }
+}
+/** Used mid-sentence ("Fetch pull requests", "No open issues came back"). */
+function kindNoun(forge: Forge, kind: BackfillKind): string {
+  const changes = forge === 'github' ? 'pull requests' : 'merge requests'
+  return kind === 'issues' ? 'issues' : kind === 'merge-requests' ? changes : `issues & ${changes}`
+}
+
 const SOURCE_LABELS: Record<string, string> = {
   'git-remote': 'from git remote',
   'mcp-default': 'MCP default project',
@@ -1384,7 +1748,7 @@ function BacklogBackfillModal(props: {
   /** The "Run with" selection from the standup header — the same account+model runs both. */
   model: string
   accountId: string
-  onAdd: (rows: { title: string; points?: number | null; notes?: string }[]) => void
+  onAdd: (rows: BackfillRow[]) => void
   onCache: (cache: SprintBackfillCache) => void
   onClose: () => void
 }) {
@@ -1393,14 +1757,38 @@ function BacklogBackfillModal(props: {
   const [resolving, setResolving] = useState(!cache)
   const [resolveError, setResolveError] = useState<string | null>(null)
   const [project, setProject] = useState(cache?.project ?? '')
-  const [info, setInfo] = useState<{ source?: string; url?: string; note?: string; openIssueCount?: number | null } | null>(
-    cache ? { source: cache.source, url: cache.projectUrl, note: cache.note, openIssueCount: cache.openIssueCount ?? null } : null
+  const [info, setInfo] = useState<{
+    source?: string
+    url?: string
+    note?: string
+    openIssueCount?: number | null
+    openMrCount?: number | null
+  } | null>(
+    cache
+      ? {
+          source: cache.source,
+          url: cache.projectUrl,
+          note: cache.note,
+          openIssueCount: cache.openIssueCount ?? null,
+          openMrCount: cache.openMrCount ?? null
+        }
+      : null
   )
 
-  // Phase 2 — fetch that project's open issues.
+  // Phase 2 — fetch that project's open issues and/or pending merge requests.
+  // The cache belongs to one kind of fetch, so switching kind empties the list
+  // rather than showing issues under a "Merge requests" heading.
+  const [kind, setKind] = useState<BackfillKind>(cache?.kind ?? 'issues')
+  // Which forge this sprint talks to. The probe confirms it from the git remote; until
+  // then the last cached answer stands, and GitLab is the fallback.
+  const [forge, setForge] = useState<Forge>(cache?.forge ?? 'gitlab')
+  const forgeName = FORGE_NAMES[forge]
+  const KIND_LABELS = kindLabels(forge)
   const [fetching, setFetching] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
-  const [items, setItems] = useState<{ title: string; points?: number | null; notes?: string }[]>(cache?.items ?? [])
+  // A run that succeeded but returned something other than what was asked for.
+  const [fetchWarning, setFetchWarning] = useState<string | null>(null)
+  const [items, setItems] = useState<BackfillRow[]>(cache?.items ?? [])
   const [hasFetched, setHasFetched] = useState(!!cache)
   const [cachedAt, setCachedAt] = useState<number | null>(cache?.fetchedAt ?? null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -1427,15 +1815,17 @@ function BacklogBackfillModal(props: {
     })
     setResolving(false)
     if (!res.ok || !res.data) {
-      setResolveError(res.error || 'Could not load the GitLab MCP.')
+      setResolveError(res.error || 'Could not load the forge MCP.')
       return
     }
+    if (res.data.forge) setForge(res.data.forge)
     setProject(res.data.project || '')
     setInfo({
       source: res.data.source,
       url: res.data.url,
       note: res.data.note,
-      openIssueCount: res.data.openIssueCount ?? null
+      openIssueCount: res.data.openIssueCount ?? null,
+      openMrCount: res.data.openMrCount ?? null
     })
   }
 
@@ -1449,22 +1839,27 @@ function BacklogBackfillModal(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const fetchIssues = async () => {
+  const fetchIssues = async (which: BackfillKind = kind) => {
     setFetching(true)
     setFetchError(null)
+    setFetchWarning(null)
     setHasFetched(false)
     const res = await window.electronAPI.sprintBackfill({
       projectPath: props.sprint.projectPath,
       instructions: project.trim() || undefined,
       model: props.model,
-      accountId: props.accountId
+      accountId: props.accountId,
+      kind: which,
+      forge
     })
     setFetching(false)
     setHasFetched(true)
     if (!res.ok || !res.data) {
-      setFetchError(res.error || 'Could not fetch issues.')
+      setFetchError(res.error || `Could not fetch ${kindNoun(forge, which)}.`)
       return
     }
+    if (res.data.forge) setForge(res.data.forge)
+    setFetchWarning(res.warning ?? null)
     const fetched = (res.data.items ?? []).filter((i) => i && i.title && i.title.trim())
     setItems(fetched)
     preselect(fetched)
@@ -1478,8 +1873,22 @@ function BacklogBackfillModal(props: {
       source: info?.source,
       note: info?.note,
       openIssueCount: info?.openIssueCount ?? null,
+      openMrCount: info?.openMrCount ?? null,
+      kind: which,
+      forge,
       items: fetched
     })
+  }
+
+  const changeKind = (next: BackfillKind) => {
+    if (next === kind) return
+    setKind(next)
+    setItems([])
+    setSelected(new Set())
+    setHasFetched(false)
+    setFetchError(null)
+    setFetchWarning(null)
+    setCachedAt(null)
   }
 
   const toggle = (i: number) =>
@@ -1500,7 +1909,7 @@ function BacklogBackfillModal(props: {
       <div className="task-modal backfill-modal" onClick={(e) => e.stopPropagation()}>
         <div className="task-modal-head">
           <span className="task-modal-heading">
-            <ImportIcon /> Backfill backlog from GitLab
+            <ImportIcon /> Import from {forgeName}
           </span>
           <button className="chip-x lg" onClick={props.onClose}>×</button>
         </div>
@@ -1509,12 +1918,24 @@ function BacklogBackfillModal(props: {
           {resolving ? (
             <div className="assist-loading">
               <div className="view-spinner" />
-              <span>Loading the GitLab MCP and finding the attributed project…</span>
+              <span>Loading the forge MCP and finding the attributed repository…</span>
             </div>
           ) : (
             <div className="backfill-attribution">
               <span className="planner-label">Attributed project</span>
               {info?.note && <p className="backfill-attr-note">{info.note}</p>}
+              <div className="seg-control backfill-kind">
+                {(['issues', 'merge-requests', 'both'] as BackfillKind[]).map((k) => (
+                  <button
+                    key={k}
+                    className={kind === k ? 'on' : ''}
+                    disabled={busy}
+                    onClick={() => changeKind(k)}
+                  >
+                    {KIND_LABELS[k]}
+                  </button>
+                ))}
+              </div>
               <div className="backfill-project-row">
                 <input
                   className="text-input"
@@ -1523,14 +1944,23 @@ function BacklogBackfillModal(props: {
                   onChange={(e) => setProject(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !busy && fetchIssues()}
                 />
-                <button className="assist-btn primary" onClick={fetchIssues} disabled={busy}>
-                  {fetching ? 'Fetching…' : hasFetched && items.length > 0 ? 'Refresh' : 'Fetch issues'}
+                <button className="assist-btn primary" onClick={() => fetchIssues()} disabled={busy}>
+                  {fetching
+                    ? 'Fetching…'
+                    : hasFetched && items.length > 0
+                      ? 'Refresh'
+                      : `Fetch ${kindNoun(forge, kind)}`}
                 </button>
               </div>
               <div className="backfill-attr-meta">
                 {info?.source && <span className="backfill-source">{SOURCE_LABELS[info.source] ?? info.source}</span>}
                 {typeof info?.openIssueCount === 'number' && (
-                  <span className="backfill-attr-count">{info.openIssueCount} open</span>
+                  <span className="backfill-attr-count">{info.openIssueCount} open issues</span>
+                )}
+                {typeof info?.openMrCount === 'number' && (
+                  <span className="backfill-attr-count">
+                    {info.openMrCount} open {forge === 'github' ? 'PRs' : 'MRs'}
+                  </span>
                 )}
                 {info?.url && <span className="backfill-attr-url" title={info.url}>{info.url}</span>}
                 {cachedAt && <span className="backfill-cached">cached {relBackfillTime(cachedAt)}</span>}
@@ -1545,12 +1975,17 @@ function BacklogBackfillModal(props: {
           {fetching && (
             <div className="assist-loading">
               <div className="view-spinner" />
-              <span>Reading open issues from GitLab…</span>
+              <span>Reading open {kindNoun(forge, kind)} from {forgeName}…</span>
             </div>
           )}
           {fetchError && !fetching && <div className="assist-error">{fetchError}</div>}
+          {fetchWarning && !fetching && !fetchError && (
+            <div className="assist-error warn">{fetchWarning}</div>
+          )}
           {hasFetched && !fetching && !fetchError && items.length === 0 && (
-            <p className="burndown-empty">No open issues came back. Try a different project or filter above.</p>
+            <p className="burndown-empty">
+              No open {kindNoun(forge, kind)} came back. Try a different repository or filter above.
+            </p>
           )}
           {!fetching && items.length > 0 && (
             <>
@@ -1574,7 +2009,16 @@ function BacklogBackfillModal(props: {
                     <label key={i} className={`backfill-row ${dup ? 'dup' : ''}`}>
                       <input type="checkbox" checked={selected.has(i)} onChange={() => toggle(i)} />
                       <span className="backfill-row-body">
-                        <span className="backfill-row-title">{it.title}</span>
+                        <span className="backfill-row-title">
+                          {it.kind === 'merge-request' ? (
+                            <span className="backfill-kind-tag mr">{forge === 'github' ? 'PR' : 'MR'}</span>
+                          ) : (
+                            kind === 'both' && it.kind === 'issue' && (
+                              <span className="backfill-kind-tag issue">Issue</span>
+                            )
+                          )}
+                          {it.title}
+                        </span>
                         {it.notes?.trim() && <span className="backfill-row-notes">{it.notes}</span>}
                       </span>
                       {typeof it.points === 'number' && it.points > 0 && (
@@ -1591,7 +2035,7 @@ function BacklogBackfillModal(props: {
         <div className="task-modal-foot">
           <button className="btn-text" onClick={props.onClose}>Cancel</button>
           <button className="assist-btn primary" onClick={addSelected} disabled={busy || selected.size === 0}>
-            Add {selected.size || ''} to backlog
+            Add {selected.size || ''} to sprint
           </button>
         </div>
       </div>
@@ -1623,6 +2067,23 @@ function GearIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  )
+}
+
+function FlagIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 22V4a6 6 0 0 1 8 0 6 6 0 0 0 8 0v10a6 6 0 0 1-8 0 6 6 0 0 0-8 0" />
+    </svg>
+  )
+}
+
+function ReopenIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+      <polyline points="3 3 3 8 8 8" />
     </svg>
   )
 }

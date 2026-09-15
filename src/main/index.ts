@@ -71,6 +71,13 @@ import { listAgents, saveAgent, deleteAgent, AgentDef } from './agents'
 import { listWeeks, getWeek, saveWeek, deleteWeek, WeekPlan } from './planner'
 import { listSprints, getSprint, saveSprint, deleteSprint, Sprint } from './sprints'
 import {
+  BackfillKind,
+  buildBacklogBackfillPrompt,
+  buildProjectProbePrompt,
+  filterBackfillRows
+} from './sprint-backfill-pure'
+import { Forge, forgeFromRemote, pickForgeServer } from './forge-pure'
+import {
   createCheckpoint,
   listCheckpoints,
   restoreCheckpoint,
@@ -88,7 +95,8 @@ import {
   commit,
   getLog,
   createWorktree,
-  getRepoName
+  getRepoName,
+  getRemoteUrl
 } from './git'
 import { listCommands } from './commands'
 import {
@@ -2034,97 +2042,69 @@ ipcMain.handle(
   }
 )
 
-// ─── Backlog backfill (GitLab MCP → sprint items) ───────────────────────────────
-
-function buildBacklogBackfillPrompt(instructions?: string): string {
-  const extra = instructions?.trim()
-    ? `\n\nAdditional filter / instructions from the user: ${instructions.trim()}`
-    : ''
-  return `You have access to this project's configured MCP servers, including a GitLab server. Using ONLY the GitLab MCP tools (and read-only file tools), fetch the currently OPEN issues for this project's GitLab repository so they can seed a sprint backlog. This is strictly READ-ONLY — do NOT create, edit, close, label, or comment on anything.${extra}
-
-Work out the correct GitLab project/repository from: the user's instructions above if they name a project or group, otherwise the git remote in the current directory, otherwise list the projects available via the MCP and pick the best match. Respond with ONLY a single JSON object — no markdown fences, no prose outside the JSON:
-{
-  "items": [
-    { "title": "<issue title>", "points": <small integer story-point estimate, or null>, "notes": "<issue reference like #123 plus a one-line summary, or an empty string>" }
-  ]
-}
-If you cannot reach GitLab or there are no open issues, return { "items": [] }.`
-}
-
-function buildProjectProbePrompt(instructions?: string): string {
-  const extra = instructions?.trim()
-    ? `\n\nThe user suggests this project/group: ${instructions.trim()}`
-    : ''
-  return `You have access to this project's configured MCP servers, including a GitLab server. Load it and determine which single GitLab project this backlog should be attributed to. Decide it from: the user's suggestion below if given, otherwise the git remote of the repository in the current directory, otherwise the GitLab server's own configured/default project. This is strictly READ-ONLY — only inspect, do not modify anything.${extra}
-
-Respond with ONLY a single JSON object — no markdown fences, no prose outside the JSON:
-{
-  "project": "<full path like group/subgroup/name, or best human identifier>",
-  "projectId": <numeric GitLab project id, or null>,
-  "url": "<project web URL, or empty string>",
-  "openIssueCount": <number of open issues if known, or null>,
-  "source": "git-remote" | "mcp-default" | "instructions" | "guess",
-  "note": "<one short sentence explaining how you determined it>"
-}
-If you cannot determine a project, return { "project": "", "source": "guess", "note": "<why>" }.`
-}
-
-// Heuristically identify the GitLab MCP among all configured servers (local + WSL).
-function looksLikeGitlab(s: { name: string; url?: string; config?: Record<string, unknown> }): boolean {
-  if (/git.?lab|wm-git/i.test(s.name)) return true
-  if (s.url && /gitlab/i.test(s.url)) return true
-  const env = (s.config as { env?: Record<string, unknown> } | undefined)?.env
-  if (env && typeof env === 'object') {
-    for (const [k, v] of Object.entries(env)) {
-      if (/gitlab/i.test(k) || /gitlab/i.test(String(v))) return true
-    }
-  }
-  return false
-}
+// ─── Sprint backfill (a forge's MCP → sprint items) ─────────────────────────────
 
 ipcMain.handle(
   'sprint:backfill',
   async (
     _,
-    payload: { projectPath?: string; instructions?: string; model?: string; accountId?: string; probe?: boolean }
+    payload: {
+      projectPath?: string
+      instructions?: string
+      model?: string
+      accountId?: string
+      probe?: boolean
+      kind?: BackfillKind
+      /** Overrides the forge derived from the git remote. */
+      forge?: Forge
+    }
   ) => {
     const model = payload.model || getConfig().defaultModel
-    const promptText = payload.probe
-      ? buildProjectProbePrompt(payload.instructions)
-      : buildBacklogBackfillPrompt(payload.instructions)
 
-    // Find the GitLab MCP wherever it lives — local ~/.claude.json OR a WSL distro's.
+    // Find the forge MCP wherever it lives — local ~/.claude.json OR a WSL distro's.
     let servers: { name: string; source: string; url?: string; config?: Record<string, unknown> }[] = []
     try {
       servers = await listMcpServers()
     } catch {
       servers = []
     }
-    const gitlab = servers.find(looksLikeGitlab)
-    if (!gitlab) {
+    // Which forge this project actually uses decides which MCP to run against, and
+    // every noun in the prompt. The caller can say; otherwise the git remote does.
+    const fromRemote = payload.projectPath ? forgeFromRemote(await getRemoteUrl(payload.projectPath)) : null
+    const picked = pickForgeServer(servers, payload.forge ?? fromRemote)
+    if (!picked) {
       return {
         ok: false as const,
-        error: 'No GitLab MCP server was found in Claude Code (checked local and WSL). Configure the GitLab MCP, then try again.',
+        error:
+          'No GitLab or GitHub MCP server was found (checked local and WSL). Configure one in the CLI, then try again.',
         costUsd: 0
       }
     }
+    const { server: forgeServer, forge } = picked
+
+    const promptText = payload.probe
+      ? buildProjectProbePrompt(payload.instructions, forge)
+      : buildBacklogBackfillPrompt(payload.instructions, payload.kind ?? 'issues', forge)
 
     // ── WSL-hosted MCP: run that distro's own `claude -p` so its stdio server loads.
     // `source` is the distro name for WSL servers, 'local' otherwise.
-    if (gitlab.source && gitlab.source !== 'local') {
+    if (forgeServer.source && forgeServer.source !== 'local') {
       const cwd = uncToWslPath(payload.projectPath) ?? undefined
-      const res = await runWslOneShot(gitlab.source, promptText, {
+      const res = await runWslOneShot(forgeServer.source, promptText, {
         model,
         // MCP server + read-only file tools (to read a repo's .git/config); no Bash/Write.
-        allowedTools: [`mcp__${gitlab.name}`, 'Read', 'Grep', 'Glob'],
+        allowedTools: [`mcp__${forgeServer.name}`, 'Read', 'Grep', 'Glob'],
         cwd,
         timeoutMs: 180000
       })
       if (!res.ok) return { ok: false as const, error: res.error || 'The WSL backfill run failed.', costUsd: 0 }
       try {
-        return { ok: true as const, data: extractJson(res.text), costUsd: 0 }
+        const parsed = extractJson(res.text)
+        if (payload.probe) return { ok: true as const, data: { ...(parsed as object), forge }, costUsd: 0 }
+        const { items, warning } = filterBackfillRows(parsed, payload.kind ?? 'issues', forge)
+        return { ok: true as const, data: { ...(parsed as object), items, forge }, warning, costUsd: 0 }
       } catch {
-        return { ok: false as const, error: 'Could not parse Claude’s response as JSON.', raw: res.text, costUsd: 0 }
+        return { ok: false as const, error: 'Could not parse the model’s response as JSON.', raw: res.text, costUsd: 0 }
       }
     }
 
@@ -2160,12 +2140,14 @@ ipcMain.handle(
         mcpServers: mcpServers as Record<string, unknown>
       })
       const { text, costUsd, isError, errorText } = await collectText(stream)
-      if (isError) return { ok: false as const, error: errorText || 'Claude returned an error.', costUsd }
+      if (isError) return { ok: false as const, error: errorText || 'The model returned an error.', costUsd }
       try {
         const data = extractJson(text)
-        return { ok: true as const, data, costUsd }
+        if (payload.probe) return { ok: true as const, data: { ...(data as object), forge }, costUsd }
+        const { items, warning } = filterBackfillRows(data, payload.kind ?? 'issues', forge)
+        return { ok: true as const, data: { ...(data as object), items, forge }, warning, costUsd }
       } catch {
-        return { ok: false as const, error: 'Could not parse Claude’s response as JSON.', raw: text, costUsd }
+        return { ok: false as const, error: 'Could not parse the model’s response as JSON.', raw: text, costUsd }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)

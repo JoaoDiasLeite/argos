@@ -2,6 +2,9 @@ import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { readJsonFile } from './json-file'
+// What the cached backfill went looking for — one definition, shared with the importer.
+import type { BackfillKind } from './sprint-backfill-pure'
+import type { Forge } from './forge-pure'
 
 // A sprint is a multi-week Scrum artifact, stored as one JSON file per sprint keyed
 // by its id in userData/sprints (mirroring the agents.ts / planner.ts pattern). Unlike
@@ -23,9 +26,20 @@ export interface SprintItem {
   completedAt?: number | null
   /** The status this item held before its current one — lets un-checking 'done' restore it. */
   prevStatus?: ItemStatus | null
+  /** Imported reference: `#481`, or `!49` for a GitLab merge request. */
+  ref?: string | null
+  /**
+   * Issue or change request. Authoritative: on GitHub the reference cannot be read
+   * back to a kind, since issues and pull requests share one numbering sequence.
+   */
+  kind?: 'issue' | 'merge-request' | null
+  /** Which forge it came from. Absent means GitLab — nothing else wrote these. */
+  forge?: Forge | null
+  /** The issue/MR/PR web URL, for the link on the item. */
+  url?: string | null
 }
 
-/** Cached GitLab backfill so re-opening the importer doesn't re-hit the MCP each time. */
+/** Cached forge backfill so re-opening the importer doesn't re-hit the MCP each time. */
 export interface SprintBackfillCache {
   fetchedAt: number
   project?: string
@@ -33,7 +47,19 @@ export interface SprintBackfillCache {
   source?: string
   note?: string
   openIssueCount?: number | null
-  items: { title: string; points?: number | null; notes?: string }[]
+  openMrCount?: number | null
+  /** Which fetch produced `items` — switching kind in the importer invalidates them. */
+  kind?: BackfillKind
+  /** The forge the last fetch ran against. */
+  forge?: Forge
+  items: {
+    title: string
+    points?: number | null
+    notes?: string
+    kind?: 'issue' | 'merge-request'
+    ref?: string
+    url?: string
+  }[]
 }
 
 export interface DailyStandup {
@@ -59,7 +85,7 @@ export interface Sprint {
   standups: DailyStandup[]
   /** Project folder standups/metrics default to (for git-log digest). */
   projectPath?: string
-  /** Last GitLab backfill result, cached so the importer opens instantly. */
+  /** Last forge backfill result, cached so the importer opens instantly. */
   backfillCache?: SprintBackfillCache
   createdAt: number
   updatedAt: number

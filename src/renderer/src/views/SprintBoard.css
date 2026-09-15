@@ -752,3 +752,192 @@
   color: var(--text-0);
   white-space: pre-wrap;
 }
+
+/* ─── Completed sprints ─────────────────────────────────────────────────────── */
+.sprint-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sprint-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.sprint-badge.completed {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.sprint-closed-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 11px 14px;
+  border-radius: 11px;
+  background: var(--accent-dim);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--text-1);
+  font-size: 13px;
+}
+
+/* Read-only board: the cards stay legible, they just stop inviting interaction. */
+.sprint-board.locked .sprint-item {
+  cursor: default;
+}
+/* `button.task-check` rather than a bare `.task-check`: the class belongs to the week
+   planner's stylesheet, and this is a scoped override of it (see css-scope.test.ts). */
+.sprint-board.locked button.task-check {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* ─── Complete sprint dialog ───────────────────────────────────────────────── */
+.sprint-close-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.sprint-close-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-light);
+}
+.sprint-close-summary strong {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text-0);
+}
+.sprint-close-summary span {
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.sprint-close-summary > div.warn strong { color: var(--warn); }
+.sprint-close-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.sprint-close-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sprint-close-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--border-light);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.sprint-close-choice:hover { background: var(--bg-hover); }
+.sprint-close-choice.on {
+  background: var(--accent-dim);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.sprint-close-choice input { margin-top: 2px; accent-color: var(--accent); }
+.sprint-close-choice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sprint-close-choice-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+.sprint-close-choice-hint {
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.pill-row.sprint-close-targets,
+.sprint-close-name {
+  margin-top: 8px;
+}
+.task-modal-note {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* ─── GitLab importer: issues vs pending merge requests ─────────────────────── */
+.seg-control.backfill-kind {
+  align-self: flex-start;
+  margin-bottom: 8px;
+}
+.seg-control.backfill-kind button {
+  padding: 5px 13px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.backfill-kind-tag {
+  display: inline-block;
+  margin-right: 7px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  vertical-align: 1px;
+}
+.backfill-kind-tag.mr {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+/* A fetch that worked but returned the wrong thing — a caution, not a failure.
+   Scoped to the importer: `.assist-error` itself belongs to PlannerView.css. */
+.backfill-modal .assist-error.warn {
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+  color: var(--warn);
+}
+.backfill-kind-tag.issue {
+  background: var(--bg-3);
+  color: var(--text-2);
+}
+
+/* ─── Where an imported item came from ──────────────────────────────────────── */
+.sprint-ref {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--bg-3);
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.sprint-ref.merge-request {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+.sprint-origin-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sprint-origin-link {
+  font-size: 12.5px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.sprint-origin-link:hover { text-decoration: underline; }
+.sprint-origin-hint {
+  font-size: 11.5px;
+  color: var(--text-2);
+}

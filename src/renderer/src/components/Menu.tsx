@@ -9,6 +9,8 @@ export interface MenuItem {
   disabled?: boolean
   /** Renders the item highlighted (e.g. the current selection in a picker). */
   active?: boolean
+  /** Optional section label — rendered once above the first item of each run. */
+  group?: string
 }
 
 interface MenuProps {
@@ -45,18 +47,22 @@ export default function Menu({ triggerClass, triggerContent, triggerTitle, items
       {open && (
         <div className={`ui-menu-pop ${align}`}>
           {items.map((it, i) => (
-            <button
-              key={i}
-              className={`ui-menu-item ${it.danger ? 'danger' : ''} ${it.active ? 'active' : ''}`}
-              disabled={it.disabled}
-              onClick={() => {
-                setOpen(false)
-                it.onClick()
-              }}
-            >
-              {it.icon}
-              <span>{it.label}</span>
-            </button>
+            <div key={i} className="ui-menu-row">
+              {it.group && it.group !== items[i - 1]?.group && (
+                <span className="ui-menu-group">{it.group}</span>
+              )}
+              <button
+                className={`ui-menu-item ${it.danger ? 'danger' : ''} ${it.active ? 'active' : ''}`}
+                disabled={it.disabled}
+                onClick={() => {
+                  setOpen(false)
+                  it.onClick()
+                }}
+              >
+                {it.icon}
+                <span>{it.label}</span>
+              </button>
+            </div>
           ))}
         </div>
       )}

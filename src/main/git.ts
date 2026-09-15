@@ -191,6 +191,21 @@ export function clearRepoNameCache(): void {
 }
 
 /**
+ * The origin remote's URL, verbatim — the basename in `getRepoName` throws away the
+ * host, and the host is what says which forge a project lives on. Empty when the
+ * folder is not a repo or has no origin; never throws.
+ */
+export async function getRemoteUrl(cwd: string): Promise<string> {
+  if (!cwd || !fs.existsSync(cwd)) return ''
+  try {
+    const res = await git(cwd, ['config', '--get', 'remote.origin.url'])
+    return res.code === 0 ? res.stdout.trim() : ''
+  } catch {
+    return ''
+  }
+}
+
+/**
  * Repo identity for display purposes: the origin remote's basename (if a remote is
  * configured) and the basename of the working tree's toplevel. Cached per `cwd` since
  * this is asked for on every project every time a view opens, and a repo's name is
