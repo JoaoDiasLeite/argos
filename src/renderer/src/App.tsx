@@ -1010,24 +1010,29 @@ export default function App() {
     setActiveId(s.id)
     setView('chat')
     // Bump the nonce so the chat pane greets the new draft (composer highlight + focus)
-    // the same way it does when goToNewChat lands you here.
+    // the same way it does for every other New chat entry point.
     setNewChatNonce((n) => n + 1)
   }
   createSessionRef.current = createSession
 
-  // Coming back to the chat view from elsewhere should land on a new chat rather than dropping
-  // you back into whatever happened to be open last. An existing empty draft is reused so
-  // bouncing between views doesn't pile up blank chats in the sidebar.
-  const goToNewChat = () => {
-    // createSession now does the draft reuse itself, for every entry point.
-    createSession()
-  }
-
   // Navigation from the nav rail / command palette, as opposed to the setView calls that
   // already pick a specific chat to land on (createSession, pickAccount, deployAgent, …).
+  //
+  // Arriving at the chat view creates nothing. It used to land you on a new chat, which
+  // read as convenience while a chat was just a blank composer — but a chat is a real
+  // thing (in terminal mode, a CLI process starting in some folder), and spawning one
+  // every time you passed through the view is not something anyone asked for. A chat is
+  // created when you press New chat, and only then.
+  //
+  // What you get instead: the chat you were in if it has anything in it, and otherwise
+  // the welcome pane — start one, or pick one from the sidebar. An untouched draft is
+  // let go of rather than deleted: it stays available for the next New chat to reuse
+  // (see blankDraft), it just stops being what the view opens on.
   const goToView = (v: View) => {
     if (v === 'chat' && view !== 'chat') {
-      goToNewChat()
+      const active = sessions.find((s) => s.id === activeIdRef.current)
+      if (active && active.messages.length === 0 && !active.hasTerminalActivity) setActiveId('')
+      setView('chat')
       return
     }
     setView(v)
@@ -1231,15 +1236,14 @@ export default function App() {
       setView('chat')
       return
     }
-    // Otherwise land on a new chat on the picked account rather than reopening an old one:
-    // repurpose the active empty draft onto this account, else start a fresh chat.
+    // Otherwise don't reopen a chat from the account you just switched away from — but
+    // don't fabricate one either (picking an account is not pressing New chat). An
+    // untouched draft is simply rebound onto the picked account; anything else steps
+    // aside for the welcome pane, where New chat will inherit the account just picked.
     if (active && active.messages.length === 0) {
       setSessions((prev) => prev.map((s) => (s.id === active.id ? { ...s, model: providerModel, ...acctFields } : s)))
     } else {
-      const s = newSession(activeSession?.projectPath, providerModel, provider === 'claude' ? accountId : defaultAccountId)
-      Object.assign(s, acctFields)
-      setSessions((prev) => [s, ...prev])
-      setActiveId(s.id)
+      setActiveId('')
     }
     setView('chat')
   }
