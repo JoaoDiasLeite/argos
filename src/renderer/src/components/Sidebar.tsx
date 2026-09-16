@@ -10,6 +10,7 @@ import {
   ProjectKeyContext
 } from '../lib/project-key'
 import { projectDisplayName, RepoName } from '../lib/project-name'
+import { SESSION_DRAG_TYPE } from '../lib/pane-drop'
 import FileTree from './FileTree'
 import './Sidebar.css'
 import './AccountPicker.css'
@@ -71,6 +72,8 @@ interface Props {
    *  the sidebar only needs it to know what a chat currently is. */
   mode: 'chat' | 'terminal'
   onSelectSession: (id: string) => void
+  /** A conversation started (id) or stopped (null) being dragged toward the panes. */
+  onSessionDrag?: (sessionId: string | null) => void
   /** Starts a new chat. Pass a folder path to scope it to a project's group (the
    *  per-group `+` button); the sidebar header `+` calls this with no argument. */
   onNewSession: (projectPath?: string) => void
@@ -152,6 +155,7 @@ export default function Sidebar({
   onTabChange,
   mode,
   onSelectSession,
+  onSessionDrag,
   onNewSession,
   onNewQuickChat,
   onDeleteSession,
@@ -645,6 +649,17 @@ export default function Sidebar({
         key={s.id}
         className={`session-row ${s.id === activeId ? 'active' : ''} ${status === 'running' ? 'running' : ''} ${status === 'attention' ? 'attention' : ''}`}
         onClick={() => onSelectSession(s.id)}
+        /* Dragging the row opens the conversation in split view (see PaneGrid). The id goes
+           on a custom type, never on 'text/plain': the Chat composer accepts files dropped
+           on it and tells them apart by the drag's types — with a type of our own the two
+           gestures can never get confused. A plain click still works exactly as before. */
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData(SESSION_DRAG_TYPE, s.id)
+          e.dataTransfer.effectAllowed = 'move'
+          onSessionDrag?.(s.id)
+        }}
+        onDragEnd={() => onSessionDrag?.(null)}
         onMouseEnter={() => setHoveredId(s.id)}
         onMouseLeave={() => setHoveredId(null)}
         title={rowTitle}

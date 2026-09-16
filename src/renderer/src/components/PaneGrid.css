@@ -2,36 +2,6 @@
    `grid-template-columns` is set inline from the state, not by a class per layout: the
    template depends on how many panes are actually open, which is data, not a style. */
 
-/* The bar sits above the grid, so it must not grow with it. Mirrors `.view-subnav`'s
-   visual language (same border/background) but is left-aligned and much shorter — this is
-   a control strip inside the chat area, not another top-level nav. */
-.pane-bar {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-1);
-}
-
-/* A lone `.view-subnav-btn` outside a `.view-subnav-group` has no border of its own. */
-.pane-bar-add {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0 10px;
-  font-size: 14px;
-  line-height: 1;
-}
-.pane-bar-add:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-.pane-bar-add:disabled:hover {
-  background: transparent;
-  color: var(--text-1);
-}
-
 /* No `gap` here: for column layouts the divider is a real grid item (`.pane-splitter`,
    a 5px track — see PaneGrid.tsx), not a gap the background bleeds through. The
    background still matters for `grid-2x2`/`main-side`, which have no splitters yet
@@ -133,4 +103,45 @@
 .pane-head-close:hover {
   background: var(--bg-hover);
   color: var(--text-0);
+}
+
+/* ── Drop zones ────────────────────────────────────────────────────────────────
+   The preview of where a chat dragged out of the sidebar will land. An overlay inside
+   `.pane`, positioned inline from `highlightRect` (see lib/pane-drop.ts) — it covers the
+   half the new pane will take, not the third the cursor is in, so the size on screen is
+   the size the user is about to get.
+
+   `pointer-events: none` is not cosmetic: the overlay lies on top of the pane that feeds
+   it `dragover` events, and hit-testing it would cut that feed and make it flicker. */
+.pane-drop-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-dim);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.pane-drop-label {
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The welcome pane is not a `.pane` — it stands in for the whole grid when nothing is open
+   (see App.tsx) — but it is the same drop target, so its feedback lives with the rest of
+   this file rather than drifting out of step in App.css. No zones there: with no panes the
+   only possible outcome is "open it", so the whole area lights up as one. */
+.welcome-pane.pane-drop-over {
+  background: var(--accent-dim);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }

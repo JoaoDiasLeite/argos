@@ -65,6 +65,7 @@ import { projectDisplayName, projectDisplayNames, RepoName } from './lib/project
 import { cadenceSummary } from './lib/cadence'
 import { chatTerminalId } from './lib/terminal-id'
 import { usePanes } from './hooks/usePanes'
+import { SESSION_DRAG_TYPE, type DropPlan } from './lib/pane-drop'
 // The secondary views below are only ever mounted once the user navigates away
 // from the default 'chat' view, so they're loaded lazily (React.lazy) instead
 // of statically imported. That keeps their code — and the vendor libraries
@@ -204,7 +205,6 @@ export default function App() {
     openInNewPane,
     closePane,
     setFocus,
-    setLayout,
     setSizes,
     restore
   } = usePanes()
@@ -2735,16 +2735,48 @@ export default function App() {
   // Servers — count as in-group too, matching the rail's own highlight.
   const activeGroup = VIEW_GROUPS.find((g) => groupOwnsView(g, view))
 
-  // The pane bar's `+`. A new pane has to show *something*, and the useful something is the
-  // most recent chat that is not already on screen — the invariant is that a session lives in
-  // at most one pane, so anything already visible is not a candidate.
-  // With every chat already on screen it does nothing: `createSession` routes through
-  // `openInFocused`, so "new chat" would take over the focused pane instead of adding one —
-  // the opposite of what this button promises. Splitting that path belongs to its own change.
-  const addPaneCandidate = sessions.find((s) => !visibleIds.has(s.id))
-  const addPane = () => {
-    if (addPaneCandidate) openInNewPane(addPaneCandidate.id)
+  // ── Dragging a conversation from the sidebar onto the panes ─────────────────
+  // Which conversation is being dragged, so PaneGrid can say what's going to happen BEFORE
+  // the drop: during the drag `dataTransfer` only lets you read the *types*, never the id, so
+  // whoever knows the session is whoever started dragging it.
+  const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null)
+
+  // Applies the plan PaneGrid has already worked out (see lib/pane-drop.ts). Entirely composed
+  // from the functions in lib/panes.ts — no model decision gets made here.
+  const applyDrop = (plan: DropPlan, sessionId: string) => {
+    if (plan.type === 'none') return
+    if (plan.type === 'focus') {
+      // Already in another pane: move focus, never duplicate (two terminals on one pty).
+      setFocus(plan.sessionId)
+      return
+    }
+    const ids = panes.map((p) => p.sessionId)
+    if (plan.type === 'replace') {
+      // openInFocused swaps the session of the *focused* pane, and the pane it was dropped
+      // on may not be that one — focusing first is what turns "open here" into "open there".
+      const target = ids[plan.index]
+      if (target) setFocus(target)
+      openInFocused(sessionId)
+      return
+    }
+    // Inserting at a position: the lib only knows how to append at the end, so the tail gets
+    // closed and reopened after the new one. It looks expensive but isn't: the calls are all in
+    // the same handler, hence the same React batch, and each updater runs against the previous
+    // one's result — the DOM only ever sees the final state. Since PaneGrid keys by sessionId,
+    // the tail panes get reconciled into their new spot instead of being unmounted and remounted
+    // (a remount would restart each of their xterms for nothing).
+    const tail = ids.slice(plan.index)
+    for (const id of tail) closePane(id)
+    openInNewPane(sessionId)
+    for (const id of tail) openInNewPane(id)
+    // The last openInNewPane left focus on the tail; whatever was dropped deserves it instead.
+    setFocus(sessionId)
   }
+
+  // The welcome pane also accepts the drop, and has children (title, buttons) that
+  // fire dragleave on every pass over them — hence the counter, same as in Chat and PaneGrid.
+  const [welcomeDropOver, setWelcomeDropOver] = useState(false)
+  const welcomeDragDepth = useRef(0)
 
   // Everything a chat pane needs from the App, shared by every pane. A plain object,
   // not a useMemo: most of the actions below are plain consts rebuilt on every render,
@@ -2822,6 +2854,7 @@ export default function App() {
             onTabChange={setSidebarTab}
             mode={workMode}
             onSelectSession={setActiveId}
+            onSessionDrag={setDraggingSessionId}
             onNewSession={createSession}
             onNewQuickChat={createQuickChat}
             onDeleteSession={deleteSession}
@@ -2852,7 +2885,35 @@ export default function App() {
             {!activeSession ? (
               /* No chat open yet: the composer/chat header only appear once the user
                  explicitly starts or picks a chat. */
-              <div className="welcome-pane">
+              <div
+                className={`welcome-pane ${welcomeDropOver ? 'pane-drop-over' : ''}`}
+                /* No panes means no zones: the only possible drop is "open this conversation",
+                   so the whole area lights up and the gesture falls through to the usual openInFocused. */
+                onDragEnter={(e) => {
+                  if (!Array.from(e.dataTransfer.types).includes(SESSION_DRAG_TYPE)) return
+                  e.preventDefault()
+                  welcomeDragDepth.current += 1
+                  setWelcomeDropOver(true)
+                }}
+                onDragOver={(e) => {
+                  if (!Array.from(e.dataTransfer.types).includes(SESSION_DRAG_TYPE)) return
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'move'
+                }}
+                onDragLeave={(e) => {
+                  if (!Array.from(e.dataTransfer.types).includes(SESSION_DRAG_TYPE)) return
+                  welcomeDragDepth.current = Math.max(0, welcomeDragDepth.current - 1)
+                  if (welcomeDragDepth.current === 0) setWelcomeDropOver(false)
+                }}
+                onDrop={(e) => {
+                  if (!Array.from(e.dataTransfer.types).includes(SESSION_DRAG_TYPE)) return
+                  e.preventDefault()
+                  welcomeDragDepth.current = 0
+                  setWelcomeDropOver(false)
+                  const id = e.dataTransfer.getData(SESSION_DRAG_TYPE)
+                  if (id) openInFocused(id)
+                }}
+              >
                 <svg width="44" height="44" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <circle cx="12" cy="12" r="10" stroke="var(--accent)" strokeWidth="1.5" />
                   <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
@@ -2896,10 +2957,9 @@ export default function App() {
               api={paneApi}
               onFocus={setFocus}
               onClose={closePane}
-              onSetLayout={setLayout}
               onSetSizes={setSizes}
-              onAddPane={addPane}
-              canAddPane={!!addPaneCandidate}
+              draggingSessionId={draggingSessionId}
+              onDropSession={applyDrop}
             />
             <TerminalPanel
               lines={terminalLines}
