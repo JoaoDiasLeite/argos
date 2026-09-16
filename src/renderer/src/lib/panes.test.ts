@@ -4,6 +4,7 @@ import {
   emptyState,
   openInFocused,
   openInNewPane,
+  insertPane,
   closePane,
   setFocus,
   setLayout,
@@ -108,6 +109,109 @@ describe('openInNewPane', () => {
     expect(result.layout).toBe('grid-2x2')
     expect(result.panes.map((p) => p.sessionId)).toEqual(['a', 'b', 'e', 'd'])
     expect(result.focused).toBe('e')
+  })
+})
+
+describe('insertPane', () => {
+  const two: PaneState = {
+    v: 1,
+    layout: 'cols-2',
+    panes: [{ sessionId: 'a' }, { sessionId: 'b' }],
+    focused: 'a'
+  }
+
+  it('inserts at the given index and takes the layout it is told to', () => {
+    const frozen = structuredClone(two)
+    const result = insertPane(two, 'c', 1, 'main-side')
+    expect(result.panes.map((p) => p.sessionId)).toEqual(['a', 'c', 'b'])
+    expect(result.layout).toBe('main-side')
+    expect(result.focused).toBe('c')
+    expect(two).toEqual(frozen)
+  })
+
+  it('inserts at the very start and at the very end', () => {
+    expect(insertPane(two, 'c', 0, 'cols-3').panes.map((p) => p.sessionId)).toEqual([
+      'c',
+      'a',
+      'b'
+    ])
+    expect(insertPane(two, 'c', 2, 'cols-3').panes.map((p) => p.sessionId)).toEqual([
+      'a',
+      'b',
+      'c'
+    ])
+  })
+
+  it('creates the first pane from an empty state', () => {
+    const result = insertPane(emptyState(), 'a', 0, 'single')
+    expect(result.panes).toEqual([{ sessionId: 'a' }])
+    expect(result.layout).toBe('single')
+    expect(result.focused).toBe('a')
+  })
+
+  it('reaches grid-2x2, which the auto-grow ladder alone never chooses deliberately', () => {
+    const three: PaneState = {
+      v: 1,
+      layout: 'cols-3',
+      panes: [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }],
+      focused: 'a'
+    }
+    const result = insertPane(three, 'd', 3, 'grid-2x2')
+    expect(result.layout).toBe('grid-2x2')
+    expect(result.panes.map((p) => p.sessionId)).toEqual(['a', 'b', 'c', 'd'])
+  })
+
+  it('moves focus instead of duplicating a session already open', () => {
+    const result = insertPane(two, 'b', 0, 'cols-3')
+    expect(result.panes).toEqual(two.panes)
+    expect(result.layout).toBe('cols-2')
+    expect(result.focused).toBe('b')
+  })
+
+  it('replaces in place when the target layout has no room left', () => {
+    const three: PaneState = {
+      v: 1,
+      layout: 'main-side',
+      panes: [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }],
+      focused: 'a'
+    }
+    const result = insertPane(three, 'd', 1, 'main-side')
+    expect(result.panes.map((p) => p.sessionId)).toEqual(['a', 'd', 'c'])
+    expect(result.layout).toBe('main-side')
+    expect(result.focused).toBe('d')
+  })
+
+  it('clamps an out-of-range index instead of leaving a hole', () => {
+    expect(insertPane(two, 'c', 99, 'cols-3').panes.map((p) => p.sessionId)).toEqual([
+      'a',
+      'b',
+      'c'
+    ])
+    expect(insertPane(two, 'c', -5, 'cols-3').panes.map((p) => p.sessionId)).toEqual([
+      'c',
+      'a',
+      'b'
+    ])
+  })
+
+  it('drops the sizes of both axes when it adds a pane', () => {
+    const withSizes = setSizes(two, { cols: [0.3, 0.7], rows: [0.4, 0.6] })
+    const result = insertPane(withSizes, 'c', 1, 'main-side')
+    expect(result.sizes).toBeUndefined()
+  })
+
+  it('keeps sizes when it only replaces in place', () => {
+    const withSizes = setSizes(
+      {
+        v: 1,
+        layout: 'main-side',
+        panes: [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }],
+        focused: 'a'
+      },
+      { cols: [0.6, 0.4, 0.4] }
+    )
+    const result = insertPane(withSizes, 'd', 1, 'main-side')
+    expect(result.sizes?.cols).toEqual([0.6 / 1.4, 0.4 / 1.4, 0.4 / 1.4])
   })
 })
 
@@ -449,6 +553,52 @@ describe('sizes discarded on pane-count changes', () => {
     )
     const result = setLayout(withSizes, 'cols-2')
     expect(result.sizes).toBeUndefined()
+  })
+
+  it('closePane drops the rows axis too', () => {
+    const withSizes = setSizes(
+      {
+        v: 1,
+        layout: 'grid-2x2',
+        panes: [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }, { sessionId: 'd' }],
+        focused: 'a'
+      },
+      { cols: [0.5, 0.5, 0.5, 0.5], rows: [0.5, 0.5, 0.5, 0.5] }
+    )
+    const result = closePane(withSizes, 'b')
+    expect(result.sizes).toBeUndefined()
+  })
+
+  it('setLayout drops the rows axis when the number of rows changes at equal pane count', () => {
+    // cols-3 -> main-side keeps all three panes but goes from one row to two, and
+    // from three columns to two: both axes stop describing the layout.
+    const withSizes = setSizes(
+      {
+        v: 1,
+        layout: 'cols-3',
+        panes: [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }],
+        focused: 'a'
+      },
+      { cols: [0.2, 0.3, 0.5], rows: [1, 1, 1] }
+    )
+    const result = setLayout(withSizes, 'main-side')
+    expect(result.sizes).toBeUndefined()
+  })
+
+  it('setLayout keeps both axes when the shape does not change at all', () => {
+    // grid-2x2 -> main-side with three panes: two columns and two rows either way.
+    const withSizes = setSizes(
+      {
+        v: 1,
+        layout: 'grid-2x2',
+        panes: [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }],
+        focused: 'a'
+      },
+      { cols: [0.5, 0.5, 0.5], rows: [0.5, 0.5, 0.5] }
+    )
+    const result = setLayout(withSizes, 'main-side')
+    expect(result.sizes?.cols).toEqual([1 / 3, 1 / 3, 1 / 3])
+    expect(result.sizes?.rows).toEqual([1 / 3, 1 / 3, 1 / 3])
   })
 
   it('setLayout keeps sizes when the pane count does not change', () => {
