@@ -63,6 +63,7 @@ import { projectKey, canonicalProjectPath, buildPosixDistroMap, ProjectKeyContex
 import { projectDisplayName, projectDisplayNames, RepoName } from './lib/project-name'
 import { cadenceSummary } from './lib/cadence'
 import { chatTerminalId } from './lib/terminal-id'
+import { usePanes } from './hooks/usePanes'
 // The secondary views below are only ever mounted once the user navigates away
 // from the default 'chat' view, so they're loaded lazily (React.lazy) instead
 // of statically imported. That keeps their code — and the vendor libraries
@@ -189,7 +190,13 @@ function serverGroupKey(target: RemoteTarget): string {
 
 export default function App() {
   const [sessions, setSessions] = useState<Session[]>([])
-  const [activeId, setActiveId] = useState<string>('')
+  // `focused`/`openInFocused` stand in for the old `activeId`/`setActiveId` state pair:
+  // every one of setActiveId's call sites means "show me this chat", which is exactly
+  // what openInFocused does (see lib/panes.ts for the exact semantics, including how
+  // it treats an empty sessionId as "clear the panel").
+  const { focused, openInFocused, restore } = usePanes()
+  const activeId = focused
+  const setActiveId = openInFocused
   const [compacting, setCompacting] = useState(false)
   // Per-session run state: each id in the set has an agent run in flight. The main
   // process already routes concurrent runs by appSessionId, so the renderer only
@@ -436,13 +443,22 @@ export default function App() {
       applyUi(config.ui)
       // No auto-created blank draft: with no saved chats the main area shows the
       // welcome pane until the user explicitly starts one.
+      // Restore whatever pane layout was persisted, filtered to sessions that still
+      // exist. Unconditionally, even with nothing saved: restoring is also what arms
+      // persistence, so skipping it on a first run would leave the layout unsaved for
+      // the whole session.
+      const restored = restore(saved.map((s) => s.id))
       if (saved.length > 0) {
         setSessions(saved.map((s) => s.runState === 'running' ? { ...s, runState: 'interrupted' as const } : s))
-        setActiveId(saved[0].id)
+        // No panes came back (first run, or a wiped/invalid entry) — fall back to the
+        // pre-panes behaviour of just focusing the first saved session.
+        if (restored.panes.length === 0) {
+          setActiveId(saved[0].id)
+        }
       }
     }
     init()
-  }, [refreshAuth, refreshAccounts])
+  }, [refreshAuth, refreshAccounts, restore])
 
   // The main process pushes resolved prefs whenever they change — which includes the
   // one change no renderer can see for itself: the OS flipping light/dark while
