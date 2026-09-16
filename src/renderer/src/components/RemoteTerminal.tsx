@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { TERMINAL_THEME } from './terminal-theme'
 import TerminalContextMenu, { terminalMenuItems } from './TerminalContextMenu'
+import { registerOsc52Copy } from '../lib/osc52'
 import './ChatTerminal.css'
 
 interface Props {
@@ -82,6 +83,11 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
     term.loadAddon(fit)
     term.open(host)
     term.onData((d) => window.electronAPI.remoteShellWrite(idRef.current, d))
+
+    // A CLI with no local clipboard of its own (Claude Code in a WSL distro without
+    // Windows interop, or anything over SSH) asks the terminal to copy for it. See
+    // lib/osc52.ts.
+    registerOsc52Copy(term)
 
     // Copy-on-select (like most native terminals), plus explicit Ctrl/Cmd+C when there's a
     // selection — xterm only forwards raw keystrokes as shell input by default.

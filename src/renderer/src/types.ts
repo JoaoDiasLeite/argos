@@ -1788,6 +1788,8 @@ declare global {
         text?: string
         image?: { mediaType: string; data: string }
       }>
+      /** Put text on the clipboard from the main process — see the OSC 52 handler. */
+      clipboardWrite: (text: string) => Promise<void>
       /**
        * Write the clipboard's image somewhere the terminal's CLI can open, and return
        * that path. For a WSL chat the file goes into the distro's own /tmp.

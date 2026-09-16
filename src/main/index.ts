@@ -2470,6 +2470,16 @@ ipcMain.handle('clipboard:read', () => {
 })
 
 /**
+ * Put text on the clipboard on the renderer's behalf — used by the terminals' OSC 52
+ * handler, where a CLI on the far side of a pty asks the terminal to copy for it. The
+ * renderer's own `navigator.clipboard.writeText` wants a user gesture, and a sequence
+ * arriving from the pty is not one.
+ */
+ipcMain.handle('clipboard:write', (_e, text: string) => {
+  clipboard.writeText(text)
+})
+
+/**
  * Put the clipboard's image somewhere the terminal's CLI can actually reach, and
  * return the path to type at it.
  *

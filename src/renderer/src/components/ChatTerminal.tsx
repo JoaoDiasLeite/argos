@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css'
 import { ProviderId } from '../types'
 import { TERMINAL_THEME } from './terminal-theme'
 import TerminalContextMenu, { terminalMenuItems } from './TerminalContextMenu'
+import { registerOsc52Copy } from '../lib/osc52'
 import './ChatTerminal.css'
 
 interface Props {
@@ -223,6 +224,11 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       onActiveRef.current?.()
       window.electronAPI.terminalWrite(idRef.current, d)
     })
+
+    // A CLI with no local clipboard of its own (Claude Code in a WSL distro without
+    // Windows interop, or anything over SSH) asks the terminal to copy for it. See
+    // lib/osc52.ts.
+    registerOsc52Copy(term)
 
     // Copy-on-select (like most native terminals), plus explicit Ctrl/Cmd+C when there's a
     // selection — xterm only forwards raw keystrokes as PTY input by default.
