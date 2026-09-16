@@ -195,9 +195,18 @@ export default function App() {
   // every one of setActiveId's call sites means "show me this chat", which is exactly
   // what openInFocused does (see lib/panes.ts for the exact semantics, including how
   // it treats an empty sessionId as "clear the panel").
-  const { focused, openInFocused, restore } = usePanes()
+  const { panes, focused, openInFocused, closePane, restore } = usePanes()
   const activeId = focused
   const setActiveId = openInFocused
+  // Focus and visibility are different questions. `activeId` answers "which chat am I
+  // typing in" (sidebar scope, modals, the Files tab); `visibleIds` answers "which chats
+  // can I see", which is the right question for unread, approvals and the pending bar —
+  // a chat you are looking at but not typing in still counts as read. With a single pane
+  // the two sets coincide, which is what makes this distinction a no-op for now.
+  const visibleIds = useMemo(() => new Set(panes.map((p) => p.sessionId)), [panes])
+  // A stable dependency for the effects below: `visibleIds` is a new Set whenever `panes`
+  // changes identity, and React could not compare a Set anyway.
+  const visibleKey = useMemo(() => [...visibleIds].sort().join('|'), [visibleIds])
   const [compacting, setCompacting] = useState(false)
   // Per-session run state: each id in the set has an agent run in flight. The main
   // process already routes concurrent runs by appSessionId, so the renderer only
@@ -218,7 +227,18 @@ export default function App() {
   const [dismissedRunIds, setDismissedRunIds] = useState<Set<string>>(new Set())
   // Bumped every time we deliberately land on a new chat, so Chat can bring the composer
   // forward even when the "open new chats in" pref is Terminal (see Chat's effect).
-  const [newChatNonce, setNewChatNonce] = useState(0)
+  // Per session, not one global counter: with several panes on screen a global bump would
+  // reach every pane at once and they would fight over the caret. The values come from a
+  // single shared sequence so that landing on chat B right after chat A still reads as a
+  // change to the pane that followed you there (see useSessionPane).
+  const [newChatNonces, setNewChatNonces] = useState<Record<string, number>>({})
+  const newChatNonceSeq = useRef(0)
+  const bumpNewChatNonce = useCallback((sid: string) => {
+    if (!sid) return
+    newChatNonceSeq.current += 1
+    const n = newChatNonceSeq.current
+    setNewChatNonces((prev) => ({ ...prev, [sid]: n }))
+  }, [])
   const [auth, setAuth] = useState<AuthStatus | null>(null)
   // Home is where the app opens: it answers "what needs me now" before you have to
   // pick a chat, and it is the one view whose content is about every chat at once.
@@ -287,6 +307,10 @@ export default function App() {
 
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
+  // The same mirror trick as activeIdRef, for the listeners registered once on mount that
+  // have to ask "is this chat on screen?" rather than "is it the focused one?".
+  const visibleIdsRef = useRef(visibleIds)
+  visibleIdsRef.current = visibleIds
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
   const limitsRef = useRef(limits)
@@ -339,20 +363,20 @@ export default function App() {
   }
   const trackedFiles = (sessionId: string) => [...(modifiedFilesRef.current.get(sessionId) ?? [])]
 
-  // Clear a chat's unread flag the moment it becomes the one on screen, regardless of
-  // which of the many setActiveId call sites got it there (sidebar click, opening from
-  // Projects, a fork, …) — a single effect on activeId covers all of them instead of
-  // threading a "mark read" call through every entry point. Persists on its own: the
-  // save-on-change effect below picks up the new object reference.
+  // Clear a chat's unread flag the moment it comes on screen, regardless of which of the
+  // many setActiveId call sites got it there (sidebar click, opening from Projects, a
+  // fork, …) — a single effect covers all of them instead of threading a "mark read" call
+  // through every entry point. Visibility, not focus: a chat sitting in a pane you can see
+  // has been read even while you type in the one beside it. Persists on its own: the
+  // save-on-change effect below picks up the new object references.
+  // Keyed on `visibleKey`, since the Set itself is a fresh object on every render.
   useEffect(() => {
+    const visible = visibleIdsRef.current
     setSessions((prev) => {
-      const idx = prev.findIndex((s) => s.id === activeId)
-      if (idx === -1 || !prev[idx].unread) return prev
-      const next = [...prev]
-      next[idx] = { ...next[idx], unread: false }
-      return next
+      if (!prev.some((s) => s.unread && visible.has(s.id))) return prev
+      return prev.map((s) => (s.unread && visible.has(s.id) ? { ...s, unread: false } : s))
     })
-  }, [activeId])
+  }, [visibleKey])
 
   const activeSession = sessions.find((s) => s.id === activeId)
   // Which CLI a session's model belongs to. A plain lookup, but it has three callers now
@@ -636,9 +660,10 @@ export default function App() {
             outputTokens: (s.outputTokens ?? 0) + (data.outputTokens ?? 0),
             cacheReadTokens: (s.cacheReadTokens ?? 0) + (data.cacheReadTokens ?? 0),
             cacheCreationTokens: (s.cacheCreationTokens ?? 0) + (data.cacheCreationTokens ?? 0),
-            // The turn finished while this chat wasn't the one on screen — same signal
-            // as a terminal chat's transcript catching up in the background.
-            ...(s.id !== activeIdRef.current ? { unread: true } : {})
+            // The turn finished while this chat wasn't on screen — same signal as a
+            // terminal chat's transcript catching up in the background. Visibility, not
+            // focus: a run that finished in a pane you were watching is not news.
+            ...(!visibleIdsRef.current.has(s.id) ? { unread: true } : {})
           }
         })
         const session = updated.find((s) => s.id === data.appSessionId)
@@ -1036,7 +1061,7 @@ export default function App() {
       }
       setActiveId(draft.id)
       setView('chat')
-      setNewChatNonce((n) => n + 1)
+      bumpNewChatNonce(draft.id)
       return
     }
     const s = newSession(
@@ -1049,7 +1074,7 @@ export default function App() {
     setView('chat')
     // Bump the nonce so the chat pane greets the new draft (composer highlight + focus)
     // the same way it does for every other New chat entry point.
-    setNewChatNonce((n) => n + 1)
+    bumpNewChatNonce(s.id)
   }
   createSessionRef.current = createSession
 
@@ -1093,14 +1118,14 @@ export default function App() {
       setSessions((prev) => prev.map((s) => (s.id === draft.id ? { ...s, model } : s)))
       setActiveId(draft.id)
       setView('chat')
-      setNewChatNonce((n) => n + 1)
+      bumpNewChatNonce(draft.id)
       return
     }
     const s = newSession(activeSession?.projectPath, model, activeSession?.accountId ?? defaultAccountId)
     setSessions((prev) => [s, ...prev])
     setActiveId(s.id)
     setView('chat')
-    setNewChatNonce((n) => n + 1)
+    bumpNewChatNonce(s.id)
   }
 
   const deleteSession = async (id: string) => {
@@ -1116,7 +1141,25 @@ export default function App() {
       // so that would switch accounts just for closing a chat.
       if (activeId === id) {
         const defaults: AccountDefaults = { defaultAccountId, codexDefaultAccountId, geminiDefaultAccountId }
-        setActiveId((closed && nextChatAfterClose(closed, next, models, defaults)?.id) || '')
+        const successor = (closed && nextChatAfterClose(closed, next, models, defaults)?.id) || ''
+        // Whatever happens, no pane may be left pointed at a chat that no longer exists.
+        if (!successor) {
+          // Nothing to land on: the pane goes (with a single pane, exactly the old
+          // setActiveId('')).
+          closePane(id)
+        } else if (visibleIdsRef.current.has(successor)) {
+          // The successor is already on screen in another pane, so opening it here would
+          // only move the focus and orphan this one — close this pane, then focus it.
+          closePane(id)
+          setActiveId(successor)
+        } else {
+          // The successor takes this pane over in place, keeping its position.
+          setActiveId(successor)
+        }
+      } else {
+        // Not the chat you were typing in, but it may still have been on screen in another
+        // pane — closePane is a no-op when no pane shows it.
+        closePane(id)
       }
       return next
     })
@@ -1129,7 +1172,9 @@ export default function App() {
   const closeChatTerminal = (sid: string) => {
     if (!sid) return
     window.electronAPI.terminalKill(chatTerminalId(sid))
-    setActiveId('')
+    // Only this chat's pane: setActiveId('') means "clear every pane", which with two
+    // terminals on screen would close the one whose button you did not press.
+    closePane(sid)
   }
 
   const setSessionProject = (path: string) => {
@@ -1265,7 +1310,10 @@ export default function App() {
   // account — the most recent one already there, else the active empty draft repurposed
   // onto it, else a fresh chat bound to it.
   const pickAccount = async (provider: ProviderId, accountId: string) => {
-    setNewChatNonce((n) => n + 1)
+    // The chat this lands on is the active one in every branch below that keeps a chat at
+    // all (it either stays put or has the active draft rebound onto the picked account);
+    // the remaining branch goes to the welcome pane, where there is no composer to greet.
+    bumpNewChatNonce(activeIdRef.current)
     await switchDefaultProviderAccount(provider, accountId)
 
     // Resolve chats with the just-picked account as this provider's default — state from
@@ -1534,13 +1582,13 @@ export default function App() {
             claudeSessionId: sessionId,
             ...(nameFromTitle ? { name: nameFromTitle } : {}),
             ccSynced: true,
-            // The terminal wrote new turns while this chat wasn't the one on screen —
-            // reads activeIdRef (not activeId) because syncTerminalChats has no deps
-            // and would otherwise close over whichever chat was active when it was
-            // first created.
+            // The terminal wrote new turns while this chat wasn't on screen — reads
+            // visibleIdsRef (not visibleIds) because syncTerminalChats has no deps and
+            // would otherwise close over whichever panes were open when it was first
+            // created.
             ...(messagesChanged &&
             transcript.messages.length > s.messages.length &&
-            s.id !== activeIdRef.current
+            !visibleIdsRef.current.has(s.id)
               ? { unread: true }
               : {})
           }
@@ -1555,9 +1603,11 @@ export default function App() {
   // running in the background still catches up. Reads sessions through sessionsRef
   // (inside syncTerminalChats itself) rather than closing over `sessions`, same as the
   // other interval effects in this file.
+  // `visibleKey` as well as `activeId`: a pane that has just opened on a terminal chat has
+  // to pull its transcript now, not on the next 12s tick.
   useEffect(() => {
     syncTerminalChats()
-  }, [activeId, syncTerminalChats])
+  }, [activeId, visibleKey, syncTerminalChats])
   useEffect(() => {
     const timer = setInterval(() => {
       syncTerminalChats()
@@ -1740,7 +1790,7 @@ export default function App() {
       (s) =>
         displayRunningIds.has(s.id) &&
         !dismissedRunIds.has(s.id) &&
-        !(view === 'chat' && s.id === activeId)
+        !(view === 'chat' && visibleIds.has(s.id))
     )
     // Which account each run is actually billed to, resolved exactly the way the run
     // itself resolves it (acctOf mirrors buildAgentPayload's fallbacks), so an unbound
@@ -2688,7 +2738,7 @@ export default function App() {
     ready,
     workMode,
     terminalPrompts,
-    newChatNonce,
+    newChatNonces,
     compacting,
     saveError,
     defaultAccountId,
@@ -3040,7 +3090,7 @@ export default function App() {
       {/* Suppressed only where Chat renders the same request inline — which it does in
           chat mode alone. In terminal mode the chat pane is a terminal, so a run Argos
           itself is driving (Planner, Rooms, a routine) has nowhere else to ask. */}
-      {view !== 'rooms' && approvalQueue.length > 0 && !(view === 'chat' && workMode === 'chat' && approvalQueue[0].appSessionId === activeId) && (
+      {view !== 'rooms' && approvalQueue.length > 0 && !(view === 'chat' && workMode === 'chat' && visibleIds.has(approvalQueue[0].appSessionId)) && (
         <ApprovalModal request={approvalQueue[0]} onDecide={respondApproval} />
       )}
       {openFilePath && (

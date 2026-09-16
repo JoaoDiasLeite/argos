@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import { ApprovalRequest, ModelInfo, ProviderId, Session } from '../types'
 import { provOf } from '../lib/account-scope'
 import type { Props as ChatProps } from '../components/Chat'
@@ -26,7 +26,10 @@ export interface SessionPaneApi {
   workMode: 'chat' | 'terminal'
   /** Prompts parked for a terminal to type once its CLI is up, by session id. */
   terminalPrompts: Record<string, string>
-  newChatNonce: number
+  /** "Land on this chat" stamps, by session id — a single counter would make every
+   *  pane fight over the caret. Each value comes from one shared sequence, so it also
+   *  says *when* that chat was landed on relative to the others. */
+  newChatNonces: Record<string, number>
   compacting: boolean
   saveError: string
   /** Per-provider default accounts — a chat that names none inherits these. */
@@ -79,12 +82,24 @@ export function useSessionPane(sessionId: string, api: SessionPaneApi): ChatProp
     models,
     defaultModel,
     terminalPrompts,
+    newChatNonces,
     defaultAccountId,
     codexDefaultAccountId,
     geminiDefaultAccountId
   } = api
 
   const session = sessions.find((s) => s.id === sessionId)
+
+  // Chat takes a plain number and reacts to it *changing*, and this pane is not remounted
+  // when it switches session (see ChatPane), so the value handed over must never go
+  // backwards: switching back to a chat that was landed on earlier would otherwise read
+  // as a fresh landing and steal the caret. Clamping to the highest stamp this pane has
+  // seen keeps exactly the two cases that should greet you — this chat being landed on
+  // again, and the pane following you to a chat just landed on — and nothing else.
+  const highestNonce = useRef(0)
+  const stamp = newChatNonces[sessionId] ?? 0
+  if (stamp > highestNonce.current) highestNonce.current = stamp
+  const newChatNonce = highestNonce.current
   const model = session?.model || defaultModel
   // Which CLI this chat's model belongs to — decides which binary the embedded terminal
   // launches, and therefore which account store the id below has to come from.
@@ -195,7 +210,7 @@ export function useSessionPane(sessionId: string, api: SessionPaneApi): ChatProp
     mode: api.workMode,
     initialTerminalPrompt: terminalPrompts[sessionId],
     onInitialTerminalPromptSent,
-    newChatNonce: api.newChatNonce,
+    newChatNonce,
     onOpenClaudeMd,
     autoApprove: session?.autoApprove ?? false,
     onToggleAutoApprove,
