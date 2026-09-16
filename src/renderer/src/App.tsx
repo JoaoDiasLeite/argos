@@ -1044,10 +1044,17 @@ export default function App() {
   // the welcome pane — start one, or pick one from the sidebar. An untouched draft is
   // let go of rather than deleted: it stays available for the next New chat to reuse
   // (see blankDraft), it just stops being what the view opens on.
+  //
+  // Terminal mode goes further: the view always opens on the welcome pane, whatever was
+  // last active. A terminal is a live CLI process, and dropping back into one you left
+  // running — at whatever prompt or half-typed command it sits on — is not what pressing
+  // Chat in the rail asks for. The terminal keeps running and stays one click away in the
+  // sidebar; the rail entry means "New terminal, or pick one".
   const goToView = (v: View) => {
     if (v === 'chat' && view !== 'chat') {
       const active = sessions.find((s) => s.id === activeIdRef.current)
-      if (active && active.messages.length === 0 && !active.hasTerminalActivity) setActiveId('')
+      const unused = active && active.messages.length === 0 && !active.hasTerminalActivity
+      if (workMode === 'terminal' || unused) setActiveId('')
       setView('chat')
       return
     }
