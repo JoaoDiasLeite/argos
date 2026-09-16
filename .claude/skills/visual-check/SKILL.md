@@ -34,6 +34,13 @@ Valid `-View` names: `chat`, `projects`, `agents`, `rooms`, `planner`,
   `app.setPath('userData', ...)` pointed at an isolated temp dir, then (if
   `VISUAL_CHECK_VIEW` is set) sends the same `app:open-view` IPC event the
   real app uses for plan-limit notification clicks, deep-linking to that view.
+- `VISUAL_CHECK_LOCALSTORAGE` seeds renderer `localStorage` before the app reads it:
+  pass a JSON object of `{key: value}` (values are JSON-encoded into the store) and the
+  launcher writes them on first load, then reloads. This is how to photograph state that
+  otherwise only exists after a gesture — the pane layout lives under `argos.panes.v1`,
+  e.g. `{"argos.panes.v1":{"v":1,"layout":"cols-2","panes":[{"sessionId":"demo"},{"sessionId":"demo2"}],"focused":"demo"}}`
+  splits the two seeded chats into two columns. Every session id named there must exist
+  in `seed/sessions/`, or it is dropped as stale.
 - `VISUAL_CHECK_CC_SESSION` does the same for a Claude Code conversation: set it
   to a JSON target (`{"encodedDir":"-home-x-repo","sessionId":"<uuid>"}`) and the
   launcher sends `app:open-cc-session`, the channel a notification click uses. The
@@ -74,14 +81,12 @@ Valid `-View` names: `chat`, `projects`, `agents`, `rooms`, `planner`,
   script can land on the *user's real windows* if focus ends up elsewhere.
   If you need to reach a specific screen, use `VISUAL_CHECK_VIEW` deep-linking
   (the `-View` param) instead of simulating navigation clicks.
-- **The isolated userData dir is reused, and the app restores the last view from
-  it.** `run.ps1` copies the seed into `%TEMP%\argos-visual-check\userdata` without
-  clearing what is already there, so a run that ended on some other screen leaves
-  that screen persisted — and every later `-View <name>` lands back on it, because
-  the restore happens after the deep-link IPC. The symptom is a screenshot of the
-  wrong view that is pixel-identical run after run, which reads like a stale image
-  or an orphaned instance and is neither. Fix: delete
-  `%TEMP%\argos-visual-check` before the run.
+- **`run.ps1` wipes the isolated userData dir on every run** (`Remove-Item -Recurse`
+  before copying the seed), so anything placed there by hand — an extra session file,
+  a tweaked config — is gone before the app starts. Put fixtures in `seed/` instead.
+  The failure is quiet and misleading: a pane layout naming a session that no longer
+  exists is discarded by `normalize()`, so a seeded split comes back as a single pane
+  and reads like the split itself is broken.
 - **A deep-linked run that also builds can land on the wrong screen.** The launcher
   sends its `app:open-view` / `app:open-cc-session` at 6s and 10s, and `run.ps1`
   captures at 11s; on a run that just spent ten seconds building, the app starts late

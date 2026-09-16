@@ -34,6 +34,33 @@ if (wide) {
   })
 }
 
+// Seed renderer localStorage, for state that otherwise only exists after a gesture.
+// VISUAL_CHECK_LOCALSTORAGE is a JSON object of {key: value}; values are JSON-encoded
+// into the store. The pane layout lives there, so without this a split view could only
+// be photographed by dragging — and this flow deliberately never synthesises input
+// (a stray click can land on the user's real windows).
+//
+// Written, then the page is reloaded: the app reads this during startup, so seeding a
+// live renderer would be too late. Once per window, or the reload would loop.
+const seedLocalStorage = process.env.VISUAL_CHECK_LOCALSTORAGE
+if (seedLocalStorage) {
+  const seeded = new WeakSet()
+  app.on('browser-window-created', (_e, win) => {
+    win.webContents.on('did-finish-load', () => {
+      // Skip the small always-on-top helpers: the layout being seeded is the main window's.
+      if (win.isDestroyed() || win.getBounds().width <= 600 || seeded.has(win)) return
+      seeded.add(win)
+      const entries = JSON.stringify(seedLocalStorage)
+      win.webContents
+        .executeJavaScript(
+          `(() => { const e = JSON.parse(${entries}); for (const k of Object.keys(e)) localStorage.setItem(k, JSON.stringify(e[k])) })()`
+        )
+        .then(() => !win.isDestroyed() && win.webContents.reload())
+        .catch(() => {})
+    })
+  })
+}
+
 const view = process.env.VISUAL_CHECK_VIEW
 if (view) {
   app.whenReady().then(() => {
