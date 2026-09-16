@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 import ChatPane from './ChatPane'
 import PaneSplitter from './PaneSplitter'
+import { TerminalAccelContext } from './terminal-accel'
 import { capacity, type LayoutId, type Pane, type PaneState } from '../lib/panes'
 import {
   dropKindAt,
@@ -306,141 +307,152 @@ export default function PaneGrid({
     )
 
   return (
-    <div className={`pane-grid ${showHeads ? 'split' : ''}`} style={style} ref={gridRef}>
-      {panes.slice(0, visible).map((pane, i) => {
-        const isFocused = pane.sessionId === focused
-        const name = api.sessions.find((s) => s.id === pane.sessionId)?.name ?? 'Chat'
-        // Gated on an actual drag in flight: a `dragend` outside the grid (cancelled drag,
-        // dropped on the sidebar) never reaches the pane's own handlers, so `over` can outlive
-        // the drag that set it.
-        const zone = !draggingSessionId
-          ? null
-          : alreadyOpenIndex !== -1
-            ? alreadyOpenIndex === i
-              ? { kind: 'center' as DropKind, label: 'Already open' }
-              : null
-            : over?.index === i
-              ? { kind: over.kind, label: dropLabel(over.kind) }
-              : null
-        const box = zone ? highlightRect(zone.kind) : null
-        return (
-          /* Keyed by sessionId, and placed by explicit grid lines rather than by document
-             order, so a pane inserted in the middle is reconciled into its new slot instead
-             of being unmounted and remounted — a remount would restart its xterm. */
-          <div
-            key={pane.sessionId}
-            style={panePlacement(layout, Math.max(visible, 1), i)}
-            className={`pane ${isFocused ? 'focused' : ''}`}
-            aria-current={isFocused ? 'true' : undefined}
-            /* `focusin` bubbles and `focus` does not, and React's onFocus is a bubbling
-               synthetic event — but the capture variant is what reliably catches xterm's
-               hidden textarea taking focus from inside the terminal. */
-            onFocusCapture={() => {
-              if (!isFocused) onFocus(pane.sessionId)
-            }}
-            /* Capture phase on purpose: ChatTerminal swallows right-button mousedown on its
-               host in capture with stopPropagation, so a bubble-phase handler here would
-               never see a right-click — and right-clicking a terminal is exactly the moment
-               the user means "this pane". */
-            onMouseDownCapture={() => {
-              if (!isFocused) onFocus(pane.sessionId)
-            }}
-            onDragEnter={(e) => {
-              if (!isSessionDrag(e)) return
-              e.preventDefault()
-              dragDepth.current.set(i, (dragDepth.current.get(i) ?? 0) + 1)
-            }}
-            onDragOver={(e) => {
-              if (!isSessionDrag(e)) return
-              // Without this the drop never happens: the default is to refuse.
-              e.preventDefault()
-              e.dataTransfer.dropEffect = 'move'
-              const kind = kindAt(e, e.currentTarget)
-              setOver((prev) =>
-                prev && prev.index === i && prev.kind === kind ? prev : { index: i, kind }
-              )
-            }}
-            onDragLeave={(e) => {
-              if (!isSessionDrag(e)) return
-              const depth = (dragDepth.current.get(i) ?? 0) - 1
-              dragDepth.current.set(i, Math.max(0, depth))
-              if (depth <= 0) setOver((prev) => (prev?.index === i ? null : prev))
-            }}
-            onDrop={(e) => {
-              if (!isSessionDrag(e)) return
-              e.preventDefault()
-              const kind = kindAt(e, e.currentTarget)
-              resetDrag()
-              const sessionId = e.dataTransfer.getData(SESSION_DRAG_TYPE)
-              if (!sessionId) return
-              onDropSession(
-                planDrop({ paneIds, targetIndex: i, sessionId, kind, maxPanes }),
-                sessionId
-              )
-            }}
-          >
-            {showHeads && (
-              <div className="pane-head">
-                <span className="pane-head-name" title={name}>
-                  {name}
-                </span>
-                <button
-                  className="pane-head-close"
-                  /* Removes the pane, nothing else: the CLI keeps running and the chat keeps
-                     existing. Ending a terminal is the close button inside Chat, which is a
-                     different and deliberately more destructive thing. */
-                  onClick={() => onClose(pane.sessionId)}
-                  title="Close pane (the chat keeps running)"
-                  aria-label={`Close pane ${name}`}
+    /* The workspace panes, and only they, render their terminals on the GPU. They are the
+       terminals that stream output at the same time — up to four CLIs repainting at once is
+       what makes the DOM renderer hurt — and, just as importantly, there are at most four of
+       them. The Live view mounts one terminal per running pty with no such ceiling, so it
+       stays on the DOM renderer via the context's `false` default rather than by asking.
+
+       Provided here rather than passed down as a prop because the terminal is four
+       components away (ChatPane → Chat → ChatTerminal) and neither component in between has
+       any opinion about how a terminal paints. */
+    <TerminalAccelContext.Provider value={true}>
+      <div className={`pane-grid ${showHeads ? 'split' : ''}`} style={style} ref={gridRef}>
+        {panes.slice(0, visible).map((pane, i) => {
+          const isFocused = pane.sessionId === focused
+          const name = api.sessions.find((s) => s.id === pane.sessionId)?.name ?? 'Chat'
+          // Gated on an actual drag in flight: a `dragend` outside the grid (cancelled drag,
+          // dropped on the sidebar) never reaches the pane's own handlers, so `over` can outlive
+          // the drag that set it.
+          const zone = !draggingSessionId
+            ? null
+            : alreadyOpenIndex !== -1
+              ? alreadyOpenIndex === i
+                ? { kind: 'center' as DropKind, label: 'Already open' }
+                : null
+              : over?.index === i
+                ? { kind: over.kind, label: dropLabel(over.kind) }
+                : null
+          const box = zone ? highlightRect(zone.kind) : null
+          return (
+            /* Keyed by sessionId, and placed by explicit grid lines rather than by document
+               order, so a pane inserted in the middle is reconciled into its new slot instead
+               of being unmounted and remounted — a remount would restart its xterm. */
+            <div
+              key={pane.sessionId}
+              style={panePlacement(layout, Math.max(visible, 1), i)}
+              className={`pane ${isFocused ? 'focused' : ''}`}
+              aria-current={isFocused ? 'true' : undefined}
+              /* `focusin` bubbles and `focus` does not, and React's onFocus is a bubbling
+                 synthetic event — but the capture variant is what reliably catches xterm's
+                 hidden textarea taking focus from inside the terminal. */
+              onFocusCapture={() => {
+                if (!isFocused) onFocus(pane.sessionId)
+              }}
+              /* Capture phase on purpose: ChatTerminal swallows right-button mousedown on its
+                 host in capture with stopPropagation, so a bubble-phase handler here would
+                 never see a right-click — and right-clicking a terminal is exactly the moment
+                 the user means "this pane". */
+              onMouseDownCapture={() => {
+                if (!isFocused) onFocus(pane.sessionId)
+              }}
+              onDragEnter={(e) => {
+                if (!isSessionDrag(e)) return
+                e.preventDefault()
+                dragDepth.current.set(i, (dragDepth.current.get(i) ?? 0) + 1)
+              }}
+              onDragOver={(e) => {
+                if (!isSessionDrag(e)) return
+                // Without this the drop never happens: the default is to refuse.
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'move'
+                const kind = kindAt(e, e.currentTarget)
+                setOver((prev) =>
+                  prev && prev.index === i && prev.kind === kind ? prev : { index: i, kind }
+                )
+              }}
+              onDragLeave={(e) => {
+                if (!isSessionDrag(e)) return
+                const depth = (dragDepth.current.get(i) ?? 0) - 1
+                dragDepth.current.set(i, Math.max(0, depth))
+                if (depth <= 0) setOver((prev) => (prev?.index === i ? null : prev))
+              }}
+              onDrop={(e) => {
+                if (!isSessionDrag(e)) return
+                e.preventDefault()
+                const kind = kindAt(e, e.currentTarget)
+                resetDrag()
+                const sessionId = e.dataTransfer.getData(SESSION_DRAG_TYPE)
+                if (!sessionId) return
+                onDropSession(
+                  planDrop({ paneIds, targetIndex: i, sessionId, kind, maxPanes }),
+                  sessionId
+                )
+              }}
+            >
+              {showHeads && (
+                <div className="pane-head">
+                  <span className="pane-head-name" title={name}>
+                    {name}
+                  </span>
+                  <button
+                    className="pane-head-close"
+                    /* Removes the pane, nothing else: the CLI keeps running and the chat keeps
+                       existing. Ending a terminal is the close button inside Chat, which is a
+                       different and deliberately more destructive thing. */
+                    onClick={() => onClose(pane.sessionId)}
+                    title="Close pane (the chat keeps running)"
+                    aria-label={`Close pane ${name}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+              {/* `showHeads` is exactly "more than one pane on screen" — the same condition
+                  that draws `.pane-head` below, so the two never disagree about whether the
+                  name is already on screen once. */}
+              <ChatPane sessionId={pane.sessionId} api={api} titleInHeader={showHeads} />
+              {zone && box && (
+                /* `pointer-events: none` is load-bearing: the overlay sits over the pane it is
+                   describing, and a hit-testable overlay would steal the very `dragover` that
+                   keeps it alive — the highlight would flicker itself out of existence. */
+                /* Both axes now: a vertical drop halves the pane horizontally, so a
+                   full-height highlight would describe the wrong thing. The halves are the
+                   honest approximation `highlightRect` documents — in `main-side` the new
+                   pane may end up with a quarter or with a whole column, and drawing that
+                   exactly would mean overlaying the *grid* with the destination geometry
+                   rather than overlaying the pane that was aimed at. */
+                <div
+                  className="pane-drop-zone"
+                  style={{
+                    left: `${box.left * 100}%`,
+                    width: `${box.width * 100}%`,
+                    top: `${box.top * 100}%`,
+                    height: `${box.height * 100}%`
+                  }}
+                  aria-hidden="true"
                 >
-                  ×
-                </button>
-              </div>
-            )}
-            {/* `showHeads` is exactly "more than one pane on screen" — the same condition
-                that draws `.pane-head` below, so the two never disagree about whether the
-                name is already on screen once. */}
-            <ChatPane sessionId={pane.sessionId} api={api} titleInHeader={showHeads} />
-            {zone && box && (
-              /* `pointer-events: none` is load-bearing: the overlay sits over the pane it is
-                 describing, and a hit-testable overlay would steal the very `dragover` that
-                 keeps it alive — the highlight would flicker itself out of existence. */
-              /* Both axes now: a vertical drop halves the pane horizontally, so a
-                 full-height highlight would describe the wrong thing. The halves are the
-                 honest approximation `highlightRect` documents — in `main-side` the new
-                 pane may end up with a quarter or with a whole column, and drawing that
-                 exactly would mean overlaying the *grid* with the destination geometry
-                 rather than overlaying the pane that was aimed at. */
-              <div
-                className="pane-drop-zone"
-                style={{
-                  left: `${box.left * 100}%`,
-                  width: `${box.width * 100}%`,
-                  top: `${box.top * 100}%`,
-                  height: `${box.height * 100}%`
-                }}
-                aria-hidden="true"
-              >
-                <span className="pane-drop-label">{zone.label}</span>
-              </div>
-            )}
-          </div>
-        )
-      })}
-      {/* Dividers come after the panes in document order and are positioned by explicit grid
-          lines, so the pane list above stays a flat, sessionId-keyed array. */}
-      {splitters.map((spec) => (
-        <PaneSplitter
-          key={`${spec.axis}-${spec.index}`}
-          gridRef={gridRef}
-          axis={spec.axis}
-          index={spec.index}
-          sizes={display[spec.axis]}
-          style={spec.style}
-          onChange={(values) => setLive({ axis: spec.axis, values })}
-          onCommit={(values) => commitAxis(spec.axis, values)}
-        />
-      ))}
-    </div>
+                  <span className="pane-drop-label">{zone.label}</span>
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {/* Dividers come after the panes in document order and are positioned by explicit grid
+            lines, so the pane list above stays a flat, sessionId-keyed array. */}
+        {splitters.map((spec) => (
+          <PaneSplitter
+            key={`${spec.axis}-${spec.index}`}
+            gridRef={gridRef}
+            axis={spec.axis}
+            index={spec.index}
+            sizes={display[spec.axis]}
+            style={spec.style}
+            onChange={(values) => setLive({ axis: spec.axis, values })}
+            onCommit={(values) => commitAxis(spec.axis, values)}
+          />
+        ))}
+      </div>
+    </TerminalAccelContext.Provider>
   )
 }

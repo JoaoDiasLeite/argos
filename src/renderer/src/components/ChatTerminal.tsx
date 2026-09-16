@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { ProviderId } from '../types'
 import { TERMINAL_THEME } from './terminal-theme'
 import TerminalContextMenu, { terminalMenuItems } from './TerminalContextMenu'
+import { TerminalAccelContext } from './terminal-accel'
 import { registerOsc52Copy } from '../lib/osc52'
 import './ChatTerminal.css'
 
@@ -49,6 +51,21 @@ interface Props {
   /** Fired once the PTY has actually launched, so the host can mark this chat as having
    *  real activity (see Session.hasTerminalActivity) even though no `messages` exist. */
   onActive?: () => void
+  /** Render this terminal on the GPU (xterm's WebGL renderer) instead of in the DOM.
+   *
+   *  Default `false`, and deliberately so: Chromium caps the number of live WebGL contexts
+   *  per renderer process (~16), and a view that mounts one terminal per running pty (the
+   *  Live view's grid) would exhaust them and have terminals lose their context in a
+   *  cascade. Only a bounded set of terminals — the at-most-four workspace panes, which are
+   *  also the ones streaming output at the same time — asks for it.
+   *
+   *  Left undefined, the answer comes from `TerminalAccelContext` (PaneGrid provides it),
+   *  which is how the workspace panes get it without `ChatPane`/`Chat` having to forward a
+   *  prop they have no opinion about.
+   *
+   *  Read once, when the terminal is created — flipping it later does not move a live
+   *  terminal between renderers. */
+  accelerated?: boolean
 }
 
 // The embedded terminal's palette lives in terminal-theme.ts, shared with
@@ -104,7 +121,14 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onActive, initialPrompt, onInitialPromptSent }: Props) {
+export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onActive, initialPrompt, onInitialPromptSent, accelerated }: Props) {
+  // An explicit prop wins; otherwise the surrounding view decides (false by default).
+  const accelFromContext = useContext(TerminalAccelContext)
+  // The setup effect below runs once and cannot close over a prop that changes later, and
+  // the renderer is chosen when the terminal is created anyway — so latch the answer in a
+  // ref rather than pretending the effect could react to it.
+  const acceleratedRef = useRef(accelerated ?? accelFromContext)
+
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -166,6 +190,50 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(host)
+
+    /**
+     * The GPU renderer, when this terminal was allowed one. Null means "DOM renderer", which
+     * is a fully working terminal — just one that repaints ~25 000 cells of DOM when three or
+     * four CLIs stream at once, which is the whole reason the option exists.
+     *
+     * Everything here is best-effort by design. Acceleration is a speed-up, never a
+     * correctness requirement, so no failure in it may be allowed to take the terminal down
+     * with it:
+     *
+     * - **Creation can throw** — no WebGL at all, a blacklisted driver, software rendering,
+     *   or the process having already handed out its last context. Caught: we stay on the
+     *   DOM renderer and the rest of the mount proceeds untouched.
+     * - **A live context can be taken away** — driver reset, a laptop switching GPUs, or
+     *   Chromium evicting the oldest context once too many are alive. xterm keeps the
+     *   buffer, the selection and the pty binding either way; only the painter dies. So
+     *   `onContextLoss` disposes the addon, which drops the terminal back to the DOM
+     *   renderer with its scrollback and its pty intact. Without this the terminal would
+     *   stay blank while still being very much alive, which is far worse than never having
+     *   accelerated it.
+     *
+     * Loaded after `term.open`, because the addon needs the terminal's element to exist
+     * before it can make a canvas for it.
+     */
+    let webgl: WebglAddon | null = null
+    if (acceleratedRef.current) {
+      try {
+        const addon = new WebglAddon()
+        addon.onContextLoss(() => {
+          // Deliberately not re-created: whatever took the context away is likely to take
+          // the next one too, and a terminal that flickers between renderers is worse than
+          // one that quietly settles on the slower, always-available path.
+          addon.dispose()
+          if (webgl === addon) webgl = null
+        })
+        // `loadAddon` is where the context is actually created, so it has to be inside the
+        // try as well — not just the constructor.
+        term.loadAddon(addon)
+        webgl = addon
+      } catch {
+        webgl = null
+      }
+    }
+
     const localPtyEatsBrackets = LOCAL_PTY_EATS_BRACKETS_PLATFORM && !wslDistro && !remoteHostId
 
     /**
@@ -404,6 +472,12 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       host.removeEventListener('contextmenu', onContextMenu)
       host.removeEventListener('mousedown', swallowRightButton, true)
       host.removeEventListener('mouseup', swallowRightButton, true)
+      // Before term.dispose(): the addon has to give its WebGL context back explicitly, and
+      // the contexts are the scarce resource here — leaking one per unmount would walk a
+      // long-running window into the per-process cap. Guarded because onContextLoss may
+      // already have disposed it, and disposing twice throws.
+      webgl?.dispose()
+      webgl = null
       term.dispose()
       termRef.current = null
       fitRef.current = null
