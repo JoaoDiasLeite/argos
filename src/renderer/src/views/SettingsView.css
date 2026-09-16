@@ -2,9 +2,8 @@
    SettingsView.css — the Settings screen: nav column + scrolling pane.
 
    Most of this file arrived from SettingsModal.css when Settings stopped
-   being a dialog. What came across is what only Settings uses: the API-key
-   field, the code chip, and the row/card scaffolding rewritten around a
-   single column. What did NOT come across went to styles/shared.css
+   being a dialog. What came across is what only Settings uses: the code chip
+   and the row/card scaffolding, rewritten around a single column. What did NOT come across went to styles/shared.css
    instead, because a second component already depended on it —
    `.field-hint` (ten users), `.auth-option*` (OnboardingModal) and
    `.btn-secondary.small` (NotifyHookModal). The rest of the modal's CSS
@@ -187,34 +186,6 @@
   border-radius: 4px;
   color: var(--text-1);
 }
-
-/* ── API key field ── */
-.key-input-wrapper {
-  display: flex;
-  align-items: center;
-  background: var(--bg-2);
-  border: 1px solid var(--border-light);
-  border-radius: 9px;
-  padding: 0 8px 0 12px;
-  transition: border-color 0.15s;
-}
-.key-input-wrapper:focus-within { border-color: var(--accent); }
-
-.key-input {
-  flex: 1;
-  min-width: 0;
-  background: none;
-  border: none;
-  outline: none;
-  padding: 10px 0;
-  font-size: 13px;
-  font-family: var(--font-mono);
-  color: var(--text-0);
-}
-.key-input::placeholder { color: var(--text-2); font-family: var(--font-sans); }
-
-.show-btn { color: var(--text-2); }
-.show-btn:hover { color: var(--text-0); }
 
 /* ── Narrow window ──
    The nav gives up its column and becomes a scrolling strip along the top. Nothing

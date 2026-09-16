@@ -12,7 +12,7 @@
 // threaded through App.tsx, because App has never held them and nothing else needs them.
 
 import { useEffect, useRef, useState } from 'react'
-import { AuthMode, AuthStatus, ModelInfo, SystemPrefs, UiPrefs, UiPrefsPatch, UpdaterState } from '../types'
+import { ModelInfo, SystemPrefs, UiPrefs, UiPrefsPatch, UpdaterState } from '../types'
 import ModelPicker from '../components/ModelPicker'
 import PermissionsModal from '../components/PermissionsModal'
 import HooksModal from '../components/HooksModal'
@@ -24,13 +24,11 @@ import './SettingsView.css'
 type SectionId = 'appearance' | 'general' | 'connection' | 'system' | 'about'
 
 interface Props {
-  auth: AuthStatus | null
   models: ModelInfo[]
   defaultModel: string
   onSetDefaultModel: (modelId: string) => void
   ui: UiPrefs | null
   onSetUi: (patch: UiPrefsPatch) => void
-  onChanged: () => Promise<AuthStatus> | void
   onManageAccounts: () => void
   /** Back to whatever view this screen displaced — App.tsx remembers which. */
   onBack: () => void
@@ -92,13 +90,11 @@ const SECTIONS: { id: SectionId; label: string; icon: JSX.Element }[] = [
 ]
 
 export default function SettingsView({
-  auth,
   models,
   defaultModel,
   onSetDefaultModel,
   ui,
   onSetUi,
-  onChanged,
   onManageAccounts,
   onBack
 }: Props) {
@@ -111,45 +107,9 @@ export default function SettingsView({
     pane.current?.scrollTo({ top: 0 })
   }, [section])
 
-  // ── Connection ──
-  const [mode, setMode] = useState<AuthMode>(auth?.mode ?? 'claude-code')
-  const [key, setKey] = useState('')
-  const [show, setShow] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [savedKey, setSavedKey] = useState(false)
-
   const [showPerms, setShowPerms] = useState(false)
   const [showHooks, setShowHooks] = useState(false)
   const [showNotifyHook, setShowNotifyHook] = useState(false)
-
-  const claudeDetected = auth?.claudeCodeDetected ?? false
-  const hasApiKey = auth?.hasApiKey ?? false
-
-  const selectMode = async (m: AuthMode) => {
-    setMode(m)
-    setBusy(true)
-    await window.electronAPI.setAuthMode(m)
-    await onChanged()
-    setBusy(false)
-  }
-
-  const saveKey = async () => {
-    if (!key.trim()) return
-    setBusy(true)
-    await window.electronAPI.setApiKey(key.trim())
-    await onChanged()
-    setBusy(false)
-    setSavedKey(true)
-    setKey('')
-    setTimeout(() => setSavedKey(false), 1500)
-  }
-
-  const removeKey = async () => {
-    setBusy(true)
-    await window.electronAPI.clearApiKey()
-    await onChanged()
-    setBusy(false)
-  }
 
   // ── System integration ──
   // These prefs live in config.ts alongside `ui`, but App.tsx has never fetched them;
@@ -396,55 +356,9 @@ export default function SettingsView({
             <>
               <h1 className="settings-title">Connection</h1>
               <p className="settings-lead">
-                How this app reaches Anthropic. Codex and Antigravity sign in through their own
-                CLIs — add those logins under Accounts below.
+                Which logins this app runs chats under. Claude, Codex and Antigravity each sign
+                in through their own CLI — add them under Accounts.
               </p>
-
-              <div className="auth-option-group">
-                <button
-                  className={`auth-option ${mode === 'claude-code' ? 'selected' : ''}`}
-                  onClick={() => selectMode('claude-code')}
-                  disabled={busy}
-                >
-                  <div className="auth-option-radio">
-                    <span className={mode === 'claude-code' ? 'on' : ''} />
-                  </div>
-                  <div className="auth-option-body">
-                    <div className="auth-option-title">
-                      Use my Claude Code account
-                      {claudeDetected ? (
-                        <span className="status-pill ok">Detected</span>
-                      ) : (
-                        <span className="status-pill warn">Not found</span>
-                      )}
-                    </div>
-                    <div className="auth-option-desc">
-                      Reuses the login from the Claude Code CLI on this machine — no API key
-                      needed.{' '}
-                      {!claudeDetected && 'Run `claude` once and log in, then reopen this app.'}
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  className={`auth-option ${mode === 'api-key' ? 'selected' : ''}`}
-                  onClick={() => selectMode('api-key')}
-                  disabled={busy}
-                >
-                  <div className="auth-option-radio">
-                    <span className={mode === 'api-key' ? 'on' : ''} />
-                  </div>
-                  <div className="auth-option-body">
-                    <div className="auth-option-title">
-                      Use an API key
-                      {hasApiKey && <span className="status-pill ok">Saved</span>}
-                    </div>
-                    <div className="auth-option-desc">
-                      Bills your Anthropic Console account. Stored encrypted in your OS keychain.
-                    </div>
-                  </div>
-                </button>
-              </div>
 
               <section className="settings-card">
                 <div className="settings-row">
@@ -460,61 +374,6 @@ export default function SettingsView({
                   </button>
                 </div>
               </section>
-
-              {mode === 'api-key' && (
-                <section className="settings-card">
-                  <h3 className="settings-h">Anthropic API key</h3>
-                  <p className="field-hint">
-                    Get a key from{' '}
-                    <a
-                      href="https://console.anthropic.com/account/keys"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      console.anthropic.com
-                    </a>
-                  </p>
-                  <div className="key-input-wrapper">
-                    <input
-                      type={show ? 'text' : 'password'}
-                      className="key-input"
-                      placeholder={hasApiKey ? '•••••••• (saved) — enter to replace' : 'sk-ant-...'}
-                      value={key}
-                      onChange={(e) => setKey(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && saveKey()}
-                      spellCheck={false}
-                    />
-                    <button
-                      className="icon-btn show-btn"
-                      onClick={() => setShow((v) => !v)}
-                      title={show ? 'Hide' : 'Show'}
-                      aria-label={show ? 'Hide key' : 'Show key'}
-                    >
-                      {show ? (
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                          <line x1="1" y1="1" x2="23" y2="23" />
-                        </svg>
-                      ) : (
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                  <div className="settings-actions">
-                    <button className="btn-primary small" onClick={saveKey} disabled={!key.trim() || busy}>
-                      {savedKey ? '✓ Saved' : 'Save key'}
-                    </button>
-                    {hasApiKey && (
-                      <button className="btn-text" onClick={removeKey} disabled={busy}>
-                        Remove saved key
-                      </button>
-                    )}
-                  </div>
-                </section>
-              )}
             </>
           )}
 

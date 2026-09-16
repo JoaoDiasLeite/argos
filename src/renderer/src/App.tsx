@@ -2821,13 +2821,11 @@ export default function App() {
       {view === 'settings' && (
         <Suspense fallback={<ViewLoading />}>
           <SettingsView
-            auth={auth}
             models={models}
             defaultModel={defaultModel}
             onSetDefaultModel={handleSetDefaultModel}
             ui={ui}
             onSetUi={updateUi}
-            onChanged={refreshAuth}
             onManageAccounts={() => setAccountsOpen(true)}
             onBack={() => setView(preSettingsView.current)}
           />
