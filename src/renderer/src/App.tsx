@@ -1100,6 +1100,17 @@ export default function App() {
     })
   }
 
+  // Leave the terminal that IS the chat (terminal mode). Unlike unmounting the pane,
+  // this is explicit: the pty goes, because a terminal you closed should not still be
+  // running behind the welcome pane. The chat stays in the sidebar — reopening it
+  // starts a fresh terminal in the same folder.
+  const closeChatTerminal = () => {
+    const id = activeIdRef.current
+    if (!id) return
+    window.electronAPI.terminalKill(chatTerminalId(id))
+    setActiveId('')
+  }
+
   const setSessionProject = (path: string) => {
     setSessions((prev) => prev.map((s) => (s.id === activeId ? { ...s, projectPath: path } : s)))
   }
@@ -2765,6 +2776,7 @@ export default function App() {
                 if (activeSession) window.electronAPI.exportSession(activeSession, format)
               }}
               onPatchSession={patchActiveSession}
+              onCloseTerminal={closeChatTerminal}
             />
             <TerminalPanel
               lines={terminalLines}

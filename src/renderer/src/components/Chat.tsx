@@ -169,6 +169,9 @@ interface Props {
   onExportSession: (format: 'md' | 'html') => void
   /** Patch the active draft session (folder / environment / extra dirs) from the new-chat bar. */
   onPatchSession: (patch: Partial<Session>) => void
+  /** Terminal mode only: leave this terminal — the pty is torn down and the view
+   *  falls back to the welcome pane. The chat itself stays in the sidebar. */
+  onCloseTerminal: () => void
 }
 
 const REVIEW_OPEN_KEY = 'argos.reviewOpenById'
@@ -228,7 +231,8 @@ export default function Chat(
   onEditResend,
   onBranch,
   onExportSession,
-  onPatchSession
+  onPatchSession,
+  onCloseTerminal
 }: Props) {
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [markdownCopied, setMarkdownCopied] = useState(false)
@@ -840,7 +844,7 @@ export default function Chat(
             pinSessionId={session.terminalSessionId}
             initialPrompt={initialTerminalPrompt}
             onInitialPromptSent={onInitialTerminalPromptSent}
-            closable={false}
+            onClose={onCloseTerminal}
             onActive={() => {
               if (!session.hasTerminalActivity) onPatchSession({ hasTerminalActivity: true })
             }}
