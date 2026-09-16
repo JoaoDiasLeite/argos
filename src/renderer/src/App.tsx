@@ -724,12 +724,13 @@ export default function App() {
 
   const sendMessage = useCallback(
     (
+      sid: string,
       text: string,
       images?: { mediaType: string; data: string }[],
       files?: { name: string; content: string }[],
       imageThumbnails?: string[]
     ) => {
-      const session = sessions.find((s) => s.id === activeIdRef.current)
+      const session = sessions.find((s) => s.id === sid)
       if (!session || runningIds.has(session.id)) return
 
       // Auto-checkpoint the pre-turn state of files Claude has already touched, so this
@@ -786,9 +787,8 @@ export default function App() {
   // Retry the last failed turn: reset the trailing assistant message and re-send
   // the last user message's content. Uses a ref so the listener-registered callback
   // always sees current state (same pattern as createSessionRef).
-  const retryTurnRef = useRef<() => void>(() => {})
-  const retryTurn = useCallback(() => {
-    const sid = activeIdRef.current
+  const retryTurnRef = useRef<(sid: string) => void>(() => {})
+  const retryTurn = useCallback((sid: string) => {
     const session = sessionsRef.current.find((s) => s.id === sid)
     if (!session || runningIdsRef.current.has(sid)) return
 
@@ -823,9 +823,8 @@ export default function App() {
   // Edit a user message and resend: truncates history to before that message,
   // then appends a fresh user + assistant pair with the new text.
   const editAndResend = useCallback(
-    (messageId: string, newText: string) => {
+    (sid: string, messageId: string, newText: string) => {
       if (!newText.trim()) return
-      const sid = activeIdRef.current
       const session = sessionsRef.current.find((s) => s.id === sid)
       if (!session || runningIdsRef.current.has(sid)) return
 
@@ -983,8 +982,7 @@ export default function App() {
 
   // Stop only the ACTIVE session's run. agent:stop takes the appSessionId and aborts
   // just that run's AbortController in the main process, leaving other runs untouched.
-  const stopMessage = useCallback(async () => {
-    const sid = activeIdRef.current
+  const stopRun = useCallback(async (sid: string) => {
     await window.electronAPI.stopAgent(sid)
     endRun(sid)
     addTermFor(sid, { kind: 'info', text: 'stopped' })
@@ -1104,10 +1102,9 @@ export default function App() {
   // this is explicit: the pty goes, because a terminal you closed should not still be
   // running behind the welcome pane. The chat stays in the sidebar — reopening it
   // starts a fresh terminal in the same folder.
-  const closeChatTerminal = () => {
-    const id = activeIdRef.current
-    if (!id) return
-    window.electronAPI.terminalKill(chatTerminalId(id))
+  const closeChatTerminal = (sid: string) => {
+    if (!sid) return
+    window.electronAPI.terminalKill(chatTerminalId(sid))
     setActiveId('')
   }
 
@@ -1117,11 +1114,11 @@ export default function App() {
 
   // Patch the active draft session from the new-chat config bar (folder, environment,
   // extra dirs, worktree toggle). Only meaningful before the first message is sent.
-  const patchActiveSession = (patch: Partial<Session>) => {
+  const patchSession = (sid: string, patch: Partial<Session>) => {
     let patched: Session | undefined
     setSessions((prev) =>
       prev.map((s) => {
-        if (s.id !== activeIdRef.current) return s
+        if (s.id !== sid) return s
         patched = { ...s, ...patch }
         return patched
       })
@@ -1137,8 +1134,13 @@ export default function App() {
     }
   }
 
-  const setSessionModel = (modelId: string) => {
-    setSessions((prev) => prev.map((s) => (s.id === activeId ? { ...s, model: modelId } : s)))
+  const setSessionModel = (sid: string, modelId: string) => {
+    setSessions((prev) => prev.map((s) => (s.id === sid ? { ...s, model: modelId } : s)))
+  }
+
+  const exportSession = (sid: string, format: Parameters<typeof window.electronAPI.exportSession>[1]) => {
+    const session = sessions.find((s) => s.id === sid)
+    if (session) window.electronAPI.exportSession(session, format)
   }
 
   // Account selection is app-level: it sets the DEFAULT account used for new chats.
@@ -1288,26 +1290,27 @@ export default function App() {
     setView('chat')
   }
 
-  const toggleAutoApprove = () => {
-    setSessions((prev) => prev.map((s) => (s.id === activeId ? { ...s, autoApprove: !s.autoApprove } : s)))
+  const toggleAutoApprove = (sid: string) => {
+    setSessions((prev) => prev.map((s) => (s.id === sid ? { ...s, autoApprove: !s.autoApprove } : s)))
   }
 
-  const toggleLightMode = () => {
-    setSessions((prev) => prev.map((s) => (s.id === activeId ? { ...s, lightMode: !s.lightMode } : s)))
+  const toggleLightMode = (sid: string) => {
+    setSessions((prev) => prev.map((s) => (s.id === sid ? { ...s, lightMode: !s.lightMode } : s)))
   }
 
   // Summarize the current (long) session and start a FRESH one seeded with the summary as
   // system context — so each turn re-sends a compact brief instead of the whole transcript.
-  const compactSession = async () => {
-    if (!activeSession || compacting) return
+  const compactSession = async (sid: string) => {
+    const session = sessions.find((s) => s.id === sid)
+    if (!session || compacting) return
     setCompacting(true)
-    const transcript = activeSession.messages
+    const transcript = session.messages
       .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
       .join('\n\n')
     const res = await window.electronAPI.summarizeChat({
       transcript,
-      model: activeSession.model || defaultModel,
-      accountId: activeSession.accountId ?? defaultAccountId
+      model: session.model || defaultModel,
+      accountId: session.accountId ?? defaultAccountId
     })
     setCompacting(false)
     if (!res.ok || !res.summary) {
@@ -1315,12 +1318,12 @@ export default function App() {
       return
     }
     const s = newSession(
-      activeSession.projectPath,
-      activeSession.model || defaultModel,
-      activeSession.accountId ?? defaultAccountId
+      session.projectPath,
+      session.model || defaultModel,
+      session.accountId ?? defaultAccountId
     )
-    s.name = activeSession.name
-    s.lightMode = activeSession.lightMode
+    s.name = session.name
+    s.lightMode = session.lightMode
     s.systemPrompt = `Context carried over from a previous (compacted) session:\n\n${res.summary}`
     s.messages = [
       {
@@ -1342,8 +1345,8 @@ export default function App() {
   // field, re-sent on every turn by buildAgentPayload. The branched session gets NO
   // claudeSessionId: the Claude Code engine can only resume from a session's latest
   // point, so a truncated fork must rebuild context client-side (via the seed).
-  const branchSession = (messageId: string) => {
-    const parent = sessionsRef.current.find((s) => s.id === activeIdRef.current)
+  const branchSession = (sid: string, messageId: string) => {
+    const parent = sessionsRef.current.find((s) => s.id === sid)
     if (!parent) return
     const idx = parent.messages.findIndex((m) => m.id === messageId)
     if (idx === -1) return
@@ -1388,6 +1391,13 @@ export default function App() {
     setView('chat')
     window.electronAPI.saveSession(s)
   }
+
+  // Wrappers around the three modal-open setters, taking the session they open for —
+  // the modal state itself is still a single app-wide boolean in this batch (it becomes
+  // per-session in a later one), so `sid` is unused for now beyond documenting intent.
+  const openClaudeMd = (_sid: string) => setClaudeMdOpen(true)
+  const openCheckpoints = (_sid: string) => setCheckpointsOpen(true)
+  const openGit = (_sid: string) => setGitOpen(true)
 
   const createCheckpoint = async (label: string) => {
     if (!activeSession) return
@@ -2599,7 +2609,7 @@ export default function App() {
         title: `Use ${m.label}`,
         subtitle: 'this chat',
         group: 'Switch model',
-        run: () => setSessionModel(m.id)
+        run: () => setSessionModel(activeId, m.id)
       })
     }
     for (const a of accounts) {
@@ -2744,13 +2754,13 @@ export default function App() {
               onApproval={respondApprovalById}
               session={activeSession}
               streaming={activeStreaming}
-              onSendMessage={sendMessage}
-              onStop={stopMessage}
+              onSendMessage={(text, images, files, thumbs) => sendMessage(activeId, text, images, files, thumbs)}
+              onStop={() => stopRun(activeId)}
               onOpenSettings={() => setView('settings')}
               ready={ready}
               models={models}
               currentModel={activeSession?.model || defaultModel}
-              onModelChange={setSessionModel}
+              onModelChange={(modelId) => setSessionModel(activeId, modelId)}
               terminalProvider={activeChatProvider}
               terminalAccountId={activeChatAccountId}
               mode={workMode}
@@ -2759,24 +2769,22 @@ export default function App() {
                 if (activeId) clearTerminalPrompt(activeId)
               }}
               newChatNonce={newChatNonce}
-              onOpenClaudeMd={() => setClaudeMdOpen(true)}
+              onOpenClaudeMd={() => openClaudeMd(activeId)}
               autoApprove={activeSession?.autoApprove ?? false}
-              onToggleAutoApprove={toggleAutoApprove}
+              onToggleAutoApprove={() => toggleAutoApprove(activeId)}
               lightMode={activeSession?.lightMode ?? false}
-              onToggleLightMode={toggleLightMode}
+              onToggleLightMode={() => toggleLightMode(activeId)}
               onStartFresh={createSession}
-              onCompact={compactSession}
+              onCompact={() => compactSession(activeId)}
               compacting={compacting}
-              onOpenCheckpoints={() => setCheckpointsOpen(true)}
-              onOpenGit={() => setGitOpen(true)}
-              onRetry={retryTurn}
-              onEditResend={editAndResend}
-              onBranch={branchSession}
-              onExportSession={(format) => {
-                if (activeSession) window.electronAPI.exportSession(activeSession, format)
-              }}
-              onPatchSession={patchActiveSession}
-              onCloseTerminal={closeChatTerminal}
+              onOpenCheckpoints={() => openCheckpoints(activeId)}
+              onOpenGit={() => openGit(activeId)}
+              onRetry={() => retryTurn(activeId)}
+              onEditResend={(messageId, newText) => editAndResend(activeId, messageId, newText)}
+              onBranch={(messageId) => branchSession(activeId, messageId)}
+              onExportSession={(format) => exportSession(activeId, format)}
+              onPatchSession={(patch) => patchSession(activeId, patch)}
+              onCloseTerminal={() => closeChatTerminal(activeId)}
             />
             <TerminalPanel
               lines={terminalLines}
