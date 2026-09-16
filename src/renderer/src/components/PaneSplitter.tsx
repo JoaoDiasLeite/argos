@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, type CSSProperties, type RefObject } from 'react'
 
 /**
- * Drag handle for the boundary between column `index` and `index + 1` in `<PaneGrid>`.
+ * Drag handle for the boundary between tracks `index` and `index + 1` of one axis of
+ * `<PaneGrid>` — columns (`cols`, drags horizontally) or rows (`rows`, drags vertically).
  *
  * Follows the same recipe as the sidebar/terminal-panel/projects-view resize handles
  * (mousedown → listeners on `window`, cursor/userSelect on `document.body`, clamp, persist
@@ -9,32 +10,46 @@ import { useCallback, useEffect, useRef, type RefObject } from 'react'
  * The one addition here is `document.body.dataset.paneDrag`, which `ChatTerminal`'s
  * `ResizeObserver` checks to skip `fit()` mid-drag — see the comment there for why.
  *
- * Only the two panes adjacent to this boundary move: dragging changes where the boundary
- * sits (as a fraction of the grid's width), which is equivalent to redistributing exactly
- * `sizes[index]` and `sizes[index + 1]` between themselves. Every other column keeps
- * whatever fraction it already had.
+ * Only the two tracks adjacent to this boundary move: dragging changes where the boundary
+ * sits (as a fraction of the grid's width or height), which is equivalent to redistributing
+ * exactly `sizes[index]` and `sizes[index + 1]` between themselves. Every other track keeps
+ * whatever fraction it had.
+ *
+ * The two axes are the same arithmetic with a different pair of coordinates, so they share
+ * one component rather than two that would have to be kept in step.
  */
+
+export type SplitterAxis = 'cols' | 'rows'
 
 const MIN_FRACTION = 0.15
 
 export default function PaneSplitter({
   gridRef,
+  axis,
   index,
   sizes,
+  style,
   onChange,
   onCommit
 }: {
-  /** The `.pane-grid` element — its `getBoundingClientRect()` turns `clientX` into a fraction. */
+  /** The `.pane-grid` element — its `getBoundingClientRect()` turns the mouse into a fraction. */
   gridRef: RefObject<HTMLDivElement | null>
-  /** This splitter sits between panes `index` and `index + 1`. */
+  /** Which axis this boundary redistributes. */
+  axis: SplitterAxis
+  /** This splitter sits between tracks `index` and `index + 1` of that axis. */
   index: number
-  /** Current column fractions, normalized to sum to 1 — one entry per visible pane. */
+  /** Current fractions of that axis, normalized to sum to 1 — one entry per track. */
   sizes: number[]
+  /** Explicit grid placement: a divider does not always span the whole grid (see PaneGrid). */
+  style?: CSSProperties
   /** Fired on every mousemove with the full next fractions array — drives the live visual. */
   onChange: (sizes: number[]) => void
   /** Fired once on mouseup with the final fractions — this is what gets persisted. */
   onCommit: (sizes: number[]) => void
 }) {
+  const isRow = axis === 'rows'
+  const cursor = isRow ? 'row-resize' : 'col-resize'
+
   const draggingRef = useRef(false)
   // The latest fractions, live during a drag — read at drag start and updated on every
   // move so the next move computes from where this one left off, not from a stale prop
@@ -47,7 +62,10 @@ export default function PaneSplitter({
       const grid = gridRef.current
       if (!grid) return
       const rect = grid.getBoundingClientRect()
-      if (rect.width <= 0) return
+      // The axis picks which side of the rect the fraction is measured against; everything
+      // below is identical for both.
+      const extent = isRow ? rect.height : rect.width
+      if (extent <= 0) return
 
       const current = sizesRef.current
       const cumBefore = current.slice(0, index).reduce((a, b) => a + b, 0)
@@ -56,7 +74,7 @@ export default function PaneSplitter({
       // Clamp so neither of the two adjacent panes shrinks past the minimum — a global
       // fraction, not a pixel one, so it clamps consistently regardless of window width.
       const min = Math.min(MIN_FRACTION, span / 2)
-      const rawBoundary = (e.clientX - rect.left) / rect.width
+      const rawBoundary = (isRow ? e.clientY - rect.top : e.clientX - rect.left) / extent
       const boundary = Math.min(cumAfter - min, Math.max(cumBefore + min, rawBoundary))
 
       const next = current.slice()
@@ -65,7 +83,7 @@ export default function PaneSplitter({
       sizesRef.current = next
       onChange(next)
     },
-    [gridRef, index, onChange]
+    [gridRef, isRow, index, onChange]
   )
 
   const handleMouseUp = useCallback(() => {
@@ -89,11 +107,11 @@ export default function PaneSplitter({
       sizesRef.current = sizes
       document.body.dataset.paneDrag = '1'
       document.body.style.userSelect = 'none'
-      document.body.style.cursor = 'col-resize'
+      document.body.style.cursor = cursor
       window.addEventListener('mousemove', handleMouseMove)
       window.addEventListener('mouseup', handleMouseUp)
     },
-    [sizes, handleMouseMove, handleMouseUp]
+    [sizes, cursor, handleMouseMove, handleMouseUp]
   )
 
   useEffect(() => {
@@ -105,10 +123,13 @@ export default function PaneSplitter({
 
   return (
     <div
-      className="pane-splitter"
+      className={`pane-splitter ${isRow ? 'pane-splitter-row' : ''}`}
+      style={style}
       onMouseDown={handleMouseDown}
       role="separator"
-      aria-orientation="vertical"
+      /* A divider between stacked panes separates them along the vertical axis, so its own
+         orientation is horizontal — the ARIA sense is the opposite of the visual one. */
+      aria-orientation={isRow ? 'horizontal' : 'vertical'}
       aria-label="Resize panes"
     />
   )

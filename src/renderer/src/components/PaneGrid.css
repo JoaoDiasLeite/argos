@@ -2,31 +2,27 @@
    `grid-template-columns` is set inline from the state, not by a class per layout: the
    template depends on how many panes are actually open, which is data, not a style. */
 
-/* No `gap` here: for column layouts the divider is a real grid item (`.pane-splitter`,
-   a 5px track — see PaneGrid.tsx), not a gap the background bleeds through. The
-   background still matters for `grid-2x2`/`main-side`, which have no splitters yet
-   and fall back to `repeat(n, 1fr)` with the 1px row/column gap those relied on. */
+/* No `gap`: every divider is a real grid item (`.pane-splitter`, a 5px track — see
+   PaneGrid.tsx) on both axes, not a gap the background bleeds through. A gap on top of
+   them would draw the boundary twice. */
 .pane-grid {
   flex: 1;
   min-height: 0;
   display: grid;
-  gap: 1px;
+  gap: 0;
   background: var(--border);
 }
 
-/* Column layouts draw their own divider as a real grid item (`.pane-splitter`), so the
-   grid's own `gap` would double it up — one column layout's dividers are already the full
-   width they need. */
-.pane-grid.pane-grid-dividers {
-  gap: 0;
-}
-
-/* The draggable divider between two column panes. A real grid item (a 5px-wide track),
-   not an overlay — see PaneGrid.tsx's `gridTemplateColumns`. Wider than the old 1px gap
-   on purpose: enough hit area to grab reliably without stealing much space from the panes. */
+/* The draggable divider between two panes. A real grid item (a 5px track), not an overlay —
+   see the templates in PaneGrid.tsx. Wider than a 1px hairline on purpose: enough hit area
+   to grab reliably without stealing much space from the panes. */
 .pane-splitter {
   cursor: col-resize;
   background: var(--border);
+}
+/* Between stacked panes the same handle drags the other way round. */
+.pane-splitter-row {
+  cursor: row-resize;
 }
 .pane-splitter:hover,
 .pane-splitter:active {
@@ -112,11 +108,12 @@
    the size the user is about to get.
 
    `pointer-events: none` is not cosmetic: the overlay lies on top of the pane that feeds
-   it `dragover` events, and hit-testing it would cut that feed and make it flicker. */
+   it `dragover` events, and hit-testing it would cut that feed and make it flicker.
+
+   `top`/`height` come in inline alongside `left`/`width` now that a drop can also halve the
+   pane horizontally — hence no `top`/`bottom` defaults here to fight them. */
 .pane-drop-zone {
   position: absolute;
-  top: 0;
-  bottom: 0;
   pointer-events: none;
   z-index: 5;
   display: flex;

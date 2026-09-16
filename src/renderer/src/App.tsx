@@ -202,7 +202,9 @@ export default function App() {
     focused,
     sizes: paneSizes,
     openInFocused,
-    openInNewPane,
+    // `openInNewPane` is not wired up here: every "new pane" in this app comes from a drop,
+    // which brings its own position and layout and therefore goes through `insertPane`.
+    insertPane,
     closePane,
     setFocus,
     setSizes,
@@ -2785,18 +2787,13 @@ export default function App() {
       openInFocused(sessionId)
       return
     }
-    // Inserting at a position: the lib only knows how to append at the end, so the tail gets
-    // closed and reopened after the new one. It looks expensive but isn't: the calls are all in
-    // the same handler, hence the same React batch, and each updater runs against the previous
-    // one's result — the DOM only ever sees the final state. Since PaneGrid keys by sessionId,
-    // the tail panes get reconciled into their new spot instead of being unmounted and remounted
-    // (a remount would restart each of their xterms for nothing).
-    const tail = ids.slice(plan.index)
-    for (const id of tail) closePane(id)
-    openInNewPane(sessionId)
-    for (const id of tail) openInNewPane(id)
-    // The last openInNewPane left focus on the tail; whatever was dropped deserves it instead.
-    setFocus(sessionId)
+    // Inserting at a position, with the layout the gesture chose. This used to be a
+    // close-the-tail-and-reopen-it dance, because the lib could only append at the end;
+    // `insertPane` does it in one transition, and the property that dance was protecting is
+    // now PaneGrid's: it keys panes by sessionId and places them by explicit grid lines, so a
+    // pane that moves position is reconciled into its new slot rather than unmounted and
+    // remounted (a remount would restart its xterm for nothing).
+    insertPane(sessionId, plan.index, plan.layout)
   }
 
   // The welcome pane also accepts the drop, and has children (title, buttons) that

@@ -9,6 +9,7 @@ import {
   emptyState,
   normalize,
   openInFocused as openInFocusedImpl,
+  insertPane as insertPaneImpl,
   openInNewPane as openInNewPaneImpl,
   setFocus as setFocusImpl,
   setLayout as setLayoutImpl,
@@ -31,6 +32,12 @@ export function usePanes() {
 
   const openInNewPane = useCallback((sessionId: string) => {
     setState((prev) => openInNewPaneImpl(prev, sessionId))
+  }, [])
+
+  // The drag-and-drop sibling of `openInNewPane`: the gesture already decided the position
+  // and the target layout, so this hook only forwards them (see `insertPane` in lib/panes.ts).
+  const insertPane = useCallback((sessionId: string, index: number, layout: LayoutId) => {
+    setState((prev) => insertPaneImpl(prev, sessionId, index, layout))
   }, [])
 
   const closePane = useCallback((sessionId: string) => {
@@ -99,6 +106,7 @@ export function usePanes() {
     sizes: state.sizes,
     openInFocused,
     openInNewPane,
+    insertPane,
     closePane,
     setFocus,
     setLayout,
