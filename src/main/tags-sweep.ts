@@ -1,7 +1,9 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import { getSources, safeSessionPath, ClaudeSource } from './claude-data'
+import { getSources, resolveCodexFor, safeSessionPath, ClaudeSource } from './claude-data'
 import { readEffectiveTags, writeSessionTags } from './tags'
+import { normalizeTags } from './tags-pure'
+import { codexTagKey, getCodexSessionTags, setCodexSessionTags } from './store'
 
 /**
  * Cross-source tag operations — everything that has to look at more than one
@@ -10,11 +12,38 @@ import { readEffectiveTags, writeSessionTags } from './tags'
  */
 
 export interface TaggedSession {
-  file: string
+  /**
+   * The transcript carrying the tags, or null for a Codex conversation — whose tags
+   * are in Argos's own store, not in its rollout (see store.ts). A rewrite branches
+   * on exactly this, which is why it is a field and not a lookup.
+   */
+  file: string | null
   sourceId: string
+  /** Empty for a Codex hit: its tags are addressed by session id alone, and no caller
+   *  of this sweep uses the directory. */
   encodedDir: string
   sessionId: string
   tags: string[]
+}
+
+/** Every Codex conversation carrying `name`, from the store rather than from disk. */
+function codexSessionsWithTag(name: string): TaggedSession[] {
+  const hits: TaggedSession[] = []
+  for (const [key, tags] of Object.entries(getCodexSessionTags())) {
+    if (!tags.includes(name)) continue
+    // `<sourceId>:<sessionId>`, and a source id can itself contain a colon
+    // (`codex:<accountId>`), so the LAST one separates them — the session id is a uuid.
+    const at = key.lastIndexOf(':')
+    if (at === -1) continue
+    hits.push({
+      file: null,
+      sourceId: key.slice(0, at),
+      encodedDir: '',
+      sessionId: key.slice(at + 1),
+      tags
+    })
+  }
+  return hits
 }
 
 /** Every directory that can hold a transcript, across every source. */
@@ -71,7 +100,7 @@ export async function scanSessionsWithTag(name: string): Promise<TaggedSession[]
       }
     }
   }
-  return hits
+  return [...hits, ...codexSessionsWithTag(name)]
 }
 
 /** How many sessions carry `name`. Feeds the destructive confirmations. */
@@ -94,7 +123,8 @@ export async function rewriteTagAcrossSessions(
   let failed = 0
   for (const hit of await scanSessionsWithTag(name)) {
     try {
-      await writeSessionTags(hit.file, hit.sessionId, change(hit.tags))
+      if (hit.file) await writeSessionTags(hit.file, hit.sessionId, change(hit.tags))
+      else setCodexSessionTags(hit.sourceId, hit.sessionId, normalizeTags(change(hit.tags)))
       changed++
     } catch {
       failed++
@@ -109,6 +139,9 @@ export async function tagsForSession(
   encodedDir: string,
   sessionId: string
 ): Promise<string[]> {
+  if (await resolveCodexFor(sourceId)) {
+    return getCodexSessionTags()[codexTagKey(sourceId, sessionId)] ?? []
+  }
   const file = await safeSessionPath(sourceId, encodedDir, sessionId)
   if (!file) return []
   try {
@@ -116,4 +149,28 @@ export async function tagsForSession(
   } catch {
     return []
   }
+}
+
+/**
+ * Write the tags of one session, wherever that session keeps them.
+ *
+ * The single write path the IPC handler uses, so a Codex conversation and a Claude
+ * Code one are tagged by the same call. Returns the normalised set, or null when the
+ * ids address no session at all. Invalid input throws, exactly as `writeSessionTags`
+ * does — the handler already turns that into its own answer.
+ */
+export async function writeTagsForSession(
+  sourceId: string,
+  encodedDir: string,
+  sessionId: string,
+  tags: unknown
+): Promise<string[] | null> {
+  if (await resolveCodexFor(sourceId)) {
+    const clean = normalizeTags(tags)
+    setCodexSessionTags(sourceId, sessionId, clean)
+    return clean
+  }
+  const file = await safeSessionPath(sourceId, encodedDir, sessionId)
+  if (!file) return null
+  return writeSessionTags(file, sessionId, tags)
 }

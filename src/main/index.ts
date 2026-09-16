@@ -30,10 +30,9 @@ import {
   getUsage,
   listSources,
   searchSessions,
-  safeSessionPath,
   readSessionPeek
 } from './claude-data'
-import { writeSessionTags } from './tags'
+import { writeTagsForSession } from './tags-sweep'
 import {
   archiveSession,
   deleteSession,
@@ -1596,10 +1595,12 @@ ipcMain.handle(
 ipcMain.handle(
   'cc:set-session-tags',
   async (_, sourceId: string, encodedDir: string, sessionId: string, tags: unknown) => {
-    const file = await safeSessionPath(sourceId, encodedDir, sessionId)
-    if (!file) return { ok: false as const, error: 'not-found' as const }
     try {
-      const clean = await writeSessionTags(file, sessionId, tags)
+      // Routed rather than resolved here: a Codex conversation keeps its tags in
+      // Argos's store, because its rollout is read back by a typed deserialiser and
+      // must not carry a line Argos invented (see store.ts).
+      const clean = await writeTagsForSession(sourceId, encodedDir, sessionId, tags)
+      if (!clean) return { ok: false as const, error: 'not-found' as const }
       try {
         foldIn(clean)
       } catch {

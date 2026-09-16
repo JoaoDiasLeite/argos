@@ -158,6 +158,53 @@ export function setProjectFavorite(sourceId: string, encodedDir: string, on: boo
   return next
 }
 
+// ─── Codex session tags ───────────────────────────────────────────────────────
+
+/**
+ * Tags on a Codex conversation, keyed `<sourceId>:<sessionId>`.
+ *
+ * The one tag store that is NOT inside the transcript. A Claude Code transcript takes
+ * an appended `custom-tags` line because the CLI's own format is append-only JSONL
+ * and ignores lines it does not know. A Codex rollout is read back by a typed
+ * deserialiser on `codex resume`, so putting a line Argos invented into one risks
+ * breaking the conversation itself — a tag is not worth that.
+ *
+ * The cost is honest and small: these tags live in Argos and no other tool sees them,
+ * and losing store.json loses them. The sweep in tags-sweep.ts reads and rewrites
+ * them alongside the in-transcript ones so a label rename or delete still reaches
+ * every conversation carrying it.
+ */
+const CODEX_TAGS_KEY = 'codexSessionTags'
+
+export function codexTagKey(sourceId: string, sessionId: string): string {
+  return `${sourceId}:${sessionId}`
+}
+
+export function getCodexSessionTags(): Record<string, string[]> {
+  const raw = storeGet<unknown>(CODEX_TAGS_KEY, {})
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, string[]> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (Array.isArray(value)) out[key] = value.filter((t): t is string => typeof t === 'string')
+  }
+  return out
+}
+
+/** The tags of one Codex conversation. An empty set removes the entry rather than
+ *  storing `[]`, so the map holds only conversations that actually carry a tag. */
+export function setCodexSessionTags(sourceId: string, sessionId: string, tags: string[]): void {
+  const map = getCodexSessionTags()
+  const key = codexTagKey(sourceId, sessionId)
+  if (tags.length) map[key] = tags
+  else delete map[key]
+  storeSet(CODEX_TAGS_KEY, map)
+}
+
+/** Deleting a conversation takes its tags with it — nothing else ever will. */
+export function forgetCodexSessionTags(sourceId: string, sessionId: string): void {
+  setCodexSessionTags(sourceId, sessionId, [])
+}
+
 // ─── Archived projects ────────────────────────────────────────────────────────
 
 /**

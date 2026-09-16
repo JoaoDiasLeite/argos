@@ -29,7 +29,14 @@ import {
   withDecisions
 } from './ask-answers-pure'
 import { getWslClaudeRoots } from './wsl'
-import { getArchivedProjects, projectKey, storeGet, storeSet } from './store'
+import {
+  codexTagKey,
+  getArchivedProjects,
+  getCodexSessionTags,
+  projectKey,
+  storeGet,
+  storeSet
+} from './store'
 import { readJsonFile } from './json-file'
 import { getAccounts } from './accounts'
 import { getProviderAccounts } from './provider-accounts'
@@ -199,7 +206,7 @@ export async function resolveSource(id: string): Promise<ClaudeSource | null> {
  * The Codex reader's own source for this id, or null if the id names a Claude Code
  * one. The single place the "is this Codex" question is asked by the read paths.
  */
-async function resolveCodexFor(sourceId: string): Promise<CodexSource | null> {
+export async function resolveCodexFor(sourceId: string): Promise<CodexSource | null> {
   const src = await resolveSource(sourceId)
   return src?.provider === 'codex' ? (src.codex ?? null) : null
 }
@@ -631,7 +638,15 @@ export async function listSessions(
 ): Promise<CCSessionMeta[]> {
   const src = await resolveSource(sourceId)
   if (!src) return []
-  if (src.provider === 'codex' && src.codex) return codexSessions(src.codex, encodedDir, archived)
+  if (src.provider === 'codex' && src.codex) {
+    // Codex tags are the one set Argos keeps outside the transcript (see store.ts),
+    // so they are overlaid here rather than read by the Codex reader — which stays
+    // free of electron, and of any store the user could be without.
+    const sessions = await codexSessions(src.codex, encodedDir, archived)
+    const tags = getCodexSessionTags()
+    for (const s of sessions) s.tags = tags[codexTagKey(src.id, s.sessionId)] ?? []
+    return sessions
+  }
   const dir = archived
     ? path.join(src.projectsDir, encodedDir, ARCHIVED_DIR)
     : path.join(src.projectsDir, encodedDir)
