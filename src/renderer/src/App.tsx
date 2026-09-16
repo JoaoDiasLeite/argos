@@ -25,7 +25,8 @@ import {
 import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
 import ResizeHandles from './components/ResizeHandles'
-import Chat from './components/Chat'
+import ChatPane from './components/ChatPane'
+import { SessionPaneApi } from './hooks/useSessionPane'
 import TerminalPanel from './components/TerminalPanel'
 import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, groupOwnsView } from './components/NavRail'
 import ServerTabs from './components/ServerTabs'
@@ -370,9 +371,6 @@ export default function App() {
   useEffect(() => {
     setOpenFilePath(null)
   }, [activeProjectPath, view])
-  // "Is the currently-focused session streaming?" — replaces the old global `streaming`
-  // boolean wherever it gated the active chat's UI.
-  const activeStreaming = activeSession ? runningIds.has(activeSession.id) : false
   // Sessions with a pending approval — drives the amber sidebar dot.
   const attentionIds = useMemo(
     () => new Set(approvalQueue.map((r) => r.appSessionId)),
@@ -2675,6 +2673,48 @@ export default function App() {
   // Servers — count as in-group too, matching the rail's own highlight.
   const activeGroup = VIEW_GROUPS.find((g) => groupOwnsView(g, view))
 
+  // Everything a chat pane needs from the App, shared by every pane. A plain object,
+  // not a useMemo: most of the actions below are plain consts rebuilt on every render,
+  // so memoizing would compare thirty-odd references to never once skip the rebuild.
+  // Omitting deps to buy a stable identity would be worse than useless — a stale api
+  // binds a pane's actions to a session it no longer shows. If Chat is ever wrapped in
+  // React.memo, make the actions stable first; only then does memoizing this pay.
+  const paneApi: SessionPaneApi = {
+    sessions,
+    runningIds,
+    approvalQueue,
+    models,
+    defaultModel,
+    ready,
+    workMode,
+    terminalPrompts,
+    newChatNonce,
+    compacting,
+    saveError,
+    defaultAccountId,
+    codexDefaultAccountId,
+    geminiDefaultAccountId,
+    sendMessage,
+    stopRun,
+    retryTurn,
+    editAndResend,
+    branchSession,
+    patchSession,
+    setSessionModel,
+    toggleAutoApprove,
+    toggleLightMode,
+    compactSession,
+    closeChatTerminal,
+    openClaudeMd,
+    openCheckpoints,
+    openGit,
+    exportSession,
+    clearTerminalPrompt,
+    onApproval: respondApprovalById,
+    createSession,
+    openSettings: () => setView('settings')
+  }
+
   return (
     <div className={`app-shell ${maximized ? 'maximized' : ''}`}>
       {!maximized && <ResizeHandles />}
@@ -2775,44 +2815,7 @@ export default function App() {
                 <button className="budget-banner-close" onClick={() => setBudgetBanners([])} aria-label="Dismiss">✕</button>
               </div>
             )}
-            <Chat
-              saveError={saveError}
-              approval={approvalQueue.find((r) => r.appSessionId === activeSession?.id)}
-              onApproval={respondApprovalById}
-              session={activeSession}
-              streaming={activeStreaming}
-              onSendMessage={(text, images, files, thumbs) => sendMessage(activeId, text, images, files, thumbs)}
-              onStop={() => stopRun(activeId)}
-              onOpenSettings={() => setView('settings')}
-              ready={ready}
-              models={models}
-              currentModel={activeSession?.model || defaultModel}
-              onModelChange={(modelId) => setSessionModel(activeId, modelId)}
-              terminalProvider={activeChatProvider}
-              terminalAccountId={activeChatAccountId}
-              mode={workMode}
-              initialTerminalPrompt={activeId ? terminalPrompts[activeId] : undefined}
-              onInitialTerminalPromptSent={() => {
-                if (activeId) clearTerminalPrompt(activeId)
-              }}
-              newChatNonce={newChatNonce}
-              onOpenClaudeMd={() => openClaudeMd(activeId)}
-              autoApprove={activeSession?.autoApprove ?? false}
-              onToggleAutoApprove={() => toggleAutoApprove(activeId)}
-              lightMode={activeSession?.lightMode ?? false}
-              onToggleLightMode={() => toggleLightMode(activeId)}
-              onStartFresh={createSession}
-              onCompact={() => compactSession(activeId)}
-              compacting={compacting}
-              onOpenCheckpoints={() => openCheckpoints(activeId)}
-              onOpenGit={() => openGit(activeId)}
-              onRetry={() => retryTurn(activeId)}
-              onEditResend={(messageId, newText) => editAndResend(activeId, messageId, newText)}
-              onBranch={(messageId) => branchSession(activeId, messageId)}
-              onExportSession={(format) => exportSession(activeId, format)}
-              onPatchSession={(patch) => patchSession(activeId, patch)}
-              onCloseTerminal={() => closeChatTerminal(activeId)}
-            />
+            <ChatPane sessionId={activeId} api={paneApi} />
             <TerminalPanel
               lines={terminalLines}
               open={terminalOpen}
