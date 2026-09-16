@@ -199,9 +199,9 @@ export default function App() {
   const [terminalLines, setTerminalLines] = useState<TermLine[]>([])
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [changelogOpen, setChangelogOpen] = useState(false)
-  const [claudeMdOpen, setClaudeMdOpen] = useState(false)
-  const [checkpointsOpen, setCheckpointsOpen] = useState(false)
-  const [gitOpen, setGitOpen] = useState(false)
+  const [claudeMdFor, setClaudeMdFor] = useState<string | null>(null)
+  const [checkpointsFor, setCheckpointsFor] = useState<string | null>(null)
+  const [gitFor, setGitFor] = useState<string | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [sidebarTab, setSidebarTab] = useState<'files' | 'sessions'>('sessions')
   // File opened from the sidebar's Files tab, shown in the FileEditor modal.
@@ -347,6 +347,17 @@ export default function App() {
   }, [activeId])
 
   const activeSession = sessions.find((s) => s.id === activeId)
+  // Which CLI a session's model belongs to. A plain lookup, but it has three callers now
+  // that must agree — the sidebar's scope, the embedded terminal, and the CLAUDE.md modal,
+  // which is opened FOR a session and so cannot read the active one.
+  const providerOf = (s?: Session): ProviderId =>
+    models.find((m) => (s?.model || defaultModel).startsWith(m.id))?.provider ?? 'claude'
+  // The three modals are opened for a session, not for "the active one" — with two panes
+  // on screen those differ, and resolving them here keeps the JSX from doing the lookup
+  // once per prop.
+  const claudeMdSession = claudeMdFor ? sessions.find((s) => s.id === claudeMdFor) : undefined
+  const checkpointsSession = checkpointsFor ? sessions.find((s) => s.id === checkpointsFor) : undefined
+  const gitSession = gitFor ? sessions.find((s) => s.id === gitFor) : undefined
   // The open file belongs to the chat's project tree, so it goes stale the moment we point at
   // a different folder or leave the chat view (where the Files tab lives) entirely.
   const activeProjectPath = activeSession?.projectPath
@@ -1174,8 +1185,7 @@ export default function App() {
   // terminal launches and under which account, and which account the sidebar row, its
   // usage badge and the session list are scoped to — so opening a chat bound to another
   // account moves the whole sidebar onto it rather than disagreeing with what's on screen.
-  const activeChatProvider: ProviderId =
-    models.find((m) => (activeSession?.model || defaultModel).startsWith(m.id))?.provider ?? 'claude'
+  const activeChatProvider: ProviderId = providerOf(activeSession)
   const activeChatAccountId =
     activeChatProvider === 'codex'
       ? (activeSession?.codexAccountId ?? codexDefaultAccountId)
@@ -1393,19 +1403,21 @@ export default function App() {
   }
 
   // Wrappers around the three modal-open setters, taking the session they open for —
-  // the modal state itself is still a single app-wide boolean in this batch (it becomes
-  // per-session in a later one), so `sid` is unused for now beyond documenting intent.
-  const openClaudeMd = (_sid: string) => setClaudeMdOpen(true)
-  const openCheckpoints = (_sid: string) => setCheckpointsOpen(true)
-  const openGit = (_sid: string) => setGitOpen(true)
+  // each modal now tracks which session it belongs to, so two panes can have their own
+  // CLAUDE.md/checkpoints/git modal open on different sessions at once.
+  const openClaudeMd = (sid: string) => setClaudeMdFor(sid)
+  const openCheckpoints = (sid: string) => setCheckpointsFor(sid)
+  const openGit = (sid: string) => setGitFor(sid)
 
-  const createCheckpoint = async (label: string) => {
-    if (!activeSession) return
+  // Creates a checkpoint for the given session — the checkpoints modal passes its own
+  // session here rather than this closing over `activeSession`, so a checkpoint taken from
+  // a background pane's modal doesn't land on whatever session happens to be active.
+  const createCheckpoint = async (session: Session, label: string) => {
     await window.electronAPI.checkpointCreate(
-      activeSession.id,
+      session.id,
       label,
-      trackedFiles(activeSession.id),
-      activeSession.messages.length
+      trackedFiles(session.id),
+      session.messages.length
     )
   }
 
@@ -3000,11 +3012,11 @@ export default function App() {
           }}
         />
       )}
-      {claudeMdOpen && (
+      {claudeMdSession && (
         <ClaudeMdModal
-          projectPath={activeSession?.projectPath}
-          provider={activeChatProvider}
-          onClose={() => setClaudeMdOpen(false)}
+          projectPath={claudeMdSession.projectPath}
+          provider={providerOf(claudeMdSession)}
+          onClose={() => setClaudeMdFor(null)}
         />
       )}
       {/* Suppressed only where Chat renders the same request inline — which it does in
@@ -3021,17 +3033,17 @@ export default function App() {
           write={writeLocalFile}
         />
       )}
-      {checkpointsOpen && activeSession && (
+      {checkpointsSession && (
         <CheckpointsModal
-          sessionId={activeSession.id}
-          trackedFileCount={trackedFiles(activeSession.id).length}
-          onClose={() => setCheckpointsOpen(false)}
-          onCreate={createCheckpoint}
+          sessionId={checkpointsSession.id}
+          trackedFileCount={trackedFiles(checkpointsSession.id).length}
+          onClose={() => setCheckpointsFor(null)}
+          onCreate={(label) => createCheckpoint(checkpointsSession, label)}
           onRestored={() => addTerm({ kind: 'info', text: 'files restored from checkpoint' })}
         />
       )}
-      {gitOpen && (
-        <GitModal cwd={activeSession?.projectPath ?? ''} onClose={() => setGitOpen(false)} />
+      {gitSession && (
+        <GitModal cwd={gitSession.projectPath ?? ''} onClose={() => setGitFor(null)} />
       )}
       {paletteOpen && <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />}
       {/* Right-click for the app's own fields. Mounted once, listens on window, and
