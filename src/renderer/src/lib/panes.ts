@@ -1,32 +1,32 @@
-// Modelo de estado dos painéis (split/grid) e as funções puras que o manipulam.
+// Pane state model (split/grid) and the pure functions that manipulate it.
 //
-// Fica de propósito sem React, sem DOM e sem localStorage: quem persiste e quem
-// liga isto à UI vive noutro ficheiro (o hook `usePanes`, ainda por escrever),
-// para que este módulo se possa testar e raciocinar sobre ele sem montar nada.
+// Deliberately kept without React, DOM, or localStorage: whoever persists it and
+// wires it to the UI lives in another file (the `usePanes` hook, still to be
+// written), so this module can be tested and reasoned about without mounting anything.
 
 export type LayoutId = 'single' | 'cols-2' | 'cols-3' | 'grid-2x2' | 'main-side'
 
 export interface Pane {
   sessionId: string
-  /** Reservado: override do modo por painel. Não usado ainda — existe para evitar
-   *  migrar a chave persistida quando quisermos um chat ao lado de um terminal. */
+  /** Reserved: per-pane mode override. Not used yet — exists so we don't have to
+   *  migrate the persisted key once we want a chat next to a terminal. */
   mode?: 'chat' | 'terminal'
 }
 
 export interface PaneState {
   v: 1
   layout: LayoutId
-  /** Invariante: sessionId único em todos os painéis; length <= capacity(layout). */
+  /** Invariant: sessionId unique across all panes; length <= capacity(layout). */
   panes: Pane[]
-  /** sessionId do painel focado; '' quando não há painéis. */
+  /** sessionId of the focused pane; '' when there are no panes. */
   focused: string
-  /** Fracções por eixo, normalizadas para somar 1. Ausente = painéis iguais. */
+  /** Fractions per axis, normalized to sum to 1. Absent = equal panes. */
   sizes?: { cols?: number[]; rows?: number[] }
 }
 
-// Ordem de "subida" de layout usada por openInNewPane — não é a ordem de capacidade
-// pura (grid-2x2 e main-side empatam a 4/3... na verdade main-side fica de fora
-// porque não é um degrau automático, é uma escolha explícita do utilizador).
+// Layout "step up" order used by openInNewPane — not plain capacity order
+// (grid-2x2 and main-side tie at 4/3... actually main-side is left out
+// because it isn't an automatic step, it's an explicit user choice).
 //
 // `main-side` pane order (the UI depends on this and so does `insertPane`):
 // index 0 is the BIG pane — it owns a full-height column of its own — and indices
@@ -45,9 +45,9 @@ const CAPACITY: Record<LayoutId, number> = {
   'main-side': 3
 }
 
-// Degraus que openInNewPane sobe sozinho quando fica sem espaço. main-side não
-// entra aqui: também cabe 3 painéis como cols-3, mas é um layout com forma própria
-// (um painel grande + coluna lateral) que só faz sentido por escolha explícita.
+// Steps openInNewPane climbs on its own when it runs out of space. main-side is
+// not among them: it also fits 3 panes like cols-3, but it's a layout with a shape
+// of its own (one big pane + a side column) that only makes sense as an explicit choice.
 const AUTO_GROW: LayoutId[] = ['single', 'cols-2', 'cols-3', 'grid-2x2']
 
 export function capacity(layout: LayoutId): number {
@@ -59,23 +59,23 @@ export function emptyState(): PaneState {
 }
 
 export function openInFocused(state: PaneState, sessionId: string): PaneState {
-  // Regra 1: sessionId vazio é o sinal de "fecha tudo", não uma sessão real.
+  // Rule 1: an empty sessionId is the signal to "close everything", not a real session.
   if (sessionId === '') {
     return { ...state, panes: [], focused: '' }
   }
 
   const existingIndex = state.panes.findIndex((p) => p.sessionId === sessionId)
   if (existingIndex !== -1) {
-    // Regra 2: já está aberta noutro painel — não duplicar, só focar.
+    // Rule 2: already open in another pane — don't duplicate, just focus it.
     return { ...state, focused: sessionId }
   }
 
   if (state.panes.length === 0) {
-    // Regra 3: sem painéis, este é o primeiro.
+    // Rule 3: no panes, this is the first one.
     return { ...state, panes: [{ sessionId }], focused: sessionId }
   }
 
-  // Regra 4: substitui a sessão do painel focado, preservando a posição dele.
+  // Rule 4: replace the focused pane's session, preserving its position.
   const focusedIndex = state.panes.findIndex((p) => p.sessionId === state.focused)
   const targetIndex = focusedIndex === -1 ? 0 : focusedIndex
   const panes = state.panes.map((p, i) => (i === targetIndex ? { ...p, sessionId } : p))
@@ -85,15 +85,15 @@ export function openInFocused(state: PaneState, sessionId: string): PaneState {
 export function openInNewPane(state: PaneState, sessionId: string): PaneState {
   const existingIndex = state.panes.findIndex((p) => p.sessionId === sessionId)
   if (existingIndex !== -1) {
-    // Mesma regra de não-duplicação que openInFocused: mover o foco chega.
+    // Same non-duplication rule as openInFocused: moving the focus is enough.
     return { ...state, focused: sessionId }
   }
 
   const before = shape(state)
   const cap = capacity(state.layout)
   if (state.panes.length < cap) {
-    // O número de painéis muda: as fracções guardadas já não descrevem este
-    // layout, não faz sentido tentar reescalá-las (ver comentário em dropStaleSizes).
+    // The pane count changes: the stored fractions no longer describe this
+    // layout, so there's no point trying to rescale them (see comment on dropStaleSizes).
     return dropStaleSizes(before, {
       ...state,
       panes: [...state.panes, { sessionId }],
@@ -101,8 +101,8 @@ export function openInNewPane(state: PaneState, sessionId: string): PaneState {
     })
   }
 
-  // Sem espaço no layout atual: tenta subir um degrau em vez de sacrificar um
-  // painel existente — é o que o utilizador espera de "abrir num painel novo".
+  // No room in the current layout: try climbing a step instead of sacrificing an
+  // existing pane — that's what the user expects from "open in a new pane".
   const step = AUTO_GROW.indexOf(state.layout)
   const nextLayout = step !== -1 && step + 1 < AUTO_GROW.length ? AUTO_GROW[step + 1] : null
   if (nextLayout) {
@@ -114,8 +114,8 @@ export function openInNewPane(state: PaneState, sessionId: string): PaneState {
     })
   }
 
-  // Já no máximo (ou num layout sem degrau seguinte, como main-side): não há para
-  // onde crescer, cai para o mesmo comportamento de openInFocused.
+  // Already at the max (or in a layout with no next step, like main-side): there's
+  // nowhere to grow, so fall back to the same behavior as openInFocused.
   return openInFocused(state, sessionId)
 }
 
@@ -176,17 +176,17 @@ export function closePane(state: PaneState, sessionId: string): PaneState {
   const panes = state.panes.filter((_, i) => i !== index)
 
   if (panes.length === 0) {
-    // Volta a single: não há painéis para justificar um layout maior.
+    // Back to single: no panes left to justify a bigger layout.
     return dropStaleSizes(before, { ...state, panes, focused: '', layout: 'single' })
   }
 
   if (state.focused !== sessionId) {
-    // O foco não estava aqui, não há nada a recalcular — mas o número de painéis
-    // mudou na mesma, e com ele o número de faixas dos dois eixos.
+    // The focus wasn't here, so there's nothing to recompute — but the pane count
+    // still changed, and with it the number of tracks on both axes.
     return dropStaleSizes(before, { ...state, panes })
   }
 
-  // O painel adjacente é o anterior ao removido, ou o primeiro se era o índice 0.
+  // The adjacent pane is the one before the removed one, or the first if it was index 0.
   const adjacentIndex = index === 0 ? 0 : index - 1
   return dropStaleSizes(before, { ...state, panes, focused: panes[adjacentIndex].sessionId })
 }
@@ -203,18 +203,18 @@ export function setLayout(state: PaneState, layout: LayoutId): PaneState {
   const before = shape(state)
   const cap = capacity(layout)
   if (state.panes.length <= cap) {
-    // O número de painéis visíveis não muda (só pode crescer o layout à volta
-    // deles), mas a *forma* pode: cols-3 → main-side mantém os três painéis e
-    // passa de uma linha para duas. Quem decide isso é dropStaleSizes, por isso
-    // isto já não é um return directo.
+    // The number of visible panes doesn't change (only the layout around them can
+    // grow), but the *shape* can: cols-3 → main-side keeps the three panes and
+    // goes from one row to two. dropStaleSizes is the one that decides that, which
+    // is why this is no longer a direct return.
     return dropStaleSizes(before, { ...state, layout })
   }
 
   const focusedIndex = state.panes.findIndex((p) => p.sessionId === state.focused)
   let panes: Pane[]
   if (focusedIndex !== -1 && focusedIndex >= cap) {
-    // O corte simples deixaria o painel focado de fora — troca-o com o último
-    // painel que sobrevive ao corte para que continue visível.
+    // A plain truncation would leave the focused pane out — swap it with the last
+    // pane that survives the truncation so it stays visible.
     panes = state.panes.slice(0, cap)
     panes[cap - 1] = state.panes[focusedIndex]
   } else {
@@ -225,8 +225,8 @@ export function setLayout(state: PaneState, layout: LayoutId): PaneState {
     ? state.focused
     : panes[0].sessionId
 
-  // Aqui sim o número de painéis muda (corte): as fracções antigas já não
-  // correspondem ao número de faixas do novo layout.
+  // Here the pane count does change (truncation): the old fractions no longer
+  // correspond to the new layout's number of tracks.
   return dropStaleSizes(before, { ...state, layout, panes, focused })
 }
 
@@ -234,7 +234,7 @@ type Axis = keyof NonNullable<PaneState['sizes']>
 
 const AXES: Axis[] = ['cols', 'rows']
 
-/** O par (layout, nº de painéis) de que depende a forma da grelha. */
+/** The (layout, pane count) pair the grid's shape depends on. */
 function shape(state: PaneState): { layout: LayoutId; paneCount: number } {
   return { layout: state.layout, paneCount: state.panes.length }
 }
@@ -306,7 +306,7 @@ function dropAxes(state: PaneState, axes: Axis[]): PaneState {
   return { ...state, sizes: rest }
 }
 
-/** Um eixo válido: só números finitos, todos > 0, com o comprimento certo. */
+/** A valid axis: only finite numbers, all > 0, with the right length. */
 function isValidAxis(value: unknown, expectedLength: number): value is number[] {
   return (
     Array.isArray(value) &&
@@ -316,17 +316,17 @@ function isValidAxis(value: unknown, expectedLength: number): value is number[] 
   )
 }
 
-/** Normaliza a soma de um eixo para 1, preservando as proporções relativas. */
+/** Normalizes an axis's sum to 1, preserving relative proportions. */
 function normalizeAxis(values: number[]): number[] {
   const sum = values.reduce((a, b) => a + b, 0)
   return values.map((n) => n / sum)
 }
 
 /**
- * Puro e imutável: define/substitui as fracções de um ou ambos os eixos. Cada
- * eixo passado é renormalizado para somar 1; um eixo vazio ou ausente é
- * removido em vez de guardado como `[]`, para que `normalize` não tenha de
- * distinguir "sem eixo" de "eixo vazio" ao restaurar.
+ * Pure and immutable: sets/replaces the fractions of one or both axes. Each
+ * axis passed in is renormalized to sum to 1; an empty or absent axis is
+ * removed instead of stored as `[]`, so that `normalize` doesn't have to
+ * distinguish "no axis" from "empty axis" when restoring.
  */
 export function setSizes(
   state: PaneState,
@@ -346,7 +346,7 @@ export function setSizes(
 }
 
 export function normalize(state: unknown, knownSessionIds: string[]): PaneState {
-  // Vem do localStorage: trata tudo como potencialmente hostil e nunca atira.
+  // Comes from localStorage: treat everything as potentially hostile and never throw.
   if (typeof state !== 'object' || state === null) {
     return emptyState()
   }
