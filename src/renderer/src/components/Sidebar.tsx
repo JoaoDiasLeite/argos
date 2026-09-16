@@ -416,9 +416,7 @@ export default function Sidebar({
   }, [accountMenuOpen])
 
   // Blank "New chat" drafts (no messages yet) stay out of the list, and chats are
-  // scoped to the selected provider + account — except ones that run somewhere else
-  // entirely (a WSL distro, a remote host), which belong to no managed account and stay
-  // visible whichever is selected. See src/renderer/src/lib/account-scope.ts for
+  // scoped to the selected provider + account. See src/renderer/src/lib/account-scope.ts for
   // provOf/acctOf/originOf/visibleSessions — the logic (including the "fallbacks mirror
   // how an unbound chat actually RUNS" comment) lives there now, so it can be unit-tested
   // outside of React.

@@ -90,12 +90,10 @@ export function idFor(
 // `acctOf` resolves. Everything (across accounts) remains reachable via
 // "Explore all chats" → Projects.
 //
-// A chat with an ORIGIN (see originOf) is the exception, and skips the account half of
-// that: it runs against a CLI login inside a distro or on a remote host, so it belongs to
-// no managed account at all and filing it under one only decides which account's list it
-// vanishes from. It stays visible whichever account is selected, and its row says where it
-// runs, so the two kinds are never confusable. The provider half still applies — a Codex
-// account's list is no place for a chat on a Claude model, wherever it runs.
+// A chat with an ORIGIN (see originOf) is filed the same way. It runs against a CLI login
+// inside a distro or on a remote host rather than the account it carries, but that account
+// is still the one it was created under, and a chat started while working on one account
+// showing up in another's list reads as a leak between them. Its row says where it runs.
 export function visibleSessions(
   sessions: Session[],
   models: ModelInfo[],
@@ -107,22 +105,13 @@ export function visibleSessions(
     (s) =>
       (s.messages.length > 0 || s.hasTerminalActivity) &&
       provOf(models, s.model) === selectedProvider &&
-      (originOf(s) !== null || acctOf(s, models, defaults) === currentAccountId)
+      acctOf(s, models, defaults) === currentAccountId
   )
 }
 
-/**
- * The provider and account a chat puts the sidebar on while it is the active chat.
- *
- * Mirrors App's scopeAccountId: a chat with an origin does not move the sidebar onto
- * the account it carries, so it scopes to that provider's default instead.
- */
+/** The provider and account a chat puts the sidebar on while it is the active chat. */
 export function scopeOf(s: Session, models: ModelInfo[], defaults: AccountDefaults): string {
-  const p = provOf(models, s.model)
-  if (!originOf(s)) return `${p}:${acctOf(s, models, defaults)}`
-  const fallback =
-    p === 'codex' ? defaults.codexDefaultAccountId : p === 'gemini' ? defaults.geminiDefaultAccountId : defaults.defaultAccountId
-  return `${p}:${fallback ?? 'default'}`
+  return `${provOf(models, s.model)}:${acctOf(s, models, defaults)}`
 }
 
 /**

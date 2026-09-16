@@ -164,22 +164,21 @@ describe('visibleSessions', () => {
     expect(result.map((s) => s.id)).toEqual(['x1'])
   })
 
-  it('shows a WSL chat whichever account is selected', () => {
-    // It carries claude-personal and runs on neither that nor claude-work. Filing it under
-    // an account would only pick which list it disappears from; the row says 'Ubuntu-DevOps'
-    // either way, so there is nothing to confuse it with.
+  it('files a WSL or SSH chat under the account it was created with', () => {
+    // It runs against the distro's own login, but it was started on claude-personal, and
+    // showing it on claude-work too leaks one account's chats into the other's list.
     const withOrigins = [...allSessions, wslChat, sshChat]
     const onWork = visibleSessions(withOrigins, models, 'claude', 'claude-work', defaults)
     const onPersonal = visibleSessions(withOrigins, models, 'claude', 'claude-personal', defaults)
-    expect(onWork.map((s) => s.id)).toEqual(['c1', 'w1', 's1'])
-    expect(onPersonal.map((s) => s.id)).toEqual(['c2', 'w1', 's1'])
+    expect(onWork.map((s) => s.id)).toEqual(['c1', 's1'])
+    expect(onPersonal.map((s) => s.id)).toEqual(['c2', 'w1'])
   })
 
-  it('still scopes an origin chat by provider', () => {
+  it('scopes an origin chat by provider', () => {
     // Where it runs is not which CLI it runs: a Codex account's list is no place for a
     // Claude chat, distro or no distro.
     const withOrigins = [...allSessions, wslChat, codexWslChat]
-    const onClaude = visibleSessions(withOrigins, models, 'claude', 'claude-work', defaults)
+    const onClaude = visibleSessions(withOrigins, models, 'claude', 'claude-personal', defaults)
     const onCodex = visibleSessions(withOrigins, models, 'codex', 'codex-work', defaults)
     expect(onClaude.map((s) => s.id)).toContain('w1')
     expect(onClaude.map((s) => s.id)).not.toContain('w2')
@@ -230,12 +229,11 @@ describe('nextChatAfterClose', () => {
     expect(nextChatAfterClose(closed, [draft, terminal], models, defaults)?.id).toBe('term')
   })
 
-  it('lands on a WSL chat only when it leaves the sidebar on the same account', () => {
-    // A WSL chat scopes the sidebar to the default account, whatever id it carries.
+  it('lands on a WSL chat only when it was created on the same account', () => {
     const wsl = makeSession({ id: 'wsl', model: 'claude-opus-4-8', accountId: 'work', wslDistro: 'Ubuntu' })
     const onWork = makeSession({ id: 'w', model: 'claude-opus-4-8', accountId: 'work' })
     const onPersonal = makeSession({ id: 'p', model: 'claude-opus-4-8', accountId: 'personal' })
-    expect(nextChatAfterClose(onWork, [wsl], models, defaults)).toBeUndefined()
-    expect(nextChatAfterClose(onPersonal, [wsl], models, defaults)?.id).toBe('wsl')
+    expect(nextChatAfterClose(onWork, [wsl], models, defaults)?.id).toBe('wsl')
+    expect(nextChatAfterClose(onPersonal, [wsl], models, defaults)).toBeUndefined()
   })
 })

@@ -18,7 +18,14 @@ const CHANGELOG: Entry[] = [
     version: '1.11.0',
     date: '2026-09-16',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'A chat that runs inside a WSL distro or on a remote host is listed under the account it was created with again, instead of under every account. It runs against the login that lives there rather than the account it carries, which is why it had been let through, but a chat started while working on one account turning up in another’s list reads as a leak between them. Opening one moves the sidebar onto its account like any other chat, and its row still says where it runs.'
+        ]
+      }
+    ]
   },
   {
     version: '1.10.0',
