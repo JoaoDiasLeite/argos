@@ -262,7 +262,17 @@ export default function Chat(
   const toggleReview = () => {
     if (!session) return
     setReviewOpenById((prev) => {
-      const next = { ...prev }
+      // Re-read before writing rather than trusting `prev`. Each pane mounts its own Chat,
+      // which read the map once and then writes the whole thing back — so with two panes
+      // open, toggling Review in one saved a map built before the other's entry existed
+      // and silently dropped it. The symptom was Review forgetting a chat now and then,
+      // with nothing to tie it to the other pane.
+      //
+      // Only the entry for THIS chat is decided here, so the disk is the better base:
+      // a session can only ever be in one pane (see lib/panes.ts), which means nobody
+      // else is competing for this key.
+      const stored = readReviewOpen()
+      const next = { ...stored }
       if (prev[session.id]) delete next[session.id]
       else next[session.id] = true
       writeReviewOpen(next)
