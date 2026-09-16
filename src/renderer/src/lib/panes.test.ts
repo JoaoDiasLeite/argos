@@ -7,6 +7,7 @@ import {
   closePane,
   setFocus,
   setLayout,
+  setSizes,
   normalize,
   type PaneState
 } from './panes'
@@ -304,5 +305,158 @@ describe('normalize', () => {
     const frozen = structuredClone(input)
     normalize(input, known)
     expect(input).toEqual(frozen)
+  })
+
+  it('round-trips valid sizes, normalized to sum to 1', () => {
+    const result = normalize(
+      {
+        v: 1,
+        layout: 'cols-2',
+        panes: [{ sessionId: 'a' }, { sessionId: 'b' }],
+        focused: 'a',
+        sizes: { cols: [1, 3] }
+      },
+      known
+    )
+    expect(result.sizes?.cols).toEqual([0.25, 0.75])
+  })
+
+  it('drops an axis whose length does not match the sanitized pane count', () => {
+    const result = normalize(
+      {
+        v: 1,
+        layout: 'cols-3',
+        panes: [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }],
+        focused: 'a',
+        // Two fractions for three panes — length mismatch.
+        sizes: { cols: [0.5, 0.5] }
+      },
+      known
+    )
+    expect(result.sizes).toBeUndefined()
+  })
+
+  it('drops an axis containing a NaN', () => {
+    const result = normalize(
+      {
+        v: 1,
+        layout: 'cols-2',
+        panes: [{ sessionId: 'a' }, { sessionId: 'b' }],
+        focused: 'a',
+        sizes: { cols: [NaN, 1] }
+      },
+      known
+    )
+    expect(result.sizes).toBeUndefined()
+  })
+
+  it('drops an axis containing a zero', () => {
+    const result = normalize(
+      {
+        v: 1,
+        layout: 'cols-2',
+        panes: [{ sessionId: 'a' }, { sessionId: 'b' }],
+        focused: 'a',
+        sizes: { cols: [0, 1] }
+      },
+      known
+    )
+    expect(result.sizes).toBeUndefined()
+  })
+
+  it('drops an axis whose length matched the raw panes but not the sanitized ones', () => {
+    // Three raw panes, one of them a ghost session — sanitizing drops it to two,
+    // so a three-long cols axis (valid against the raw list) must still be dropped.
+    const result = normalize(
+      {
+        v: 1,
+        layout: 'cols-3',
+        panes: [{ sessionId: 'a' }, { sessionId: 'ghost' }, { sessionId: 'b' }],
+        focused: 'a',
+        sizes: { cols: [1, 1, 1] }
+      },
+      known
+    )
+    expect(result.sizes).toBeUndefined()
+  })
+})
+
+describe('setSizes', () => {
+  const base: PaneState = {
+    v: 1,
+    layout: 'cols-2',
+    panes: [{ sessionId: 'a' }, { sessionId: 'b' }],
+    focused: 'a'
+  }
+
+  it('sets and normalizes the cols axis, leaving the rest untouched', () => {
+    const frozen = structuredClone(base)
+    const result = setSizes(base, { cols: [1, 1] })
+    expect(result.sizes).toEqual({ cols: [0.5, 0.5] })
+    expect(result.panes).toEqual(base.panes)
+    expect(base).toEqual(frozen)
+  })
+
+  it('normalizes an uneven split', () => {
+    const result = setSizes(base, { cols: [1, 4] })
+    expect(result.sizes?.cols).toEqual([0.2, 0.8])
+  })
+
+  it('drops sizes entirely when given an empty axis and nothing else', () => {
+    const withSizes = setSizes(base, { cols: [0.5, 0.5] })
+    const result = setSizes(withSizes, { cols: [] })
+    expect(result.sizes).toBeUndefined()
+  })
+})
+
+describe('sizes discarded on pane-count changes', () => {
+  it('closePane drops the cols axis', () => {
+    const withSizes = setSizes(
+      { v: 1, layout: 'cols-3', panes: [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }], focused: 'a' },
+      { cols: [0.2, 0.3, 0.5] }
+    )
+    const result = closePane(withSizes, 'b')
+    expect(result.sizes).toBeUndefined()
+  })
+
+  it('openInNewPane drops the cols axis when it appends a pane', () => {
+    const withSizes = setSizes(
+      { v: 1, layout: 'cols-2', panes: [{ sessionId: 'a' }], focused: 'a' },
+      { cols: [1] }
+    )
+    const result = openInNewPane(withSizes, 'b')
+    expect(result.sizes).toBeUndefined()
+  })
+
+  it('openInNewPane keeps sizes when it only moves focus to an already-open pane', () => {
+    const withSizes = setSizes(
+      { v: 1, layout: 'cols-2', panes: [{ sessionId: 'a' }, { sessionId: 'b' }], focused: 'a' },
+      { cols: [0.3, 0.7] }
+    )
+    const result = openInNewPane(withSizes, 'b')
+    expect(result.sizes?.cols).toEqual([0.3, 0.7])
+  })
+
+  it('setLayout drops the cols axis when it trims panes', () => {
+    const withSizes = setSizes(
+      {
+        v: 1,
+        layout: 'grid-2x2',
+        panes: [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }, { sessionId: 'd' }],
+        focused: 'a'
+      },
+      { cols: [0.25, 0.25, 0.25, 0.25] }
+    )
+    const result = setLayout(withSizes, 'cols-2')
+    expect(result.sizes).toBeUndefined()
+  })
+
+  it('setLayout keeps sizes when the pane count does not change', () => {
+    const withSizes = setSizes(
+      { v: 1, layout: 'single', panes: [{ sessionId: 'a' }], focused: 'a' },
+      { cols: [1] }
+    )
+    const result = setLayout(withSizes, 'cols-3')
+    expect(result.sizes?.cols).toEqual([1])
   })
 })

@@ -81,7 +81,9 @@ export function openInNewPane(state: PaneState, sessionId: string): PaneState {
 
   const cap = capacity(state.layout)
   if (state.panes.length < cap) {
-    return { ...state, panes: [...state.panes, { sessionId }], focused: sessionId }
+    // O número de painéis muda: as fracções de coluna guardadas já não descrevem
+    // este layout, não faz sentido tentar reescalá-las (ver comentário em dropAxis).
+    return dropAxis({ ...state, panes: [...state.panes, { sessionId }], focused: sessionId }, 'cols')
   }
 
   // Sem espaço no layout atual: tenta subir um degrau em vez de sacrificar um
@@ -89,12 +91,15 @@ export function openInNewPane(state: PaneState, sessionId: string): PaneState {
   const step = AUTO_GROW.indexOf(state.layout)
   const nextLayout = step !== -1 && step + 1 < AUTO_GROW.length ? AUTO_GROW[step + 1] : null
   if (nextLayout) {
-    return {
-      ...state,
-      layout: nextLayout,
-      panes: [...state.panes, { sessionId }],
-      focused: sessionId
-    }
+    return dropAxis(
+      {
+        ...state,
+        layout: nextLayout,
+        panes: [...state.panes, { sessionId }],
+        focused: sessionId
+      },
+      'cols'
+    )
   }
 
   // Já no máximo (ou num layout sem degrau seguinte, como main-side): não há para
@@ -112,17 +117,18 @@ export function closePane(state: PaneState, sessionId: string): PaneState {
 
   if (panes.length === 0) {
     // Volta a single: não há painéis para justificar um layout maior.
-    return { ...state, panes, focused: '', layout: 'single' }
+    return dropAxis({ ...state, panes, focused: '', layout: 'single' }, 'cols')
   }
 
   if (state.focused !== sessionId) {
-    // O foco não estava aqui, não há nada a recalcular.
-    return { ...state, panes }
+    // O foco não estava aqui, não há nada a recalcular — mas o número de painéis
+    // mudou na mesma, e com ele o número de colunas.
+    return dropAxis({ ...state, panes }, 'cols')
   }
 
   // O painel adjacente é o anterior ao removido, ou o primeiro se era o índice 0.
   const adjacentIndex = index === 0 ? 0 : index - 1
-  return { ...state, panes, focused: panes[adjacentIndex].sessionId }
+  return dropAxis({ ...state, panes, focused: panes[adjacentIndex].sessionId }, 'cols')
 }
 
 export function setFocus(state: PaneState, sessionId: string): PaneState {
@@ -136,6 +142,9 @@ export function setFocus(state: PaneState, sessionId: string): PaneState {
 export function setLayout(state: PaneState, layout: LayoutId): PaneState {
   const cap = capacity(layout)
   if (state.panes.length <= cap) {
+    // O número de painéis visíveis não muda (só pode crescer o layout à volta
+    // deles), por isso as fracções de coluna continuam a descrever o mesmo
+    // número de painéis e não há razão para as descartar.
     return { ...state, layout }
   }
 
@@ -154,7 +163,62 @@ export function setLayout(state: PaneState, layout: LayoutId): PaneState {
     ? state.focused
     : panes[0].sessionId
 
-  return { ...state, layout, panes, focused }
+  // Aqui sim o número de painéis muda (corte): as fracções antigas já não
+  // correspondem ao número de colunas do novo layout.
+  return dropAxis({ ...state, layout, panes, focused }, 'cols')
+}
+
+// Descarta um eixo de `sizes` (imutável): usado sempre que uma transição muda o
+// número de painéis desse eixo, porque nesse caso as fracções antigas já não
+// descrevem o layout novo — reescalá-las daria tamanhos que ninguém escolheu.
+function dropAxis(state: PaneState, axis: keyof NonNullable<PaneState['sizes']>): PaneState {
+  if (!state.sizes || !(axis in state.sizes)) return state
+  const rest = { ...state.sizes }
+  delete rest[axis]
+  if (Object.keys(rest).length === 0) {
+    const { sizes: _sizes, ...withoutSizes } = state
+    return withoutSizes
+  }
+  return { ...state, sizes: rest }
+}
+
+/** Um eixo válido: só números finitos, todos > 0, com o comprimento certo. */
+function isValidAxis(value: unknown, expectedLength: number): value is number[] {
+  return (
+    Array.isArray(value) &&
+    value.length === expectedLength &&
+    value.length > 0 &&
+    value.every((n) => typeof n === 'number' && Number.isFinite(n) && n > 0)
+  )
+}
+
+/** Normaliza a soma de um eixo para 1, preservando as proporções relativas. */
+function normalizeAxis(values: number[]): number[] {
+  const sum = values.reduce((a, b) => a + b, 0)
+  return values.map((n) => n / sum)
+}
+
+/**
+ * Puro e imutável: define/substitui as fracções de um ou ambos os eixos. Cada
+ * eixo passado é renormalizado para somar 1; um eixo vazio ou ausente é
+ * removido em vez de guardado como `[]`, para que `normalize` não tenha de
+ * distinguir "sem eixo" de "eixo vazio" ao restaurar.
+ */
+export function setSizes(
+  state: PaneState,
+  sizes: { cols?: number[]; rows?: number[] }
+): PaneState {
+  const cols = sizes.cols && sizes.cols.length > 0 ? normalizeAxis(sizes.cols) : undefined
+  const rows = sizes.rows && sizes.rows.length > 0 ? normalizeAxis(sizes.rows) : undefined
+  const next: NonNullable<PaneState['sizes']> = {
+    ...(cols ? { cols } : {}),
+    ...(rows ? { rows } : {})
+  }
+  if (Object.keys(next).length === 0) {
+    const { sizes: _sizes, ...withoutSizes } = state
+    return withoutSizes
+  }
+  return { ...state, sizes: next }
 }
 
 export function normalize(state: unknown, knownSessionIds: string[]): PaneState {
@@ -189,5 +253,25 @@ export function normalize(state: unknown, knownSessionIds: string[]): PaneState 
       ? raw.focused
       : panes[0].sessionId
 
-  return { v: 1, layout, panes, focused }
+  // O eixo só é aceite se bater certo com o número de painéis *depois* do
+  // saneamento acima (dedup, sessões desconhecidas, corte pela capacidade) —
+  // validar contra o `raw.panes.length` original deixaria passar um eixo
+  // desalinhado sempre que o saneamento tivesse descartado alguma entrada.
+  // Quando não bate, descarta-se o eixo em vez de tentar adivinhar: volta a
+  // painéis iguais, que é o comportamento seguro por omissão.
+  const rawSizes = raw.sizes as Partial<{ cols: unknown; rows: unknown }> | null | undefined
+  let sizes: PaneState['sizes'] | undefined
+  if (rawSizes && typeof rawSizes === 'object') {
+    const cols = isValidAxis(rawSizes.cols, panes.length)
+      ? normalizeAxis(rawSizes.cols)
+      : undefined
+    const rows = isValidAxis(rawSizes.rows, panes.length)
+      ? normalizeAxis(rawSizes.rows)
+      : undefined
+    if (cols || rows) {
+      sizes = { ...(cols ? { cols } : {}), ...(rows ? { rows } : {}) }
+    }
+  }
+
+  return sizes ? { v: 1, layout, panes, focused, sizes } : { v: 1, layout, panes, focused }
 }

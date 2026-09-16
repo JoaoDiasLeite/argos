@@ -12,6 +12,7 @@ import {
   openInNewPane as openInNewPaneImpl,
   setFocus as setFocusImpl,
   setLayout as setLayoutImpl,
+  setSizes as setSizesImpl,
   type LayoutId,
   type PaneState
 } from '../lib/panes'
@@ -42,6 +43,10 @@ export function usePanes() {
 
   const setLayout = useCallback((layout: LayoutId) => {
     setState((prev) => setLayoutImpl(prev, layout))
+  }, [])
+
+  const setSizes = useCallback((sizes: { cols?: number[]; rows?: number[] }) => {
+    setState((prev) => setSizesImpl(prev, sizes))
   }, [])
 
   // Reads the persisted state and applies it, filtered down to sessions that still
@@ -97,6 +102,7 @@ export function usePanes() {
     closePane,
     setFocus,
     setLayout,
+    setSizes,
     restore
   }
 }

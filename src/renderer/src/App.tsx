@@ -195,8 +195,19 @@ export default function App() {
   // every one of setActiveId's call sites means "show me this chat", which is exactly
   // what openInFocused does (see lib/panes.ts for the exact semantics, including how
   // it treats an empty sessionId as "clear the panel").
-  const { panes, layout, focused, openInFocused, openInNewPane, closePane, setFocus, setLayout, restore } =
-    usePanes()
+  const {
+    panes,
+    layout,
+    focused,
+    sizes: paneSizes,
+    openInFocused,
+    openInNewPane,
+    closePane,
+    setFocus,
+    setLayout,
+    setSizes,
+    restore
+  } = usePanes()
   const activeId = focused
   const setActiveId = openInFocused
   // Focus and visibility are different questions. `activeId` answers "which chat am I
@@ -2881,10 +2892,12 @@ export default function App() {
               panes={panes}
               layout={layout}
               focused={focused}
+              sizes={paneSizes}
               api={paneApi}
               onFocus={setFocus}
               onClose={closePane}
               onSetLayout={setLayout}
+              onSetSizes={setSizes}
               onAddPane={addPane}
               canAddPane={!!addPaneCandidate}
             />

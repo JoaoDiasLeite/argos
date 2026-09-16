@@ -1,6 +1,7 @@
-import type { CSSProperties } from 'react'
+import { Fragment, useMemo, useRef, useState, type CSSProperties } from 'react'
 import ChatPane from './ChatPane'
-import { capacity, type LayoutId, type Pane } from '../lib/panes'
+import PaneSplitter from './PaneSplitter'
+import { capacity, type LayoutId, type Pane, type PaneState } from '../lib/panes'
 import type { SessionPaneApi } from '../hooks/useSessionPane'
 import './PaneGrid.css'
 
@@ -37,32 +38,67 @@ const TEMPLATE: Record<LayoutId, (visible: number) => CSSProperties> = {
   'main-side': (n) => ({ gridTemplateColumns: `repeat(${n}, 1fr)` })
 }
 
+function equalFractions(n: number): number[] {
+  return Array.from({ length: n }, () => 1 / n)
+}
+
 export default function PaneGrid({
   panes,
   layout,
   focused,
+  sizes,
   api,
   onFocus,
   onClose,
   onSetLayout,
+  onSetSizes,
   onAddPane,
   canAddPane
 }: {
   panes: Pane[]
   layout: LayoutId
   focused: string
+  /** Persisted column/row fractions — see `lib/panes.ts`. Absent/mismatched means equal panes. */
+  sizes: PaneState['sizes']
   api: SessionPaneApi
   /** A pane took DOM focus — make it the focused pane. Never the other way around. */
   onFocus: (sessionId: string) => void
   /** Drop the pane from the layout. Does NOT end the session or its pty. */
   onClose: (sessionId: string) => void
   onSetLayout: (layout: LayoutId) => void
+  /** A splitter was dragged and released — persist the resulting fractions. */
+  onSetSizes: (sizes: { cols?: number[]; rows?: number[] }) => void
   onAddPane: () => void
   /** Whether there is a chat left to put in a new pane — only the App can know. */
   canAddPane: boolean
 }) {
   const visible = Math.min(capacity(layout), panes.length)
-  const style = TEMPLATE[layout](Math.max(visible, 1))
+  // Only the layouts this component actually draws as real columns get draggable
+  // dividers — `grid-2x2`/`main-side` still fall back to `TEMPLATE`'s `repeat(n, 1fr)`.
+  const isColumnLayout = COLUMN_LAYOUTS.includes(layout)
+
+  const gridRef = useRef<HTMLDivElement>(null)
+
+  // The committed fractions: the persisted `sizes.cols` when it actually matches the
+  // number of panes on screen, equal fractions otherwise (first run, or a layout/pane-count
+  // change that made the lib drop `sizes.cols` — see `dropAxis` in `lib/panes.ts`).
+  const committedCols = useMemo(() => {
+    if (!isColumnLayout || visible <= 0) return null
+    const stored = sizes?.cols
+    return stored && stored.length === visible ? stored : equalFractions(visible)
+  }, [isColumnLayout, visible, sizes])
+
+  // Live drag preview: while a splitter is held, this overrides `committedCols` for
+  // rendering only — `usePanes`/localStorage never see an intermediate value, just the
+  // fractions from the moment the mouse is released (see `PaneSplitter`'s `onCommit`).
+  const [liveCols, setLiveCols] = useState<number[] | null>(null)
+  const displayCols =
+    liveCols && committedCols && liveCols.length === committedCols.length ? liveCols : committedCols
+
+  const style: CSSProperties =
+    isColumnLayout && displayCols
+      ? { gridTemplateColumns: displayCols.map((f) => `${f}fr`).join(' 5px ') }
+      : TEMPLATE[layout](Math.max(visible, 1))
 
   // The `+` needs either room in the current layout or a wider layout to grow into. The
   // ladder stops at the widest layout this component draws, so the button can never push
@@ -110,49 +146,66 @@ export default function PaneGrid({
         </button>
       </div>
 
-      <div className={`pane-grid ${showHeads ? 'split' : ''}`} style={style}>
-        {panes.slice(0, visible).map((pane) => {
+      <div
+        className={`pane-grid ${showHeads ? 'split' : ''} ${isColumnLayout ? 'pane-grid-dividers' : ''}`}
+        style={style}
+        ref={gridRef}
+      >
+        {panes.slice(0, visible).map((pane, i) => {
           const isFocused = pane.sessionId === focused
           const name = api.sessions.find((s) => s.id === pane.sessionId)?.name ?? 'Chat'
           return (
-            <div
-              key={pane.sessionId}
-              className={`pane ${isFocused ? 'focused' : ''}`}
-              aria-current={isFocused ? 'true' : undefined}
-              /* `focusin` bubbles and `focus` does not, and React's onFocus is a bubbling
-                 synthetic event — but the capture variant is what reliably catches xterm's
-                 hidden textarea taking focus from inside the terminal. */
-              onFocusCapture={() => {
-                if (!isFocused) onFocus(pane.sessionId)
-              }}
-              /* Capture phase on purpose: ChatTerminal swallows right-button mousedown on its
-                 host in capture with stopPropagation, so a bubble-phase handler here would
-                 never see a right-click — and right-clicking a terminal is exactly the moment
-                 the user means "this pane". */
-              onMouseDownCapture={() => {
-                if (!isFocused) onFocus(pane.sessionId)
-              }}
-            >
-              {showHeads && (
-                <div className="pane-head">
-                  <span className="pane-head-name" title={name}>
-                    {name}
-                  </span>
-                  <button
-                    className="pane-head-close"
-                    /* Removes the pane, nothing else: the CLI keeps running and the chat keeps
-                       existing. Ending a terminal is the close button inside Chat, which is a
-                       different and deliberately more destructive thing. */
-                    onClick={() => onClose(pane.sessionId)}
-                    title="Close pane (the chat keeps running)"
-                    aria-label={`Close pane ${name}`}
-                  >
-                    ×
-                  </button>
-                </div>
+            <Fragment key={pane.sessionId}>
+              {i > 0 && isColumnLayout && displayCols && (
+                <PaneSplitter
+                  gridRef={gridRef}
+                  index={i - 1}
+                  sizes={displayCols}
+                  onChange={setLiveCols}
+                  onCommit={(next) => {
+                    setLiveCols(null)
+                    onSetSizes({ cols: next })
+                  }}
+                />
               )}
-              <ChatPane sessionId={pane.sessionId} api={api} />
-            </div>
+              <div
+                className={`pane ${isFocused ? 'focused' : ''}`}
+                aria-current={isFocused ? 'true' : undefined}
+                /* `focusin` bubbles and `focus` does not, and React's onFocus is a bubbling
+                   synthetic event — but the capture variant is what reliably catches xterm's
+                   hidden textarea taking focus from inside the terminal. */
+                onFocusCapture={() => {
+                  if (!isFocused) onFocus(pane.sessionId)
+                }}
+                /* Capture phase on purpose: ChatTerminal swallows right-button mousedown on its
+                   host in capture with stopPropagation, so a bubble-phase handler here would
+                   never see a right-click — and right-clicking a terminal is exactly the moment
+                   the user means "this pane". */
+                onMouseDownCapture={() => {
+                  if (!isFocused) onFocus(pane.sessionId)
+                }}
+              >
+                {showHeads && (
+                  <div className="pane-head">
+                    <span className="pane-head-name" title={name}>
+                      {name}
+                    </span>
+                    <button
+                      className="pane-head-close"
+                      /* Removes the pane, nothing else: the CLI keeps running and the chat keeps
+                         existing. Ending a terminal is the close button inside Chat, which is a
+                         different and deliberately more destructive thing. */
+                      onClick={() => onClose(pane.sessionId)}
+                      title="Close pane (the chat keeps running)"
+                      aria-label={`Close pane ${name}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+                <ChatPane sessionId={pane.sessionId} api={api} />
+              </div>
+            </Fragment>
           )
         })}
       </div>

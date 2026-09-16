@@ -369,15 +369,38 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         // container mid-layout / zero-sized — ignore
       }
     }
-    const ro = new ResizeObserver(() => doFit())
+    // Debounced trailing, and ONLY for this observer callback — with 2-3 terminals on
+    // screen and a pane splitter being dragged, the container resizes several times a
+    // frame, and each one is a SIGWINCH that makes a full-screen TUI (Claude Code) reflow
+    // its whole transcript. This must never wrap the explicit resize(cols-1)→resize(cols)
+    // pair below (the reattach redraw nudge): that one is deliberately two calls ~60ms
+    // apart, not noise to be coalesced, and it doesn't go through `doFit`/this observer at
+    // all — swallowing it here would leave a reattached terminal blank until it next
+    // resizes for an unrelated reason.
+    let resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null
+    const ro = new ResizeObserver(() => {
+      // While a pane splitter is being dragged, PaneSplitter sets this flag and skips
+      // straight to a single `doFit()` on mouseup (see the `panedragend` listener below) —
+      // firing here too would just be more of the same flood this debounce exists to avoid.
+      if (document.body.dataset.paneDrag === '1') return
+      if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer)
+      resizeDebounceTimer = setTimeout(doFit, 70)
+    })
     ro.observe(host)
     // A single rAF can still land before the panel's own layout (flex/display
     // swap) has settled, sizing the terminal off the stale hidden-state rect —
     // chain a second frame so fit() runs against the final visible layout.
     requestAnimationFrame(() => requestAnimationFrame(doFit))
 
+    // The one fit() a pane-splitter drag gets, once the boundary has actually settled
+    // (see PaneSplitter's `onCommit`, which dispatches this after clearing `paneDrag`).
+    const onPaneDragEnd = () => doFit()
+    window.addEventListener('panedragend', onPaneDragEnd)
+
     return () => {
       ro.disconnect()
+      if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer)
+      window.removeEventListener('panedragend', onPaneDragEnd)
       host.removeEventListener('contextmenu', onContextMenu)
       host.removeEventListener('mousedown', swallowRightButton, true)
       host.removeEventListener('mouseup', swallowRightButton, true)

@@ -32,14 +32,35 @@
   color: var(--text-1);
 }
 
-/* The 1px gap plus the grid's own background is what draws the divider between panes —
-   cheaper and better-aligned than a border on each pane. */
+/* No `gap` here: for column layouts the divider is a real grid item (`.pane-splitter`,
+   a 5px track — see PaneGrid.tsx), not a gap the background bleeds through. The
+   background still matters for `grid-2x2`/`main-side`, which have no splitters yet
+   and fall back to `repeat(n, 1fr)` with the 1px row/column gap those relied on. */
 .pane-grid {
   flex: 1;
   min-height: 0;
   display: grid;
   gap: 1px;
   background: var(--border);
+}
+
+/* Column layouts draw their own divider as a real grid item (`.pane-splitter`), so the
+   grid's own `gap` would double it up — one column layout's dividers are already the full
+   width they need. */
+.pane-grid.pane-grid-dividers {
+  gap: 0;
+}
+
+/* The draggable divider between two column panes. A real grid item (a 5px-wide track),
+   not an overlay — see PaneGrid.tsx's `gridTemplateColumns`. Wider than the old 1px gap
+   on purpose: enough hit area to grab reliably without stealing much space from the panes. */
+.pane-splitter {
+  cursor: col-resize;
+  background: var(--border);
+}
+.pane-splitter:hover,
+.pane-splitter:active {
+  background: var(--accent);
 }
 
 /* `min-width`/`min-height: 0` are load-bearing, not tidiness: a grid item defaults to
