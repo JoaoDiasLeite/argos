@@ -2623,7 +2623,7 @@ export default function App() {
     }
     return items
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, models, accounts, workMode])
+  }, [sessions, models, accounts, workMode, activeId])
 
   // What the Remote & WSL list's SSH dots are allowed to claim. A host counts as reachable
   // only once one of its sessions has actually connected; a host whose sessions have all
