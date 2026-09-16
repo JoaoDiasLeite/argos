@@ -13,7 +13,12 @@ import LabelManager from '../components/LabelManager'
 import SessionPeek from '../components/SessionPeek'
 import ProjectActions from '../components/ProjectActions'
 import { tagsSatisfy } from '../lib/tags'
-import { canonicalProjectPath, projectKey } from '../lib/project-key'
+import {
+  canonicalProjectPath,
+  projectKey,
+  buildPosixDistroMap,
+  ProjectKeyContext
+} from '../lib/project-key'
 import { projectDisplayName } from '../lib/project-name'
 import { groupByAge, sortSessions, SORT_LABELS, SortMode } from '../lib/session-groups'
 import './views.css'
@@ -128,10 +133,10 @@ interface ProjectGroup {
   distros: string[]
 }
 
-function groupProjects(list: CCProject[]): ProjectGroup[] {
+function groupProjects(list: CCProject[], ctx: ProjectKeyContext): ProjectGroup[] {
   const map = new Map<string, ProjectGroup>()
   for (const p of list) {
-    const key = projectKey(p.realPath, p.distro)
+    const key = projectKey(p.realPath, p.distro, ctx)
     let g = map.get(key)
     if (!g) {
       g = { key, members: [], sessionCount: 0, archivedCount: 0, lastActive: 0, archived: false, distros: [] }
@@ -247,8 +252,13 @@ function scopeGroup(g: ProjectGroup, identity: string, codex: CodexAccountEmails
   }
 }
 
-function scopeGroups(list: CCProject[], identity: string, codex: CodexAccountEmails): ProjectGroup[] {
-  return groupProjects(list)
+function scopeGroups(
+  list: CCProject[],
+  identity: string,
+  codex: CodexAccountEmails,
+  ctx: ProjectKeyContext
+): ProjectGroup[] {
+  return groupProjects(list, ctx)
     .map((g) => scopeGroup(g, identity, codex))
     .filter((g): g is ProjectGroup => g !== null)
 }
@@ -265,6 +275,28 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     else setPeeked(s)
   }
   const [projects, setProjects] = useState<CCProject[]>([])
+  // Drive-letter → distro map, so `X:\home\me\proj` and
+  // `\wsl.localhost\Ubuntu\home\me\proj` group as the one folder they are — the same
+  // context the Sidebar and Home already build (see project-key.ts). Without it a
+  // mapped WSL drive shows up as a second project next to the UNC spelling of itself.
+  const [wslDriveMap, setWslDriveMap] = useState<Record<string, string>>({})
+  useEffect(() => {
+    window.electronAPI.wslDriveMap?.().then(setWslDriveMap).catch(() => {})
+  }, [])
+  const keyCtx = useMemo<ProjectKeyContext>(
+    () => ({
+      driveMap: wslDriveMap,
+      posixDistros: buildPosixDistroMap(
+        projects.map((p) => ({ projectPath: p.realPath, wslDistro: p.distro }))
+      )
+    }),
+    [wslDriveMap, projects]
+  )
+  // The same context for the callbacks that run outside a render's closure (`load`,
+  // the deep-link effects, the repo-name fetch): they must key by what the list is
+  // grouped by now, not by whatever the map held when the callback was created.
+  const keyCtxRef = useRef(keyCtx)
+  keyCtxRef.current = keyCtx
   // The project list column's width. An invalid or out-of-range stored value falls
   // back to the default rather than applying a bogus width — see Sidebar.tsx.
   const [listWidth, setListWidth] = useState<number>(() => {
@@ -593,7 +625,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   // every project regardless of the account filter: favorites and ProjectActions (see
   // `fullMembersByKey` below) act on the whole folder, not on whichever slice of it
   // the filter currently shows.
-  const allGroups = useMemo(() => groupProjects(projects), [projects])
+  const allGroups = useMemo(() => groupProjects(projects, keyCtx), [projects, keyCtx])
   // The list actually rendered — each group narrowed to the current account filter
   // (see `scopeGroup`), and dropped entirely once nothing in it matches.
   const projectGroups = useMemo(
@@ -618,11 +650,11 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       new Map(
         projectGroups.map((g) => {
           const p = primaryMember(g)
-          const path = canonicalProjectPath(p.realPath, p.distro)
+          const path = canonicalProjectPath(p.realPath, p.distro, keyCtx)
           return [g.key, projectDisplayName(g.key, path, { custom: customNames, repos: repoNames })]
         })
       ),
-    [projectGroups, customNames, repoNames]
+    [projectGroups, customNames, repoNames, keyCtx]
   )
   const nameOf = (g: ProjectGroup): string => displayNames.get(g.key) ?? primaryMember(g).name
 
@@ -644,7 +676,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     const knownIdentities = new Set(list.map((p) => identityOf(p, codexAccounts)))
     const effectiveFilter =
       accountFilter === 'all' || knownIdentities.has(accountFilter) ? accountFilter : 'all'
-    const firstGroup = scopeGroups(list, effectiveFilter, codexAccounts)[0]
+    const firstGroup = scopeGroups(list, effectiveFilter, codexAccounts, keyCtxRef.current)[0]
     if (firstGroup && !selected && !targetRef.current) selectProject(firstGroup)
   }
 
@@ -770,7 +802,10 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
           p.encodedDir === target.encodedDir && (!target.sourceId || p.sourceId === target.sourceId)
       )
       if (!proj || cancelled) return
-      const group = groupProjects(list).find((g) => g.key === projectKey(proj.realPath, proj.distro))
+      const ctx = keyCtxRef.current
+      const group = groupProjects(list, ctx).find(
+        (g) => g.key === projectKey(proj.realPath, proj.distro, ctx)
+      )
       if (!group || cancelled) return
       // A notification click is a decision, not a default — the account filter must
       // not be able to silently swallow it. Widen back to All when the filtered view
@@ -810,7 +845,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     ;(async () => {
       const list = projects.length ? projects : await window.electronAPI.ccListProjects()
       if (cancelled) return
-      const group = groupProjects(list).find((g) => g.key === focus.key)
+      const group = groupProjects(list, keyCtxRef.current).find((g) => g.key === focus.key)
       if (!group || cancelled) return
       // Same reasoning as the deep-link effect above: a click from Home must not be
       // hidden by a filter that happens to exclude every member of that project.
@@ -883,7 +918,9 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     // A move usually changes the moved member's projectKey (it is a genuinely
     // different real path now), so look its GROUP up fresh rather than assume it is
     // still the one `selected` pointed at.
-    const group = projectGroups.find((g) => g.key === projectKey(match.realPath, match.distro))
+    const group = projectGroups.find(
+      (g) => g.key === projectKey(match.realPath, match.distro, keyCtx)
+    )
     if (group) {
       selectProject(group)
       setPendingSelect(null)
@@ -957,7 +994,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     for (const g of targets) fetchedRepoKeys.current.add(g.key)
     for (const g of targets) {
       const primary = primaryMember(g)
-      const cwd = canonicalProjectPath(primary.realPath, primary.distro)
+      const cwd = canonicalProjectPath(primary.realPath, primary.distro, keyCtxRef.current)
       window.electronAPI
         .gitRepoName(cwd)
         .then((repo) => setRepoNames((prev) => ({ ...prev, [g.key]: repo })))
