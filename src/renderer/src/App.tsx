@@ -331,6 +331,10 @@ export default function App() {
   // sessionsRef/activeIdRef). Kept in sync on every render.
   const runningIdsRef = useRef(runningIds)
   runningIdsRef.current = runningIds
+  // Mirror of panes for the pane-focus keyboard shortcuts, registered once on mount
+  // (same pattern as sessionsRef/activeIdRef).
+  const panesRef = useRef(panes)
+  panesRef.current = panes
 
   // Add/remove a session id from the running set (immutable Set updates).
   const startRun = useCallback((sid: string) => {
@@ -2635,7 +2639,12 @@ export default function App() {
     applyUi(next)
   }
 
-  // Global Ctrl/Cmd-K toggles the command palette.
+  // Global shortcuts: Ctrl/Cmd-K toggles the command palette, Ctrl/Cmd-N starts a new
+  // chat, Ctrl/Cmd-1..3 focuses a pane by position, Ctrl/Cmd-Shift-W closes the focused
+  // pane. None of these filter by event target (matching Ctrl-K/N above) — none of them
+  // type a literal character, so stealing them from a focused input/textarea/xterm is
+  // harmless, and bubbling order means xterm's own handler (on the terminal element)
+  // already ran by the time this window-level listener sees the event.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -2644,6 +2653,23 @@ export default function App() {
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
         e.preventDefault()
         createSessionRef.current()
+      } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && ['1', '2', '3'].includes(e.key)) {
+        // Focus the 1st/2nd/3rd pane by position. A no-op past the end of `panes`
+        // (e.g. Ctrl+3 with a single pane open) — nothing to focus, so don't preventDefault
+        // and let the key fall through to whatever's typing it.
+        const pane = panesRef.current[Number(e.key) - 1]
+        if (pane) {
+          e.preventDefault()
+          setFocus(pane.sessionId)
+        }
+      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'w') {
+        // Close the focused pane only — just removes it from the layout, same as the
+        // sidebar's close affordance; the session/chat itself is untouched. Closing the
+        // last remaining pane correctly lands back on the welcome pane (closePane's job).
+        if (activeIdRef.current) {
+          e.preventDefault()
+          closePane(activeIdRef.current)
+        }
       }
     }
     window.addEventListener('keydown', onKey)
