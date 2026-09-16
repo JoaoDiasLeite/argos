@@ -357,8 +357,7 @@ export default function App() {
   // Which CLI a session's model belongs to. A plain lookup, but it has three callers now
   // that must agree — the sidebar's scope, the embedded terminal, and the CLAUDE.md modal,
   // which is opened FOR a session and so cannot read the active one.
-  const providerOf = (s?: Session): ProviderId =>
-    models.find((m) => (s?.model || defaultModel).startsWith(m.id))?.provider ?? 'claude'
+  const providerOf = (s?: Session): ProviderId => provOf(models, s?.model || defaultModel)
   // The three modals are opened for a session, not for "the active one" — with two panes
   // on screen those differ, and resolving them here keeps the JSX from doing the lookup
   // once per prop.

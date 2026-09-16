@@ -116,7 +116,7 @@ function contextTokens(session?: Session): number | null {
   return null
 }
 
-interface Props {
+export interface Props {
   session?: Session
   streaming: boolean
   /** Non-empty when the last autosave of this session's transcript failed. */
