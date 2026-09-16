@@ -16,14 +16,36 @@ interface Entry {
 const CHANGELOG: Entry[] = [
   {
     version: '1.9.5',
-    date: '2026-09-15',
-    tag: 'new',
-    sections: []
+    date: '2026-09-16',
+    tag: 'latest',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'A Codex conversation can be renamed, archived, moved and deleted like any other. Every one of those actions used to fail with “this conversation is no longer on disk” — the file was there, Argos simply refused to touch a transcript Codex had written. Each now goes through Codex’s own mechanism, so the CLI sees it too: the name lands in Codex’s session index, archiving moves the transcript into its archive directory, and deleting removes it. Moving is the one that works differently: Codex files a conversation by the folder recorded inside it, so moving rewrites that folder and resuming starts there — the panel says so before you confirm.',
+          'Tags on a Codex conversation. They are kept by Argos rather than written into the transcript, because a Codex transcript is read back strictly and a line Argos invented could break the conversation itself — so the Codex CLI does not see them, but renaming, merging or deleting a label still reaches every conversation carrying it.',
+          'The terminal has a close button in Terminal mode. There was no way out of it: closing meant picking another chat. Closing ends the terminal and drops back to the welcome pane; the chat stays in the sidebar and opening it again starts a fresh terminal.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'A project reached through a mapped WSL drive is one project again. A folder opened as X:\\home\\me\\proj and as \\\\wsl.localhost\\Ubuntu\\home\\me\\proj is the same folder, and the sidebar and Home already knew that — the Projects list did not, so it showed the same project twice, with its conversations split between the two rows.',
+          'Pressing Chat in Terminal mode opens the welcome pane instead of dropping you back into a terminal left running. A terminal is a live CLI process, and landing on it at whatever prompt or half-typed command it sits on is not what the rail entry asks for. The terminal keeps running and stays one click away in the sidebar.'
+        ]
+      },
+      {
+        title: 'Changes',
+        items: [
+          'The Chat/Terminal switch now lives only in Settings. It sat above the Chats/Files tabs as well — the surface it was easiest to hit by accident, on a choice that decides what every chat in the app is.',
+          'Connection no longer offers a Claude Code vs API key choice. Chats run under the accounts managed in Accounts, which is where that decision has actually been made for some time.'
+        ]
+      }
+    ]
   },
   {
     version: '1.9.4',
     date: '2026-09-15',
-    tag: 'latest',
     sections: [
       {
         title: 'Fixes',
