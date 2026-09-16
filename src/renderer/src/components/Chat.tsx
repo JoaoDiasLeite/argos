@@ -172,6 +172,13 @@ export interface Props {
   /** Terminal mode only: leave this terminal — the pty is torn down and the view
    *  falls back to the welcome pane. The chat itself stays in the sidebar. */
   onCloseTerminal: () => void
+  /** True when a split-view pane header is already drawing this chat's name (see
+   *  `PaneGrid`'s `pane-head`) — so this component must not draw it a second time.
+   *  Optional and defaulted to false: every other mounter of `Chat` (the single-pane
+   *  case included) keeps today's title exactly as it is. The rest of the title block
+   *  (agent badge / remote host / resumed marker) still renders here regardless, since
+   *  the pane header has no room for it and none of it is duplicated elsewhere. */
+  titleInHeader?: boolean
 }
 
 const REVIEW_OPEN_KEY = 'argos.reviewOpenById'
@@ -232,7 +239,8 @@ export default function Chat(
   onBranch,
   onExportSession,
   onPatchSession,
-  onCloseTerminal
+  onCloseTerminal,
+  titleInHeader = false
 }: Props) {
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [markdownCopied, setMarkdownCopied] = useState(false)
@@ -688,10 +696,15 @@ export default function Chat(
     !dismissedBanners[session.id]
 
   // Title block: session name plus one quiet meta line replacing the header adornments.
+  // The name is skipped when a split-view pane header is already showing it (`titleInHeader`)
+  // — otherwise the same chat name would be drawn twice, once in `.pane-head` and once here.
+  // The meta line (agent badge / remote host / resumed marker) has no equivalent in the pane
+  // header, so it always renders when present, in either mode.
   const hasTitleMeta = !!(session?.agentName || session?.remoteHostName || session?.claudeSessionId)
-  const titleBlock = session && (
+  const showTitleName = !titleInHeader
+  const titleBlock = session && (showTitleName || hasTitleMeta) && (
     <div className="chat-title-block">
-      <div className="chat-title-name">{session.name || 'New chat'}</div>
+      {showTitleName && <div className="chat-title-name">{session.name || 'New chat'}</div>}
       {hasTitleMeta && (
         <div className="chat-title-meta">
           {session.agentName && <span title="Agent this chat runs as">{session.agentName}</span>}

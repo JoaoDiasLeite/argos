@@ -10,10 +10,14 @@ import { SessionPaneApi, useSessionPane } from '../hooks/useSessionPane'
  */
 export default function ChatPane({
   sessionId,
-  api
+  api,
+  titleInHeader
 }: {
   sessionId: string
   api: SessionPaneApi
+  /** Forwarded to `Chat` as-is — see its doc comment. Defaults to false there, so a plain
+   *  `<ChatPane sessionId api />` (single-pane case) keeps today's in-transcript title. */
+  titleInHeader?: boolean
 }) {
   const props = useSessionPane(sessionId, api)
   // A pane pointed at a session that no longer exists (closed, or not loaded yet) renders
@@ -21,5 +25,5 @@ export default function ChatPane({
   if (!props.session) return null
   /* Deliberately NOT keyed by sessionId: Chat holds the unsent composer text in state, and
      remounting per chat would throw away a draft every time you switch. */
-  return <Chat {...props} />
+  return <Chat {...props} titleInHeader={titleInHeader} />
 }

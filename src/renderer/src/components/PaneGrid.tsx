@@ -256,7 +256,10 @@ export default function PaneGrid({
                   </button>
                 </div>
               )}
-              <ChatPane sessionId={pane.sessionId} api={api} />
+              {/* `showHeads` is exactly "more than one pane on screen" — the same condition
+                  that draws `.pane-head` below, so the two never disagree about whether the
+                  name is already on screen once. */}
+              <ChatPane sessionId={pane.sessionId} api={api} titleInHeader={showHeads} />
               {zone && box && (
                 /* `pointer-events: none` is load-bearing: the overlay sits over the pane it is
                    describing, and a hit-testable overlay would steal the very `dragover` that
