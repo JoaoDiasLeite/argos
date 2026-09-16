@@ -377,19 +377,22 @@ export function normalize(state: unknown, knownSessionIds: string[]): PaneState 
       ? raw.focused
       : panes[0].sessionId
 
-  // O eixo só é aceite se bater certo com o número de painéis *depois* do
-  // saneamento acima (dedup, sessões desconhecidas, corte pela capacidade) —
-  // validar contra o `raw.panes.length` original deixaria passar um eixo
-  // desalinhado sempre que o saneamento tivesse descartado alguma entrada.
-  // Quando não bate, descarta-se o eixo em vez de tentar adivinhar: volta a
-  // painéis iguais, que é o comportamento seguro por omissão.
+  // The axis is only accepted if it matches the pane count *after* the sanitizing
+  // above (dedup, unknown sessions, capacity truncation) — validating against the
+  // original `raw.panes.length` would let a misaligned axis through whenever the
+  // sanitizing had dropped an entry. When it doesn't match, the axis is discarded
+  // instead of guessed at: back to equal panes, the safe default behavior.
   const rawSizes = raw.sizes as Partial<{ cols: unknown; rows: unknown }> | null | undefined
   let sizes: PaneState['sizes'] | undefined
   if (rawSizes && typeof rawSizes === 'object') {
-    const cols = isValidAxis(rawSizes.cols, panes.length)
+    // Against the TRACK count, not the pane count: in a grid four panes share two
+    // columns, so validating against panes.length threw away every fraction a grid
+    // layout had saved, and the splitters silently reset to equal on every restart.
+    const trackCount = tracks(layout, panes.length)
+    const cols = isValidAxis(rawSizes.cols, trackCount.cols)
       ? normalizeAxis(rawSizes.cols)
       : undefined
-    const rows = isValidAxis(rawSizes.rows, panes.length)
+    const rows = isValidAxis(rawSizes.rows, trackCount.rows)
       ? normalizeAxis(rawSizes.rows)
       : undefined
     if (cols || rows) {

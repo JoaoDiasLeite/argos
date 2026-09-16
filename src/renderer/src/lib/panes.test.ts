@@ -468,6 +468,38 @@ describe('normalize', () => {
     expect(result.sizes).toBeUndefined()
   })
 
+  it('keeps grid fractions, which are per track and not per pane', () => {
+    // Four panes share two columns and two rows in a 2x2, so an axis is validated
+    // against the track count. Validating against the pane count instead threw every
+    // grid fraction away on restore, and the splitters reset to equal on each restart.
+    const result = normalize(
+      {
+        v: 1,
+        layout: 'grid-2x2',
+        panes: [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }, { sessionId: 'd' }],
+        focused: 'a',
+        sizes: { cols: [0.6, 0.4], rows: [0.7, 0.3] }
+      },
+      ['a', 'b', 'c', 'd']
+    )
+    expect(result.sizes?.cols).toEqual([0.6, 0.4])
+    expect(result.sizes?.rows).toEqual([0.7, 0.3])
+  })
+
+  it('still drops a grid axis with the wrong number of tracks', () => {
+    const result = normalize(
+      {
+        v: 1,
+        layout: 'grid-2x2',
+        panes: [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }, { sessionId: 'd' }],
+        focused: 'a',
+        sizes: { cols: [0.25, 0.25, 0.25, 0.25] }
+      },
+      ['a', 'b', 'c', 'd']
+    )
+    expect(result.sizes).toBeUndefined()
+  })
+
   it('drops an axis whose length matched the raw panes but not the sanitized ones', () => {
     // Three raw panes, one of them a ghost session — sanitizing drops it to two,
     // so a three-long cols axis (valid against the raw list) must still be dropped.
