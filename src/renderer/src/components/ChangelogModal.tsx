@@ -15,6 +15,38 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '1.10.0',
+    date: '2026-09-16',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Two to four chats or terminals side by side. Drag a conversation out of the sidebar and onto the workspace: drop against the outer third of a pane to open it beside that pane, drop in the middle to open it in place. The highlight covers exactly where it will land, so the choice is visible before letting go, and a conversation already open somewhere lights that pane instead — a drop just moves focus there, because two terminals sharing one process would fight over its size forever.',
+          'Dropping high or low in a pane asks for a grid instead of a column: three panes become one large pane with two stacked beside it, four become a 2×2. The vertical zones sit inside the middle band so the side zones keep the hit area they had — columns are the common case, and a grid spends the height a CLI needs for its transcript, so it is somewhere you aim rather than somewhere you land by accident. With a single pane on screen the vertical zones do not exist at all.',
+          'The boundary between panes can be dragged, on both axes, and the widths are remembered. A pane cannot be squeezed below 15%. Changing how many panes there are throws the old fractions away rather than rescaling them, which would hand you widths you never chose.',
+          'Ctrl/Cmd+1 to 3 focus a pane and Ctrl/Cmd+Shift+W drops the focused one from the layout. Closing a pane only removes it from the layout: the CLI keeps running and the chat stays in the sidebar, which is a different and deliberately gentler thing than the close button inside a terminal.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'Copying from a CLI running inside a WSL distro now reaches the Windows clipboard. A distro without Windows interop has no clip.exe, powershell.exe, wl-copy or xclip to reach a clipboard through, so Claude Code falls back to asking the terminal to copy for it — and that request was being parsed and dropped. It reported the text as copied, correctly from where it stood, and nothing arrived. Terminals over SSH had the same gap. Requests to READ the clipboard are still refused, because that direction would let anything printing to a terminal pull your clipboard into the session.',
+          'Switching model from the command palette applies to the chat you are looking at. The palette builds its entries once and keeps them, so “Use <model>” carried whichever chat was open when the list was last built and could set the model on one you had already left.',
+          'The Review panel stops being forgotten. Every pane kept its own copy of which chats have it open and wrote the whole thing back on each toggle, so with two panes open one would quietly drop the other’s entry. It survived in memory until a restart, which is what made it look random.',
+          'Widths dragged in a grid layout survive a restart. They were validated against the number of panes, but they belong to tracks — four panes share two columns in a 2×2 — so every fraction a grid had saved was discarded on the way back in and the dividers reset to equal.'
+        ]
+      },
+      {
+        title: 'Changes',
+        items: [
+          'Terminals in the workspace panes paint on the GPU. Four CLIs streaming at once is far more work than the previous renderer was meant for. The Live view keeps the old renderer on purpose: it mounts one terminal per running process with no ceiling, and the browser caps how many GPU contexts a window may hold, so accelerating everything would start evicting them. If a context is lost anyway — a laptop waking, a GPU switching — the terminal drops back to the old renderer with its scrollback and session intact.',
+          'Opening CLAUDE.md, Checkpoints or Git from a pane acts on that pane’s chat. They used to act on whichever chat was focused, which is the same thing until two are on screen.'
+        ]
+      }
+    ]
+  },
+  {
     version: '1.9.5',
     date: '2026-09-16',
     tag: 'latest',
