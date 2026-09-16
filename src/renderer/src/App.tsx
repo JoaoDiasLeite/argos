@@ -25,7 +25,7 @@ import {
 import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
 import ResizeHandles from './components/ResizeHandles'
-import ChatPane from './components/ChatPane'
+import PaneGrid from './components/PaneGrid'
 import { SessionPaneApi } from './hooks/useSessionPane'
 import TerminalPanel from './components/TerminalPanel'
 import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, groupOwnsView } from './components/NavRail'
@@ -195,7 +195,8 @@ export default function App() {
   // every one of setActiveId's call sites means "show me this chat", which is exactly
   // what openInFocused does (see lib/panes.ts for the exact semantics, including how
   // it treats an empty sessionId as "clear the panel").
-  const { panes, focused, openInFocused, closePane, restore } = usePanes()
+  const { panes, layout, focused, openInFocused, openInNewPane, closePane, setFocus, setLayout, restore } =
+    usePanes()
   const activeId = focused
   const setActiveId = openInFocused
   // Focus and visibility are different questions. `activeId` answers "which chat am I
@@ -2723,6 +2724,17 @@ export default function App() {
   // Servers — count as in-group too, matching the rail's own highlight.
   const activeGroup = VIEW_GROUPS.find((g) => groupOwnsView(g, view))
 
+  // The pane bar's `+`. A new pane has to show *something*, and the useful something is the
+  // most recent chat that is not already on screen — the invariant is that a session lives in
+  // at most one pane, so anything already visible is not a candidate.
+  // With every chat already on screen it does nothing: `createSession` routes through
+  // `openInFocused`, so "new chat" would take over the focused pane instead of adding one —
+  // the opposite of what this button promises. Splitting that path belongs to its own change.
+  const addPaneCandidate = sessions.find((s) => !visibleIds.has(s.id))
+  const addPane = () => {
+    if (addPaneCandidate) openInNewPane(addPaneCandidate.id)
+  }
+
   // Everything a chat pane needs from the App, shared by every pane. A plain object,
   // not a useMemo: most of the actions below are plain consts rebuilt on every render,
   // so memoizing would compare thirty-odd references to never once skip the rebuild.
@@ -2865,7 +2877,17 @@ export default function App() {
                 <button className="budget-banner-close" onClick={() => setBudgetBanners([])} aria-label="Dismiss">✕</button>
               </div>
             )}
-            <ChatPane sessionId={activeId} api={paneApi} />
+            <PaneGrid
+              panes={panes}
+              layout={layout}
+              focused={focused}
+              api={paneApi}
+              onFocus={setFocus}
+              onClose={closePane}
+              onSetLayout={setLayout}
+              onAddPane={addPane}
+              canAddPane={!!addPaneCandidate}
+            />
             <TerminalPanel
               lines={terminalLines}
               open={terminalOpen}

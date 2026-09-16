@@ -1,0 +1,115 @@
+/* Pane grid — the split layout for chats (see PaneGrid.tsx).
+   `grid-template-columns` is set inline from the state, not by a class per layout: the
+   template depends on how many panes are actually open, which is data, not a style. */
+
+/* The bar sits above the grid, so it must not grow with it. Mirrors `.view-subnav`'s
+   visual language (same border/background) but is left-aligned and much shorter — this is
+   a control strip inside the chat area, not another top-level nav. */
+.pane-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
+/* A lone `.view-subnav-btn` outside a `.view-subnav-group` has no border of its own. */
+.pane-bar-add {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 10px;
+  font-size: 14px;
+  line-height: 1;
+}
+.pane-bar-add:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.pane-bar-add:disabled:hover {
+  background: transparent;
+  color: var(--text-1);
+}
+
+/* The 1px gap plus the grid's own background is what draws the divider between panes —
+   cheaper and better-aligned than a border on each pane. */
+.pane-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: 1px;
+  background: var(--border);
+}
+
+/* `min-width`/`min-height: 0` are load-bearing, not tidiness: a grid item defaults to
+   `min-*: auto`, so xterm's intrinsic width would push the column wider than its track and
+   the whole grid would overflow instead of the terminal re-fitting. */
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-0);
+  position: relative;
+}
+
+/* The focus ring is an overlay rather than a border/outline so it costs no layout space —
+   a border would shrink the terminal by 2px every time focus moved, forcing a re-fit.
+   `.split` gates it: with one pane there is nothing to tell apart, and the ring was just a
+   permanent accent frame around the whole app. */
+.pane-grid.split .pane.focused::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Same register as `.live-terminal-cell-head`, tightened: that one heads a 420px card in a
+   scrolling view, this one steals height from a terminal where rows are the scarce resource. */
+.pane-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  height: 26px;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+  font-size: 12px;
+}
+
+.pane-head-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.pane.focused .pane-head-name {
+  color: var(--text-0);
+}
+
+.pane-head-close {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pane-head-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-0);
+}
