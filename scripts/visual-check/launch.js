@@ -90,4 +90,31 @@ if (ccSession) {
   })
 }
 
+// Patch the seeded config before the app reads it. VISUAL_CHECK_CONFIG_PATCH is a JSON
+// object, merged one level deep into the copied config.json. It exists for settings the
+// renderer cannot be talked into after startup — `ui.workMode: 'terminal'` above all,
+// which is what puts real terminals on screen instead of chat transcripts, and so the
+// only way to photograph anything about how terminals render.
+//
+// Written here rather than in run.ps1 because PowerShell 5.1 writes UTF-8 with a BOM by
+// default, and the seed files are deliberately BOM-free.
+const configPatch = process.env.VISUAL_CHECK_CONFIG_PATCH
+if (configPatch) {
+  const fs = require('fs')
+  const configPath = path.join(userData, 'config.json')
+  try {
+    const current = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+    const patch = JSON.parse(configPatch)
+    for (const [key, value] of Object.entries(patch)) {
+      current[key] =
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? { ...current[key], ...value }
+          : value
+    }
+    fs.writeFileSync(configPath, JSON.stringify(current, null, 2), 'utf8')
+  } catch {
+    // A missing or unreadable config is the app's problem to report, not ours to mask.
+  }
+}
+
 require(path.join(__dirname, '..', '..', 'out', 'main', 'index.js'))

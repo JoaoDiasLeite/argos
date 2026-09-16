@@ -41,6 +41,11 @@ Valid `-View` names: `chat`, `projects`, `agents`, `rooms`, `planner`,
   e.g. `{"argos.panes.v1":{"v":1,"layout":"cols-2","panes":[{"sessionId":"demo"},{"sessionId":"demo2"}],"focused":"demo"}}`
   splits the two seeded chats into two columns. Every session id named there must exist
   in `seed/sessions/`, or it is dropped as stale.
+- `VISUAL_CHECK_CONFIG_PATCH` merges a JSON object one level deep into the seeded
+  `config.json` before the app starts. `{"ui":{"workMode":"terminal"}}` is the one that
+  matters: it puts real embedded terminals on screen instead of chat transcripts, which
+  is the only way to photograph anything about how terminals look. The CLIs do start for
+  real in the isolated instance, so expect a trust prompt in the capture.
 - `VISUAL_CHECK_CC_SESSION` does the same for a Claude Code conversation: set it
   to a JSON target (`{"encodedDir":"-home-x-repo","sessionId":"<uuid>"}`) and the
   launcher sends `app:open-cc-session`, the channel a notification click uses. The
