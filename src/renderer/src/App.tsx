@@ -2653,7 +2653,6 @@ export default function App() {
             tab={sidebarTab}
             onTabChange={setSidebarTab}
             mode={workMode}
-            onModeChange={(m) => updateUi({ workMode: m })}
             onSelectSession={setActiveId}
             onNewSession={createSession}
             onNewQuickChat={createQuickChat}

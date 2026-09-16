@@ -120,41 +120,6 @@
 .plan-badge.danger { color: var(--error); background: color-mix(in srgb, var(--error) 14%, transparent); }
 
 /* ── Sidebar tabs ─────────────────────────────────────────── */
-/* ── Mode switch ──────────────────────────────────────────── */
-/* Chat vs terminal for the whole app. Heavier than the Chats/Files tabs right below
-   it — a segmented pair on its own surface — because those two only swap what the
-   panel lists, while this decides what a chat is. */
-.sidebar-mode {
-  display: flex;
-  gap: 2px;
-  margin: 0 10px 6px;
-  padding: 2px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.sidebar-mode-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-2);
-  border-radius: calc(var(--radius-sm) - 2px);
-  transition: background 0.14s, color 0.14s;
-}
-.sidebar-mode-btn:hover { color: var(--text-0); }
-.sidebar-mode-btn.on {
-  background: var(--bg-0);
-  color: var(--text-0);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
-}
-
 .sidebar-tabs {
   display: flex;
   align-items: center;
