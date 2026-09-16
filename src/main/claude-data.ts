@@ -615,6 +615,26 @@ async function projectsForSource(src: ClaudeSource): Promise<CCProject[]> {
   return result
 }
 
+/**
+ * The real folder one project row stands for.
+ *
+ * Only a move needs this, and only because moving a Codex conversation means writing
+ * that folder into its header — the destination arrives as an `encodedDir`, which is
+ * lossy by construction (see `encodeProjectPath`) and cannot be decoded back.
+ */
+export async function projectRealPathById(
+  sourceId: string,
+  encodedDir: string
+): Promise<string | null> {
+  const src = await resolveSource(sourceId)
+  if (!src) return null
+  if (src.provider === 'codex' && src.codex) {
+    const projects = await codexProjects(src.codex)
+    return projects.find((p) => p.encodedDir === encodedDir)?.realPath ?? null
+  }
+  return projectRealPath(src, encodedDir)
+}
+
 export async function getAllProjects(): Promise<CCProject[]> {
   const sources = await getSources()
   const all: CCProject[] = []

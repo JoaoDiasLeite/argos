@@ -56,6 +56,10 @@ export default function SessionPeek({
   const [error, setError] = useState('')
 
   const { sourceId, encodedDir, sessionId, archived } = session
+  // Codex records the same four operations in its own terms — a name in the session
+  // index, the archive directory, the cwd in the header — so what the notes below
+  // promise has to say which CLI will see it.
+  const codex = session.provider === 'codex'
 
   /** Every lifecycle call answers the same three ways, so they are handled once. */
   const run = async (fn: () => Promise<LifecycleResult>, after: 'close' | 'stay') => {
@@ -223,7 +227,9 @@ export default function SessionPeek({
             }}
           />
           <p className="peek-prompt-note">
-            The name is stored inside the conversation, so Claude Code sees it too.
+            {codex
+              ? "The name goes into Codex's own session index, so the Codex CLI sees it too."
+              : 'The name is stored inside the conversation, so Claude Code sees it too.'}
           </p>
           <div className="peek-prompt-actions">
             <button className="btn-ghost small" onClick={() => setPrompt(null)}>
@@ -249,6 +255,10 @@ export default function SessionPeek({
             <option value="">Pick a project…</option>
             {projects
               .filter((p) => !(p.sourceId === sourceId && p.encodedDir === encodedDir))
+              // A Codex "project" is a folder derived from transcripts, not a directory
+              // anything can be filed into — so it is a destination only for the
+              // conversations that are filed that way themselves.
+              .filter((p) => codex || p.provider !== 'codex')
               .map((p) => (
                 <option key={`${p.sourceId}:${p.encodedDir}`} value={`${p.sourceId}:${p.encodedDir}`}>
                   {p.name}
@@ -257,8 +267,9 @@ export default function SessionPeek({
               ))}
           </select>
           <p className="peek-prompt-note">
-            Filing only. Where the conversation ran is recorded inside it and is never
-            rewritten, so resuming still lands in the right folder.
+            {codex
+              ? 'Codex files a conversation by the folder recorded in it, so moving rewrites that folder — resuming this one will start in the new project.'
+              : 'Filing only. Where the conversation ran is recorded inside it and is never rewritten, so resuming still lands in the right folder.'}
           </p>
           <div className="peek-prompt-actions">
             <button className="btn-ghost small" onClick={() => setPrompt(null)}>

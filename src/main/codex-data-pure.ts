@@ -62,6 +62,19 @@ export function parseRolloutFileName(file: string): RolloutName | null {
 }
 
 /**
+ * The `<YYYY>/<MM>/<DD>` a rollout's own name says it belongs under.
+ *
+ * Archiving moves the file out of that tree and unarchiving has to put it back, with
+ * no header read to go on: the name carries the date, in local time, and it is the
+ * same date the directory it came from was named after. Reconstructing it from the
+ * name is therefore exact, and not a guess at what `mtime` might mean by now.
+ */
+export function rolloutDateSegments(file: string): [string, string, string] | null {
+  const m = ROLLOUT_NAME.exec(file)
+  return m ? [m[1], m[2], m[3]] : null
+}
+
+/**
  * `session_index.jsonl`'s entries reduced to id → thread name.
  *
  * The file is append-only and the same id reappears every time its name changes, so

@@ -1,6 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { StringDecoder } from 'string_decoder'
 import { iterJsonlEntries } from './jsonl'
 import { boilerplateKeys, previewKey, previewRestatesTitle } from './transcript-text'
 import {
@@ -10,8 +11,15 @@ import {
   encodeProjectPath,
   groupRolloutsByCwd,
   parseRolloutFileName,
-  reduceThreadNames
+  reduceThreadNames,
+  rolloutDateSegments
 } from './codex-data-pure'
+import {
+  deleteTranscript,
+  FileOpResult,
+  moveTranscript,
+  normalizeTitle
+} from './session-files'
 // Type-only, so this does NOT create a runtime import cycle with claude-data.ts —
 // which imports this module for real. The shapes are the ones Projects already
 // consumes; a Codex project must be indistinguishable from a Claude Code one at the
@@ -189,6 +197,17 @@ const SCAN_TTL = 30000
 const scanCache = new Map<string, { at: number; rollouts: CodexRolloutFacts[] }>()
 
 /**
+ * Where an archived Codex transcript lives: `<CODEX_HOME>/archived_sessions`, flat.
+ *
+ * Codex's own directory, not one Argos invents — the CLI created it and leaves files
+ * there alone. Flat is what makes unarchiving reconstructable: the rollout keeps its
+ * name, and the name says which date bucket it came out of (`rolloutDateSegments`).
+ */
+export function codexArchivedDir(src: CodexSource): string {
+  return path.join(src.home, 'archived_sessions')
+}
+
+/**
  * Every transcript in a Codex home, with just enough read to place it in a project.
  *
  * Read errors propagate. A caller that cannot afford one (the combined project list,
@@ -197,12 +216,25 @@ const scanCache = new Map<string, { at: number; rollouts: CodexRolloutFacts[] }>
  * exists to prevent.
  */
 export async function scanCodexRollouts(src: CodexSource, force = false): Promise<CodexRolloutFacts[]> {
+  return scanDir(src.id, src.sessionsDir, force)
+}
+
+/**
+ * The same scan over the archive. Kept separate rather than merged with a flag on the
+ * facts, because every caller already knows which of the two it is asking about and a
+ * mixed list would have to be split again by all of them.
+ */
+export async function scanCodexArchived(src: CodexSource, force = false): Promise<CodexRolloutFacts[]> {
+  return scanDir(`${src.id}::archived`, codexArchivedDir(src), force)
+}
+
+async function scanDir(cacheKey: string, dir: string, force: boolean): Promise<CodexRolloutFacts[]> {
   const now = Date.now()
-  const cached = scanCache.get(src.id)
+  const cached = scanCache.get(cacheKey)
   if (!force && cached && now - cached.at < SCAN_TTL) return cached.rollouts
 
   const rollouts: CodexRolloutFacts[] = []
-  for (const { file, sessionId, startedAt } of rolloutFiles(src.sessionsDir)) {
+  for (const { file, sessionId, startedAt } of rolloutFiles(dir)) {
     let header: { cwd: string; createdAt: number } | null
     try {
       header = await readRolloutHeader(file)
@@ -220,7 +252,7 @@ export async function scanCodexRollouts(src: CodexSource, force = false): Promis
       mtime: statMtime(file)
     })
   }
-  scanCache.set(src.id, { at: now, rollouts })
+  scanCache.set(cacheKey, { at: now, rollouts })
   return rollouts
 }
 
@@ -234,18 +266,25 @@ export function invalidateCodexScan(): void {
 /**
  * Codex's projects for one home, in the shape Projects already renders.
  *
- * `archivedCount` is 0 and stays 0: Codex has an `archived_sessions/` directory but
- * nothing Argos writes puts anything in it, and reporting a count Argos cannot act on
- * would offer an unarchive that does nothing.
+ * Built from both trees. A project whose every conversation has been archived still
+ * has to appear — it is the one an unarchive has to be reachable from — so the
+ * archive contributes rows of its own, with no active sessions in them.
  */
 export async function codexProjects(src: CodexSource): Promise<CCProject[]> {
-  const rollouts = await scanCodexRollouts(src)
-  return groupRolloutsByCwd(rollouts).map((g) => ({
+  const active = groupRolloutsByCwd(await scanCodexRollouts(src))
+  const archived = new Map(
+    groupRolloutsByCwd(await scanCodexArchived(src)).map((g) => [g.encodedDir, g])
+  )
+  const groups = [...active]
+  for (const [encodedDir, g] of archived) {
+    if (!active.some((a) => a.encodedDir === encodedDir)) groups.push({ ...g, sessionCount: 0 })
+  }
+  return groups.map((g) => ({
     encodedDir: g.encodedDir,
     realPath: g.realPath,
     name: g.name,
     sessionCount: g.sessionCount,
-    archivedCount: 0,
+    archivedCount: archived.get(g.encodedDir)?.sessionCount ?? 0,
     lastActive: g.lastActive,
     sourceId: src.id,
     sourceLabel: src.label,
@@ -328,19 +367,18 @@ async function readSessionBody(file: string): Promise<SessionBody> {
 }
 
 /**
- * The sessions of one Codex project.
+ * The sessions of one Codex project, active or archived.
  *
- * `archived` has no counterpart here, so an archived listing is empty rather than
- * wrong: Argos never moves a Codex transcript, so no Codex session can be in that
- * state.
+ * Archived means the file sits in `archived_sessions/` — the same "it is where it is"
+ * rule the Claude Code side follows, rather than a flag stored beside the transcript.
  */
 export async function codexSessions(
   src: CodexSource,
   encodedDir: string,
   archived = false
 ): Promise<CCSessionMeta[]> {
-  if (archived) return []
-  const rollouts = (await scanCodexRollouts(src)).filter((r) => encodeProjectPath(r.cwd) === encodedDir)
+  const scan = archived ? await scanCodexArchived(src) : await scanCodexRollouts(src)
+  const rollouts = scan.filter((r) => encodeProjectPath(r.cwd) === encodedDir)
   if (!rollouts.length) return []
   const realPath = rollouts[0].cwd
   const names = await threadNames(src)
@@ -373,7 +411,7 @@ export async function codexSessions(
       // Codex has no tag concept. An empty array, not undefined: the view maps over it.
       tags: [],
       previewRedundant: false,
-      archived: false
+      archived
     })
   }
 
@@ -398,9 +436,20 @@ export async function codexSessions(
  * built, never to construct a path — so there is nothing here for a crafted id to
  * escape from, and no need for the charset guards `safeSessionPath` applies.
  */
-async function rolloutFileFor(src: CodexSource, sessionId: string): Promise<string | null> {
-  const rollouts = await scanCodexRollouts(src)
-  return rollouts.find((r) => r.sessionId === sessionId)?.file ?? null
+export async function rolloutFileFor(
+  src: CodexSource,
+  sessionId: string,
+  archived = false
+): Promise<string | null> {
+  // Both trees are consulted whichever way the caller asked. The renderer's `archived`
+  // is what its last listing said, and a conversation archived from another window is
+  // still the same conversation — failing with "not found" because it moved since is
+  // an answer about Argos's bookkeeping, not about the user's transcript.
+  const first = archived ? await scanCodexArchived(src) : await scanCodexRollouts(src)
+  const hit = first.find((r) => r.sessionId === sessionId)
+  if (hit) return hit.file
+  const second = archived ? await scanCodexRollouts(src) : await scanCodexArchived(src)
+  return second.find((r) => r.sessionId === sessionId)?.file ?? null
 }
 
 /**
@@ -430,4 +479,196 @@ export async function codexTranscript(src: CodexSource, sessionId: string): Prom
     messages.push({ role, text, toolCalls: [], timestamp: parseTimestamp(obj?.timestamp) })
   }
   return messages
+}
+
+// ─── Lifecycle ──────────────────────────────────────────────────────────────
+
+/**
+ * Renaming, archiving, moving and deleting a Codex conversation.
+ *
+ * Every one of these goes through Codex's own mechanisms rather than a preference
+ * Argos keeps on the side: a name is a line in `session_index.jsonl`, archiving is
+ * the file being in `archived_sessions/`, and the project a conversation belongs to
+ * is the `cwd` in its header. The CLI sees each of them, which is the point — a
+ * conversation renamed here is renamed in `codex resume` too.
+ *
+ * Ids never build a path here. They pick a file out of a scan Argos did, the same way
+ * the readers do, so there is nothing for a crafted id to escape from.
+ */
+
+/** Drop every cached scan, active and archived — any write invalidates both. */
+function invalidateAfterWrite(): void {
+  invalidateCodexScan()
+}
+
+export async function codexDeleteSession(
+  src: CodexSource,
+  sessionId: string,
+  archived = false
+): Promise<FileOpResult> {
+  const file = await rolloutFileFor(src, sessionId, archived)
+  if (!file) return { ok: false, error: 'not-found' }
+  const res = await deleteTranscript(file)
+  if (res.ok) invalidateAfterWrite()
+  return res
+}
+
+/**
+ * Rename by appending to `session_index.jsonl`.
+ *
+ * Append-only and last-one-wins (`reduceThreadNames`), which is exactly how Codex
+ * itself records a rename — so this is the same write the CLI would have made, not a
+ * shadow copy of the name that only Argos would read back.
+ */
+export async function codexRenameSession(
+  src: CodexSource,
+  sessionId: string,
+  raw: unknown
+): Promise<FileOpResult> {
+  let title: string
+  try {
+    title = normalizeTitle(raw)
+  } catch (e) {
+    return { ok: false, error: 'failed', message: (e as Error).message }
+  }
+  const file = await rolloutFileFor(src, sessionId, false)
+  if (!file) return { ok: false, error: 'not-found' }
+  try {
+    await fs.promises.appendFile(
+      src.indexPath,
+      JSON.stringify({ id: sessionId, thread_name: title, updated_at: new Date().toISOString() }) +
+        '\n'
+    )
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: 'failed', message: (e as Error).message }
+  }
+}
+
+export async function codexArchiveSession(
+  src: CodexSource,
+  sessionId: string
+): Promise<FileOpResult> {
+  const file = await rolloutFileFor(src, sessionId, false)
+  if (!file) return { ok: false, error: 'not-found' }
+  const res = await moveTranscript(file, path.join(codexArchivedDir(src), path.basename(file)))
+  if (res.ok) invalidateAfterWrite()
+  return res
+}
+
+/**
+ * Back out of the archive, into the date bucket the rollout's own name names.
+ *
+ * Not "wherever it came from" remembered somewhere — the name carries the date, so
+ * the bucket is derivable, and an archive Argos did not create still unarchives to
+ * the right place.
+ */
+export async function codexUnarchiveSession(
+  src: CodexSource,
+  sessionId: string
+): Promise<FileOpResult> {
+  const file = await rolloutFileFor(src, sessionId, true)
+  if (!file) return { ok: false, error: 'not-found' }
+  const name = path.basename(file)
+  const segments = rolloutDateSegments(name)
+  if (!segments) {
+    return { ok: false, error: 'failed', message: 'This transcript has an unrecognised name.' }
+  }
+  const res = await moveTranscript(file, path.join(src.sessionsDir, ...segments, name))
+  if (res.ok) invalidateAfterWrite()
+  return res
+}
+
+/**
+ * Move a conversation to another project, by rewriting the `cwd` in its header.
+ *
+ * This is where Codex and Claude Code genuinely differ. A Claude Code transcript is
+ * filed by the directory it sits in, so moving it is cosmetic and the recorded cwd is
+ * left alone. A Codex rollout sits in a date bucket that says nothing about the
+ * project — the cwd IS the filing — so moving one means changing it, and a later
+ * `codex resume` will start in the new folder. The caller says so in as many words
+ * before asking for this.
+ *
+ * Only the header line is rewritten, through a temp file: the conversation's own
+ * lines are copied byte for byte, and an interrupted write leaves the original in
+ * place rather than a half-rewritten transcript.
+ */
+export async function codexMoveSession(
+  src: CodexSource,
+  sessionId: string,
+  toCwd: string,
+  archived = false
+): Promise<FileOpResult> {
+  const file = await rolloutFileFor(src, sessionId, archived)
+  if (!file) return { ok: false, error: 'not-found' }
+  try {
+    const rewritten = await rewriteFirstLine(file, (line) => {
+      const obj = JSON.parse(line)
+      if (obj?.type !== 'session_meta' || !obj?.payload) return null
+      obj.payload.cwd = toCwd
+      return JSON.stringify(obj)
+    })
+    if (!rewritten) {
+      return {
+        ok: false,
+        error: 'failed',
+        message: 'This transcript has no header saying where it ran, so it cannot be refiled.'
+      }
+    }
+    invalidateAfterWrite()
+    return { ok: true }
+  } catch (e) {
+    if (isMissing(e)) return { ok: false, error: 'not-found' }
+    return { ok: false, error: 'failed', message: (e as Error).message }
+  }
+}
+
+/**
+ * Replace a file's first line, streaming the rest through untouched.
+ *
+ * Streamed rather than read whole: a rollout runs to tens of megabytes and only its
+ * first line is of any interest here. `transform` returning null means the line was
+ * not what the caller expected — nothing is written and the original stands.
+ */
+async function rewriteFirstLine(
+  file: string,
+  transform: (line: string) => string | null
+): Promise<boolean> {
+  const first = await readFirstLine(file)
+  if (first === null) return false
+  const replacement = transform(first)
+  if (replacement === null) return false
+
+  const tmp = `${file}.argos-tmp`
+  await new Promise<void>((resolve, reject) => {
+    const out = fs.createWriteStream(tmp)
+    out.on('error', reject)
+    out.on('finish', () => resolve())
+    // `start` skips the original header exactly, so the remaining bytes — including
+    // whatever encoding or trailing state they carry — are never parsed, only copied.
+    const rest = fs.createReadStream(file, { start: Buffer.byteLength(first, 'utf8') })
+    rest.on('error', reject)
+    out.write(replacement)
+    rest.pipe(out)
+  })
+  await fs.promises.rename(tmp, file)
+  return true
+}
+
+/** A file's first line, without its newline, or null for an empty file. */
+async function readFirstLine(file: string): Promise<string | null> {
+  const decoder = new StringDecoder('utf8')
+  let buffered = ''
+  const stream = fs.createReadStream(file, { highWaterMark: 64 * 1024 })
+  try {
+    for await (const chunk of stream) {
+      buffered += decoder.write(chunk as Buffer)
+      const nl = buffered.indexOf('\n')
+      if (nl !== -1) return buffered.slice(0, nl)
+    }
+  } finally {
+    stream.destroy()
+  }
+  buffered += decoder.end()
+  return buffered || null
 }

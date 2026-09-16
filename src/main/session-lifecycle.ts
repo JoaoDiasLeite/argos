@@ -1,7 +1,21 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import { ARCHIVED_DIR, resolveChatSource, safeSessionPath } from './claude-data'
+import {
+  ARCHIVED_DIR,
+  projectRealPathById,
+  resolveChatSource,
+  resolveCodexFor,
+  safeSessionPath
+} from './claude-data'
+import {
+  codexArchiveSession,
+  codexDeleteSession,
+  codexMoveSession,
+  codexRenameSession,
+  codexUnarchiveSession
+} from './codex-data'
 import { appendTitle, deleteTranscript, FileOpResult, moveTranscript } from './session-files'
+import { forgetCodexSessionTags } from './store'
 
 /**
  * Archive, unarchive, rename, move and delete a conversation, addressed the way the
@@ -18,6 +32,12 @@ import { appendTitle, deleteTranscript, FileOpResult, moveTranscript } from './s
  * This module's whole job is resolving ids through `safeSessionPath` before handing
  * absolute paths to session-files.ts. Ids come from the renderer and reach the
  * filesystem, so every one of them is checked here first.
+ *
+ * A Codex conversation takes the other road at every one of these: it has no project
+ * directory to move a file between and no `custom-title` line to append, so each
+ * operation is handed to codex-data.ts, which expresses it in Codex's own terms (see
+ * that module's Lifecycle section). This module stays the one place the renderer's
+ * ids are turned into an operation, whichever CLI wrote the transcript.
  */
 
 export type LifecycleResult = FileOpResult
@@ -34,11 +54,15 @@ async function shuffle(
   return moveTranscript(from, to)
 }
 
-export function archiveSession(sourceId: string, encodedDir: string, sessionId: string) {
+export async function archiveSession(sourceId: string, encodedDir: string, sessionId: string) {
+  const codex = await resolveCodexFor(sourceId)
+  if (codex) return codexArchiveSession(codex, sessionId)
   return shuffle(sourceId, encodedDir, sessionId, false)
 }
 
-export function unarchiveSession(sourceId: string, encodedDir: string, sessionId: string) {
+export async function unarchiveSession(sourceId: string, encodedDir: string, sessionId: string) {
+  const codex = await resolveCodexFor(sourceId)
+  if (codex) return codexUnarchiveSession(codex, sessionId)
   return shuffle(sourceId, encodedDir, sessionId, true)
 }
 
@@ -48,6 +72,15 @@ export async function deleteSession(
   sessionId: string,
   archived = false
 ): Promise<LifecycleResult> {
+  const codex = await resolveCodexFor(sourceId)
+  if (codex) {
+    const res = await codexDeleteSession(codex, sessionId, archived)
+    // The tags of a Codex conversation are Argos's own (see store.ts), so nothing else
+    // will ever clear them: a transcript that is gone must not leave a tag entry behind
+    // for a session id to collide with later.
+    if (res.ok) forgetCodexSessionTags(sourceId, sessionId)
+    return res
+  }
   const file = await safeSessionPath(sourceId, encodedDir, sessionId, archived)
   if (!file) return { ok: false, error: 'not-found' }
   return deleteTranscript(file)
@@ -60,6 +93,8 @@ export async function renameSession(
   title: string,
   archived = false
 ): Promise<LifecycleResult> {
+  const codex = await resolveCodexFor(sourceId)
+  if (codex) return codexRenameSession(codex, sessionId, title)
   const file = await safeSessionPath(sourceId, encodedDir, sessionId, archived)
   if (!file) return { ok: false, error: 'not-found' }
   return appendTitle(file, sessionId, title)
@@ -86,9 +121,16 @@ export async function renameChatSession(
 /**
  * Move a conversation to another project.
  *
- * The `cwd` recorded inside the transcript is NOT rewritten. Moving is a cosmetic
- * relocation of where the conversation is filed; where it ran is a fact about the
- * past, and resume still resolves from it.
+ * The `cwd` recorded inside a Claude Code transcript is NOT rewritten. Moving is a
+ * cosmetic relocation of where the conversation is filed; where it ran is a fact
+ * about the past, and resume still resolves from it.
+ *
+ * Codex is the exception, and not by choice: its transcripts all live in one date
+ * tree, so the recorded cwd is the ONLY thing filing them. Moving one therefore
+ * rewrites it, and a later resume starts in the new folder — the renderer says so
+ * before asking. A Claude Code transcript cannot move into a Codex project at all:
+ * there is no directory to put it in, and rewriting its cwd would change where
+ * resuming it runs without moving the file anywhere.
  */
 export async function moveSession(
   sourceId: string,
@@ -98,6 +140,19 @@ export async function moveSession(
   toEncodedDir: string,
   archived = false
 ): Promise<LifecycleResult> {
+  const codex = await resolveCodexFor(sourceId)
+  if (codex) {
+    const toCwd = await projectRealPathById(toSourceId, toEncodedDir)
+    if (!toCwd) return { ok: false, error: 'not-found' }
+    return codexMoveSession(codex, sessionId, toCwd, archived)
+  }
+  if (await resolveCodexFor(toSourceId)) {
+    return {
+      ok: false,
+      error: 'failed',
+      message: 'Codex has no project directory to move a Claude Code conversation into.'
+    }
+  }
   const from = await safeSessionPath(sourceId, encodedDir, sessionId, archived)
   const to = await safeSessionPath(toSourceId, toEncodedDir, sessionId, archived)
   if (!from || !to) return { ok: false, error: 'not-found' }
