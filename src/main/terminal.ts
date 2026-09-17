@@ -2,6 +2,7 @@ import * as pty from 'node-pty'
 import { spawnSync } from 'child_process'
 import * as fs from 'fs'
 import * as os from 'os'
+import * as path from 'path'
 import { buildSubprocessEnv } from './auth'
 import { accountConfigDir, resolveClaudeBin } from './accounts'
 import { providerAccountEnv } from './provider-accounts'
@@ -177,6 +178,31 @@ function hasCommand(cmd: string): boolean {
   }
 }
 
+/**
+ * Absolute path for a bare Windows executable name, so node-pty never has to resolve it.
+ *
+ * node-pty resolves a relative name itself, and gets it wrong in one specific case: if the
+ * name also exists relative to *our own* process's current directory, it returns an empty
+ * path and the spawn dies with a bare "File not found:". Argos auto-starts at login, and the
+ * Run key hands the process C:\Windows\System32 as its cwd — so every shell that lives in
+ * System32 (wsl.exe, cmd.exe) hit exactly that case while pwsh.exe, which does not, worked.
+ * Resolving here leaves node-pty nothing to guess at.
+ */
+function resolveWindowsExe(name: string): string {
+  if (process.platform !== 'win32' || path.isAbsolute(name)) return name
+  const system32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32')
+  for (const dir of [system32, ...(process.env.PATH || '').split(';')]) {
+    if (!dir) continue
+    try {
+      const full = path.join(dir, name)
+      if (fs.statSync(full).isFile()) return full
+    } catch {
+      // missing or unreadable PATH entry — keep looking
+    }
+  }
+  return name
+}
+
 function pickShell(): { shell: string; kind: ShellKind } {
   if (process.platform === 'win32') {
     if (hasPwsh()) return { shell: 'pwsh.exe', kind: 'pwsh' }
@@ -348,7 +374,7 @@ export function createTerminal(
     let p: pty.IPty
     attempted = `${shell} in ${spawnCwd}`
     try {
-      p = pty.spawn(shell, shellArgs, { name: 'xterm-color', cols, rows, cwd: spawnCwd, env })
+      p = pty.spawn(resolveWindowsExe(shell), shellArgs, { name: 'xterm-color', cols, rows, cwd: spawnCwd, env })
     } catch (err) {
       // conpty resolves the shell by name through the pty's own PATH, so a shell `where`
       // claimed to exist can still fail here — a Store app-execution alias for pwsh is a
@@ -358,7 +384,7 @@ export function createTerminal(
       pwshAvailable = false
       shell = 'powershell.exe'
       kind = 'powershell'
-      p = pty.spawn(shell, shellArgs, { name: 'xterm-color', cols, rows, cwd: spawnCwd, env })
+      p = pty.spawn(resolveWindowsExe(shell), shellArgs, { name: 'xterm-color', cols, rows, cwd: spawnCwd, env })
     }
 
     p.onData((d) => {

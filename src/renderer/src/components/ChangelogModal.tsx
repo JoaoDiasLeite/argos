@@ -22,6 +22,7 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Fixes',
         items: [
+          'The terminal opens again in a chat that runs inside a WSL distro. It failed with “File not found (wsl.exe)” whenever Argos had been started by Windows at login: the terminal library resolves a bare program name itself, and hands back nothing at all when that name also happens to sit in the directory Argos was started from — which, for a program started at login, is the very directory wsl.exe lives in. Argos now gives it the full path. PowerShell chats were never affected, which is what made it look like a WSL problem.',
           'A chat that runs inside a WSL distro or on a remote host is listed under the account it was created with again, instead of under every account. It runs against the login that lives there rather than the account it carries, which is why it had been let through, but a chat started while working on one account turning up in another’s list reads as a leak between them. Opening one moves the sidebar onto its account like any other chat, and its row still says where it runs.'
         ]
       }
