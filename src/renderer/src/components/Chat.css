@@ -758,3 +758,45 @@
   font-size: 13px;
   line-height: 1;
 }
+
+/* ── Terminal setup pane ──────────────────────────────────────────────────────
+   Terminal mode only, and only for a terminal that arrived without knowing where
+   it runs: the pty is spawned the moment ChatTerminal mounts, so the environment
+   and folder are chosen here first (see needsTerminalSetup in Chat.tsx). */
+.terminal-setup {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+.terminal-setup h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+.terminal-setup p {
+  max-width: 400px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-1);
+}
+/* The config bar is built for the composer's one-line chip row; here it has the
+   whole pane, so its chips are free to wrap onto a second line. */
+.terminal-setup .config-bar {
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+}
+.terminal-setup-start {
+  margin-top: 8px;
+  padding: 9px 20px;
+  font-size: 13px;
+}
+.terminal-setup-hint {
+  font-size: 11px;
+  color: var(--text-2);
+}
