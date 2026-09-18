@@ -47,6 +47,18 @@
   border-color: #e2b341;
 }
 
+.pending-run.done {
+  border-color: var(--success);
+}
+
+.pending-run-check {
+  flex-shrink: 0;
+}
+
+.pending-run.done .pending-run-check {
+  color: var(--success);
+}
+
 .pending-run-open {
   display: flex;
   align-items: center;
@@ -83,6 +95,10 @@
   color: #e2b341;
   font-size: 11px;
   flex-shrink: 0;
+}
+
+.pending-run-note.done {
+  color: var(--success);
 }
 
 .pending-run-close {

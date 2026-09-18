@@ -343,6 +343,12 @@ export default function App() {
   // have to ask "is this chat on screen?" rather than "is it the focused one?".
   const visibleIdsRef = useRef(visibleIds)
   visibleIdsRef.current = visibleIds
+  // What is actually being read. The panes stay mounted behind Home and Projects, so a
+  // chat in one is "visible" there without anyone looking at it — unread asks this instead.
+  const seenIds = useMemo(() => (view === 'chat' ? visibleIds : new Set<string>()), [view, visibleIds])
+  const seenIdsRef = useRef(seenIds)
+  seenIdsRef.current = seenIds
+  const seenKey = view === 'chat' ? visibleKey : ''
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
   const limitsRef = useRef(limits)
@@ -408,14 +414,14 @@ export default function App() {
   // through every entry point. Visibility, not focus: a chat sitting in a pane you can see
   // has been read even while you type in the one beside it. Persists on its own: the
   // save-on-change effect below picks up the new object references.
-  // Keyed on `visibleKey`, since the Set itself is a fresh object on every render.
+  // Keyed on `seenKey`, since the Set itself is a fresh object on every render.
   useEffect(() => {
-    const visible = visibleIdsRef.current
+    const seen = seenIdsRef.current
     setSessions((prev) => {
-      if (!prev.some((s) => s.unread && visible.has(s.id))) return prev
-      return prev.map((s) => (s.unread && visible.has(s.id) ? { ...s, unread: false } : s))
+      if (!prev.some((s) => s.unread && seen.has(s.id))) return prev
+      return prev.map((s) => (s.unread && seen.has(s.id) ? { ...s, unread: false } : s))
     })
-  }, [visibleKey])
+  }, [seenKey])
 
   const activeSession = sessions.find((s) => s.id === activeId)
   // Which CLI a session's model belongs to. A plain lookup, but it has three callers now
@@ -702,7 +708,7 @@ export default function App() {
             // The turn finished while this chat wasn't on screen — same signal as a
             // terminal chat's transcript catching up in the background. Visibility, not
             // focus: a run that finished in a pane you were watching is not news.
-            ...(!visibleIdsRef.current.has(s.id) ? { unread: true } : {})
+            ...(!seenIdsRef.current.has(s.id) ? { unread: true } : {})
           }
         })
         const session = updated.find((s) => s.id === data.appSessionId)
@@ -1726,12 +1732,12 @@ export default function App() {
             ...(nameFromTitle ? { name: nameFromTitle } : {}),
             ccSynced: true,
             // The terminal wrote new turns while this chat wasn't on screen — reads
-            // visibleIdsRef (not visibleIds) because syncTerminalChats has no deps and
+            // seenIdsRef (not seenIds) because syncTerminalChats has no deps and
             // would otherwise close over whichever panes were open when it was first
             // created.
             ...(messagesChanged &&
             transcript.messages.length > s.messages.length &&
-            !visibleIdsRef.current.has(s.id)
+            !seenIdsRef.current.has(s.id)
               ? { unread: true }
               : {})
           }
@@ -1923,6 +1929,8 @@ export default function App() {
   // keying off Argos's own runs alone left the strip empty for exactly the chats you most
   // need to find your way back to. The chat you're already looking at is left out — its own
   // header already shows it streaming, so listing it is just noise.
+  // A chat that finished while you were elsewhere stays on as `done` until it is read: the
+  // toast is gone by the time you're back, and this is where you were already looking.
   const pendingRuns = useMemo<PendingRun[]>(() => {
     const defaults: AccountDefaults = {
       defaultAccountId,
@@ -1931,9 +1939,8 @@ export default function App() {
     }
     const running = sessions.filter(
       (s) =>
-        displayRunningIds.has(s.id) &&
-        !dismissedRunIds.has(s.id) &&
-        !(view === 'chat' && visibleIds.has(s.id))
+        !seenIds.has(s.id) &&
+        (displayRunningIds.has(s.id) ? !dismissedRunIds.has(s.id) : !!s.unread)
     )
     // Which account each run is actually billed to, resolved exactly the way the run
     // itself resolves it (acctOf mirrors buildAgentPayload's fallbacks), so an unbound
@@ -1958,12 +1965,13 @@ export default function App() {
     // you're already using would just be noise on every pill.
     const spansAccounts = new Set(acctKeys).size > 1
     return running.map((s, i) => {
+      const done = !displayRunningIds.has(s.id)
       // A run somewhere other than this machine is always named, span or no span: "it is
       // working" and "it is working inside Ubuntu-DevOps" are different facts, and the
       // second is the one you need to go and look in the right place.
       const origin = origins[i]
       if (origin) {
-        return { id: s.id, name: s.name, attention: attentionIds.has(s.id), account: origin.label }
+        return { id: s.id, name: s.name, attention: attentionIds.has(s.id), done, account: origin.label }
       }
       const acctId = acctIds[i]
       const provider = provOf(models, s.model)
@@ -1981,6 +1989,7 @@ export default function App() {
         id: s.id,
         name: s.name,
         attention: attentionIds.has(s.id),
+        done,
         account: spansAccounts || (!isDefault && list.length > 1) ? name : undefined
       }
     })
@@ -1989,8 +1998,7 @@ export default function App() {
     displayRunningIds,
     dismissedRunIds,
     attentionIds,
-    view,
-    activeId,
+    seenIds,
     models,
     accounts,
     defaultAccountId,
@@ -2010,6 +2018,31 @@ export default function App() {
       return next.size === prev.size ? prev : next
     })
   }, [displayRunningIds])
+
+  // The one signal every kind of chat shares for "it finished": leaving the running set.
+  // A terminal chat's transcript sync only flags unread when it happens to run, which may
+  // not be until you open the chat — too late for the pending bar to tell you about it.
+  const prevRunningRef = useRef(displayRunningIds)
+  useEffect(() => {
+    const stopped = [...prevRunningRef.current].filter(
+      (id) => !displayRunningIds.has(id) && !seenIdsRef.current.has(id)
+    )
+    prevRunningRef.current = displayRunningIds
+    if (!stopped.length) return
+    setSessions((prev) => {
+      if (!prev.some((s) => stopped.includes(s.id) && !s.unread)) return prev
+      return prev.map((s) => (stopped.includes(s.id) && !s.unread ? { ...s, unread: true } : s))
+    })
+  }, [displayRunningIds])
+
+  // Hiding a finished chat from the bar is saying you've dealt with it.
+  const dismissPending = useCallback(
+    (sid: string) => {
+      if (displayRunningIds.has(sid)) return dismissRun(sid)
+      setSessions((prev) => prev.map((s) => (s.id === sid && s.unread ? { ...s, unread: false } : s)))
+    },
+    [displayRunningIds, dismissRun]
+  )
 
   // ─── Home view data ────────────────────────────────────────────────────────
   // Everything below is either derived from state Argos already keeps (approvals,
@@ -2978,7 +3011,7 @@ export default function App() {
           setActiveId(id)
           setView('chat')
         }}
-        onDismiss={dismissRun}
+        onDismiss={dismissPending}
       />
       <div className="app">
         <NavRail
