@@ -49,7 +49,8 @@
   z-index: 45;
   /* The rail is 68px wide (NavRail.css); -1 lays this over its border so the two join. */
   left: 67px;
-  top: 36px;
+  /* Low enough that the top flare clears the terminal bar under a single pane. */
+  top: 46px;
   width: 16px;
   height: 30px;
   display: flex;
@@ -61,10 +62,44 @@
   border: 1px solid var(--border);
   border-left: none;
   border-radius: 0 10px 10px 0;
-  box-shadow: 2px 1px 4px rgba(0, 0, 0, 0.08);
   transition: width 0.14s, color 0.14s;
 }
 .sidebar-expand-tab:hover { width: 22px; color: var(--accent); }
+
+/* Where the tab meets the rail its edges flare out — the top one up, the bottom one down —
+   instead of meeting it at a right angle, so the rail's border runs round the tab without a
+   break and the tab reads as pulled out of the rail rather than stuck onto it. Each flare
+   is a square holding a concave quarter-circle: transparent inside the circle, the
+   border's colour on it, the rail's colour outside. */
+.sidebar-expand-tab::before,
+.sidebar-expand-tab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+.sidebar-expand-tab::before {
+  top: -10px;
+  background: radial-gradient(
+    circle at 100% 0,
+    transparent 9.5px,
+    var(--border) 9.5px,
+    var(--border) 10.5px,
+    var(--bg-1) 10.5px
+  );
+}
+.sidebar-expand-tab::after {
+  bottom: -10px;
+  background: radial-gradient(
+    circle at 100% 100%,
+    transparent 9.5px,
+    var(--border) 9.5px,
+    var(--border) 10.5px,
+    var(--bg-1) 10.5px
+  );
+}
 
 .main-area {
   flex: 1;
