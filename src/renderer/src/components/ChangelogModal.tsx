@@ -30,6 +30,7 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Changes',
         items: [
+          'A chat that finishes while you are somewhere else stays in the bar at the top of the window, marked finished, until you open it. The bar used to list only chats still working, so the moment one was done it vanished — and with the notification already gone, the only way to find out what it had to say was to go looking in the chat list, possibly under another account. Open it from there, or press × to mark it read. Being on Home or Projects now counts as not looking at a chat, even one still sitting in a pane behind them.',
           'New terminal no longer guesses which folder to open in. It used to inherit one from whichever chat happened to be open, which a terminal — a CLI process that starts where it is told and cannot be moved afterwards — leaves you to discover only once it is up. It now asks first, on the same short setup screen a terminal gets when it has no folder at all. A folder that was actually named still skips the question: a project group’s “+”, “Open with Argos”, or the start box on Home. In Chat mode nothing changes, because there the folder is on show under the composer and repointing it costs nothing.'
         ]
       }
