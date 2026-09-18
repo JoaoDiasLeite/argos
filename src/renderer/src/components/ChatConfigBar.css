@@ -237,3 +237,11 @@ button.config-pill:hover:not(:disabled) {
   text-transform: uppercase;
   color: var(--text-2);
 }
+
+/* In the terminal setup pane this row is not a composer chip row — it has the whole
+   pane, so its chips are free to wrap onto a second line and sit centred. */
+.terminal-setup .config-bar {
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+}

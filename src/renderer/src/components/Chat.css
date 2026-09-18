@@ -784,13 +784,9 @@
   line-height: 1.7;
   color: var(--text-1);
 }
-/* The config bar is built for the composer's one-line chip row; here it has the
-   whole pane, so its chips are free to wrap onto a second line. */
-.terminal-setup .config-bar {
-  flex-wrap: wrap;
-  justify-content: center;
-  margin-top: 4px;
-}
+/* The setup pane's own override of .config-bar lives in ChatConfigBar.css, with the
+   class it belongs to — every stylesheet here is bundled into one global sheet, so a
+   second file defining it would be overwriting the first app-wide (see css-scope.test). */
 .terminal-setup-start {
   margin-top: 8px;
   padding: 9px 20px;
