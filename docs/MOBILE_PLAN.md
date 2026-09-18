@@ -26,26 +26,61 @@ sessions, no tools, no terminal, no projects) and is not worth building out of t
 The desktop app must keep working exactly as today with the host turned off. Every design
 choice below follows from that.
 
-## What the phone is for
+## What is worth taking
 
-Ordered by how much it earns its place. The phone is a **remote control for runs already
-happening on your machine**, not a second workstation.
+First, the criterion — because nothing here *ports*. The desktop UI is 48 files and 329
+calls into `window.electronAPI`, built for a mouse and a wide window; every screen on the
+phone is written from scratch. What carries over is the **host handler** and the **types**,
+never the component. So the question is not "what can be moved" but "what is worth a new
+UI", and a screen earns one when all three hold:
 
-1. **Approve tool calls.** A run stops on `Edit`/`Write`/`Bash` and waits. Today that
-   blocks until you are back at the desk. This is the single feature that justifies the
-   whole project.
-2. **See what is running** — `PendingRuns.tsx` / `LiveView`, the same state the tray and
-   pill already show.
-3. **Read a chat as it streams, and send a prompt.** Text, thinking, tool use. Start a new
-   turn on an existing session.
-4. **Browse projects/sessions and search** (read-only) — `claude-data.ts` already serves all
-   of it.
-5. **Usage + limit bars** — one screen, already computed in `plan-usage.ts`.
+1. **It is time-critical while you are away from the machine** — something is blocked or
+   broke, and finding out an hour later has a cost.
+2. **It is read-mostly, or one tap** — no keyboard, no drag, no precision.
+3. **The host side already exists** as a handler, so the cost is the UI and nothing else.
 
-Not on the phone, v1 and probably ever: the terminal grid (`PaneGrid`, `ChatTerminal`,
-`RemoteTerminal` — xterm on a 6-inch screen is a toy), the file editor, the SFTP browser,
-git staging, checkpoint restore, the settings surface. Diffs render read-only (approvals
-need them anyway); acting on files does not.
+Anything failing (1) is config you touch once a month at a desk. Anything failing (2)
+becomes a worse version of something that already works well fifteen steps away.
+
+### Takes itself — this is the product
+
+| Screen | Why | Host side |
+|---|---|---|
+| **Approvals** | A run is stopped dead on `Edit`/`Write`/`Bash` until someone answers. Allow/Deny with a read-only diff is one tap and unblocks real work. | `requestToolApproval` + `resolveApprovalEverywhere` already fan across two surfaces |
+| **Home** | `HomeView` is *already* this dashboard: attention (approvals, routines), what's running, plan %, spend today, next routine, recents. Drop the dirty-repo section and the start pickers and it is a phone screen. | `HomeAttention` / `HomeRunning` / `HomePlan` / `HomeSpend` exist |
+| **Routines** (`ScheduledView`) | These fire unattended. The phone is where you find out one ran, or failed, or is about to. Read-only: list, next run, last result. | `scheduler.ts` (5 channels) |
+| **Chat, streamed** | Reading what the agent is doing, and answering when it asks. With a prompt box — a one-line correction is worth typing on a phone; nothing longer is. | `agent:event`/`done`/`error`, already normalised for WSL/SSH by `claude-stream.ts` |
+
+### Cheap, because the host already computed it
+
+Read-only, no new main-process work, and each is a single list or a few numbers:
+
+- **Projects + sessions + full-text search** — `claude-data.ts` (`searchSessions`,
+  `readSessionPeek`). Reading a transcript on the phone is the "what did it actually do"
+  case, and it is the thing `jsonl.ts` streaming was built for.
+- **Usage and limit bars** — `plan-usage.ts` computes all of it; the phone renders three
+  bars and a total.
+- **Backlog topics** — `backlog.ts` reads them from the repo. List, and tick one done.
+  Genuinely useful away from the desk, and the write is one boolean.
+
+### Only once the above is real
+
+- **Starting a turn** on an existing session (as opposed to reading one). Needs model and
+  account pickers, and it widens the write surface — so it is a decision, not a freebie.
+- **Sprint / Planner boards.** The standup on a phone is a fair idea, but `SprintBoard.tsx`
+  is 2139 lines and `PlannerView.tsx` 1511, of dense board UI. What would actually be built
+  is "today's items", not the board — a new screen wearing the same data.
+
+### Not worth it
+
+| Left behind | Why |
+|---|---|
+| **Terminals** — `ChatTerminal`, `RemoteTerminal`, `PaneGrid`, `LiveView` takeover | Keyboard-bound by nature, and the only part of the app needing bidirectional streaming. A terminal on a phone is a demo, not a tool. |
+| **SFTP browser, `FileEditor`, `RemoteSessionView`** | Two-pane, drag-and-drop, precision editing. |
+| **Git staging / commit, checkpoint restore** | Destructive and irreversible, decided by reading a diff properly. A wrong tap costs a working tree. |
+| **MCP, Permissions, Hooks, `CLAUDE.md` editor, Settings** | Configured once, at a desk. Fails (1) completely. |
+| **Accounts, auth, API keys** | Not merely pointless on the phone — these channels must never leave the machine at all (see Security). |
+| **Agents authoring, Rooms, command palette** | Authoring is typing; `Ctrl-K` is a keyboard idea. The one part of Rooms that matters on a phone — its approvals — is already Tier 1. |
 
 ## The shape: host + client
 
