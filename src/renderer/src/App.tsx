@@ -2919,6 +2919,11 @@ export default function App() {
   // Applies the plan PaneGrid has already worked out (see lib/pane-drop.ts). Entirely composed
   // from the functions in lib/panes.ts — no model decision gets made here.
   const applyDrop = (plan: DropPlan, sessionId: string) => {
+    // The drag is over, and this can't wait for the source's dragend: a pill in the pending bar
+    // is unmounted by this very drop (the chat is now on screen, so it leaves the bar), and a
+    // detached element never fires dragend — the grid then kept pointing at the new pane as
+    // "Already open".
+    setDraggingSessionId(null)
     if (plan.type === 'none') return
     if (plan.type === 'focus') {
       // Already in another pane: move focus, never duplicate (two terminals on one pty).
@@ -3081,6 +3086,7 @@ export default function App() {
                   e.preventDefault()
                   welcomeDragDepth.current = 0
                   setWelcomeDropOver(false)
+                  setDraggingSessionId(null) // see applyDrop
                   const id = e.dataTransfer.getData(SESSION_DRAG_TYPE)
                   if (id) openInFocused(id)
                 }}
