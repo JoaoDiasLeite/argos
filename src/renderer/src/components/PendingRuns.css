@@ -42,63 +42,99 @@
   max-width: 260px;
 }
 
+/* The state is read from the pill itself, no words: an arc of accent chasing round the
+   border while it works, amber and an alert when it wants you, green and a tick once done.
+   The arc is a conic gradient on the border box under an opaque padding box, turned by
+   animating a registered angle — a plain custom property cannot be interpolated. */
+@property --pending-run-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.pending-run.working {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--bg-1), var(--bg-1)) padding-box,
+    conic-gradient(
+        from var(--pending-run-angle),
+        var(--border) 0 50%,
+        var(--accent) 78%,
+        var(--accent) 88%,
+        var(--border) 100%
+      )
+      border-box;
+  animation: pending-run-orbit 1.6s linear infinite;
+}
+
+@keyframes pending-run-orbit {
+  to { --pending-run-angle: 360deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pending-run.working {
+    animation: none;
+    border-color: var(--accent);
+    background: var(--bg-1);
+  }
+}
+
 /* Same amber as .session-dot.attention in the chat list, which flags the same condition. */
 .pending-run.attention {
   border-color: #e2b341;
+  background: color-mix(in srgb, #e2b341 10%, var(--bg-1));
 }
 
 .pending-run.done {
   border-color: var(--success);
 }
 
-.pending-run-check {
+.pending-run-icon {
   flex-shrink: 0;
 }
 
-.pending-run.done .pending-run-check {
-  color: var(--success);
-}
+.pending-run.attention .pending-run-icon { color: #e2b341; }
+.pending-run.done .pending-run-icon { color: var(--success); }
 
 .pending-run-open {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  height: 100%;
+  padding: 0;
   color: var(--text-1);
   font-size: 12px;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .pending-run-open:hover { color: var(--accent); }
 
-/* Which account the run is on, when the bar spans more than one. Borrows
+/* The name is what gives way on a long chat, never the account chip beside it: a bare text
+   node cannot take an ellipsis, so it overflowed the pill and pushed the chip out of it. */
+.pending-run-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Which account the run is on, when it is not the one you are on. Borrows
    .session-badge's chip so an account reads the same here as in the chat list —
    the sidebar is scoped to one account, so this bar is where a run on another
    one is first seen. */
 .pending-run-account {
   flex-shrink: 0;
   max-width: 130px;
-  padding: 1px 5px;
+  padding: 0 5px;
   border: 1px solid var(--border-light);
   border-radius: 4px;
   background: var(--bg-3);
   color: var(--text-2);
   font-size: 10px;
-  line-height: 1.4;
+  line-height: 14px;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.pending-run-note {
-  color: #e2b341;
-  font-size: 11px;
-  flex-shrink: 0;
-}
-
-.pending-run-note.done {
-  color: var(--success);
 }
 
 .pending-run-close {

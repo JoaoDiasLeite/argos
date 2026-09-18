@@ -35,13 +35,14 @@ export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) 
   if (runs.length === 0) return null
 
   const doneCount = runs.filter((r) => r.done).length
-  const workingCount = runs.length - doneCount
-  const label = [
-    workingCount ? `${workingCount} chat${workingCount === 1 ? '' : 's'} working` : null,
-    doneCount ? `${doneCount}${workingCount ? '' : ` chat${doneCount === 1 ? '' : 's'}`} finished` : null
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  const waitingCount = runs.filter((r) => !r.done && r.attention).length
+  const workingCount = runs.length - doneCount - waitingCount
+  const counts = [
+    workingCount ? `${workingCount} working` : null,
+    waitingCount ? `${waitingCount} waiting for you` : null,
+    doneCount ? `${doneCount} finished` : null
+  ].filter(Boolean)
+  const label = `${runs.length === 1 ? '1 chat' : `${runs.length} chats`}: ${counts.join(' · ')}`
 
   return (
     <div className="pending-runs">
@@ -50,6 +51,8 @@ export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) 
           <svg className="pending-runs-spinner" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
             <path d="M21 12a9 9 0 1 1-6.22-8.56" />
           </svg>
+        ) : waitingCount > 0 ? (
+          <InputIcon />
         ) : (
           <CheckIcon />
         )}
@@ -58,7 +61,7 @@ export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) 
       {runs.map((r) => (
         <span
           key={r.id}
-          className={`pending-run ${r.attention ? 'attention' : ''} ${r.done ? 'done' : ''}`}
+          className={`pending-run ${r.done ? 'done' : r.attention ? 'attention' : 'working'}`}
           /* Dragging a pill onto the panes opens that chat beside the one on screen, exactly
              like dragging a sidebar row (see PaneGrid). For a chat on another account this is
              the only way to do it: the sidebar lists just the account you're on, and this bar
@@ -77,19 +80,14 @@ export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) 
             title={[
               r.name,
               r.account ? `on ${r.account}` : null,
-              r.done ? 'finished — not read yet' : r.attention ? 'waiting for your approval' : null
+              r.done ? 'finished — not read yet' : r.attention ? 'waiting for your input' : 'working'
             ]
               .filter(Boolean)
               .join(' — ')}
           >
-            {r.done && <CheckIcon />}
-            {r.name}
+            {r.done ? <CheckIcon /> : r.attention && <InputIcon />}
+            <span className="pending-run-name">{r.name}</span>
             {r.account && <span className="pending-run-account">{r.account}</span>}
-            {r.done ? (
-              <span className="pending-run-note done">finished</span>
-            ) : (
-              r.attention && <span className="pending-run-note">needs approval</span>
-            )}
           </button>
           <button
             className="pending-run-close"
@@ -107,8 +105,17 @@ export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) 
 
 function CheckIcon() {
   return (
-    <svg className="pending-run-check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg className="pending-run-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+
+function InputIcon() {
+  return (
+    <svg className="pending-run-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 7v6M12 17h.01" />
     </svg>
   )
 }
