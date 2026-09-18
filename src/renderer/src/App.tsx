@@ -1948,49 +1948,36 @@ export default function App() {
     // Keyed by provider too: 'default' means a different login on Codex than it does on
     // Claude, so two runs sharing the bare id are still two accounts.
     //
-    // …except where the chat does not run under a managed account at all. A chat inside a
-    // WSL distro, or on a box over SSH, runs against the CLI login that lives THERE, and
-    // labelling it with the account it happens to carry states something false. originOf
-    // answers first, and its key joins the same set, so a distro counts as its own origin
-    // when deciding whether the bar spans more than one.
-    const origins = running.map((s) => originOf(s))
-    const acctIds = running.map((s) => acctOf(s, models, defaults))
-    const acctKeys = running.map(
-      (s, i) => origins[i]?.key ?? `${provOf(models, s.model)}:${acctIds[i]}`
-    )
-    // The sidebar is scoped to ONE provider+account, so a run on another account is
-    // invisible there — this bar is the only place it shows up at all. Name the account
-    // when that matters: the runs span more than one, or a single run is on an account
-    // other than the current default. Naming it when every run is on the one account
-    // you're already using would just be noise on every pill.
-    const spansAccounts = new Set(acctKeys).size > 1
-    return running.map((s, i) => {
+    // The sidebar is scoped to ONE provider+account — the one you're on — so a run on any
+    // other account is invisible there, and this bar is the only place it shows up. So the
+    // account is named exactly when it isn't the one you're on: naming yours on every pill
+    // is noise, and leaving another's off makes the run look like it belongs to this list,
+    // where you then won't find it. Whether the bar happens to span accounts doesn't enter
+    // into it — a WSL run beside a local one used to put "Personal" on the local pill even
+    // while you were on Personal.
+    const scopeKey = `${activeChatProvider}:${activeChatAccountId ?? 'default'}`
+    return running.map((s) => {
       const done = !displayRunningIds.has(s.id)
-      // A run somewhere other than this machine is always named, span or no span: "it is
-      // working" and "it is working inside Ubuntu-DevOps" are different facts, and the
-      // second is the one you need to go and look in the right place.
-      const origin = origins[i]
+      // A chat inside a WSL distro, or on a box over SSH, runs against the CLI login that
+      // lives THERE, and labelling it with the account it happens to carry states something
+      // false. It is always named by where it runs: "it is working" and "it is working
+      // inside Ubuntu-DevOps" are different facts, and the second is the one you need to go
+      // and look in the right place.
+      const origin = originOf(s)
       if (origin) {
         return { id: s.id, name: s.name, attention: attentionIds.has(s.id), done, account: origin.label }
       }
-      const acctId = acctIds[i]
+      const acctId = acctOf(s, models, defaults)
       const provider = provOf(models, s.model)
       const list =
         provider === 'codex' ? codexAccounts : provider === 'gemini' ? geminiAccounts : accounts
-      const isDefault =
-        acctId ===
-        (provider === 'codex'
-          ? codexDefaultAccountId
-          : provider === 'gemini'
-            ? geminiDefaultAccountId
-            : defaultAccountId)
-      const name = list.find((a) => a.id === acctId)?.name ?? s.accountName
+      const name = list.find((a) => a.id === acctId)?.name ?? s.accountName ?? acctId
       return {
         id: s.id,
         name: s.name,
         attention: attentionIds.has(s.id),
         done,
-        account: spansAccounts || (!isDefault && list.length > 1) ? name : undefined
+        account: `${provider}:${acctId}` === scopeKey ? undefined : name
       }
     })
   }, [
@@ -2005,7 +1992,9 @@ export default function App() {
     codexAccounts,
     codexDefaultAccountId,
     geminiAccounts,
-    geminiDefaultAccountId
+    geminiDefaultAccountId,
+    activeChatProvider,
+    activeChatAccountId
   ])
 
   // endRun forgets a dismissal once Argos's own run finishes, but a terminal chat never
