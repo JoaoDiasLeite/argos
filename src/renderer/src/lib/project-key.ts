@@ -60,6 +60,23 @@ function toUnc(distro: string, posix: string): string {
 }
 
 /**
+ * The distro and Linux path behind a WSL share spelling, or null for anything else.
+ *
+ * The main process makes the same read when it spawns a terminal (`parseWslUnc` in
+ * terminal.ts): a chat whose folder is `\\wsl.localhost\Ubuntu\home\me\proj` gets a
+ * shell *inside* Ubuntu, because a Windows shell cannot cd into a UNC path. This is
+ * that knowledge on the renderer side, so a chat created from the UNC spelling can be
+ * recorded as the WSL chat it is going to be — rather than a local one whose terminal
+ * quietly ends up somewhere else, with its transcript written on the far side of the
+ * boundary where nothing here thinks to look for it.
+ */
+export function parseWslUnc(path: string): { distro: string; posixPath: string } | null {
+  const m = unify(path).match(WSL_UNC)
+  if (!m) return null
+  return { distro: m[1], posixPath: m[2] || '/' }
+}
+
+/**
  * Resolve a path to the one spelling every session in that folder can be keyed by.
  *
  * For a WSL folder that is the UNC form, deliberately — not the POSIX one. It is the

@@ -60,7 +60,13 @@ import type {
   HomeStartChoice,
   HomeStartOptions
 } from './views/HomeView'
-import { projectKey, canonicalProjectPath, buildPosixDistroMap, ProjectKeyContext } from './lib/project-key'
+import {
+  projectKey,
+  canonicalProjectPath,
+  buildPosixDistroMap,
+  parseWslUnc,
+  ProjectKeyContext
+} from './lib/project-key'
 import { projectDisplayName, projectDisplayNames, RepoName } from './lib/project-name'
 import { cadenceSummary } from './lib/cadence'
 import { chatTerminalId } from './lib/terminal-id'
@@ -138,11 +144,23 @@ const ADOPT_RETRY_MS = 60_000
 
 function newSession(projectPath?: string, model?: string, accountId?: string): Session {
   const now = Date.now()
+  // A folder given as a WSL share (`\\wsl.localhost\<distro>\…`) makes this a WSL chat,
+  // and it has to be recorded as one. The terminal already behaves that way — the main
+  // process reads the same spelling and runs the shell inside the distro — but nothing
+  // wrote the distro down, so the chat stayed "local" with a Windows path: its transcript
+  // is written in the distro, and every lookup on this side (terminal-chat sync, the
+  // account a chat is filed under, the environment chip) went looking on the Windows
+  // filesystem and found nothing. The symptom was a terminal chat that never picked up
+  // its own name. A project group's "+" hands over exactly this spelling, because for a
+  // WSL folder that is the one form a plain Windows process can use.
+  const wsl = projectPath ? parseWslUnc(projectPath) : null
   return {
     id: generateId(),
     name: 'New chat',
     messages: [],
-    projectPath,
+    projectPath: wsl ? wsl.posixPath : projectPath,
+    wslDistro: wsl?.distro,
+    remoteHostName: wsl ? `WSL · ${wsl.distro}` : undefined,
     model,
     accountId,
     // MCP off by default: loading every configured MCP server injects all their tool
@@ -1105,7 +1123,21 @@ export default function App() {
           )
         )
       } else if (folder && draft.projectPath !== folder) {
-        setSessions((prev) => prev.map((s) => (s.id === draft.id ? { ...s, projectPath: folder } : s)))
+        // Same WSL-share reading as newSession — a draft repointed at a distro folder has
+        // to become a WSL chat too, or it inherits the very mismatch that fixes.
+        const wsl = parseWslUnc(folder)
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === draft.id
+              ? {
+                  ...s,
+                  projectPath: wsl ? wsl.posixPath : folder,
+                  wslDistro: wsl?.distro,
+                  remoteHostName: wsl ? `WSL · ${wsl.distro}` : undefined
+                }
+              : s
+          )
+        )
       }
       setActiveId(draft.id)
       setView('chat')
@@ -1632,6 +1664,28 @@ export default function App() {
     )
     for (const s of candidates) {
       const sessionId = (s.claudeSessionId || s.terminalSessionId) as string
+      // A chat recorded before newSession read the WSL share spelling: the folder is a
+      // `\\wsl.localhost\<distro>\…` path with no distro beside it, so its terminal ran
+      // inside the distro while this lookup searched the Windows filesystem — and found
+      // nothing, forever. Repair it here rather than only reading around it: the distro is
+      // what makes its account, its environment chip and its project group right too.
+      const unc = s.wslDistro ? null : s.projectPath && parseWslUnc(s.projectPath)
+      if (unc) {
+        setSessions((prev) =>
+          prev.map((cur) =>
+            cur.id === s.id
+              ? {
+                  ...cur,
+                  projectPath: unc.posixPath,
+                  wslDistro: unc.distro,
+                  remoteHostName: `WSL · ${unc.distro}`
+                }
+              : cur
+          )
+        )
+        // Next tick reads the repaired session — no need to duplicate the lookup here.
+        continue
+      }
       const prefer = s.wslDistro ? `wsl:${s.wslDistro}` : undefined
       const transcript = await window.electronAPI.ccChatTranscript(s.projectPath as string, sessionId, prefer)
       if (!transcript) continue

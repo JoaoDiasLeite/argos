@@ -3,6 +3,7 @@ import {
   buildPosixDistroMap,
   canonicalProjectPath,
   legacyProjectKey,
+  parseWslUnc,
   projectKey
 } from './project-key'
 
@@ -165,5 +166,37 @@ describe('legacyProjectKey', () => {
   it('is the pre-WSL-folding key, so a name filed under it can still be found', () => {
     expect(legacyProjectKey('/home/jdl/dev/wm-project')).toBe('/home/jdl/dev/wm-project')
     expect(legacyProjectKey('C:\\dev\\Claude-GUI\\')).toBe('c:/dev/claude-gui')
+  })
+})
+
+describe('parseWslUnc', () => {
+  it('reads the distro and the Linux path out of a WSL share path', () => {
+    expect(parseWslUnc('\\\\wsl.localhost\\Ubuntu-DevOps\\home\\jdl\\dev\\wm-project')).toEqual({
+      distro: 'Ubuntu-DevOps',
+      posixPath: '/home/jdl/dev/wm-project'
+    })
+  })
+
+  it('reads the older \\\\wsl$ spelling too', () => {
+    expect(parseWslUnc('\\\\wsl$\\Ubuntu\\home\\me\\proj')).toEqual({
+      distro: 'Ubuntu',
+      posixPath: '/home/me/proj'
+    })
+  })
+
+  it('accepts the already-slashed spelling, which is how a saved session may hold it', () => {
+    expect(parseWslUnc('//wsl.localhost/Ubuntu/home/me/proj')?.distro).toBe('Ubuntu')
+  })
+
+  it('gives the distro root when the path is the share itself', () => {
+    expect(parseWslUnc('\\\\wsl.localhost\\Ubuntu')).toEqual({ distro: 'Ubuntu', posixPath: '/' })
+  })
+
+  it('is null for every other kind of path, so nothing else is mistaken for WSL', () => {
+    expect(parseWslUnc('C:\\dev\\proj')).toBeNull()
+    expect(parseWslUnc('/home/me/proj')).toBeNull()
+    // A plain Windows share, not a distro.
+    expect(parseWslUnc('\\\\fileserver\\share\\proj')).toBeNull()
+    expect(parseWslUnc('')).toBeNull()
   })
 })
