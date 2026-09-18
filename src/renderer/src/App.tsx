@@ -3001,6 +3001,7 @@ export default function App() {
           setView('chat')
         }}
         onDismiss={dismissPending}
+        onDrag={setDraggingSessionId}
       />
       <div className="app">
         <NavRail

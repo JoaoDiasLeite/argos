@@ -1,4 +1,5 @@
 import './PendingRuns.css'
+import { SESSION_DRAG_TYPE } from '../lib/pane-drop'
 
 export interface PendingRun {
   /** The app session id of the chat that's still working. */
@@ -17,6 +18,8 @@ interface Props {
   runs: PendingRun[]
   onOpen: (id: string) => void
   onDismiss: (id: string) => void
+  /** Same contract as Sidebar's `onSessionDrag`: the chat being dragged, or null when it ends. */
+  onDrag?: (id: string | null) => void
 }
 
 /**
@@ -28,7 +31,7 @@ interface Props {
  * the chat starts a request — see how endRun clears the dismissed set. Dismissing a done
  * one marks it read.
  */
-export default function PendingRuns({ runs, onOpen, onDismiss }: Props) {
+export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) {
   if (runs.length === 0) return null
 
   const doneCount = runs.filter((r) => r.done).length
@@ -53,7 +56,21 @@ export default function PendingRuns({ runs, onOpen, onDismiss }: Props) {
         {label}
       </span>
       {runs.map((r) => (
-        <span key={r.id} className={`pending-run ${r.attention ? 'attention' : ''} ${r.done ? 'done' : ''}`}>
+        <span
+          key={r.id}
+          className={`pending-run ${r.attention ? 'attention' : ''} ${r.done ? 'done' : ''}`}
+          /* Dragging a pill onto the panes opens that chat beside the one on screen, exactly
+             like dragging a sidebar row (see PaneGrid). For a chat on another account this is
+             the only way to do it: the sidebar lists just the account you're on, and this bar
+             is where every other account's runs surface. */
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData(SESSION_DRAG_TYPE, r.id)
+            e.dataTransfer.effectAllowed = 'move'
+            onDrag?.(r.id)
+          }}
+          onDragEnd={() => onDrag?.(null)}
+        >
           <button
             className="pending-run-open"
             onClick={() => onOpen(r.id)}
