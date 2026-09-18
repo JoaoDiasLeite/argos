@@ -1069,12 +1069,40 @@ export default function App() {
 
   const createSession = (projectPath?: unknown) => {
     const folder = typeof projectPath === 'string' ? projectPath : undefined
+    // Terminal mode, and no folder named by whoever asked (the sidebar's own New terminal
+    // row, the welcome pane, the command palette): don't infer one. A terminal is a CLI
+    // process that starts where it is told and cannot be moved afterwards, so inheriting
+    // the folder from whichever chat happened to be open is a guess the user is left to
+    // discover. Chat.tsx asks instead (see needsTerminalSetup). Chat mode keeps inheriting:
+    // there the folder is on show in the config bar under the composer, and repointing it
+    // costs nothing. A folder that WAS named — a project group's "+", "Open with Argos",
+    // Home's start box — is a choice already made, and skips the question.
+    const ask = workMode === 'terminal' && !folder
     // An untouched draft IS the new chat — a chat only earns its own row once it has been
     // used. So reuse a blank one rather than stacking another, repointing it at whichever
     // folder was asked for so a project group's "+" still lands you inside that project.
     const draft = blankDraft()
     if (draft) {
-      if (folder && draft.projectPath !== folder) {
+      if (ask) {
+        // A reused draft already knowing where it runs would skip the question — it carries
+        // a folder inherited before this change, or one picked in a setup pane that was left
+        // without starting. Clear that, so New terminal means New terminal either way.
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === draft.id
+              ? {
+                  ...s,
+                  projectPath: undefined,
+                  additionalDirs: undefined,
+                  useWorktree: false,
+                  wslDistro: undefined,
+                  remoteHostId: undefined,
+                  remoteHostName: undefined
+                }
+              : s
+          )
+        )
+      } else if (folder && draft.projectPath !== folder) {
         setSessions((prev) => prev.map((s) => (s.id === draft.id ? { ...s, projectPath: folder } : s)))
       }
       setActiveId(draft.id)
@@ -1083,7 +1111,7 @@ export default function App() {
       return
     }
     const s = newSession(
-      folder ?? activeSession?.projectPath,
+      ask ? undefined : folder ?? activeSession?.projectPath,
       defaultModel,
       activeSession?.accountId ?? defaultAccountId
     )

@@ -312,6 +312,10 @@ export default function Sidebar({
     if (path) onSetProject(path)
   }
 
+  // What starting one is called here, in the app's current mode — the same wording the
+  // welcome pane uses, so the two entry points to the same action don't disagree.
+  const newLabel = mode === 'terminal' ? 'New terminal' : 'New chat'
+
   const authReady = auth
     ? auth.mode === 'api-key'
       ? auth.hasApiKey
@@ -855,12 +859,15 @@ export default function Sidebar({
           own full-width row with a name on it. */}
       {tab === 'sessions' && (
         <div className="sidebar-actions">
-          <button className="sidebar-action" onClick={() => onNewSession()} title="New chat">
+          {/* In terminal mode a chat IS a terminal, and this row starts one without naming a
+              folder — which is now asked for rather than inherited (see the setup pane in
+              Chat.tsx). The name has to say what is about to happen. */}
+          <button className="sidebar-action" onClick={() => onNewSession()} title={newLabel}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            New chat
+            {newLabel}
           </button>
           {onNewQuickChat && mode === 'chat' && (
             <button
@@ -1017,8 +1024,8 @@ export default function Sidebar({
                           <button
                             className="session-group-add"
                             onClick={(e) => { e.stopPropagation(); onNewSession(g.path) }}
-                            title={`New chat in ${displayName}`}
-                            aria-label={`New chat in ${displayName}`}
+                            title={`${newLabel} in ${displayName}`}
+                            aria-label={`${newLabel} in ${displayName}`}
                           >
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
                               <line x1="12" y1="5" x2="12" y2="19" />

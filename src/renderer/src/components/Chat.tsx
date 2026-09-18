@@ -271,13 +271,18 @@ export default function Chat(
   // alone: the setup pane's own config bar patches the session as you use it, so re-deriving
   // this on every render would launch the pty mid-edit — choosing "WSL" clears projectPath
   // and picking the distro would read as "configured" before a folder was ever named.
-  const [setup, setSetup] = useState<{ id: string; pending: boolean } | null>(null)
-  if (session && mode === 'terminal' && setup?.id !== session.id) {
+  // The nonce is part of the key, not just the id: pressing New terminal on a chat that is
+  // already the open draft is the one way this has to be asked again, and the answer would
+  // otherwise be frozen from the first time the chat was seen. It cannot be re-derived from
+  // the session alone — after Start with no folder chosen, the session still knows nothing
+  // about where it runs, and that would snap straight back to the setup pane.
+  const [setup, setSetup] = useState<{ id: string; nonce: number; pending: boolean } | null>(null)
+  if (session && mode === 'terminal' && (setup?.id !== session.id || setup.nonce !== newChatNonce)) {
     // Adjusting state during the render (rather than in an effect) is deliberate: an effect
     // runs after the commit that already mounted ChatTerminal and spawned its pty.
     const knowsWhereItRuns =
       !!session.projectPath || !!session.remoteHostId || !!session.wslDistro || !!session.hasTerminalActivity
-    setSetup({ id: session.id, pending: !knowsWhereItRuns })
+    setSetup({ id: session.id, nonce: newChatNonce, pending: !knowsWhereItRuns })
   }
   const needsTerminalSetup = mode === 'terminal' && !!session && setup?.id === session.id && setup.pending
   const termOpen = !!session && mode === 'terminal' && !needsTerminalSetup
@@ -881,7 +886,10 @@ export default function Chat(
             Pick where it runs — the CLI starts there and can't be moved afterwards.
           </p>
           <ChatConfigBar session={session} onPatch={onPatchSession} />
-          <button className="btn-primary terminal-setup-start" onClick={() => setSetup({ id: session.id, pending: false })}>
+          <button
+            className="btn-primary terminal-setup-start"
+            onClick={() => setSetup({ id: session.id, nonce: newChatNonce, pending: false })}
+          >
             Start terminal
           </button>
           {!session.projectPath && !session.remoteHostId && (
