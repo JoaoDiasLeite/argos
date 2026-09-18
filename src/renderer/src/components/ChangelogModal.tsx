@@ -15,9 +15,21 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '1.10.2',
+    date: '2026-09-18',
+    tag: 'latest',
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'A new terminal asks where it should run before it starts. The row that picks the environment, folder, worktree and extra working directories only ever existed under the chat composer, which Terminal mode hides outright — so a terminal started with no chat open to inherit a folder from opened in your home directory, filed under “No folder”, with nowhere to point it. A terminal that does not know where it runs now opens on a short setup screen instead, and the CLI starts when you press Start terminal. One that already knows — a project group’s “+”, “Open with Argos”, the start box on Home, a WSL distro or a remote host — starts straight away, as before.'
+        ]
+      }
+    ]
+  },
+  {
     version: '1.10.1',
     date: '2026-09-17',
-    tag: 'latest',
     sections: [
       {
         title: 'Fixes',
