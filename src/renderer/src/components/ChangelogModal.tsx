@@ -20,6 +20,13 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'Fixes',
+        items: [
+          'Clicking a notification opens the conversation it is about, in the chat. It used to land on the Projects list with the conversation in a reading panel beside it — and when the conversation could not be matched against that list, it stopped there and opened nothing, which is how a click came to do nothing at all. A conversation already open in Argos is brought forward rather than resumed a second time, and one only on disk is resumed into a chat, archived transcripts included. Projects is still where a conversation that is nowhere to be found leaves you, because that is somewhere to go looking.',
+          'A notification answers the click it was shown for. The object holding that click was released as soon as the toast was on screen, so it could be collected while the notification was still sitting there — and a collected one does nothing when pressed. It happened often enough to look like the notifications were not wired up at all, and rarely enough to look random. Note that a toast left unanswered for a minute still stops responding by design: the process behind it does not wait around, and by then the app itself is the better place to answer.'
+        ]
+      },
+      {
         title: 'Changes',
         items: [
           'New terminal no longer guesses which folder to open in. It used to inherit one from whichever chat happened to be open, which a terminal — a CLI process that starts where it is told and cannot be moved afterwards — leaves you to discover only once it is up. It now asks first, on the same short setup screen a terminal gets when it has no folder at all. A folder that was actually named still skips the question: a project group’s “+”, “Open with Argos”, or the start box on Home. In Chat mode nothing changes, because there the folder is on show under the composer and repointing it costs nothing.'
