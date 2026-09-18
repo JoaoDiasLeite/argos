@@ -22,7 +22,8 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Changes',
         items: [
-          'A hidden chat list leaves a small tab on the edge of the rail, where the list used to be — press it to bring the list back. Pressing Chat in the rail still does the same, but nothing on screen said so.'
+          'A hidden chat list leaves a small tab on the edge of the rail, where the list used to be — press it to bring the list back. Pressing Chat in the rail still does the same, but nothing on screen said so.',
+          'The bar of pending chats shows each chat’s state on the pill itself instead of in small print beside it. A chat still working has an arc of accent running round its border, one waiting on you turns amber with an alert icon, and a finished one keeps its green tick. “finished” and “needs approval” were easy to miss, and a chat that was still working had no mark at all. The bar’s label counts each state, and hovering a pill spells it out. A long chat name now shortens with an ellipsis instead of pushing the account chip out of the pill.'
         ]
       }
     ]
