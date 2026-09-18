@@ -37,6 +37,35 @@
 .rz-se { bottom: 0; right: 0; width: 11px; height: 11px; cursor: se-resize; z-index: 51; }
 .rz-sw { bottom: 0; left: 0; width: 11px; height: 11px; cursor: sw-resize; z-index: 51; }
 
+/* Brings the collapsed chat list back. Hangs off the nav rail's right edge, in the rail's
+   own colour and with its border carried round, so it reads as part of the rail rather
+   than as something floating over the chat. Kept narrow on purpose — it sits over the
+   terminal's left padding — and only widens once you reach for it. */
+.app { position: relative; }
+.sidebar-expand-tab {
+  position: absolute;
+  /* Above the chat's own layers (up to 40 in Chat.css), which it overlaps by a few pixels;
+     below the window resize handles (50) and every menu and modal (60 and up). */
+  z-index: 45;
+  /* The rail is 68px wide (NavRail.css); -1 lays this over its border so the two join. */
+  left: 67px;
+  top: 36px;
+  width: 16px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--bg-1);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 10px 10px 0;
+  box-shadow: 2px 1px 4px rgba(0, 0, 0, 0.08);
+  transition: width 0.14s, color 0.14s;
+}
+.sidebar-expand-tab:hover { width: 22px; color: var(--accent); }
+
 .main-area {
   flex: 1;
   display: flex;

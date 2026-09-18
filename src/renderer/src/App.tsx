@@ -3048,6 +3048,23 @@ export default function App() {
 
       {view === 'chat' && (
         <>
+          {sidebarCollapsed && (
+            /* The way back, where the list used to be: a small tab growing out of the rail's
+               edge. Pressing Chat in the rail does the same, but nothing on screen said so. */
+            <button
+              className="sidebar-expand-tab"
+              onClick={toggleSidebar}
+              title="Show the chat list"
+              aria-label="Show the chat list"
+            >
+              {/* The collapse button's icon, mirrored: the arrow points back out. */}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <line x1="9" y1="4" x2="9" y2="20" />
+                <polyline points="13 9 16 12 13 15" />
+              </svg>
+            </button>
+          )}
           {!sidebarCollapsed && (
             <Sidebar
               onCollapse={toggleSidebar}
