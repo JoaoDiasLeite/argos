@@ -1,6 +1,6 @@
 {
   "name": "argos",
-  "version": "1.10.2",
+  "version": "1.11.0",
   "description": "Desktop workspace for coding-agent CLIs — Claude Code, Codex and Gemini, across local, WSL and SSH sessions",
   "main": "out/main/index.js",
   "scripts": {
