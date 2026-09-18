@@ -259,7 +259,28 @@ export default function Chat(
   // per-chat override any more: the two modes are whole working surfaces, and a chat that
   // could be flipped between them left the terminal-mode user with a composer that has no
   // business existing (and the chat-mode user with a pane the mode says is not there).
-  const termOpen = !!session && mode === 'terminal'
+  // Terminal mode: the pty is created on the same render that mounts ChatTerminal, so where
+  // it runs has to be settled BEFORE that — a CLI already launched in the wrong folder has
+  // no undo. A terminal that arrives with no folder at all (New terminal from the welcome
+  // pane, with no chat open to inherit one from) therefore opens on a setup pane: pick the
+  // environment and folder, then Start. One that already knows where it runs (a project
+  // group's "+", Open with Argos, Home's start box, a WSL/SSH environment, or any chat
+  // that has already had a terminal in it) skips it — that choice was made elsewhere.
+  //
+  // Decided once per chat, the first time it is rendered in terminal mode, and then left
+  // alone: the setup pane's own config bar patches the session as you use it, so re-deriving
+  // this on every render would launch the pty mid-edit — choosing "WSL" clears projectPath
+  // and picking the distro would read as "configured" before a folder was ever named.
+  const [setup, setSetup] = useState<{ id: string; pending: boolean } | null>(null)
+  if (session && mode === 'terminal' && setup?.id !== session.id) {
+    // Adjusting state during the render (rather than in an effect) is deliberate: an effect
+    // runs after the commit that already mounted ChatTerminal and spawned its pty.
+    const knowsWhereItRuns =
+      !!session.projectPath || !!session.remoteHostId || !!session.wslDistro || !!session.hasTerminalActivity
+    setSetup({ id: session.id, pending: !knowsWhereItRuns })
+  }
+  const needsTerminalSetup = mode === 'terminal' && !!session && setup?.id === session.id && setup.pending
+  const termOpen = !!session && mode === 'terminal' && !needsTerminalSetup
   // Per-chat "Review" panel toggle (working-tree diff / checkpoints), keyed by session id.
   // Unlike the terminal, which the app's mode decides outright, this is per chat and stays
   // open for that chat across restarts: it is a working preference, not a mode.
@@ -740,7 +761,7 @@ export default function Chat(
       {/* Floating action cluster over the transcript. Hidden while the embedded terminal
           is open: it would float over xterm's own surface, and ChatTerminal already
           renders its own close control to get you back to the chat. */}
-      {!termOpen && (
+      {!termOpen && !needsTerminalSetup && (
         <div className={`chat-float-actions ${exportMenuOpen ? 'open' : ''}`}>
           <div className="header-menu-wrap" style={{ position: 'relative' }}>
             <button
@@ -807,7 +828,7 @@ export default function Chat(
           </button>
         </div>
       )}
-      <div className="chat-messages" style={termOpen ? { display: 'none' } : undefined}>
+      <div className="chat-messages" style={termOpen || needsTerminalSetup ? { display: 'none' } : undefined}>
         {isEmpty ? (
           <div className="chat-empty">
             {titleBlock}
@@ -851,6 +872,24 @@ export default function Chat(
         <div ref={bottomRef} />
       </div>
 
+      {session && needsTerminalSetup && (
+        <div className="terminal-setup">
+          {/* No titleBlock here: the chat's name is still the placeholder "New chat" at this
+              point, and printing it above "Start a terminal" reads as two headings. */}
+          <h2>Start a terminal</h2>
+          <p>
+            Pick where it runs — the CLI starts there and can't be moved afterwards.
+          </p>
+          <ChatConfigBar session={session} onPatch={onPatchSession} />
+          <button className="btn-primary terminal-setup-start" onClick={() => setSetup({ id: session.id, pending: false })}>
+            Start terminal
+          </button>
+          {!session.projectPath && !session.remoteHostId && (
+            <span className="terminal-setup-hint">No folder chosen — it will start in your home folder.</span>
+          )}
+        </div>
+      )}
+
       {session && termOpen && (
         <Suspense fallback={null}>
           <ChatTerminal
@@ -888,7 +927,7 @@ export default function Chat(
         </div>
       )}
 
-      <div className="chat-input-area" style={termOpen ? { display: 'none' } : undefined}>
+      <div className="chat-input-area" style={termOpen || needsTerminalSetup ? { display: 'none' } : undefined}>
       <div className="chat-input-column">
         {session && showLongSessionBanner && (
           <div className="long-session-banner">
