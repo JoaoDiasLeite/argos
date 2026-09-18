@@ -96,6 +96,8 @@ const ScheduledView = lazy(() => import('./views/ScheduledView'))
 const SettingsView = lazy(() => import('./views/SettingsView'))
 const HomeView = lazy(() => import('./views/HomeView'))
 
+const SIDEBAR_COLLAPSED_KEY = 'sidebar-collapsed'
+
 /** Minimal, style-consistent fallback shown while a lazy view's chunk loads. */
 function ViewLoading() {
   return (
@@ -253,6 +255,24 @@ export default function App() {
   const [gitFor, setGitFor] = useState<string | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [sidebarTab, setSidebarTab] = useState<'files' | 'sessions'>('sessions')
+  // The chat list hidden to give the panes its width. Remembered across launches, like the
+  // list's own width: it is a choice about how you like to work, not about this chat.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const toggleSidebar = () =>
+    setSidebarCollapsed((c) => {
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, c ? '0' : '1')
+      } catch {
+        // Storage unavailable — the toggle still works, it just won't be remembered.
+      }
+      return !c
+    })
   // File opened from the sidebar's Files tab, shown in the FileEditor modal.
   const [openFilePath, setOpenFilePath] = useState<string | null>(null)
   // Chats the user hid from the pending-requests bar; cleared per id when that run ends.
@@ -1184,6 +1204,12 @@ export default function App() {
   // Chat in the rail asks for. The terminal keeps running and stays one click away in the
   // sidebar; the rail entry means "New terminal, or pick one".
   const goToView = (v: View) => {
+    // Chat pressed while already in Chat: nothing to navigate to, so the click shows or
+    // hides the chat list — the way to get it back once it is collapsed.
+    if (v === 'chat' && view === 'chat') {
+      toggleSidebar()
+      return
+    }
     if (v === 'chat' && view !== 'chat') {
       const active = sessions.find((s) => s.id === activeIdRef.current)
       const unused = active && active.messages.length === 0 && !active.hasTerminalActivity
@@ -3017,46 +3043,50 @@ export default function App() {
           serverSessionCount={serverSessions.length}
           chatRunningCount={displayRunningIds.size}
           attentionCount={approvalQueue.length}
+          chatListHidden={sidebarCollapsed}
         />
 
       {view === 'chat' && (
         <>
-          <Sidebar
-            sessions={sessions}
-            activeId={activeId}
-            runningIds={displayRunningIds}
-            attentionIds={attentionIds}
-            tab={sidebarTab}
-            onTabChange={setSidebarTab}
-            mode={workMode}
-            onSelectSession={setActiveId}
-            onSessionDrag={setDraggingSessionId}
-            onNewSession={createSession}
-            onNewQuickChat={createQuickChat}
-            onDeleteSession={deleteSession}
-            onRenameSession={renameSessionById}
-            projectPath={activeSession?.projectPath}
-            onSetProject={setSessionProject}
-            onOpenFile={setOpenFilePath}
-            openFilePath={openFilePath ?? undefined}
-            onOpenSettings={() => setView('settings')}
-            auth={auth}
-            accounts={accounts}
-            models={models}
-            selectedProvider={activeChatProvider}
-            selectedAccountId={activeChatAccountId}
-            codexAccounts={codexAccounts}
-            geminiAccounts={geminiAccounts}
-            codexDefaultAccountId={codexDefaultAccountId}
-            geminiDefaultAccountId={geminiDefaultAccountId}
-            onPickAccount={pickAccount}
-            onManageAccounts={() => setAccountsOpen(true)}
-            accountUsage={accountUsage}
-            codexAccountUsage={codexAccountUsage}
-            onExploreProjects={() => setView('projects')}
-            defaultModel={defaultModel}
-            defaultAccountId={defaultAccountId}
-          />
+          {!sidebarCollapsed && (
+            <Sidebar
+              onCollapse={toggleSidebar}
+              sessions={sessions}
+              activeId={activeId}
+              runningIds={displayRunningIds}
+              attentionIds={attentionIds}
+              tab={sidebarTab}
+              onTabChange={setSidebarTab}
+              mode={workMode}
+              onSelectSession={setActiveId}
+              onSessionDrag={setDraggingSessionId}
+              onNewSession={createSession}
+              onNewQuickChat={createQuickChat}
+              onDeleteSession={deleteSession}
+              onRenameSession={renameSessionById}
+              projectPath={activeSession?.projectPath}
+              onSetProject={setSessionProject}
+              onOpenFile={setOpenFilePath}
+              openFilePath={openFilePath ?? undefined}
+              onOpenSettings={() => setView('settings')}
+              auth={auth}
+              accounts={accounts}
+              models={models}
+              selectedProvider={activeChatProvider}
+              selectedAccountId={activeChatAccountId}
+              codexAccounts={codexAccounts}
+              geminiAccounts={geminiAccounts}
+              codexDefaultAccountId={codexDefaultAccountId}
+              geminiDefaultAccountId={geminiDefaultAccountId}
+              onPickAccount={pickAccount}
+              onManageAccounts={() => setAccountsOpen(true)}
+              accountUsage={accountUsage}
+              codexAccountUsage={codexAccountUsage}
+              onExploreProjects={() => setView('projects')}
+              defaultModel={defaultModel}
+              defaultAccountId={defaultAccountId}
+            />
+          )}
           <div className="main-area">
             {!activeSession ? (
               /* No chat open yet: the composer/chat header only appear once the user

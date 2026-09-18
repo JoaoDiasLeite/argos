@@ -38,6 +38,20 @@
   position: relative;
 }
 
+/* Folds the whole list away. Quiet until hovered, like .sidebar-tab: it sits beside the
+   account row and must not compete with it. */
+.sidebar-collapse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+}
+.sidebar-collapse:hover { background: var(--bg-hover); color: var(--text-0); }
+
 /* ── Auth status ──────────────────────────────────────────── */
 /* A quiet flat row, not a boxed pill — the account line sits directly above the
    tab row and session cards, and three stacked boxes read as clutter. The box

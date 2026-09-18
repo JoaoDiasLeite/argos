@@ -37,6 +37,9 @@ interface Props {
   onChange: (view: View) => void
   onSettings: () => void
   onChangelog: () => void
+  /** The chat list is collapsed. Pressing Chat while in Chat toggles it (see App.tsx's
+      goToView), and the entry's tooltip says so. */
+  chatListHidden?: boolean
   /** Open Remote/WSL sessions — surfaced as a badge on the Servers entry so they
       stay discoverable from anywhere in the app. */
   serverSessionCount?: number
@@ -159,7 +162,8 @@ export default function NavRail({
   onChangelog,
   serverSessionCount = 0,
   chatRunningCount = 0,
-  attentionCount = 0
+  attentionCount = 0,
+  chatListHidden = false
 }: Props) {
   return (
     <div className="nav-rail">
@@ -178,7 +182,11 @@ export default function NavRail({
                 key={entry.view}
                 className={`nav-item ${view === entry.view ? 'active' : ''}`}
                 onClick={() => onChange(entry.view)}
-                title={entry.label}
+                title={
+                  entry.view === 'chat' && view === 'chat'
+                    ? `${chatListHidden ? 'Show' : 'Hide'} the chat list`
+                    : entry.label
+                }
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   {ICONS[entry.view]}

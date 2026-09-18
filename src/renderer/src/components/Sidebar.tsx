@@ -74,6 +74,8 @@ interface Props {
   onSelectSession: (id: string) => void
   /** A conversation started (id) or stopped (null) being dragged toward the panes. */
   onSessionDrag?: (sessionId: string | null) => void
+  /** Hides the whole list. Brought back from the Chat entry in the nav rail. */
+  onCollapse?: () => void
   /** Starts a new chat. Pass a folder path to scope it to a project's group (the
    *  per-group `+` button); the sidebar header `+` calls this with no argument. */
   onNewSession: (projectPath?: string) => void
@@ -147,6 +149,7 @@ const NO_FOLDER_KEY = '__no_folder__'
 const GROUP_ROW_CAP = 5
 
 export default function Sidebar({
+  onCollapse,
   sessions,
   activeId,
   runningIds,
@@ -837,6 +840,21 @@ export default function Sidebar({
             </div>,
             document.body
           )}
+        {onCollapse && (
+          <button
+            className="sidebar-collapse"
+            onClick={onCollapse}
+            title="Hide the chat list — press Chat in the rail to bring it back"
+            aria-label="Hide the chat list"
+          >
+            {/* A panel with its left column ruled off, pointing left: "fold this away". */}
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <line x1="9" y1="4" x2="9" y2="20" />
+              <polyline points="16 9 13 12 16 15" />
+            </svg>
+          </button>
+        )}
       </div>
 
       <div className="sidebar-tabs">
