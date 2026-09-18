@@ -46,7 +46,7 @@ import AccountsModal from './components/AccountsModal'
 import ChangelogModal from './components/ChangelogModal'
 import { UiPrefs, UiPrefsPatch } from './types'
 import { sessionToReplaySeed } from './lib/markdown-export'
-import { provOf, acctOf, originOf, nextChatAfterClose, AccountDefaults } from './lib/account-scope'
+import { provOf, acctOf, originOf, nextChatAfterClose, isUnstarted, AccountDefaults } from './lib/account-scope'
 import type {
   HomeAttention,
   HomeRunning,
@@ -1301,7 +1301,7 @@ export default function App() {
   // Account selection is app-level: it sets the DEFAULT account used for new chats.
   // Existing sessions keep their own accountId forever (a chat is permanently bound to
   // the account that created it — its Claude Code resume id only exists there). The one
-  // exception: an unstarted draft (zero messages) follows the switch, so an empty chat
+  // exception: an unstarted draft (see isUnstarted) follows the switch, so an empty chat
   // inherits the account you just picked.
   const switchDefaultAccount = async (accountId: string) => {
     const { accounts: next, defaultAccountId: nextDefault } =
@@ -1311,7 +1311,7 @@ export default function App() {
     const name = next.find((a) => a.id === accountId)?.name
     setSessions((prev) =>
       prev.map((s) =>
-        s.id === activeIdRef.current && s.messages.length === 0
+        s.id === activeIdRef.current && isUnstarted(s)
           ? { ...s, accountId, accountName: name }
           : s
       )
@@ -1369,7 +1369,7 @@ export default function App() {
       const name = next.find((a) => a.id === accountId)?.name
       setSessions((prev) =>
         prev.map((s) => {
-          if (s.id !== activeIdRef.current || s.messages.length !== 0) return s
+          if (s.id !== activeIdRef.current || !isUnstarted(s)) return s
           return provider === 'codex'
             ? { ...s, codexAccountId: accountId, codexAccountName: name }
             : { ...s, geminiAccountId: accountId, geminiAccountName: name }
@@ -1432,7 +1432,7 @@ export default function App() {
     // don't fabricate one either (picking an account is not pressing New chat). An
     // untouched draft is simply rebound onto the picked account; anything else steps
     // aside for the welcome pane, where New chat will inherit the account just picked.
-    if (active && active.messages.length === 0) {
+    if (active && isUnstarted(active)) {
       setSessions((prev) => prev.map((s) => (s.id === active.id ? { ...s, model: providerModel, ...acctFields } : s)))
     } else {
       setActiveId('')

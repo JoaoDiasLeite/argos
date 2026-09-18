@@ -109,6 +109,19 @@ export function visibleSessions(
   )
 }
 
+/**
+ * A chat nothing has happened in yet — the only kind an account switch may rebind.
+ *
+ * Zero messages is not enough on its own: a chat driven from the embedded terminal has
+ * none until its transcript is synced, which may not be until the run is over. Treating
+ * that as a blank draft moved a chat onto the account just picked while it was still
+ * running there — relaunching its terminal under a login its conversation doesn't exist
+ * on, and filing it under an account whose list you'd already left.
+ */
+export function isUnstarted(s: Session): boolean {
+  return s.messages.length === 0 && !s.hasTerminalActivity
+}
+
 /** The provider and account a chat puts the sidebar on while it is the active chat. */
 export function scopeOf(s: Session, models: ModelInfo[], defaults: AccountDefaults): string {
   return `${provOf(models, s.model)}:${acctOf(s, models, defaults)}`

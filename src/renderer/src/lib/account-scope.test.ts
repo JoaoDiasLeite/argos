@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { acctOf, idFor, nextChatAfterClose, originOf, provOf, visibleSessions, AccountDefaults } from './account-scope'
+import { acctOf, idFor, isUnstarted, nextChatAfterClose, originOf, provOf, visibleSessions, AccountDefaults } from './account-scope'
 import { ModelInfo, Session } from '../types'
 
 // Minimal model catalog — only the fields provOf reads (id, provider).
@@ -235,5 +235,16 @@ describe('nextChatAfterClose', () => {
     const onPersonal = makeSession({ id: 'p', model: 'claude-opus-4-8', accountId: 'personal' })
     expect(nextChatAfterClose(onWork, [wsl], models, defaults)?.id).toBe('wsl')
     expect(nextChatAfterClose(onPersonal, [wsl], models, defaults)).toBeUndefined()
+  })
+})
+
+describe('isUnstarted', () => {
+  it('is a chat with no messages and no terminal use', () => {
+    expect(isUnstarted(makeSession({ id: 'd', model: 'claude-opus-4-8', messages: [] }))).toBe(true)
+  })
+
+  it('is not a terminal chat whose transcript has not synced yet — it may be running', () => {
+    const terminal = makeSession({ id: 't', model: 'claude-opus-4-8', messages: [], hasTerminalActivity: true })
+    expect(isUnstarted(terminal)).toBe(false)
   })
 })
