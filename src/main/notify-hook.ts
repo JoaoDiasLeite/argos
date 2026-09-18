@@ -135,6 +135,17 @@ export async function buildNotifyPayload(input: HookInput): Promise<NotifyPayloa
 }
 
 /**
+ * Notifications that are still on screen, held here for exactly as long as they are.
+ *
+ * A toast outlives the call that showed it, but the `Notification` carrying its click
+ * handler is an ordinary JS object: dropped on the floor after `show()`, it is eligible
+ * for collection while the user is still looking at the toast, and a collected one
+ * answers the click with nothing. This looks precisely like a notification that was
+ * never wired up, and only some of the time, which is the worst way for it to look.
+ */
+const liveNotifications = new Set<Notification>()
+
+/**
  * Show one hook notification. `onClick` is what the click does — focus the running
  * window, or open the app through the protocol from the detached process.
  */
@@ -146,7 +157,14 @@ export function showHookNotification(payload: NotifyPayload, onClick: () => void
     silent: !payload.urgent,
     urgency: payload.urgent ? 'critical' : 'normal'
   })
-  n.on('click', onClick)
+  liveNotifications.add(n)
+  // Both endings, or the set is a leak: on Windows `close` fires for a toast that was
+  // dismissed or that timed out into the Action Center, `click` for one that was answered.
+  n.on('close', () => liveNotifications.delete(n))
+  n.on('click', () => {
+    liveNotifications.delete(n)
+    onClick()
+  })
   n.show()
 }
 
