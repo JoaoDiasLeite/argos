@@ -15,6 +15,19 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '1.12.0',
+    date: '2026-09-18',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Changes',
+        items: [
+          'New terminal no longer guesses which folder to open in. It used to inherit one from whichever chat happened to be open, which a terminal — a CLI process that starts where it is told and cannot be moved afterwards — leaves you to discover only once it is up. It now asks first, on the same short setup screen a terminal gets when it has no folder at all. A folder that was actually named still skips the question: a project group’s “+”, “Open with Argos”, or the start box on Home. In Chat mode nothing changes, because there the folder is on show under the composer and repointing it costs nothing.'
+        ]
+      }
+    ]
+  },
+  {
     version: '1.11.0',
     date: '2026-09-18',
     tag: 'latest',
