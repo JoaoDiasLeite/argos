@@ -367,6 +367,9 @@ export default function App() {
   // Latest createSession, so the global ⌘N handler never calls a stale closure.
   // An optional projectPath overrides the inherited folder (used by --folder launches).
   const createSessionRef = useRef<(projectPath?: string) => void>(() => {})
+  // Same, for what a notification click opens — it is registered once and has to see
+  // fresh sessions and defaults (see openCcTarget).
+  const openCcTargetRef = useRef<(target: CcSessionTarget) => void>(() => {})
 
   // Files Claude has edited/written per session — used for checkpoint snapshots.
   const modifiedFilesRef = useRef<Map<string, Set<string>>>(new Map())
@@ -994,8 +997,7 @@ export default function App() {
     const offPrompt = window.electronAPI.onOverlayPrompt((p) => startOverlayPromptRef.current(p))
     const offCc = window.electronAPI.onOpenCcSession((target) => {
       if (!target?.encodedDir || !target?.sessionId) return
-      setCcTarget(target)
-      setView('projects')
+      openCcTargetRef.current(target)
     })
     const offOpen = window.electronAPI.onOpenSession((id) => {
       if (sessionsRef.current.some((s) => s.id === id)) {
@@ -1566,6 +1568,54 @@ export default function App() {
     setTerminalLines([])
     addTerm({ kind: 'info', text: `resuming ${isWsl ? cc.distro + ' ' : ''}session ${cc.sessionId.slice(0, 8)}` })
   }
+
+  // What a notification click (or any `argos://session?…` link) opens: the conversation
+  // it names, in the chat. It used to land on the Projects list with the conversation in
+  // a reading panel beside it, which is not what a notification promises — it says a
+  // session needs you, and the answer to that is the session, not a list of them.
+  //
+  // Three cases, in the order they are worth trying:
+  const openCcTarget = async (target: CcSessionTarget) => {
+    // Already a chat in the app. The common case by far: most notifications come from a
+    // CLI running in an Argos terminal, and resuming that would fork a second copy of a
+    // conversation that is still live in the first.
+    const open = sessionsRef.current.find(
+      (s) => s.claudeSessionId === target.sessionId || s.terminalSessionId === target.sessionId
+    )
+    if (open) {
+      setActiveId(open.id)
+      setView('chat')
+      return
+    }
+    // Not in the app, but on disk: resume it into a chat, the same way picking it in
+    // Projects does. Archived transcripts are tried too — a conversation can have been
+    // archived between the notification firing and the click.
+    try {
+      const projects = await window.electronAPI.ccListProjects()
+      const proj = projects.find(
+        (p) =>
+          p.encodedDir === target.encodedDir && (!target.sourceId || p.sourceId === target.sourceId)
+      )
+      if (proj) {
+        for (const archived of [false, true]) {
+          const list = await window.electronAPI.ccListSessions(proj.sourceId, proj.encodedDir, archived)
+          const meta = list.find((s) => s.sessionId === target.sessionId)
+          if (meta) {
+            await resumeCCSession(meta)
+            return
+          }
+        }
+      }
+    } catch {
+      // Fall through — a failed read is not a reason to leave the click unanswered.
+    }
+    // Nowhere to be found (another source, a transcript this side cannot read, a project
+    // that has since moved). The Projects list is where the user can go looking, which is
+    // still an answer; a click that does nothing at all is not.
+    setCcTarget(target)
+    setView('projects')
+  }
+  openCcTargetRef.current = openCcTarget
 
   // Pull each terminal-driven chat's transcript in from disk once the CLI it launched
   // has actually written one. A chat qualifies while it's still showing nothing of its
