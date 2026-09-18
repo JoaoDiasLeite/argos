@@ -18,7 +18,14 @@ const CHANGELOG: Entry[] = [
     version: '1.13.0',
     date: '2026-09-18',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Changes',
+        items: [
+          'A hidden chat list leaves a small tab on the edge of the rail, where the list used to be — press it to bring the list back. Pressing Chat in the rail still does the same, but nothing on screen said so.'
+        ]
+      }
+    ]
   },
   {
     version: '1.12.0',
