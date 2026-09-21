@@ -121,3 +121,37 @@
   font-size: 12px;
   color: var(--text-1);
 }
+
+/* ─── Authorship (see main/authorship.ts) ─────────────────────────────────── */
+
+/* Said in the header, not in a tooltip: a tree holding another chat's work is the one
+   thing about this panel a reviewer must not have to go looking for. */
+.git-attr-note {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-1);
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+}
+
+/* The three groups sit inside Changes, so their heads are quieter than its own. */
+.git-sub-head {
+  padding-top: 6px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.git-owner {
+  flex-shrink: 0;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  color: var(--text-2);
+  background: var(--bg-3);
+}

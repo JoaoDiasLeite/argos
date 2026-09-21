@@ -3430,7 +3430,7 @@ export default function App() {
         />
       )}
       {gitSession && (
-        <GitModal cwd={gitSession.projectPath ?? ''} onClose={() => setGitFor(null)} />
+        <GitModal cwd={gitSession.projectPath ?? ''} sessionId={gitSession.id} onClose={() => setGitFor(null)} />
       )}
       {paletteOpen && <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />}
       {/* Right-click for the app's own fields. Mounted once, listens on window, and
