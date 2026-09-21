@@ -135,6 +135,7 @@ import {
 } from './remote-shell'
 import { listDistros, testDistro, testDistroClaude, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory, listWslDriveMap, wslClipboardImageCapable } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
+import { attributionFor, forgetSession as forgetAuthorship, recordToolUse } from './authorship'
 import { posixToWslUnc } from './local-fs-pure'
 import {
   getHiddenDistros,
@@ -997,6 +998,21 @@ ipcMain.handle(
   }
 )
 
+/**
+ * Forward a headless backend's event to the renderer, noting who wrote what on the way
+ * past.
+ *
+ * The note is taken here rather than in claude-stream.ts, which parses the WSL and SSH
+ * line protocol: that module has no imports at all and is the better for it, while this
+ * is the one place both backends' events already pass through.
+ */
+function relayAgentEvent(e: Record<string, unknown>): void {
+  if (e.kind === 'tool-use' && typeof e.appSessionId === 'string' && typeof e.tool === 'string') {
+    recordToolUse(e.appSessionId, e.tool, e.input)
+  }
+  send('agent:event', e)
+}
+
 ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
   const { appSessionId, claudeSessionId, prompt, projectPath } = payload
 
@@ -1027,7 +1043,7 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
   // Remote host: drive the remote machine's Claude Code over SSH instead of the local SDK.
   if (payload.remoteHostId) {
     runRemote(appSessionId, payload.remoteHostId, promptWithFiles, payload.model, claudeSessionId, projectPath, {
-      onEvent: (e) => send('agent:event', e),
+      onEvent: relayAgentEvent,
       onDone: (d) => send('agent:done', { appSessionId, ...d }),
       onError: (msg) => send('agent:error', { appSessionId, error: msg })
     })
@@ -1037,7 +1053,7 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
   // WSL distro: drive that distro's Claude Code via wsl.exe.
   if (payload.wslDistro) {
     runWsl(appSessionId, payload.wslDistro, promptWithFiles, payload.model, claudeSessionId, projectPath, undefined, {
-      onEvent: (e) => send('agent:event', e),
+      onEvent: relayAgentEvent,
       onDone: (d) => send('agent:done', { appSessionId, ...d }),
       onError: (msg) => send('agent:error', { appSessionId, error: msg })
     })
@@ -1207,6 +1223,7 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
             input: message.input,
             toolId: message.id
           })
+          recordToolUse(appSessionId, message.name, message.input)
           // Cheap live status for the pill; the hidden window just ignores it.
           sendToPill('pill:update', { state: 'running', tool: message.name })
           break
@@ -2432,6 +2449,16 @@ ipcMain.handle('git:unstage', (_, cwd: string, filePath: string) => unstageFile(
 ipcMain.handle('git:stage-all', (_, cwd: string) => stageAll(cwd))
 ipcMain.handle('git:commit', (_, cwd: string, message: string) => commit(cwd, message))
 
+// Who wrote which of the dirty files (authorship.ts). Takes the chat the panel was
+// opened from, so "this chat" means the one being reviewed rather than whichever ran last.
+ipcMain.handle('authorship:for-repo', (_, cwd: string, sessionId?: string) =>
+  attributionFor(cwd, sessionId)
+)
+ipcMain.handle('authorship:forget', (_, sessionId: string) => {
+  forgetAuthorship(sessionId)
+  return { ok: true }
+})
+
 // ─── File System ──────────────────────────────────────────────────────────────
 
 ipcMain.handle('fs:read-dir', (_, dirPath: string) => {
@@ -2592,6 +2619,8 @@ ipcMain.handle('session:delete', (_, sessionId: string) => {
   }
   const filePath = path.join(sessionsDir, `${sessionId}.json`)
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+  // A deleted chat keeps no claim on anyone's files.
+  forgetAuthorship(sessionId)
   return { success: true }
 })
 

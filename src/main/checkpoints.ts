@@ -129,6 +129,30 @@ export function listCheckpoints(sessionId: string): CheckpointMeta[] {
   return metas.sort((a, b) => b.createdAt - a.createdAt)
 }
 
+/**
+ * Every path this chat's checkpoints ever snapshotted.
+ *
+ * The authorship ledger uses it to give a chat that predates the ledger something to
+ * say for itself (authorship.ts). It reads the checkpoint files whole, contents and
+ * all, because that is how they are stored — so it is called once per chat, and what
+ * it finds is folded into the ledger rather than asked for again.
+ */
+export function checkpointPaths(sessionId: string): string[] {
+  if (!isSafeId(sessionId)) return []
+  const dir = path.join(root, sessionId)
+  if (!fs.existsSync(dir)) return []
+  const paths = new Set<string>()
+  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
+    try {
+      const c = readJsonFile<Checkpoint>(path.join(dir, f))
+      for (const file of c.files ?? []) if (file.path) paths.add(file.path)
+    } catch {
+      // One unreadable checkpoint costs its paths, not the rest.
+    }
+  }
+  return [...paths]
+}
+
 function read(sessionId: string, id: string): Checkpoint | null {
   if (!isSafeId(sessionId) || !isSafeId(id)) return null
   const p = path.join(root, sessionId, `${id}.json`)

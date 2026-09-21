@@ -778,6 +778,24 @@ export interface GitFile {
   untracked: boolean
 }
 
+/** A file in the tree, and the chat that wrote it. Mirrors main/authorship-pure.ts. */
+export interface AttributedFile {
+  path: string
+  sessionId: string
+  name: string
+}
+
+/** A repo's dirty files, split by who wrote them. */
+export interface RepoAttribution {
+  isRepo: boolean
+  /** Written by the chat the panel was opened from. */
+  mine: string[]
+  /** Written by another chat, which each row names. */
+  others: AttributedFile[]
+  /** Claimed by nobody: a hand edit, another tool, a rebase, a chat from before the ledger. */
+  unattributed: string[]
+}
+
 export interface GitStatus {
   isRepo: boolean
   branch: string
@@ -1784,6 +1802,12 @@ declare global {
       gitUnstage: (cwd: string, filePath: string) => Promise<GitStatus>
       gitStageAll: (cwd: string) => Promise<GitStatus>
       gitCommit: (cwd: string, message: string) => Promise<{ ok: boolean; message: string }>
+      /**
+       * Which of a repo's dirty files this chat wrote, which another chat wrote, and
+       * which nobody claims. See main/authorship.ts.
+       */
+      authorshipForRepo: (cwd: string, sessionId?: string) => Promise<RepoAttribution>
+      authorshipForget: (sessionId: string) => Promise<{ ok: boolean }>
 
       // File system
       readDir: (dirPath: string) => Promise<FileNode[] | { error: string }>

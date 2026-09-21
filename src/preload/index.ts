@@ -400,6 +400,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitUnstage: (cwd: string, filePath: string) => ipcRenderer.invoke('git:unstage', cwd, filePath),
   gitStageAll: (cwd: string) => ipcRenderer.invoke('git:stage-all', cwd),
   gitCommit: (cwd: string, message: string) => ipcRenderer.invoke('git:commit', cwd, message),
+  authorshipForRepo: (cwd: string, sessionId?: string) =>
+    ipcRenderer.invoke('authorship:for-repo', cwd, sessionId),
+  authorshipForget: (sessionId: string) => ipcRenderer.invoke('authorship:forget', sessionId),
 
   // File system
   readDir: (dirPath: string) => ipcRenderer.invoke('fs:read-dir', dirPath),

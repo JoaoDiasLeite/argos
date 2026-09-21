@@ -30,6 +30,21 @@ export interface GitStatus {
   behind: number
 }
 
+/**
+ * The repository root a folder belongs to, or null when it belongs to none.
+ *
+ * Needed wherever a status line has to be matched against a path: git reports the
+ * files in `git status --porcelain` relative to the ROOT, while a chat can be working
+ * in any directory inside it. Joining the two without asking silently produces paths
+ * that match nothing at all.
+ */
+export async function getRepoRoot(cwd: string): Promise<string | null> {
+  if (!cwd || !fs.existsSync(cwd)) return null
+  const res = await git(cwd, ['rev-parse', '--show-toplevel'])
+  const root = res.stdout.trim()
+  return res.code === 0 && root ? root : null
+}
+
 export async function getStatus(cwd: string): Promise<GitStatus> {
   if (!cwd || !fs.existsSync(cwd)) return { isRepo: false, branch: '', files: [], ahead: 0, behind: 0 }
 
