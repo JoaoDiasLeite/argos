@@ -163,6 +163,10 @@ export interface Props {
   compacting: boolean
   onOpenCheckpoints: () => void
   onOpenGit: () => void
+  /** Whether this chat's Review panel is showing, and the toggle for it. The map of open
+   *  chats is App's — one owner for a preference several panes can act on. */
+  reviewOpen: boolean
+  onToggleReview: () => void
   onRetry: () => void
   onEditResend: (messageId: string, newText: string) => void
   onBranch: (messageId: string) => void
@@ -179,29 +183,6 @@ export interface Props {
    *  (agent badge / remote host / resumed marker) still renders here regardless, since
    *  the pane header has no room for it and none of it is duplicated elsewhere. */
   titleInHeader?: boolean
-}
-
-const REVIEW_OPEN_KEY = 'argos.reviewOpenById'
-
-/** Reads the persisted set of chats with the Review panel open. Storage can be
- *  unavailable or hold something else entirely; a panel preference is never worth
- *  failing a render over, so anything unreadable is treated as "none open". */
-function readReviewOpen(): Record<string, boolean> {
-  try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(REVIEW_OPEN_KEY) || '{}')
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-    return parsed as Record<string, boolean>
-  } catch {
-    return {}
-  }
-}
-
-function writeReviewOpen(map: Record<string, boolean>): void {
-  try {
-    localStorage.setItem(REVIEW_OPEN_KEY, JSON.stringify(map))
-  } catch {
-    // Quota or a locked-down storage: the panel just forgets, which is survivable.
-  }
 }
 
 export default function Chat(
@@ -234,6 +215,8 @@ export default function Chat(
   compacting,
   onOpenCheckpoints,
   onOpenGit,
+  reviewOpen,
+  onToggleReview,
   onRetry,
   onEditResend,
   onBranch,
@@ -286,33 +269,6 @@ export default function Chat(
   }
   const needsTerminalSetup = mode === 'terminal' && !!session && setup?.id === session.id && setup.pending
   const termOpen = !!session && mode === 'terminal' && !needsTerminalSetup
-  // Per-chat "Review" panel toggle (working-tree diff / checkpoints), keyed by session id.
-  // Unlike the terminal, which the app's mode decides outright, this is per chat and stays
-  // open for that chat across restarts: it is a working preference, not a mode.
-  // Only the open ones are stored; keeping the false entries would grow the record by a
-  // key for every chat ever opened, and it would never shrink.
-  const [reviewOpenById, setReviewOpenById] = useState<Record<string, boolean>>(readReviewOpen)
-  const reviewOpen = !!session && !!reviewOpenById[session.id]
-  const toggleReview = () => {
-    if (!session) return
-    setReviewOpenById((prev) => {
-      // Re-read before writing rather than trusting `prev`. Each pane mounts its own Chat,
-      // which read the map once and then writes the whole thing back — so with two panes
-      // open, toggling Review in one saved a map built before the other's entry existed
-      // and silently dropped it. The symptom was Review forgetting a chat now and then,
-      // with nothing to tie it to the other pane.
-      //
-      // Only the entry for THIS chat is decided here, so the disk is the better base:
-      // a session can only ever be in one pane (see lib/panes.ts), which means nobody
-      // else is competing for this key.
-      const stored = readReviewOpen()
-      const next = { ...stored }
-      if (prev[session.id]) delete next[session.id]
-      else next[session.id] = true
-      writeReviewOpen(next)
-      return next
-    })
-  }
   // Backfill for chats that predate newSession handing every chat an id of its own.
   // Naming the session before the CLI does is what makes the title, the transcript and
   // the running dot findable at all — left to the CLI, that id is invented inside the pty
@@ -796,7 +752,7 @@ export default function Chat(
                 <button
                   disabled={!session}
                   aria-pressed={reviewOpen}
-                  onClick={() => { setExportMenuOpen(false); toggleReview() }}
+                  onClick={() => { setExportMenuOpen(false); onToggleReview() }}
                 >
                   {reviewOpen ? 'Review ✓' : 'Review'}
                 </button>
@@ -916,7 +872,7 @@ export default function Chat(
             onInitialPromptSent={onInitialTerminalPromptSent}
             onClose={onCloseTerminal}
             onOpenGit={onOpenGit}
-            onToggleReview={toggleReview}
+            onToggleReview={onToggleReview}
             reviewOpen={reviewOpen}
             onActive={() => {
               // The stamp is the lower bound on which Codex conversation can be this

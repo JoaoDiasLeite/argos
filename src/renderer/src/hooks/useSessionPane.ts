@@ -58,6 +58,10 @@ export interface SessionPaneApi {
   openClaudeMd: (sid: string) => void
   openCheckpoints: (sid: string) => void
   openGit: (sid: string) => void
+  /** Which chats have the Review panel open, and the toggle for one. Held by App so a
+   *  single owner answers for it — the panes and the command palette all act on it. */
+  reviewOpenById: Record<string, boolean>
+  toggleReview: (sid: string) => void
   exportSession: (sid: string, format: 'md' | 'html') => void
   clearTerminalPrompt: (sid: string) => void
 
@@ -130,6 +134,8 @@ export function useSessionPane(sessionId: string, api: SessionPaneApi): ChatProp
     openClaudeMd,
     openCheckpoints,
     openGit,
+    reviewOpenById,
+    toggleReview,
     exportSession,
     clearTerminalPrompt,
     createSession,
@@ -182,6 +188,7 @@ export function useSessionPane(sessionId: string, api: SessionPaneApi): ChatProp
     [openCheckpoints, sessionId]
   )
   const onOpenGit = useCallback(() => openGit(sessionId), [openGit, sessionId])
+  const onToggleReview = useCallback(() => toggleReview(sessionId), [toggleReview, sessionId])
   const onExportSession = useCallback(
     (format: 'md' | 'html') => exportSession(sessionId, format),
     [exportSession, sessionId]
@@ -221,6 +228,8 @@ export function useSessionPane(sessionId: string, api: SessionPaneApi): ChatProp
     compacting: api.compacting,
     onOpenCheckpoints,
     onOpenGit,
+    reviewOpen: !!reviewOpenById[sessionId],
+    onToggleReview,
     onRetry,
     onEditResend,
     onBranch,

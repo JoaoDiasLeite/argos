@@ -46,6 +46,7 @@ import AccountsModal from './components/AccountsModal'
 import ChangelogModal from './components/ChangelogModal'
 import ShortcutsModal from './components/ShortcutsModal'
 import { modLabel } from './lib/shortcuts'
+import { readReviewOpen, writeReviewOpen, toggleReviewOpen } from './lib/review-open'
 import { UiPrefs, UiPrefsPatch } from './types'
 import { sessionToReplaySeed } from './lib/markdown-export'
 import { provOf, acctOf, originOf, nextChatAfterClose, isUnstarted, AccountDefaults } from './lib/account-scope'
@@ -264,6 +265,18 @@ export default function App() {
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [changelogOpen, setChangelogOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  // Which chats show the Review panel. It used to live in Chat, where every pane mounted
+  // its own copy of the whole map and wrote all of it back — so a toggle in one pane
+  // could save a map built before the other pane's entry existed and silently drop it.
+  // One owner, one map; the panes and the palette are handed a view of it.
+  const [reviewOpenById, setReviewOpenById] = useState(readReviewOpen)
+  const toggleReview = useCallback((sid: string) => {
+    setReviewOpenById((prev) => {
+      const next = toggleReviewOpen(prev, sid)
+      writeReviewOpen(next)
+      return next
+    })
+  }, [])
   const [claudeMdFor, setClaudeMdFor] = useState<string | null>(null)
   const [checkpointsFor, setCheckpointsFor] = useState<string | null>(null)
   const [gitFor, setGitFor] = useState<string | null>(null)
@@ -3253,6 +3266,8 @@ export default function App() {
     openClaudeMd,
     openCheckpoints,
     openGit,
+    reviewOpenById,
+    toggleReview,
     exportSession,
     clearTerminalPrompt,
     onApproval: respondApprovalById,
