@@ -730,8 +730,11 @@ export function startCliInTerminal(
 
     if (kind === 'wsl' || kind === 'ssh') {
       // Use the distro's/remote's own CLI on PATH — the Windows node-entry resolution
-      // doesn't apply there. WSL/SSH chats are Claude-only in practice; handled defensively.
-      p.write(`${clear}${provider}\n`)
+      // doesn't apply there. Only codex reaches this: claude and gemini both returned
+      // above. The notification flags come along for the same reason they do locally,
+      // and are safe against an older CLI over there — codex ignores a config key it
+      // does not recognise, and refuses only a bad value for one it does.
+      p.write(`${clear}${[provider, ...CODEX_NOTIFY_ARGS].map(quoteUnix).join(' ')}\n`)
       return { ok: true }
     }
 
