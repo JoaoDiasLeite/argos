@@ -18,7 +18,14 @@ const CHANGELOG: Entry[] = [
     version: '1.14.0',
     date: '2026-09-21',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'An image pasted into a WSL chat is attached to the conversation, the way it already was locally, instead of arriving as a file path typed at the prompt. Argos took it that a CLI inside a distro could never reach the Windows clipboard, so it always wrote the picture into the distro’s /tmp and typed where it had put it. Claude Code there reads the clipboard through Windows itself whenever the distro has interop, which most do. Argos now asks the distro once, when the terminal opens: where the answer is yes the paste is handed to the CLI and shows up as “[Image #1]”, and where it is no — no wl-clipboard, no xclip, no interop — the file and its path are still what you get. A terminal running a plain shell rather than a CLI gets the path too, that being the only form it can do anything with.'
+        ]
+      }
+    ]
   },
   {
     version: '1.13.0',
