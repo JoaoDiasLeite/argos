@@ -25,6 +25,12 @@ const CHANGELOG: Entry[] = [
           'The Git panel can be reached from a chat run in the terminal. It only ever opened from the floating ⋯ menu over the transcript, and that menu is hidden for as long as the embedded terminal is up — it would otherwise sit over the terminal’s own surface — so a chat driven from the terminal, which is most of them, had no way to it at all: not the menu, not the palette, not a key. The terminal’s bar now carries a Git button beside Restart, that bar being the only chrome on screen in terminal mode. A terminal that is nobody’s chat — the Remote Session pane, a tile in the Live view — does not offer one, having no repository to point at. Git and Checkpoints are in the command palette too, which answers in either mode and costs no room on screen.',
           'Ctrl+/ opens a list of every keyboard shortcut Argos answers to, grouped by where it applies and narrowed by typing; the nav rail and the command palette reach it as well. The keys were spread across the window, the terminal and each dialog, and nothing in the app had ever named them, so the only way to learn one was to be told. The quick launcher’s line reports the chord that actually got registered when Argos started rather than the one it asked for — Alt+Space is often already owned by another launcher, and what you have to press is whatever it fell back to.'
         ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'A Codex chat stops being marked as waiting on you the moment you answer it, instead of some way into the turn that follows — or never. The mark used to come off when the terminal looked busy again, and Codex keeps its elapsed-time line ticking underneath an approval prompt: the terminal never falls quiet, so answering the prompt changed nothing Argos could read, and the chat sat there amber in the list and in the bar of pending chats while the terminal beside it said it was working. Argos now takes the keystroke you answer with as the answer — it is the one that carries it to the CLI — and still watches for work resuming, which covers an approval that times out or is answered somewhere Argos is not the one typing. A window opened while a chat is already parked on a prompt now shows that too: the notification behind the mark is sent once, and anything not listening at that moment used to miss it.'
+        ]
       }
     ]
   },
