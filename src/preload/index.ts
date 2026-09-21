@@ -453,6 +453,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   terminalKillDeferred: (id: string) => ipcRenderer.send('terminal:kill-deferred', id),
   terminalList: () => ipcRenderer.invoke('terminal:list'),
   terminalBusyList: () => ipcRenderer.invoke('terminal:busy-list'),
+  terminalWaitingList: () => ipcRenderer.invoke('terminal:waiting-list'),
   terminalStartCli: (
     id: string,
     provider: string,

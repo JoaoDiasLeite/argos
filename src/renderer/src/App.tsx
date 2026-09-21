@@ -2009,6 +2009,15 @@ export default function App() {
    */
   const [busyTerminalIds, setBusyTerminalIds] = useState<Set<string>>(new Set())
   useEffect(() => {
+    let alive = true
+    // Seeded like the busy set, and for the same reason: the notification that raised the
+    // mark was emitted once, so a window that opens after it would never hear about a chat
+    // already parked on an approval.
+    window.electronAPI.terminalWaitingList().then((ids) => {
+      if (alive && ids.length) setWaitingTerminalIds((prev) => new Set([...prev, ...ids]))
+    }).catch(() => {
+      // No seed just means the mark waits for the next notification.
+    })
     const off = window.electronAPI.onTerminalNotify(({ id, waiting }) => {
       setWaitingTerminalIds((prev) => {
         if (prev.has(id) === waiting) return prev
@@ -2018,7 +2027,10 @@ export default function App() {
         return next
       })
     })
-    return off
+    return () => {
+      alive = false
+      off()
+    }
   }, [])
   useEffect(() => {
     let alive = true
@@ -2037,18 +2049,6 @@ export default function App() {
       // syncCodexThreadLinks.
       const sid = sessionIdFromTerminalId(id)
       if (sid) codexLinkDirtyRef.current.add(sid)
-      // Output starting again means the prompt was answered inside the terminal. That is
-      // the only signal there is: the answer is a keystroke Argos never sees the meaning
-      // of. Safe against the notification's own frame, because the CLI is already busy by
-      // then and this fires on the transition only.
-      if (busy) {
-        setWaitingTerminalIds((prev) => {
-          if (!prev.has(id)) return prev
-          const next = new Set(prev)
-          next.delete(id)
-          return next
-        })
-      }
       setBusyTerminalIds((prev) => {
         if (prev.has(id) === busy) return prev
         const next = new Set(prev)

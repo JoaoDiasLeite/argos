@@ -51,6 +51,42 @@ const busy = new BusyTracker()
 const osc = new OscScanner()
 
 /**
+ * Which ptys have asked for the user and not been answered yet, and how each one's
+ * changes are announced.
+ *
+ * The renderer used to hold this alone, and clear it when the CLI looked busy again.
+ * That reads the answer far too late, and often not at all: Codex keeps its elapsed-time
+ * line ticking underneath the approval prompt, so the pty never falls quiet, and a chat
+ * that never went idle has no idle->busy transition to notice when you answer it. The
+ * mark then sat there for the rest of the turn — drawn on a chat that was already working
+ * again. Here, the answer is in hand: it is a keystroke routed through writeTerminal, and
+ * a keystroke is the first moment the user is demonstrably dealing with the prompt.
+ */
+const waiting = new Set<string>()
+const notifiers = new Map<string, (id: string, waiting: boolean) => void>()
+
+/** Announce a change of state, and only a change — nothing downstream needs to hear that
+ *  a chat which was not waiting is still not waiting. */
+function setWaiting(id: string, want: boolean): void {
+  if (waiting.has(id) === want) return
+  if (want) waiting.add(id)
+  else waiting.delete(id)
+  notifiers.get(id)?.(id, want)
+}
+
+/** The pty is gone. Drops the mark if it died while waiting, so a killed chat does not go
+ *  on asking for an answer nothing can take. */
+function forgetWaiting(id: string): void {
+  setWaiting(id, false)
+  notifiers.delete(id)
+}
+
+/** The ptys currently waiting on the user, for the renderer to seed itself from. */
+export function waitingTerminals(): string[] {
+  return [...waiting]
+}
+
+/**
  * Make the Codex TUI announce itself through OSC 9.
  *
  * `notification_method=osc9` is what puts the notification into the pty, where Argos can
@@ -423,14 +459,23 @@ export function createTerminal(
       p = pty.spawn(resolveWindowsExe(shell), shellArgs, { name: 'xterm-color', cols, rows, cwd: spawnCwd, env })
     }
 
-    busy.watch(id, onBusy)
+    notifiers.set(id, onNotify)
+    busy.watch(id, (tid, working) => {
+      // Output starting again after a silence is the backstop for an answer that reached
+      // the CLI without passing through writeTerminal — an approval that timed out, or one
+      // answered in a terminal Argos is not the one writing to. Safe against the
+      // notification's own frame: noteOutput runs before osc.feed below, so the chunk that
+      // raises the mark has already been counted as work by the time it is raised.
+      if (working) setWaiting(tid, false)
+      onBusy(tid, working)
+    })
     p.onData((d) => {
       // A superseded pty (replaced above because the environment changed) can still flush a
       // final chunk as it dies. Dropping it keeps the replacement's buffer and screen clean.
       if (terminals.get(id) !== p) return
       appendToBuffer(id, d)
       busy.noteOutput(id)
-      for (const payload of osc.feed(id, d)) onNotify(id, isApprovalNotification(payload))
+      for (const payload of osc.feed(id, d)) setWaiting(id, isApprovalNotification(payload))
       onData(id, d)
     })
     p.onExit((e) => {
@@ -441,6 +486,7 @@ export function createTerminal(
       if (terminals.get(id) !== p) return
       busy.forget(id)
       osc.forget(id)
+      forgetWaiting(id)
       onExit(id, e.exitCode)
       terminals.delete(id)
       shellKinds.delete(id)
@@ -482,6 +528,10 @@ export function writeTerminal(id: string, data: string): void {
   const p = terminals.get(id)
   if (!p) return
   busy.noteWrite(id)
+  // Typing into a chat that was waiting on you IS the answer — whatever the keystroke
+  // means to the CLI, the user is there dealing with it, so the mark has done its job and
+  // comes off now rather than whenever the CLI next happens to look busy.
+  setWaiting(id, false)
   try {
     p.write(data)
   } catch {
@@ -525,6 +575,7 @@ export function killTerminal(id: string): { ok: boolean } {
   // out before it can clean up — the busy state has to be cleared from here.
   busy.forget(id)
   osc.forget(id)
+  forgetWaiting(id)
   terminals.delete(id)
   shellKinds.delete(id)
   sshMeta.delete(id)

@@ -1904,6 +1904,8 @@ declare global {
       terminalList: () => Promise<TerminalInfo[]>
       /** The ids of the ptys currently producing output. */
       terminalBusyList: () => Promise<string[]>
+      /** The ids of the ptys whose CLI is waiting on the user. */
+      terminalWaitingList: () => Promise<string[]>
       terminalStartCli: (
         id: string,
         provider: ProviderId,

@@ -192,6 +192,7 @@ import {
 } from './codex-thread-link-pure'
 import {
   busyTerminals,
+  waitingTerminals,
   createTerminal,
   writeTerminal,
   resizeTerminal,
@@ -1739,6 +1740,9 @@ ipcMain.handle(
 // it subscribes, so it seeds itself from this — otherwise a chat already working when the
 // window opened would stay dark until it next changed state.
 ipcMain.handle('terminal:busy-list', () => busyTerminals())
+// And which ones are waiting on the user, seeded for the same reason: a chat parked on an
+// approval when the window opened would otherwise look like one that had simply finished.
+ipcMain.handle('terminal:waiting-list', () => waitingTerminals())
 ipcMain.on('terminal:write', (_, id: string, data: string) => writeTerminal(id, data))
 ipcMain.on('terminal:resize', (_, id: string, cols: number, rows: number) =>
   resizeTerminal(id, cols, rows)
