@@ -205,11 +205,10 @@ export async function attributionFor(
   if (activeSessionId && !load()[activeSessionId]) await backfill(activeSessionId)
 
   const ledger = load()
-  const names = new Map(listSessionRecords().map((s) => [s.id, s.name || 'Untitled chat']))
+  const records = listSessionRecords()
+  const names = new Map(records.map((s) => [s.id, s.name || 'Untitled chat']))
   const worktrees = new Map(
-    listSessionRecords()
-      .filter((s) => s.worktreePath)
-      .map((s) => [s.id, s.worktreePath as string])
+    records.filter((s) => s.worktreePath).map((s) => [s.id, s.worktreePath as string])
   )
 
   const ledgers: SessionPaths[] = Object.entries(ledger).map(([sessionId, entry]) => ({
