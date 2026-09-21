@@ -3109,6 +3109,16 @@ export default function App() {
         group: 'Actions',
         run: () => openCheckpoints(activeSession.id)
       })
+      // Says which way it will go, since a toggle you cannot see the state of is a
+      // coin flip — the palette is often opened over a terminal, with the panel
+      // off-screen behind it.
+      items.push({
+        id: 'review',
+        title: reviewOpenById[activeSession.id] ? 'Hide the review panel' : 'Review this chat’s changes',
+        subtitle: 'this chat',
+        group: 'Actions',
+        run: () => toggleReview(activeSession.id)
+      })
     }
     items.push({
       id: 'shortcuts',
@@ -3163,7 +3173,7 @@ export default function App() {
     }
     return items
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, models, accounts, workMode, activeId])
+  }, [sessions, models, accounts, workMode, activeId, reviewOpenById])
 
   // What the Remote & WSL list's SSH dots are allowed to claim. A host counts as reachable
   // only once one of its sessions has actually connected; a host whose sessions have all
