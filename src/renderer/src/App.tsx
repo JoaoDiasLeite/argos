@@ -3088,18 +3088,6 @@ export default function App() {
     if (workMode === 'chat') {
       items.push({ id: 'new-quick', title: 'Quick chat (cheapest model)', group: 'Actions', run: createQuickChat })
     }
-    const views: { v: View; label: string }[] = [
-      { v: 'chat', label: 'Chat' },
-      { v: 'projects', label: 'Projects' },
-      { v: 'agents', label: 'Agents' },
-      { v: 'rooms', label: 'Rooms' },
-      { v: 'planner', label: 'Planner' },
-      { v: 'scheduled', label: 'Routines' },
-      { v: 'usage', label: 'Usage' },
-      { v: 'mcp', label: 'MCP' },
-      { v: 'remote', label: 'Remote & WSL' }
-    ]
-    for (const { v, label } of views) items.push({ id: `view:${v}`, title: `Go to ${label}`, group: 'Views', run: () => goToView(v) })
     // Git and Checkpoints are otherwise reachable only from the chat's ⋯ menu, which is
     // hidden for as long as a terminal is open — so in terminal mode the palette is the
     // way in. Both need a chat to act on, and Git a folder to look at.
@@ -3129,6 +3117,18 @@ export default function App() {
       group: 'Actions',
       run: () => setShortcutsOpen(true)
     })
+    const views: { v: View; label: string }[] = [
+      { v: 'chat', label: 'Chat' },
+      { v: 'projects', label: 'Projects' },
+      { v: 'agents', label: 'Agents' },
+      { v: 'rooms', label: 'Rooms' },
+      { v: 'planner', label: 'Planner' },
+      { v: 'scheduled', label: 'Routines' },
+      { v: 'usage', label: 'Usage' },
+      { v: 'mcp', label: 'MCP' },
+      { v: 'remote', label: 'Remote & WSL' }
+    ]
+    for (const { v, label } of views) items.push({ id: `view:${v}`, title: `Go to ${label}`, group: 'Views', run: () => goToView(v) })
     items.push({ id: 'settings', title: 'Open Settings', group: 'Views', run: () => setView('settings') })
     items.push({ id: 'accounts', title: 'Manage Claude accounts', group: 'Views', run: () => setAccountsOpen(true) })
     for (const s of sessions) {
