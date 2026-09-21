@@ -8,6 +8,7 @@ import { TERMINAL_THEME } from './terminal-theme'
 import TerminalContextMenu, { terminalMenuItems } from './TerminalContextMenu'
 import { TerminalAccelContext } from './terminal-accel'
 import { registerOsc52Copy } from '../lib/osc52'
+import { imagePasteRoute } from '../lib/terminal-image-paste'
 import './ChatTerminal.css'
 
 interface Props {
@@ -176,6 +177,25 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
   // effect's `pasteText` through a ref rather than a second copy of the same decision.
   const pasteRef = useRef<(text: string) => void>(() => {})
 
+  // Whether the CLI over in the distro can read the Windows clipboard itself — null until
+  // the probe answers. A ref, not state: the only reader is the paste handler inside the
+  // setup effect below, which runs once and would never see a new value anyway.
+  const distroReadsClipboardRef = useRef<boolean | null>(null)
+
+  // Ask once, when the terminal appears, rather than when something is pasted into it:
+  // the probe starts the distro if it is cold, and a paste that waited seconds for an
+  // answer would be worse than either of the answers.
+  useEffect(() => {
+    if (!wslDistro) return
+    let live = true
+    void window.electronAPI.wslClipboardImageCapable(wslDistro).then((ok) => {
+      if (live) distroReadsClipboardRef.current = ok
+    })
+    return () => {
+      live = false
+    }
+  }, [wslDistro])
+
   // Create the xterm instance once for this component's lifetime.
   useEffect(() => {
     const host = hostRef.current
@@ -260,23 +280,25 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     const ALT_V = '\x1bv'
 
     /**
-     * Put the clipboard's image in front of the CLI.
+     * Put the clipboard's image in front of the CLI — as its own Alt+V where the CLI
+     * can read the clipboard, as a written-out file and a typed path where it cannot.
+     * Which is which is decided in lib/terminal-image-paste.ts.
      *
-     * Two ways, and which one is right depends on whether the CLI can reach the
-     * clipboard itself:
-     *
-     * - **Locally it can**, so the gesture is translated into its own Alt+V and it
-     *   attaches the image properly — the transcript shows `[Image #1]`. Handing it a
-     *   file path instead worked, in the sense that the path was correct, and was
-     *   plainly worse to use.
-     * - **In a distro it often cannot** — `appendWindowsPath = false` leaves it with no
-     *   powershell.exe to read the Windows clipboard through — so Argos writes the
-     *   image into the distro's own /tmp and types that path.
-     *
-     * SSH gets neither: the file would be here and the shell is there.
+     * A distro used to be assumed unable to reach the Windows clipboard, and so always
+     * got the path. Most can: Claude Code there falls back to powershell over interop,
+     * and a picture pasted into a WSL chat now arrives as `[Image #1]` like it
+     * does locally, instead of as /tmp/argos-paste-….png at the prompt.
      */
     const pasteImage = () => {
-      if (!wslDistro && !remoteHostId) {
+      const route = imagePasteRoute({
+        wslDistro,
+        remoteHostId,
+        provider,
+        cliRunning: autoLaunchCli,
+        distroReadsClipboard: distroReadsClipboardRef.current
+      })
+      if (route === 'refuse') return
+      if (route === 'cli-clipboard') {
         window.electronAPI.terminalWrite(idRef.current, ALT_V)
         return
       }

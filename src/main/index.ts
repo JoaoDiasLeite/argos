@@ -133,7 +133,7 @@ import {
   remoteShellKill,
   remoteShellKillAll
 } from './remote-shell'
-import { listDistros, testDistro, testDistroClaude, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory, listWslDriveMap } from './wsl'
+import { listDistros, testDistro, testDistroClaude, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory, listWslDriveMap, wslClipboardImageCapable } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
 import { posixToWslUnc } from './local-fs-pure'
 import {
@@ -1314,6 +1314,9 @@ ipcMain.handle('wsl:hidden', () => getHiddenDistros())
 ipcMain.handle('wsl:set-hidden', (_, distro: string, hidden: boolean) => setDistroHidden(distro, hidden))
 ipcMain.handle('wsl:history', (_, distro: string) => wslHistory(distro))
 ipcMain.handle('wsl:drive-map', () => listWslDriveMap())
+// Asked when a WSL terminal opens, not when something is pasted into it: the probe boots
+// the distro if it is cold, and a paste should never wait on that. See wsl.ts.
+ipcMain.handle('wsl:clipboard-image-capable', (_, distro: string) => wslClipboardImageCapable(distro))
 
 // ─── Rooms (persisted board layout) ───────────────────────────────────────────
 

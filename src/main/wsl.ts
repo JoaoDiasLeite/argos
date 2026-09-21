@@ -294,6 +294,68 @@ export function testDistroClaude(distro: string): Promise<{ ok: boolean; message
   })
 }
 
+/**
+ * The script that answers "can the CLI in this distro read the clipboard image itself?".
+ *
+ * It is Claude Code's own list of readers, in its own order, taken out of the 2.1.250
+ * bundle rather than guessed: `wl-paste`, then `xclip`, then — a branch it only adds
+ * when it detects WSL — Windows' powershell over interop, falling back to the absolute
+ * /mnt/c path for a distro whose PATH carries no Windows entries
+ * (`appendWindowsPath = false`).
+ *
+ * The powershell branches are *run*, not merely located, because locating them proves
+ * nothing: a distro can have /mnt/c mounted with `interop.enabled = false`, where the
+ * .exe sits right there and executing it fails. `-Command exit` starts and stops it
+ * with no work and no window, in about half a second.
+ *
+ * Every command is written as a literal, never through a variable: `command -v` in a
+ * `sh` assignment came back empty on a distro where the same substitution inside `echo`
+ * printed the path, and a `"$ps"` built that way failed to execute what a bare
+ * `powershell.exe` on the very same line ran fine.
+ */
+const CLIPBOARD_IMAGE_PROBE = [
+  'command -v wl-paste >/dev/null 2>&1 && exit 0',
+  'command -v xclip >/dev/null 2>&1 && exit 0',
+  'powershell.exe -NoProfile -NonInteractive -Command exit >/dev/null 2>&1 && exit 0',
+  '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -Command exit >/dev/null 2>&1'
+].join('\n')
+
+/** Answered once per distro, for as long as the answer is yes — see below. */
+const clipboardImageCapable = new Map<string, Promise<boolean>>()
+
+/**
+ * Whether the CLI running inside `distro` can reach the Windows clipboard's image on
+ * its own.
+ *
+ * This is what decides whether a picture pasted into a WSL terminal becomes a proper
+ * attachment (`[Image #1]`) or a path typed at the prompt: when the distro can read the
+ * clipboard, the gesture is handed to the CLI as its own Alt+V; when it cannot, Argos
+ * writes the image into the distro's /tmp instead (see `clipboard:image-to-file`).
+ *
+ * A "no" is not remembered: installing `wl-clipboard` is the obvious fix for a distro
+ * that answers no, and it would be an odd fix that needed the app restarted to take.
+ * A "yes" cannot go stale in any way that matters, so it is kept.
+ */
+export function wslClipboardImageCapable(distro: string): Promise<boolean> {
+  if (!isWindows) return Promise.resolve(false)
+  const cached = clipboardImageCapable.get(distro)
+  if (cached) return cached
+  const probe = new Promise<boolean>((resolve) => {
+    execFile(
+      'wsl.exe',
+      ['-d', distro, '--', 'sh', '-c', CLIPBOARD_IMAGE_PROBE],
+      // Same generous timeout as the other probes: a cold distro has to boot first.
+      { encoding: 'utf8', windowsHide: true, timeout: 20000 },
+      (err) => resolve(!err)
+    )
+  })
+  clipboardImageCapable.set(distro, probe)
+  void probe.then((ok) => {
+    if (!ok) clipboardImageCapable.delete(distro)
+  })
+  return probe
+}
+
 const activeProcs = new Map<string, ChildProcess>()
 
 export interface WslRunHandlers extends StreamEmit {

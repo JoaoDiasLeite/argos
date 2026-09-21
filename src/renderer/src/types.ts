@@ -1761,6 +1761,12 @@ declare global {
       wslHistory: (distro: string) => Promise<{ ok: boolean; commands?: string[]; error?: string }>
       /** Drive letters mapped to a WSL distro root: `{ 'z:': 'Ubuntu' }`. */
       wslDriveMap: () => Promise<Record<string, string>>
+      /**
+       * Whether the CLI inside this distro can read the clipboard's image itself — which
+       * decides whether a pasted picture becomes an attachment or a typed path. See
+       * lib/terminal-image-paste.ts.
+       */
+      wslClipboardImageCapable: (distro: string) => Promise<boolean>
 
       // Rooms (persisted board layout: room order + custom names)
       roomsGetLayout: () => Promise<RoomsLayout>

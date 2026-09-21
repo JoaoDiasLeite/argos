@@ -380,6 +380,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   wslSetHidden: (distro: string, hidden: boolean) => ipcRenderer.invoke('wsl:set-hidden', distro, hidden),
   wslHistory: (distro: string) => ipcRenderer.invoke('wsl:history', distro),
   wslDriveMap: () => ipcRenderer.invoke('wsl:drive-map'),
+  wslClipboardImageCapable: (distro: string) =>
+    ipcRenderer.invoke('wsl:clipboard-image-capable', distro),
 
   // Rooms (persisted board layout: room order + custom names)
   roomsGetLayout: () => ipcRenderer.invoke('rooms:get-layout'),
