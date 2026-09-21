@@ -3078,6 +3078,28 @@ export default function App() {
       { v: 'remote', label: 'Remote & WSL' }
     ]
     for (const { v, label } of views) items.push({ id: `view:${v}`, title: `Go to ${label}`, group: 'Views', run: () => goToView(v) })
+    // Git and Checkpoints are otherwise reachable only from the chat's ⋯ menu, which is
+    // hidden for as long as a terminal is open — so in terminal mode the palette is the
+    // way in. Both need a chat to act on, and Git a folder to look at.
+    const activeSession = sessions.find((s) => s.id === activeId)
+    if (activeSession?.projectPath) {
+      items.push({
+        id: 'git',
+        title: 'Git — review and stage changes',
+        subtitle: activeSession.projectPath.split(/[\\/]/).filter(Boolean).pop(),
+        group: 'Actions',
+        run: () => openGit(activeSession.id)
+      })
+    }
+    if (activeSession) {
+      items.push({
+        id: 'checkpoints',
+        title: 'Checkpoints',
+        subtitle: 'this chat',
+        group: 'Actions',
+        run: () => openCheckpoints(activeSession.id)
+      })
+    }
     items.push({ id: 'settings', title: 'Open Settings', group: 'Views', run: () => setView('settings') })
     items.push({ id: 'accounts', title: 'Manage Claude accounts', group: 'Views', run: () => setAccountsOpen(true) })
     for (const s of sessions) {

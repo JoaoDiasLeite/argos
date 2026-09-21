@@ -45,6 +45,12 @@ interface Props {
    *  to close back to, so the × would only strand the user. */
   closable?: boolean
   onClose?: () => void
+  /** Opens the Git panel for this chat. Optional: a terminal that is nobody's chat — the
+   *  Remote Session pane, the Live view's grid — has no repository to point at and leaves
+   *  it out. It belongs on this bar because in terminal mode the bar is the only chrome
+   *  there is: the chat's ⋯ menu, where Git otherwise lives, is hidden for as long as a
+   *  terminal is open (see the float cluster in Chat.tsx). */
+  onOpenGit?: () => void
   /** Typed into the CLI, with Enter, once it is up. Sent at most once per mount (see
    *  sentPromptRef) so a Restart doesn't silently re-run the task. */
   initialPrompt?: string
@@ -122,7 +128,7 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onActive, initialPrompt, onInitialPromptSent, accelerated }: Props) {
+export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onOpenGit, onActive, initialPrompt, onInitialPromptSent, accelerated }: Props) {
   // An explicit prop wins; otherwise the surrounding view decides (false by default).
   const accelFromContext = useContext(TerminalAccelContext)
   // The setup effect below runs once and cannot close over a prop that changes later, and
@@ -773,6 +779,19 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
               +
             </button>
           </div>
+          {onOpenGit && (
+            <button
+              className="chat-terminal-btn"
+              onClick={onOpenGit}
+              title="Review and stage this chat's changes"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" />
+                <path d="M6 9v12" /><path d="M18 9a9 9 0 0 1-9 9" />
+              </svg>
+              Git
+            </button>
+          )}
           <button
             className="chat-terminal-btn"
             onClick={() => {
