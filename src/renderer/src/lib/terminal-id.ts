@@ -9,3 +9,12 @@
 export function chatTerminalId(sessionId: string): string {
   return `chatterm_${sessionId}`
 }
+
+const CHAT_TERMINAL_PREFIX = 'chatterm_'
+
+/** The chat a terminal id belongs to, or null for a pty that is not a chat's — the
+ *  standalone terminal grid keeps its own, and they arrive on the same events. */
+export function sessionIdFromTerminalId(terminalId: string): string | null {
+  if (!terminalId.startsWith(CHAT_TERMINAL_PREFIX)) return null
+  return terminalId.slice(CHAT_TERMINAL_PREFIX.length) || null
+}
