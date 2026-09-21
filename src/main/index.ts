@@ -1729,7 +1729,10 @@ ipcMain.handle(
       (tid, exitCode) => send('terminal:exit', { id: tid, exitCode }),
       // Pushed on the transition rather than polled: the renderer turns this straight into
       // a running dot, and a poll slow enough to be cheap would be too slow to be right.
-      (tid, busy) => send('terminal:busy', { id: tid, busy })
+      (tid, busy) => send('terminal:busy', { id: tid, busy }),
+      // The CLI asking for the user back, read out of its own output — see
+      // terminal-osc-pure.ts. `waiting` separates "it needs you" from "it is done".
+      (tid, waiting) => send('terminal:notify', { id: tid, waiting })
     )
 )
 // Which ptys are mid-burst right now. The renderer hears transitions only from the moment

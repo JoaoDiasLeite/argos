@@ -1314,6 +1314,17 @@ export interface TerminalDataEvent {
   data: string
 }
 
+/**
+ * The CLI in a pty raised a notification — see terminal-osc-pure.ts.
+ *
+ * `waiting` is true when it is asking for something (a command to approve) and false
+ * when it is reporting a finished turn.
+ */
+export interface TerminalNotifyEvent {
+  id: string
+  waiting: boolean
+}
+
 /** A pty started or stopped producing output — see busyTerminals() in main/terminal.ts. */
 export interface TerminalBusyEvent {
   id: string
@@ -1902,6 +1913,7 @@ declare global {
       onTerminalData: (cb: (data: TerminalDataEvent) => void) => () => void
       onTerminalExit: (cb: (data: TerminalExitEvent) => void) => () => void
       onTerminalBusy: (cb: (data: TerminalBusyEvent) => void) => () => void
+      onTerminalNotify: (cb: (data: TerminalNotifyEvent) => void) => () => void
 
       // Remote shell (Remote Session SSH terminal, over the SFTP connection)
       remoteShellCreate: (id: string, hostId: string, cols: number, rows: number) => Promise<{ ok: boolean; error?: string }>

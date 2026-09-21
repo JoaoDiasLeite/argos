@@ -247,6 +247,17 @@ export default function App() {
   // needs to track which sessions are busy (no global mutex). Always update
   // immutably via `new Set(prev)`.
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
+  /**
+   * Terminal ids whose CLI is waiting on the user rather than working.
+   *
+   * Read from the notification the CLI writes into its own pty (see
+   * terminal-osc-pure.ts), which is the only thing a chat driven from the terminal can
+   * say about itself: a Codex approval prompt is drawn inside that terminal and never
+   * reaches Argos's own approval queue, so a chat parked on one used to be
+   * indistinguishable from one that had simply finished. Declared up here because
+   * attentionIds reads it; it is filled beside the busy signal, far below.
+   */
+  const [waitingTerminalIds, setWaitingTerminalIds] = useState<Set<string>>(new Set())
   const [terminalLines, setTerminalLines] = useState<TermLine[]>([])
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [changelogOpen, setChangelogOpen] = useState(false)
@@ -460,11 +471,18 @@ export default function App() {
   useEffect(() => {
     setOpenFilePath(null)
   }, [activeProjectPath, view])
-  // Sessions with a pending approval — drives the amber sidebar dot.
-  const attentionIds = useMemo(
-    () => new Set(approvalQueue.map((r) => r.appSessionId)),
-    [approvalQueue]
-  )
+  // Sessions with a pending approval — drives the amber sidebar dot. Two sources, because
+  // an approval can be raised in either place: Argos's own queue, for a run it is driving,
+  // and the CLI's notification, for a chat driven from the terminal where the prompt is
+  // drawn inside the terminal and never reaches that queue.
+  const attentionIds = useMemo(() => {
+    const out = new Set(approvalQueue.map((r) => r.appSessionId))
+    for (const tid of waitingTerminalIds) {
+      const sid = sessionIdFromTerminalId(tid)
+      if (sid) out.add(sid)
+    }
+    return out
+  }, [approvalQueue, waitingTerminalIds])
 
   const dismissRun = useCallback((sid: string) => {
     setDismissedRunIds((prev) => new Set(prev).add(sid))
@@ -1991,6 +2009,18 @@ export default function App() {
    */
   const [busyTerminalIds, setBusyTerminalIds] = useState<Set<string>>(new Set())
   useEffect(() => {
+    const off = window.electronAPI.onTerminalNotify(({ id, waiting }) => {
+      setWaitingTerminalIds((prev) => {
+        if (prev.has(id) === waiting) return prev
+        const next = new Set(prev)
+        if (waiting) next.add(id)
+        else next.delete(id)
+        return next
+      })
+    })
+    return off
+  }, [])
+  useEffect(() => {
     let alive = true
     // Seeded as well as subscribed: transitions only start arriving once this listener is
     // registered, so without the seed a chat that was already working when the window
@@ -2007,6 +2037,18 @@ export default function App() {
       // syncCodexThreadLinks.
       const sid = sessionIdFromTerminalId(id)
       if (sid) codexLinkDirtyRef.current.add(sid)
+      // Output starting again means the prompt was answered inside the terminal. That is
+      // the only signal there is: the answer is a keystroke Argos never sees the meaning
+      // of. Safe against the notification's own frame, because the CLI is already busy by
+      // then and this fires on the transition only.
+      if (busy) {
+        setWaitingTerminalIds((prev) => {
+          if (!prev.has(id)) return prev
+          const next = new Set(prev)
+          next.delete(id)
+          return next
+        })
+      }
       setBusyTerminalIds((prev) => {
         if (prev.has(id) === busy) return prev
         const next = new Set(prev)
@@ -2137,7 +2179,12 @@ export default function App() {
     // while you were on Personal.
     const scopeKey = `${activeChatProvider}:${activeChatAccountId ?? 'default'}`
     return running.map((s) => {
-      const done = !displayRunningIds.has(s.id)
+      const attention = attentionIds.has(s.id)
+      // A chat waiting on you has not finished, whatever its terminal has stopped doing.
+      // A terminal chat parked on an approval goes quiet exactly like one that is done,
+      // so without this the single state that needs you to act would be the one drawn,
+      // counted and coloured as dealt with.
+      const done = !attention && !displayRunningIds.has(s.id)
       // A chat inside a WSL distro, or on a box over SSH, runs against the CLI login that
       // lives THERE, and labelling it with the account it happens to carry states something
       // false. It is always named by where it runs: "it is working" and "it is working
@@ -2145,7 +2192,7 @@ export default function App() {
       // and look in the right place.
       const origin = originOf(s)
       if (origin) {
-        return { id: s.id, name: s.name, attention: attentionIds.has(s.id), done, account: origin.label }
+        return { id: s.id, name: s.name, attention, done, account: origin.label }
       }
       const acctId = acctOf(s, models, defaults)
       const provider = provOf(models, s.model)
@@ -2155,7 +2202,7 @@ export default function App() {
       return {
         id: s.id,
         name: s.name,
-        attention: attentionIds.has(s.id),
+        attention,
         done,
         account: `${provider}:${acctId}` === scopeKey ? undefined : name
       }

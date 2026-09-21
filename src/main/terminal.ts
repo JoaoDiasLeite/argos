@@ -9,6 +9,7 @@ import { providerAccountEnv } from './provider-accounts'
 import { resolveCodex } from './providers/cli-resolve'
 import { getSshTerminalCommand } from './ssh'
 import { BusyTracker } from './terminal-busy-pure'
+import { isApprovalNotification, OscScanner } from './terminal-osc-pure'
 
 /**
  * Embedded real terminal (PTY) support, so the user can run the actual interactive
@@ -45,6 +46,29 @@ const configs = new Map<string, string>()
 // Is the CLI in each pty working? Every decision lives in terminal-busy-pure.ts — see
 // there for why output is a sound proxy, and for the measurement behind it.
 const busy = new BusyTracker()
+
+// Notifications the CLI writes into its own pty — see terminal-osc-pure.ts.
+const osc = new OscScanner()
+
+/**
+ * Make the Codex TUI announce itself through OSC 9.
+ *
+ * `notification_method=osc9` is what puts the notification into the pty, where Argos can
+ * see it, instead of into a desktop notifier it cannot. `notification_condition=always`
+ * is the other half: the default notifies only while the terminal is unfocused, and an
+ * embedded terminal's focus is not something the CLI can read reliably — a chat waiting
+ * on approval in a pane you are not looking at would go unmarked.
+ *
+ * Passed per launch with `-c` and never written into the user's config.toml: this is
+ * what Argos needs from the terminals it starts, not a change to how their codex behaves
+ * everywhere else.
+ */
+const CODEX_NOTIFY_ARGS = [
+  '-c',
+  'tui.notification_method=osc9',
+  '-c',
+  'tui.notification_condition=always'
+]
 
 /** The ptys currently producing output, for the renderer to seed itself from. */
 export function busyTerminals(): string[] {
@@ -236,7 +260,8 @@ export function createTerminal(
   opts: CreateTerminalOptions,
   onData: (id: string, data: string) => void,
   onExit: (id: string, exitCode: number) => void,
-  onBusy: (id: string, busy: boolean) => void
+  onBusy: (id: string, busy: boolean) => void,
+  onNotify: (id: string, waiting: boolean) => void
 ): {
   ok: boolean
   shell?: string
@@ -405,6 +430,7 @@ export function createTerminal(
       if (terminals.get(id) !== p) return
       appendToBuffer(id, d)
       busy.noteOutput(id)
+      for (const payload of osc.feed(id, d)) onNotify(id, isApprovalNotification(payload))
       onData(id, d)
     })
     p.onExit((e) => {
@@ -414,6 +440,7 @@ export function createTerminal(
       // pty currently registered for this id is allowed to.
       if (terminals.get(id) !== p) return
       busy.forget(id)
+      osc.forget(id)
       onExit(id, e.exitCode)
       terminals.delete(id)
       shellKinds.delete(id)
@@ -497,6 +524,7 @@ export function killTerminal(id: string): { ok: boolean } {
   // killTerminal drops the pty from `terminals` itself, so the onExit handler above bails
   // out before it can clean up — the busy state has to be cleared from here.
   busy.forget(id)
+  osc.forget(id)
   terminals.delete(id)
   shellKinds.delete(id)
   sshMeta.delete(id)
@@ -601,13 +629,14 @@ function buildCliInvocation(
   // which is visible and good enough. `id` is unused here but kept for signature symmetry
   // with the interactive path (sshMeta-style per-terminal lookups would key off it).
   void id
+  const argv = [command, ...prefixArgs, ...CODEX_NOTIFY_ARGS]
   if (kind === 'pwsh' || kind === 'powershell') {
-    return `& ${[command, ...prefixArgs].map(quotePwsh).join(' ')}`
+    return `& ${argv.map(quotePwsh).join(' ')}`
   }
   if (kind === 'cmd') {
-    return [command, ...prefixArgs].map(quoteCmd).join(' ')
+    return argv.map(quoteCmd).join(' ')
   }
-  return [command, ...prefixArgs].map(quoteUnix).join(' ')
+  return argv.map(quoteUnix).join(' ')
 }
 
 // Build the shell-specific command line that launches claude, clearing the shell's
@@ -712,12 +741,13 @@ export function startCliInTerminal(
     if (command === 'codex' && prefixArgs.length === 0 && !hasCommand('codex')) {
       p.write(`\r\n\x1b[33mcodex not found on PATH — install with: npm i -g @openai/codex\x1b[0m\r\n`)
     }
+    const argv = [command, ...prefixArgs, ...CODEX_NOTIFY_ARGS]
     if (kind === 'pwsh' || kind === 'powershell') {
-      p.write(`${clear}& ${[command, ...prefixArgs].map(quotePwsh).join(' ')}\r`)
+      p.write(`${clear}& ${argv.map(quotePwsh).join(' ')}\r`)
     } else if (kind === 'cmd') {
-      p.write(`${clear}${[command, ...prefixArgs].map(quoteCmd).join(' ')}\r`)
+      p.write(`${clear}${argv.map(quoteCmd).join(' ')}\r`)
     } else {
-      p.write(`${clear}${[command, ...prefixArgs].map(quoteUnix).join(' ')}\n`)
+      p.write(`${clear}${argv.map(quoteUnix).join(' ')}\n`)
     }
     return { ok: true }
   } catch {

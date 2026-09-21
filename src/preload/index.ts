@@ -474,6 +474,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('terminal:busy', fn)
     return () => ipcRenderer.removeListener('terminal:busy', fn)
   },
+  onTerminalNotify: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('terminal:notify', fn)
+    return () => ipcRenderer.removeListener('terminal:notify', fn)
+  },
 
   // Remote shell (Remote Session SSH terminal, over the SFTP connection)
   remoteShellCreate: (id: string, hostId: string, cols: number, rows: number) =>
