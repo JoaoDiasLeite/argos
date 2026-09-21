@@ -69,7 +69,7 @@ import {
 } from './lib/project-key'
 import { projectDisplayName, projectDisplayNames, RepoName } from './lib/project-name'
 import { cadenceSummary } from './lib/cadence'
-import { chatTerminalId } from './lib/terminal-id'
+import { chatTerminalId, sessionIdFromTerminalId } from './lib/terminal-id'
 import { usePanes } from './hooks/usePanes'
 import { SESSION_DRAG_TYPE, type DropPlan } from './lib/pane-drop'
 // The secondary views below are only ever mounted once the user navigates away
@@ -1310,7 +1310,7 @@ export default function App() {
     // terminal's session id has to survive the same way and for a sharper reason: it is
     // the only record of which Claude Code conversation that terminal started, and losing
     // it means the chat can never be matched back to its own transcript.
-    if ((patch.hasTerminalActivity || patch.terminalSessionId) && patched) {
+    if ((patch.hasTerminalActivity || patch.terminalSessionId || patch.terminalStartedAt) && patched) {
       window.electronAPI.saveSession(patched)
     }
   }
@@ -1772,6 +1772,114 @@ export default function App() {
     }
   }, [])
 
+  /**
+   * Give each Codex terminal chat the name of the conversation it started.
+   *
+   * The Codex half of syncTerminalChats. That one addresses a transcript by the session
+   * id the chat pinned before its CLI launched, which a Codex chat has no way to do —
+   * its CLI takes no `--session-id` — so there was nothing to look up and those chats
+   * stayed called "New chat" for good. Here the conversation is claimed after the fact,
+   * by folder and time, in main (see codex-thread-link-pure.ts for what it refuses).
+   *
+   * Gated on `codexLinkDirtyRef`, which the pty busy signal fills: a chat sitting idle
+   * at its prompt cannot have gained a conversation, and every attempt costs an
+   * app-server spawn. So this stays silent until a terminal has actually done something.
+   */
+  const codexLinkDirtyRef = useRef<Set<string>>(new Set())
+  const syncCodexThreadLinks = useCallback(async () => {
+    const dirty = codexLinkDirtyRef.current
+    if (!dirty.size) return
+    const candidates = sessionsRef.current.filter(
+      (s) =>
+        dirty.has(s.id) &&
+        !s.codexThreadId &&
+        s.projectPath &&
+        s.terminalStartedAt &&
+        s.hasTerminalActivity &&
+        // The app-server this spawns runs on this machine, against this machine's Codex
+        // home. A chat whose CLI lives inside a distro or on another box keeps its
+        // conversation over there, where none of that applies.
+        !s.wslDistro &&
+        !s.remoteHostId &&
+        provOf(models, s.model || defaultModel) === 'codex'
+    )
+    // Cleared for this round up front: a chat whose turn produced no thread is flagged
+    // again by its next transition, and holding the flag would retry on every tick.
+    for (const s of candidates) dirty.delete(s.id)
+    if (!candidates.length) return
+
+    // A thread another chat already holds is not available, however well it matches.
+    const claimed = sessionsRef.current
+      .map((s) => s.codexThreadId)
+      .filter((id): id is string => !!id)
+
+    // Grouped by account because each Codex login keeps its own history under its own
+    // CODEX_HOME — one listing cannot answer for two of them.
+    const byAccount = new Map<string | undefined, Session[]>()
+    for (const s of candidates) {
+      const key = s.codexAccountId ?? codexDefaultAccountId
+      const list = byAccount.get(key)
+      if (list) list.push(s)
+      else byAccount.set(key, [s])
+    }
+
+    for (const [accountId, group] of byAccount) {
+      let linked: Record<string, { threadId: string; title: string | null }>
+      try {
+        linked = await window.electronAPI.codexLinkThreads(
+          group.map((s) => ({
+            id: s.id,
+            cwd: s.projectPath as string,
+            startedAt: s.terminalStartedAt as number
+          })),
+          claimed,
+          accountId
+        )
+      } catch {
+        // Nothing claimed this round; the next transition flags these chats again.
+        continue
+      }
+      if (!Object.keys(linked).length) continue
+      setSessions((prev) => {
+        const touched: Session[] = []
+        const next = prev.map((s) => {
+          const hit = linked[s.id]
+          // Re-checked here rather than above: this resolves a round later, and a chat
+          // that has been linked in the meantime owns what it has.
+          if (!hit || s.codexThreadId) return s
+          const updated: Session = {
+            ...s,
+            codexThreadId: hit.threadId,
+            // Only a chat still carrying the placeholder is renamed. A name the user
+            // typed, or one an earlier round already took from this conversation, is
+            // not something a later listing gets to overwrite.
+            ...(hit.title && s.name === 'New chat' ? { name: hit.title } : {})
+          }
+          touched.push(updated)
+          return updated
+        })
+        // A terminal-driven chat never goes through the agent:send save path, so without
+        // this the link and the name would be lost on restart and re-claimed from
+        // scratch — against a listing that by then has other chats' threads in it too.
+        for (const s of touched) window.electronAPI.saveSession(s)
+        return next
+      })
+    }
+  }, [models, defaultModel, codexDefaultAccountId])
+
+  // Runs on the same cadence, and for the same reason, as the transcript sync below: a
+  // chat left working in the background has to catch up without being looked at. The
+  // dirty-set gate inside makes an idle tick free.
+  useEffect(() => {
+    syncCodexThreadLinks()
+  }, [activeId, visibleKey, syncCodexThreadLinks])
+  useEffect(() => {
+    const timer = setInterval(() => {
+      syncCodexThreadLinks()
+    }, 12000)
+    return () => clearInterval(timer)
+  }, [syncCodexThreadLinks])
+
   // Pull terminal chats' transcripts in on the cadence a terminal-driven conversation
   // actually changes on: right away and whenever the user switches to look at one (this
   // effect covers both — it runs on mount too), and otherwise every 12s so a chat left
@@ -1893,6 +2001,12 @@ export default function App() {
       // No seed just means the first transition is what lights the chat up.
     })
     const off = window.electronAPI.onTerminalBusy(({ id, busy }) => {
+      // Every transition is a moment a Codex chat may have gained a conversation: the
+      // start of a turn creates one, and the end of a turn guarantees it is recorded.
+      // Linking is gated on this so an idle terminal never spawns an app-server — see
+      // syncCodexThreadLinks.
+      const sid = sessionIdFromTerminalId(id)
+      if (sid) codexLinkDirtyRef.current.add(sid)
       setBusyTerminalIds((prev) => {
         if (prev.has(id) === busy) return prev
         const next = new Set(prev)

@@ -259,6 +259,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // own registry. Read-only — nothing here signals anything.
   ccLiveSessions: () => ipcRenderer.invoke('cc:live-sessions'),
   ccAdoptSessions: (terminalIds: string[]) => ipcRenderer.invoke('cc:adopt-sessions', terminalIds),
+  codexLinkThreads: (
+    chats: { id: string; cwd: string; startedAt: number }[],
+    claimed: string[],
+    accountId?: string
+  ) => ipcRenderer.invoke('codex:link-threads', chats, claimed, accountId),
   ccTakeoverSession: (sourceId: string, sessionId: string, expectedPid: number) =>
     ipcRenderer.invoke('cc:takeover-session', sourceId, sessionId, expectedPid),
 

@@ -98,6 +98,20 @@ export interface Session {
   /** Which Claude Code account (login) this chat runs under. Undefined = default account. */
   accountId?: string
   accountName?: string
+  /**
+   * The Codex conversation this chat's embedded terminal started.
+   *
+   * The Codex counterpart of `terminalSessionId`, but arrived at the other way round.
+   * A Claude chat names its session before launching and the CLI accepts the name; the
+   * Codex CLI has no `--session-id`, so the conversation gets an id Argos is never told
+   * and has to be claimed afterwards from what Codex reports — see
+   * codex-thread-link-pure.ts. Written once, and never rewritten: a chat already showing
+   * one conversation must not be repointed at another.
+   */
+  codexThreadId?: string
+  /** When this chat's embedded terminal first came up, in ms. The lower bound on which
+   *  Codex conversations can be this chat's. */
+  terminalStartedAt?: number
   /** Which Codex account this chat runs under, when its model is a Codex model. */
   codexAccountId?: string
   codexAccountName?: string
@@ -1581,6 +1595,13 @@ declare global {
        * whose CLI started without the id the chat had picked for it.
        */
       ccAdoptSessions: (terminalIds: string[]) => Promise<Record<string, string>>
+      /** Match Codex terminal chats to the conversations they started, by folder and
+       *  time. Returns only the chats it could place. */
+      codexLinkThreads: (
+        chats: { id: string; cwd: string; startedAt: number }[],
+        claimed: string[],
+        accountId?: string
+      ) => Promise<Record<string, { threadId: string; title: string | null }>>
       /**
        * Ask a live `claude` to exit so its conversation can be resumed here.
        * `expectedPid` is the pid the UI displayed — it is only ever used to refuse

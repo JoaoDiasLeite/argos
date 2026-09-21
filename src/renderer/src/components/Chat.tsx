@@ -916,7 +916,15 @@ export default function Chat(
             onInitialPromptSent={onInitialTerminalPromptSent}
             onClose={onCloseTerminal}
             onActive={() => {
-              if (!session.hasTerminalActivity) onPatchSession({ hasTerminalActivity: true })
+              // The stamp is the lower bound on which Codex conversation can be this
+              // chat's, so it is written once and never moved: a terminal reopened later
+              // must not let the chat reach back and claim something older.
+              if (!session.hasTerminalActivity || !session.terminalStartedAt) {
+                onPatchSession({
+                  hasTerminalActivity: true,
+                  ...(session.terminalStartedAt ? {} : { terminalStartedAt: Date.now() })
+                })
+              }
             }}
           />
         </Suspense>

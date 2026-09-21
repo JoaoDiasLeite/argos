@@ -167,6 +167,7 @@ import {
   loadProviderAccounts,
   listProviderAccountStatus,
   providerAccountEnv,
+  providerAccountConfigDir,
   addProviderAccount,
   renameProviderAccount,
   removeProviderAccount,
@@ -183,6 +184,12 @@ import {
   startScheduler,
   ScheduledRun
 } from './scheduler'
+import { listCodexThreads } from './codex-threads'
+import {
+  pickThreadsForChats,
+  titleForThread,
+  type LinkableChat
+} from './codex-thread-link-pure'
 import {
   busyTerminals,
   createTerminal,
@@ -1493,6 +1500,31 @@ ipcMain.handle(
   'cc:chat-transcript',
   (_, cwd: string, sessionId: string, preferSourceId?: string) =>
     readChatTranscript(cwd, sessionId, preferSourceId)
+)
+/**
+ * Match Codex terminal chats to the conversations they started.
+ *
+ * The listing and the claim are both done here rather than in the renderer: the listing
+ * spawns a process, and the claim has to see every chat at once to hand two chats in one
+ * folder their own threads. `claimed` is the thread ids other chats already hold, so a
+ * chat whose terminal is reopened cannot take one that is already spoken for.
+ */
+ipcMain.handle(
+  'codex:link-threads',
+  async (_, chats: LinkableChat[], claimed: string[], accountId?: string) => {
+    if (!Array.isArray(chats) || !chats.length) return {}
+    const configDir = providerAccountConfigDir('codex', accountId)
+    const threads = await listCodexThreads(chats.map((c) => c.cwd), configDir)
+    if (!threads.length) return {}
+    const picked = pickThreadsForChats(chats, threads, new Set(claimed))
+    const byId = new Map(threads.map((t) => [t.id, t]))
+    const out: Record<string, { threadId: string; title: string | null }> = {}
+    for (const [chatId, threadId] of Object.entries(picked)) {
+      const thread = byId.get(threadId)
+      if (thread) out[chatId] = { threadId, title: titleForThread(thread) }
+    }
+    return out
+  }
 )
 ipcMain.handle('cc:usage', (_, force = false) => getUsage(force))
 ipcMain.handle('cc:plan-usage', (_, force = false) => getPlanUsageForIpc(!!force))
