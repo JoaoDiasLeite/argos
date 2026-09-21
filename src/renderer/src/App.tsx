@@ -44,6 +44,8 @@ import CommandPalette, { CommandItem } from './components/CommandPalette'
 import OnboardingModal from './components/OnboardingModal'
 import AccountsModal from './components/AccountsModal'
 import ChangelogModal from './components/ChangelogModal'
+import ShortcutsModal from './components/ShortcutsModal'
+import { modLabel } from './lib/shortcuts'
 import { UiPrefs, UiPrefsPatch } from './types'
 import { sessionToReplaySeed } from './lib/markdown-export'
 import { provOf, acctOf, originOf, nextChatAfterClose, isUnstarted, AccountDefaults } from './lib/account-scope'
@@ -261,6 +263,7 @@ export default function App() {
   const [terminalLines, setTerminalLines] = useState<TermLine[]>([])
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [changelogOpen, setChangelogOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [claudeMdFor, setClaudeMdFor] = useState<string | null>(null)
   const [checkpointsFor, setCheckpointsFor] = useState<string | null>(null)
   const [gitFor, setGitFor] = useState<string | null>(null)
@@ -3016,8 +3019,10 @@ export default function App() {
   }
 
   // Global shortcuts: Ctrl/Cmd-K toggles the command palette, Ctrl/Cmd-N starts a new
-  // chat, Ctrl/Cmd-1..3 focuses a pane by position, Ctrl/Cmd-Shift-W closes the focused
-  // pane. None of these filter by event target (matching Ctrl-K/N above) — none of them
+  // chat, Ctrl/Cmd-/ shows the shortcut sheet, Ctrl/Cmd-1..3 focuses a pane by position,
+  // Ctrl/Cmd-Shift-W closes the focused pane. Anything added here belongs in
+  // lib/shortcuts.ts too — that is what the sheet reads, and it cannot tell that a key
+  // has moved. None of these filter by event target (matching Ctrl-K/N above) — none of them
   // type a literal character, so stealing them from a focused input/textarea/xterm is
   // harmless, and bubbling order means xterm's own handler (on the terminal element)
   // already ran by the time this window-level listener sees the event.
@@ -3029,6 +3034,10 @@ export default function App() {
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
         e.preventDefault()
         createSessionRef.current()
+      } else if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+        // Toggles, like the palette: the same key that asked for the sheet puts it away.
+        e.preventDefault()
+        setShortcutsOpen((v) => !v)
       } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && ['1', '2', '3'].includes(e.key)) {
         // Focus the 1st/2nd/3rd pane by position. A no-op past the end of `panes`
         // (e.g. Ctrl+3 with a single pane open) — nothing to focus, so don't preventDefault
@@ -3100,6 +3109,13 @@ export default function App() {
         run: () => openCheckpoints(activeSession.id)
       })
     }
+    items.push({
+      id: 'shortcuts',
+      title: 'Keyboard shortcuts',
+      subtitle: modLabel('/'),
+      group: 'Actions',
+      run: () => setShortcutsOpen(true)
+    })
     items.push({ id: 'settings', title: 'Open Settings', group: 'Views', run: () => setView('settings') })
     items.push({ id: 'accounts', title: 'Manage Claude accounts', group: 'Views', run: () => setAccountsOpen(true) })
     for (const s of sessions) {
@@ -3263,6 +3279,7 @@ export default function App() {
           onChange={goToView}
           onSettings={() => setView('settings')}
           onChangelog={() => setChangelogOpen(true)}
+          onShortcuts={() => setShortcutsOpen(true)}
           serverSessionCount={serverSessions.length}
           chatRunningCount={displayRunningIds.size}
           attentionCount={approvalQueue.length}
@@ -3669,6 +3686,7 @@ export default function App() {
         />
       )}
       {changelogOpen && <ChangelogModal onClose={() => setChangelogOpen(false)} />}
+      {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
       </div>
     </div>
   )

@@ -1,0 +1,115 @@
+/* A cheat sheet, so it is sized to be read at a glance rather than scrolled: wider than
+   the usual modal, and the groups flow down columns instead of one long list.
+   Qualified with .modal because .modal.wide's own width is two classes' worth of
+   specificity and beats a bare .shortcuts-modal. */
+.modal.shortcuts-modal {
+  width: 880px;
+}
+
+.shortcuts-modal .modal-header {
+  gap: 12px;
+}
+
+/* Sits between the title and the close button, taking the slack. */
+.shortcuts-filter {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 220px;
+  margin-left: auto;
+  background: var(--bg-1);
+  border: 1px solid var(--border-light);
+  border-radius: 7px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--text-0);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.shortcuts-filter:focus { border-color: var(--accent); }
+.shortcuts-filter::placeholder { color: var(--text-2); }
+
+.shortcuts-body {
+  /* Columns, not a grid: groups are different heights and a grid would leave holes
+     under the short ones. `break-inside` keeps a group whole. */
+  display: block;
+  columns: 2;
+  column-gap: 28px;
+  padding: 18px 20px 20px;
+}
+
+.shortcuts-group {
+  break-inside: avoid;
+  margin-bottom: 18px;
+}
+
+.shortcuts-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+  margin-bottom: 7px;
+}
+
+.shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.shortcuts-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+}
+.shortcuts-row:hover { background: var(--bg-3); }
+
+/* Fixed-width key column so the actions line up down the sheet. */
+.shortcuts-keys {
+  flex: 0 0 140px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+}
+
+.shortcuts-keys kbd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-1);
+  background: var(--bg-1);
+  border: 1px solid var(--border-light);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.shortcuts-action {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-0);
+  margin: 0;
+}
+
+.shortcuts-note {
+  display: block;
+  font-size: 11px;
+  color: var(--text-2);
+  margin-top: 1px;
+}
+
+.shortcuts-empty {
+  font-size: 12.5px;
+  color: var(--text-2);
+  padding: 8px 0;
+}
+
+/* One column once two would be too narrow to keep keys and action on one line. */
+@media (max-width: 940px) {
+  .shortcuts-body { columns: 1; }
+}
