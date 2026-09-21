@@ -447,6 +447,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   terminalKill: (id: string) => ipcRenderer.invoke('terminal:kill', id),
   terminalKillDeferred: (id: string) => ipcRenderer.send('terminal:kill-deferred', id),
   terminalList: () => ipcRenderer.invoke('terminal:list'),
+  terminalBusyList: () => ipcRenderer.invoke('terminal:busy-list'),
   terminalStartCli: (
     id: string,
     provider: string,
@@ -462,6 +463,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const fn = (_: unknown, data: unknown) => cb(data)
     ipcRenderer.on('terminal:exit', fn)
     return () => ipcRenderer.removeListener('terminal:exit', fn)
+  },
+  onTerminalBusy: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('terminal:busy', fn)
+    return () => ipcRenderer.removeListener('terminal:busy', fn)
   },
 
   // Remote shell (Remote Session SSH terminal, over the SFTP connection)

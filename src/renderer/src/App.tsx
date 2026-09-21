@@ -1873,6 +1873,41 @@ export default function App() {
   }, [])
 
   /**
+   * Terminal ids whose pty is producing output right now.
+   *
+   * The provider-agnostic half of "this chat is working". `liveBusyIds` above covers only
+   * Claude Code, which publishes its own status and can be pinned to a session id; codex
+   * and Antigravity publish nothing and codex cannot even be pinned (no `--session-id`),
+   * so for those this is the only signal there is. Pushed from main on the transition, not
+   * polled — see busyTerminals() there for why output is a sound proxy.
+   */
+  const [busyTerminalIds, setBusyTerminalIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    let alive = true
+    // Seeded as well as subscribed: transitions only start arriving once this listener is
+    // registered, so without the seed a chat that was already working when the window
+    // opened would stay dark until it happened to change state.
+    window.electronAPI.terminalBusyList().then((ids) => {
+      if (alive && ids.length) setBusyTerminalIds(new Set(ids))
+    }).catch(() => {
+      // No seed just means the first transition is what lights the chat up.
+    })
+    const off = window.electronAPI.onTerminalBusy(({ id, busy }) => {
+      setBusyTerminalIds((prev) => {
+        if (prev.has(id) === busy) return prev
+        const next = new Set(prev)
+        if (busy) next.add(id)
+        else next.delete(id)
+        return next
+      })
+    })
+    return () => {
+      alive = false
+      off()
+    }
+  }, [])
+
+  /**
    * Adopt the CLI a chat's terminal actually started, when the id the chat picked for it
    * did not take.
    *
@@ -1941,14 +1976,19 @@ export default function App() {
    * composer — this is a display, not a lock.
    */
   const displayRunningIds = useMemo(() => {
-    if (!liveBusyIds.size) return runningIds
+    if (!liveBusyIds.size && !busyTerminalIds.size) return runningIds
     const out = new Set(runningIds)
     for (const s of sessions) {
       const ccId = s.claudeSessionId || s.terminalSessionId
       if (ccId && liveBusyIds.has(ccId)) out.add(s.id)
+      // Only ever adds, never clears: where Claude Code reports its own status that
+      // remains the more precise answer, and this is here to cover the chats it says
+      // nothing about — every codex and Antigravity terminal, and any Claude one whose
+      // registry entry could not be read.
+      else if (busyTerminalIds.has(chatTerminalId(s.id))) out.add(s.id)
     }
     return out
-  }, [runningIds, liveBusyIds, sessions])
+  }, [runningIds, liveBusyIds, busyTerminalIds, sessions])
 
   // Chats still working, for the window-wide pending bar. Reads displayRunningIds, not
   // runningIds: a chat driven from the embedded terminal never goes through startRun, so

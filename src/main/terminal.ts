@@ -8,6 +8,7 @@ import { accountConfigDir, resolveClaudeBin } from './accounts'
 import { providerAccountEnv } from './provider-accounts'
 import { resolveCodex } from './providers/cli-resolve'
 import { getSshTerminalCommand } from './ssh'
+import { BusyTracker } from './terminal-busy-pure'
 
 /**
  * Embedded real terminal (PTY) support, so the user can run the actual interactive
@@ -40,6 +41,15 @@ const outputBuffers = new Map<string, string>()
 // What each live pty was created with, so a re-create can tell "reattach to this" from
 // "the chat's environment changed, respawn it" — see createTerminal.
 const configs = new Map<string, string>()
+
+// Is the CLI in each pty working? Every decision lives in terminal-busy-pure.ts — see
+// there for why output is a sound proxy, and for the measurement behind it.
+const busy = new BusyTracker()
+
+/** The ptys currently producing output, for the renderer to seed itself from. */
+export function busyTerminals(): string[] {
+  return busy.busyIds()
+}
 
 /**
  * Enough about each live pty to describe it in a list, kept beside the pty itself so
@@ -225,7 +235,8 @@ export function createTerminal(
   id: string,
   opts: CreateTerminalOptions,
   onData: (id: string, data: string) => void,
-  onExit: (id: string, exitCode: number) => void
+  onExit: (id: string, exitCode: number) => void,
+  onBusy: (id: string, busy: boolean) => void
 ): {
   ok: boolean
   shell?: string
@@ -387,11 +398,13 @@ export function createTerminal(
       p = pty.spawn(resolveWindowsExe(shell), shellArgs, { name: 'xterm-color', cols, rows, cwd: spawnCwd, env })
     }
 
+    busy.watch(id, onBusy)
     p.onData((d) => {
       // A superseded pty (replaced above because the environment changed) can still flush a
       // final chunk as it dies. Dropping it keeps the replacement's buffer and screen clean.
       if (terminals.get(id) !== p) return
       appendToBuffer(id, d)
+      busy.noteOutput(id)
       onData(id, d)
     })
     p.onExit((e) => {
@@ -400,6 +413,7 @@ export function createTerminal(
       // the live pty's state and tell the renderer the new terminal had exited, so only the
       // pty currently registered for this id is allowed to.
       if (terminals.get(id) !== p) return
+      busy.forget(id)
       onExit(id, e.exitCode)
       terminals.delete(id)
       shellKinds.delete(id)
@@ -440,6 +454,7 @@ export function writeTerminal(id: string, data: string): void {
   if (typeof data !== 'string') return
   const p = terminals.get(id)
   if (!p) return
+  busy.noteWrite(id)
   try {
     p.write(data)
   } catch {
@@ -479,6 +494,9 @@ export function killTerminal(id: string): { ok: boolean } {
   } catch {
     // no-op
   }
+  // killTerminal drops the pty from `terminals` itself, so the onExit handler above bails
+  // out before it can clean up — the busy state has to be cleared from here.
+  busy.forget(id)
   terminals.delete(id)
   shellKinds.delete(id)
   sshMeta.delete(id)

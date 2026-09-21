@@ -1300,6 +1300,12 @@ export interface TerminalDataEvent {
   data: string
 }
 
+/** A pty started or stopped producing output — see busyTerminals() in main/terminal.ts. */
+export interface TerminalBusyEvent {
+  id: string
+  busy: boolean
+}
+
 export interface TerminalExitEvent {
   id: string
   exitCode: number
@@ -1864,6 +1870,8 @@ declare global {
       terminalKillDeferred: (id: string) => void
       /** The ptys this process holds, newest first. */
       terminalList: () => Promise<TerminalInfo[]>
+      /** The ids of the ptys currently producing output. */
+      terminalBusyList: () => Promise<string[]>
       terminalStartCli: (
         id: string,
         provider: ProviderId,
@@ -1872,6 +1880,7 @@ declare global {
       ) => Promise<{ ok: boolean }>
       onTerminalData: (cb: (data: TerminalDataEvent) => void) => () => void
       onTerminalExit: (cb: (data: TerminalExitEvent) => void) => () => void
+      onTerminalBusy: (cb: (data: TerminalBusyEvent) => void) => () => void
 
       // Remote shell (Remote Session SSH terminal, over the SFTP connection)
       remoteShellCreate: (id: string, hostId: string, cols: number, rows: number) => Promise<{ ok: boolean; error?: string }>

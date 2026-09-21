@@ -184,6 +184,7 @@ import {
   ScheduledRun
 } from './scheduler'
 import {
+  busyTerminals,
   createTerminal,
   writeTerminal,
   resizeTerminal,
@@ -1693,9 +1694,16 @@ ipcMain.handle(
       id,
       opts,
       (tid, data) => send('terminal:data', { id: tid, data }),
-      (tid, exitCode) => send('terminal:exit', { id: tid, exitCode })
+      (tid, exitCode) => send('terminal:exit', { id: tid, exitCode }),
+      // Pushed on the transition rather than polled: the renderer turns this straight into
+      // a running dot, and a poll slow enough to be cheap would be too slow to be right.
+      (tid, busy) => send('terminal:busy', { id: tid, busy })
     )
 )
+// Which ptys are mid-burst right now. The renderer hears transitions only from the moment
+// it subscribes, so it seeds itself from this — otherwise a chat already working when the
+// window opened would stay dark until it next changed state.
+ipcMain.handle('terminal:busy-list', () => busyTerminals())
 ipcMain.on('terminal:write', (_, id: string, data: string) => writeTerminal(id, data))
 ipcMain.on('terminal:resize', (_, id: string, cols: number, rows: number) =>
   resizeTerminal(id, cols, rows)
