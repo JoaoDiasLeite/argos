@@ -18,7 +18,15 @@ const CHANGELOG: Entry[] = [
     version: '1.15.0',
     date: '2026-09-21',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Changes',
+        items: [
+          'The Git panel can be reached from a chat run in the terminal. It only ever opened from the floating ⋯ menu over the transcript, and that menu is hidden for as long as the embedded terminal is up — it would otherwise sit over the terminal’s own surface — so a chat driven from the terminal, which is most of them, had no way to it at all: not the menu, not the palette, not a key. The terminal’s bar now carries a Git button beside Restart, that bar being the only chrome on screen in terminal mode. A terminal that is nobody’s chat — the Remote Session pane, a tile in the Live view — does not offer one, having no repository to point at. Git and Checkpoints are in the command palette too, which answers in either mode and costs no room on screen.',
+          'Ctrl+/ opens a list of every keyboard shortcut Argos answers to, grouped by where it applies and narrowed by typing; the nav rail and the command palette reach it as well. The keys were spread across the window, the terminal and each dialog, and nothing in the app had ever named them, so the only way to learn one was to be told. The quick launcher’s line reports the chord that actually got registered when Argos started rather than the one it asked for — Alt+Space is often already owned by another launcher, and what you have to press is whatever it fell back to.'
+        ]
+      }
+    ]
   },
   {
     version: '1.14.0',
