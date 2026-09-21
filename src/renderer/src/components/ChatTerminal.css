@@ -65,6 +65,13 @@
   padding: 3px 5px;
 }
 
+/* A toggle that is currently on (Review), so it reads as pressed rather than pressable. */
+.chat-terminal-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
 .chat-terminal-fontsize {
   display: flex;
   align-items: center;

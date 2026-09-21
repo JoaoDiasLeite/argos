@@ -916,6 +916,8 @@ export default function Chat(
             onInitialPromptSent={onInitialTerminalPromptSent}
             onClose={onCloseTerminal}
             onOpenGit={onOpenGit}
+            onToggleReview={toggleReview}
+            reviewOpen={reviewOpen}
             onActive={() => {
               // The stamp is the lower bound on which Codex conversation can be this
               // chat's, so it is written once and never moved: a terminal reopened later

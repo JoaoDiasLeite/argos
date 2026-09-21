@@ -51,6 +51,11 @@ interface Props {
    *  there is: the chat's ⋯ menu, where Git otherwise lives, is hidden for as long as a
    *  terminal is open (see the float cluster in Chat.tsx). */
   onOpenGit?: () => void
+  /** Shows or hides the chat's Review panel, and whether it is showing. Same reasoning as
+   *  onOpenGit: the panel is a column beside the terminal and renders perfectly well next
+   *  to one, but the only control that turned it on lived in the hidden ⋯ menu. */
+  onToggleReview?: () => void
+  reviewOpen?: boolean
   /** Typed into the CLI, with Enter, once it is up. Sent at most once per mount (see
    *  sentPromptRef) so a Restart doesn't silently re-run the task. */
   initialPrompt?: string
@@ -128,7 +133,7 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onOpenGit, onActive, initialPrompt, onInitialPromptSent, accelerated }: Props) {
+export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onOpenGit, onToggleReview, reviewOpen = false, onActive, initialPrompt, onInitialPromptSent, accelerated }: Props) {
   // An explicit prop wins; otherwise the surrounding view decides (false by default).
   const accelFromContext = useContext(TerminalAccelContext)
   // The setup effect below runs once and cannot close over a prop that changes later, and
@@ -790,6 +795,19 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
                 <path d="M6 9v12" /><path d="M18 9a9 9 0 0 1-9 9" />
               </svg>
               Git
+            </button>
+          )}
+          {onToggleReview && (
+            <button
+              className={`chat-terminal-btn${reviewOpen ? ' active' : ''}`}
+              onClick={onToggleReview}
+              aria-pressed={reviewOpen}
+              title={reviewOpen ? 'Hide the review panel' : "Review this chat's changes"}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" />
+              </svg>
+              Review
             </button>
           )}
           <button
