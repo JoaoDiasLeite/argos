@@ -19,7 +19,8 @@
  * beyond the running dot: a burst that rises and falls while you are not looking at the
  * chat is what the pending bar reports as a run that finished (see App.tsx), so merely
  * opening a chat and leaving it announced a finished turn that never happened.
- * `noteRedraw` is how terminal.ts declares such a burst ours.
+ * `noteRedraw` is how terminal.ts declares such a burst ours, and `noteLaunch` covers the
+ * one case a burst cannot be bounded by time at all — a CLI that has just been started.
  *
  * Split out from terminal.ts so the state machine can be tested without a real pty: this
  * file holds every decision, and terminal.ts only feeds it events. Timers and the clock
@@ -45,6 +46,8 @@ export class BusyTracker {
   private readonly lastWriteAt = new Map<string, number>()
   /** Ptys whose current burst is a paint we asked for — see noteRedraw. */
   private readonly redrawing = new Set<string>()
+  /** Ptys running a CLI that has not been typed into yet — see noteLaunch. */
+  private readonly unprompted = new Set<string>()
 
   /**
    * Start tracking a pty, and say how its transitions are reported.
@@ -63,6 +66,29 @@ export class BusyTracker {
   noteWrite(id: string, at: number = Date.now()): void {
     this.lastWriteAt.set(id, at)
     this.redrawing.delete(id)
+    this.unprompted.delete(id)
+  }
+
+  /**
+   * A CLI has just been launched in this pty and has been given nothing to do.
+   *
+   * Stronger than noteRedraw, and it has to be: start-up is the one paint with no bound in
+   * time at all. It arrives whenever the CLI gets there — seconds later for `claude
+   * --resume` on a long transcript, in dribs and drabs with gaps longer than the idle
+   * window between them — so any timer drawn around it is a guess, and a guess that
+   * expires mid-paint reads the rest as work. What is certain instead is that a CLI nobody
+   * has typed into has nothing to work on: resuming a session replays it, it does not
+   * carry on with it. So nothing this pty prints counts as work until it is written to,
+   * however long that takes, which also covers the shell's own banner and the echo of the
+   * launch command before the CLI even starts.
+   *
+   * Restoring a window full of chats is what this is really about: every one of them
+   * relaunches its CLI at once, off screen, and each start-up paint used to raise and drop
+   * the mark — which the pending bar then reported as that many chats having finished a
+   * turn while you were away.
+   */
+  noteLaunch(id: string): void {
+    this.unprompted.add(id)
   }
 
   /**
@@ -88,6 +114,8 @@ export class BusyTracker {
    *  re-arms the quiet timer that will mark it idle again. */
   noteOutput(id: string, at: number = Date.now()): void {
     if (at - (this.lastWriteAt.get(id) ?? -Infinity) < BUSY_ECHO_GRACE_MS) return
+    // Nothing to end and no timer to arm: this one is ended by a keystroke, not by time.
+    if (this.unprompted.has(id)) return
     if (!this.busy.has(id) && !this.redrawing.has(id)) {
       this.busy.add(id)
       this.notify.get(id)?.(id, true)
@@ -118,6 +146,7 @@ export class BusyTracker {
     this.timers.delete(id)
     this.lastWriteAt.delete(id)
     this.redrawing.delete(id)
+    this.unprompted.delete(id)
     if (this.busy.delete(id)) this.notify.get(id)?.(id, false)
     this.notify.delete(id)
   }

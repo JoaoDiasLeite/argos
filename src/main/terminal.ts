@@ -462,8 +462,9 @@ export function createTerminal(
     notifiers.set(id, onNotify)
     // Everything this pty is about to print — the interactive shell's banner, or the whole
     // start-up paint of a CLI launched as the pty's own process — it prints because we just
-    // spawned it. Opening a chat is not the chat working.
-    busy.noteRedraw(id)
+    // spawned it, and it has been given nothing to do. Opening a chat, or restoring a
+    // window full of them, is not those chats working.
+    busy.noteLaunch(id)
     busy.watch(id, (tid, working) => {
       // Output starting again after a silence is the backstop for an answer that reached
       // the CLI without passing through writeTerminal — an approval that timed out, or one
@@ -760,8 +761,10 @@ export function startCliInTerminal(
   if (launched.has(id)) return { ok: true }
   launched.add(id)
   // The CLI's start-up paint (and the echo of the command below) belongs to the launch,
-  // not to a turn — the wsl/ssh counterpart of the noteRedraw in createTerminal.
-  busy.noteRedraw(id)
+  // not to a turn — the wsl/ssh counterpart of the noteLaunch in createTerminal, and the
+  // one that matters most there: the CLI starts over a distro or an SSH hop, so its paint
+  // arrives late and in pieces.
+  busy.noteLaunch(id)
   try {
     if (provider === 'claude') {
       // Pin the CLI to the chat's own Claude Code session id when we have one, else start

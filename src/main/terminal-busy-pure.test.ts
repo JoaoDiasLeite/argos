@@ -166,6 +166,59 @@ describe('BusyTracker', () => {
     expect(events).toEqual([['t1', true]])
   })
 
+  it('never reports a launched CLI busy until something is typed into it', () => {
+    const { tracker, events } = watched()
+    // Start-up has no bound in time: the CLI paints when it gets there, in as many pieces
+    // as it likes, with gaps longer than the idle window in between. A timer around it is
+    // a guess — what is certain is that a CLI nobody has typed into has nothing to do.
+    tracker.noteLaunch('t1')
+    for (let i = 0; i < 6; i++) {
+      tracker.noteOutput('t1')
+      vi.advanceTimersByTime(BUSY_IDLE_MS * 3)
+    }
+    expect(events).toEqual([])
+    expect(tracker.busyIds()).toEqual([])
+  })
+
+  it('reports busy once the launched CLI is given something to do', () => {
+    const { tracker, events } = watched()
+    tracker.noteLaunch('t1')
+    tracker.noteOutput('t1')
+    vi.advanceTimersByTime(BUSY_IDLE_MS * 5)
+    // The keystroke that starts the first turn is what ends the launch.
+    tracker.noteWrite('t1')
+    vi.advanceTimersByTime(BUSY_ECHO_GRACE_MS + 1)
+    tracker.noteOutput('t1')
+    expect(events).toEqual([['t1', true]])
+
+    vi.advanceTimersByTime(BUSY_IDLE_MS + 1)
+    expect(events).toEqual([
+      ['t1', true],
+      ['t1', false]
+    ])
+  })
+
+  it('treats a relaunched CLI as unprompted again', () => {
+    const { tracker, events } = watched()
+    tracker.noteWrite('t1')
+    vi.advanceTimersByTime(BUSY_ECHO_GRACE_MS + 1)
+    tracker.noteOutput('t1')
+    vi.advanceTimersByTime(BUSY_IDLE_MS + 1)
+    expect(events).toEqual([
+      ['t1', true],
+      ['t1', false]
+    ])
+    // Restart drops the pty to a bare shell and launches the CLI again — that start-up is
+    // no more work than the first one was, whatever was typed into the CLI it replaced.
+    tracker.noteLaunch('t1')
+    tracker.noteOutput('t1')
+    vi.advanceTimersByTime(BUSY_IDLE_MS * 3)
+    expect(events).toEqual([
+      ['t1', true],
+      ['t1', false]
+    ])
+  })
+
   it('announces idle when a pty is forgotten mid-burst', () => {
     const { tracker, events } = watched()
     tracker.noteOutput('t1')
