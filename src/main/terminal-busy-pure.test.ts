@@ -100,6 +100,72 @@ describe('BusyTracker', () => {
     expect(events).toEqual([['t1', true]])
   })
 
+  it('ignores the paint that follows something we did to the pty', () => {
+    const { tracker, events } = watched()
+    // Spawning the CLI, or resizing the pty under a full-screen TUI, makes it repaint —
+    // for as many chunks as the repaint takes. Counting that as work is what put a chat
+    // you only opened and left on the pending bar, marked finished.
+    tracker.noteRedraw('t1')
+    for (let i = 0; i < 20; i++) {
+      tracker.noteOutput('t1')
+      vi.advanceTimersByTime(50)
+    }
+    expect(events).toEqual([])
+    expect(tracker.busyIds()).toEqual([])
+  })
+
+  it('reports busy again once the paint it was told about has settled', () => {
+    const { tracker, events } = watched()
+    tracker.noteRedraw('t1')
+    tracker.noteOutput('t1')
+    // The burst is bounded by the pty going quiet, not by a duration — a redraw crossing a
+    // WSL or SSH hop takes as long as it takes. Once it has, the next turn is a real one.
+    vi.advanceTimersByTime(BUSY_IDLE_MS + 1)
+    expect(events).toEqual([])
+    tracker.noteOutput('t1')
+    expect(events).toEqual([['t1', true]])
+  })
+
+  it('clears a redraw that painted nothing at all', () => {
+    const { tracker, events } = watched()
+    // A resize the CLI ignores produces no output, so there is no chunk to end the burst.
+    // Without the timer armed by noteRedraw itself, the next real turn would be swallowed.
+    tracker.noteRedraw('t1')
+    vi.advanceTimersByTime(BUSY_IDLE_MS + 1)
+    tracker.noteOutput('t1')
+    expect(events).toEqual([['t1', true]])
+  })
+
+  it('keeps a working pty busy across a redraw', () => {
+    const { tracker, events } = watched()
+    tracker.noteOutput('t1')
+    // Resizing a pane mid-turn (a splitter drag, a font-size change) must not read as the
+    // turn ending — that would announce a finished run while the CLI is still going.
+    tracker.noteRedraw('t1')
+    vi.advanceTimersByTime(BUSY_IDLE_MS - 100)
+    tracker.noteOutput('t1')
+    expect(events).toEqual([['t1', true]])
+    expect(tracker.busyIds()).toEqual(['t1'])
+
+    vi.advanceTimersByTime(BUSY_IDLE_MS + 1)
+    expect(events).toEqual([
+      ['t1', true],
+      ['t1', false]
+    ])
+  })
+
+  it('treats output after a keystroke as work even mid-redraw', () => {
+    const { tracker, events } = watched()
+    // Typing into a CLI that is still painting its start-up screen: what comes back is the
+    // answer to the keystroke, which is a turn. (The echo grace still covers the keystroke
+    // itself — this is output that arrives after it.)
+    tracker.noteRedraw('t1')
+    tracker.noteWrite('t1')
+    vi.advanceTimersByTime(BUSY_ECHO_GRACE_MS + 1)
+    tracker.noteOutput('t1')
+    expect(events).toEqual([['t1', true]])
+  })
+
   it('announces idle when a pty is forgotten mid-burst', () => {
     const { tracker, events } = watched()
     tracker.noteOutput('t1')

@@ -13,6 +13,14 @@
  * fifteen seconds — so "has emitted recently" separates working from idle without a line
  * of per-provider parsing.
  *
+ * The proxy holds only for output the CLI produced on its own account. Output it was made
+ * to produce — the start-up paint of a CLI we just launched, the full redraw a pty emits
+ * when it is resized — says nothing about work, and reading it as work shows up well
+ * beyond the running dot: a burst that rises and falls while you are not looking at the
+ * chat is what the pending bar reports as a run that finished (see App.tsx), so merely
+ * opening a chat and leaving it announced a finished turn that never happened.
+ * `noteRedraw` is how terminal.ts declares such a burst ours.
+ *
  * Split out from terminal.ts so the state machine can be tested without a real pty: this
  * file holds every decision, and terminal.ts only feeds it events. Timers and the clock
  * are the ambient ones on purpose — the test drives them with vitest's fake timers rather
@@ -35,6 +43,8 @@ export class BusyTracker {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly notify = new Map<string, Notify>()
   private readonly lastWriteAt = new Map<string, number>()
+  /** Ptys whose current burst is a paint we asked for — see noteRedraw. */
+  private readonly redrawing = new Set<string>()
 
   /**
    * Start tracking a pty, and say how its transitions are reported.
@@ -48,25 +58,53 @@ export class BusyTracker {
   }
 
   /** The renderer wrote to this pty — remember when, so the echo that follows is not read
-   *  as work. */
+   *  as work. Ends a redraw as well: what the CLI paints after a keystroke of yours is its
+   *  answer to it, and that is work. */
   noteWrite(id: string, at: number = Date.now()): void {
     this.lastWriteAt.set(id, at)
+    this.redrawing.delete(id)
+  }
+
+  /**
+   * We are about to make this pty paint — its CLI is being launched, or it has just been
+   * resized and the CLI will redraw from scratch. The burst that follows is not work and
+   * must not raise the mark.
+   *
+   * Bounded by the pty going quiet rather than by a duration: a redraw coming back from a
+   * WSL distro or an SSH box takes as long as it takes, a CLI's start-up paint has no
+   * fixed length at all, and "it has stopped painting" is the signal this class already
+   * trusts for everything else. The quiet timer is armed here too, so a resize that paints
+   * nothing still clears instead of swallowing the next real turn.
+   *
+   * A pty already marked busy stays busy — a resize in the middle of a turn is not the
+   * turn ending. Only the announcement is held back, never the timer that ends the burst.
+   */
+  noteRedraw(id: string): void {
+    this.redrawing.add(id)
+    this.arm(id)
   }
 
   /** A chunk came out of this pty. Marks it busy (announcing the change, if it is one) and
    *  re-arms the quiet timer that will mark it idle again. */
   noteOutput(id: string, at: number = Date.now()): void {
     if (at - (this.lastWriteAt.get(id) ?? -Infinity) < BUSY_ECHO_GRACE_MS) return
-    if (!this.busy.has(id)) {
+    if (!this.busy.has(id) && !this.redrawing.has(id)) {
       this.busy.add(id)
       this.notify.get(id)?.(id, true)
     }
+    this.arm(id)
+  }
+
+  /** (Re)arm the quiet timer that ends the current burst — the single place that says what
+   *  "the pty went quiet" does, shared by output and by a redraw that paints nothing. */
+  private arm(id: string): void {
     const prev = this.timers.get(id)
     if (prev) clearTimeout(prev)
     this.timers.set(
       id,
       setTimeout(() => {
         this.timers.delete(id)
+        this.redrawing.delete(id)
         if (this.busy.delete(id)) this.notify.get(id)?.(id, false)
       }, BUSY_IDLE_MS)
     )
@@ -79,6 +117,7 @@ export class BusyTracker {
     if (t) clearTimeout(t)
     this.timers.delete(id)
     this.lastWriteAt.delete(id)
+    this.redrawing.delete(id)
     if (this.busy.delete(id)) this.notify.get(id)?.(id, false)
     this.notify.delete(id)
   }

@@ -460,6 +460,10 @@ export function createTerminal(
     }
 
     notifiers.set(id, onNotify)
+    // Everything this pty is about to print — the interactive shell's banner, or the whole
+    // start-up paint of a CLI launched as the pty's own process — it prints because we just
+    // spawned it. Opening a chat is not the chat working.
+    busy.noteRedraw(id)
     busy.watch(id, (tid, working) => {
       // Output starting again after a silence is the backstop for an answer that reached
       // the CLI without passing through writeTerminal — an approval that timed out, or one
@@ -545,6 +549,10 @@ export function resizeTerminal(id: string, cols: number, rows: number): void {
   if (!Number.isInteger(rows) || rows <= 0) return
   const p = terminals.get(id)
   if (!p) return
+  // A full-screen CLI answers SIGWINCH by repainting everything, and the renderer resizes
+  // on every mount, pane-splitter drag and font change — ChatTerminal even nudges the size
+  // twice on reattach precisely to force that repaint. None of it is the CLI working.
+  busy.noteRedraw(id)
   try {
     p.resize(cols, rows)
   } catch {
@@ -751,6 +759,9 @@ export function startCliInTerminal(
   if (!p || !kind) return { ok: false }
   if (launched.has(id)) return { ok: true }
   launched.add(id)
+  // The CLI's start-up paint (and the echo of the command below) belongs to the launch,
+  // not to a turn — the wsl/ssh counterpart of the noteRedraw in createTerminal.
+  busy.noteRedraw(id)
   try {
     if (provider === 'claude') {
       // Pin the CLI to the chat's own Claude Code session id when we have one, else start
