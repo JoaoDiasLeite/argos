@@ -18,7 +18,14 @@ const CHANGELOG: Entry[] = [
     version: '1.15.2',
     date: '2026-09-22',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'Chats no longer report a finished turn just for having been reopened. The previous version stopped counting a CLI’s own repaint as work, but bounded it by the terminal falling quiet — and a CLI starting up does not oblige: on a chat being resumed the first pieces of its screen arrive within a second and the next only two and a half seconds later, so the burst was taken for over and the rest of the start-up screen read as a turn. Reopening the app is where that showed: every chat you had open relaunches its CLI at once, none of them on screen, and the bar of pending chats duly announced each one as having finished something. A CLI nobody has typed into has nothing to be working on — resuming a chat replays it, it does not carry on with it — so a terminal that has just been launched now stays out of the running list until something is actually typed into it, however long its screen takes to paint and in however many pieces.'
+        ]
+      }
+    ]
   },
   {
     version: '1.15.1',
