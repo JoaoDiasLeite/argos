@@ -18,7 +18,14 @@ const CHANGELOG: Entry[] = [
     version: '1.15.1',
     date: '2026-09-22',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'A chat you only open and leave no longer turns up in the bar of pending chats as one that finished. Argos reads a terminal chat as working from what its terminal prints, and two of those bursts are its own doing: the whole start-up screen of a CLI when the chat’s terminal is spawned, and the full redraw a terminal app does whenever it is resized — which includes the size nudge Argos itself sends on reattach, precisely so the CLI repaints what you are coming back to. Both raised and dropped the working mark, and a mark dropping while the chat is off screen is exactly what that bar reports as a turn having ended, so walking in and out of a WSL chat was enough to be told two of them had finished. Those repaints are now recognised as Argos’s own and end when the terminal falls quiet, however long that takes coming back from a WSL distro or a box over SSH; a chat that really is working stays marked across a resize, and whatever the CLI paints after a keystroke of yours still counts as the answer to it.'
+        ]
+      }
+    ]
   },
   {
     version: '1.15.0',
