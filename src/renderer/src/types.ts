@@ -1396,6 +1396,7 @@ export interface NotifyHookInstallResult extends NotifyHookInfo {
 declare global {
   interface Window {
     electronAPI: {
+      platform: string
       // Notifications
       notify: (title: string, body: string) => Promise<{ shown: boolean }>
       setZoom: (factor: number) => Promise<number>

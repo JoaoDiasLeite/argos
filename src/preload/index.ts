@@ -8,6 +8,10 @@ interface CcSessionTarget {
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  // For the few settings that only exist on one OS (the Explorer menu, the wording
+  // of "start at login").
+  platform: process.platform,
+
   // Notifications
   notify: (title: string, body: string) => ipcRenderer.invoke('app:notify', { title, body }),
   setZoom: (factor: number) => ipcRenderer.invoke('app:set-zoom', factor),

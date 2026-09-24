@@ -89,6 +89,8 @@ const SECTIONS: { id: SectionId; label: string; icon: JSX.Element }[] = [
   }
 ]
 
+const isWindows = window.electronAPI.platform === 'win32'
+
 export default function SettingsView({
   models,
   defaultModel,
@@ -384,7 +386,7 @@ export default function SettingsView({
                 <>
                   <section className="settings-card">
                     {toggleRow(
-                      'Start with Windows',
+                      isWindows ? 'Start with Windows' : 'Start at login',
                       'Launch Argos when you sign in.',
                       system.openAtLogin,
                       (openAtLogin) => updateSystem({ openAtLogin })
@@ -401,12 +403,13 @@ export default function SettingsView({
                       system.closeToTray,
                       (closeToTray) => updateSystem({ closeToTray })
                     )}
-                    {toggleRow(
-                      'Show ‘Open with Argos’ in the Explorer folder menu',
-                      'Adds an entry to the right-click menu for folders.',
-                      system.explorerContextMenu,
-                      (explorerContextMenu) => updateSystem({ explorerContextMenu })
-                    )}
+                    {isWindows &&
+                      toggleRow(
+                        'Show ‘Open with Argos’ in the Explorer folder menu',
+                        'Adds an entry to the right-click menu for folders.',
+                        system.explorerContextMenu,
+                        (explorerContextMenu) => updateSystem({ explorerContextMenu })
+                      )}
                   </section>
 
                   <section className="settings-card">
