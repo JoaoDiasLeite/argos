@@ -18,7 +18,15 @@ const CHANGELOG: Entry[] = [
     version: '1.15.3',
     date: '2026-09-24',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'Ctrl+click on a link in a terminal opens it in your browser. A URL printed as plain text was never recognised as a link at all, and one the CLI marked up as a link answered a click with a blocking confirmation dialog. A plain click is still the CLI’s, as it is in VS Code and Windows Terminal.',
+          'Files copied in Explorer paste into a terminal as their paths, and files dragged onto a terminal land the same way — before, both did nothing. In a WSL chat the path is the one the distro sees (`/mnt/c/…`, or its own home for a file from its share); over SSH nothing is typed, since the file is not on that machine.'
+        ]
+      }
+    ]
   },
   {
     version: '1.15.2',
