@@ -23,7 +23,8 @@ const CHANGELOG: Entry[] = [
         title: 'Features',
         items: [
           'The SSH file browser takes drag and drop: files and folders dragged in from Explorer upload into the folder you are looking at, or into a folder row you drop them on, and a row dragged onto another folder moves there.',
-          'An up arrow in the SSH file browser’s toolbar goes to the parent folder — and takes a drop too, to move or upload one level up.'
+          'An up arrow in the SSH file browser’s toolbar goes to the parent folder — and takes a drop too, to move or upload one level up.',
+          'Linux builds: every release now ships an AppImage alongside the Windows installer, and it updates itself the same way.'
         ]
       }
     ]
