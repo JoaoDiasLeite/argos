@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 /** A Claude Code conversation addressed from outside the app (see notify-hook-pure.ts). */
 interface CcSessionTarget {
@@ -416,6 +416,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // The app handles Ctrl+V itself — see renderer lib/clipboard-paste.ts for why.
   clipboardRead: () => ipcRenderer.invoke('clipboard:read'),
   clipboardWrite: (text: string) => ipcRenderer.invoke('clipboard:write', text),
+  // A dropped File's path on disk. Only the preload can ask: the renderer's File has no path.
+  pathForFile: (file: File) => webUtils.getPathForFile(file),
   clipboardImageToFile: (wslDistro?: string, remoteHostId?: string) =>
     ipcRenderer.invoke('clipboard:image-to-file', wslDistro, remoteHostId),
   fsReadText: (filePath: string) => ipcRenderer.invoke('fs:read-text', filePath),

@@ -10,6 +10,7 @@ import { TerminalAccelContext } from './terminal-accel'
 import { registerOsc52Copy } from '../lib/osc52'
 import { imagePasteRoute } from '../lib/terminal-image-paste'
 import { registerTerminalLinks } from '../lib/terminal-links'
+import { terminalPathsText } from '../lib/terminal-file-paths'
 import './ChatTerminal.css'
 
 interface Props {
@@ -319,6 +320,12 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       })
     }
 
+    /** Files — copied in Explorer, or dropped — typed out as paths the CLI can open. */
+    const pastePaths = (paths: string[]) => {
+      const text = terminalPathsText(paths, { wslDistro, remoteHostId })
+      if (text) pasteText(text)
+    }
+
     term.onData((d) => {
       // Typing into the terminal is what makes a chat "used". Reporting it when the pty
       // merely started marked every chat opened on the Terminal pane as used the instant
@@ -396,6 +403,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
             return
           }
           if (res.image) pasteImage()
+          else if (res.files) pastePaths(res.files)
         })
         return false
       }
@@ -434,6 +442,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         // on the clipboard did nothing at all, because the read only ever looked at
         // text.
         if (res.image) pasteImage()
+        else if (res.files) pastePaths(res.files)
       })
     }
     /**
@@ -460,6 +469,28 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     host.addEventListener('mouseup', swallowRightButton, true)
 
     host.addEventListener('contextmenu', onContextMenu)
+
+    // A file dragged in from Explorer is typed as its path, as Windows Terminal does.
+    // Only a drag carrying files is claimed: a chat dragged from the sidebar onto this
+    // pane is the pane grid's to answer, and has to reach it.
+    const carriesFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files')
+    const onDragOver = (e: DragEvent) => {
+      if (!carriesFiles(e)) return
+      e.preventDefault()
+      e.dataTransfer!.dropEffect = 'copy'
+    }
+    const onDrop = (e: DragEvent) => {
+      if (!carriesFiles(e)) return
+      e.preventDefault()
+      const paths = Array.from(e.dataTransfer!.files)
+        .map((f) => window.electronAPI.pathForFile(f))
+        .filter(Boolean)
+      if (!paths.length) return
+      pastePaths(paths)
+      term.focus()
+    }
+    host.addEventListener('dragover', onDragOver)
+    host.addEventListener('drop', onDrop)
 
     termRef.current = term
     fitRef.current = fit
@@ -505,6 +536,8 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer)
       window.removeEventListener('panedragend', onPaneDragEnd)
       host.removeEventListener('contextmenu', onContextMenu)
+      host.removeEventListener('dragover', onDragOver)
+      host.removeEventListener('drop', onDrop)
       host.removeEventListener('mousedown', swallowRightButton, true)
       host.removeEventListener('mouseup', swallowRightButton, true)
       // Before term.dispose(): the addon has to give its WebGL context back explicitly, and

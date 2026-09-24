@@ -4,6 +4,7 @@ import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
+import { readClipboardFiles } from './clipboard-files'
 import { resolvePolicy } from './ai-policy'
 import { getEngine } from './providers/registry'
 import { collectText } from './providers/collect'
@@ -2537,13 +2538,19 @@ ipcMain.handle('fs:read-dir', (_, dirPath: string) => {
  * Read here rather than through `navigator.clipboard` in the renderer because that
  * one needs a permission prompt this app has no way to answer, while the main
  * process can simply read it.
+ *
+ * Files copied in Explorer come back as their paths, for a terminal to type out; they
+ * carry no text of their own, so without this such a paste did nothing at all.
  */
-ipcMain.handle('clipboard:read', () => {
+ipcMain.handle('clipboard:read', async () => {
   const image = clipboard.readImage()
   if (!image.isEmpty()) {
     return { image: { mediaType: 'image/png', data: image.toPNG().toString('base64') } }
   }
-  return { text: clipboard.readText() }
+  const text = clipboard.readText()
+  if (text) return { text }
+  const files = await readClipboardFiles()
+  return files.length ? { text, files } : { text }
 })
 
 /**

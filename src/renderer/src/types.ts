@@ -1851,13 +1851,17 @@ declare global {
       readDir: (dirPath: string) => Promise<FileNode[] | { error: string }>
       readFile: (filePath: string) => Promise<{ content?: string; error?: string }>
       openFolder: (defaultPath?: string) => Promise<string | null>
-      /** What is on the clipboard: an image if there is one, else text. */
+      /** What is on the clipboard: an image if there is one, else text, else the paths
+       *  of files copied in Explorer (Windows only). */
       clipboardRead: () => Promise<{
         text?: string
         image?: { mediaType: string; data: string }
+        files?: string[]
       }>
       /** Put text on the clipboard from the main process — see the OSC 52 handler. */
       clipboardWrite: (text: string) => Promise<void>
+      /** Where a dropped file lives on disk; '' for one with no path (dragged from a page). */
+      pathForFile: (file: File) => string
       /**
        * Write the clipboard's image somewhere the terminal's CLI can open, and return
        * that path. For a WSL chat the file goes into the distro's own /tmp.
