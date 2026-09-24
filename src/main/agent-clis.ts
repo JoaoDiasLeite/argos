@@ -2,6 +2,7 @@ import { execFile, spawn } from 'child_process'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import { openLinuxTerminal } from './linux-desktop'
 import { resolveCodex, resolveGemini } from './providers/cli-resolve'
 import { JsonRpcConnection } from './providers/jsonrpc'
 
@@ -216,11 +217,8 @@ export function loginAgentCli(id: AgentCliId): { launched: boolean; command: str
         detached: true,
         stdio: 'ignore'
       })
-    } else {
-      child = spawn('x-terminal-emulator', ['-e', `bash -lc "${command}; exec bash"`], {
-        detached: true,
-        stdio: 'ignore'
-      })
+    } else if (!openLinuxTerminal(command)) {
+      return { launched: false, command }
     }
     child?.on('error', () => {
       /* swallow — caller falls back to showing the command */

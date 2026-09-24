@@ -5,6 +5,7 @@ import * as path from 'path'
 import * as os from 'os'
 import { readJsonFile } from './json-file'
 import { checkCodexStatus } from './agent-clis'
+import { openLinuxTerminal } from './linux-desktop'
 
 /**
  * Multi-account support for Codex and Gemini logins — the Codex/Gemini analog of
@@ -270,11 +271,9 @@ function launchLoginTerminal(
       const prefix = Object.entries(envOverride)
         .map(([k, v]) => `${k}='${v}' `)
         .join('')
-      const full = `${prefix}${command}`
-      child = spawn('x-terminal-emulator', ['-e', `bash -lc "${full}; exec bash"`], {
-        detached: true,
-        stdio: 'ignore'
-      })
+      if (!openLinuxTerminal(`${prefix}${command}`)) {
+        return { launched: false, command: `${prefix}${command}` }
+      }
     }
     child?.on('error', () => {
       /* swallow — caller falls back to showing the command */

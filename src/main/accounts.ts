@@ -4,6 +4,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { readJsonFile } from './json-file'
+import { openLinuxTerminal } from './linux-desktop'
 
 /**
  * Multi-account support for Claude Code subscription logins.
@@ -281,11 +282,7 @@ export function loginAccount(id: string): { launched: boolean; command: string }
       })
     } else {
       command = `CLAUDE_CONFIG_DIR='${dir}' '${claudeBin}'`
-      // Best-effort: try a common terminal emulator.
-      child = spawn('x-terminal-emulator', ['-e', `bash -lc "${command}; exec bash"`], {
-        detached: true,
-        stdio: 'ignore'
-      })
+      if (!openLinuxTerminal(command)) return { launched: false, command }
     }
     child?.on('error', () => {
       /* swallow — caller falls back to showing the command */
