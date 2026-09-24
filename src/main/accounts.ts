@@ -225,6 +225,8 @@ export function resolveClaudeBin(): string {
     }
   } else {
     candidates.push(
+      // The native installer's location, then npm's documented global prefix.
+      path.join(os.homedir(), '.local', 'bin', 'claude'),
       path.join(os.homedir(), '.npm-global', 'bin', 'claude'),
       '/usr/local/bin/claude',
       '/opt/homebrew/bin/claude'

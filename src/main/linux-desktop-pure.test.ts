@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { terminalCandidates } from './linux-desktop-pure'
+import { terminalCandidates, userBinDirs, withPathDirs } from './linux-desktop-pure'
 
 describe('terminalCandidates', () => {
   const run = ['bash', '-lc', "claude login; exec bash"]
@@ -29,5 +29,32 @@ describe('terminalCandidates', () => {
   it('keeps the whole script as one argument, so quotes in it survive', () => {
     const [first] = terminalCandidates(`CLAUDE_CONFIG_DIR='/home/joão/a b' 'claude'`)
     expect(first.args[2]).toBe(`CLAUDE_CONFIG_DIR='/home/joão/a b' 'claude'; exec bash`)
+  })
+})
+
+describe('userBinDirs', () => {
+  it('covers the native claude install, mise shims and the npm global prefix', () => {
+    expect(userBinDirs('/home/me')).toEqual([
+      '/home/me/.local/bin',
+      '/home/me/.local/share/mise/shims',
+      '/home/me/.npm-global/bin'
+    ])
+  })
+
+  it('follows XDG_DATA_HOME for mise', () => {
+    expect(userBinDirs('/home/me', '/data')).toContain('/data/mise/shims')
+  })
+})
+
+describe('withPathDirs', () => {
+  it('appends only the dirs PATH lacks, after the existing ones', () => {
+    expect(withPathDirs('/usr/bin:/home/me/.local/bin', ['/home/me/.local/bin', '/x'])).toBe(
+      '/usr/bin:/home/me/.local/bin:/x'
+    )
+  })
+
+  it('copes with an unset PATH and stray empty entries', () => {
+    expect(withPathDirs(undefined, ['/x'])).toBe('/x')
+    expect(withPathDirs('/a::/b:', ['/b'])).toBe('/a:/b')
   })
 })

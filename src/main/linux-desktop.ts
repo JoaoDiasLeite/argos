@@ -1,7 +1,8 @@
 import { spawn } from 'child_process'
 import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
-import { terminalCandidates } from './linux-desktop-pure'
+import { terminalCandidates, userBinDirs, withPathDirs } from './linux-desktop-pure'
 
 function isExecutable(file: string): boolean {
   try {
@@ -32,4 +33,18 @@ export function openLinuxTerminal(script: string): boolean {
   })
   child.unref()
   return true
+}
+
+/**
+ * Add the usual user bin dirs to this process's PATH, so every CLI Argos spawns —
+ * the SDK's claude, codex, gemini, the terminals' shells — resolves the same as it
+ * would from the user's own shell. Linux only: Windows resolves through APPDATA and
+ * the registry PATH, which a GUI launch already has.
+ */
+export function extendLinuxPath(): void {
+  if (process.platform !== 'linux') return
+  process.env.PATH = withPathDirs(
+    process.env.PATH,
+    userBinDirs(os.homedir(), process.env.XDG_DATA_HOME)
+  )
 }

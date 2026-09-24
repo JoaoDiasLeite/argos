@@ -218,6 +218,7 @@ import {
   LaunchAction
 } from './shell-integration'
 import { refreshJumpList } from './jumplist'
+import { extendLinuxPath } from './linux-desktop'
 import { readJsonFile } from './json-file'
 import {
   PROTOCOL,
@@ -237,6 +238,10 @@ import {
   runNotifyShow,
   showHookNotification
 } from './notify-hook'
+
+// Before anything spawns a CLI: a desktop launcher hands Linux apps the session PATH,
+// which often lacks where claude, codex and gemini are installed.
+extendLinuxPath()
 
 let mainWindow: BrowserWindow | null = null
 // True once the user (or OS) actually intends to exit — lets the close handler
