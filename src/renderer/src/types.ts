@@ -1804,7 +1804,11 @@ declare global {
         hostId: string,
         p: string
       ) => Promise<{ ok: boolean; savedTo?: string; canceled?: boolean; error?: string }>
-      sftpUpload: (hostId: string, dir: string) => Promise<{ ok: boolean; uploaded?: string[]; error?: string }>
+      sftpUpload: (
+        hostId: string,
+        dir: string,
+        localPaths?: string[]
+      ) => Promise<{ ok: boolean; uploaded?: string[]; error?: string }>
       sftpHistory: (hostId: string) => Promise<{ ok: boolean; commands?: string[]; error?: string }>
       sftpDisconnect: (hostId: string) => Promise<{ ok: boolean }>
 

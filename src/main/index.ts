@@ -1328,7 +1328,9 @@ ipcMain.handle('sftp:mkdir', (_, hostId: string, dir: string) => sftpMkdir(hostI
 ipcMain.handle('sftp:rename', (_, hostId: string, from: string, to: string) => sftpRename(hostId, from, to))
 ipcMain.handle('sftp:delete', (_, hostId: string, p: string) => sftpDelete(hostId, p))
 ipcMain.handle('sftp:download', (_, hostId: string, p: string) => sftpDownload(hostId, p))
-ipcMain.handle('sftp:upload', (_, hostId: string, dir: string) => sftpUpload(hostId, dir))
+ipcMain.handle('sftp:upload', (_, hostId: string, dir: string, localPaths?: string[]) =>
+  sftpUpload(hostId, dir, localPaths)
+)
 ipcMain.handle('sftp:history', (_, hostId: string) => sftpHistory(hostId))
 ipcMain.handle('sftp:disconnect', (_, hostId: string) => sftpDisconnect(hostId))
 

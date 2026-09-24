@@ -373,7 +373,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('sftp:rename', hostId, from, to),
   sftpDelete: (hostId: string, p: string) => ipcRenderer.invoke('sftp:delete', hostId, p),
   sftpDownload: (hostId: string, p: string) => ipcRenderer.invoke('sftp:download', hostId, p),
-  sftpUpload: (hostId: string, dir: string) => ipcRenderer.invoke('sftp:upload', hostId, dir),
+  sftpUpload: (hostId: string, dir: string, localPaths?: string[]) =>
+    ipcRenderer.invoke('sftp:upload', hostId, dir, localPaths),
   sftpHistory: (hostId: string) => ipcRenderer.invoke('sftp:history', hostId),
   sftpDisconnect: (hostId: string) => ipcRenderer.invoke('sftp:disconnect', hostId),
 

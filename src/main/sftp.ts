@@ -1,4 +1,5 @@
 import { dialog } from 'electron'
+import { promises as fsp } from 'fs'
 import * as path from 'path'
 import { Client, SFTPWrapper, Stats } from 'ssh2'
 import { getHost, buildConnectConfig } from './ssh'
@@ -260,28 +261,53 @@ export async function sftpDownload(
   })
 }
 
+// Puts a local file, or a local folder and everything under it, at `remote`. A folder that
+// already exists remotely is merged into rather than treated as a failure.
+async function putRecursive(sftp: SFTPWrapper, local: string, remote: string): Promise<boolean> {
+  const st = await fsp.stat(local).catch(() => null)
+  if (!st) return false
+  if (!st.isDirectory()) {
+    return new Promise((resolve) => sftp.fastPut(local, remote, (err) => resolve(!err)))
+  }
+  await new Promise<void>((resolve) => sftp.mkdir(remote, () => resolve()))
+  const names = await fsp.readdir(local).catch(() => null)
+  if (!names) return false
+  let ok = true
+  for (const name of names) {
+    if (!(await putRecursive(sftp, path.join(local, name), path.posix.join(remote, name)))) ok = false
+  }
+  return ok
+}
+
+// Uploads `localPaths` (files or folders dropped onto the browser) into `remoteDir`, or asks
+// for files with an open dialog when none are given.
 export async function sftpUpload(
   hostId: string,
-  remoteDir: string
+  remoteDir: string,
+  localPaths?: string[]
 ): Promise<{ ok: boolean; uploaded?: string[]; error?: string }> {
   if (!isSafeRemotePath(remoteDir)) return { ok: false, error: 'Invalid remote path' }
   const res = await getSession(hostId)
   if (!res.ok) return { ok: false, error: res.error }
 
-  const dlg = await dialog.showOpenDialog({
-    title: 'Upload files',
-    properties: ['openFile', 'multiSelections']
-  })
-  if (dlg.canceled || dlg.filePaths.length === 0) return { ok: true, uploaded: [] }
+  let locals = localPaths ?? []
+  if (!localPaths) {
+    const dlg = await dialog.showOpenDialog({
+      title: 'Upload files',
+      properties: ['openFile', 'multiSelections']
+    })
+    if (dlg.canceled || dlg.filePaths.length === 0) return { ok: true, uploaded: [] }
+    locals = dlg.filePaths
+  }
 
   const uploaded: string[] = []
-  for (const local of dlg.filePaths) {
+  const failed: string[] = []
+  for (const local of locals) {
     const remote = path.posix.join(remoteDir, path.basename(local))
-    const ok = await new Promise<boolean>((resolve) => {
-      res.session.sftp.fastPut(local, remote, (err) => resolve(!err))
-    })
-    if (ok) uploaded.push(remote)
+    if (await putRecursive(res.session.sftp, local, remote)) uploaded.push(remote)
+    else failed.push(path.basename(local))
   }
+  if (failed.length > 0) return { ok: false, uploaded, error: `Upload failed: ${failed.join(', ')}` }
   return { ok: true, uploaded }
 }
 

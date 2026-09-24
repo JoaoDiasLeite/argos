@@ -18,6 +18,18 @@ function posixJoin(dir: string, name: string): string {
   return dir === '/' ? `/${name}` : `${dir}/${name}`
 }
 
+function posixDirname(p: string): string {
+  const i = p.lastIndexOf('/')
+  return i <= 0 ? '/' : p.slice(0, i)
+}
+
+function posixBasename(p: string): string {
+  return p.slice(p.lastIndexOf('/') + 1)
+}
+
+/** dataTransfer type carrying the remote path of a row being dragged within the browser. */
+const ROW_DRAG_TYPE = 'application/x-argos-sftp-path'
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   const units = ['KB', 'MB', 'GB', 'TB']
@@ -75,6 +87,11 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
   const [newFolderName, setNewFolderName] = useState('')
   const [creatingFile, setCreatingFile] = useState(false)
   const [newFileName, setNewFileName] = useState('')
+  /** Directory a drag is currently hovering — the list itself (cwd), a folder row, or the parent. */
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+
+  const parent = cwd === '/' ? null : posixDirname(cwd)
 
   const load = async () => {
     setLoading(true)
@@ -177,9 +194,59 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
     }
   }
 
+  // Files from the OS are uploaded into `dir`; a row dragged from this list is moved there.
+  const dropInto = async (e: React.DragEvent, dir: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDropTarget(null)
+    const moved = e.dataTransfer.getData(ROW_DRAG_TYPE)
+    if (moved) {
+      // Dropping onto its own folder, onto itself, or into its own subtree is a no-op.
+      if (posixDirname(moved) === dir || dir === moved || dir.startsWith(`${moved}/`)) return
+      setBusyPath(moved)
+      const res = await window.electronAPI.sftpRename(hostId, moved, posixJoin(dir, posixBasename(moved)))
+      setBusyPath(null)
+      if (res.ok) load()
+      else setError(res.error || 'Move failed')
+      return
+    }
+    const paths = Array.from(e.dataTransfer.files)
+      .map((f) => window.electronAPI.pathForFile(f))
+      .filter(Boolean)
+    if (paths.length === 0) return
+    setUploading(true)
+    setError(null)
+    const res = await window.electronAPI.sftpUpload(hostId, dir, paths)
+    setUploading(false)
+    if (!res.ok) setError(res.error || 'Upload failed')
+    if (dir === cwd && res.uploaded && res.uploaded.length > 0) load()
+  }
+
+  const dragOver = (e: React.DragEvent, dir: string) => {
+    const types = e.dataTransfer.types
+    if (!types.includes('Files') && !types.includes(ROW_DRAG_TYPE)) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = types.includes(ROW_DRAG_TYPE) ? 'move' : 'copy'
+    if (dropTarget !== dir) setDropTarget(dir)
+  }
+
   return (
     <div className="sftp-browser">
       <div className="sftp-toolbar">
+        <button
+          className={`sftp-toolbar-btn ${parent && dropTarget === parent ? 'drop-target' : ''}`}
+          onClick={() => parent && onNavigate(parent)}
+          onDragOver={(e) => parent && dragOver(e, parent)}
+          onDragLeave={() => setDropTarget(null)}
+          onDrop={(e) => parent && dropInto(e, parent)}
+          title="Up to parent folder"
+          disabled={!parent}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
+          </svg>
+        </button>
         <button className="sftp-toolbar-btn" onClick={load} title="Refresh" disabled={loading}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
@@ -259,12 +326,32 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
       )}
 
       {error && <div className="sftp-error">{error}</div>}
+      {uploading && <div className="sftp-status">Uploading…</div>}
 
-      <div className="sftp-list">
+      <div
+        className={`sftp-list ${dropTarget === cwd ? 'drop-target' : ''}`}
+        onDragOver={(e) => dragOver(e, cwd)}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null)
+        }}
+        onDrop={(e) => dropInto(e, cwd)}
+      >
         {loading && entries.length === 0 && <div className="view-empty small">Loading…</div>}
         {!loading && entries.length === 0 && !error && <div className="view-empty small">Empty directory.</div>}
         {entries.map((entry) => (
-          <div key={entry.path} className={`sftp-row ${busyPath === entry.path ? 'busy' : ''}`}>
+          <div
+            key={entry.path}
+            className={`sftp-row ${busyPath === entry.path ? 'busy' : ''} ${
+              dropTarget === entry.path ? 'drop-target' : ''
+            }`}
+            draggable={renaming?.path !== entry.path}
+            onDragStart={(e) => {
+              e.dataTransfer.setData(ROW_DRAG_TYPE, entry.path)
+              e.dataTransfer.effectAllowed = 'move'
+            }}
+            onDragOver={entry.type === 'directory' ? (e) => dragOver(e, entry.path) : undefined}
+            onDrop={entry.type === 'directory' ? (e) => dropInto(e, entry.path) : undefined}
+          >
             {renaming?.path === entry.path ? (
               <input
                 className="text-input mono sftp-rename-input"
