@@ -1,6 +1,7 @@
 import { app, Notification } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
+import { updaterLogger } from './updater-log'
 
 // Auto-update via electron-updater, backed by GitHub Releases (see the "publish"
 // block in package.json). Kept as its own module so index.ts just wires it up.
@@ -47,6 +48,14 @@ export function initUpdater(notifyFn: (channel: string, payload: unknown) => voi
   }
 
   state.state = 'idle'
+
+  autoUpdater.logger = updaterLogger
+  // Enough to read a report without asking which build it came from. On Linux the
+  // update replaces the AppImage file itself, so where that file lives matters too.
+  updaterLogger.info(
+    `Argos ${app.getVersion()} on ${process.platform}-${process.arch}` +
+      (process.env.APPIMAGE ? ` (AppImage ${process.env.APPIMAGE})` : '')
+  )
 
   autoUpdater.on('checking-for-update', () => {
     state.state = 'checking'
