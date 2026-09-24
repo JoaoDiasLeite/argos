@@ -359,6 +359,21 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       if (sel) navigator.clipboard.writeText(sel).catch(() => {})
     })
     term.attachCustomKeyEventHandler((e) => {
+      // Shift+Enter is a newline in the prompt, not a submit. xterm sends a bare \r for
+      // Enter whatever the modifiers, so the CLI never learns Shift was held and submits.
+      // Ctrl+J (\n) is the newline key all three CLIs accept in any terminal, so that is
+      // what gets sent. A plain shell has no multi-line prompt, so it keeps Enter as is.
+      // The keypress is swallowed too: preventDefault alone left xterm's own keypress
+      // path free to send the \r on top.
+      const shiftEnter = e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey
+      if (shiftEnter && autoLaunchCli && !e.isComposing) {
+        if (e.type === 'keydown') {
+          e.preventDefault()
+          onActiveRef.current?.()
+          window.electronAPI.terminalWrite(idRef.current, '\n')
+        }
+        return false
+      }
       if (e.type !== 'keydown') return true
       const mod = e.ctrlKey || e.metaKey
       if (mod && e.key.toLowerCase() === 'c' && term.hasSelection()) {
