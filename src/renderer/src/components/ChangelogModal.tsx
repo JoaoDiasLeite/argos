@@ -18,7 +18,14 @@ const CHANGELOG: Entry[] = [
     version: '1.16.1',
     date: '2026-09-24',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Improvements',
+        items: [
+          'Updates keep a log. Every check, download and install — and every error, with its full message — is written to `logs/updater.log` in Argos’s data folder (`%APPDATA%\\argos` on Windows, `~/.config/argos` on Linux). Until now a failed update left no trace outside the one-line status in Settings.'
+        ]
+      }
+    ]
   },
   {
     version: '1.16.0',
