@@ -24,6 +24,12 @@ const CHANGELOG: Entry[] = [
         items: [
           'Updates keep a log. Every check, download and install — and every error, with its full message — is written to `logs/updater.log` in Argos’s data folder (`%APPDATA%\\argos` on Windows, `~/.config/argos` on Linux). Until now a failed update left no trace outside the one-line status in Settings.'
         ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'Shift+Enter in a terminal chat starts a new line instead of sending the message. The terminal sent the same keystroke for Enter and Shift+Enter, so the CLI could not tell them apart.'
+        ]
       }
     ]
   },
