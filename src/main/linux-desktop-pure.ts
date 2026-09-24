@@ -2,8 +2,9 @@ import * as path from 'path'
 
 /**
  * Pure helpers for the Linux desktop: which terminal emulator to open a login in,
- * and which user bin dirs a launcher-started app is missing from PATH. No fs or
- * process access here — linux-desktop.ts feeds the environment in.
+ * which user bin dirs a launcher-started app is missing from PATH, and how to write
+ * the XDG autostart entry. No fs or process access here — linux-desktop.ts feeds the
+ * environment in.
  */
 
 type ArgvStyle = 'direct' | 'dash-e' | 'double-dash' | 'wezterm'
@@ -81,4 +82,29 @@ export function withPathDirs(current: string | undefined, extra: string[]): stri
     if (!dirs.includes(dir)) dirs.push(dir)
   }
   return dirs.join(':')
+}
+
+// Desktop Entry spec: an Exec argument containing a reserved character is wrapped in
+// double quotes, and inside them `"`, `` ` ``, `$` and `\` are backslash-escaped. A
+// literal `%` is `%%` (a bare one starts a field code).
+function quoteExecArg(arg: string): string {
+  const escaped = arg.replace(/%/g, '%%')
+  if (!/[\s"'\\><~|&;$*?#()`]/.test(escaped)) return escaped
+  return `"${escaped.replace(/(["`$\\])/g, '\\$1')}"`
+}
+
+/** The XDG autostart entry that launches `exe` with `args` at login. */
+export function autostartDesktopEntry(exe: string, args: string[]): string {
+  // The file's string-value escaping runs before the Exec quoting is read, so every
+  // backslash the quoting produced has to be doubled once more to survive it.
+  const exec = [exe, ...args].map(quoteExecArg).join(' ').replace(/\\/g, '\\\\')
+  return [
+    '[Desktop Entry]',
+    'Type=Application',
+    'Name=Argos',
+    `Exec=${exec}`,
+    'Terminal=false',
+    'X-GNOME-Autostart-enabled=true',
+    ''
+  ].join('\n')
 }

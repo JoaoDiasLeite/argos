@@ -218,7 +218,7 @@ import {
   LaunchAction
 } from './shell-integration'
 import { refreshJumpList } from './jumplist'
-import { extendLinuxPath } from './linux-desktop'
+import { extendLinuxPath, setOpenAtLogin } from './linux-desktop'
 import { readJsonFile } from './json-file'
 import {
   PROTOCOL,
@@ -647,15 +647,13 @@ app.whenReady().then(async () => {
       sendToMainWindow('app:open-view', 'usage')
     }
   })
-  // Keep the Windows registry "run at login" entry in sync with config on every
-  // startup (covers the case where it was changed outside this app, or the app
-  // was reinstalled). Skipped in dev — electron.exe as the login target would
-  // pollute the registry with a path that's meaningless outside this checkout.
+  // Keep the "run at login" entry (Windows registry, or the XDG autostart file on
+  // Linux) in sync with config on every startup (covers the case where it was
+  // changed outside this app, or the app was reinstalled or updated to a new
+  // path). Skipped in dev — electron as the login target would register a path
+  // that's meaningless outside this checkout.
   if (!is.dev) {
-    app.setLoginItemSettings({
-      openAtLogin: getConfig().system.openAtLogin,
-      args: ['--hidden']
-    })
+    setOpenAtLogin(getConfig().system.openAtLogin, ['--hidden'])
   }
   // Safety net: if startup visibility logic above skipped show() but the tray
   // failed to materialize (or is still spinning up), never strand the user with
@@ -1418,10 +1416,10 @@ ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
     void setExplorerContextMenu(system.explorerContextMenu)
   }
 
-  // Only touch the registry when the pref actually changed, and never in dev (see
+  // Only touch the login entry when the pref actually changed, and never in dev (see
   // the startup call for why: electron.exe isn't a meaningful login target there).
   if (!is.dev && prefs.openAtLogin !== undefined && prefs.openAtLogin !== prevOpenAtLogin) {
-    app.setLoginItemSettings({ openAtLogin: system.openAtLogin, args: ['--hidden'] })
+    setOpenAtLogin(system.openAtLogin, ['--hidden'])
   }
 
   // Re-register the global shortcut only when it changed, and reflect the winner

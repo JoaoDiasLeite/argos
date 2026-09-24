@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { terminalCandidates, userBinDirs, withPathDirs } from './linux-desktop-pure'
+import {
+  autostartDesktopEntry,
+  terminalCandidates,
+  userBinDirs,
+  withPathDirs
+} from './linux-desktop-pure'
 
 describe('terminalCandidates', () => {
   const run = ['bash', '-lc', "claude login; exec bash"]
@@ -56,5 +61,32 @@ describe('withPathDirs', () => {
   it('copes with an unset PATH and stray empty entries', () => {
     expect(withPathDirs(undefined, ['/x'])).toBe('/x')
     expect(withPathDirs('/a::/b:', ['/b'])).toBe('/a:/b')
+  })
+})
+
+describe('autostartDesktopEntry', () => {
+  const execLine = (text: string): string | undefined =>
+    text.split('\n').find((l) => l.startsWith('Exec='))
+
+  it('writes a plain path and args bare', () => {
+    expect(execLine(autostartDesktopEntry('/home/me/.local/bin/argos.AppImage', ['--hidden']))).toBe(
+      'Exec=/home/me/.local/bin/argos.AppImage --hidden'
+    )
+  })
+
+  it('quotes a path with spaces, leaving non-ASCII alone', () => {
+    expect(execLine(autostartDesktopEntry('/home/joão/My Apps/Argos.AppImage', []))).toBe(
+      'Exec="/home/joão/My Apps/Argos.AppImage"'
+    )
+  })
+
+  it('escapes $ inside quotes and doubles the backslash for the string pass', () => {
+    // Quoting turns $x into \$x; the file's own string escaping then doubles that
+    // backslash, so the line on disk reads \\$x.
+    expect(execLine(autostartDesktopEntry('/a b/$x', []))).toBe(String.raw`Exec="/a b/\\$x"`)
+  })
+
+  it('turns a literal % into %%', () => {
+    expect(execLine(autostartDesktopEntry('/opt/100%/argos', []))).toBe('Exec=/opt/100%%/argos')
   })
 })

@@ -1,8 +1,14 @@
+import { app } from 'electron'
 import { spawn } from 'child_process'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { terminalCandidates, userBinDirs, withPathDirs } from './linux-desktop-pure'
+import {
+  autostartDesktopEntry,
+  terminalCandidates,
+  userBinDirs,
+  withPathDirs
+} from './linux-desktop-pure'
 
 function isExecutable(file: string): boolean {
   try {
@@ -47,4 +53,35 @@ export function extendLinuxPath(): void {
     process.env.PATH,
     userBinDirs(os.homedir(), process.env.XDG_DATA_HOME)
   )
+}
+
+function autostartFile(): string {
+  const configHome = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config')
+  return path.join(configHome, 'autostart', 'argos.desktop')
+}
+
+/**
+ * Start Argos at login with `args`. Electron's setLoginItemSettings only covers
+ * Windows and macOS, so on Linux this writes (or removes) an XDG autostart entry.
+ * Inside an AppImage `process.execPath` is a mount that vanishes on exit; the
+ * AppImage file itself is in $APPIMAGE. Rewritten on every startup, which also
+ * follows the file if an update renamed it.
+ */
+export function setOpenAtLogin(openAtLogin: boolean, args: string[]): void {
+  if (process.platform !== 'linux') {
+    app.setLoginItemSettings({ openAtLogin, args })
+    return
+  }
+  const file = autostartFile()
+  try {
+    if (openAtLogin) {
+      const exe = process.env.APPIMAGE || process.execPath
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(file, autostartDesktopEntry(exe, args))
+    } else {
+      fs.rmSync(file, { force: true })
+    }
+  } catch {
+    /* an unwritable autostart dir only costs the preference — never crash startup */
+  }
 }
