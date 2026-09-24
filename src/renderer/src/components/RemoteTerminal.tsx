@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css'
 import { TERMINAL_THEME } from './terminal-theme'
 import TerminalContextMenu, { terminalMenuItems } from './TerminalContextMenu'
 import { registerOsc52Copy } from '../lib/osc52'
+import { registerTerminalLinks } from '../lib/terminal-links'
 import './ChatTerminal.css'
 
 interface Props {
@@ -88,6 +89,7 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
     // Windows interop, or anything over SSH) asks the terminal to copy for it. See
     // lib/osc52.ts.
     registerOsc52Copy(term)
+    registerTerminalLinks(term)
 
     // Copy-on-select (like most native terminals), plus explicit Ctrl/Cmd+C when there's a
     // selection — xterm only forwards raw keystrokes as shell input by default.

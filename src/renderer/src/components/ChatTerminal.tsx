@@ -9,6 +9,7 @@ import TerminalContextMenu, { terminalMenuItems } from './TerminalContextMenu'
 import { TerminalAccelContext } from './terminal-accel'
 import { registerOsc52Copy } from '../lib/osc52'
 import { imagePasteRoute } from '../lib/terminal-image-paste'
+import { registerTerminalLinks } from '../lib/terminal-links'
 import './ChatTerminal.css'
 
 interface Props {
@@ -330,6 +331,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     // Windows interop, or anything over SSH) asks the terminal to copy for it. See
     // lib/osc52.ts.
     registerOsc52Copy(term)
+    registerTerminalLinks(term)
 
     // Copy-on-select (like most native terminals), plus explicit Ctrl/Cmd+C when there's a
     // selection — xterm only forwards raw keystrokes as PTY input by default.
