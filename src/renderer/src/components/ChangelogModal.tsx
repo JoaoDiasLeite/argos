@@ -24,7 +24,8 @@ const CHANGELOG: Entry[] = [
         items: [
           'The SSH file browser takes drag and drop: files and folders dragged in from Explorer upload into the folder you are looking at, or into a folder row you drop them on, and a row dragged onto another folder moves there.',
           'An up arrow in the SSH file browser’s toolbar goes to the parent folder — and takes a drop too, to move or upload one level up.',
-          'Linux builds: every release now ships an AppImage alongside the Windows installer, and it updates itself the same way.'
+          'Linux builds: every release now ships an AppImage alongside the Windows installer, and it updates itself the same way.',
+          'On Linux, signing in to an account opens your own terminal — whatever `xdg-terminal-exec` or `$TERMINAL` names, or the first common emulator installed — instead of one only Debian ships; Argos finds claude, codex and gemini in `~/.local/bin` and mise’s shims even when started from the app launcher; and “Open at login” writes an autostart entry that actually takes effect.'
         ]
       }
     ]
