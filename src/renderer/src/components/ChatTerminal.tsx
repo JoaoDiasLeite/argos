@@ -321,8 +321,11 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     }
 
     /** Files — copied in Explorer, or dropped — typed out as paths the CLI can open. */
-    const pastePaths = (paths: string[]) => {
-      const text = terminalPathsText(paths, { wslDistro, remoteHostId })
+    const pastePaths = async (paths: string[]) => {
+      // A distro names Windows paths its own way; ask it rather than assume /mnt.
+      const linux =
+        wslDistro && !remoteHostId ? await window.electronAPI.wslToLinuxPaths(wslDistro, paths) : undefined
+      const text = terminalPathsText(paths, { wslDistro, remoteHostId }, linux)
       if (text) pasteText(text)
     }
 
@@ -486,7 +489,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         .map((f) => window.electronAPI.pathForFile(f))
         .filter(Boolean)
       if (!paths.length) return
-      pastePaths(paths)
+      void pastePaths(paths)
       term.focus()
     }
     host.addEventListener('dragover', onDragOver)

@@ -134,7 +134,7 @@ import {
   remoteShellKill,
   remoteShellKillAll
 } from './remote-shell'
-import { listDistros, testDistro, testDistroClaude, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory, listWslDriveMap, wslClipboardImageCapable } from './wsl'
+import { listDistros, testDistro, testDistroClaude, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
 import { attributionFor, forgetSession as forgetAuthorship, recordToolUse } from './authorship'
 import { posixToWslUnc } from './local-fs-pure'
@@ -1344,6 +1344,7 @@ ipcMain.handle('wsl:drive-map', () => listWslDriveMap())
 // Asked when a WSL terminal opens, not when something is pasted into it: the probe boots
 // the distro if it is cold, and a paste should never wait on that. See wsl.ts.
 ipcMain.handle('wsl:clipboard-image-capable', (_, distro: string) => wslClipboardImageCapable(distro))
+ipcMain.handle('wsl:to-linux-paths', (_, distro: string, paths: string[]) => wslToLinuxPaths(distro, paths))
 
 // ─── Rooms (persisted board layout) ───────────────────────────────────────────
 

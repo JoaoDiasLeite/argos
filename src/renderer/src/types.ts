@@ -1823,6 +1823,9 @@ declare global {
        * lib/terminal-image-paste.ts.
        */
       wslClipboardImageCapable: (distro: string) => Promise<boolean>
+      /** Windows paths as the distro names them (its own `wslpath`), null per path it
+       *  cannot reach; null overall when the distro could not be asked. */
+      wslToLinuxPaths: (distro: string, paths: string[]) => Promise<(string | null)[] | null>
 
       // Rooms (persisted board layout: room order + custom names)
       roomsGetLayout: () => Promise<RoomsLayout>

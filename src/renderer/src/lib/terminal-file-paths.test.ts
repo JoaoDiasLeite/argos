@@ -28,7 +28,27 @@ describe('terminalPathFor', () => {
   })
 })
 
+describe("terminalPathFor with the distro's answer", () => {
+  const env = { wslDistro: 'Ubuntu' }
+
+  it('uses what the distro says, wherever it mounts its drives', () => {
+    expect(terminalPathFor('C:\\dev\\a b.png', env, '/c/dev/a b.png')).toBe("'/c/dev/a b.png'")
+  })
+
+  it('types nothing for a path the distro cannot reach', () => {
+    expect(terminalPathFor('D:\\x', env, null)).toBeNull()
+  })
+
+  it("never asks about another distro's share", () => {
+    expect(terminalPathFor('\\\\wsl.localhost\\Debian\\home', env, '-DevOps/home')).toBeNull()
+  })
+})
+
 describe('terminalPathsText', () => {
+  it('pairs each path with its answer', () => {
+    expect(terminalPathsText(['C:\\a', 'D:\\b'], { wslDistro: 'Ubuntu' }, ['/c/a', null])).toBe('/c/a ')
+  })
+
   it('joins what can be reached, with a trailing space', () => {
     expect(terminalPathsText(['C:\\a', 'C:\\b c'], {})).toBe('C:\\a "C:\\b c" ')
     expect(terminalPathsText(['C:\\a'], { remoteHostId: 'h1' })).toBe('')

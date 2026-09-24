@@ -387,6 +387,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   wslDriveMap: () => ipcRenderer.invoke('wsl:drive-map'),
   wslClipboardImageCapable: (distro: string) =>
     ipcRenderer.invoke('wsl:clipboard-image-capable', distro),
+  wslToLinuxPaths: (distro: string, paths: string[]) =>
+    ipcRenderer.invoke('wsl:to-linux-paths', distro, paths),
 
   // Rooms (persisted board layout: room order + custom names)
   roomsGetLayout: () => ipcRenderer.invoke('rooms:get-layout'),

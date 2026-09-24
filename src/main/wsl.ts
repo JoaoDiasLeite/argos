@@ -507,6 +507,33 @@ export async function wslHistory(distro: string): Promise<{ ok: boolean; command
   return { ok: true, commands: [] }
 }
 
+/**
+ * Windows paths as `distro` names them, in the same order — null for one it cannot reach
+ * (a drive it has not mounted). Null for the whole call when the distro could not be
+ * asked, so the caller can fall back to its own reading.
+ *
+ * The distro's own `wslpath` answers rather than a `/mnt/<letter>` rule of ours, because
+ * where drives are mounted is the distro's choice: `[automount] root` in its wsl.conf
+ * moves them, and only the distro knows. One spawn for every path, and `-e` rather than
+ * `--`, which hands the command line to the login shell and loses the quoting.
+ */
+export function wslToLinuxPaths(distro: string, paths: string[]): Promise<(string | null)[] | null> {
+  if (!isWindows || !paths.length) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    execFile(
+      'wsl.exe',
+      ['-d', distro, '-e', 'sh', '-c', 'for p; do wslpath -u "$p" 2>/dev/null || echo; done', 'sh', ...paths],
+      // Generous, like the other probes: a cold distro has to boot first.
+      { encoding: 'utf8', windowsHide: true, timeout: 20000 },
+      (err, stdout) => {
+        const lines = String(stdout ?? '').split('\n')
+        if (err || lines.length < paths.length) return resolve(null)
+        resolve(paths.map((_, i) => lines[i] || null))
+      }
+    )
+  })
+}
+
 /** Convert a \\wsl.localhost\<distro>\home\… (or \\wsl$\…) UNC path to its Linux path. */
 export function uncToWslPath(p: string | undefined): string | null {
   if (!p) return null
