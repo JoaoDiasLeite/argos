@@ -1,10 +1,12 @@
-# Builds the Windows installer and publishes it to GitHub Releases whenever a
-# version tag (v0.3.0, v1.0.0, …) is pushed. The tag must match the "version"
-# in package.json — latest.yml is generated from package.json.
+# Builds the Windows installer and the Linux AppImage and publishes them to
+# GitHub Releases whenever a version tag (v0.3.0, v1.0.0, …) is pushed. The tag
+# must match the "version" in package.json — latest.yml and latest-linux.yml
+# (the auto-update feeds) are generated from package.json.
 #
 # electron-builder runs with --publish never: its own GitHub publisher races
-# parallel asset uploads and creates duplicate releases. A single
-# action-gh-release step uploads everything to one release instead.
+# parallel asset uploads and creates duplicate releases. Each OS builds in its
+# own job and hands its files over as a workflow artifact; a single
+# action-gh-release step then uploads everything to one release.
 name: Release
 
 on:
@@ -16,8 +18,20 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: windows-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            files: |
+              release/*.exe
+              release/*.blockmap
+              release/latest.yml
+          - os: ubuntu-latest
+            files: |
+              release/*.AppImage
+              release/latest-linux.yml
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -31,10 +45,22 @@ jobs:
       - name: Build installer
         run: npm run package -- --publish never
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            release/*.exe
-            release/*.blockmap
-            release/latest.yml
+          files: release/*
