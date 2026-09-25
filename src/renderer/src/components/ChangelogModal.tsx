@@ -15,6 +15,20 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '1.16.2',
+    date: '2026-09-25',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'Chats no longer show up as “finished” in the pending bar when nothing ran. Opening a chat, or leaving it, told its CLI the terminal had gained or lost focus, and the redraw that followed was taken for a turn — so a notification you had just opened could come straight back.',
+          'Clicking into a blank new chat no longer counts as using it, so an untouched draft can still be reused instead of staying in the sidebar.'
+        ]
+      }
+    ]
+  },
+  {
     version: '1.16.1',
     date: '2026-09-24',
     tag: 'latest',
