@@ -8,7 +8,7 @@ import { accountConfigDir, resolveClaudeBin } from './accounts'
 import { providerAccountEnv } from './provider-accounts'
 import { resolveCodex } from './providers/cli-resolve'
 import { getSshTerminalCommand } from './ssh'
-import { BusyTracker } from './terminal-busy-pure'
+import { BusyTracker, isFocusReport } from './terminal-busy-pure'
 import { isApprovalNotification, OscScanner } from './terminal-osc-pure'
 
 /**
@@ -532,11 +532,17 @@ export function writeTerminal(id: string, data: string): void {
   if (typeof data !== 'string') return
   const p = terminals.get(id)
   if (!p) return
-  busy.noteWrite(id)
-  // Typing into a chat that was waiting on you IS the answer — whatever the keystroke
-  // means to the CLI, the user is there dealing with it, so the mark has done its job and
-  // comes off now rather than whenever the CLI next happens to look busy.
-  setWaiting(id, false)
+  if (isFocusReport(data)) {
+    // Not typing: xterm telling the CLI it was focused or blurred. What the CLI paints in
+    // reply is a redraw, and it says nothing about an approval having been answered.
+    busy.noteRedraw(id)
+  } else {
+    busy.noteWrite(id)
+    // Typing into a chat that was waiting on you IS the answer — whatever the keystroke
+    // means to the CLI, the user is there dealing with it, so the mark has done its job
+    // and comes off now rather than whenever the CLI next happens to look busy.
+    setWaiting(id, false)
+  }
   try {
     p.write(data)
   } catch {

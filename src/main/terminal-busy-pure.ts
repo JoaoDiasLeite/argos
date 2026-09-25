@@ -37,6 +37,21 @@ export const BUSY_IDLE_MS = 1200
  *  dot on for as long as it took to type. */
 export const BUSY_ECHO_GRACE_MS = 350
 
+/**
+ * Whether a write to a pty is only xterm reporting that the terminal gained or lost focus.
+ *
+ * A CLI that turns on focus reporting (DECSET 1004, which Claude Code does) is sent
+ * `ESC [ I` when its terminal is focused and `ESC [ O` when it is blurred — so opening a
+ * chat, or leaving it, writes to its pty without anyone having typed. Read as a keystroke
+ * it ended the redraw of the resize that came with it and lifted a fresh CLI's launch
+ * guard, and the repaint the CLI answers with then counted as work: a burst that ends
+ * after you have looked away is what the pending bar reports as a finished run, so merely
+ * opening a chat, or opening its notification and leaving, raised a new one.
+ */
+export function isFocusReport(data: string): boolean {
+  return /^(?:\x1b\[[IO])+$/.test(data)
+}
+
 type Notify = (id: string, busy: boolean) => void
 
 export class BusyTracker {

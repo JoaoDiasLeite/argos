@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { BusyTracker, BUSY_IDLE_MS, BUSY_ECHO_GRACE_MS } from './terminal-busy-pure'
+import { BusyTracker, BUSY_IDLE_MS, BUSY_ECHO_GRACE_MS, isFocusReport } from './terminal-busy-pure'
 
 /**
  * The state machine behind the sidebar's running dot for terminal-driven chats.
@@ -281,5 +281,22 @@ describe('BusyTracker', () => {
     // registered a callback for it. The absent notify must not be an error.
     expect(() => tracker.noteOutput('loose')).not.toThrow()
     expect(tracker.busyIds()).toEqual(['loose'])
+  })
+})
+
+describe('isFocusReport', () => {
+  it('recognises focus-in and focus-out, alone or batched', () => {
+    expect(isFocusReport('\x1b[I')).toBe(true)
+    expect(isFocusReport('\x1b[O')).toBe(true)
+    expect(isFocusReport('\x1b[O\x1b[I')).toBe(true)
+  })
+
+  it('does not swallow real input that merely contains one', () => {
+    expect(isFocusReport('')).toBe(false)
+    expect(isFocusReport('I')).toBe(false)
+    expect(isFocusReport('\x1b[Ia')).toBe(false)
+    expect(isFocusReport('\r')).toBe(false)
+    // Arrow keys share the CSI prefix and must still count as typing.
+    expect(isFocusReport('\x1b[A')).toBe(false)
   })
 })
