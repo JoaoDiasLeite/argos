@@ -333,7 +333,10 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       // Typing into the terminal is what makes a chat "used". Reporting it when the pty
       // merely started marked every chat opened on the Terminal pane as used the instant
       // it appeared, so blank drafts were kept in the sidebar and could never be reused.
-      onActiveRef.current?.()
+      // Focus reports (ESC[I / ESC[O, sent once the CLI turns on focus reporting) are the
+      // same mistake by another route: focusing a chat is not using it. Mirrors
+      // isFocusReport in main/terminal-busy-pure.ts, which the renderer cannot import.
+      if (!/^(?:\x1b\[[IO])+$/.test(d)) onActiveRef.current?.()
       window.electronAPI.terminalWrite(idRef.current, d)
     })
 
