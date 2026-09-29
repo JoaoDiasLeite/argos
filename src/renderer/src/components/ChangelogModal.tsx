@@ -15,6 +15,20 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '1.16.3',
+    date: '2026-09-29',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'Chats no longer show up as “finished” in the pending bar just because the mouse passed over them. Claude Code tracks every mouse movement, and each one was taken for typing — so the next repaint counted as a turn, even when you never touched the keyboard.',
+          'Moving the mouse over a chat waiting on an approval no longer clears its mark; clicking an option still does.'
+        ]
+      }
+    ]
+  },
+  {
     version: '1.16.2',
     date: '2026-09-25',
     tag: 'latest',
