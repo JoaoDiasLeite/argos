@@ -8,7 +8,7 @@ import { accountConfigDir, resolveClaudeBin } from './accounts'
 import { providerAccountEnv } from './provider-accounts'
 import { resolveCodex } from './providers/cli-resolve'
 import { getSshTerminalCommand } from './ssh'
-import { BusyTracker, isFocusReport } from './terminal-busy-pure'
+import { BusyTracker, isMouseClick, isTerminalReport } from './terminal-busy-pure'
 import { isApprovalNotification, OscScanner } from './terminal-osc-pure'
 
 /**
@@ -532,10 +532,13 @@ export function writeTerminal(id: string, data: string): void {
   if (typeof data !== 'string') return
   const p = terminals.get(id)
   if (!p) return
-  if (isFocusReport(data)) {
-    // Not typing: xterm telling the CLI it was focused or blurred. What the CLI paints in
-    // reply is a redraw, and it says nothing about an approval having been answered.
-    busy.noteRedraw(id)
+  if (isTerminalReport(data)) {
+    // Not typing: xterm telling the CLI it was focused, where the pointer is, or answering
+    // one of its queries. What the CLI paints in reply is a redraw, and it says nothing
+    // about an approval having been answered — unless it is a click, which in a
+    // full-screen CLI can pick an option.
+    busy.noteReport(id)
+    if (isMouseClick(data)) setWaiting(id, false)
   } else {
     busy.noteWrite(id)
     // Typing into a chat that was waiting on you IS the answer — whatever the keystroke

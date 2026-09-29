@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { BusyTracker, BUSY_IDLE_MS, BUSY_ECHO_GRACE_MS, isFocusReport } from './terminal-busy-pure'
+import { BusyTracker, BUSY_IDLE_MS, BUSY_ECHO_GRACE_MS, isMouseClick, isTerminalReport } from './terminal-busy-pure'
 
 /**
  * The state machine behind the sidebar's running dot for terminal-driven chats.
@@ -282,21 +282,94 @@ describe('BusyTracker', () => {
     expect(() => tracker.noteOutput('loose')).not.toThrow()
     expect(tracker.busyIds()).toEqual(['loose'])
   })
+
+  it('keeps a launched CLI unprompted however much the mouse moves over it', () => {
+    const { tracker, events } = watched()
+    tracker.noteLaunch('t1')
+    // The pointer crossing the chat on the way out, then a hint the CLI repaints later.
+    tracker.noteReport('t1')
+    vi.advanceTimersByTime(BUSY_IDLE_MS * 3)
+    tracker.noteOutput('t1')
+    vi.advanceTimersByTime(BUSY_IDLE_MS * 3)
+    expect(events).toEqual([])
+  })
+
+  it('reads the paint that answers a report as a redraw', () => {
+    const { tracker, events } = watched()
+    tracker.noteWrite('t1')
+    vi.advanceTimersByTime(BUSY_IDLE_MS * 2)
+    // An idle chat you typed into earlier, repainting a hover.
+    tracker.noteReport('t1')
+    tracker.noteOutput('t1')
+    vi.advanceTimersByTime(BUSY_IDLE_MS + 1)
+    expect(events).toEqual([])
+  })
+
+  it('does not let a report right after a keystroke hide the turn it started', () => {
+    const { tracker, events } = watched()
+    tracker.noteWrite('t1')
+    // The mouse moves while Enter is pressed; the CLI then works without a pause.
+    tracker.noteReport('t1')
+    vi.advanceTimersByTime(BUSY_ECHO_GRACE_MS + 1)
+    tracker.noteOutput('t1')
+    expect(events).toEqual([['t1', true]])
+  })
 })
 
-describe('isFocusReport', () => {
-  it('recognises focus-in and focus-out, alone or batched', () => {
-    expect(isFocusReport('\x1b[I')).toBe(true)
-    expect(isFocusReport('\x1b[O')).toBe(true)
-    expect(isFocusReport('\x1b[O\x1b[I')).toBe(true)
+describe('isTerminalReport', () => {
+  it('recognises focus reports, alone or batched', () => {
+    expect(isTerminalReport('\x1b[I')).toBe(true)
+    expect(isTerminalReport('\x1b[O')).toBe(true)
+    expect(isTerminalReport('\x1b[O\x1b[I')).toBe(true)
+  })
+
+  it('recognises mouse reports, which Claude Code asks for on every motion', () => {
+    expect(isTerminalReport('\x1b[<35;40;12M')).toBe(true)
+    expect(isTerminalReport('\x1b[<35;40;12M\x1b[<35;41;12M')).toBe(true)
+    expect(isTerminalReport('\x1b[<0;10;5M\x1b[<0;10;5m')).toBe(true)
+    expect(isTerminalReport('\x1b[<64;10;5M')).toBe(true)
+    expect(isTerminalReport('\x1b[M #!')).toBe(true)
+  })
+
+  it("recognises xterm's answers to a CLI's queries", () => {
+    expect(isTerminalReport('\x1b[?1;2c')).toBe(true)
+    expect(isTerminalReport('\x1b[>0;276;0c')).toBe(true)
+    expect(isTerminalReport('\x1b[12;40R')).toBe(true)
+    expect(isTerminalReport('\x1b[0n')).toBe(true)
+    expect(isTerminalReport('\x1b[?2026;2$y')).toBe(true)
+    expect(isTerminalReport('\x1b[8;30;120t')).toBe(true)
+    expect(isTerminalReport('\x1b]11;rgb:1e1e/1e1e/1e1e\x1b\\')).toBe(true)
+    expect(isTerminalReport('\x1bP1$r0m\x1b\\')).toBe(true)
   })
 
   it('does not swallow real input that merely contains one', () => {
-    expect(isFocusReport('')).toBe(false)
-    expect(isFocusReport('I')).toBe(false)
-    expect(isFocusReport('\x1b[Ia')).toBe(false)
-    expect(isFocusReport('\r')).toBe(false)
-    // Arrow keys share the CSI prefix and must still count as typing.
-    expect(isFocusReport('\x1b[A')).toBe(false)
+    expect(isTerminalReport('')).toBe(false)
+    expect(isTerminalReport('I')).toBe(false)
+    expect(isTerminalReport('\x1b[Ia')).toBe(false)
+    expect(isTerminalReport('\x1b[<35;40;12Mx')).toBe(false)
+    expect(isTerminalReport('\r')).toBe(false)
+    expect(isTerminalReport('\x1b')).toBe(false)
+    // Arrow keys and the like share the CSI prefix and must still count as typing.
+    expect(isTerminalReport('\x1b[A')).toBe(false)
+    expect(isTerminalReport('\x1b[1;5C')).toBe(false)
+    expect(isTerminalReport('\x1b[3~')).toBe(false)
   })
 })
+
+describe('isMouseClick', () => {
+  it('is true for a button press', () => {
+    expect(isMouseClick('\x1b[<0;10;5M')).toBe(true)
+    expect(isMouseClick('\x1b[<2;10;5M')).toBe(true)
+    expect(isMouseClick('\x1b[<35;9;5M\x1b[<0;10;5M')).toBe(true)
+  })
+
+  it('is false for motion, the wheel, a release or anything else', () => {
+    expect(isMouseClick('\x1b[<35;10;5M')).toBe(false)
+    expect(isMouseClick('\x1b[<32;10;5M')).toBe(false)
+    expect(isMouseClick('\x1b[<64;10;5M')).toBe(false)
+    expect(isMouseClick('\x1b[<0;10;5m')).toBe(false)
+    expect(isMouseClick('\x1b[I')).toBe(false)
+    expect(isMouseClick('a')).toBe(false)
+  })
+})
+

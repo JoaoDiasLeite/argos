@@ -38,18 +38,64 @@ export const BUSY_IDLE_MS = 1200
 export const BUSY_ECHO_GRACE_MS = 350
 
 /**
- * Whether a write to a pty is only xterm reporting that the terminal gained or lost focus.
+ * One report xterm writes to a pty on its own account rather than because a key was
+ * pressed: a focus report, a mouse report, or its answer to a query the CLI sent.
  *
- * A CLI that turns on focus reporting (DECSET 1004, which Claude Code does) is sent
- * `ESC [ I` when its terminal is focused and `ESC [ O` when it is blurred — so opening a
- * chat, or leaving it, writes to its pty without anyone having typed. Read as a keystroke
- * it ended the redraw of the resize that came with it and lifted a fresh CLI's launch
- * guard, and the repaint the CLI answers with then counted as work: a burst that ends
- * after you have looked away is what the pending bar reports as a finished run, so merely
- * opening a chat, or opening its notification and leaving, raised a new one.
+ * Read as keystrokes, these end the redraw of the resize that came with them and lift a
+ * fresh CLI's launch guard, and the repaint the CLI answers with then counts as work: a
+ * burst that ends after you have looked away is what the pending bar reports as a
+ * finished run.
+ *
+ * Focus reports come from a CLI that turns on focus reporting (DECSET 1004, which Claude
+ * Code does): `ESC [ I` when its terminal is focused and `ESC [ O` when it is blurred, so
+ * opening a chat, or leaving it, writes to its pty without anyone having typed.
+ *
+ * Mouse reports come from Claude Code turning on any-motion mouse tracking
+ * (DECSET 1003 with SGR encoding, 1006): merely moving the pointer across a chat — on the
+ * way in, or on the way out to another one — writes a stream of `ESC [ < b ; x ; y M` to
+ * its pty, so a phantom finished run needed no one to touch the keyboard at all.
  */
-export function isFocusReport(data: string): boolean {
-  return /^(?:\x1b\[[IO])+$/.test(data)
+const TERMINAL_REPORT = new RegExp(
+  [
+    /\x1b\[[IO]/, // focus in / out
+    /\x1b\[<\d+;\d+;\d+[Mm]/, // SGR mouse (1006)
+    /\x1b\[M[\s\S]{3}/, // X10 / normal mouse
+    /\x1b\[[?>][\d;]*c/, // device attributes (DA1 / DA2)
+    /\x1b\[\??\d+;\d+R/, // cursor position
+    /\x1b\[0n/, // device status
+    /\x1b\[\??\d+;\d+\$y/, // mode report (DECRPM)
+    /\x1b\[\d+;\d+;\d+t/, // window size reports
+    /\x1b\]\d+;[^\x07\x1b]*(?:\x07|\x1b\\)/, // OSC answers (colours)
+    /\x1bP[^\x1b]*\x1b\\/ // DCS answers (DECRQSS)
+  ]
+    .map((r) => r.source)
+    .join('|')
+)
+const ONLY_REPORTS = new RegExp(`^(?:${TERMINAL_REPORT.source})+$`)
+
+/**
+ * Whether a write to a pty is only terminal reports (see TERMINAL_REPORT) — no keystroke
+ * in it. Batched reports still qualify; anything typed alongside them does not.
+ *
+ * A modified F3 (`ESC [ 1 ; 2 R`) is indistinguishable from a cursor-position report and
+ * is read as one. Erring that way costs nothing: the worst it does is not count a key.
+ */
+export function isTerminalReport(data: string): boolean {
+  return ONLY_REPORTS.test(data)
+}
+
+/**
+ * Whether a write is a mouse button being pressed — a click, as opposed to the pointer
+ * moving or the wheel turning. A full-screen CLI lets you click an option to answer it,
+ * so a click still takes an approval mark off even though it is not typing.
+ */
+export function isMouseClick(data: string): boolean {
+  for (const m of data.matchAll(/\x1b\[<(\d+);\d+;\d+M/g)) {
+    const b = Number(m[1])
+    // Motion (32) and wheel (64+) carry flags on top of the button; a plain press is 0–2.
+    if ((b & (32 | 64 | 128)) === 0 && (b & 3) !== 3) return true
+  }
+  return false
 }
 
 type Notify = (id: string, busy: boolean) => void
@@ -123,6 +169,19 @@ export class BusyTracker {
   noteRedraw(id: string): void {
     this.redrawing.add(id)
     this.arm(id)
+  }
+
+  /**
+   * xterm wrote a report to this pty (see isTerminalReport) — not a keystroke, so it lifts
+   * no launch guard, and whatever the CLI paints in reply is a redraw.
+   *
+   * Except right after a real keystroke: the pointer moving while you press Enter would
+   * otherwise open a redraw just as the turn starts, and a CLI that never goes quiet while
+   * it works would never be announced busy at all.
+   */
+  noteReport(id: string, at: number = Date.now()): void {
+    if (at - (this.lastWriteAt.get(id) ?? -Infinity) < BUSY_IDLE_MS) return
+    this.noteRedraw(id)
   }
 
   /** A chunk came out of this pty. Marks it busy (announcing the change, if it is one) and

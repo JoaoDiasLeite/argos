@@ -11,6 +11,7 @@ import { registerOsc52Copy } from '../lib/osc52'
 import { imagePasteRoute } from '../lib/terminal-image-paste'
 import { registerTerminalLinks } from '../lib/terminal-links'
 import { terminalPathsText } from '../lib/terminal-file-paths'
+import { isTerminalReport } from '../lib/terminal-reports'
 import './ChatTerminal.css'
 
 interface Props {
@@ -333,10 +334,10 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       // Typing into the terminal is what makes a chat "used". Reporting it when the pty
       // merely started marked every chat opened on the Terminal pane as used the instant
       // it appeared, so blank drafts were kept in the sidebar and could never be reused.
-      // Focus reports (ESC[I / ESC[O, sent once the CLI turns on focus reporting) are the
-      // same mistake by another route: focusing a chat is not using it. Mirrors
-      // isFocusReport in main/terminal-busy-pure.ts, which the renderer cannot import.
-      if (!/^(?:\x1b\[[IO])+$/.test(d)) onActiveRef.current?.()
+      // Reports xterm sends on its own (focus, the pointer moving under Claude Code's mouse
+      // tracking, answers to the CLI's queries) are the same mistake by another route:
+      // focusing a chat, or passing the mouse over it, is not using it.
+      if (!isTerminalReport(d)) onActiveRef.current?.()
       window.electronAPI.terminalWrite(idRef.current, d)
     })
 
