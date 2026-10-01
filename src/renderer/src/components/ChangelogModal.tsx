@@ -18,7 +18,15 @@ const CHANGELOG: Entry[] = [
     version: '1.16.4',
     date: '2026-10-01',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Improvements',
+        items: [
+          'A chat set to ask before acting now asks for every tool that is not plainly read-only. Until now only five tools asked (Edit, Write, MultiEdit, NotebookEdit, Bash); MCP servers, web fetches, subagents and process kills ran unprompted, and so would any tool added later. The list is now the other way round: Read, Grep, Glob and the CLI’s own bookkeeping pass, everything else asks.',
+          'On an SSH host, the menu item that starts a chat on the host’s own Claude Code says so, and the session view’s “Run log” is now “Typed here” — it only ever held what was typed in the quick-run box.'
+        ]
+      }
+    ]
   },
   {
     version: '1.16.3',
