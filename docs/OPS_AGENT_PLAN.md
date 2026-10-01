@@ -296,7 +296,9 @@ the one artefact here that leaves the company. Rules, each a test:
 ```
 Resolves to: requested model (no cheap clamp — this is the user's work), `settingSources:
 []` (no plugins, no user-tier skills into an ops session), `disallowedTools` as §1.3,
-`allowedTools: ['Read','Grep','Glob','mcp__ops__*']`, `maxTurns: 60`, system prompt =
+**no `allowedTools`** (the SDK auto-allows those without calling `canUseTool`, which
+would skip the gate; instead `canUseTool` sees every call and allows `Read`/`Grep`/`Glob`
+only inside the runbook folder), `maxTurns: 60`, system prompt =
 `CLAUDE_CODE_PROMPT` + an ops preamble (§7) + `RUNBOOK.md`. `permissionMode: 'default'` with
 `canUseTool` **always** set (the ask/auto toggle is ignored for this profile — `auto` would
 mean "`mutate+auto` rules only", and that is what `policy.json` already expresses).
@@ -363,7 +365,7 @@ classifier), `ops-audit-pure.ts` (event types, chain, report renderer). Tests fi
   client one also passes the §5.1 absence tests (argv, paths, IPs, dashes).
 No Electron imports. Commit: `feat(ops): add runbook policy, command gate and audit core`.
 
-### Phase 2 — executor, MCP tools, ledger, profile · 2–3 days
+### Phase 2 — executor, MCP tools, ledger, profile · done (`e1f13d6`, `23d6d8c`, `f02a59d`)
 `ops-exec.ts` over `getRemoteClient`; `ops-tools.ts` (`createSdkMcpServer`); `ops-audit.ts`
 (append, chain, `ops:report`); `ai-policy.ts` `ops-remote`; the ops branch in the
 `agent:send` handler (profile, runbook load, `mcpServers: { ops }`, `canUseTool` extended
@@ -373,6 +375,9 @@ backend; a timed-out call is marked and the next call on that host still runs; a
 channels. Commit: `feat(ops): run runbook-gated commands over ssh with an audit ledger`.
 
 ### Phase 3 — UI · 2 days
+Carried over from Phase 2: the sudo password prompt (§4; `sudoPasswords` is typed and
+unused), the plan-mode first turn with `plan.approved` (§1.7), and wiring the modal's
+"Deny and stop the run" button in `App.tsx` (`respondApproval({ allow: false, stop: true })`).
 Runbook picker, plan-approval bar, timeline panel, report button, Settings → Ops, host
 card relabel. `visual-check` with a seeded runbook and the fake backend behind a dev flag
 (`ARGOS_OPS_FAKE=1`), so screenshots need no server. Commit per surface.
