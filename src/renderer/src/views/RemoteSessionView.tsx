@@ -287,9 +287,11 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
                 ))}
               </div>
 
-              <div className="remote-history-section-title">Run log</div>
+              {/* Only what was typed in the quick-run box, kept in this browser's
+                  localStorage. It is not a record of what ran on the host. */}
+              <div className="remote-history-section-title">Typed here</div>
               <div className="remote-history-list">
-                {runLog.length === 0 && <div className="view-empty small">Nothing run yet.</div>}
+                {runLog.length === 0 && <div className="view-empty small">Nothing typed yet.</div>}
                 {[...runLog].reverse().map((entry) => (
                   <button key={entry.ts} className="remote-history-item" onClick={() => sendToTerminal(entry.cmd)} title="Send to terminal">
                     {entry.cmd}

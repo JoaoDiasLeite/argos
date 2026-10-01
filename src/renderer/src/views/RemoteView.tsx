@@ -530,7 +530,10 @@ export default function RemoteView({
                             triggerTitle="More"
                             triggerContent={<MoreIcon />}
                             items={[
-                              { label: 'New chat here', onClick: () => onConnect(host) },
+                              /* Says where the chat runs: this path drives the host's own
+                                 Claude Code with acceptEdits, approved once per run rather
+                                 than per tool — the opposite of the local gate. */
+                              { label: 'New chat on host (runs its Claude Code)', onClick: () => onConnect(host) },
                               { label: testing === host.id ? 'Testing…' : 'Test connection', disabled: testing === host.id, onClick: () => probeHost(host.id, 'conn') },
                               { label: 'Check Claude Code', disabled: testing === host.id, onClick: () => probeHost(host.id, 'claude') },
                               {
