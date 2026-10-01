@@ -32,6 +32,12 @@ export type AiProfile =
   | 'routine-full'
   /** Ask a question over configured MCP servers + read-only file tools. */
   | 'mcp-ask'
+  /**
+   * Ops chat over a runbook (docs/OPS_AGENT_PLAN.md §6). Claude only: the remote reach is
+   * the in-process `ops` MCP server, and every local tool that could touch this machine
+   * is removed from context rather than gated.
+   */
+  | 'ops-remote'
 
 export interface ResolvePolicyInput {
   profile: AiProfile
@@ -59,6 +65,8 @@ export interface ResolvedPolicy {
     type: 'preset'
     preset: 'claude_code'
     excludeDynamicSections?: boolean
+    /** Extra system text after Claude Code's own (ops: the preamble + RUNBOOK.md). */
+    append?: string
   }
 }
 
@@ -111,6 +119,31 @@ const CHEAP_CEILING: Record<ProviderId, string> = {
 const REASONING_MAX_TURNS = 2
 const ROUTINE_MAX_TURNS = 40
 const MCP_ASK_MAX_TURNS = 15
+/** An ops run is a plan plus one call per step; 60 covers the longest runbook (the
+ * PostgreSQL upgrade) with room for the reads between its mutate steps. */
+const OPS_MAX_TURNS = 60
+
+/**
+ * Removed from an ops chat's context (plan §1.3): everything that could run a command,
+ * write a file, reach the network or spawn another agent on THIS machine. A tool that
+ * is not in context cannot be argued into running; a gated one can.
+ */
+export const OPS_DISALLOWED_TOOLS = [
+  'Bash',
+  'Write',
+  'Edit',
+  'MultiEdit',
+  'NotebookEdit',
+  'WebFetch',
+  'WebSearch',
+  'Agent',
+  'Task',
+  'KillShell',
+  'KillBash'
+]
+
+/** The ops tools by their SDK names; ops-tools.ts registers the server as `ops`. */
+export const OPS_MCP_TOOLS = ['mcp__ops__run', 'mcp__ops__script', 'mcp__ops__read', 'mcp__ops__list', 'mcp__ops__write']
 
 /** Coarse model-family tier for ceiling comparisons, scoped per provider (each
  * provider's model-id conventions are unrelated). Higher = more expensive. */
@@ -200,6 +233,23 @@ export function resolvePolicy(input: ResolvePolicyInput): ResolvedPolicy {
           ...READ_ONLY_TOOLS
         ],
         maxTurns: MCP_ASK_MAX_TURNS
+      }
+
+    case 'ops-remote':
+      // The user's own work on the user's model, so no cheap clamp. No settings tiers: no
+      // plugin, skill or project hook rides into a session that can reach servers.
+      //
+      // No `allowedTools`, on purpose: in the SDK that list means "auto-approved without
+      // calling canUseTool", so naming mcp__ops__* there would skip the gate's `ask`, and
+      // naming Read would let it read anywhere on this machine. Every call goes through
+      // the ops canUseTool instead (ops-run.ts), which allows Read/Grep/Glob only inside
+      // the runbook folder and runs the gate for the ops tools.
+      return {
+        model: requestedOrDefault(requestedModel, fallback),
+        settingSources: [],
+        disallowedTools: OPS_DISALLOWED_TOOLS,
+        maxTurns: OPS_MAX_TURNS,
+        systemPrompt: CLAUDE_CODE_PROMPT
       }
   }
 }

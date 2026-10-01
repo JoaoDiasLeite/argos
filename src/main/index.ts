@@ -138,6 +138,13 @@ import { listDistros, testDistro, testDistroClaude, runWsl, stopWsl, runWslOneSh
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
 import { attributionFor, forgetSession as forgetAuthorship, recordToolUse } from './authorship'
 import { needsApproval } from './tool-approval-pure'
+import { createLedger, type OpsLedger } from './ops-audit'
+import { createExecutor, createSshBackend, type OpsExecutor } from './ops-exec'
+import { createFakeBackend } from './ops-backend-fake'
+import { loadRunbook, readScript } from './ops-runbook'
+import { finishOpsRun, prepareOpsRun, type ApprovalOpsContext, type OpsRunContext } from './ops-run'
+import type { CanUseTool } from './providers/types'
+import { OPS_MAX_TIMEOUT_MS } from './ops-types'
 import { posixToWslUnc } from './local-fs-pure'
 import {
   getHiddenDistros,
@@ -695,6 +702,9 @@ app.on('before-quit', () => {
   isQuitting = true
   killAllTerminals()
   remoteShellKillAll()
+  // Before the ssh sessions go: an ops exec ended by the disconnect would otherwise read
+  // as a dropped connection rather than an abort.
+  opsExecutor?.abortAll('app quit')
   sftpDisconnectAll()
 })
 
@@ -871,6 +881,72 @@ ipcMain.handle('provider-accounts:login', (_, provider: AgentProvider, id: strin
 // per Codex account keyed by account id (see codex-usage.ts).
 ipcMain.handle('codex-usage:get', (_, force?: boolean) => getCodexAccountsUsage(!!force))
 
+// ─── Ops runs (docs/OPS_AGENT_PLAN.md) ──────────────────────────────────────
+
+// One ledger and one executor for the whole app, created on first use so a user who never
+// opens an ops chat never gets an ops-audit folder. One executor matters: its per-host
+// queue is what keeps two ops chats from running on the same host at once.
+let opsLedger: OpsLedger | null = null
+let opsExecutor: OpsExecutor | null = null
+
+function getOpsLedger(): OpsLedger {
+  if (!opsLedger) opsLedger = createLedger(path.join(app.getPath('userData'), 'ops-audit'))
+  return opsLedger
+}
+
+function getOpsExecutor(): OpsExecutor {
+  // ARGOS_OPS_FAKE=1 runs the whole gate + ledger path against the in-memory backend, so
+  // screenshots and demos need no server (plan §9 Phase 3).
+  if (!opsExecutor) opsExecutor = createExecutor(process.env.ARGOS_OPS_FAKE === '1' ? createFakeBackend() : createSshBackend())
+  return opsExecutor
+}
+
+/** Stored hosts as the gate and the reports see them: no secrets, no auth fields. */
+function opsHostRefs(): { id: string; name: string; host: string }[] {
+  return listHosts().map((h) => ({ id: h.id, name: h.name, host: h.host }))
+}
+
+/** `user@host:port` for the approval modal's header. */
+function opsHostAddress(hostId: string): string {
+  const h = listHosts().find((x) => x.id === hostId)
+  return h ? `${h.username}@${h.host}:${h.port}` : hostId
+}
+
+ipcMain.handle('ops:load-runbook', async (_, dir: string) => {
+  if (typeof dir !== 'string' || dir.trim() === '') return { ok: false, error: 'No runbook folder given.' }
+  const r = await loadRunbook(dir)
+  if (!r.ok) return { ok: false, error: r.error, ...(r.errors ? { errors: r.errors } : {}) }
+  const rb = r.runbook
+  return {
+    ok: true,
+    name: rb.ref.name,
+    path: rb.ref.path,
+    hosts: rb.hosts.map((h) => ({ id: h.host.id, name: h.host.name, host: h.host.host, groups: h.groups })),
+    warnings: rb.warnings,
+    ...(rb.ref.platform ? { platform: rb.ref.platform } : {}),
+    strict: rb.policy.strict
+  }
+})
+
+ipcMain.handle('ops:report', async (_, runId: string, kind: 'internal' | 'client', runbookPath?: string) => {
+  if (typeof runId !== 'string' || runId === '') return { ok: false, error: 'No run id given.' }
+  if (kind !== 'internal' && kind !== 'client') return { ok: false, error: `Unknown report kind: ${String(kind)}` }
+  // The ledger has no policy, so the host roles of the client report ("servidor de base
+  // de dados") come from the runbook when the caller names it.
+  const extraWarnings: string[] = []
+  let opts: { hostGroups: Record<string, string[]>; hosts: { id: string; name: string; host: string }[] } | undefined
+  if (typeof runbookPath === 'string' && runbookPath !== '') {
+    const rb = await loadRunbook(runbookPath)
+    if (rb.ok) opts = { hostGroups: rb.runbook.policy.hosts, hosts: opsHostRefs() }
+    else extraWarnings.push(`The runbook could not be loaded, so hosts are shown as [servidor]: ${rb.error}`)
+  }
+  const r = await getOpsLedger().report(runId, kind, opts)
+  return r.ok ? { ...r, warnings: [...extraWarnings, ...r.warnings] } : r
+})
+
+ipcMain.handle('ops:verify', (_, date: string) => getOpsLedger().verify(date))
+ipcMain.handle('ops:ledger-info', () => getOpsLedger().info())
+
 // ─── Agent run ─────────────────────────────────────────────────────────────
 
 interface SendPayload {
@@ -911,6 +987,12 @@ interface SendPayload {
   codexAccountId?: string
   /** Which Gemini account to run under, when the active model is a Gemini model. */
   geminiAccountId?: string
+  /**
+   * Ops chat: the runbook folder this turn runs under (docs/OPS_AGENT_PLAN.md). Switches
+   * the run to the ops-remote profile, the ops MCP server and the gate's canUseTool, and
+   * ignores every tool, MCP, prompt and approval setting above.
+   */
+  runbookPath?: string
 }
 
 /**
@@ -962,6 +1044,8 @@ function send(channel: string, payload: unknown): void {
 interface ApprovalDecision {
   allow: boolean
   updatedInput?: Record<string, unknown>
+  /** Ops calls only: "deny and stop the run" (plan §3.4). */
+  stop?: boolean
 }
 const pendingApprovals = new Map<string, (d: ApprovalDecision) => void>()
 
@@ -971,7 +1055,13 @@ function nextApprovalId(): string {
   return `appr_${approvalSeq}_${approvalSeq * 2654435761 % 1000000}`
 }
 
-function requestToolApproval(appSessionId: string, tool: string, input: Record<string, unknown>, signal: AbortSignal): Promise<ApprovalDecision> {
+function requestToolApproval(
+  appSessionId: string,
+  tool: string,
+  input: Record<string, unknown>,
+  signal: AbortSignal,
+  ops?: ApprovalOpsContext
+): Promise<ApprovalDecision> {
   if (signal.aborted) return Promise.resolve({ allow: false })
   const approvalId = nextApprovalId()
   return new Promise((resolve) => {
@@ -984,7 +1074,7 @@ function requestToolApproval(appSessionId: string, tool: string, input: Record<s
     const onAbort = () => finish({ allow: false })
     pendingApprovals.set(approvalId, finish)
     signal.addEventListener('abort', onAbort, { once: true })
-    const req = { appSessionId, approvalId, tool, input }
+    const req = { appSessionId, approvalId, tool, input, ...(ops ? { ops } : {}) }
     send('agent:approval-request', req)
     if (mainWindowInactive()) {
       toastApprovals.add(approvalId)
@@ -997,11 +1087,16 @@ function requestToolApproval(appSessionId: string, tool: string, input: Record<s
 
 ipcMain.handle(
   'agent:approval-response',
-  (_, payload: { approvalId: string; allow: boolean; updatedInput?: Record<string, unknown> }) => {
+  (_, payload: { approvalId: string; allow: boolean; updatedInput?: Record<string, unknown>; stop?: boolean }) => {
     const resolver = pendingApprovals.get(payload.approvalId)
     if (resolver) {
       pendingApprovals.delete(payload.approvalId)
-      resolver({ allow: payload.allow, updatedInput: payload.updatedInput })
+      resolver({
+        allow: payload.allow,
+        updatedInput: payload.updatedInput,
+        // A stop is always a deny, whatever else the payload says.
+        ...(payload.stop === true ? { stop: true, allow: false } : {})
+      })
     }
     // Whoever answered (main-window modal OR toast), tell both UIs to drop it.
     resolveApprovalEverywhere(payload.approvalId)
@@ -1030,6 +1125,14 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
   // Remote/WSL runs take a plain prompt string (no structured image path), so fold any
   // attached text files straight into the prompt text here.
   const promptWithFiles = appendFiles(prompt, payload.files)
+
+  // An ops chat runs here, on the local engine, and reaches servers only through the
+  // gated ops tools. A remote or WSL transport would run the CLI with no gate at all, so
+  // the combination is refused rather than quietly dropping the runbook.
+  if (payload.runbookPath && (payload.remoteHostId || payload.wslDistro)) {
+    send('agent:error', { appSessionId, error: 'Ops chats run locally; a runbook cannot be used on a remote or WSL chat.' })
+    return
+  }
 
   // Headless remote transports cannot pause at individual tools. Ask for the
   // whole run explicitly, without changing the session's permission preference.
@@ -1094,8 +1197,9 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
   // it lazily on the first send, reuse it on later turns (worktreePath), and notify the
   // renderer so it persists the path onto the session. Best-effort — fall back to the repo
   // root if creation fails, so a run never dies over a worktree hiccup.
+  const opsMode = !!payload.runbookPath
   let effectiveCwd = projectPath
-  if (payload.useWorktree && projectPath && fs.existsSync(projectPath)) {
+  if (!opsMode && payload.useWorktree && projectPath && fs.existsSync(projectPath)) {
     if (payload.worktreePath && fs.existsSync(payload.worktreePath)) {
       effectiveCwd = payload.worktreePath
     } else {
@@ -1107,9 +1211,11 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
     }
   }
 
-  const cwd = effectiveCwd && fs.existsSync(effectiveCwd) ? effectiveCwd : os.homedir()
+  // An ops run's cwd is the runbook folder: Read/Grep/Glob may look there and nowhere else.
+  const runbookDir = payload.runbookPath ? path.resolve(payload.runbookPath) : undefined
+  const cwd = runbookDir ?? (effectiveCwd && fs.existsSync(effectiveCwd) ? effectiveCwd : os.homedir())
   const policy = resolvePolicy({
-    profile: payload.lightMode ? 'interactive-light' : 'interactive-chat',
+    profile: opsMode ? 'ops-remote' : payload.lightMode ? 'interactive-light' : 'interactive-chat',
     requestedModel: payload.model
   })
 
@@ -1121,8 +1227,62 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
     env.CLAUDE_CONFIG_DIR = configDir
     delete env.ANTHROPIC_API_KEY
   }
-  const mcpServers = payload.useMcp ? mcpServersForProject(projectPath) : undefined
+  const mcpServers = !opsMode && payload.useMcp ? mcpServersForProject(projectPath) : undefined
   const askMode = payload.approvalMode !== 'auto' && payload.permissionMode !== 'bypassPermissions'
+
+  // Ops: load the runbook, check the hosts, log run.start, and get the gate's canUseTool
+  // and the ops MCP server. Any refusal ends the turn here, before the model is called.
+  let ops: { ctx: OpsRunContext; systemAppend: string; mcpServer: unknown; canUseTool: CanUseTool } | null = null
+  if (payload.runbookPath) {
+    const fail = (error: string): void => {
+      activeRuns.delete(appSessionId)
+      updateRunIndicators()
+      if (activeRuns.size === 0) hidePillSoon(4000)
+      flagAttention('error')
+      send('agent:error', { appSessionId, error })
+    }
+    if (providerFor(policy.model) !== 'claude') {
+      fail('Ops chats run on Claude only.')
+      return
+    }
+    const prepared = await prepareOpsRun({
+      appSessionId,
+      runbookPath: payload.runbookPath,
+      model: policy.model,
+      ...(payload.accountId ? { account: payload.accountId } : {}),
+      ledger: getOpsLedger(),
+      executor: getOpsExecutor(),
+      abort,
+      loadRunbook,
+      readScript,
+      hostAddress: opsHostAddress,
+      ask: async ({ tool, input, ops: context }) => {
+        const d = await requestToolApproval(appSessionId, tool, input, abort.signal, context)
+        return { allow: d.allow, ...(d.stop ? { stop: true } : {}) }
+      },
+      onEvent: (line) => send('ops:event', { appSessionId, runId: line.event.runId, line })
+    })
+    if (!prepared.ok) {
+      fail(prepared.error)
+      return
+    }
+    if (abort.signal.aborted) {
+      // Stopped while the hosts were being checked.
+      await finishOpsRun(prepared.ctx, { ok: false, costUsd: 0, aborted: true })
+      fail('The ops run was stopped before it started.')
+      return
+    }
+    ops = prepared
+    // A tool call may wait in the per-host queue and then run for the policy's timeout;
+    // the CLI's default 60 s wait on an in-process MCP call would cut it off first.
+    env.CLAUDE_CODE_STREAM_CLOSE_TIMEOUT ??= String(2 * OPS_MAX_TIMEOUT_MS)
+    env.MCP_TOOL_TIMEOUT ??= String(2 * OPS_MAX_TIMEOUT_MS)
+  }
+  const opsCtx = ops?.ctx ?? null
+  /** Log run.end for an ops run; a no-op otherwise, and only the first call counts. */
+  const endOps = async (r: Parameters<typeof finishOpsRun>[1]): Promise<void> => {
+    if (opsCtx) await finishOpsRun(opsCtx, r)
+  }
 
   // In 'ask' mode, prompt the renderer before any tool that is not on the read-only
   // allowlist runs (see tool-approval-pure.ts for why it is an allowlist).
@@ -1183,22 +1343,36 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
       abortController: abort,
       includePartialMessages: true,
       settingSources: policy.settingSources,
-      permissionMode: askMode ? 'default' : payload.permissionMode ?? 'acceptEdits',
-      ...(canUseTool ? { canUseTool } : {}),
-      // A custom agent's prompt replaces Claude Code's; otherwise take whatever
-      // the profile decided (see CLAUDE_CODE_PROMPT in ai-policy.ts).
-      ...(payload.systemPrompt
-        ? { systemPrompt: payload.systemPrompt }
-        : policy.systemPrompt
-          ? { systemPrompt: policy.systemPrompt }
-          : {}),
-      ...(payload.allowedTools ? { allowedTools: payload.allowedTools } : {}),
-      ...(payload.additionalDirs && payload.additionalDirs.length
-        ? { additionalDirectories: payload.additionalDirs.filter((d) => fs.existsSync(d)) }
-        : {}),
-      ...(mcpServers && Object.keys(mcpServers).length
-        ? { mcpServers: mcpServers as Record<string, never> }
-        : {}),
+      ...(ops
+        ? {
+            // The gate's canUseTool on every turn, whatever the chat's ask/auto toggle says
+            // (plan §6): mutate+auto is what policy.json already expresses.
+            permissionMode: 'default' as const,
+            canUseTool: ops.canUseTool,
+            ...(policy.systemPrompt ? { systemPrompt: { ...policy.systemPrompt, append: ops.systemAppend } } : {}),
+            ...(policy.disallowedTools ? { disallowedTools: policy.disallowedTools } : {}),
+            ...(policy.maxTurns !== undefined ? { maxTurns: policy.maxTurns } : {}),
+            additionalDirectories: [cwd],
+            mcpServers: { ops: ops.mcpServer }
+          }
+        : {
+            permissionMode: askMode ? ('default' as const) : payload.permissionMode ?? 'acceptEdits',
+            ...(canUseTool ? { canUseTool } : {}),
+            // A custom agent's prompt replaces Claude Code's; otherwise take whatever
+            // the profile decided (see CLAUDE_CODE_PROMPT in ai-policy.ts).
+            ...(payload.systemPrompt
+              ? { systemPrompt: payload.systemPrompt }
+              : policy.systemPrompt
+                ? { systemPrompt: policy.systemPrompt }
+                : {}),
+            ...(payload.allowedTools ? { allowedTools: payload.allowedTools } : {}),
+            ...(payload.additionalDirs && payload.additionalDirs.length
+              ? { additionalDirectories: payload.additionalDirs.filter((d) => fs.existsSync(d)) }
+              : {}),
+            ...(mcpServers && Object.keys(mcpServers).length
+              ? { mcpServers: mcpServers as Record<string, never> }
+              : {})
+          }),
       ...(resumeToken ? { resume: resumeToken } : {})
     })
 
@@ -1254,6 +1428,13 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
 
         case 'result': {
           if (message.sessionId) capturedSessionId = message.sessionId
+          await endOps({
+            ok: !message.isError,
+            costUsd: message.costUsd,
+            usage: message.usage,
+            ...(abort.signal.aborted ? { aborted: true } : {}),
+            ...(message.isError && message.errorText ? { error: message.errorText } : {})
+          })
           // Cue the taskbar if the user has stepped away while this run finished.
           flagAttention(message.isError ? 'error' : 'success')
           sendToPill('pill:update', { state: message.isError ? 'error' : 'done' })
@@ -1272,6 +1453,7 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
         }
 
         case 'error': {
+          await endOps({ ok: false, costUsd: 0, error: message.message, ...(abort.signal.aborted ? { aborted: true } : {}) })
           flagAttention('error')
           send('agent:error', { appSessionId, error: message.message })
           break
@@ -1280,11 +1462,18 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
+    await endOps({ ok: false, costUsd: 0, error: msg, ...(abort.signal.aborted ? { aborted: true } : {}) })
     flagAttention('error')
     send('agent:error', { appSessionId, error: msg })
     runErrored = true
     sendToPill('pill:update', { state: 'error' })
   } finally {
+    // A stream that ended with neither a result nor an error still closes its run.
+    await endOps({
+      ok: false,
+      costUsd: 0,
+      ...(abort.signal.aborted ? { aborted: true } : { error: 'The run ended without a result.' })
+    })
     activeRuns.delete(appSessionId)
     updateRunIndicators()
     // Once nothing is running, let the finished/errored state linger briefly then

@@ -118,6 +118,8 @@ export interface Session {
   /** Which Gemini account this chat runs under, when its model is a Gemini model. */
   geminiAccountId?: string
   geminiAccountName?: string
+  /** Ops chat: the runbook folder this chat runs under. Claude only; local only. */
+  runbookPath?: string
   /**
    * Set when this session was forked from another chat. Drives the "branched from …"
    * divider shown after the copied messages. `atMessageId` is the id of the last
@@ -1000,6 +1002,51 @@ export interface ApprovalRequest {
   approvalId: string
   tool: string
   input: Record<string, unknown>
+  /** Present for `mcp__ops__*` calls: what the gate decided, so the modal can show the
+   *  host and the exact argv that will run rather than the tool's raw JSON. */
+  ops?: ApprovalOpsContext
+}
+
+export interface ApprovalOpsContext {
+  hostName: string
+  /** `user@host:port` for the header; never a secret. */
+  hostAddress: string
+  tool: 'run' | 'script' | 'read' | 'list' | 'write'
+  class: 'read' | 'mutate'
+  reason: string
+  rule?: string
+  title?: string
+  argv?: string[]
+  path?: string
+  scriptSha256?: string
+  /** Calls already waiting on this host before this one. */
+  queuedBehind: number
+  /** The runbook folder's name. */
+  runbook: string
+}
+
+/** What `ops:load-runbook` returns: enough for the picker, never a secret. */
+export type OpsRunbookInfo =
+  | {
+      ok: true
+      name: string
+      path: string
+      hosts: { id: string; name: string; host: string; groups: string[] }[]
+      warnings: string[]
+      platform?: string
+      strict: boolean
+    }
+  | { ok: false; error: string; errors?: string[] }
+
+/**
+ * One ledger line of a live ops run, as main wrote it (`ops:event`). `line.event.kind`
+ * is run.start, call.decided, call.asked, call.answered, call.started, call.finished,
+ * write.backup or run.end; the full field list is OpsAuditEvent in src/main/ops-types.ts.
+ */
+export interface OpsLiveEvent {
+  appSessionId: string
+  runId: string
+  line: { at: string; prev: string; event: { kind: string; runId: string; callId?: string } & Record<string, unknown> }
 }
 
 // ─── Planner ──────────────────────────────────────────────────────────────────
@@ -1491,6 +1538,8 @@ declare global {
         accountId?: string
         codexAccountId?: string
         geminiAccountId?: string
+        /** Ops chat: run this turn under the runbook in this folder (ops-remote profile). */
+        runbookPath?: string
       }) => void
       stopAgent: (appSessionId: string) => Promise<{ stopped: boolean }>
       onAgentEvent: (cb: (data: AgentEvent) => void) => () => void
@@ -1504,6 +1553,8 @@ declare global {
         approvalId: string
         allow: boolean
         updatedInput?: Record<string, unknown>
+        /** Ops calls: "deny and stop the run". Always treated as a deny. */
+        stop?: boolean
       }) => Promise<{ ok: boolean }>
       onApprovalResolved: (cb: (approvalId: string) => void) => () => void
 
@@ -1811,6 +1862,19 @@ declare global {
         localPaths?: string[]
       ) => Promise<{ ok: boolean; uploaded?: string[]; error?: string }>
       sftpHistory: (hostId: string) => Promise<{ ok: boolean; commands?: string[]; error?: string }>
+
+      // Ops runs
+      opsLoadRunbook: (dir: string) => Promise<OpsRunbookInfo>
+      opsReport: (
+        runId: string,
+        kind: 'internal' | 'client',
+        runbookPath?: string
+      ) => Promise<{ ok: true; markdown: string; warnings: string[] } | { ok: false; error: string }>
+      opsVerify: (
+        date: string
+      ) => Promise<{ ok: true; lines: number } | { ok: false; brokenAt?: number; reason: string }>
+      opsLedgerInfo: () => Promise<{ dir: string; files: number; bytes: number }>
+      onOpsEvent: (cb: (data: OpsLiveEvent) => void) => () => void
       sftpDisconnect: (hostId: string) => Promise<{ ok: boolean }>
 
       // WSL
