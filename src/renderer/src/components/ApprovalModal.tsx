@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { ApprovalRequest } from '../types'
+import { ApprovalOpsContext, ApprovalRequest } from '../types'
+import { describeOpsRequest } from '../lib/ops-approval'
 import DiffView from './DiffView'
 import { useModalA11y } from '../hooks/useModalA11y'
 import './ApprovalModal.css'
@@ -11,14 +12,37 @@ interface Props {
   // where more than one session may have pending approvals.
   sessionName?: string
   inline?: boolean
+  // "Deny and stop the run" - only offered when the caller wires it (ops requests).
+  onStop?: () => void
 }
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
 }
 
-export default function ApprovalModal({ request, onDecide, sessionName, inline = false }: Props) {
-  const { tool, input } = request
+function OpsBody({ ops }: { ops: ApprovalOpsContext }) {
+  const { lines } = describeOpsRequest(ops)
+  return (
+    <div className="approval-ops">
+      <div className="approval-ops-meta">
+        <span>{ops.hostName} · {ops.hostAddress} · runbook {ops.runbook}</span>
+        <span className={`approval-ops-class ${ops.class}`}>{ops.class}</span>
+      </div>
+      {ops.title && <div className="approval-ops-title">{ops.title}</div>}
+      {lines.length > 0 && <pre className="approval-ops-exec">{lines.join('\n')}</pre>}
+      <div className="approval-ops-rule">{ops.rule ? ops.rule : 'no rule matched'}</div>
+      {ops.reason && <div className="approval-desc">{ops.reason}</div>}
+      {ops.queuedBehind > 0 && (
+        <div className="approval-ops-queue">
+          Queued behind {ops.queuedBehind} call{ops.queuedBehind === 1 ? '' : 's'} on this host.
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function ApprovalModal({ request, onDecide, sessionName, inline = false, onStop }: Props) {
+  const { tool, input, ops } = request
   const dialogRef = useRef<HTMLDivElement>(null)
   // Esc is handled by the existing keydown handler (deny), so we pass escapeToClose: false
   // to avoid a double call. Focus trap + focus-restore still apply.
@@ -38,6 +62,7 @@ export default function ApprovalModal({ request, onDecide, sessionName, inline =
   const filePath = str(input.file_path || input.path)
 
   const renderBody = () => {
+    if (ops) return <OpsBody ops={ops} />
     if (tool === 'RemoteRun') return <div className="approval-command">
       <p>{str(input.permissions)}</p>
       {/* Two separate <pre>s rather than one with an embedded "\n" — a template-literal
@@ -78,7 +103,7 @@ export default function ApprovalModal({ request, onDecide, sessionName, inline =
     return <pre className="approval-json">{JSON.stringify(input, null, 2)}</pre>
   }
 
-  const verb =
+  const verb = ops ? describeOpsRequest(ops).verb :
     tool === 'RemoteRun' ? 'start a remote run' : tool === 'Bash' ? 'run a command' : tool === 'Write' ? 'create / overwrite a file' : 'use a tool'
 
   return (
@@ -98,12 +123,17 @@ export default function ApprovalModal({ request, onDecide, sessionName, inline =
           </h3>
           {sessionName && <div className="approval-session">{sessionName}</div>}
         </div>
-        {filePath && <div className="approval-path">{filePath}</div>}
+        {!ops && filePath && <div className="approval-path">{filePath}</div>}
         <div className="approval-body">{renderBody()}</div>
         <div className="modal-footer approval-footer">
           <button className="btn-secondary" onClick={() => onDecide(false)}>
             Deny {!inline && <span className="kbd">Esc</span>}
           </button>
+          {ops && onStop && (
+            <button className="btn-secondary approval-stop" onClick={onStop}>
+              Deny and stop the run
+            </button>
+          )}
           <button className="btn-primary" onClick={() => onDecide(true)}>
             Allow once {!inline && <span className="kbd">Ctrl/⌘↵</span>}
           </button>

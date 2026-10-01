@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ApprovalRequest } from '../types'
 import { applyTheme } from '../lib/theme'
+import { summarizeOps } from '../lib/ops-approval'
 
 // Approval toast window. Shown bottom-right, always on top, whenever an agent run
 // needs tool approval while the main window is hidden/unfocused, so the run never
@@ -12,6 +13,7 @@ import { applyTheme } from '../lib/theme'
 function summarize(req: ApprovalRequest): string {
   const input = req.input || {}
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  if (req.ops) return summarizeOps(req.ops)
   switch (req.tool) {
     case 'Bash':
       return str(input.command) || 'Run a command'
