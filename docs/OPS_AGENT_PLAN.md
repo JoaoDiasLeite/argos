@@ -335,7 +335,7 @@ Short, and the tests assert it is present on every ops run:
 
 ## 9. Phases — each shippable, each a reviewed batch
 
-### Phase 0 — close the holes that exist today · 1 day
+### Phase 0 — close the holes that exist today · done (`d54f4bc`, `75a2385`)
 1. **Invert the approval gate.** `index.ts:961` becomes an allowlist of read-only tools
    (`Read, Grep, Glob, LS, WebSearch?` — decide, document) that auto-pass; **everything
    else asks**, including `mcp__*`, `WebFetch`, `Agent`, `KillShell`. Test: a tool name not
