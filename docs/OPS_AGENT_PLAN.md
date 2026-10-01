@@ -124,8 +124,8 @@ degrades to "allow everything"):
     { "name": "reload.sh", "sha256": "…", "hosts": ["web"], "class": "mutate", "approval": "ask",
       "args": { "max": 1, "pattern": "^[a-z0-9.-]+$" } }
   ],
-  "read": { "paths": ["^/etc/nginx/", "^/var/log/nginx/"], "maxBytes": 1000000 },
-  "write": { "paths": ["^/etc/nginx/sites-available/"], "approval": "ask", "backup": true },
+  "read": { "paths": ["^/etc/nginx/.*$", "^/var/log/nginx/.*$"], "maxBytes": 1000000 },
+  "write": { "paths": ["^/etc/nginx/sites-available/.*$"], "approval": "ask", "backup": true },
   "limits": { "timeoutMs": 60000, "maxOutputBytes": 200000, "concurrentPerHost": 1 }
 }
 ```
@@ -177,7 +177,11 @@ classify(tool, input, policy, host): { decision: 'allow'|'ask'|'deny'; class: 'r
    `list`/`write` need an absolute POSIX path with no `..` after `path.posix.normalize`
    (reuse `sftp-pure`'s guard).
 5. Allow rules for that host's groups, first match wins → that rule's `class` and
-   `approval`.
+   `approval`. The regex is matched against the **canonical** line rebuilt from the
+   parsed argv (words joined by one space, a word quoted only when it holds characters
+   outside `[A-Za-z0-9_./:=@%+,-]`), never against the raw string: `tail -n 100
+   '/var/log/nginx/error.log'` and the same command without quotes run the same argv, so
+   they must meet the same rule. Found in review of Phase 1.
 6. No match → `strict ? deny : ask`, class `mutate` (unknown is treated as the worse case).
 
 ### 3.2 What the model never controls
@@ -345,7 +349,7 @@ Short, and the tests assert it is present on every ops run:
 3. **Run-log honesty.** The Remote Session run log says "commands typed here", not "run
    log", and is left as is.
 
-### Phase 1 — pure core · 2 days
+### Phase 1 — pure core · done (`88f3ddb`, `1257aeb`, see git log for the gate)
 `ops-policy-pure.ts` (schema, validator, hashes), `ops-gate-pure.ts` (parser, denylist,
 classifier), `ops-audit-pure.ts` (event types, chain, report renderer). Tests first:
 - Validator: every rule in §2 has a failing fixture.
