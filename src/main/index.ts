@@ -137,6 +137,7 @@ import {
 import { listDistros, testDistro, testDistroClaude, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
 import { attributionFor, forgetSession as forgetAuthorship, recordToolUse } from './authorship'
+import { needsApproval } from './tool-approval-pure'
 import { posixToWslUnc } from './local-fs-pure'
 import {
   getHiddenDistros,
@@ -957,9 +958,6 @@ function send(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload)
 }
 
-// Tools that change the filesystem or run commands — these require approval in 'ask' mode.
-const MUTATING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Bash'])
-
 // Pending tool-approval prompts, keyed by an approval id, awaiting a renderer decision.
 interface ApprovalDecision {
   allow: boolean
@@ -1126,10 +1124,11 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
   const mcpServers = payload.useMcp ? mcpServersForProject(projectPath) : undefined
   const askMode = payload.approvalMode !== 'auto' && payload.permissionMode !== 'bypassPermissions'
 
-  // In 'ask' mode, prompt the renderer before any mutating tool runs.
+  // In 'ask' mode, prompt the renderer before any tool that is not on the read-only
+  // allowlist runs (see tool-approval-pure.ts for why it is an allowlist).
   const canUseTool = askMode
     ? async (toolName: string, input: Record<string, unknown>) => {
-        if (!MUTATING_TOOLS.has(toolName)) {
+        if (!needsApproval(toolName)) {
           return { behavior: 'allow' as const, updatedInput: input }
         }
         const approvalId = nextApprovalId()
