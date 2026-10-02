@@ -1,0 +1,154 @@
+{
+  "id": "sprint-14",
+  "name": "Sprint 14",
+  "goal": "SAML login live for the municipal portal.",
+  "startDate": "2026-09-29",
+  "endDate": "2026-10-12",
+  "status": "active",
+  "projectPath": "C:/Work/Portal municipal",
+  "items": [
+    {
+      "id": "i1",
+      "title": "Renew PostgreSQL TLS cert on db-02",
+      "status": "todo",
+      "points": 5,
+      "createdAt": 1790668800000,
+      "completedAt": null,
+      "ref": "#142",
+      "kind": "issue",
+      "forge": "gitlab"
+    },
+    {
+      "id": "i2",
+      "title": "Audit log export for the client",
+      "status": "todo",
+      "points": 3,
+      "createdAt": 1790668800000,
+      "completedAt": null,
+      "ref": "#139",
+      "kind": "issue",
+      "forge": "gitlab"
+    },
+    {
+      "id": "i3",
+      "title": "Rails 7.2 upgrade dry run",
+      "status": "todo",
+      "points": 3,
+      "createdAt": 1790668800000,
+      "completedAt": null,
+      "ref": "!88",
+      "kind": "merge-request",
+      "forge": "gitlab"
+    },
+    {
+      "id": "i4",
+      "title": "Rotate the SFTP host keys on Rocky hosts",
+      "status": "todo",
+      "points": 1,
+      "createdAt": 1790668800000,
+      "completedAt": null
+    },
+    {
+      "id": "i5",
+      "title": "Update the SAML runbook",
+      "status": "todo",
+      "points": 1,
+      "createdAt": 1790668800000,
+      "completedAt": null
+    },
+    {
+      "id": "i6",
+      "title": "SAML metadata exchange with the IdP",
+      "status": "in-progress",
+      "points": 5,
+      "createdAt": 1790668800000,
+      "completedAt": null,
+      "ref": "#131",
+      "kind": "issue",
+      "forge": "gitlab",
+      "prevStatus": "todo"
+    },
+    {
+      "id": "i7",
+      "title": "Nginx rate limits on the public API",
+      "status": "in-progress",
+      "points": 3,
+      "createdAt": 1790668800000,
+      "completedAt": null,
+      "ref": "#137",
+      "kind": "issue",
+      "forge": "gitlab",
+      "prevStatus": "todo"
+    },
+    {
+      "id": "i8",
+      "title": "Disk alert thresholds on app-03",
+      "status": "in-progress",
+      "points": null,
+      "createdAt": 1790668800000,
+      "completedAt": null,
+      "prevStatus": "todo"
+    },
+    {
+      "id": "i9",
+      "title": "Rocky 9 patching, test host",
+      "status": "done",
+      "points": 3,
+      "createdAt": 1790668800000,
+      "completedAt": 1790694000000,
+      "prevStatus": "in-progress"
+    },
+    {
+      "id": "i10",
+      "title": "Backup restore drill",
+      "status": "done",
+      "points": 5,
+      "createdAt": 1790668800000,
+      "completedAt": 1790776800000,
+      "prevStatus": "in-progress"
+    },
+    {
+      "id": "i11",
+      "title": "Ops runbook: diagnose-rails-host",
+      "status": "done",
+      "points": 3,
+      "createdAt": 1790668800000,
+      "completedAt": 1790848800000,
+      "prevStatus": "in-progress"
+    },
+    {
+      "id": "i12",
+      "title": "Changelog 2.0.0",
+      "status": "done",
+      "points": 2,
+      "createdAt": 1790668800000,
+      "completedAt": 1790870400000,
+      "prevStatus": "in-progress"
+    }
+  ],
+  "standups": [
+    {
+      "date": "2026-09-30",
+      "yesterday": "Patched the Rocky 9 test host.",
+      "today": "Backup restore drill.",
+      "blockers": "",
+      "updatedAt": 1790755200000
+    },
+    {
+      "date": "2026-10-01",
+      "yesterday": "Finished the backup restore drill.",
+      "today": "SAML metadata exchange with the IdP.",
+      "blockers": "SAML metadata exchange with the IdP: waiting on the client's IdP team.",
+      "updatedAt": 1790841600000
+    },
+    {
+      "date": "2026-10-02",
+      "yesterday": "Finished the backup restore drill; runbook written.",
+      "today": "Rate limits on the public API, then the db-02 cert.",
+      "blockers": "#131 IdP metadata still missing, waiting on the client's IdP team.",
+      "updatedAt": 1790928000000
+    }
+  ],
+  "createdAt": 1790593200000,
+  "updatedAt": 1790931600000
+}

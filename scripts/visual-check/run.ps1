@@ -59,6 +59,12 @@ New-Item -ItemType Directory -Force -Path (Join-Path $userDataDir 'sessions') | 
 # PowerShell 5.1's Set-Content/Out-File, which would add a BOM).
 Copy-Item -Path (Join-Path $scriptDir 'seed\config.json') -Destination (Join-Path $userDataDir 'config.json') -Force
 Copy-Item -Path (Join-Path $scriptDir 'seed\sessions\*.json') -Destination (Join-Path $userDataDir 'sessions') -Force
+# Sprints for the Planner's sprint board (one JSON file per sprint, as src/main/sprints.ts stores them).
+$seedSprints = Join-Path $scriptDir 'seed\sprints'
+if (Test-Path $seedSprints) {
+  New-Item -ItemType Directory -Force -Path (Join-Path $userDataDir 'sprints') | Out-Null
+  Copy-Item -Path (Join-Path $seedSprints '*.json') -Destination (Join-Path $userDataDir 'sprints') -Force
+}
 
 if (-not $SkipBuild) {
   Write-Host "== Building app (electron-vite build)"
