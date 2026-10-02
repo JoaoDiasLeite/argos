@@ -27,17 +27,30 @@ export interface MigrateLegacySessionsResult {
   failed: { id: string; error: string }[]
 }
 
-/** Write a new file, never replacing one. An existing identical file counts as done
- *  (a retry after a later step failed); a different one is an error. */
-function writeOnce(p: string, data: Buffer | string): void {
-  try {
-    fs.writeFileSync(p, data, { flag: 'wx' })
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
-    const existing = fs.readFileSync(p)
-    const wanted = typeof data === 'string' ? Buffer.from(data, 'utf-8') : data
-    if (!existing.equals(wanted)) throw new Error(`${path.basename(p)} already exists with different content`)
+/**
+ * Write a new file, never replacing one. An existing identical file counts as done (a
+ * retry after a later step failed). An existing *different* file is kept and the data
+ * goes to the next free `<stem>.2<ext>`, `<stem>.3<ext>`…: seen on the first real run,
+ * where the dev instance re-seeds its sessions from the production folder, so the same
+ * id came back with newer content and a backup already sat there. Both copies are worth
+ * keeping; refusing would have left that session unmigrated for good. Returns the path
+ * actually written.
+ */
+function writeOnce(p: string, data: Buffer | string): string {
+  const wanted = typeof data === 'string' ? Buffer.from(data, 'utf-8') : data
+  const ext = path.extname(p)
+  const stem = p.slice(0, p.length - ext.length)
+  for (let n = 1; n < 1000; n++) {
+    const candidate = n === 1 ? p : `${stem}.${n}${ext}`
+    try {
+      fs.writeFileSync(candidate, wanted, { flag: 'wx' })
+      return candidate
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+      if (fs.readFileSync(candidate).equals(wanted)) return candidate
+    }
   }
+  throw new Error(`${path.basename(p)}: too many existing copies`)
 }
 
 /**
@@ -85,8 +98,9 @@ export async function migrateLegacySessions(opts: MigrateLegacySessionsOptions):
       fs.mkdirSync(backupDir, { recursive: true })
       writeOnce(path.join(backupDir, file), original)
       fs.mkdirSync(exportsDir, { recursive: true })
-      writeOnce(exportPath, outcome.markdown)
-      writeJsonFileAtomic(src, outcome.session)
+      const written = writeOnce(exportPath, outcome.markdown)
+      // The export may have landed on a numbered copy; the session must point at that one.
+      writeJsonFileAtomic(src, { ...outcome.session, archivedTranscript: written })
       result.exported++
     } catch (e) {
       result.failed.push({ id, error: e instanceof Error ? e.message : String(e) })

@@ -124,17 +124,43 @@ describe('migrateLegacySessions', () => {
     expect(fs.readFileSync(path.join(sessionsDir, 'a.json'), 'utf-8')).toBe(after)
   })
 
-  it('never overwrites an existing different backup and leaves that session untouched', async () => {
+  it('keeps an existing different backup and writes the new one beside it', async () => {
     const raw = JSON.stringify(legacy('a', 'claude-opus-5'))
     writeSession('a.json', raw)
     fs.mkdirSync(backupDir)
     fs.writeFileSync(path.join(backupDir, 'a.json'), 'older backup')
+    fs.mkdirSync(exportsDir, { recursive: true })
+    const planned = fs.readdirSync(exportsDir)
 
     const res = await run()
-    expect(res.exported).toBe(0)
-    expect(res.failed.map((f) => f.id)).toEqual(['a'])
+    expect(res).toEqual({ exported: 1, upgraded: 0, skipped: 0, failed: [] })
+    // Neither copy is lost: the older backup stays, the new original goes to a.2.json.
     expect(fs.readFileSync(path.join(backupDir, 'a.json'), 'utf-8')).toBe('older backup')
-    expect(fs.readFileSync(path.join(sessionsDir, 'a.json'), 'utf-8')).toBe(raw)
+    expect(fs.readFileSync(path.join(backupDir, 'a.2.json'), 'utf-8')).toBe(raw)
+    expect(planned).toEqual([])
+    const migrated = readSession('a.json') as { archivedTranscript: string }
+    expect(fs.existsSync(migrated.archivedTranscript)).toBe(true)
+  })
+
+  it('points the session at a numbered export when the planned name is taken', async () => {
+    const raw = JSON.stringify(legacy('a', 'claude-opus-5'))
+    writeSession('a.json', raw)
+    fs.mkdirSync(exportsDir, { recursive: true })
+    // Pre-create the planned export with other content, as a second run over re-seeded
+    // sessions would find it.
+    const first = await (async () => {
+      await run()
+      return (readSession('a.json') as { archivedTranscript: string }).archivedTranscript
+    })()
+    fs.writeFileSync(first, '# something else')
+    writeSession('a.json', raw)
+
+    const res = await run()
+    expect(res.exported).toBe(1)
+    const second = (readSession('a.json') as { archivedTranscript: string }).archivedTranscript
+    expect(second).not.toBe(first)
+    expect(second).toMatch(/\.2\.md$/)
+    expect(fs.readFileSync(first, 'utf-8')).toBe('# something else')
   })
 
   it('retries after a partial run whose backup and export were already written', async () => {
