@@ -375,5 +375,5 @@ describe('ops relay', () => {
     revokeToken(token)
     expect(await exited).toBe(0)
     expect(logged).toEqual([])
-  })
+  }, 30_000) // the first test to import the MCP SDK and zod pays a cold load; seen past 5 s once
 })
