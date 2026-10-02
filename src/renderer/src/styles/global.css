@@ -37,7 +37,10 @@
   /* Code block size. A token rather than the literal it replaced, so lib/theme.ts can
      write it from UiPrefs.codeFontSize; the value is what code blocks already used. */
   --font-size-code: 13px;
+  /* Buttons and segmented toggles: the things you click. */
   --radius: 8px;
+  /* Surfaces: panels, inputs, rows, code blocks, tiles (ops design rule). */
+  --radius-surface: 4px;
   --radius-sm: 4px;
   --radius-lg: 12px;
   --sidebar-width: 260px;

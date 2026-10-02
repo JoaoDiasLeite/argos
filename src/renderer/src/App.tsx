@@ -23,7 +23,7 @@ import ServerTabs from './components/ServerTabs'
 import ApprovalModal from './components/ApprovalModal'
 import PlanReviewSheet from './components/PlanReviewSheet'
 import SecretPrompt from './components/SecretPrompt'
-import { readRecentRunbooks } from './lib/recent-runbooks'
+import type { Intervention } from './lib/intervention-types'
 import { CLI_PROVIDERS } from './lib/cli-providers'
 import PendingRuns, { PendingRun } from './components/PendingRuns'
 import FileEditor from './components/FileEditor'
@@ -77,7 +77,7 @@ const McpView = lazy(() => import('./views/McpView'))
 const PlannerView = lazy(() => import('./views/PlannerView'))
 const RemoteView = lazy(() => import('./views/RemoteView'))
 const RemoteSessionView = lazy(() => import('./views/RemoteSessionView'))
-const OpsView = lazy(() => import('./views/OpsView'))
+const InterventionStart = lazy(() => import('./views/InterventionStart'))
 const OpsWorkspace = lazy(() => import('./views/OpsWorkspace'))
 const SettingsView = lazy(() => import('./views/SettingsView'))
 const HomeView = lazy(() => import('./views/HomeView'))
@@ -2057,35 +2057,24 @@ export default function App() {
     })
   }
 
-  // "Ops" on an SSH host card: the Ops workspace for the most recent runbook that names
-  // this host. None does → the most recent runbook anyway. Ops lives in the workspace's
-  // gated terminal only (H1).
-  const connectOps = async (host: SshHostPublic) => {
-    const recents = readRecentRunbooks()
-    if (recents.length === 0) return
-    let runbookPath = recents[0]
-    for (const dir of recents) {
-      try {
-        const info = await window.electronAPI.opsLoadRunbook(dir)
-        if (info.ok && info.hosts.some((h) => h.id === host.id)) {
-          runbookPath = dir
-          break
-        }
-      } catch {
-        /* an unreadable runbook just doesn't match */
-      }
-    }
-    openOpsWorkspace(runbookPath)
+  // "Ops" on an SSH host card: the intervention start screen with that host chosen. It
+  // picks the most recent runbook that knows the host itself; the task still has to be
+  // typed, so nothing opens straight into a workspace from here.
+  const [opsStartHostId, setOpsStartHostId] = useState<string | undefined>(undefined)
+  const connectOps = (host: SshHostPublic) => {
+    setOpsStartHostId(host.id)
+    setView('ops')
   }
 
   // Servers → Ops. The workspace is an extra of the Servers group, like a Remote/WSL
-  // session; which runbook it shows lives here so the view itself stays a plain string.
-  const [opsWorkspace, setOpsWorkspace] = useState<{ runbookPath: string } | null>(null)
+  // session; the intervention it runs (runbook, scope, task, ticket, client) lives here
+  // so the view itself stays a plain string.
+  const [opsWorkspace, setOpsWorkspace] = useState<Intervention | null>(null)
   /** The ops terminal the workspace has on screen — a plan for its run is reviewed in the
    *  workspace's side column, so the drawer steps aside for it. */
   const [opsTerminalVisibleId, setOpsTerminalVisibleId] = useState<string | null>(null)
-  const openOpsWorkspace = (runbookPath: string) => {
-    setOpsWorkspace({ runbookPath })
+  const openOpsWorkspace = (intervention: Intervention) => {
+    setOpsWorkspace(intervention)
     setView('ops-workspace')
   }
   // "New terminal here" on a WSL row.
@@ -2601,7 +2590,9 @@ export default function App() {
               />
             )}
             {view === 'mcp' && <McpView />}
-            {(view === 'ops' || view === 'ops-workspace') && <OpsView onOpen={openOpsWorkspace} />}
+            {(view === 'ops' || view === 'ops-workspace') && (
+              <InterventionStart key={opsStartHostId ?? ''} initialHostId={opsStartHostId} onStart={openOpsWorkspace} />
+            )}
             {view === 'remote' && (
               <RemoteView
                 onConnect={connectRemote}
