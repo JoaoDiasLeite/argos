@@ -20,6 +20,15 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'New',
+        items: [
+          'Ops chats: operate servers from a runbook, with Claude running here and nothing installed on the server. Pick a runbook folder (RUNBOOK.md, policy.json, scripts/) in the chat’s environment menu; the chat then loses every local tool and gains five that reach the runbook’s hosts over the existing SSH connection: run, script, read, list, write. Every call is parsed into one simple command, checked against a denylist no policy can override, matched to the runbook’s rules, and written to an audit ledger before it runs. A read runs on its own; anything else asks, showing the host, the exact command and the rule that matched. Nothing runs before you approve the model’s plan.',
+          'The ops timeline beside an ops chat shows each call as it happens: host, command, class, decision, exit code and duration, with the output a click away, and the chat’s earlier runs after a restart. When a run ends, Report renders it twice: an internal version with every command, and a client version in formal European Portuguese with commands, paths and addresses removed, which can be saved beside the runbook.',
+          'A sudo command that needs a password asks for it once per host and run, keeps it in memory only, and never writes it to the ledger.',
+          'Settings → Ops audit shows where the ledger lives and verifies a day’s hash chain.'
+        ]
+      },
+      {
         title: 'Improvements',
         items: [
           'A chat set to ask before acting now asks for every tool that is not plainly read-only. Until now only five tools asked (Edit, Write, MultiEdit, NotebookEdit, Bash); MCP servers, web fetches, subagents and process kills ran unprompted, and so would any tool added later. The list is now the other way round: Read, Grep, Glob and the CLI’s own bookkeeping pass, everything else asks.',
