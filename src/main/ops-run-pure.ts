@@ -633,10 +633,27 @@ export function planInputWithoutSkips(input: Record<string, unknown>, skips: num
 }
 
 /** What propose_plan answers once approved; skipped steps are named 1-based. */
-export function planApprovedText(skips: number[]): string {
-  if (skips.length === 0) return PLAN_APPROVED_TEXT
-  const n = skips.map((i) => String(i + 1)).join(', ')
-  return `Plan approved. Step${skips.length > 1 ? 's' : ''} ${n} ${skips.length > 1 ? 'were' : 'was'} skipped by the operator: do not run ${skips.length > 1 ? 'them' : 'it'}. Proceed step by step.`
+/**
+ * What the model reads after an approval with skips. Steps are named by title and
+ * command, never by number: on the first real run the model had numbered its own prose
+ * "1, 2a, 2b, 2c" and could not tell which of three readings "steps 1, 2" meant, so it
+ * stopped and asked. Both lists are given, so there is nothing left to infer.
+ */
+export function planApprovedText(steps: OpsPlanStep[], skips: number[]): string {
+  if (skips.length === 0 || steps.length === 0) return PLAN_APPROVED_TEXT
+  const skipped = new Set(skips)
+  const line = (s: OpsPlanStep): string =>
+    s.commands.length ? `- ${s.title}: ${s.commands.join(' ; ')}` : `- ${s.title}`
+  const out: string[] = ['Plan approved with changes by the operator.', '', 'Skipped, do NOT run these:']
+  steps.forEach((s, i) => {
+    if (skipped.has(i)) out.push(line(s))
+  })
+  out.push('', 'Approved, run these in order, one command per call:')
+  steps.forEach((s, i) => {
+    if (!skipped.has(i)) out.push(line(s))
+  })
+  out.push('', 'Proceed step by step. If you need a skipped step after all, propose a new plan.')
+  return out.join('\n')
 }
 
 /** A run or script call as a plan step line, so it can be matched against skipped steps. */

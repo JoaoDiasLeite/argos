@@ -511,3 +511,19 @@ describe('plan', () => {
     })
   })
 })
+
+describe('planApprovedText', () => {
+  it('names skipped and approved steps by title and command, never by number', async () => {
+    const { planApprovedText } = await import('./ops-run-pure')
+    const steps = [
+      { title: 'Sistema', commands: ['cat /etc/os-release', 'uptime'], verdict: 'runs' as const },
+      { title: 'Serviços', commands: ['systemctl status nginx'], verdict: 'runs' as const },
+      { title: 'Processos', commands: ['pgrep -af puma'], verdict: 'runs' as const }
+    ]
+    const text = planApprovedText(steps, [0, 1])
+    expect(text).toContain('Skipped, do NOT run these:\n- Sistema: cat /etc/os-release ; uptime\n- Serviços: systemctl status nginx')
+    expect(text).toContain('Approved, run these in order, one command per call:\n- Processos: pgrep -af puma')
+    expect(text).not.toMatch(/Steps? \d/)
+    expect(planApprovedText(steps, [])).toBe('Plan approved. Proceed step by step.')
+  })
+})

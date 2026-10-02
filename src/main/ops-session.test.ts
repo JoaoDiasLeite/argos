@@ -799,10 +799,13 @@ describe('skipped plan steps', () => {
       },
       { plan: false }
     )
-    expect(await call('propose_plan', PLAN)).toEqual({
-      text: 'Plan approved. Steps 2, 3 were skipped by the operator: do not run them. Proceed step by step.',
-      isError: false
-    })
+    const reply = await call('propose_plan', PLAN)
+    expect(reply.isError).toBe(false)
+    // Steps are named by title and command, never by number: the model's own numbering
+    // is not ours (seen on the first real run).
+    expect(reply.text).toContain('Skipped, do NOT run these:')
+    expect(reply.text).toContain('Approved, run these in order')
+    expect(reply.text).not.toMatch(/Steps? d/)
     const approved = (await lines()).find((l) => l.event.kind === 'plan.approved')?.event
     expect(approved).toMatchObject({ kind: 'plan.approved', skippedSteps: [1, 2] })
     expect((approved as { steps: unknown[] }).steps).toHaveLength(4)
@@ -828,9 +831,7 @@ describe('skipped plan steps', () => {
       async (req) => (req.tool === 'mcp__ops__propose_plan' ? { allow: true, skipSteps: [0] } : { allow: true }),
       { plan: false }
     )
-    expect((await call('propose_plan', PLAN)).text).toBe(
-      'Plan approved. Step 1 was skipped by the operator: do not run it. Proceed step by step.'
-    )
+    expect((await call('propose_plan', PLAN)).text).toContain('Skipped, do NOT run these:')
     await finishOpsRun(session.ctx, { ok: true, costUsd: 0 })
     const summary = summarizeRun(await lines(), 'run-1')
     expect(summary?.planSteps?.map((s) => s.skipped === true)).toEqual([true, false, false, false])

@@ -27,6 +27,7 @@ import {
   classifyPlanSteps,
   planApprovalContext,
   planStepsFrom,
+  type OpsPlanStep,
   planTextFor,
   callPlanLine,
   planInputWithoutSkips,
@@ -101,6 +102,8 @@ export interface OpsRunContext {
    */
   skippedSteps: number[]
   skippedCommands: Set<string>
+  /** The last approved plan as classified, so the approval text can name steps by title. */
+  planSteps?: OpsPlanStep[]
   /** canUseTool parks each decided call's id here; the tool handler takes it. */
   calls: CallBook
   readScript: ReadScriptFn
@@ -582,6 +585,7 @@ async function decidePlan(
     // A new plan, new decisions: the earlier plan's skips go with it.
     ctx.skippedSteps = skips
     ctx.skippedCommands = skippedCommandLines(plan, skips)
+    ctx.planSteps = plan.steps
     return { behavior: 'allow' as const, updatedInput: planInputWithoutSkips(input, skips) }
   }
   // A rejected revision does not leave the earlier plan standing: the operator has just
