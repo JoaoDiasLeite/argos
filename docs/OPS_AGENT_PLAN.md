@@ -481,6 +481,32 @@ Argos only sees the screen. This phase moves the gate to a place both can reach.
 **Not in this phase:** running the relay on the server (never), enforcing local-tool
 removal on Codex/Gemini (not possible from outside the CLI), and the review-gate backlog.
 
+### First run against a real host · 2026-10-02
+
+The `diagnose-rails-host` runbook (in the sibling `runbooks` repo) ran against the Rocky
+9.8 test VM over ssh2 through the real policy, gate, ledger and reports, with the
+Electron-wrapped host store replaced by a direct connection. 18 commands ran, 4 were
+refused as intended (an unlisted sudo, a `;` chain, a path outside the policy, a `..`),
+the ledger verified clean at 67 lines. What it taught:
+
+- **Titles are the client's text, not the sanitiser's input.** The sanitiser redacted
+  `nginx`, `Ruby` and `erros` out of step titles because they were argv words. Fixed:
+  titles are sanitised only for hosts and addresses, and listed as noun phrases
+  (`35e7b7e`).
+- **`sudo` with `NOPASSWD` for one command passes silently** (`sudo nginx -t` ran with no
+  password), while `sudo -u postgres psql` needed one and the probe, having no prompt,
+  got "a password is required". The app's prompt (§4) covers this; the probe did not.
+- **Each exec took about 2 s** on this VM, even `nproc`. Measured: `source ~/.bashrc`
+  alone is 1.4 s, from `nvm.sh` (bash sources `.bashrc` for every ssh exec because sshd
+  sets `SSH_CLIENT`). Not Argos's to fix, but a runbook of twenty reads is a minute of
+  waiting; a `[ -z "$PS1" ] && return` before the nvm lines on the host removes it.
+- **Rules for services that do not exist return exit 4** (`puma.service could not be
+  found`) and the client report then says operations were not concluded. A runbook per
+  host profile, or titles that say "quando existir", would read better.
+- The VM has nginx, redis, memcached and monit as units; PostgreSQL 17 is installed but
+  disabled; no puma or sidekiq units. `sudo` asks for a password for anything not in a
+  NOPASSWD rule.
+
 ## 10. Verification
 
 - `npm run typecheck` and `npm test` on every staged tree.
