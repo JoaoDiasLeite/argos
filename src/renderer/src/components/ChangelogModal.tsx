@@ -18,7 +18,41 @@ const CHANGELOG: Entry[] = [
     version: '2.0.0',
     date: '2026-10-02',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Changed',
+        items: [
+          'Argos is terminal-only. The chat composer and transcript are gone: every chat is the CLI (Claude Code, Codex or Gemini) in an embedded terminal, started from the sidebar, the quick launcher, Home, Planner tasks, the standup and the remote and WSL hosts. The CLI prompts for its own tools, so Argos no longer asks a second time.',
+          'Chats from before 2.0 are kept. The original file is saved untouched, the transcript is exported to Markdown, and the chat reopens at the setup pane with a link to both; a Claude chat offers “Resume in terminal”. Settings → General says how many were saved.',
+          'The setup pane chooses the CLI, which replaces the model picker. The model is the CLI’s own /model. The default model in Settings is now named for what it still does: background tasks.',
+          'Planner opens on the Sprint board. The weekly planner is still there, behind Settings → General → “Show the weekly planner”, off by default.'
+        ]
+      },
+      {
+        title: 'Removed',
+        items: [
+          'Live: it listed Claude processes running outside Argos and could take one over, and nothing opened it any more.',
+          'Agents and Rooms: custom agent definitions and the room board were only reachable from the command palette and were not used. Saved agents stay on disk.',
+          'Planner · Backlog and the memory diagnostic: neither was used. Your repository’s BACKLOG files are untouched.',
+          'Routines and the scheduler: scheduled prompts were never used, and Home’s “Next up” went with them. Saved routines stay on disk, never run.',
+          'The Git modal, the Review panel, Checkpoints and file authorship: git is done in the terminal, and without the old chat’s tool events there was nothing to record authorship from.',
+          'The CLAUDE.md editor: its only entry point was the old chat’s menu.',
+          'Home’s “Plan & spend”: it repeated Usage and the sidebar badge.',
+          'Quick chat and light mode: both belonged to the old chat. The quick launcher now starts a terminal.',
+          'The headless SSH and WSL chats that ran Claude on the host: remote and WSL chats are terminals on the host now.',
+          'Budget alerts: they were counted from the old chat’s runs.',
+          'The worktree and add-dir toggles in the pre-launch bar: they never reached the terminal.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'An ops runbook picked in a terminal chat started a CLI with no gate, in the home folder. Ops runs now start only from the Ops workspace, where every call goes through the gate.',
+          'The ops timeline’s Stop did nothing for a terminal run. It now ends the run and revokes its session.',
+          'The pill, the taskbar progress bar and the success flag now follow terminal activity.'
+        ]
+      }
+    ]
   },
   {
     version: '1.17.0',
