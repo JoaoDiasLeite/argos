@@ -21,6 +21,10 @@ Add new follow-ups above the line as they come up.
   done.
 - **`Menu` trigger has a `title` but no `aria-label`** on icon-only triggers (SSH keys "More").
   Give `Menu` an `ariaLabel` prop. Batch 6 or 8.
+- **Native `<select>` draws the browser chevron.** `select.text-input` (Fonts in Appearance,
+  sort in Projects, the launcher shortcut) shows the OS arrow instead of the design's SVG
+  chevron. Wrap it in a `.select` span that paints the SVG at the right and hides the native
+  arrow (`appearance: none`). Batch 8.
 
 ---
 
