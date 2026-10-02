@@ -37,6 +37,13 @@ export interface OpsRow {
   backup?: { path: string; backupPath: string }
 }
 
+export interface OpsPlanStepRow {
+  title: string
+  commands: string[]
+  verdict: string
+  hostName?: string
+}
+
 export interface OpsRun {
   runId: string
   /** ISO time of run.start, or of the first line seen for the run when that is missing. */
@@ -47,6 +54,8 @@ export interface OpsRun {
   /** Host id → name, from run.start, so rows can show the name instead of the address. */
   hostNames?: Record<string, string>
   planDecision?: 'approved' | 'rejected'
+  /** The latest approved plan's steps, as logged with plan.approved. */
+  planSteps?: OpsPlanStepRow[]
   /** ISO time of the plan decision. */
   planAt?: string
   calls: OpsRow[]
@@ -61,6 +70,19 @@ const strArr = (v: unknown): string[] | undefined =>
   Array.isArray(v) && v.every((w) => typeof w === 'string') ? (v as string[]) : undefined
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
 
+/** A ledger line's plan steps, keeping only well-formed ones; undefined when there are none. */
+function planStepsOf(v: unknown): OpsPlanStepRow[] | undefined {
+  if (!Array.isArray(v)) return undefined
+  const out: OpsPlanStepRow[] = []
+  for (const s of v as Record<string, unknown>[]) {
+    const title = str(s?.title)
+    if (title === undefined) continue
+    const hostName = str(s.hostName)
+    out.push({ title, commands: strArr(s.commands) ?? [], verdict: str(s.verdict) ?? '', ...(hostName ? { hostName } : {}) })
+  }
+  return out.length ? out : undefined
+}
+
 function blankRow(callId: string): OpsRow {
   return { callId, host: '', tool: '', class: '', decision: '', reason: 'decided event missing', status: 'decided' }
 }
@@ -69,6 +91,8 @@ function blankRow(callId: string): OpsRow {
 export function foldOpsEvents(events: OpsLiveEvent[]): OpsRun[] {
   const runs = new Map<string, OpsRun>()
   const rows = new Map<string, Map<string, OpsRow>>()
+  // Runs whose plan text came with run.start: that text stays, as in the main-side fold.
+  const startPlans = new Set<string>()
 
   const runFor = (runId: string, at: string): OpsRun => {
     let run = runs.get(runId)
@@ -110,7 +134,10 @@ export function foldOpsEvents(events: OpsLiveEvent[]): OpsRun[] {
           hosts.flatMap((h) => (str(h?.id) && str(h?.name) ? [[str(h.id) as string, str(h.name) as string]] : []))
         )
         const plan = str(e.planText)
-        if (plan) run.planText = plan
+        if (plan) {
+          run.planText = plan
+          startPlans.add(runId)
+        }
         break
       }
       case 'call.decided': {
@@ -169,6 +196,13 @@ export function foldOpsEvents(events: OpsLiveEvent[]): OpsRun[] {
       case 'plan.rejected': {
         run.planDecision = e.kind === 'plan.approved' ? 'approved' : 'rejected'
         run.planAt = ev.line.at
+        // Only an approved plan is the run's plan; a rejected one is just a decision.
+        if (e.kind === 'plan.approved') {
+          const steps = planStepsOf(e.steps)
+          if (steps) run.planSteps = steps
+          const plan = str(e.planText)
+          if (plan && !startPlans.has(runId)) run.planText = plan
+        }
         break
       }
       case 'run.end': {

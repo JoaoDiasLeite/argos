@@ -12,7 +12,7 @@ import {
 const WIN_PATH = 'C:\\Users\\Jo Leite\\AppData\\Roaming\\argos\\ops-mcp\\t1\\claude.json'
 const UNIX_PATH = '/home/jo leite/.config/argos/ops-mcp/t1/claude.json'
 const SID = '0b5c1d2e-aaaa-bbbb-cccc-1234567890ab'
-const DISALLOWED = 'Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Agent,Task'
+const DISALLOWED = 'Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Agent,Task'
 
 describe('claudeOpsFlags', () => {
   it('points at the ops config only, allows the ops tools and removes the local ones', () => {

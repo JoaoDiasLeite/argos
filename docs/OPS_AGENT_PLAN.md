@@ -428,6 +428,8 @@ Landed as planned, with these findings worth keeping:
   gives up on a call, main still waits on the modal.
 - Not verified: that Antigravity (`agy`) honours `GEMINI_CLI_SYSTEM_SETTINGS_PATH`. The
   Ops view shows Gemini as "tools only" but nobody has run it.
+- **2026-10-02: Codex and Gemini ops dropped from the UI**, never verified; the workspace
+  always launches Claude (main's `ops:terminal-session` still takes a provider).
 
 Phases 0–3 put the gate where Argos sits between the model and the tools: the SDK chat.
 The user's daily tool is the **embedded terminal**, where the CLI runs on its own and

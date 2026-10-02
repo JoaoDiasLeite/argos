@@ -145,3 +145,30 @@ describe('foldOpsEvents', () => {
     expect(rej.planDecision).toBe('rejected')
   })
 })
+
+describe('plan steps', () => {
+  const step = { title: 'check app', commands: ['systemctl status app'], verdict: 'runs', hostName: 'web1' }
+
+  it('folds the latest approved plan steps, skipping malformed ones, and leaves a rejection out', () => {
+    const [run] = foldOpsEvents([
+      start,
+      ev({ kind: 'plan.approved', planText: '1. check app', steps: [step, { commands: ['x'] }, 'junk'] }),
+      ev({ kind: 'plan.rejected', planText: '1. other', steps: [{ ...step, title: 'other' }] })
+    ])
+    expect(run.planSteps).toEqual([step])
+    // run.start's plan text stays the run's.
+    expect(run.planText).toBe('the plan')
+    expect(run.planDecision).toBe('rejected')
+  })
+
+  it('takes the plan text from plan.approved when run.start has none', () => {
+    const bare = ev({ kind: 'run.start', appSessionId: 's1', runbook: { name: 'rb' }, hosts: [], model: 'm' }, 'r3')
+    const [run] = foldOpsEvents([
+      bare,
+      ev({ kind: 'plan.approved', planText: '1. first', steps: [step] }, 'r3'),
+      ev({ kind: 'plan.approved', planText: '1. second' }, 'r3')
+    ])
+    expect(run.planText).toBe('1. second')
+    expect(run.planSteps).toEqual([step])
+  })
+})

@@ -37,7 +37,7 @@ import { OPS_BRIDGE_TOOLS, type OpsBridgeTool } from './ops-tool-defs-pure'
 import type { LoadedRunbook, LoadRunbookResult } from './ops-runbook-pure'
 import type { OpsExecutor } from './ops-exec-pure'
 import type { OpsLedger } from './ops-audit'
-import type { OpsAuditEvent, OpsAuditLine } from './ops-types'
+import type { OpsAuditEvent, OpsAuditLine, OpsLoggedPlanStep, OpsToolName } from './ops-types'
 
 export type { ApprovalOpsContext } from './ops-run-pure'
 
@@ -129,6 +129,13 @@ export interface OpsSession {
 }
 
 export type OpenOpsSessionResult = ({ ok: true } & OpsSession) | { ok: false; error: string }
+
+/** The client-facing step title of a file call whose gate gave none (pt-PT, like the report). */
+export const DEFAULT_FILE_TITLES: Partial<Record<OpsToolName, string>> = {
+  read: 'Leitura de um ficheiro de configuração',
+  list: 'Listagem de uma pasta',
+  write: 'Alteração de um ficheiro de configuração'
+}
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
@@ -309,6 +316,9 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions): CanUseT
 
       const key = callKey(parsed)
       const callId = ctx.calls.open(key)
+      // read/list/write rules carry no title, so the client report would have nothing but
+      // a path to show; these say what the step is without naming it.
+      const title = gate.title ?? DEFAULT_FILE_TITLES[tool]
 
       // Logged before anything runs, so a crash mid-call still leaves the intent on disk.
       const decided = await ctx.log({
@@ -325,7 +335,7 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions): CanUseT
         decision: gate.decision,
         reason: gate.reason,
         ...(gate.rule !== undefined ? { rule: gate.rule } : {}),
-        ...(gate.title !== undefined ? { title: gate.title } : {}),
+        ...(title !== undefined ? { title } : {}),
         ...(gate.scriptSha256 !== undefined ? { scriptSha256: gate.scriptSha256 } : {}),
         ...(gate.denylist !== undefined ? { denylist: gate.denylist } : {})
       })
@@ -394,17 +404,26 @@ async function decidePlan(
   if (opts.ask && !ctx.abort.signal.aborted) {
     answer = await opts.ask({ tool: toolName, input, ops: planApprovalContext(plan, ctx.runbook.ref.name) })
   }
+  // The steps as the operator saw them go into the ledger with the decision, so the report
+  // can show the plan (a terminal run has none at run.start).
+  const planText = planTextFor(plan.steps)
+  const logged: OpsLoggedPlanStep[] = plan.steps.map((s) => ({
+    title: s.title,
+    commands: [...s.commands],
+    verdict: s.verdict,
+    ...(s.hostName !== undefined ? { hostName: s.hostName } : {})
+  }))
   if (answer.allow && !ctx.abort.signal.aborted) {
-    const logged = await ctx.log({ kind: 'plan.approved', runId: ctx.runId, by: 'user' })
-    if (!logged.ok) return deny('Refused: the ops ledger is unavailable, so the plan cannot be approved.')
+    const ok = await ctx.log({ kind: 'plan.approved', runId: ctx.runId, by: 'user', planText, steps: logged })
+    if (!ok.ok) return deny('Refused: the ops ledger is unavailable, so the plan cannot be approved.')
     ctx.planApproved = true
-    ctx.planText = planTextFor(plan.steps)
+    ctx.planText = planText
     return { behavior: 'allow' as const, updatedInput: input }
   }
   // A rejected revision does not leave the earlier plan standing: the operator has just
   // said no to where the run was going.
   ctx.planApproved = false
-  await ctx.log({ kind: 'plan.rejected', runId: ctx.runId, by: 'user' })
+  await ctx.log({ kind: 'plan.rejected', runId: ctx.runId, by: 'user', planText, steps: logged })
   if (answer.stop) {
     ctx.abort.abort()
     return deny('Denied by the operator, who stopped the run.')

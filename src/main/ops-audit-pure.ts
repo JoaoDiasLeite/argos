@@ -17,6 +17,7 @@ import type {
   OpsClass,
   OpsDecision,
   OpsHostRef,
+  OpsLoggedPlanStep,
   OpsRunbookRef,
   OpsToolName
 } from './ops-types'
@@ -186,6 +187,8 @@ export interface OpsRunSummary {
   hosts: OpsHostRef[]
   model: string
   planText?: string
+  /** The latest approved plan's steps, when the ledger recorded them. */
+  planSteps?: OpsLoggedPlanStep[]
   planDecision?: 'approved' | 'rejected'
   calls: OpsCallSummary[]
   ok?: boolean
@@ -247,6 +250,9 @@ export function summarizeRun(lines: OpsAuditLine[], runId: string): OpsRunSummar
         break
       case 'plan.approved':
         s.planDecision = 'approved'
+        // A terminal run has no plan at run.start: the latest approved plan is the run's.
+        if (start.event.planText === undefined && e.planText !== undefined) s.planText = e.planText
+        if (e.steps !== undefined) s.planSteps = e.steps
         break
       case 'plan.rejected':
         s.planDecision = 'rejected'

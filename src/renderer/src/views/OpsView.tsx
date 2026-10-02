@@ -118,7 +118,7 @@ export default function OpsView({ onOpen }: Props) {
             <h1>Ops</h1>
             <p className="view-sub">
               Runbook-gated work on your servers: every command is checked against the runbook&apos;s policy,
-              asked when it must be, and written to the ledger.
+              asked when it must be, and written to the audit log.
             </p>
           </div>
           <div className="header-actions">
@@ -209,8 +209,8 @@ export default function OpsView({ onOpen }: Props) {
           <div className="ops-view-ledger">
             <span className="ops-view-ledger-text">
               {ledger
-                ? `Ledger · ${ledger.files} file${ledger.files === 1 ? '' : 's'} · ${formatBytes(ledger.bytes)}`
-                : 'Ledger'}
+                ? `Audit log · ${ledger.files} file${ledger.files === 1 ? '' : 's'} · ${formatBytes(ledger.bytes)}`
+                : 'Audit log'}
               {ledger && (
                 <span className="ops-view-meta mono" title={ledger.dir}>
                   {ledger.dir}

@@ -43,6 +43,40 @@ export function summarizeOps(ops: ApprovalOpsContext): string {
   return full.length > 80 ? full.slice(0, 79) + '…' : full
 }
 
+const cap = (s: string, n: number): string => (s.length > n ? s.slice(0, n - 1) + '…' : s)
+
+/**
+ * The toast's wording for an ops request: a question a person can answer at a glance
+ * from outside the app, and one line of detail. Never the raw `mcp__ops__*` tool name.
+ */
+export function opsToastText(ops: ApprovalOpsContext): { title: string; detail: string } {
+  const host = ops.hostName
+  if (ops.tool === 'plan') {
+    const t = planTotals(ops)
+    return {
+      title: `Approve the plan for ${ops.runbook || host}`,
+      detail: `${t.total} step${t.total === 1 ? '' : 's'} · ${planChangesLine(t)}`
+    }
+  }
+  const detail = ops.title || ops.reason
+  const path = ops.path ?? ''
+  switch (ops.tool) {
+    case 'script':
+      return { title: cap(`Allow script ${ops.argv?.[0] ?? ''} on ${host}?`, 90), detail }
+    case 'read':
+      return { title: cap(`Allow reading ${path} on ${host}?`, 90), detail }
+    case 'list':
+      return { title: cap(`Allow listing ${path} on ${host}?`, 90), detail }
+    case 'write':
+      return { title: cap(`Allow writing ${path} on ${host}?`, 90), detail }
+    default:
+      return {
+        title: ops.argv?.length ? `Allow \`${cap(displayArgv(ops.argv), 60)}\` on ${host}?` : `Allow a command on ${host}?`,
+        detail
+      }
+  }
+}
+
 // ── Plan review sheet ──
 
 export interface PlanTotals {

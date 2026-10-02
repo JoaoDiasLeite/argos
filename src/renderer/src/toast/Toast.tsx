@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ApprovalRequest } from '../types'
 import { applyTheme } from '../lib/theme'
-import { summarizeOps } from '../lib/ops-approval'
+import { opsToastText } from '../lib/ops-approval'
 
 // Approval toast window. Shown bottom-right, always on top, whenever an agent run
 // needs tool approval while the main window is hidden/unfocused, so the run never
@@ -13,7 +13,6 @@ import { summarizeOps } from '../lib/ops-approval'
 function summarize(req: ApprovalRequest): string {
   const input = req.input || {}
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
-  if (req.ops) return summarizeOps(req.ops)
   switch (req.tool) {
     case 'Bash':
       return str(input.command) || 'Run a command'
@@ -68,6 +67,41 @@ export default function Toast() {
     // so we don't need to optimistically remove — but doing so keeps the UI snappy.
     window.electronAPI.respondApproval({ approvalId: head.approvalId, allow })
     setQueue((prev) => prev.filter((r) => r.approvalId !== head.approvalId))
+  }
+
+  if (head.ops) {
+    // An ops request says what it asks in words: the MCP tool name means nothing to the
+    // person deciding, and a plan is approved, not "allowed".
+    const { title, detail } = opsToastText(head.ops)
+    return (
+      <div className="toast-shell">
+        <div className="toast-head">
+          <span className="toast-title">Argos ops</span>
+          {queue.length > 1 && <span className="toast-more">+{queue.length - 1} more</span>}
+        </div>
+        <div className="toast-body">
+          <span className="toast-question" title={title}>
+            {title}
+          </span>
+          {detail && (
+            <span className="toast-detail" title={detail}>
+              {detail}
+            </span>
+          )}
+        </div>
+        <div className="toast-actions">
+          <button className="toast-btn allow" onClick={() => decide(true)}>
+            Approve
+          </button>
+          <button className="toast-btn deny" onClick={() => decide(false)}>
+            Deny
+          </button>
+          <button className="toast-btn open" onClick={() => window.electronAPI.toastOpenMain()}>
+            Open Argos
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (

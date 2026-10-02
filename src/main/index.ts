@@ -371,6 +371,16 @@ function resolveApprovalEverywhere(approvalId: string): void {
   if (toastApprovals.size === 0) hideToast()
 }
 
+// The user came back to the main window, which already holds every pending approval (its
+// modal or plan sheet got each request when it was made). A toast over the app asking the
+// same thing is noise: withdraw it, from the toast only, and leave the requests pending.
+function withdrawToastApprovals(): void {
+  if (toastApprovals.size === 0) return
+  for (const id of toastApprovals) sendToToast('approval:resolved', id)
+  toastApprovals.clear()
+  hideToast()
+}
+
 const sessionsDir = path.join(app.getPath('userData'), 'sessions')
 // Where the pre-2.0 migration puts each SDK chat's transcript, and its original JSON.
 const chatExportsDir = path.join(app.getPath('userData'), 'exports', 'chats')
@@ -494,6 +504,7 @@ function createWindow(): void {
     mainWindow?.setOverlayIcon(null, '')
     // The app is visible/focused now, so the background-activity pill is redundant.
     hidePill()
+    withdrawToastApprovals()
   })
   // If a run is in flight when the user hides or minimizes the window mid-run, bring
   // up the pill at that moment so background activity stays visible.

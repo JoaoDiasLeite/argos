@@ -43,7 +43,7 @@ export default function SecretPrompt({ request, onSubmit }: Props) {
             aria-label={`sudo password for ${request.hostName}`}
           />
           <p className="secret-prompt-note">
-            Kept in memory only for this run and never written to the ledger.
+            Kept in memory only for this run and never written to the audit log.
           </p>
           <div className="secret-prompt-actions">
             <button type="button" className="btn-secondary" onClick={() => onSubmit(null)}>Decline</button>

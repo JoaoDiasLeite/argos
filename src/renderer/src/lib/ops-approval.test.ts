@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   describeOpsRequest, displayArgv, summarizeOps, planTotals, planTotalsGroups, planChangesLine,
-  planTarget, planStepLabel
+  planTarget, planStepLabel, opsToastText
 } from './ops-approval'
 import type { ApprovalOpsContext, OpsPlanStep } from '../types'
 
@@ -81,5 +81,28 @@ describe('plan approvals', () => {
     expect(planStepLabel(step({ commands: ['a', 'b', 'c'] }))).toBe('read · 3')
     expect(planStepLabel(step({ verdict: 'asks', sudo: true }))).toBe('asks · sudo')
     expect(planStepLabel(step({ verdict: 'denied' }))).toBe('not allowed')
+  })
+})
+
+describe('opsToastText', () => {
+  it('asks in words, never with the MCP tool name', () => {
+    expect(opsToastText({ ...base, argv: ['systemctl', 'status', 'puma'], hostName: 'Rocky-9-Testes', title: 'Estado' })).toEqual({
+      title: 'Allow `systemctl status puma` on Rocky-9-Testes?',
+      detail: 'Estado'
+    })
+    expect(opsToastText({ ...base, tool: 'read', path: '/etc/hosts' }).title).toBe('Allow reading /etc/hosts on web1?')
+    expect(opsToastText({ ...base, tool: 'script', argv: ['check.sh'] }).title).toBe('Allow script check.sh on web1?')
+    expect(opsToastText({ ...base, tool: 'run' }).detail).toBe('r')
+  })
+
+  it('names the runbook for a plan, with its size and what changes', () => {
+    const plan: ApprovalOpsContext = {
+      ...base,
+      tool: 'plan',
+      hostName: 'diagnose-rails-host',
+      runbook: 'diagnose-rails-host',
+      planSteps: [{ title: 'a', commands: ['uptime'], verdict: 'runs', class: 'read' }]
+    }
+    expect(opsToastText(plan)).toEqual({ title: 'Approve the plan for diagnose-rails-host', detail: '1 step · nothing changes' })
   })
 })

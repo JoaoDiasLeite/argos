@@ -95,7 +95,15 @@ export function renderInternalReport(summary: OpsRunSummary): string {
   out.push('')
 
   out.push('## Plan', '')
-  out.push(s.planText && s.planText.trim() ? s.planText.trim() : '_No plan recorded._')
+  if (s.planSteps && s.planSteps.length > 0) {
+    s.planSteps.forEach((p, i) => {
+      const cmds = p.commands.map((c) => `\`${c}\``).join(' · ')
+      const host = p.hostName ? ` (${p.hostName})` : ''
+      out.push(`${i + 1}. ${p.title}${host}${cmds ? ` – ${cmds}` : ''}`)
+    })
+  } else {
+    out.push(s.planText && s.planText.trim() ? s.planText.trim() : '_No plan recorded._')
+  }
   out.push('', `Plan decision: ${s.planDecision ?? 'not recorded'}`, '')
 
   out.push('## Calls', '')

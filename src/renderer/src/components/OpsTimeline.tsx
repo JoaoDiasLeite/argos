@@ -147,6 +147,35 @@ function CallRow({ row }: { row: OpsRow }) {
   )
 }
 
+/** The run's plan decision; an approved plan with logged steps opens to list them. */
+function PlanLine({ run }: { run: OpsRun }) {
+  const [open, setOpen] = useState(false)
+  if (run.planDecision !== 'approved') return <div className="ops-tl-plan rejected">Plan rejected</div>
+  const steps = run.planSteps ?? []
+  const label = `Plan approved ${formatClock(run.planAt)}${steps.length ? ` · ${steps.length} step${steps.length === 1 ? '' : 's'}` : ''}`
+  return (
+    <div className="ops-tl-plan approved">
+      {steps.length === 0 ? (
+        label
+      ) : (
+        <button className="ops-tl-plan-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          {label}
+        </button>
+      )}
+      {open && steps.length > 0 && (
+        <ol className="ops-tl-plan-steps">
+          {steps.map((s, i) => (
+            <li key={i}>
+              <span>{s.title}{s.hostName ? ` · ${s.hostName}` : ''}</span>
+              {s.commands.map((c, j) => <code key={j}>{c}</code>)}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
+}
+
 /** Right-side panel of an ops chat: one block per run, newest first, one row per call. */
 export default function OpsTimeline({ appSessionId, runbookPath, onClose }: Props) {
   const { events, loading } = useOpsEvents(appSessionId)
@@ -172,11 +201,7 @@ export default function OpsTimeline({ appSessionId, runbookPath, onClose }: Prop
               {run.hosts.length > 0 && <span>{run.hosts.join(', ')}</span>}
               <span>{formatTime(run.startedAt)}</span>
             </div>
-            {run.planDecision && (
-              <div className={`ops-tl-plan ${run.planDecision}`}>
-                {run.planDecision === 'approved' ? `Plan approved ${formatClock(run.planAt)}` : 'Plan rejected'}
-              </div>
-            )}
+            {run.planDecision && <PlanLine run={run} />}
             {run.ended?.error && <p className="ops-tl-reason">{run.ended.error}</p>}
             {!run.ended && (
               <button className="btn-ghost small ops-tl-stop" onClick={() => { void window.electronAPI.opsStop(appSessionId) }}>

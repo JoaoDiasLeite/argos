@@ -544,14 +544,14 @@ export default function SettingsView({
             <>
               <h1 className="settings-title">Ops audit</h1>
               <p className="settings-lead">
-                The ledger is append-only, written by Argos only, and never deleted by it.
+                The audit log is append-only, written by Argos only, and never deleted by it.
               </p>
 
               <section className="settings-card">
                 {ledger ? (
                   <div className="settings-row">
                     <div className="settings-row-text">
-                      <span className="settings-row-label">Ledger folder</span>
+                      <span className="settings-row-label">Audit log folder</span>
                       <code className="settings-code settings-ops-path">{ledger.dir}</code>
                       <span className="settings-row-hint">
                         {ledger.files} day {ledger.files === 1 ? 'file' : 'files'} ·{' '}
@@ -578,7 +578,7 @@ export default function SettingsView({
                       setVerifyDate(e.target.value)
                       setVerifyResult(null)
                     }}
-                    aria-label="Ledger day (UTC)"
+                    aria-label="Audit log day (UTC)"
                   />
                   <button
                     className="btn-secondary small"
@@ -588,7 +588,7 @@ export default function SettingsView({
                     {verifying
                       ? 'Verifying…'
                       : verifyDate === utcToday()
-                        ? 'Verify today’s ledger'
+                        ? 'Verify today’s audit log'
                         : 'Verify this day'}
                   </button>
                 </div>

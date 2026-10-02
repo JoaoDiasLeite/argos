@@ -293,6 +293,27 @@ describe('summarizeRun', () => {
     expect(s.calls[1]).toMatchObject({ callId: 'y', reason: DECIDED_MISSING, decision: 'allow' })
   })
 
+  it('takes the plan from the latest plan.approved when run.start has none', () => {
+    const { planText: _omit, ...bare } = start() as Extract<OpsAuditEvent, { kind: 'run.start' }>
+    const step = (title: string) => ({ title, commands: [`echo ${title}`], verdict: 'runs', hostName: 'web-1' })
+    const events: OpsAuditEvent[] = [
+      bare,
+      { kind: 'plan.approved', runId: 'r1', by: 'user', planText: '1. first', steps: [step('first')] },
+      { kind: 'plan.approved', runId: 'r1', by: 'user', planText: '1. second', steps: [step('second')] },
+      // A rejected revision is a decision, not the run's plan.
+      { kind: 'plan.rejected', runId: 'r1', by: 'user', planText: '1. third', steps: [step('third')] }
+    ]
+    const s = summarizeRun(parseLedger(ledger(events).text).lines, 'r1')!
+    expect(s.planText).toBe('1. second')
+    expect(s.planSteps).toEqual([step('second')])
+    expect(s.planDecision).toBe('rejected')
+
+    // A plan written at run.start stays the run's plan text.
+    const withStart = summarizeRun(parseLedger(ledger([start(), events[1]]).text).lines, 'r1')!
+    expect(withStart.planText).toBe('1. check\n2. restart')
+    expect(withStart.planSteps).toEqual([step('first')])
+  })
+
   it('records a write backup', () => {
     const lines = parseLedger(
       ledger([

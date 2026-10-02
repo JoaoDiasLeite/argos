@@ -113,6 +113,14 @@ export interface OpsRunbookRef {
   platform?: OpsPolicy['platform']
 }
 
+/** One step of a plan, as logged with the user's decision on it. */
+export interface OpsLoggedPlanStep {
+  title: string
+  commands: string[]
+  verdict: string
+  hostName?: string
+}
+
 export type OpsAuditEvent =
   | {
       kind: 'run.start'
@@ -124,7 +132,16 @@ export type OpsAuditEvent =
       account?: string
       planText?: string
     }
-  | { kind: 'plan.approved' | 'plan.rejected'; runId: string; by: 'user' }
+  | {
+      kind: 'plan.approved' | 'plan.rejected'
+      runId: string
+      by: 'user'
+      /** The plan as the model wrote it. A terminal run has no plan at run.start, so the
+       *  report takes it from here. */
+      planText?: string
+      /** The plan's steps as classified when the user saw them. */
+      steps?: OpsLoggedPlanStep[]
+    }
   | {
       kind: 'call.decided'
       runId: string

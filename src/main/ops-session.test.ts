@@ -3,13 +3,15 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { createLedger, type OpsLedger } from './ops-audit'
-import { sha256Hex } from './ops-audit-pure'
+import { sha256Hex, summarizeRun } from './ops-audit-pure'
+import { clientReportWarnings } from './ops-report-pure'
 import { createFakeBackend, type FakeBackend, type FakeScript } from './ops-backend-fake'
 import { createExecutor } from './ops-exec-pure'
 import { assembleRunbook, scriptPinError, type LoadedRunbook, type LoadRunbookResult } from './ops-runbook-pure'
 import {
   bridgeSessionFor,
   callOpsTool,
+  DEFAULT_FILE_TITLES,
   finishOpsRun,
   openOpsSession,
   type OpenOpsSessionResult,
@@ -337,6 +339,24 @@ describe('ops session through callOpsTool', () => {
     expect(hostCalls(fake).map((c) => c.kind)).toEqual(['read'])
   })
 
+  it('file calls get a default step title, so the client report has words for them', async () => {
+    const { call } = await start({ files: { '/etc/nginx/nginx.conf': 'worker_processes 2;' } })
+    await call('read', { hostId: 'h1', path: '/etc/nginx/nginx.conf' })
+    await call('list', { hostId: 'h1', path: '/etc/nginx' })
+    await call('write', { hostId: 'h1', path: '/etc/nginx/x.conf', content: 'x' })
+    await call('run', { hostId: 'h1', cmd: 'systemctl status nginx' })
+    const decided = (await lines()).filter((l) => l.event.kind === 'call.decided').map((l) => l.event)
+    expect(decided.map((e) => (e.kind === 'call.decided' ? [e.tool, e.title] : []))).toEqual([
+      ['read', DEFAULT_FILE_TITLES.read],
+      ['list', DEFAULT_FILE_TITLES.list],
+      ['write', DEFAULT_FILE_TITLES.write],
+      // A rule's own title wins.
+      ['run', 'Estado do serviço web']
+    ])
+    const summary = summarizeRun(await lines(), 'run-1')
+    expect(summary && clientReportWarnings(summary)).toEqual([])
+  })
+
   it('local tools: Read inside the runbook only, everything else refused', async () => {
     const { session } = await start()
     expect((await session.canUseTool('Read', { file_path: path.join(rbDir, 'RUNBOOK.md') })).behavior).toBe('allow')
@@ -458,8 +478,19 @@ describe('plan first', () => {
       }
     })
     expect(session.ctx.planText).toBe('1. Estado do serviço web — systemctl status nginx\n2. Recarregamento — sudo systemctl reload nginx')
-    // Classifying the plan logged nothing per command: only the approval.
+    // Classifying the plan logged nothing per command: only the approval, which carries
+    // the steps as the operator saw them (the report's plan, since run.start has none).
     expect(await kinds()).toEqual(['run.start', 'plan.approved'])
+    expect((await lines())[1].event).toEqual({
+      kind: 'plan.approved',
+      runId: 'run-1',
+      by: 'user',
+      planText: session.ctx.planText,
+      steps: [
+        { title: 'Estado do serviço web', commands: ['systemctl status nginx'], verdict: 'runs', hostName: 'web-01' },
+        { title: 'Recarregamento', commands: ['sudo systemctl reload nginx'], verdict: 'asks', hostName: 'web-01' }
+      ]
+    })
 
     expect((await call('run', STATUS)).isError).toBe(false)
     expect(hostCalls(fake).map((c) => c.kind)).toEqual(['exec'])
@@ -478,6 +509,10 @@ describe('plan first', () => {
     expect((await call('run', STATUS)).isError).toBe(true)
     expect(hostCalls(fake)).toEqual([])
     expect(await kinds()).toEqual(['run.start', 'plan.rejected', 'call.decided'])
+    expect((await lines())[1].event).toMatchObject({
+      kind: 'plan.rejected',
+      steps: [{ title: 'Estado do serviço web' }, { title: 'Recarregamento' }]
+    })
   })
 
   it('a malformed plan is refused without asking; stop on a plan aborts the run', async () => {

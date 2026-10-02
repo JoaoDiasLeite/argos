@@ -59,14 +59,6 @@
   border-color: color-mix(in srgb, var(--success) 35%, transparent);
   background: color-mix(in srgb, var(--success) 10%, transparent);
 }
-.ops-ws-guarantee.tools-only {
-  color: var(--warn);
-  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
-  background: color-mix(in srgb, var(--warn) 10%, transparent);
-}
-
-.ops-ws-seg { flex-shrink: 0; }
-.ops-ws-seg button { padding: 5px 11px; font-size: 12px; }
 
 .ops-ws-hosts {
   display: flex;

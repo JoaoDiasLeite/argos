@@ -26,7 +26,6 @@ export const OPS_DISALLOWED_TOOLS = [
   'Bash',
   'Edit',
   'Write',
-  'MultiEdit',
   'NotebookEdit',
   'WebFetch',
   'WebSearch',

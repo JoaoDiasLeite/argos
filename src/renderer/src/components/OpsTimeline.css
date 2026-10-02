@@ -103,4 +103,9 @@
 
 .ops-tl-plan { font-size: 11.5px; color: var(--text-1); }
 .ops-tl-plan.rejected { color: var(--error); }
+.ops-tl-plan-toggle { font: inherit; color: inherit; text-decoration: underline dotted; }
+.ops-tl-plan-toggle:hover { color: var(--text-0); }
+.ops-tl-plan-steps { margin: 4px 0 0; padding-left: 18px; }
+.ops-tl-plan-steps li { margin-top: 3px; }
+.ops-tl-plan-steps code { display: block; font: 11px/1.45 var(--font-mono); color: var(--text-0); overflow-wrap: anywhere; }
 .ops-tl-stop { align-self: flex-start; margin-top: 4px; color: var(--error); }

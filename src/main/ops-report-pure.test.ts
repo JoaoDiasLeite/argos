@@ -329,6 +329,22 @@ describe('renderInternalReport', () => {
     expect(out).not.toContain('Client report warnings')
   })
 
+  it('lists the logged plan steps with their commands, ahead of the plan text', () => {
+    const out = renderInternalReport(
+      run([], {
+        planSteps: [
+          { title: 'check web', commands: ['systemctl status puma'], verdict: 'runs', hostName: 'web-1' },
+          { title: 'restart', commands: ['sudo systemctl restart puma', 'systemctl is-active puma'], verdict: 'asks' }
+        ]
+      })
+    )
+    expect(out).toContain(
+      '## Plan\n\n1. check web (web-1) – `systemctl status puma`\n2. restart – `sudo systemctl restart puma` · `systemctl is-active puma`\n'
+    )
+    expect(out).not.toContain('1. check web\n2. check db')
+    expect(renderInternalReport(run([], { planText: undefined }))).toContain('_No plan recorded._')
+  })
+
   it('flags untitled steps for the runbook author', () => {
     const out = renderInternalReport(run([call({ callId: 'n', title: undefined })]))
     expect(out).toContain('## Client report warnings')

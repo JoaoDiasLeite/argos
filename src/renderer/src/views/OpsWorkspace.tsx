@@ -10,7 +10,9 @@ import './OpsWorkspace.css'
  * One runbook's workspace (Servers → Ops → a runbook).
  *
  * The embedded terminal, where the CLI runs with the ops MCP relay in its config, beside
- * the run's timeline. Which CLI is remembered per runbook.
+ * the run's timeline. Always Claude Code: it is the only CLI that takes --disallowedTools,
+ * so the only one whose own shell and file tools Argos can switch off. Codex and Gemini ops
+ * were never verified and are not offered.
  *
  * A terminal ops session is one run per CLI launch (OPS_AGENT_PLAN §9 Phase 5). The pty
  * outlives this component like every embedded terminal does, so coming back to the
@@ -18,31 +20,13 @@ import './OpsWorkspace.css'
  * only a pty that is gone gets a fresh `opsTerminalSession`.
  */
 
-type Guarantee = 'tools-and-local-shell' | 'tools-only'
 type Launched = Extract<OpsTerminalSessionResult, { ok: true }>
 
-const PROVIDERS: { id: OpsTerminalProvider; label: string }[] = [
-  { id: 'claude', label: 'Claude' },
-  { id: 'codex', label: 'Codex' },
-  { id: 'gemini', label: 'Antigravity' }
-]
+const PROVIDER: OpsTerminalProvider = 'claude'
 
-const GUARANTEE_LABEL: Record<Guarantee, string> = {
-  'tools-and-local-shell': 'Tools and local shell gated',
-  'tools-only': 'Tools gated; local shell is the CLI’s own'
-}
-
-const GUARANTEE_HINT: Record<Guarantee, string> = {
-  'tools-and-local-shell':
-    'Every server command goes through the runbook’s gate, and the CLI’s own shell and file tools are switched off.',
-  'tools-only':
-    'Server commands through the ops tools are gated and logged. This CLI keeps its own local shell, which Argos cannot switch off: the runbook is a rule there, not a lock.'
-}
-
-/** Only Claude Code takes --disallowedTools, so only it loses its own shell. Used until
- *  main has said which guarantee is in force. */
-const derivedGuarantee = (provider: OpsTerminalProvider): Guarantee =>
-  provider === 'claude' ? 'tools-and-local-shell' : 'tools-only'
+const GUARANTEE_LABEL = 'Tools and local shell gated'
+const GUARANTEE_HINT =
+  'Every server command goes through the runbook’s gate, and the CLI’s own shell and file tools are switched off.'
 
 /** A short, stable, alphanumeric id for a string (cyrb53, base 36). Terminal ids must match
  *  `^[A-Za-z0-9_-]+$`, which a path never does. */
@@ -69,23 +53,6 @@ const launches = new Map<string, Launched>()
 // STATUS_CONTROL_C_EXIT, as signed and unsigned: a pty we killed ourselves. Same filter as
 // ChatTerminal's exit handler.
 const KILLED_EXIT_CODES = new Set([-1073741510, 3221225786])
-
-function readPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
-  try {
-    const v = localStorage.getItem(key)
-    return v && (allowed as readonly string[]).includes(v) ? (v as T) : fallback
-  } catch {
-    return fallback
-  }
-}
-
-function writePref(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value)
-  } catch {
-    /* storage unavailable: the choice just isn't remembered */
-  }
-}
 
 const baseName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 
@@ -123,22 +90,14 @@ export default function OpsWorkspace({
 }: Props) {
   const [info, setInfo] = useState<OpsRunbookInfo | null>(null)
   const [hostDots, setHostDots] = useState<Record<string, HostDot>>({})
-  const [provider, setProviderState] = useState<OpsTerminalProvider>(() =>
-    readPref(`ops.provider.${runbookPath}`, ['claude', 'codex', 'gemini'], 'claude')
-  )
   const [term, setTerm] = useState<TermState>({ kind: 'starting' })
   const [timelineOpen, setTimelineOpen] = useState(true)
 
-  const terminalId = opsTerminalId(runbookPath, provider)
+  const terminalId = opsTerminalId(runbookPath, PROVIDER)
   const keyRef = useRef(0)
-  // Bumped by every start, so an answer to a superseded one (provider switched, Relaunch
+  // Bumped by every start, so an answer to a superseded one (runbook switched, Relaunch
   // pressed twice) is dropped instead of overwriting the newer state.
   const startSeqRef = useRef(0)
-
-  const setProvider = (p: OpsTerminalProvider) => {
-    setProviderState(p)
-    writePref(`ops.provider.${runbookPath}`, p)
-  }
 
   // ── The runbook and its hosts ──
   useEffect(() => {
@@ -188,7 +147,7 @@ export default function OpsWorkspace({
           launches.delete(terminalId)
           if (alive) await window.electronAPI.terminalKill(terminalId)
         }
-        const res = await window.electronAPI.opsTerminalSession(terminalId, runbookPath, provider)
+        const res = await window.electronAPI.opsTerminalSession(terminalId, runbookPath, PROVIDER)
         if (seq !== startSeqRef.current) return
         if (!res.ok) {
           setTerm({ kind: 'error', error: res.error })
@@ -200,7 +159,7 @@ export default function OpsWorkspace({
         if (seq === startSeqRef.current) setTerm({ kind: 'error', error: e instanceof Error ? e.message : String(e) })
       }
     },
-    [terminalId, runbookPath, provider]
+    [terminalId, runbookPath]
   )
 
   useEffect(() => {
@@ -234,8 +193,6 @@ export default function OpsWorkspace({
 
   // ── Render ──
   const name = info?.ok ? info.name : baseName(runbookPath)
-  const guarantee: Guarantee =
-    term.kind === 'ready' || term.kind === 'exited' ? term.launch.guarantee : derivedGuarantee(provider)
 
   return (
     <div className="view ops-ws">
@@ -250,17 +207,10 @@ export default function OpsWorkspace({
           {info?.ok && info.platform && <span className="ops-ws-tag">{info.platform}</span>}
           {info?.ok && <span className={`ops-ws-tag${info.strict ? ' strict' : ''}`}>{info.strict ? 'strict' : 'not strict'}</span>}
         </div>
-        <span className={`ops-ws-guarantee ${guarantee}`} title={GUARANTEE_HINT[guarantee]}>
-          {GUARANTEE_LABEL[guarantee]}
+        <span className="ops-ws-guarantee tools-and-local-shell" title={GUARANTEE_HINT}>
+          {GUARANTEE_LABEL}
         </span>
         <div className="ops-ws-spacer" />
-        <div className="seg-control ops-ws-seg" role="group" aria-label="CLI">
-          {PROVIDERS.map((p) => (
-            <button key={p.id} className={provider === p.id ? 'on' : ''} onClick={() => setProvider(p.id)}>
-              {p.label}
-            </button>
-          ))}
-        </div>
         {!timelineOpen && (
           <button className="btn-ghost small" onClick={() => setTimelineOpen(true)}>
             Timeline
@@ -328,7 +278,7 @@ export default function OpsWorkspace({
               key={`${terminalId}:${term.key}`}
               terminalId={terminalId}
               cwd={runbookPath}
-              provider={provider}
+              provider={PROVIDER}
               autoLaunchCli
               active
               ops={{ env: term.launch.env, mcpConfigPath: term.launch.mcpConfigPath }}
