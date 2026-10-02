@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   describeOpsRequest, displayArgv, summarizeOps, planTotals, planTotalsGroups, planChangesLine,
-  planTarget, planStepLabel, opsToastText
+  planTarget, planStepLabel, opsToastText, opsToastQuestion, opsToastEyebrow, planTotalsWithout
 } from './ops-approval'
 import type { ApprovalOpsContext, OpsPlanStep } from '../types'
 
@@ -104,5 +104,54 @@ describe('opsToastText', () => {
       planSteps: [{ title: 'a', commands: ['uptime'], verdict: 'runs', class: 'read' }]
     }
     expect(opsToastText(plan)).toEqual({ title: 'Approve the plan for diagnose-rails-host', detail: '1 step · nothing changes' })
+  })
+})
+
+describe('host approvals', () => {
+  const host: ApprovalOpsContext = {
+    ...base, tool: 'host', hostName: 'db-01', hostAddress: 'ops@10.0.0.2:22',
+    reason: 'first use of this host in an open intervention', runbook: 'diagnose-rails-host'
+  }
+
+  it('describes and summarises the first touch of a host', () => {
+    expect(describeOpsRequest(host)).toEqual({ verb: 'reach db-01 for this intervention', lines: ['ops@10.0.0.2:22'] })
+    expect(summarizeOps(host)).toBe('Reach db-01?')
+    expect(opsToastText(host)).toEqual({
+      title: 'Allow reaching db-01 for this intervention?',
+      detail: 'first use of this host in an open intervention'
+    })
+  })
+
+  it('asks the toast question in words, with no chip', () => {
+    expect(opsToastQuestion(host)).toEqual({ lead: 'The model wants to reach db-01. Allow for this intervention?', tail: '' })
+    expect(opsToastEyebrow(host)).toBe('Argos · diagnose-rails-host on db-01')
+  })
+})
+
+describe('opsToastQuestion', () => {
+  it('puts the command or path in the chip', () => {
+    expect(opsToastQuestion({ ...base, argv: ['sudo', 'nginx', '-t'] })).toEqual({ lead: 'Allow ', code: 'sudo nginx -t', tail: '?' })
+    expect(opsToastQuestion({ ...base, tool: 'read', path: '/etc/hosts' })).toEqual({ lead: 'Allow reading ', code: '/etc/hosts', tail: '?' })
+    expect(opsToastQuestion({ ...base, tool: 'plan', planSteps: [step({})] }).code).toBeUndefined()
+    expect(opsToastEyebrow({ ...base, tool: 'plan' })).toBe('Argos · rb')
+  })
+})
+
+describe('planTotalsWithout', () => {
+  const plan: ApprovalOpsContext = {
+    ...base,
+    tool: 'plan',
+    planSummary: { runs: 2, asks: 1, denied: 0, mutates: 1 },
+    planSteps: [
+      step({ verdict: 'runs', class: 'read' }),
+      step({ verdict: 'asks', class: 'mutate' }),
+      step({ verdict: 'runs', class: 'read' })
+    ]
+  }
+  it('keeps the gate summary when nothing is skipped', () => {
+    expect(planTotalsWithout(plan, new Set())).toEqual(planTotals(plan))
+  })
+  it('counts only the steps left', () => {
+    expect(planTotalsWithout(plan, new Set([1]))).toEqual({ runs: 2, asks: 0, denied: 0, mutates: 0, unknown: 0, total: 2 })
   })
 })

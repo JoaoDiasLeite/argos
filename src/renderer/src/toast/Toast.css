@@ -1,18 +1,18 @@
-/* Approval toast window. The OS window keeps a transparent background so DWM can
-   shape the rounded corners of this frameless floating flyout; the shell itself
-   paints a solid, opaque surface (matching the quick-launcher overlay). Compact
-   by design. */
+/* Approval toast window (board F2). The OS window keeps a transparent background; the
+   shell paints a solid, opaque surface. A surface is 4 px, a button 8 px. Compact by
+   design. */
 
 .toast-shell {
   display: flex;
   flex-direction: column;
   height: 100vh;
   width: 100vw;
-  padding: 12px 14px;
-  gap: 8px;
+  padding: 16px 18px;
+  gap: 10px;
   background: var(--bg-1);
-  border: 1px solid var(--border-light);
-  border-radius: 12px;
+  color: var(--text-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -26,25 +26,66 @@
 .toast-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
   flex-shrink: 0;
 }
 
-.toast-title {
+.toast-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--warn);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 20%, transparent);
+}
+
+.toast-eyebrow {
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toast-title {
+  flex: 1;
+  font-size: 12px;
   color: var(--text-2);
 }
 
 .toast-more {
+  flex-shrink: 0;
   font-size: 11px;
   color: var(--text-2);
-  background: var(--bg-3);
-  border: 1px solid var(--border-light);
-  border-radius: 999px;
-  padding: 1px 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  padding: 1px 6px;
+}
+
+/* The question: words around one mono chip, up to three lines. */
+.toast-question {
+  flex: 1;
+  min-height: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.toast-chip {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  padding: 1px 6px;
 }
 
 .toast-body {
@@ -65,28 +106,7 @@
 .toast-summary {
   font-size: 12px;
   color: var(--text-1);
-  font-family: var(--font-mono, monospace);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* An ops request: a question in words (up to two lines) and one line of detail. */
-.toast-question {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-0);
-  line-height: 1.35;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}
-
-.toast-detail {
-  font-size: 12px;
-  color: var(--text-1);
+  font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -94,39 +114,49 @@
 
 .toast-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
+  margin-top: 2px;
   flex-shrink: 0;
 }
+.toast-spacer { flex: 1; }
 
 .toast-btn {
-  flex: 1;
-  padding: 7px 10px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-weight: 600;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--radius);
+  font-size: 12.5px;
   border: 1px solid var(--border-light);
-  background: var(--bg-3);
-  color: var(--text-0);
+  background: transparent;
+  color: var(--text-1);
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.toast-btn:hover {
-  background: var(--bg-hover);
-}
+.toast-btn:hover { background: var(--bg-hover); color: var(--text-0); }
 
 .toast-btn.allow {
+  padding: 0 16px;
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--bg-0);
+  font-weight: 650;
 }
-.toast-btn.allow:hover {
-  background: color-mix(in srgb, var(--accent) 88%, #000);
-}
+.toast-btn.allow:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--bg-0); }
 
-.toast-btn.deny {
-  color: var(--error);
-  border-color: color-mix(in srgb, var(--error) 45%, transparent);
+.toast-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-1);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
 }
-.toast-btn.deny:hover {
-  background: color-mix(in srgb, var(--error) 16%, transparent);
+.toast-link:hover { color: var(--text-0); text-decoration: underline; }
+
+.toast-btn:focus-visible,
+.toast-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

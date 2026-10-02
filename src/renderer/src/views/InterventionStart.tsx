@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
-import type { OpsRunbookInfo, SshHostPublic } from '../types'
+import type { OpsIntervention, OpsRunbookInfo, OpsRunListItem, OpsScope, SshHostPublic } from '../types'
 import { forgetRecentRunbook, pushRecentRunbook, readRecentRunbooks } from '../lib/recent-runbooks'
-import { interventionApi, runbookSummary } from '../lib/intervention-types'
-import type { Intervention, InterventionScope, OpsRunSummary } from '../lib/intervention-types'
-import OpsReportModal from '../components/OpsReportModal'
+import OpsReportSheet from '../components/OpsReportSheet'
 import './InterventionStart.css'
 
 /**
@@ -71,7 +69,7 @@ function runWhen(iso: string): string {
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 }
 
-function runStatus(r: OpsRunSummary): { label: string; tone: 'ok' | 'bad' | 'muted' } {
+function runStatus(r: OpsRunListItem): { label: string; tone: 'ok' | 'bad' | 'muted' } {
   if (r.aborted) return { label: 'stopped', tone: 'bad' }
   if (r.ok === true) return { label: 'finished', tone: 'ok' }
   if (r.ok === false) return { label: 'failed', tone: 'bad' }
@@ -257,7 +255,7 @@ function IvsDropdown({
 interface Props {
   /** Preselects this SSH host (the Ops button on a Remote & WSL row). */
   initialHostId?: string
-  onStart: (intervention: Intervention) => void
+  onStart: (intervention: OpsIntervention) => void
 }
 
 export default function InterventionStart({ initialHostId, onStart }: Props) {
@@ -275,8 +273,8 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
   const [ticket, setTicket] = useState('')
   const [client, setClient] = useState(readLastClient)
 
-  const [runs, setRuns] = useState<{ ok: true; runs: OpsRunSummary[] } | { ok: false; error: string } | 'loading'>('loading')
-  const [reportFor, setReportFor] = useState<{ runId: string; runbookPath?: string } | null>(null)
+  const [runs, setRuns] = useState<{ ok: true; runs: OpsRunListItem[] } | { ok: false; error: string } | 'loading'>('loading')
+  const [reportFor, setReportFor] = useState<{ runId: string; runbookPath?: string; appSessionId?: string } | null>(null)
 
   const serverLabelId = useId()
   const runbookLabelId = useId()
@@ -338,7 +336,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
     if (pick) setRunbookPath(pick)
   }, [infos, recents, runbookPath, server])
 
-  const scope: InterventionScope | null =
+  const scope: OpsScope | null =
     server === null ? null : server === OPEN ? { kind: 'open' } : { kind: 'host', hostId: server }
   const hostId = scope?.kind === 'host' ? scope.hostId : undefined
 
@@ -346,7 +344,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
   useEffect(() => {
     let cancelled = false
     setRuns('loading')
-    interventionApi()
+    window.electronAPI
       .opsRuns({ hostId, limit: HISTORY_LIMIT })
       .then((res) => !cancelled && setRuns(res))
       .catch((e) => !cancelled && setRuns({ ok: false, error: e instanceof Error ? e.message : String(e) }))
@@ -359,7 +357,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
   const info: InfoState | undefined = runbookPath ? infos[runbookPath] : undefined
   const loaded = info && info !== 'loading' ? info : undefined
   const okInfo = loaded?.ok ? loaded : undefined
-  const summary = runbookSummary(okInfo)
+  const summary = okInfo?.summary
 
   // ── Validation (inline) ────────────────────────────────────────────────────
   const hostProblem = useMemo(() => {
@@ -468,7 +466,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
     if (!i || i === 'loading') chip = <span className="ivs-meta">Loading…</span>
     else if (!i.ok) chip = <span className="ivs-chip bad">unusable</span>
     else {
-      const s = runbookSummary(i)
+      const s = i.summary
       if (s) chip = <span className={`ivs-chip${s.mutates > 0 ? ' warn' : ''}`}>{s.mutates === 0 ? 'read-only' : 'changes the server'}</span>
     }
     return (
@@ -513,11 +511,11 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
 
   // ── Right column ───────────────────────────────────────────────────────────
   const openFile = (file: 'RUNBOOK.md' | 'policy.json') => {
-    if (runbookPath) void interventionApi().opsOpenRunbookFile(runbookPath, file)
+    if (runbookPath) void window.electronAPI.opsOpenRunbookFile(runbookPath, file)
   }
 
   /** The recent folder a past run belongs to, so its report can be saved beside it. */
-  const runbookDirFor = (r: OpsRunSummary): string | undefined => {
+  const runbookDirFor = (r: OpsRunListItem): string | undefined => {
     if (/[\\/]/.test(r.runbook)) return r.runbook
     return recents.find((d) => {
       const i = infos[d]
@@ -752,7 +750,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
                         <button
                           type="button"
                           className="ivs-btn small"
-                          onClick={() => setReportFor({ runId: r.runId, runbookPath: runbookDirFor(r) })}
+                          onClick={() => setReportFor({ runId: r.runId, runbookPath: runbookDirFor(r), appSessionId: r.appSessionId })}
                         >
                           Report
                         </button>
@@ -767,7 +765,12 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
       </div>
 
       {reportFor && (
-        <OpsReportModal runId={reportFor.runId} runbookPath={reportFor.runbookPath} onClose={() => setReportFor(null)} />
+        <OpsReportSheet
+          runId={reportFor.runId}
+          appSessionId={reportFor.appSessionId}
+          runbookPath={reportFor.runbookPath}
+          onClose={() => setReportFor(null)}
+        />
       )}
     </div>
   )

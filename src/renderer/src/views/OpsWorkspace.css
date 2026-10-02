@@ -1,97 +1,65 @@
 /* ── OpsWorkspace.css ────────────────────────────────────────────────────────
-   One runbook's workspace: header, hosts strip, then the terminal (with the ops
-   timeline beside it) or the chat. Laid out like RemoteSessionView. Classes are
-   prefixed `ops-ws-`. ───────────────────────────────────────────────────────── */
+   One intervention's workspace (board D2): a one-line header, then the
+   terminal beside the activity column (ActivityColumn.css). Surfaces 4 px,
+   buttons 8 px. Classes are prefixed `ops-ws-`. ─────────────────────────── */
 
 .ops-ws { padding: 0; }
 
 .ops-ws-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
+  gap: 14px;
+  padding: 12px 18px;
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
+  min-width: 0;
   -webkit-app-region: drag;
 }
 .ops-ws-header > * { -webkit-app-region: no-drag; }
 .ops-ws-spacer { flex: 1; -webkit-app-region: drag; }
 
-.ops-ws-title {
-  display: flex;
+.ops-ws-back {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: -6px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  flex-shrink: 0;
 }
+.ops-ws-back:hover { color: var(--text-0); background: var(--bg-hover); }
+
 .ops-ws-name {
-  font-size: 13.5px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 650;
   color: var(--text-0);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
-.ops-ws-tag {
-  flex-shrink: 0;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 2px 7px;
-  border-radius: var(--radius-sm);
-  color: var(--text-1);
-  background: var(--bg-3);
-}
-.ops-ws-tag.strict { color: var(--accent); background: var(--accent-dim); }
-
-.ops-ws-guarantee {
-  flex-shrink: 0;
-  font-size: 11.5px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--border-light);
-  white-space: nowrap;
-  cursor: help;
-}
-.ops-ws-guarantee.tools-and-local-shell {
-  color: var(--success);
-  border-color: color-mix(in srgb, var(--success) 35%, transparent);
-  background: color-mix(in srgb, var(--success) 10%, transparent);
-}
-
-.ops-ws-hosts {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-1);
-  font-size: 12.5px;
-  flex: 0 0 auto;
-}
 .ops-ws-host {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--text-0);
-}
-.ops-ws-host-name { font-weight: 500; }
-.ops-ws-pill {
-  font-size: 10.5px;
-  padding: 1px 6px;
-  border-radius: 999px;
+  font-size: 12.5px;
   color: var(--text-1);
-  background: var(--bg-3);
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.ops-ws-muted { color: var(--text-2); }
-.ops-ws-bad { color: var(--error); }
-.ops-ws-warn { color: var(--warn); cursor: help; }
+.ops-ws-touched { color: var(--text-2); }
 
 .ops-ws-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--text-2);
   flex-shrink: 0;
@@ -99,10 +67,35 @@
 .ops-ws-dot.checking { animation: ops-ws-pulse 1.2s ease-in-out infinite; }
 .ops-ws-dot.ok { background: var(--success); }
 .ops-ws-dot.error { background: var(--error); }
-
+.ops-ws-dot.open { background: transparent; border: 1px solid var(--text-2); }
 @keyframes ops-ws-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
+}
+
+.ops-ws-meta { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.ops-ws-meta[title] { cursor: help; }
+.ops-ws-bad { font-size: 12px; color: var(--error); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ops-ws-warn { font-size: 12px; color: var(--warn); cursor: help; white-space: nowrap; }
+
+.ops-ws-btn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-light);
+  background: transparent;
+  color: var(--text-1);
+  font-size: 12.5px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ops-ws-btn.small { height: 26px; padding: 0 10px; font-size: 12px; }
+.ops-ws-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-0); }
+.ops-ws-btn:disabled { opacity: 0.5; cursor: default; }
+.ops-ws-btn:focus-visible,
+.ops-ws-back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .ops-ws-body {
@@ -118,17 +111,6 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-
-/* The plan review sheet, in the timeline's place while a plan waits. */
-.ops-ws-plan {
-  flex: 0 1 440px;
-  min-width: 300px;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--border);
 }
 
 .ops-ws-state {

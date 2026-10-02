@@ -16,6 +16,8 @@ export function describeOpsRequest(ops: ApprovalOpsContext): { verb: string; lin
   switch (ops.tool) {
     case 'plan':
       return { verb: `approve the plan for ${host}`, lines: (ops.planSteps ?? []).map((s) => s.title) }
+    case 'host':
+      return { verb: `reach ${host} for this intervention`, lines: [ops.hostAddress] }
     case 'script':
       if (argvLine) lines.push(argvLine)
       if (ops.scriptSha256) lines.push(`sha256 ${ops.scriptSha256.slice(0, 12)}…`)
@@ -38,6 +40,7 @@ export function summarizeOps(ops: ApprovalOpsContext): string {
     const n = ops.planSteps?.length ?? 0
     return `Plan: ${n} step${n === 1 ? '' : 's'} for ${ops.hostName}`
   }
+  if (ops.tool === 'host') return `Reach ${ops.hostName}?`
   const what = ops.argv && ops.argv.length ? displayArgv(ops.argv) : ops.path || ops.tool
   const full = `${ops.hostName}: ${what}`
   return full.length > 80 ? full.slice(0, 79) + '…' : full
@@ -61,6 +64,8 @@ export function opsToastText(ops: ApprovalOpsContext): { title: string; detail: 
   const detail = ops.title || ops.reason
   const path = ops.path ?? ''
   switch (ops.tool) {
+    case 'host':
+      return { title: cap(`Allow reaching ${host} for this intervention?`, 90), detail: ops.reason }
     case 'script':
       return { title: cap(`Allow script ${ops.argv?.[0] ?? ''} on ${host}?`, 90), detail }
     case 'read':
@@ -75,6 +80,41 @@ export function opsToastText(ops: ApprovalOpsContext): { title: string; detail: 
         detail
       }
   }
+}
+
+/**
+ * The toast's question in pieces (board F2): words around one mono chip, the command or
+ * path the operator is asked about. A plan or a host has no chip.
+ */
+export function opsToastQuestion(ops: ApprovalOpsContext): { lead: string; code?: string; tail: string } {
+  const host = ops.hostName
+  const argv = ops.argv?.length ? cap(displayArgv(ops.argv), 70) : ''
+  const path = ops.path ? cap(ops.path, 70) : ''
+  switch (ops.tool) {
+    case 'plan': {
+      const t = planTotals(ops)
+      return { lead: `Approve the plan: ${t.total} step${t.total === 1 ? '' : 's'}, ${planChangesLine(t)}?`, tail: '' }
+    }
+    case 'host':
+      return { lead: `The model wants to reach ${host}. Allow for this intervention?`, tail: '' }
+    case 'script':
+      return argv ? { lead: 'Allow script ', code: argv, tail: '?' } : { lead: 'Allow a script?', tail: '' }
+    case 'read':
+      return { lead: 'Allow reading ', code: path, tail: '?' }
+    case 'list':
+      return { lead: 'Allow listing ', code: path, tail: '?' }
+    case 'write':
+      return { lead: 'Allow writing ', code: path, tail: '?' }
+    default:
+      return argv ? { lead: 'Allow ', code: argv, tail: '?' } : { lead: 'Allow a command?', tail: '' }
+  }
+}
+
+/** "Argos · diagnose-rails-host on Rocky-9-Testes": the toast's eyebrow. */
+export function opsToastEyebrow(ops: ApprovalOpsContext): string {
+  const rb = ops.runbook
+  if (ops.tool === 'plan') return rb ? `Argos · ${rb}` : 'Argos'
+  return rb ? `Argos · ${rb} on ${ops.hostName}` : `Argos · ${ops.hostName}`
 }
 
 // ── Plan review sheet ──
@@ -102,6 +142,15 @@ export function planTotals(ops: ApprovalOpsContext): PlanTotals {
   const { runs, asks, denied, mutates } = ops.planSummary ?? counted
   const total = steps.length
   return { runs, asks, denied, mutates, unknown: Math.max(0, total - runs - asks - denied), total }
+}
+
+/**
+ * The totals of the steps that will run: every step when none is skipped (the gate's
+ * summary still wins then), else counted from the steps left.
+ */
+export function planTotalsWithout(ops: ApprovalOpsContext, skipped: ReadonlySet<number>): PlanTotals {
+  if (skipped.size === 0) return planTotals(ops)
+  return planTotals({ ...ops, planSummary: undefined, planSteps: (ops.planSteps ?? []).filter((_, i) => !skipped.has(i)) })
 }
 
 export interface PlanTotalsGroup {

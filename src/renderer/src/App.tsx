@@ -11,7 +11,8 @@ import {
   PlannerTask,
   PlanUsageReport,
   CcSessionTarget,
-  LiveSession
+  LiveSession,
+  OpsIntervention
 } from './types'
 import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
@@ -21,9 +22,8 @@ import { SessionPaneApi } from './hooks/useSessionPane'
 import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, groupOwnsView } from './components/NavRail'
 import ServerTabs from './components/ServerTabs'
 import ApprovalModal from './components/ApprovalModal'
-import PlanReviewSheet from './components/PlanReviewSheet'
 import SecretPrompt from './components/SecretPrompt'
-import type { Intervention } from './lib/intervention-types'
+import { opsTerminalIdFor } from './lib/ops-terminal'
 import { CLI_PROVIDERS } from './lib/cli-providers'
 import PendingRuns, { PendingRun } from './components/PendingRuns'
 import FileEditor from './components/FileEditor'
@@ -521,11 +521,12 @@ export default function App() {
   }, [])
 
   // Answer a specific queued approval by id: send the response, prune it from the
-  // queue. Used by the head-of-queue global modal (via respondApproval).
-  const respondApprovalById = (approvalId: string, allow: boolean) => {
+  // queue. Used by the approval modal and the Ops workspace's activity column.
+  // `skipSteps`: an ops plan approved without those steps (0-based into its planSteps).
+  const respondApprovalById = (approvalId: string, allow: boolean, skipSteps?: number[]) => {
     const req = approvalQueue.find((r) => r.approvalId === approvalId)
     if (!req) return
-    window.electronAPI.respondApproval({ approvalId, allow })
+    window.electronAPI.respondApproval({ approvalId, allow, ...(allow && skipSteps?.length ? { skipSteps } : {}) })
     approvalSinceRef.current.delete(approvalId)
     setApprovalQueue((prev) => prev.filter((r) => r.approvalId !== approvalId))
   }
@@ -539,11 +540,6 @@ export default function App() {
     setApprovalQueue((prev) => prev.filter((r) => r.approvalId !== approvalId))
   }
 
-  // Global modal answers the HEAD of the queue — delegates to respondApprovalById.
-  const respondApproval = (allow: boolean) => {
-    const head = approvalQueue[0]
-    if (head) respondApprovalById(head.approvalId, allow)
-  }
 
   /**
    * Open a new terminal chat, with an optional prompt for the CLI to be handed once it is
@@ -1953,7 +1949,10 @@ export default function App() {
   // Review an approval — the one kind of row Home's attention list holds.
   const onHomeAct = (id: string) => {
     const req = approvalQueue.find((r) => r.approvalId === id)
-    if (req) {
+    // An ops request belongs to the workspace's terminal, not to a chat.
+    if (req?.ops) {
+      setView(opsWorkspace ? 'ops-workspace' : 'ops')
+    } else if (req) {
       setActiveId(req.appSessionId)
       setView('chat')
     }
@@ -2069,11 +2068,11 @@ export default function App() {
   // Servers → Ops. The workspace is an extra of the Servers group, like a Remote/WSL
   // session; the intervention it runs (runbook, scope, task, ticket, client) lives here
   // so the view itself stays a plain string.
-  const [opsWorkspace, setOpsWorkspace] = useState<Intervention | null>(null)
-  /** The ops terminal the workspace has on screen — a plan for its run is reviewed in the
-   *  workspace's side column, so the drawer steps aside for it. */
+  const [opsWorkspace, setOpsWorkspace] = useState<OpsIntervention | null>(null)
+  /** The ops terminal the workspace has on screen: its run's approvals are answered in the
+   *  workspace's activity column. */
   const [opsTerminalVisibleId, setOpsTerminalVisibleId] = useState<string | null>(null)
-  const openOpsWorkspace = (intervention: Intervention) => {
+  const openOpsWorkspace = (intervention: OpsIntervention) => {
     setOpsWorkspace(intervention)
     setView('ops-workspace')
   }
@@ -2304,14 +2303,15 @@ export default function App() {
   const [welcomeDropOver, setWelcomeDropOver] = useState(false)
   const welcomeDragDepth = useRef(0)
 
-  // An ops plan at the head of the queue is always the review sheet, never the modal or an
-  // inline card: embedded in the Ops workspace when it belongs to the terminal on screen
-  // there, else the drawer.
-  const headApproval = approvalQueue[0]
-  const headIsPlan = headApproval?.ops?.tool === 'plan'
-  const workspacePlan =
-    headIsPlan && view === 'ops-workspace' && headApproval.appSessionId === opsTerminalVisibleId ? headApproval : undefined
-  const stopHeadApproval = headApproval?.ops ? () => respondApprovalStopById(headApproval.approvalId) : undefined
+  // Ops approvals (plan, call, host) are answered only in the Ops workspace's activity
+  // column, for the terminal on screen there, oldest first; never in a modal. Off the
+  // workspace they wait (Home lists them, and the toast asks while the window is hidden).
+  // The modal is for non-ops requests only.
+  const workspaceApproval =
+    view === 'ops-workspace' && opsTerminalVisibleId
+      ? approvalQueue.find((r) => r.ops && r.appSessionId === opsTerminalVisibleId)
+      : undefined
+  const modalApproval = approvalQueue.find((r) => !r.ops)
 
   // Everything a chat pane needs from the App, shared by every pane. A plain object,
   // not a useMemo: most of the actions below are plain consts rebuilt on every render,
@@ -2612,13 +2612,13 @@ export default function App() {
       {view === 'ops-workspace' && opsWorkspace && (
         <Suspense fallback={<ViewLoading />}>
           <OpsWorkspace
-            key={opsWorkspace.runbookPath}
-            runbookPath={opsWorkspace.runbookPath}
+            key={opsTerminalIdFor(opsWorkspace)}
+            intervention={opsWorkspace}
             onBack={() => setView('ops')}
             onTerminalVisible={setOpsTerminalVisibleId}
-            pendingPlan={workspacePlan}
-            onPlanDecide={respondApproval}
-            onPlanStop={stopHeadApproval}
+            waiting={workspaceApproval}
+            onDecide={workspaceApproval ? (allow, skipSteps) => respondApprovalById(workspaceApproval.approvalId, allow, skipSteps) : undefined}
+            onStop={workspaceApproval ? () => respondApprovalStopById(workspaceApproval.approvalId) : undefined}
           />
         </Suspense>
       )}
@@ -2677,19 +2677,11 @@ export default function App() {
       )}
       {/* While a password is being asked, the approval modal waits: its window-level Esc would
           otherwise deny the call behind the prompt. */}
-      {secretQueue.length === 0 && headIsPlan && !workspacePlan && (
-        <PlanReviewSheet
-          key={headApproval.approvalId}
-          request={headApproval}
-          onDecide={respondApproval}
-          onStop={stopHeadApproval}
-        />
-      )}
-      {secretQueue.length === 0 && !headIsPlan && approvalQueue.length > 0 && (
+      {secretQueue.length === 0 && modalApproval && (
         <ApprovalModal
-          request={approvalQueue[0]}
-          onDecide={respondApproval}
-          onStop={approvalQueue[0]?.ops ? () => respondApprovalStopById(approvalQueue[0].approvalId) : undefined}
+          key={modalApproval.approvalId}
+          request={modalApproval}
+          onDecide={(allow) => respondApprovalById(modalApproval.approvalId, allow)}
         />
       )}
       {openFilePath && (

@@ -1,0 +1,238 @@
+/* ── OpsReportSheet.css ──────────────────────────────────────────────────────
+   The run report as a document sheet from the right (board E2). Surfaces 4 px,
+   things you click 8 px. Classes are prefixed `ops-rs-`. ───────────────────── */
+
+.ops-rs-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: color-mix(in srgb, var(--bg-0) 55%, transparent);
+  /* Covers the frameless window's drag strip; see .modal-backdrop. */
+  -webkit-app-region: no-drag;
+}
+
+.ops-rs {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(720px, 100vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  color: var(--text-0);
+  border-left: 1px solid var(--border);
+  box-shadow: -24px 0 60px color-mix(in srgb, #000 40%, transparent);
+  outline: none;
+}
+
+.ops-rs-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ops-rs-spacer { flex: 1; }
+
+.ops-rs-eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.ops-rs-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.ops-rs-toggle button {
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--text-1);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.ops-rs-toggle button:hover { color: var(--text-0); }
+.ops-rs-toggle button.active { color: var(--text-0); background: var(--bg-2); }
+
+.ops-rs-btn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-light);
+  background: transparent;
+  color: var(--text-1);
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ops-rs-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-0); }
+.ops-rs-btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg-0);
+  font-weight: 650;
+}
+.ops-rs-btn.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--bg-0); }
+.ops-rs-btn:disabled { opacity: 0.5; cursor: default; }
+
+.ops-rs-close {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.ops-rs-close:hover { color: var(--text-0); background: var(--bg-hover); }
+
+.ops-rs-notices {
+  padding: 10px 22px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.ops-rs-saved { font-size: 12px; color: var(--success); overflow-wrap: anywhere; }
+.ops-rs-saved.error { color: var(--error); }
+.ops-rs-warnings {
+  padding: 8px 12px 8px 28px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  border-radius: var(--radius-surface);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ops-rs-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.ops-rs-body {
+  min-height: 100%;
+  max-width: 640px;
+  padding: 28px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.ops-rs-titles { display: flex; flex-direction: column; gap: 6px; }
+.ops-rs-title { font-size: 22px; font-weight: 650; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.ops-rs-context { font-size: 13px; color: var(--text-1); }
+.ops-rs-task { font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; }
+
+.ops-rs-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.ops-rs-tile {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  border-radius: var(--radius-surface);
+  background: var(--bg-2);
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.ops-rs-n { font-size: 20px; font-weight: 650; color: var(--text-0); }
+.ops-rs-n.ok { color: var(--success); }
+.ops-rs-n.warn { color: var(--warn); }
+.ops-rs-n.bad { color: var(--error); }
+
+.ops-rs-section { display: flex; flex-direction: column; gap: 10px; }
+.ops-rs-plan {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-0);
+}
+.ops-rs-muted { color: var(--text-2); }
+.ops-rs-plan li.skipped { color: var(--text-2); }
+.ops-rs-plan li.skipped .ops-rs-step { text-decoration: line-through; }
+.ops-rs-warn { color: var(--warn); }
+.ops-rs-bad { color: var(--error); }
+
+.ops-rs-calls {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) auto;
+  gap: 8px 14px;
+  font-size: 12.5px;
+  align-items: baseline;
+}
+/* Each call is three cells of the parent grid. */
+.ops-rs-call { display: contents; }
+.ops-rs-cmd {
+  font-family: var(--font-mono);
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+.ops-rs-cmd.refused { color: var(--text-2); text-decoration: line-through; }
+.ops-rs-allowed {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--warn);
+  text-decoration: none;
+  display: inline-block;
+}
+.ops-rs-result { white-space: nowrap; color: var(--text-2); }
+.ops-rs-result.ok { color: var(--success); }
+.ops-rs-result.warn { color: var(--warn); }
+.ops-rs-result.bad { color: var(--error); }
+
+.ops-rs-link {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-1);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.ops-rs-link:hover { color: var(--text-0); text-decoration: underline; }
+
+.ops-rs-md {
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.ops-rs-md:first-child { border-top: none; padding-top: 0; }
+
+.ops-rs-foot {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.ops-rs-foot code { font-family: var(--font-mono); font-size: 11.5px; color: inherit; background: none; border: none; padding: 0; }
+.ops-rs-broken { color: var(--error); }
+
+.ops-rs-note { color: var(--text-2); padding: 24px 0; text-align: center; }
+.ops-rs-error { color: var(--error); overflow-wrap: anywhere; }
+
+.ops-rs-btn:focus-visible,
+.ops-rs-close:focus-visible,
+.ops-rs-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Inside the toggle's clipped frame an outside ring would show as a sliver. */
+.ops-rs-toggle button:focus { outline: none; }
+.ops-rs-toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

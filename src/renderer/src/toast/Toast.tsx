@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ApprovalRequest } from '../types'
 import { applyTheme } from '../lib/theme'
-import { opsToastText } from '../lib/ops-approval'
+import { opsToastEyebrow, opsToastQuestion } from '../lib/ops-approval'
 
 // Approval toast window. Shown bottom-right, always on top, whenever an agent run
 // needs tool approval while the main window is hidden/unfocused, so the run never
@@ -70,33 +70,33 @@ export default function Toast() {
   }
 
   if (head.ops) {
-    // An ops request says what it asks in words: the MCP tool name means nothing to the
-    // person deciding, and a plan is approved, not "allowed".
-    const { title, detail } = opsToastText(head.ops)
+    // An ops request says what it asks in words (board F2): the MCP tool name means nothing
+    // to the person deciding, and a plan is approved, not "allowed".
+    const q = opsToastQuestion(head.ops)
+    const plan = head.ops.tool === 'plan'
     return (
       <div className="toast-shell">
         <div className="toast-head">
-          <span className="toast-title">Argos ops</span>
+          <span className="toast-dot" aria-hidden="true" />
+          <span className="toast-eyebrow" title={opsToastEyebrow(head.ops)}>
+            {opsToastEyebrow(head.ops)}
+          </span>
           {queue.length > 1 && <span className="toast-more">+{queue.length - 1} more</span>}
         </div>
-        <div className="toast-body">
-          <span className="toast-question" title={title}>
-            {title}
-          </span>
-          {detail && (
-            <span className="toast-detail" title={detail}>
-              {detail}
-            </span>
-          )}
+        <div className="toast-question">
+          {q.lead}
+          {q.code && <code className="toast-chip">{q.code}</code>}
+          {q.tail}
         </div>
         <div className="toast-actions">
           <button className="toast-btn allow" onClick={() => decide(true)}>
-            Approve
+            {plan ? 'Approve' : 'Allow'}
           </button>
           <button className="toast-btn deny" onClick={() => decide(false)}>
             Deny
           </button>
-          <button className="toast-btn open" onClick={() => window.electronAPI.toastOpenMain()}>
+          <span className="toast-spacer" />
+          <button className="toast-link" onClick={() => window.electronAPI.toastOpenMain()}>
             Open Argos
           </button>
         </div>
@@ -123,8 +123,9 @@ export default function Toast() {
         <button className="toast-btn deny" onClick={() => decide(false)}>
           Deny
         </button>
-        <button className="toast-btn open" onClick={() => window.electronAPI.toastOpenMain()}>
-          Open app
+        <span className="toast-spacer" />
+        <button className="toast-link" onClick={() => window.electronAPI.toastOpenMain()}>
+          Open Argos
         </button>
       </div>
     </div>

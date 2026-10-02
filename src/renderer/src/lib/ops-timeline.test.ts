@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { foldOpsEvents } from './ops-timeline'
+import { foldOpsEvents, planProgress, rowLabel, rowTone, runCounts, splitRuns, touchedHosts } from './ops-timeline'
 import type { OpsLiveEvent } from '../types'
 
 let n = 0
@@ -170,5 +170,123 @@ describe('plan steps', () => {
     ])
     expect(run.planText).toBe('1. second')
     expect(run.planSteps).toEqual([step])
+  })
+})
+
+describe('intervention fields and host answers', () => {
+  it('reads task, ticket, client, scope and policy sha from run.start', () => {
+    const s = ev({
+      kind: 'run.start', appSessionId: 's1', model: 'm', hosts: [],
+      runbook: { name: 'rb', path: '/rb', policySha256: 'b2f5ae7f00', runbookMdSha256: 'x' },
+      task: 'diagnose', ticket: 'WM-1', client: 'CM Porto', scope: { kind: 'host', hostId: 'h1' }
+    }, 'r4')
+    const [run] = foldOpsEvents([s])
+    expect(run).toMatchObject({ task: 'diagnose', ticket: 'WM-1', client: 'CM Porto', scope: { kind: 'host', hostId: 'h1' }, policySha256: 'b2f5ae7f00' })
+    expect(run.hostAnswers).toEqual([])
+  })
+
+  it('places host answers among the calls and counts touched hosts', () => {
+    const approved = ev({ kind: 'host.approved', hostId: 'h2', host: 'db1', by: 'user' })
+    const [run] = foldOpsEvents([
+      start,
+      decided('c1', 'allow'),
+      approved,
+      ev({ kind: 'host.denied', hostId: 'h3', host: 'cache1', by: 'user' }),
+      decided('c2', 'allow', { hostId: 'h2', host: '10.0.0.2' })
+    ])
+    expect(run.hostAnswers).toEqual([
+      { hostId: 'h2', host: 'db1', answer: 'approved', at: approved.line.at, beforeCall: 1 },
+      expect.objectContaining({ hostId: 'h3', answer: 'denied', beforeCall: 1 })
+    ])
+    expect(touchedHosts(run)).toEqual(['db1', 'web1'])
+  })
+
+  it('marks asked calls and stamps the decision time', () => {
+    const d = decided('c1', 'ask')
+    const r = row([start, d, ev({ kind: 'call.asked', callId: 'c1' }), ev({ kind: 'call.answered', callId: 'c1', answer: 'allow' })])
+    expect(r).toMatchObject({ asked: true, at: d.line.at, status: 'queued' })
+  })
+})
+
+describe('step progress', () => {
+  const steps = [1, 2, 3].map((i) => ({ title: `s${i}`, commands: [`c${i}`], verdict: 'runs' }))
+
+  it('is null without an approved plan', () => {
+    expect(planProgress(foldOpsEvents([start, decided('c1', 'allow'), finished('c1', 0)])[0])).toBeNull()
+    expect(planProgress(foldOpsEvents([start, ev({ kind: 'plan.rejected', steps })])[0])).toBeNull()
+  })
+
+  it('counts settled calls after the approval, capped at the plan size', () => {
+    const before = [start, decided('c0', 'allow'), finished('c0', 0), ev({ kind: 'plan.approved', steps })]
+    const [run] = foldOpsEvents([...before, decided('c1', 'allow'), finished('c1', 3), decided('c2', 'deny'), decided('c3', 'allow')])
+    expect(planProgress(run)).toEqual({ done: 2, total: 3 })
+    const many = foldOpsEvents([
+      ...before,
+      ...['a', 'b', 'c', 'd'].flatMap((id) => [decided(id, 'allow'), finished(id, 0)])
+    ])[0]
+    expect(planProgress(many)).toEqual({ done: 3, total: 3 })
+  })
+})
+
+describe('row reading', () => {
+  it('labels and colours each outcome', () => {
+    const at = (events: OpsLiveEvent[]) => { const r = row(events); return [rowTone(r), rowLabel(r)] }
+    expect(at([start, decided('c1', 'allow'), finished('c1', 0)])).toEqual(['ok', '42 ms'])
+    expect(at([start, decided('c1', 'allow'), finished('c1', 4)])).toEqual(['warn', 'exit 4'])
+    expect(at([start, decided('c1', 'deny', { reason: 'no allow rule matched and the runbook is strict' })])).toEqual(['bad', 'not in runbook'])
+    expect(at([start, decided('c1', 'deny', { reason: "outside this intervention's scope: db1" })])).toEqual(['bad', 'outside scope'])
+    expect(at([start, decided('c1', 'ask'), ev({ kind: 'call.answered', callId: 'c1', answer: 'deny' })])).toEqual(['bad', 'denied by you'])
+    expect(at([start, decided('c1', 'ask'), ev({ kind: 'call.asked', callId: 'c1' })])).toEqual(['warn', 'waiting'])
+    expect(at([start, decided('c1', 'allow'), ev({ kind: 'call.started', callId: 'c1' })])).toEqual(['idle', 'running'])
+  })
+
+  it('counts the report tiles', () => {
+    const [run] = foldOpsEvents([
+      start,
+      decided('c1', 'allow'), finished('c1', 0),
+      decided('c2', 'ask'), ev({ kind: 'call.asked', callId: 'c2' }), ev({ kind: 'call.answered', callId: 'c2', answer: 'allow' }), finished('c2', 0),
+      decided('c3', 'deny')
+    ])
+    expect(runCounts(run)).toEqual({ calls: 3, ran: 2, asked: 1, notAllowed: 1 })
+  })
+})
+
+describe('splitRuns', () => {
+  const runs = foldOpsEvents([start, ev({ kind: 'call.asked', callId: 'x' }, 'r2'), ev({ kind: 'call.asked', callId: 'y' }, 'r3')])
+
+  it('takes the named run as current and the rest newest first', () => {
+    const { current, earlier } = splitRuns(runs, 'r2')
+    expect(current?.runId).toBe('r2')
+    expect(earlier.map((r) => r.runId)).toEqual(['r3', 'r1'])
+  })
+
+  it('has no current run while the named one has not arrived, and the newest without a name', () => {
+    expect(splitRuns(runs, 'r9')).toMatchObject({ current: undefined })
+    expect(splitRuns(runs, 'r9').earlier).toHaveLength(3)
+    expect(splitRuns(runs, '').current).toBeUndefined()
+    expect(splitRuns(runs).current?.runId).toBe('r3')
+  })
+})
+
+describe('skipped plan steps', () => {
+  const steps = [1, 2, 3, 4].map((i) => ({ title: `s${i}`, commands: [`c${i}`], verdict: 'runs' }))
+
+  it('marks the steps the operator skipped, ignoring bad indices', () => {
+    const [run] = foldOpsEvents([start, ev({ kind: 'plan.approved', steps, skippedSteps: [1, 3, 9, 'x'] })])
+    expect(run.planSteps?.map((s) => !!s.skipped)).toEqual([false, true, false, true])
+  })
+
+  it('counts only the steps left to run', () => {
+    const [run] = foldOpsEvents([
+      start,
+      ev({ kind: 'plan.approved', steps, skippedSteps: [0, 2] }),
+      ...['a', 'b', 'c'].flatMap((id) => [decided(id, 'allow'), finished(id, 0)])
+    ])
+    expect(planProgress(run)).toEqual({ done: 2, total: 2 })
+  })
+
+  it('has no progress when every step was skipped', () => {
+    const [run] = foldOpsEvents([start, ev({ kind: 'plan.approved', steps, skippedSteps: [0, 1, 2, 3] })])
+    expect(planProgress(run)).toBeNull()
   })
 })
