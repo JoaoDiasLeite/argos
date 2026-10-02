@@ -25,6 +25,11 @@ Add new follow-ups above the line as they come up.
   sort in Projects, the launcher shortcut) shows the OS arrow instead of the design's SVG
   chevron. Wrap it in a `.select` span that paints the SVG at the right and hides the native
   arrow (`appearance: none`). Batch 8.
+- **Home has no ops runs, no finished-today list and no previews.** Wireframe 5B shows an
+  ops intervention as a running row (accent dot), "Earlier today · N finished" folded, and a
+  preview line under each resumable session. The renderer gets none of these today
+  (`TODO(port)` in `HomeView.tsx`; the preview is the older `TODO(B4)` in `App.tsx`). Needs a
+  small IPC: today's finished chats and ops runs, and the last message of a session.
 
 ---
 
