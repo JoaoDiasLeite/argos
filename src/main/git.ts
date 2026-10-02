@@ -30,21 +30,6 @@ export interface GitStatus {
   behind: number
 }
 
-/**
- * The repository root a folder belongs to, or null when it belongs to none.
- *
- * Needed wherever a status line has to be matched against a path: git reports the
- * files in `git status --porcelain` relative to the ROOT, while a chat can be working
- * in any directory inside it. Joining the two without asking silently produces paths
- * that match nothing at all.
- */
-export async function getRepoRoot(cwd: string): Promise<string | null> {
-  if (!cwd || !fs.existsSync(cwd)) return null
-  const res = await git(cwd, ['rev-parse', '--show-toplevel'])
-  const root = res.stdout.trim()
-  return res.code === 0 && root ? root : null
-}
-
 export async function getStatus(cwd: string): Promise<GitStatus> {
   if (!cwd || !fs.existsSync(cwd)) return { isRepo: false, branch: '', files: [], ahead: 0, behind: 0 }
 
@@ -80,52 +65,6 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
   }
 
   return { isRepo: true, branch, files, ahead, behind }
-}
-
-/** Unified diff for a file (staged or working tree). Untracked files are shown as all-add. */
-export async function getDiff(cwd: string, filePath: string, staged: boolean): Promise<string> {
-  const untrackedCheck = await git(cwd, ['ls-files', '--error-unmatch', filePath])
-  if (untrackedCheck.code !== 0) {
-    // Untracked: synthesize an all-additions view from the file content.
-    try {
-      const content = fs.readFileSync(path.join(cwd, filePath), 'utf-8')
-      return content
-        .split('\n')
-        .map((l) => `+${l}`)
-        .join('\n')
-    } catch {
-      return ''
-    }
-  }
-  const args = staged ? ['diff', '--cached', '--', filePath] : ['diff', '--', filePath]
-  const res = await git(cwd, args)
-  return res.stdout
-}
-
-export async function stageFile(cwd: string, filePath: string): Promise<GitStatus> {
-  await git(cwd, ['add', '--', filePath])
-  return getStatus(cwd)
-}
-
-export async function unstageFile(cwd: string, filePath: string): Promise<GitStatus> {
-  await git(cwd, ['restore', '--staged', '--', filePath])
-  return getStatus(cwd)
-}
-
-export async function stageAll(cwd: string): Promise<GitStatus> {
-  await git(cwd, ['add', '-A'])
-  return getStatus(cwd)
-}
-
-export interface CommitResult {
-  ok: boolean
-  message: string
-}
-
-export async function commit(cwd: string, message: string): Promise<CommitResult> {
-  if (!message.trim()) return { ok: false, message: 'Empty commit message' }
-  const res = await git(cwd, ['commit', '-m', message])
-  return { ok: res.code === 0, message: (res.stdout || res.stderr).trim() }
 }
 
 /**

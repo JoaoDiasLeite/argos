@@ -6,10 +6,9 @@
   position: relative;
 }
 
-/* ── Body row: transcript/composer column + optional Review side panel ── */
-/* A row rather than folding Review into the same column, so the panel gets its own
-   independent scroll (WorkspaceReview.css already sizes itself as a fixed-width,
-   self-scrolling aside) and never has to fight the transcript for height. */
+/* ── Body row: transcript/composer column + optional side panel (ops timeline) ── */
+/* A row rather than folding the panel into the same column, so it gets its own
+   independent scroll and never has to fight the transcript for height. */
 .chat-body {
   flex: 1;
   display: flex;
@@ -20,7 +19,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  /* Floor rather than 0: with the Review panel open, an unbounded shrink let the
+  /* Floor rather than 0: with a side panel open, an unbounded shrink let the
      transcript collapse to a sliver in a narrow window. */
   min-width: 260px;
   overflow: hidden;

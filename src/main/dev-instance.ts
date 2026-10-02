@@ -14,16 +14,14 @@ import { migrateUserDataDir, MigrationOptions, MigrationResult, resyncUserDataDi
  * module-level constants the moment they load, so the path has to move before they do.
  *
  * On the first dev launch the directory is seeded from prod, so dev opens on real data
- * rather than an empty app. Two things are deliberately not copied:
- *  - `cc-accounts` and `provider-accounts`, which are used from prod's directory instead.
- *    They hold OAuth logins and the sessions Claude Code writes; a copy would fork a
- *    refresh token that only one side can go on using, and show a frozen session list.
- *  - `scheduler`, since a copy would fire every routine twice.
+ * rather than an empty app. `cc-accounts` and `provider-accounts` are deliberately not
+ * copied: they are used from prod's directory instead. They hold OAuth logins and the
+ * sessions Claude Code writes; a copy would fork a refresh token that only one side can
+ * go on using, and show a frozen session list.
  * `Local State` is carried because it holds the key safeStorage encrypted the SSH hosts
  * and API key with; without it those files cannot be read.
  */
 const SEED: MigrationOptions = {
-  skip: ['scheduler'],
   carry: ['Local State'],
   shared: ['cc-accounts', 'provider-accounts']
 }

@@ -1,4 +1,4 @@
-/* Same slot and shrink rules as .workspace-review: the panel gives way before the
+/* The chat's side-panel slot: the panel gives way before the
    transcript does, and closing it is the answer in a very narrow window. */
 .ops-tl {
   flex: 0 1 340px;

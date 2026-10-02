@@ -70,21 +70,7 @@ import {
 } from './sprint-backfill-pure'
 import { Forge, forgeFromRemote, pickForgeServer } from './forge-pure'
 import {
-  createCheckpoint,
-  listCheckpoints,
-  restoreCheckpoint,
-  previewRestore,
-  deleteCheckpoint,
-  compareCheckpoints,
-  exportPatch
-} from './checkpoints'
-import {
   getStatus,
-  getDiff,
-  stageFile,
-  unstageFile,
-  stageAll,
-  commit,
   getLog,
   createWorktree,
   getRepoName,
@@ -125,7 +111,6 @@ import {
 } from './remote-shell'
 import { listDistros, testDistro, testDistroClaude, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
-import { attributionFor, forgetSession as forgetAuthorship, recordToolUse } from './authorship'
 import { needsApproval } from './tool-approval-pure'
 import { createLedger, type OpsLedger } from './ops-audit'
 import { createExecutor, createSshBackend, type OpsExecutor } from './ops-exec'
@@ -1302,18 +1287,8 @@ ipcMain.handle('ops:secret-response', (_, payload: { requestId: string; value: s
   return { ok: true }
 })
 
-/**
- * Forward a headless backend's event to the renderer, noting who wrote what on the way
- * past.
- *
- * The note is taken here rather than in claude-stream.ts, which parses the WSL and SSH
- * line protocol: that module has no imports at all and is the better for it, while this
- * is the one place both backends' events already pass through.
- */
+/** Forward a headless backend's event to the renderer. */
 function relayAgentEvent(e: Record<string, unknown>): void {
-  if (e.kind === 'tool-use' && typeof e.appSessionId === 'string' && typeof e.tool === 'string') {
-    recordToolUse(e.appSessionId, e.tool, e.input)
-  }
   send('agent:event', e)
 }
 
@@ -1608,7 +1583,6 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
             input: message.input,
             toolId: message.id
           })
-          recordToolUse(appSessionId, message.name, message.input)
           // Cheap live status for the pill; the hidden window just ignores it.
           sendToPill('pill:update', { state: 'running', tool: message.name })
           break
@@ -2651,69 +2625,10 @@ ipcMain.handle('claudemd:write', (_, filePath: string, content: string) => {
   return { success: true }
 })
 
-// ─── Checkpoints ──────────────────────────────────────────────────────────────
-
-ipcMain.handle(
-  'checkpoint:create',
-  (_, sessionId: string, label: string, files: string[], messageCount: number) =>
-    createCheckpoint(sessionId, label, files, messageCount, Date.now())
-)
-ipcMain.handle('checkpoint:list', (_, sessionId: string) => listCheckpoints(sessionId))
-ipcMain.handle('checkpoint:preview', (_, sessionId: string, id: string) => previewRestore(sessionId, id))
-ipcMain.handle('checkpoint:restore', (_, sessionId: string, id: string, token: string) =>
-  restoreCheckpoint(sessionId, id, Date.now(), token)
-)
-ipcMain.handle('checkpoint:delete', (_, sessionId: string, id: string) =>
-  deleteCheckpoint(sessionId, id)
-)
-ipcMain.handle('checkpoint:compare', (_, sessionId: string, idA: string, idB: string) =>
-  compareCheckpoints(sessionId, idA, idB)
-)
-ipcMain.handle(
-  'checkpoint:save-patch',
-  async (_, sessionId: string, idA: string, idB: string) => {
-    const patch = exportPatch(sessionId, idA, idB)
-    if (!patch) return { saved: false, reason: 'no-diff' }
-    if (!mainWindow) return { saved: false, reason: 'no-window' }
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: 'Save patch file',
-      defaultPath: `checkpoint-${idA}.patch`,
-      filters: [
-        { name: 'Patch files', extensions: ['patch', 'diff'] },
-        { name: 'All files', extensions: ['*'] }
-      ]
-    })
-    if (result.canceled || !result.filePath) return { saved: false, reason: 'canceled' }
-    try {
-      fs.writeFileSync(result.filePath, patch, 'utf-8')
-    } catch {
-      return { saved: false, reason: 'write-error' }
-    }
-    return { saved: true, filePath: result.filePath }
-  }
-)
-
 // ─── Git ──────────────────────────────────────────────────────────────────────
 
 ipcMain.handle('git:status', (_, cwd: string) => getStatus(cwd))
 ipcMain.handle('git:repo-name', (_, cwd: string) => getRepoName(cwd))
-ipcMain.handle('git:diff', (_, cwd: string, filePath: string, staged: boolean) =>
-  getDiff(cwd, filePath, staged)
-)
-ipcMain.handle('git:stage', (_, cwd: string, filePath: string) => stageFile(cwd, filePath))
-ipcMain.handle('git:unstage', (_, cwd: string, filePath: string) => unstageFile(cwd, filePath))
-ipcMain.handle('git:stage-all', (_, cwd: string) => stageAll(cwd))
-ipcMain.handle('git:commit', (_, cwd: string, message: string) => commit(cwd, message))
-
-// Who wrote which of the dirty files (authorship.ts). Takes the chat the panel was
-// opened from, so "this chat" means the one being reviewed rather than whichever ran last.
-ipcMain.handle('authorship:for-repo', (_, cwd: string, sessionId?: string) =>
-  attributionFor(cwd, sessionId)
-)
-ipcMain.handle('authorship:forget', (_, sessionId: string) => {
-  forgetAuthorship(sessionId)
-  return { ok: true }
-})
 
 // ─── File System ──────────────────────────────────────────────────────────────
 
@@ -2881,8 +2796,6 @@ ipcMain.handle('session:delete', (_, sessionId: string) => {
   }
   const filePath = path.join(sessionsDir, `${sessionId}.json`)
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
-  // A deleted chat keeps no claim on anyone's files.
-  forgetAuthorship(sessionId)
   return { success: true }
 })
 

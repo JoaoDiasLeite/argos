@@ -14,11 +14,6 @@ import './Chat.css'
 // false) — so it's loaded lazily instead of bundled into the initial chunk.
 const ChatTerminal = lazy(() => import('./ChatTerminal'))
 
-// WorkspaceReview pulls in its own git-status/diff/checkpoint plumbing and is only
-// ever rendered once the user opens the review panel (`reviewOpen`, default false)
-// — same lazy-loading rationale as ChatTerminal above.
-const WorkspaceReview = lazy(() => import('./WorkspaceReview'))
-
 // The ops timeline only exists for chats with a runbook (`session.runbookPath`), so a
 // normal chat never loads it.
 const OpsTimeline = lazy(() => import('./OpsTimeline'))
@@ -165,12 +160,6 @@ export interface Props {
   onStartFresh: () => void
   onCompact: () => void
   compacting: boolean
-  onOpenCheckpoints: () => void
-  onOpenGit: () => void
-  /** Whether this chat's Review panel is showing, and the toggle for it. The map of open
-   *  chats is App's — one owner for a preference several panes can act on. */
-  reviewOpen: boolean
-  onToggleReview: () => void
   onRetry: () => void
   onEditResend: (messageId: string, newText: string) => void
   onBranch: (messageId: string) => void
@@ -217,10 +206,6 @@ export default function Chat(
   onStartFresh,
   onCompact,
   compacting,
-  onOpenCheckpoints,
-  onOpenGit,
-  reviewOpen,
-  onToggleReview,
   onRetry,
   onEditResend,
   onBranch,
@@ -231,21 +216,16 @@ export default function Chat(
 }: Props) {
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   // Ops chats only: whether the timeline panel shows. Open by default (keyed by chat, so
-  // every ops chat starts open) so the first call is visible without a click. It shares
-  // the side-panel slot with Review: opening one closes the other.
+  // every ops chat starts open) so the first call is visible without a click.
   const [opsClosed, setOpsClosed] = useState<Record<string, boolean>>({})
   const isOpsChat = !!session?.runbookPath
-  const opsOpen = isOpsChat && !!session && !opsClosed[session.id] && !reviewOpen
-  useEffect(() => {
-    if (reviewOpen && session?.runbookPath) setOpsClosed((m) => ({ ...m, [session.id]: true }))
-  }, [reviewOpen, session?.id, session?.runbookPath])
+  const opsOpen = isOpsChat && !!session && !opsClosed[session.id]
   const toggleOps = () => {
     if (!session) return
     if (opsOpen) {
       setOpsClosed((m) => ({ ...m, [session.id]: true }))
       return
     }
-    if (reviewOpen) onToggleReview()
     setOpsClosed((m) => ({ ...m, [session.id]: false }))
   }
   const [markdownCopied, setMarkdownCopied] = useState(false)
@@ -781,15 +761,6 @@ export default function Chat(
                 </button>
                 <button disabled={isEmpty} onClick={() => { setExportMenuOpen(false); onExportSession('html') }}>Export as HTML</button>
                 <div className="header-menu-divider" />
-                <button onClick={() => { setExportMenuOpen(false); onOpenGit() }}>Git…</button>
-                <button onClick={() => { setExportMenuOpen(false); onOpenCheckpoints() }}>Checkpoints…</button>
-                <button
-                  disabled={!session}
-                  aria-pressed={reviewOpen}
-                  onClick={() => { setExportMenuOpen(false); onToggleReview() }}
-                >
-                  {reviewOpen ? 'Review ✓' : 'Review'}
-                </button>
                 <button onClick={() => { setExportMenuOpen(false); onOpenClaudeMd() }}>Edit {CONTEXT_FILE[activeProvider]}</button>
               </div>
             )}
@@ -798,8 +769,8 @@ export default function Chat(
       )}
 
       {/* Row below the floating actions: the transcript/composer column, plus the optional
-          Review side panel. Kept as a flex row (rather than folding Review into the same
-          column) so the panel gets its own independent scroll and never has to fight the
+          side panel (the ops timeline). Kept as a flex row (rather than folding it into the
+          same column) so the panel gets its own independent scroll and never has to fight the
           transcript for height. */}
       <div className="chat-body">
       <div className="chat-main">
@@ -905,9 +876,6 @@ export default function Chat(
             initialPrompt={initialTerminalPrompt}
             onInitialPromptSent={onInitialTerminalPromptSent}
             onClose={onCloseTerminal}
-            onOpenGit={onOpenGit}
-            onToggleReview={onToggleReview}
-            reviewOpen={reviewOpen}
             onActive={() => {
               // The stamp is the lower bound on which Codex conversation can be this
               // chat's, so it is written once and never moved: a terminal reopened later
@@ -1187,17 +1155,6 @@ export default function Chat(
       </div>
       </div>
 
-      {session && reviewOpen && (
-        <Suspense fallback={null}>
-          <WorkspaceReview
-            key={session.id}
-            session={session}
-            streaming={streaming}
-            onGit={onOpenGit}
-            onCheckpoints={onOpenCheckpoints}
-          />
-        </Suspense>
-      )}
       {session && opsOpen && (
         <Suspense fallback={null}>
           <OpsTimeline

@@ -316,20 +316,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   claudeMdWrite: (filePath: string, content: string) =>
     ipcRenderer.invoke('claudemd:write', filePath, content),
 
-  // Checkpoints
-  checkpointCreate: (sessionId: string, label: string, files: string[], messageCount: number) =>
-    ipcRenderer.invoke('checkpoint:create', sessionId, label, files, messageCount),
-  checkpointList: (sessionId: string) => ipcRenderer.invoke('checkpoint:list', sessionId),
-  checkpointPreview: (sessionId: string, id: string) => ipcRenderer.invoke('checkpoint:preview', sessionId, id),
-  checkpointRestore: (sessionId: string, id: string, token: string) =>
-    ipcRenderer.invoke('checkpoint:restore', sessionId, id, token),
-  checkpointDelete: (sessionId: string, id: string) =>
-    ipcRenderer.invoke('checkpoint:delete', sessionId, id),
-  checkpointCompare: (sessionId: string, idA: string, idB: string) =>
-    ipcRenderer.invoke('checkpoint:compare', sessionId, idA, idB),
-  checkpointSavePatch: (sessionId: string, idA: string, idB: string) =>
-    ipcRenderer.invoke('checkpoint:save-patch', sessionId, idA, idB),
-
   // SSH
   sshList: () => ipcRenderer.invoke('ssh:list'),
   sshSave: (host: unknown) => ipcRenderer.invoke('ssh:save', host),
@@ -404,15 +390,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Git
   gitStatus: (cwd: string) => ipcRenderer.invoke('git:status', cwd),
   gitRepoName: (cwd: string) => ipcRenderer.invoke('git:repo-name', cwd),
-  gitDiff: (cwd: string, filePath: string, staged: boolean) =>
-    ipcRenderer.invoke('git:diff', cwd, filePath, staged),
-  gitStage: (cwd: string, filePath: string) => ipcRenderer.invoke('git:stage', cwd, filePath),
-  gitUnstage: (cwd: string, filePath: string) => ipcRenderer.invoke('git:unstage', cwd, filePath),
-  gitStageAll: (cwd: string) => ipcRenderer.invoke('git:stage-all', cwd),
-  gitCommit: (cwd: string, message: string) => ipcRenderer.invoke('git:commit', cwd, message),
-  authorshipForRepo: (cwd: string, sessionId?: string) =>
-    ipcRenderer.invoke('authorship:for-repo', cwd, sessionId),
-  authorshipForget: (sessionId: string) => ipcRenderer.invoke('authorship:forget', sessionId),
 
   // File system
   readDir: (dirPath: string) => ipcRenderer.invoke('fs:read-dir', dirPath),

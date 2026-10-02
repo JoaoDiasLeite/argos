@@ -673,60 +673,12 @@ export const HOOK_EVENTS = [
 
 export type HookEvent = (typeof HOOK_EVENTS)[number]
 
-export interface CheckpointMeta {
-  id: string
-  sessionId: string
-  label: string
-  createdAt: number
-  messageCount: number
-  fileCount: number
-}
-
-export interface RestoreResult {
-  restored: number
-  safetyCheckpointId: string | null
-  errors: { path: string; error: string }[]
-}
-
-export interface RestorePreview {
-  token: string
-  files: { path: string; action: 'write' | 'delete' | 'skip' | 'unchanged'; error?: string }[]
-}
-
-export interface CheckpointFileDiff {
-  path: string
-  before: string
-  after: string
-}
-
-export interface CheckpointDiff {
-  files: CheckpointFileDiff[]
-}
-
 export interface GitFile {
   path: string
   index: string
   worktree: string
   staged: boolean
   untracked: boolean
-}
-
-/** A file in the tree, and the chat that wrote it. Mirrors main/authorship-pure.ts. */
-export interface AttributedFile {
-  path: string
-  sessionId: string
-  name: string
-}
-
-/** A repo's dirty files, split by who wrote them. */
-export interface RepoAttribution {
-  isRepo: boolean
-  /** Written by the chat the panel was opened from. */
-  mine: string[]
-  /** Written by another chat, which each row names. */
-  others: AttributedFile[]
-  /** Claimed by nobody: a hand edit, another tool, a rebase, a chat from before the ledger. */
-  unattributed: string[]
 }
 
 export interface GitStatus {
@@ -1603,24 +1555,6 @@ declare global {
       claudeMdRead: (projectPath?: string, provider?: ProviderId) => Promise<ClaudeMdFile[]>
       claudeMdWrite: (filePath: string, content: string) => Promise<{ success: boolean }>
 
-      // Checkpoints
-      checkpointCreate: (
-        sessionId: string,
-        label: string,
-        files: string[],
-        messageCount: number
-      ) => Promise<CheckpointMeta>
-      checkpointList: (sessionId: string) => Promise<CheckpointMeta[]>
-      checkpointPreview: (sessionId: string, id: string) => Promise<RestorePreview>
-      checkpointRestore: (sessionId: string, id: string, token: string) => Promise<RestoreResult>
-      checkpointDelete: (sessionId: string, id: string) => Promise<CheckpointMeta[]>
-      checkpointCompare: (sessionId: string, idA: string, idB: string) => Promise<CheckpointDiff>
-      checkpointSavePatch: (
-        sessionId: string,
-        idA: string,
-        idB: string
-      ) => Promise<{ saved: boolean; filePath?: string; reason?: string }>
-
       // SSH
       sshList: () => Promise<SshHostPublic[]>
       sshSave: (host: SshHostInput) => Promise<SshHostPublic[]>
@@ -1729,17 +1663,6 @@ declare global {
       // Git
       gitStatus: (cwd: string) => Promise<GitStatus>
       gitRepoName: (cwd: string) => Promise<RepoName>
-      gitDiff: (cwd: string, filePath: string, staged: boolean) => Promise<string>
-      gitStage: (cwd: string, filePath: string) => Promise<GitStatus>
-      gitUnstage: (cwd: string, filePath: string) => Promise<GitStatus>
-      gitStageAll: (cwd: string) => Promise<GitStatus>
-      gitCommit: (cwd: string, message: string) => Promise<{ ok: boolean; message: string }>
-      /**
-       * Which of a repo's dirty files this chat wrote, which another chat wrote, and
-       * which nobody claims. See main/authorship.ts.
-       */
-      authorshipForRepo: (cwd: string, sessionId?: string) => Promise<RepoAttribution>
-      authorshipForget: (sessionId: string) => Promise<{ ok: boolean }>
 
       // File system
       readDir: (dirPath: string) => Promise<FileNode[] | { error: string }>

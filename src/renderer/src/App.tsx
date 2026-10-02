@@ -40,15 +40,12 @@ import { readLocalFile, writeLocalFile } from './lib/local-file-io'
 import { installEditingKeys } from './lib/clipboard-paste'
 import TextContextMenu from './components/TextContextMenu'
 import { applyTheme, zoomFor } from './lib/theme'
-import CheckpointsModal from './components/CheckpointsModal'
-import GitModal from './components/GitModal'
 import CommandPalette, { CommandItem } from './components/CommandPalette'
 import OnboardingModal from './components/OnboardingModal'
 import AccountsModal from './components/AccountsModal'
 import ChangelogModal from './components/ChangelogModal'
 import ShortcutsModal from './components/ShortcutsModal'
 import { modLabel } from './lib/shortcuts'
-import { readReviewOpen, writeReviewOpen, toggleReviewOpen } from './lib/review-open'
 import { UiPrefs, UiPrefsPatch } from './types'
 import { sessionToReplaySeed } from './lib/markdown-export'
 import { provOf, acctOf, originOf, nextChatAfterClose, isUnstarted, AccountDefaults } from './lib/account-scope'
@@ -260,21 +257,7 @@ export default function App() {
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [changelogOpen, setChangelogOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
-  // Which chats show the Review panel. It used to live in Chat, where every pane mounted
-  // its own copy of the whole map and wrote all of it back — so a toggle in one pane
-  // could save a map built before the other pane's entry existed and silently drop it.
-  // One owner, one map; the panes and the palette are handed a view of it.
-  const [reviewOpenById, setReviewOpenById] = useState(readReviewOpen)
-  const toggleReview = useCallback((sid: string) => {
-    setReviewOpenById((prev) => {
-      const next = toggleReviewOpen(prev, sid)
-      writeReviewOpen(next)
-      return next
-    })
-  }, [])
   const [claudeMdFor, setClaudeMdFor] = useState<string | null>(null)
-  const [checkpointsFor, setCheckpointsFor] = useState<string | null>(null)
-  const [gitFor, setGitFor] = useState<string | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [sidebarTab, setSidebarTab] = useState<'files' | 'sessions'>('sessions')
   // The chat list hidden to give the panes its width. Remembered across launches, like the
@@ -444,19 +427,6 @@ export default function App() {
   // fresh sessions and defaults (see openCcTarget).
   const openCcTargetRef = useRef<(target: CcSessionTarget) => void>(() => {})
 
-  // Files Claude has edited/written per session — used for checkpoint snapshots.
-  const modifiedFilesRef = useRef<Map<string, Set<string>>>(new Map())
-  const trackFile = (sessionId: string, filePath: string) => {
-    if (!filePath) return
-    let set = modifiedFilesRef.current.get(sessionId)
-    if (!set) {
-      set = new Set()
-      modifiedFilesRef.current.set(sessionId, set)
-    }
-    set.add(filePath)
-  }
-  const trackedFiles = (sessionId: string) => [...(modifiedFilesRef.current.get(sessionId) ?? [])]
-
   // Clear a chat's unread flag the moment it comes on screen, regardless of which of the
   // many setActiveId call sites got it there (sidebar click, opening from Projects, a
   // fork, …) — a single effect covers all of them instead of threading a "mark read" call
@@ -477,12 +447,10 @@ export default function App() {
   // that must agree — the sidebar's scope, the embedded terminal, and the CLAUDE.md modal,
   // which is opened FOR a session and so cannot read the active one.
   const providerOf = (s?: Session): ProviderId => provOf(models, s?.model || defaultModel)
-  // The three modals are opened for a session, not for "the active one" — with two panes
-  // on screen those differ, and resolving them here keeps the JSX from doing the lookup
+  // The CLAUDE.md modal is opened for a session, not for "the active one" — with two panes
+  // on screen those differ, and resolving it here keeps the JSX from doing the lookup
   // once per prop.
   const claudeMdSession = claudeMdFor ? sessions.find((s) => s.id === claudeMdFor) : undefined
-  const checkpointsSession = checkpointsFor ? sessions.find((s) => s.id === checkpointsFor) : undefined
-  const gitSession = gitFor ? sessions.find((s) => s.id === gitFor) : undefined
   // The open file belongs to the chat's project tree, so it goes stale the moment we point at
   // a different folder or leave the chat view (where the Files tab lives) entirely.
   const activeProjectPath = activeSession?.projectPath
@@ -654,11 +622,6 @@ export default function App() {
         addTermFor(sid, { kind: 'tool', text: `${data.tool}(${inputStr.slice(0, 200)})` })
         const call: ToolCall = { id: data.toolId, tool: data.tool, input: data.input }
         appendToLastAssistant(sid, (m) => ({ ...m, toolCalls: [...(m.toolCalls ?? []), call] }))
-        if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(data.tool)) {
-          const fp = (data.input as { file_path?: string; path?: string })?.file_path ??
-            (data.input as { path?: string })?.path
-          if (fp) trackFile(sid, fp)
-        }
         return
       }
       if (data.kind === 'tool-result') {
@@ -893,18 +856,6 @@ export default function App() {
     ) => {
       const session = sessions.find((s) => s.id === sid)
       if (!session || runningIds.has(session.id)) return
-
-      // Auto-checkpoint the pre-turn state of files Claude has already touched, so this
-      // turn's changes can be rolled back.
-      const tracked = trackedFiles(session.id)
-      if (tracked.length > 0) {
-        window.electronAPI.checkpointCreate(
-          session.id,
-          `Before: ${text.slice(0, 50)}`,
-          tracked,
-          session.messages.length
-        )
-      }
 
       // The transcript shows only the filenames of attached files; the full content
       // rides along in the prompt (see main/index.ts buildPrompt), never in
@@ -1615,24 +1566,9 @@ export default function App() {
     window.electronAPI.saveSession(s)
   }
 
-  // Wrappers around the three modal-open setters, taking the session they open for —
-  // each modal now tracks which session it belongs to, so two panes can have their own
-  // CLAUDE.md/checkpoints/git modal open on different sessions at once.
+  // Wrapper around the modal-open setter, taking the session it opens for, so two panes
+  // can have their own CLAUDE.md modal open on different sessions at once.
   const openClaudeMd = (sid: string) => setClaudeMdFor(sid)
-  const openCheckpoints = (sid: string) => setCheckpointsFor(sid)
-  const openGit = (sid: string) => setGitFor(sid)
-
-  // Creates a checkpoint for the given session — the checkpoints modal passes its own
-  // session here rather than this closing over `activeSession`, so a checkpoint taken from
-  // a background pane's modal doesn't land on whatever session happens to be active.
-  const createCheckpoint = async (session: Session, label: string) => {
-    await window.electronAPI.checkpointCreate(
-      session.id,
-      label,
-      trackedFiles(session.id),
-      session.messages.length
-    )
-  }
 
   // Resume a real Claude Code session from the Projects view (local or WSL).
   const resumeCCSession = async (cc: CCSessionMeta) => {
@@ -3021,38 +2957,6 @@ export default function App() {
     if (workMode === 'chat') {
       items.push({ id: 'new-quick', title: 'Quick chat (cheapest model)', group: 'Actions', run: createQuickChat })
     }
-    // Git and Checkpoints are otherwise reachable only from the chat's ⋯ menu, which is
-    // hidden for as long as a terminal is open — so in terminal mode the palette is the
-    // way in. Both need a chat to act on, and Git a folder to look at.
-    const activeSession = sessions.find((s) => s.id === activeId)
-    if (activeSession?.projectPath) {
-      items.push({
-        id: 'git',
-        title: 'Git — review and stage changes',
-        subtitle: activeSession.projectPath.split(/[\\/]/).filter(Boolean).pop(),
-        group: 'Actions',
-        run: () => openGit(activeSession.id)
-      })
-    }
-    if (activeSession) {
-      items.push({
-        id: 'checkpoints',
-        title: 'Checkpoints',
-        subtitle: 'this chat',
-        group: 'Actions',
-        run: () => openCheckpoints(activeSession.id)
-      })
-      // Says which way it will go, since a toggle you cannot see the state of is a
-      // coin flip — the palette is often opened over a terminal, with the panel
-      // off-screen behind it.
-      items.push({
-        id: 'review',
-        title: reviewOpenById[activeSession.id] ? 'Hide the review panel' : 'Review this chat’s changes',
-        subtitle: 'this chat',
-        group: 'Actions',
-        run: () => toggleReview(activeSession.id)
-      })
-    }
     items.push({
       id: 'shortcuts',
       title: 'Keyboard shortcuts',
@@ -3104,7 +3008,7 @@ export default function App() {
     }
     return items
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, models, accounts, workMode, activeId, reviewOpenById])
+  }, [sessions, models, accounts, workMode, activeId])
 
   // What the Remote & WSL list's SSH dots are allowed to claim. A host counts as reachable
   // only once one of its sessions has actually connected; a host whose sessions have all
@@ -3214,10 +3118,6 @@ export default function App() {
     compactSession,
     closeChatTerminal,
     openClaudeMd,
-    openCheckpoints,
-    openGit,
-    reviewOpenById,
-    toggleReview,
     exportSession,
     clearTerminalPrompt,
     onApproval: respondApprovalById,
@@ -3636,18 +3536,6 @@ export default function App() {
           read={readLocalFile}
           write={writeLocalFile}
         />
-      )}
-      {checkpointsSession && (
-        <CheckpointsModal
-          sessionId={checkpointsSession.id}
-          trackedFileCount={trackedFiles(checkpointsSession.id).length}
-          onClose={() => setCheckpointsFor(null)}
-          onCreate={(label) => createCheckpoint(checkpointsSession, label)}
-          onRestored={() => addTerm({ kind: 'info', text: 'files restored from checkpoint' })}
-        />
-      )}
-      {gitSession && (
-        <GitModal cwd={gitSession.projectPath ?? ''} sessionId={gitSession.id} onClose={() => setGitFor(null)} />
       )}
       {paletteOpen && <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />}
       {/* Right-click for the app's own fields. Mounted once, listens on window, and
