@@ -8,7 +8,8 @@ import * as path from 'path'
 import { sha256Hex } from './ops-audit-pure'
 import type { LoadedRunbook } from './ops-runbook-pure'
 import type { ExecResult, OpsListResult, OpsReadResult, OpsWriteResult } from './ops-exec-pure'
-import type { OpsAuditEvent, OpsGateResult, OpsHostRef, OpsToolInput, OpsToolName } from './ops-types'
+import { canonicalCommand, classify, parseSimpleCommand } from './ops-gate-pure'
+import type { OpsAuditEvent, OpsGateResult, OpsHostRef, OpsPolicy, OpsToolInput, OpsToolName } from './ops-types'
 
 // ─── System prompt ────────────────────────────────────────────────────────────────
 
@@ -19,7 +20,8 @@ import type { OpsAuditEvent, OpsGateResult, OpsHostRef, OpsToolInput, OpsToolNam
 export const OPS_PREAMBLE = [
   'You are operating servers for the operator through an Argos ops run.',
   '',
-  '- Plan first. Before any other mcp__ops__* call, call mcp__ops__propose_plan once with the full list of steps you intend to run, one per entry, naming the host and the command or script. Nothing runs until the operator approves the plan.',
+  '- Plan first. Before any other mcp__ops__* call, call mcp__ops__propose_plan once with the full list of steps you intend to run. Nothing runs until the operator approves the plan.',
+  "- Write each plan step as an object, not a string: a title in the operator's words, the hostId, and the exact command (cmd, or commands when one step runs several, at most 8) or the script and its args, spelled exactly as you will send them. The operator reviews each step with the gate's verdict on that exact command.",
   '- Do not run a step that was not in the approved plan. If the work needs a step the plan did not list, call mcp__ops__propose_plan again with the revised full list and wait for its approval.',
   '- You operate servers through the mcp__ops__* tools only. You have no local shell, and the local machine is out of reach.',
   '- Follow RUNBOOK.md literally. If a step is not covered by it, say so and stop. Do not improvise an equivalent command.',
@@ -59,8 +61,10 @@ export interface ApprovalOpsContext {
   hostName: string
   hostAddress: string
   tool: OpsToolName | 'plan'
-  /** For tool 'plan': the steps the model proposes for this run. */
-  planSteps?: string[]
+  /** For tool 'plan': the steps the model proposes for this run, each classified at plan time. */
+  planSteps?: OpsPlanStep[]
+  /** For tool 'plan': the totals the review sheet leads with. */
+  planSummary?: OpsPlanSummary
   class: 'read' | 'mutate'
   reason: string
   rule?: string
@@ -70,6 +74,27 @@ export interface ApprovalOpsContext {
   scriptSha256?: string
   queuedBehind: number
   runbook: string
+}
+
+/** Mirrors the renderer's OpsPlanStep (types.ts). */
+export interface OpsPlanStep {
+  /** The model's words, or the matched rule's title when one rule covers the whole step. */
+  title: string
+  /** Stored host name, when the step names a host the runbook knows. */
+  hostName?: string
+  /** Canonical command lines, or `script <name> args…`, as the gate would run them. */
+  commands: string[]
+  verdict: 'runs' | 'asks' | 'denied' | 'unknown'
+  class?: 'read' | 'mutate'
+  reason?: string
+  sudo?: boolean
+}
+
+export interface OpsPlanSummary {
+  runs: number
+  asks: number
+  denied: number
+  mutates: number
 }
 
 export function toApprovalContext(
@@ -107,26 +132,166 @@ export const PLAN_FIRST_REASON = 'propose a plan first (mcp__ops__propose_plan)'
 export const PLAN_REJECTED_MESSAGE = 'Plan rejected by the operator. Revise it or stop.'
 export const PLAN_APPROVED_TEXT = 'Plan approved. Proceed step by step.'
 
+/** Most commands one plan step may carry in `commands`. */
+export const OPS_PLAN_MAX_STEP_COMMANDS = 8
+
+/** One plan step as the model sent it, normalised. `commands` are the model's raw lines (`cmd` first). */
+export interface PlanStepInput {
+  title: string
+  hostId?: string
+  commands: string[]
+  script?: { name: string; args: string[] }
+}
+
+const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.length > 0
+
+/** One object step, checked like the schema's object branch; a string is the refusal. */
+function planStepObject(x: Record<string, unknown>): PlanStepInput | string {
+  if (!nonEmpty(x.title)) return 'every step object needs a non-empty title'
+  if (x.hostId !== undefined && typeof x.hostId !== 'string') return "a step's hostId must be a string"
+  if (x.cmd !== undefined && !nonEmpty(x.cmd)) return "a step's cmd must be a non-empty string"
+  if (x.script !== undefined && !nonEmpty(x.script)) return "a step's script must be a non-empty string"
+  if (x.args !== undefined && !isStringArray(x.args)) return "a step's args must be an array of strings"
+  if (x.commands !== undefined) {
+    if (!Array.isArray(x.commands) || !x.commands.every(nonEmpty)) return "a step's commands must be an array of non-empty strings"
+    if (x.commands.length > OPS_PLAN_MAX_STEP_COMMANDS) return `a step may list at most ${OPS_PLAN_MAX_STEP_COMMANDS} commands`
+  }
+  const commands = [...(x.cmd !== undefined ? [x.cmd as string] : []), ...((x.commands as string[] | undefined) ?? [])]
+  return {
+    title: x.title,
+    ...(x.hostId !== undefined ? { hostId: x.hostId as string } : {}),
+    commands,
+    ...(x.script !== undefined ? { script: { name: x.script as string, args: [...((x.args as string[] | undefined) ?? [])] } } : {})
+  }
+}
+
 /**
  * The steps of a propose_plan call, checked the way its zod schema checks them:
- * canUseTool sees the model's raw JSON before the schema does.
+ * canUseTool sees the model's raw JSON before the schema does. A string step is a title
+ * with no command; an object step carries the host and the exact command(s) or script.
  */
-export function planStepsFrom(input: Record<string, unknown>): string[] | { error: string } {
+export function planStepsFrom(input: Record<string, unknown>): PlanStepInput[] | { error: string } {
   const steps = input && typeof input === 'object' ? input.steps : undefined
-  if (!Array.isArray(steps)) return { error: 'steps must be an array of strings' }
+  if (!Array.isArray(steps)) return { error: 'steps must be an array' }
   if (steps.length === 0) return { error: 'steps must list at least one step' }
   if (steps.length > OPS_PLAN_MAX_STEPS) return { error: `steps may list at most ${OPS_PLAN_MAX_STEPS} entries` }
-  if (!steps.every((x) => typeof x === 'string' && x.length > 0)) return { error: 'every step must be a non-empty string' }
-  return [...(steps as string[])]
+  const out: PlanStepInput[] = []
+  for (const x of steps) {
+    if (typeof x === 'string' && x.length > 0) {
+      out.push({ title: x, commands: [] })
+      continue
+    }
+    if (!x || typeof x !== 'object' || Array.isArray(x)) return { error: 'every step must be a non-empty string or a step object' }
+    const step = planStepObject(x as Record<string, unknown>)
+    if (typeof step === 'string') return { error: step }
+    out.push(step)
+  }
+  return out
+}
+
+export interface ClassifiedPlan {
+  steps: OpsPlanStep[]
+  summary: OpsPlanSummary
+}
+
+type PlanVerdict = OpsPlanStep['verdict']
+const VERDICT_RANK: Record<PlanVerdict, number> = { unknown: 0, runs: 1, asks: 2, denied: 3 }
+const verdictOf = (g: OpsGateResult): PlanVerdict => (g.decision === 'allow' ? 'runs' : g.decision === 'ask' ? 'asks' : 'denied')
+
+/** A command line in its canonical spelling; one that does not parse is shown as sent (it cannot run). */
+function canonicalLine(cmd: string): string {
+  const parsed = parseSimpleCommand(cmd)
+  return parsed.ok ? canonicalCommand(parsed.argv) : cmd
+}
+
+const scriptLine = (name: string, args: string[]): string => `script ${canonicalCommand([name, ...args])}`
+
+type HostEntry = { host: OpsHostRef; groups: string[] }
+
+/** By id, as the gate resolves it; a stored name is accepted too, for the preview only. */
+function planHost(hostsById: Map<string, HostEntry>, hostId: string | undefined): HostEntry | undefined {
+  if (hostId === undefined || hostId === '') return undefined
+  const byId = hostsById.get(hostId)
+  if (byId) return byId
+  for (const e of hostsById.values()) if (e.host.name === hostId) return e
+  return undefined
+}
+
+/**
+ * What the gate would decide for each step of a plan, before anything runs: a preview
+ * for the review sheet. Nothing here executes or logs, and the real gate still runs on
+ * every later call, so a step approved here can still be refused there.
+ */
+export function classifyPlanSteps(steps: PlanStepInput[], policy: OpsPolicy, hostsById: Map<string, HostEntry>): ClassifiedPlan {
+  const summary: OpsPlanSummary = { runs: 0, asks: 0, denied: 0, mutates: 0 }
+  const out: OpsPlanStep[] = []
+  for (const step of steps) {
+    const entry = planHost(hostsById, step.hostId)
+    const hasWork = step.commands.length > 0 || step.script !== undefined
+    if (!entry || !hasWork) {
+      const commands = [...step.commands.map(canonicalLine), ...(step.script ? [scriptLine(step.script.name, step.script.args)] : [])]
+      const reason = !hasWork
+        ? 'the step names no command, so the gate cannot judge it yet'
+        : step.hostId === undefined || step.hostId === ''
+          ? 'the step names no host'
+          : `host '${step.hostId}' is not in this runbook`
+      out.push({ title: step.title, ...(entry ? { hostName: entry.host.name } : {}), commands, verdict: 'unknown', reason })
+      continue
+    }
+    const { host, groups } = entry
+    const results: { gate: OpsGateResult; line: string }[] = []
+    for (const cmd of step.commands) {
+      const gate = classify({ tool: 'run', hostId: host.id, cmd }, policy, host, groups)
+      results.push({ gate, line: gate.argv ? canonicalCommand(gate.argv) : canonicalLine(cmd) })
+    }
+    if (step.script) {
+      const { name, args } = step.script
+      const gate = classify({ tool: 'script', hostId: host.id, name, args: [...args] }, policy, host, groups)
+      results.push({ gate, line: scriptLine(name, args) })
+    }
+    let verdict: PlanVerdict = 'unknown'
+    for (const r of results) {
+      const v = verdictOf(r.gate)
+      if (VERDICT_RANK[v] > VERDICT_RANK[verdict]) verdict = v
+    }
+    const first = results[0].gate
+    const firstNotRuns = results.find((r) => r.gate.decision !== 'allow')
+    const reason = firstNotRuns ? firstNotRuns.gate.reason : first.title ?? first.reason
+    // The rule's title is the client-facing wording, but only when that one rule covers
+    // every command of the step.
+    const oneRule = first.rule !== undefined && results.every((r) => r.gate.rule === first.rule) ? first : undefined
+    const mutate = results.some((r) => r.gate.class === 'mutate')
+    const sudo = results.some((r, i) => i < step.commands.length && r.gate.argv?.[0] === 'sudo')
+    out.push({
+      title: oneRule?.title ?? step.title,
+      hostName: host.name,
+      commands: results.map((r) => r.line),
+      verdict,
+      class: mutate ? 'mutate' : 'read',
+      reason,
+      ...(sudo ? { sudo: true } : {})
+    })
+    if (verdict === 'runs') summary.runs++
+    else if (verdict === 'asks') summary.asks++
+    else if (verdict === 'denied') summary.denied++
+    if (mutate) summary.mutates++
+  }
+  return { steps: out, summary }
+}
+
+/** The ledger's text for an approved plan: one line per step, with its canonical commands. */
+export function planTextFor(steps: OpsPlanStep[]): string {
+  return steps.map((s, i) => `${i + 1}. ${s.title}${s.commands.length ? ` — ${s.commands.join(' · ')}` : ''}`).join('\n')
 }
 
 /** The modal's context for a plan: no host, the runbook's name in its place. */
-export function planApprovalContext(steps: string[], runbookName: string): ApprovalOpsContext {
+export function planApprovalContext(plan: ClassifiedPlan, runbookName: string): ApprovalOpsContext {
   return {
     hostName: runbookName,
     hostAddress: '',
     tool: 'plan',
-    planSteps: [...steps],
+    planSteps: plan.steps.map((s) => ({ ...s, commands: [...s.commands] })),
+    planSummary: { ...plan.summary },
     class: 'mutate',
     reason: 'plan approval',
     queuedBehind: 0,

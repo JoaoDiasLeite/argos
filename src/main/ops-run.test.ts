@@ -359,7 +359,12 @@ describe('prepareOpsRun', () => {
 })
 
 describe('plan first', () => {
-  const PLAN = { steps: ['web-01: systemctl status nginx', 'web-01: sudo systemctl reload nginx'] }
+  const PLAN = {
+    steps: [
+      { title: 'check nginx', hostId: 'h1', cmd: 'systemctl status nginx' },
+      { title: 'reload nginx', hostId: 'h1', cmd: 'sudo systemctl reload nginx' }
+    ]
+  }
   const STATUS = { hostId: 'h1', cmd: 'systemctl status nginx' }
 
   it('an ops call before any plan is denied and never reaches the backend; local reads stay open', async () => {
@@ -397,22 +402,46 @@ describe('plan first', () => {
         hostName: 'nginx-config-reload',
         hostAddress: '',
         tool: 'plan',
-        planSteps: PLAN.steps,
+        planSteps: [
+          {
+            title: 'Estado do serviço web',
+            hostName: 'web-01',
+            commands: ['systemctl status nginx'],
+            verdict: 'runs',
+            class: 'read',
+            reason: 'Estado do serviço web'
+          },
+          {
+            title: 'Recarregamento',
+            hostName: 'web-01',
+            commands: ['sudo systemctl reload nginx'],
+            verdict: 'asks',
+            class: 'mutate',
+            reason: 'matched allow rule ^sudo systemctl reload nginx$ (mutate, ask)',
+            sudo: true
+          }
+        ],
+        planSummary: { runs: 1, asks: 1, denied: 0, mutates: 1 },
         class: 'mutate',
         reason: 'plan approval',
         queuedBehind: 0,
         runbook: 'nginx-config-reload'
       }
     })
-    expect(run.ctx.planText).toBe(PLAN.steps.join('\n'))
+    expect(run.ctx.planText).toBe('1. Estado do serviço web — systemctl status nginx\n2. Recarregamento — sudo systemctl reload nginx')
+    // Classifying the plan logged nothing per command: only the approval.
+    expect(await kinds()).toEqual(['run.start', 'plan.approved'])
     expect((await run.tools.propose_plan(PLAN)).content[0].text).toBe('Plan approved. Proceed step by step.')
 
     expect((await run.canUseTool('mcp__ops__run', STATUS)).behavior).toBe('allow')
     expect((await run.tools.run(STATUS)).isError).toBe(false)
     expect(hostCalls(fake).map((c) => c.kind)).toEqual(['exec'])
 
-    // A revised plan goes through the same approval and logs a second plan.approved.
+    // A revised plan goes through the same approval and logs a second plan.approved;
+    // plain string steps are still accepted, as steps the gate cannot judge yet.
     expect((await run.canUseTool('mcp__ops__propose_plan', { steps: ['web-01: nginx -t'] })).behavior).toBe('allow')
+    expect(asked[1].ops?.planSteps).toEqual([{ title: 'web-01: nginx -t', commands: [], verdict: 'unknown', reason: expect.any(String) }])
+    expect(run.ctx.planText).toBe('1. web-01: nginx -t')
     expect(await kinds()).toEqual(['run.start', 'plan.approved', 'call.decided', 'call.started', 'call.finished', 'plan.approved'])
   })
 

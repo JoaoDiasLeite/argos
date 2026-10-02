@@ -3,7 +3,7 @@ import * as path from 'path'
 import { sha256Hex } from './ops-audit-pure'
 import type { ExecResult } from './ops-exec-pure'
 import type { LoadedRunbook } from './ops-runbook-pure'
-import type { OpsGateResult } from './ops-types'
+import type { OpsGateResult, OpsHostRef, OpsPolicy } from './ops-types'
 import {
   buildOpsSystemAppend,
   callKey,
@@ -26,8 +26,11 @@ import {
   toolResultText,
   withSudoStdin,
   writeResultText,
+  classifyPlanSteps,
   planApprovalContext,
-  planStepsFrom
+  planStepsFrom,
+  planTextFor,
+  type PlanStepInput
 } from './ops-run-pure'
 
 const exec = (over: Partial<ExecResult> = {}): ExecResult => ({
@@ -375,20 +378,164 @@ describe('withSudoStdin', () => {
 })
 
 describe('plan', () => {
-  it('planStepsFrom checks the steps like the schema does', () => {
-    expect(planStepsFrom({ steps: ['a', 'b'] })).toEqual(['a', 'b'])
+  it('planStepsFrom takes string steps as titles with no command', () => {
+    expect(planStepsFrom({ steps: ['a', 'b'] })).toEqual([
+      { title: 'a', commands: [] },
+      { title: 'b', commands: [] }
+    ])
     expect(planStepsFrom({ steps: [] })).toEqual({ error: 'steps must list at least one step' })
-    expect(planStepsFrom({ steps: [''] })).toEqual({ error: 'every step must be a non-empty string' })
-    expect(planStepsFrom({ steps: 'a' })).toEqual({ error: 'steps must be an array of strings' })
+    expect(planStepsFrom({ steps: [''] })).toEqual({ error: 'every step must be a non-empty string or a step object' })
+    expect(planStepsFrom({ steps: 'a' })).toEqual({ error: 'steps must be an array' })
     expect(planStepsFrom({ steps: Array.from({ length: 41 }, () => 'x') })).toMatchObject({ error: expect.stringContaining('40') })
   })
 
-  it('planApprovalContext names the runbook in place of a host', () => {
-    expect(planApprovalContext(['a'], 'rb')).toEqual({
+  it('planStepsFrom normalises object steps, cmd before commands, script with its args', () => {
+    expect(
+      planStepsFrom({
+        steps: [
+          { title: 'Check', hostId: 'h1', cmd: 'systemctl status nginx' },
+          { title: 'Both', hostId: 'h1', cmd: 'uptime', commands: ['df -h', 'free -m'] },
+          { title: 'Script', hostId: 'h1', script: 'check.sh', args: ['x'] },
+          { title: 'Bare script', hostId: 'h1', script: 'check.sh' },
+          'plain words'
+        ]
+      })
+    ).toEqual([
+      { title: 'Check', hostId: 'h1', commands: ['systemctl status nginx'] },
+      { title: 'Both', hostId: 'h1', commands: ['uptime', 'df -h', 'free -m'] },
+      { title: 'Script', hostId: 'h1', commands: [], script: { name: 'check.sh', args: ['x'] } },
+      { title: 'Bare script', hostId: 'h1', commands: [], script: { name: 'check.sh', args: [] } },
+      { title: 'plain words', commands: [] }
+    ])
+  })
+
+  it('planStepsFrom refuses bad shapes and more than 8 commands in a step', () => {
+    const one = (step: unknown) => planStepsFrom({ steps: [step] })
+    expect(one({ title: 't', commands: Array.from({ length: 9 }, () => 'uptime') })).toEqual({ error: 'a step may list at most 8 commands' })
+    expect(one({ title: 't', commands: Array.from({ length: 8 }, () => 'uptime') })).not.toHaveProperty('error')
+    expect(one({ hostId: 'h1', cmd: 'uptime' })).toEqual({ error: 'every step object needs a non-empty title' })
+    expect(one({ title: '' })).toEqual({ error: 'every step object needs a non-empty title' })
+    expect(one({ title: 't', hostId: 3 })).toEqual({ error: "a step's hostId must be a string" })
+    expect(one({ title: 't', cmd: '' })).toEqual({ error: "a step's cmd must be a non-empty string" })
+    expect(one({ title: 't', commands: 'uptime' })).toEqual({ error: "a step's commands must be an array of non-empty strings" })
+    expect(one({ title: 't', commands: ['uptime', ''] })).toEqual({ error: "a step's commands must be an array of non-empty strings" })
+    expect(one({ title: 't', script: 'x.sh', args: 'a' })).toEqual({ error: "a step's args must be an array of strings" })
+    expect(one({ title: 't', script: 7 })).toEqual({ error: "a step's script must be a non-empty string" })
+    expect(one(42)).toEqual({ error: 'every step must be a non-empty string or a step object' })
+    expect(one(null)).toEqual({ error: 'every step must be a non-empty string or a step object' })
+    expect(one(['uptime'])).toEqual({ error: 'every step must be a non-empty string or a step object' })
+  })
+
+  describe('classifyPlanSteps', () => {
+    const web: OpsHostRef = { id: 'h1', name: 'web-01', host: '10.0.0.11' }
+    const policy: OpsPolicy = {
+      version: 1,
+      strict: true,
+      hosts: { web: ['web-01'] },
+      allow: [
+        { hosts: ['web'], cmd: '^systemctl status nginx$', class: 'read', title: 'Estado do serviço web' },
+        { hosts: ['web'], cmd: '^sudo systemctl reload nginx$', class: 'mutate', approval: 'ask', title: 'Recarregamento' },
+        { hosts: ['web'], cmd: '^df -h$', class: 'read' }
+      ],
+      scripts: [{ name: 'check.sh', sha256: 'a'.repeat(64), hosts: ['web'], class: 'read', title: 'Verificação' }]
+    }
+    const hosts = new Map([['h1', { host: web, groups: ['web'] }]])
+    const run = (steps: PlanStepInput[]) => classifyPlanSteps(steps, policy, hosts)
+
+    it('a step whose command the gate allows runs, canonical and titled by its rule', () => {
+      const { steps, summary } = run([{ title: 'ver o nginx', hostId: 'h1', commands: ["systemctl  'status'  nginx"] }])
+      expect(steps).toEqual([
+        {
+          title: 'Estado do serviço web',
+          hostName: 'web-01',
+          commands: ['systemctl status nginx'],
+          verdict: 'runs',
+          class: 'read',
+          reason: 'Estado do serviço web'
+        }
+      ])
+      expect(summary).toEqual({ runs: 1, asks: 0, denied: 0, mutates: 0 })
+    })
+
+    it('a sudo step that needs approval asks, with the rule title preferred', () => {
+      const [s] = run([{ title: 'reload', hostId: 'h1', commands: ['sudo systemctl reload nginx'] }]).steps
+      expect(s).toMatchObject({ title: 'Recarregamento', verdict: 'asks', class: 'mutate', sudo: true, commands: ['sudo systemctl reload nginx'] })
+      expect(s.reason).toContain('^sudo systemctl reload nginx$')
+    })
+
+    it('a chained command is denied, with the gate reason', () => {
+      const [s] = run([{ title: 'two at once', hostId: 'h1', commands: ['df -h && rm -rf /tmp/x'] }]).steps
+      expect(s.verdict).toBe('denied')
+      expect(s.title).toBe('two at once')
+      expect(s.class).toBe('mutate')
+      expect(s.reason).toBeTruthy()
+    })
+
+    it('a step on an unknown host, or with no command, is unknown and not counted', () => {
+      const { steps, summary } = run([
+        { title: 'elsewhere', hostId: 'nope', commands: ["df  '-h'"] },
+        { title: 'just words', commands: [] }
+      ])
+      expect(steps[0]).toEqual({ title: 'elsewhere', commands: ['df -h'], verdict: 'unknown', reason: "host 'nope' is not in this runbook" })
+      expect(steps[1]).toMatchObject({ title: 'just words', commands: [], verdict: 'unknown' })
+      expect(summary).toEqual({ runs: 0, asks: 0, denied: 0, mutates: 0 })
+    })
+
+    it('a stored host name is resolved for the preview too', () => {
+      const [s] = run([{ title: 'x', hostId: 'web-01', commands: ['df -h'] }]).steps
+      expect(s).toMatchObject({ hostName: 'web-01', verdict: 'runs' })
+    })
+
+    it('a multi-command step folds to its worst verdict and keeps the step title', () => {
+      const [s] = run([
+        { title: 'check then reload', hostId: 'h1', commands: ['systemctl status nginx', 'sudo systemctl reload nginx', 'df -h'] }
+      ]).steps
+      expect(s).toMatchObject({
+        title: 'check then reload',
+        verdict: 'asks',
+        class: 'mutate',
+        sudo: true,
+        commands: ['systemctl status nginx', 'sudo systemctl reload nginx', 'df -h']
+      })
+      expect(s.reason).toContain('^sudo systemctl reload nginx$')
+    })
+
+    it('a script step is classified as the script tool and shown as script <name> args', () => {
+      const [ok, bad] = run([
+        { title: 'check', hostId: 'h1', commands: [], script: { name: 'check.sh', args: [] } },
+        { title: 'check with args', hostId: 'h1', commands: [], script: { name: 'check.sh', args: ['a b'] } }
+      ]).steps
+      expect(ok).toMatchObject({ title: 'Verificação', verdict: 'runs', commands: ['script check.sh'] })
+      expect(bad).toMatchObject({ verdict: 'denied', commands: ["script check.sh 'a b'"] })
+    })
+
+    it('the summary counts steps by verdict and mutate steps', () => {
+      const { summary } = run([
+        { title: 'a', hostId: 'h1', commands: ['df -h'] },
+        { title: 'b', hostId: 'h1', commands: ['sudo systemctl reload nginx'] },
+        { title: 'c', hostId: 'h1', commands: ['rm -rf /'] },
+        { title: 'd', hostId: 'nope', commands: ['df -h'] }
+      ])
+      expect(summary).toEqual({ runs: 1, asks: 1, denied: 1, mutates: 2 })
+    })
+
+    it('planTextFor writes one line per step with its canonical commands', () => {
+      const { steps } = run([
+        { title: 'x', hostId: 'h1', commands: ['systemctl status nginx', "df '-h'"] },
+        { title: 'words only', commands: [] }
+      ])
+      expect(planTextFor(steps)).toBe('1. x — systemctl status nginx · df -h\n2. words only')
+    })
+  })
+
+  it('planApprovalContext names the runbook in place of a host and carries the classified steps', () => {
+    const step = { title: 'a', commands: [], verdict: 'unknown' as const }
+    expect(planApprovalContext({ steps: [step], summary: { runs: 0, asks: 0, denied: 0, mutates: 0 } }, 'rb')).toEqual({
       hostName: 'rb',
       hostAddress: '',
       tool: 'plan',
-      planSteps: ['a'],
+      planSteps: [step],
+      planSummary: { runs: 0, asks: 0, denied: 0, mutates: 0 },
       class: 'mutate',
       reason: 'plan approval',
       queuedBehind: 0,

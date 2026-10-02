@@ -48,8 +48,28 @@ export function opsToolDefs(z: typeof ZodNs, hosts: OpsToolHost[]): OpsToolDef[]
     {
       name: 'propose_plan',
       description:
-        'Call this once, before any other ops tool: list the steps you intend to run, one per entry, naming the host and the command or script. Nothing runs until the operator approves the plan.',
-      shape: { steps: z.array(z.string().min(1)).min(1).max(40) }
+        'Call this once, before any other ops tool: list the steps you intend to run. Nothing runs until the operator approves the plan. ' +
+        "Prefer an object per step: title (what the step does, in the operator's words), hostId, and the exact command as cmd " +
+        '(or commands, at most 8, when one step runs several), or script and args for a runbook script. ' +
+        `Spell each command exactly as you will send it: the operator sees what the ops gate decides for that exact command.\n${h}`,
+      shape: {
+        steps: z
+          .array(
+            z.union([
+              z.string().min(1),
+              z.object({
+                title: z.string().min(1),
+                hostId: z.string().optional(),
+                cmd: z.string().min(1).optional(),
+                script: z.string().min(1).optional(),
+                args: z.array(z.string()).optional(),
+                commands: z.array(z.string().min(1)).max(8).optional()
+              })
+            ])
+          )
+          .min(1)
+          .max(40)
+      }
     },
     {
       name: 'run',

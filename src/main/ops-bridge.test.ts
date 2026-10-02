@@ -360,7 +360,9 @@ describe('ops relay', () => {
     expect(tools.map((t) => t.name)).toEqual(['propose_plan', 'run', 'script', 'read', 'list', 'write'])
     expect(tools.find((t) => t.name === 'run')?.description).toMatch(/hostId: h1/)
 
-    const plan = await mcp.request('tools/call', { name: 'propose_plan', arguments: { steps: ['read the config'] } })
+    // Both step shapes pass the relay's zod schema: a bare string and a structured step.
+    const steps = ['read the config', { title: 'Read nginx.conf', hostId: 'h1', commands: ['cat /etc/nginx/nginx.conf'] }]
+    const plan = await mcp.request('tools/call', { name: 'propose_plan', arguments: { steps } })
     expect(plan.result).toMatchObject({ content: [{ type: 'text', text: 'Plan approved. Proceed step by step.' }], isError: false })
 
     const read = await mcp.request('tools/call', { name: 'read', arguments: { hostId: 'h1', path: '/etc/nginx/nginx.conf' } })

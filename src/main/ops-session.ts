@@ -25,8 +25,10 @@ import {
   opsToolFromSdkName,
   PLAN_FIRST_REASON,
   PLAN_REJECTED_MESSAGE,
+  classifyPlanSteps,
   planApprovalContext,
   planStepsFrom,
+  planTextFor,
   toApprovalContext,
   type ApprovalOpsContext,
   type CallBook
@@ -380,16 +382,19 @@ async function decidePlan(
   const deny = (msg: string) => ({ behavior: 'deny' as const, message: msg })
   const steps = planStepsFrom(input)
   if (!Array.isArray(steps)) return deny(`Refused: ${steps.error}.`)
+  // A preview of what the gate would say for each step: nothing runs or is logged here,
+  // and every later call is still classified on its own.
+  const plan = classifyPlanSteps(steps, ctx.runbook.policy, ctx.hosts.byId)
 
   let answer: { allow: boolean; stop?: boolean } = { allow: false }
   if (opts.ask && !ctx.abort.signal.aborted) {
-    answer = await opts.ask({ tool: toolName, input, ops: planApprovalContext(steps, ctx.runbook.ref.name) })
+    answer = await opts.ask({ tool: toolName, input, ops: planApprovalContext(plan, ctx.runbook.ref.name) })
   }
   if (answer.allow && !ctx.abort.signal.aborted) {
     const logged = await ctx.log({ kind: 'plan.approved', runId: ctx.runId, by: 'user' })
     if (!logged.ok) return deny('Refused: the ops ledger is unavailable, so the plan cannot be approved.')
     ctx.planApproved = true
-    ctx.planText = steps.join('\n')
+    ctx.planText = planTextFor(plan.steps)
     return { behavior: 'allow' as const, updatedInput: input }
   }
   // A rejected revision does not leave the earlier plan standing: the operator has just
