@@ -28,7 +28,8 @@ type SprintSection = 'board' | 'standup' | 'burndown'
 
 interface SprintBoardProps {
   mode: PlannerMode
-  onMode: (m: PlannerMode) => void
+  /** Absent when the weekly planner is off: there is nothing to switch to, so no toggle. */
+  onMode?: (m: PlannerMode) => void
   accounts: CCAccountStatus[]
   models: ModelInfo[]
   defaultModel: string
@@ -503,7 +504,7 @@ export default function SprintBoard({
     <div className="view">
       <div className="view-header planner-header">
         <div className="sprint-head-left">
-          <PlannerModeToggle mode={mode} onMode={onMode} />
+          {onMode && <PlannerModeToggle mode={mode} onMode={onMode} />}
           {active && (
             <div>
               <h1 className="sprint-title">

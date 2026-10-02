@@ -392,6 +392,30 @@ export default function SettingsView({
                         </button>
                       </div>
                     </div>
+
+                    <div className="settings-row">
+                      <div className="settings-row-text">
+                        <span className="settings-row-label">Show the weekly planner</span>
+                        <span className="settings-row-hint">
+                          Adds Week beside Sprint in the Planner. Off, the Planner opens on the
+                          sprint board.
+                        </span>
+                      </div>
+                      <div className="seg-control">
+                        <button
+                          className={!ui.showWeekPlanner ? 'on' : ''}
+                          onClick={() => onSetUi({ showWeekPlanner: false })}
+                        >
+                          Off
+                        </button>
+                        <button
+                          className={ui.showWeekPlanner ? 'on' : ''}
+                          onClick={() => onSetUi({ showWeekPlanner: true })}
+                        >
+                          On
+                        </button>
+                      </div>
+                    </div>
                   </>
                 )}
               </section>

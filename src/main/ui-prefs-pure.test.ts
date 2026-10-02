@@ -60,6 +60,14 @@ describe('migration', () => {
     expect(migrateUiPrefs(noMode as UiPrefs).workMode).toBe('chat')
   })
 
+  it('backfills showWeekPlanner as off when it is absent', () => {
+    expect(migrateUiPrefs(LEGACY).showWeekPlanner).toBe(false)
+  })
+
+  it('keeps an explicit showWeekPlanner', () => {
+    expect(migrateUiPrefs({ ...LEGACY, showWeekPlanner: true }).showWeekPlanner).toBe(true)
+  })
+
   it('leaves an explicit workMode alone', () => {
     const current = { ...LEGACY, workMode: 'chat' } as unknown as UiPrefs
     expect(migrateUiPrefs(current).workMode).toBe('chat')
@@ -71,6 +79,7 @@ describe('migration', () => {
     const current: UiPrefs = {
       ...LEGACY,
       workMode: 'terminal',
+      showWeekPlanner: true,
       mode: 'system',
       light: { palette: 'notion', accent: '#112233' },
       dark: { palette: 'vercel' }

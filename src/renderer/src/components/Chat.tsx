@@ -152,7 +152,6 @@ export interface Props {
   /** Bumped by App whenever it deliberately lands you on a new chat (switching account,
    *  returning to the chat view) — drives the composer's accent sweep. */
   newChatNonce: number
-  onOpenClaudeMd: () => void
   autoApprove: boolean
   onToggleAutoApprove: () => void
   lightMode: boolean
@@ -198,7 +197,6 @@ export default function Chat(
   initialTerminalPrompt,
   onInitialTerminalPromptSent,
   newChatNonce,
-  onOpenClaudeMd,
   autoApprove,
   onToggleAutoApprove,
   lightMode,
@@ -235,11 +233,6 @@ export default function Chat(
   const [dismissedBanners, setDismissedBanners] = useState<Record<string, boolean>>({})
   // Which provider's model the active chat is running — the model picker filters to it.
   const activeProvider = models.find((m) => currentModel.startsWith(m.id))?.provider ?? 'claude'
-  const CONTEXT_FILE: Record<typeof activeProvider, string> = {
-    claude: 'CLAUDE.md',
-    codex: 'AGENTS.md',
-    gemini: 'GEMINI.md'
-  }
   // Which pane this chat is, decided by the app's mode alone. There is deliberately no
   // per-chat override any more: the two modes are whole working surfaces, and a chat that
   // could be flipped between them left the terminal-mode user with a composer that has no
@@ -760,8 +753,6 @@ export default function Chat(
                   {markdownCopied ? 'Copied ✓' : 'Copy as Markdown'}
                 </button>
                 <button disabled={isEmpty} onClick={() => { setExportMenuOpen(false); onExportSession('html') }}>Export as HTML</button>
-                <div className="header-menu-divider" />
-                <button onClick={() => { setExportMenuOpen(false); onOpenClaudeMd() }}>Edit {CONTEXT_FILE[activeProvider]}</button>
               </div>
             )}
           </div>

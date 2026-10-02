@@ -18,6 +18,9 @@ interface PlannerProps {
   geminiAccounts: ProviderAccountStatus[]
   codexDefaultAccountId: string
   geminiDefaultAccountId: string
+  /** Settings → General "Show the weekly planner". Off, the Planner is the sprint board
+   *  alone: no Week | Sprint toggle, and a saved 'week' mode is ignored. */
+  showWeek: boolean
   onRunTask?: (task: PlannerTask) => void
   /** Open a light chat seeded with the given context (used by the sprint standup). */
   onStandupChat?: (context: string, opener: string, name: string) => void
@@ -94,16 +97,18 @@ export default function PlannerView({
   geminiAccounts,
   codexDefaultAccountId,
   geminiDefaultAccountId,
+  showWeek,
   onRunTask,
   onStandupChat,
   streaming
 }: PlannerProps) {
   // Week planner vs. sprint board — persisted so the Planner reopens where you left it.
   // A saved 'backlog' is from the board removed in 2.0.0 and lands on the sprint board.
-  const [mode, setMode] = useState<PlannerMode>(() => {
+  const [savedMode, setMode] = useState<PlannerMode>(() => {
     const saved = localStorage.getItem('planner.mode')
     return saved === 'sprint' || saved === 'backlog' ? 'sprint' : 'week'
   })
+  const mode: PlannerMode = showWeek ? savedMode : 'sprint'
   const changeMode = (m: PlannerMode) => {
     setMode(m)
     localStorage.setItem('planner.mode', m)
@@ -367,7 +372,7 @@ export default function PlannerView({
     return (
       <SprintBoard
         mode={mode}
-        onMode={changeMode}
+        onMode={showWeek ? changeMode : undefined}
         accounts={accounts}
         models={models}
         defaultModel={defaultModel}

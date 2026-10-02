@@ -310,12 +310,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getClaudeHooks: () => ipcRenderer.invoke('config:get-hooks'),
   setClaudeHooks: (hooks: unknown) => ipcRenderer.invoke('config:set-hooks', hooks),
 
-  // CLAUDE.md
-  claudeMdRead: (projectPath?: string, provider?: string) =>
-    ipcRenderer.invoke('claudemd:read', projectPath, provider),
-  claudeMdWrite: (filePath: string, content: string) =>
-    ipcRenderer.invoke('claudemd:write', filePath, content),
-
   // SSH
   sshList: () => ipcRenderer.invoke('ssh:list'),
   sshSave: (host: unknown) => ipcRenderer.invoke('ssh:save', host),

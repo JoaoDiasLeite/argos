@@ -200,7 +200,7 @@
 
 /* ── Column layout ──
    Three source-order groups: a (Needs you, Running), b (Pick up where you left off),
-   c (Plan & spend, Next up, Uncommitted work, Recent projects).
+   c (Uncommitted work, Recent projects).
 
    Flex, not a fixed grid template: a column is only rendered when it has sections in
    it, and fixed tracks kept the space of the ones that were not there — an empty first
@@ -396,94 +396,6 @@
   font-size: 11px;
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
-}
-
-/* ── Plan & spend ── */
-.home-plan-card {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  gap: 10px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-1);
-  text-align: left;
-  transition: border-color 0.14s, background 0.14s;
-}
-.home-plan-card:hover,
-.home-plan-card:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-  background: var(--bg-2);
-}
-
-.home-plan-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.home-plan-top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.home-plan-name {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-0);
-}
-
-.home-plan-percent {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-0);
-  font-variant-numeric: tabular-nums;
-}
-
-.home-plan-nodata {
-  font-size: 11px;
-  color: var(--text-2);
-  opacity: 0.8;
-}
-
-.home-plan-bar-track {
-  width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--bg-3);
-  overflow: hidden;
-}
-.home-plan-bar-fill {
-  height: 100%;
-  border-radius: 2px;
-  background: var(--accent);
-}
-
-.home-plan-sub {
-  font-size: 11px;
-  color: var(--text-2);
-}
-
-.home-plan-sep {
-  height: 1px;
-  background: var(--border);
-  margin: 2px 0;
-}
-
-.home-spend-top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.home-spend-chart {
-  display: block;
-  width: 100%;
-  height: 26px;
 }
 
 /* ── Uncommitted work ── */

@@ -46,7 +46,8 @@ const LEGACY: UiPrefs = {
   density: 'comfortable',
   fontSize: 'md',
   onboarded: true,
-  workMode: 'chat'
+  workMode: 'chat',
+  showWeekPlanner: false
 }
 
 const WARM_RUST_DARK = { '--bg-0': ' #141312', '--text-0': '#efece8' }

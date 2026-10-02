@@ -2587,44 +2587,6 @@ ipcMain.handle(
   }
 )
 
-// ─── CLAUDE.md ──────────────────────────────────────────────────────────────
-
-const CONTEXT_FILE: Record<'claude' | 'codex' | 'gemini', string> = {
-  claude: 'CLAUDE.md',
-  codex: 'AGENTS.md',
-  gemini: 'GEMINI.md'
-}
-const CONTEXT_GLOBAL_DIR: Record<'claude' | 'codex' | 'gemini', string> = {
-  claude: '.claude',
-  codex: '.codex',
-  gemini: '.gemini'
-}
-
-ipcMain.handle(
-  'claudemd:read',
-  (_, projectPath?: string, provider: 'claude' | 'codex' | 'gemini' = 'claude') => {
-    const fileName = CONTEXT_FILE[provider]
-    const targets: { scope: string; path: string }[] = []
-    if (projectPath) targets.push({ scope: 'project', path: path.join(projectPath, fileName) })
-    targets.push({
-      scope: 'global',
-      path: path.join(os.homedir(), CONTEXT_GLOBAL_DIR[provider], fileName)
-    })
-    return targets.map((t) => ({
-      scope: t.scope,
-      path: t.path,
-      exists: fs.existsSync(t.path),
-      content: fs.existsSync(t.path) ? fs.readFileSync(t.path, 'utf-8') : ''
-    }))
-  }
-)
-
-ipcMain.handle('claudemd:write', (_, filePath: string, content: string) => {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true })
-  fs.writeFileSync(filePath, content)
-  return { success: true }
-})
-
 // ─── Git ──────────────────────────────────────────────────────────────────────
 
 ipcMain.handle('git:status', (_, cwd: string) => getStatus(cwd))

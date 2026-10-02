@@ -55,7 +55,6 @@ export interface SessionPaneApi {
   toggleLightMode: (sid: string) => void
   compactSession: (sid: string) => void
   closeChatTerminal: (sid: string) => void
-  openClaudeMd: (sid: string) => void
   exportSession: (sid: string, format: 'md' | 'html') => void
   clearTerminalPrompt: (sid: string) => void
 
@@ -125,7 +124,6 @@ export function useSessionPane(sessionId: string, api: SessionPaneApi): ChatProp
     toggleLightMode,
     compactSession,
     closeChatTerminal,
-    openClaudeMd,
     exportSession,
     clearTerminalPrompt,
     createSession,
@@ -172,7 +170,6 @@ export function useSessionPane(sessionId: string, api: SessionPaneApi): ChatProp
     () => closeChatTerminal(sessionId),
     [closeChatTerminal, sessionId]
   )
-  const onOpenClaudeMd = useCallback(() => openClaudeMd(sessionId), [openClaudeMd, sessionId])
   const onExportSession = useCallback(
     (format: 'md' | 'html') => exportSession(sessionId, format),
     [exportSession, sessionId]
@@ -202,7 +199,6 @@ export function useSessionPane(sessionId: string, api: SessionPaneApi): ChatProp
     initialTerminalPrompt: terminalPrompts[sessionId],
     onInitialTerminalPromptSent,
     newChatNonce,
-    onOpenClaudeMd,
     autoApprove: session?.autoApprove ?? false,
     onToggleAutoApprove,
     lightMode: session?.lightMode ?? false,

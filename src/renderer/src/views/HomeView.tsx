@@ -43,19 +43,6 @@ export interface HomeProject {
   loading?: boolean
 }
 
-export interface HomePlan {
-  accountKey: string
-  accountName: string
-  percent: number | null
-  resetsAt?: string
-  stale?: boolean
-}
-
-export interface HomeSpend {
-  today: number
-  days: { day: string; costUsd: number }[]
-}
-
 export interface HomeRecent {
   id: string
   name: string
@@ -92,8 +79,6 @@ interface Props {
   running: HomeRunning[]
   repos: HomeRepo[]
   recentProjects: HomeProject[]
-  plans: HomePlan[]
-  spend: HomeSpend | null
   recent: HomeRecent[]
   start: HomeStart
   startOptions: HomeStartOptions
@@ -102,7 +87,6 @@ interface Props {
   onPickFolder: () => Promise<string | null>
   onOpenSession: (id: string) => void
   onOpenRepo: (key: string) => void
-  onOpenUsage: () => void
 }
 
 /** Own copy on purpose — ProjectsView has its own, and this isn't shared across files
@@ -137,18 +121,6 @@ function duration(startedAt: number): string {
 /** "resets in 3h 12m" / "resets Mon 14:00" for a plan window's reset timestamp. Own
  *  copy of UsageView's formatter by the same convention as `timeAgo` above — the raw
  *  ISO string is unreadable on a card, and the two views are free to diverge. */
-function fmtReset(iso?: string): string {
-  if (!iso) return ''
-  const t = new Date(iso).getTime()
-  if (!isFinite(t)) return ''
-  const mins = Math.round((t - Date.now()) / 60000)
-  if (mins <= 0) return 'resets soon'
-  if (mins < 60) return `resets in ${mins}m`
-  if (mins < 48 * 60) return `resets in ${Math.floor(mins / 60)}h ${mins % 60}m`
-  const d = new Date(t)
-  return `resets ${d.toLocaleDateString([], { weekday: 'short' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-}
-
 /** "waiting 40s" / "waiting 4m" for how long an attention item has been sitting there. */
 function waitingFor(since?: number): string {
   if (!since) return ''
@@ -156,10 +128,6 @@ function waitingFor(since?: number): string {
   const s = Math.floor(diff / 1000)
   if (s < 60) return `waiting ${s}s`
   return `waiting ${Math.floor(s / 60)}m`
-}
-
-function formatDollars(v: number): string {
-  return `$${v.toFixed(2)}`
 }
 
 function TerminalIcon() {
@@ -200,43 +168,6 @@ function CheckIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polyline points="20 6 9 17 4 12" />
-    </svg>
-  )
-}
-
-/** Inline SVG mini bar chart for the last N days of spend — no charting library, just
- *  a percentage-based viewBox so it scales with the card regardless of rendered width. */
-function SpendChart({ days }: { days: HomeSpend['days'] }) {
-  if (days.length === 0) return null
-  const max = Math.max(1e-6, ...days.map((d) => d.costUsd))
-  const n = days.length
-  const slot = 100 / n
-  const barW = slot * 0.6
-  return (
-    <svg
-      className="home-spend-chart"
-      viewBox="0 0 100 26"
-      preserveAspectRatio="none"
-      role="img"
-      aria-label={`Daily spend, last ${n} days`}
-    >
-      {days.map((d, i) => {
-        // A zero-cost day still gets a 1px sliver so the bar doesn't vanish from the row.
-        const h = Math.max(1, (d.costUsd / max) * 26)
-        const x = i * slot + (slot - barW) / 2
-        const isLast = i === n - 1
-        return (
-          <rect
-            key={d.day}
-            x={x}
-            y={26 - h}
-            width={barW}
-            height={h}
-            rx={0.6}
-            fill={isLast ? 'var(--accent)' : 'var(--bg-3)'}
-          />
-        )
-      })}
     </svg>
   )
 }
@@ -443,8 +374,6 @@ export default function HomeView({
   running,
   repos,
   recentProjects,
-  plans,
-  spend,
   recent,
   start,
   startOptions,
@@ -452,8 +381,7 @@ export default function HomeView({
   onStart,
   onPickFolder,
   onOpenSession,
-  onOpenRepo,
-  onOpenUsage
+  onOpenRepo
 }: Props) {
   const [prompt, setPrompt] = useState('')
 
@@ -561,15 +489,13 @@ export default function HomeView({
   const hasAttentionCol = attention.length > 0 || running.length > 0
   const hasRecentCol = recent.length > 0
   const hasSideCol =
-    plans.length > 0 || spend !== null || repos.length > 0 || recentProjects.length > 0
+    repos.length > 0 || recentProjects.length > 0
 
   const nothing =
     attention.length === 0 &&
     running.length === 0 &&
     repos.length === 0 &&
     recentProjects.length === 0 &&
-    plans.length === 0 &&
-    spend === null &&
     recent.length === 0
 
   // `repos` is already filtered to just what's dirty or errored (no more "clean" rows
@@ -842,51 +768,6 @@ export default function HomeView({
 
             {hasSideCol && (
             <div className="home-col home-col-c">
-              {(plans.length > 0 || spend !== null) && (
-                <section className="home-section" aria-label="Plan and spend">
-                  <h2 className="home-section-title">Plan &amp; spend</h2>
-                  <button className="home-plan-card" onClick={onOpenUsage}>
-                    {plans.map((p) => (
-                      <div key={p.accountKey} className="home-plan-row">
-                        <div className="home-plan-top">
-                          <span className="home-plan-name">{p.accountName}</span>
-                          {p.percent === null ? (
-                            <span className="home-plan-nodata">no data</span>
-                          ) : (
-                            <span className="home-plan-percent">{Math.round(p.percent)}%</span>
-                          )}
-                        </div>
-                        {p.percent !== null && (
-                          <div className="home-plan-bar-track">
-                            <div
-                              className="home-plan-bar-fill"
-                              style={{ width: `${Math.min(100, Math.max(0, p.percent))}%` }}
-                            />
-                          </div>
-                        )}
-                        {(fmtReset(p.resetsAt) || p.stale) && (
-                          <span className="home-plan-sub">
-                            {fmtReset(p.resetsAt)}
-                            {p.stale ? ' · stale' : ''}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-
-                    {spend !== null && (
-                      <>
-                        {plans.length > 0 && <div className="home-plan-sep" />}
-                        <div className="home-spend-top">
-                          <span className="home-plan-name">Today</span>
-                          <span className="home-plan-percent">{formatDollars(spend.today)}</span>
-                        </div>
-                        <SpendChart days={spend.days} />
-                      </>
-                    )}
-                  </button>
-                </section>
-              )}
-
               {repos.length > 0 && (
                 <section
                   ref={reposSectionRef}

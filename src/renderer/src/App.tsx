@@ -29,7 +29,6 @@ import { SessionPaneApi } from './hooks/useSessionPane'
 import TerminalPanel from './components/TerminalPanel'
 import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, groupOwnsView } from './components/NavRail'
 import ServerTabs from './components/ServerTabs'
-import ClaudeMdModal from './components/ClaudeMdModal'
 import ApprovalModal from './components/ApprovalModal'
 import PlanReviewSheet from './components/PlanReviewSheet'
 import SecretPrompt from './components/SecretPrompt'
@@ -54,8 +53,6 @@ import type {
   HomeRunning,
   HomeRepo,
   HomeProject,
-  HomePlan,
-  HomeSpend,
   HomeRecent,
   HomeStart,
   HomeStartChoice,
@@ -257,7 +254,6 @@ export default function App() {
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [changelogOpen, setChangelogOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
-  const [claudeMdFor, setClaudeMdFor] = useState<string | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [sidebarTab, setSidebarTab] = useState<'files' | 'sessions'>('sessions')
   // The chat list hidden to give the panes its width. Remembered across launches, like the
@@ -443,14 +439,9 @@ export default function App() {
   }, [seenKey])
 
   const activeSession = sessions.find((s) => s.id === activeId)
-  // Which CLI a session's model belongs to. A plain lookup, but it has three callers now
-  // that must agree — the sidebar's scope, the embedded terminal, and the CLAUDE.md modal,
-  // which is opened FOR a session and so cannot read the active one.
+  // Which CLI a session's model belongs to. A plain lookup, but it has callers that must
+  // agree — the sidebar's scope and the embedded terminal.
   const providerOf = (s?: Session): ProviderId => provOf(models, s?.model || defaultModel)
-  // The CLAUDE.md modal is opened for a session, not for "the active one" — with two panes
-  // on screen those differ, and resolving it here keeps the JSX from doing the lookup
-  // once per prop.
-  const claudeMdSession = claudeMdFor ? sessions.find((s) => s.id === claudeMdFor) : undefined
   // The open file belongs to the chat's project tree, so it goes stale the moment we point at
   // a different folder or leave the chat view (where the Files tab lives) entirely.
   const activeProjectPath = activeSession?.projectPath
@@ -1566,9 +1557,6 @@ export default function App() {
     window.electronAPI.saveSession(s)
   }
 
-  // Wrapper around the modal-open setter, taking the session it opens for, so two panes
-  // can have their own CLAUDE.md modal open on different sessions at once.
-  const openClaudeMd = (sid: string) => setClaudeMdFor(sid)
 
   // Resume a real Claude Code session from the Projects view (local or WSL).
   const resumeCCSession = async (cc: CCSessionMeta) => {
@@ -2468,22 +2456,6 @@ export default function App() {
     return [repos, recentProjects]
   }, [homeRepoEntries, homeProjectNames, homeRepoNames, homeRepoStatus])
 
-  // Same window key (`five_hour`) the sidebar's own plan badge reads (see accountUsage
-  // above) — one interpretation of AccountPlanUsage.windows, not a second one for Home.
-  const homePlans = useMemo<HomePlan[]>(() => {
-    if (!planReport) return []
-    return planReport.accounts.map((acc) => {
-      const w = acc.windows.find((win) => win.key === 'five_hour')
-      return {
-        accountKey: acc.accountKey,
-        accountName: acc.accountName,
-        percent: w ? w.utilization : null,
-        resetsAt: w?.resetsAt,
-        stale: acc.stale
-      }
-    })
-  }, [planReport])
-
   const homeRecent = useMemo<HomeRecent[]>(
     () =>
       sessions
@@ -2510,49 +2482,6 @@ export default function App() {
         }),
     [sessions, resolveHomeProjectName]
   )
-
-  const [homeSpend, setHomeSpend] = useState<HomeSpend | null>(null)
-  useEffect(() => {
-    if (view !== 'home') return
-    let cancelled = false
-    // `false`: same cache-first read UsageView does for its instant paint — Home has no
-    // more reason than that view does to force ccUsage's (heavy) refetch on every visit.
-    window.electronAPI
-      .ccUsage(false)
-      .then((report) => {
-        if (cancelled) return
-        if (report.entries.length === 0) {
-          setHomeSpend(null)
-          return
-        }
-        const byDay = new Map<string, number>()
-        for (const e of report.entries) {
-          if (e.day === 'unknown') continue
-          byDay.set(e.day, (byDay.get(e.day) ?? 0) + e.costUsd)
-        }
-        // `day` is a plain YYYY-MM-DD string, and UsageView builds its own keys from the
-        // LOCAL date (its `ymd`), not from toISOString — which is UTC, and would call the
-        // hour between local and UTC midnight yesterday.
-        const pad = (v: number) => String(v).padStart(2, '0')
-        const dayKey = (ts: number) => {
-          const d = new Date(ts)
-          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-        }
-        const todayKey = dayKey(Date.now())
-        const days: { day: string; costUsd: number }[] = []
-        for (let i = 13; i >= 0; i--) {
-          const d = dayKey(Date.now() - i * 86400_000)
-          days.push({ day: d, costUsd: byDay.get(d) ?? 0 })
-        }
-        setHomeSpend({ today: byDay.get(todayKey) ?? 0, days })
-      })
-      .catch(() => {
-        if (!cancelled) setHomeSpend(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [view])
 
   const homeStart = useMemo<HomeStart>(() => {
     // The chips describe where the prompt will actually land, so they read the same
@@ -3117,7 +3046,6 @@ export default function App() {
     toggleLightMode,
     compactSession,
     closeChatTerminal,
-    openClaudeMd,
     exportSession,
     clearTerminalPrompt,
     onApproval: respondApprovalById,
@@ -3309,8 +3237,6 @@ export default function App() {
             running={homeRunning}
             repos={homeRepos}
             recentProjects={homeRecentProjects}
-            plans={homePlans}
-            spend={homeSpend}
             recent={homeRecent}
             start={homeStart}
             startOptions={homeStartOptions}
@@ -3325,7 +3251,6 @@ export default function App() {
               setProjectFocus({ key, at: Date.now() })
               setView('projects')
             }}
-            onOpenUsage={() => setView('usage')}
           />
         </Suspense>
       )}
@@ -3409,6 +3334,7 @@ export default function App() {
                 geminiAccounts={geminiAccounts}
                 codexDefaultAccountId={codexDefaultAccountId}
                 geminiDefaultAccountId={geminiDefaultAccountId}
+                showWeek={ui?.showWeekPlanner ?? false}
                 onRunTask={runPlannerTask}
                 onStandupChat={startStandupChat}
               />
@@ -3493,13 +3419,6 @@ export default function App() {
             await updateUi({ onboarded: true })
             await refreshAuth()
           }}
-        />
-      )}
-      {claudeMdSession && (
-        <ClaudeMdModal
-          projectPath={claudeMdSession.projectPath}
-          provider={providerOf(claudeMdSession)}
-          onClose={() => setClaudeMdFor(null)}
         />
       )}
       {/* Suppressed only where Chat renders the same request inline — which it does in

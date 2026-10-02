@@ -58,6 +58,9 @@ export interface UiPrefs {
    * old `defaultChatView` because it no longer decides where a chat merely STARTS.
    */
   workMode: 'chat' | 'terminal'
+  /** Planner · Week is offered (the Week | Sprint toggle). Off by default: Planner opens
+   *  on the sprint board, and the weekly planner is an opt-in from Settings → General. */
+  showWeekPlanner: boolean
 
   /** The source of truth for light vs dark. Absent in configs older than this system. */
   mode?: 'system' | 'light' | 'dark'
@@ -156,6 +159,8 @@ export function migrateUiPrefs(ui: UiPrefs): UiPrefs {
   if (next.mode !== 'system' && next.mode !== 'light' && next.mode !== 'dark') {
     next.mode = next.theme === 'light' ? 'light' : 'dark'
   }
+  // Absent before 2.0.0, when the weekly planner became opt-in.
+  if (typeof next.showWeekPlanner !== 'boolean') next.showWeekPlanner = false
   if (!next.light) next.light = { palette: ui.palette }
   if (!next.dark) next.dark = { palette: ui.palette }
   return next

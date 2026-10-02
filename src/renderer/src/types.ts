@@ -208,6 +208,8 @@ export interface UiPrefs {
   onboarded: boolean
   /** Which panel new chats open in. */
   workMode: 'chat' | 'terminal'
+  /** Planner · Week is offered. Off by default: Planner opens on the sprint board. */
+  showWeekPlanner: boolean
 
   /** The source of truth for light vs dark. Absent in configs older than this system. */
   mode?: 'system' | 'light' | 'dark'
@@ -628,13 +630,6 @@ export interface McpServer {
 }
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan'
-
-export interface ClaudeMdFile {
-  scope: string
-  path: string
-  exists: boolean
-  content: string
-}
 
 // ─── Claude permissions & hooks (from ~/.claude/settings.json) ────────────────
 
@@ -1550,10 +1545,6 @@ declare global {
       setClaudePermissions: (perms: ClaudePermissions) => Promise<WriteResult & { permissions?: ClaudePermissions }>
       getClaudeHooks: () => Promise<ClaudeHooks>
       setClaudeHooks: (hooks: ClaudeHooks) => Promise<WriteResult & { hooks?: ClaudeHooks }>
-
-      // CLAUDE.md
-      claudeMdRead: (projectPath?: string, provider?: ProviderId) => Promise<ClaudeMdFile[]>
-      claudeMdWrite: (filePath: string, content: string) => Promise<{ success: boolean }>
 
       // SSH
       sshList: () => Promise<SshHostPublic[]>
