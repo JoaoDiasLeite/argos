@@ -194,29 +194,39 @@ Ownership: **A** owns `src/main/**`, `src/preload/**`, `types.ts`, `OpsTimeline.
 runs B4. Runtime order matters: the renderer must stop using `agent:*` before main drops
 it, and the migration may only strip `messages` once nothing renders them.
 
-- **B1 (A, additive, ~+350/−10):** `ops-session.test.ts` port; `ops:stop` + preload +
+- **B1 · done `da19139` (A, additive, ~+350/−10):** `ops-session.test.ts` port; `ops:stop` + preload +
   types + timeline button (H4); indicators fed from terminal busy, `activeRuns` kept for
   now (H5).
-- **B2 (A, additive, ~+400):** `session-migrate-pure.ts` (+test) and `session-migrate.ts`
+- **B2 · done `a3622c9` (A, additive, ~+400):** `session-migrate-pure.ts` (+test) and `session-migrate.ts`
   with `sessionToMarkdown` in main; not wired yet.
-- **B3a (B, ~−3 000/+250):** Chat.tsx and css cut to the terminal host; MessageBubble,
+- **B3a · done `29af9a8` (B, ~−3 000/+250):** Chat.tsx and css cut to the terminal host; MessageBubble,
   TerminalPanel, markdown-export deleted; useSessionPane trimmed; App.tsx loses agent
   listeners, buildAgentPayload/send/retry/edit, run plumbing, compact, branch, toggles,
   export, budget-on-done, terminalLines/addTerm, welcome quick chat, palette quick/model
   items, workMode branches, modal condition; Sidebar, Overlay, shortcuts, Settings Mode
   row, clipboard-paste image branch, css-scope test. The renderer stops calling
   `sendAgent`; main still has the IPC, so it compiles and runs.
-- **B3b (B, ~−500/+250):** `startTerminal`; Home, Planner, standup (prompt file IPC with
+- **B3b · done `f577e45`, prompt-file IPC in `e5e90f2` (B, ~−500/+250):** `startTerminal`; Home, Planner, standup (prompt file IPC with
   A), Remote/WSL/Ops entry points, `resumeCCSession`, `syncTerminalChats` without message
   copying, `homeRecent`, ChatConfigBar without Ops/worktree/add-dir (H1, H2), OpsWorkspace
   without chat mode, RemoteView, account-scope (+test), visual-check seed.
-- **B4 (A, ~−2 600/+120):** the §4 deletions; preload and types entries; `Session` trimmed
+- **B4 · done `83305f5` (A, ~−2 600/+120):** the §4 deletions; preload and types entries; `Session` trimmed
   with `provider` and `archivedTranscript`; `workMode` out of ui-prefs/config (+tests);
   jump list; ai-policy profiles; migration wired at startup; the Settings "Chats from
   before 2.0" row (small renderer edit, by agreement with B).
-- **B5 (docs):** changelog 2.0.0 lines; `FEATURE_AUDIT.md` rows to "Removed in"; mark
+- **B5 (docs) · done:** changelog 2.0.0 lines; `FEATURE_AUDIT.md` rows to "Removed in"; mark
   `OPS_AGENT_PLAN.md` §1.1, §6 and Phase 5's "SDK chat becomes one more client" as
   superseded; visual-check SKILL.md.
 
 About −6 100 / +1 400 lines over the series; `App.tsx`, `Chat.tsx` and `index.ts` carry
 most of it.
+
+### What differed
+
+- `upgradeSession`: messageless 1.x chats had no `provider`, so it derives one from the old
+  model, so a Codex terminal does not reopen as Claude.
+- `busyProjectPaths` (`index.ts`) reads the busy state from the pty cwd, not from SDK runs.
+- The CLI badge in the sidebar stayed; the pre-launch bar gained a CLI choice instead.
+- `createWorktree` was deleted as unused once the worktree pill went.
+- The prompt file IPC (`prompts:write`, `e5e90f2`) is its own commit, ahead of B3b.
+- B3a left the agent IPC in main so it compiled; B4 removed it.

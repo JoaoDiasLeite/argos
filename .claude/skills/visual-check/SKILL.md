@@ -25,8 +25,8 @@ for layouts whose breakpoints sit above the default window, or `-SkipBuild` to r
 bundle (much faster — use this if you haven't changed anything since the
 last build, or already ran `npx electron-vite build` yourself).
 
-Valid `-View` names: `chat`, `projects`, `agents`, `rooms`, `planner`,
-`scheduled`, `usage`, `mcp`, `remote`, `settings`.
+Valid `-View` names: `chat`, `projects`, `planner`,
+`usage`, `mcp`, `remote`, `settings`.
 
 ## How it works
 

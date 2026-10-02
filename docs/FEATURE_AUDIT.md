@@ -139,22 +139,22 @@ is little left to hide, so the only toggle is Planner · Week in Settings.
 
 ### Remove
 
-| What | Why | Drags along |
-|---|---|---|
-| **The SDK chat** (composer, transcript, MessageBubble, panes of transcripts, Quick chat, Light mode, per-chat Approve/Auto, model/account pickers on the composer, ⋯ export menu, long-session banner, agent output panel) | The owner works in the terminal. The CLI prompts for its own tools; Argos's per-tool approvals only ever gated the SDK path. | `ui.workMode` (terminal is the only mode); the ops chat SDK mode (Ops workspace becomes terminal-only); `agent:send`'s SDK branch, `canUseTool` for chats, `providers/*` engines stay only for headless uses (sprint backfill, planner assist); Home start box starts a terminal; standup opens a terminal with the prompt. |
-| **Planner · Backlog** + memory panel + memory diagnostic | Never used. | `backlog.ts`, `backlog-pure.ts`, `memory-diagnostic*.ts`, `memory:diagnose`, `backlog:*` IPC. The repo's BACKLOG files are untouched. |
-| **Routines** + scheduler engine | Never used. | `scheduler.ts`, `scheduler-safety.ts`, `scheduler:*` IPC, Home "next up", standup "schedule as routine", tray's keep-alive reason. Saved routines under `userData/scheduler/` are left on disk, never run again. |
-| **Agents** and **Rooms** | Palette-only, not used. | `agents.ts`, `rooms:get-layout`, `AgentDef` on sessions, `@agent` mentions in the composer (goes with the composer anyway), Sprint/Planner "run with agent". |
-| **Live** | Unreachable. | `LiveView.tsx` only. `live-sessions*.ts`, `takeover-pure.ts`, `process-identity.ts` stay: they feed the busy state in Chat and Home and the terminal's transcript link. |
-| **Git modal, Review panel, Checkpoints, authorship ledger** | Git is done in the terminal. Without SDK tool-use events the ledger and checkpoints have no primary source. | `checkpoints.ts`, `authorship*.ts`, `git.ts` keeps only what Home "uncommitted work", the branch pill and worktrees use; `project-prefs` verify command; `WorkspaceReview.tsx`, `GitModal.tsx`, `CheckpointsModal.tsx`, `DiffView.tsx` if nothing else uses it. `docs/REVIEW_GATE_PLAN.md` phases 2–3 are cancelled. |
-| **CLAUDE.md modal** | Its only entry point was the SDK chat's menu. | `ClaudeMdModal.tsx`. |
-| **Home "Plan & spend"** | Duplicate of Usage and the sidebar badge. | One section of `HomeView.tsx`. |
+| What | Why | Drags along | Removed in |
+|---|---|---|---|
+| **The SDK chat** (composer, transcript, MessageBubble, panes of transcripts, Quick chat, Light mode, per-chat Approve/Auto, model/account pickers on the composer, ⋯ export menu, long-session banner, agent output panel) | The owner works in the terminal. The CLI prompts for its own tools; Argos's per-tool approvals only ever gated the SDK path. | `ui.workMode` (terminal is the only mode); the ops chat SDK mode (Ops workspace becomes terminal-only); `agent:send`'s SDK branch, `canUseTool` for chats, `providers/*` engines stay only for headless uses (sprint backfill, planner assist); Home start box starts a terminal; standup opens a terminal with the prompt. | `83305f5` |
+| **Planner · Backlog** + memory panel + memory diagnostic | Never used. | `backlog.ts`, `backlog-pure.ts`, `memory-diagnostic*.ts`, `memory:diagnose`, `backlog:*` IPC. The repo's BACKLOG files are untouched. | `058e174` |
+| **Routines** + scheduler engine | Never used. | `scheduler.ts`, `scheduler-safety.ts`, `scheduler:*` IPC, Home "next up", standup "schedule as routine", tray's keep-alive reason. Saved routines under `userData/scheduler/` are left on disk, never run again. | `f6ceaaa` |
+| **Agents** and **Rooms** | Palette-only, not used. | `agents.ts`, `rooms:get-layout`, `AgentDef` on sessions, `@agent` mentions in the composer (goes with the composer anyway), Sprint/Planner "run with agent". | `93f4618` |
+| **Live** | Unreachable. | `LiveView.tsx` only. `live-sessions*.ts`, `takeover-pure.ts`, `process-identity.ts` stay: they feed the busy state in Chat and Home and the terminal's transcript link. | `5883070` |
+| **Git modal, Review panel, Checkpoints, authorship ledger** | Git is done in the terminal. Without SDK tool-use events the ledger and checkpoints have no primary source. | `checkpoints.ts`, `authorship*.ts`, `git.ts` keeps only what Home "uncommitted work", the branch pill and worktrees use; `project-prefs` verify command; `WorkspaceReview.tsx`, `GitModal.tsx`, `CheckpointsModal.tsx`, `DiffView.tsx` if nothing else uses it. `docs/REVIEW_GATE_PLAN.md` phases 2–3 are cancelled. | `d7862ae` |
+| **CLAUDE.md modal** | Its only entry point was the SDK chat's menu. | `ClaudeMdModal.tsx`. | `7efad25` |
+| **Home "Plan & spend"** | Duplicate of Usage and the sidebar badge. | One section of `HomeView.tsx`. | `7efad25` |
 
 ### Hide
 
 | What | How |
 |---|---|
-| **Planner · Week** | A toggle in Settings → General ("Show the weekly planner"), default off. The Sprint board is what Planner opens on. |
+| **Planner · Week** | A toggle in Settings → General ("Show the weekly planner"), default off. The Sprint board is what Planner opens on. Done in `7efad25`. |
 
 ### Keep
 
@@ -170,6 +170,8 @@ because the CLI reads the same config they edit and the notify hook is what make
 notifications work.
 
 ## 7. Order of removals (2.0.0)
+
+All steps landed (1–7, and the SDK chat of step 8); see `docs/TERMINAL_ONLY_PLAN.md` §8 for step 8's batches and what differed.
 
 One removal per commit, each compiling and passing tests on its own; `npm run typecheck`
 against each staged tree. Small and independent first, the SDK chat last because

@@ -1,5 +1,7 @@
 # Review gate — implementation plan
 
+> **Cancelled in 2.0.0.** Phases 2 and 3 were dropped in `d7862ae`, and phase 1 (the authorship ledger) was removed with them. The ledger and the checkpoints were fed by the old SDK chat's tool-use events; once every chat became a terminal there was no primary source to record from, and git is done in the terminal. Kept for history.
+
 Close the gap between "an agent finished a batch" and "that batch is committed". Argos
 already covers both ends — Rooms deploys agents, `GitModal` stages and commits — but the
 middle is done by hand, in a terminal, every single batch: work out which of the dirty

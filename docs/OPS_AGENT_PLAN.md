@@ -55,6 +55,8 @@ convention, `json-file.ts`, `ai-policy.ts`, `authorship.ts` as the model for a l
 
 ## 1. Decisions
 
+> **Note · 2026-10-02:** the SDK chat front end was removed in 2.0.0 (`83305f5`), so ops is terminal-only and "the SDK chat becomes one more client" no longer applies. `ops-run.ts` and the in-process MCP server are gone; the gate lives in `ops-session.ts` behind the relay/bridge.
+
 1. **Claude runs locally, always.** The ops chat is the local Agent SDK engine with the
    user's own account. The server sees SSH sessions and nothing else. `runRemote` (Claude on
    the host) stays for people who want it, but it is not the ops path and the UI says so.
@@ -404,6 +406,8 @@ These were already planned; they are listed here so one document holds everythin
 - **Lot 8, semantic search** — stays optional; nothing here depends on it.
 
 ### Phase 5 — ops from the terminal, and an Ops view · done (`18ae07e`, `33ef372`, `a2d677b`)
+
+> **Note · 2026-10-02:** the SDK chat front end was removed in 2.0.0 (`83305f5`), so ops is terminal-only and "the SDK chat becomes one more client" no longer applies. `ops-run.ts` and the in-process MCP server are gone; the gate lives in `ops-session.ts` behind the relay/bridge.
 
 Landed as planned, with these findings worth keeping:
 - **The relay runs as `ELECTRON_RUN_AS_NODE=1 <argos> out/main/ops-relay.js --ops-mcp`**,
