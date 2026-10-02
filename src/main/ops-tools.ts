@@ -20,7 +20,7 @@ import {
   listResultText,
   mcpInputToOpsInput,
   callKey,
-  PLAN_APPROVED_TEXT,
+  planApprovedText,
   PLAN_FIRST_REASON,
   readResultText,
   refusedFinishedEvent,
@@ -331,7 +331,7 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
     write: (a) => handle('write', a),
     // canUseTool asked the operator and logged plan.approved before this can run.
     propose_plan: async () =>
-      ctx.planApproved ? text(PLAN_APPROVED_TEXT) : text(`Refused: ${PLAN_FIRST_REASON}.`, true)
+      ctx.planApproved ? text(planApprovedText(ctx.skippedSteps)) : text(`Refused: ${PLAN_FIRST_REASON}.`, true)
   }
 }
 

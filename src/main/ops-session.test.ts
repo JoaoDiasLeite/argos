@@ -776,3 +776,65 @@ describe('intervention scope', () => {
     expect(ops.planSummary).toEqual({ runs: 1, asks: 0, denied: 1, mutates: 0 })
   })
 })
+
+describe('skipped plan steps', () => {
+  const PLAN = {
+    steps: [
+      { title: 'check nginx', hostId: 'h1', cmd: 'systemctl status nginx' },
+      { title: 'reload nginx', hostId: 'h1', cmd: 'sudo  systemctl reload nginx' },
+      { title: 'run the check', hostId: 'h1', script: 'check.sh' },
+      'tell the operator'
+    ]
+  }
+
+  it('skipped steps are logged, named to the model, and refused when tried; the rest run', async () => {
+    let planAsks = 0
+    const { fake, call } = await start(
+      { exec: () => ({ stdout: 'ok' }) },
+      async (req) => {
+        if (req.tool !== 'mcp__ops__propose_plan') return { allow: true }
+        planAsks++
+        // Out of range, a title-only step, a non-integer and a repeat are all ignored.
+        return planAsks === 1 ? { allow: true, skipSteps: [2, 1, 3, 99, -1, 1.5, 1] } : { allow: true }
+      },
+      { plan: false }
+    )
+    expect(await call('propose_plan', PLAN)).toEqual({
+      text: 'Plan approved. Steps 2, 3 were skipped by the operator: do not run them. Proceed step by step.',
+      isError: false
+    })
+    const approved = (await lines()).find((l) => l.event.kind === 'plan.approved')?.event
+    expect(approved).toMatchObject({ kind: 'plan.approved', skippedSteps: [1, 2] })
+    expect((approved as { steps: unknown[] }).steps).toHaveLength(4)
+
+    const skipped = { text: 'Refused: step skipped by the operator.', isError: true }
+    expect(await call('run', { hostId: 'h1', cmd: 'sudo systemctl reload nginx' })).toEqual(skipped)
+    expect(await call('script', { hostId: 'h1', name: 'check.sh' })).toEqual(skipped)
+    expect((await call('run', { hostId: 'h1', cmd: 'systemctl status nginx' })).isError).toBe(false)
+    expect(hostCalls(fake).map((c) => c.kind)).toEqual(['exec'])
+    const denied = (await lines()).filter(
+      (l) => l.event.kind === 'call.decided' && (l.event as { reason: string }).reason === 'step skipped by the operator'
+    )
+    expect(denied.map((l) => (l.event as { decision: string; tool: string }).tool)).toEqual(['run', 'script'])
+
+    // A new approved plan is a new set of decisions: the skips go.
+    expect(await call('propose_plan', PLAN)).toEqual({ text: 'Plan approved. Proceed step by step.', isError: false })
+    expect((await call('run', { hostId: 'h1', cmd: 'sudo systemctl reload nginx' })).isError).toBe(false)
+  })
+
+  it('the internal report marks skipped steps', async () => {
+    const { session, call } = await start(
+      {},
+      async (req) => (req.tool === 'mcp__ops__propose_plan' ? { allow: true, skipSteps: [0] } : { allow: true }),
+      { plan: false }
+    )
+    expect((await call('propose_plan', PLAN)).text).toBe(
+      'Plan approved. Step 1 was skipped by the operator: do not run it. Proceed step by step.'
+    )
+    await finishOpsRun(session.ctx, { ok: true, costUsd: 0 })
+    const summary = summarizeRun(await lines(), 'run-1')
+    expect(summary?.planSteps?.map((s) => s.skipped === true)).toEqual([true, false, false, false])
+    const report = await ledger.report('run-1', 'internal')
+    expect(report.ok && report.markdown).toContain('1. Estado do serviço web (web-01) – `systemctl status nginx` (skipped)\n')
+  })
+})

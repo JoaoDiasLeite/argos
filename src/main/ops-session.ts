@@ -28,6 +28,11 @@ import {
   planApprovalContext,
   planStepsFrom,
   planTextFor,
+  callPlanLine,
+  planInputWithoutSkips,
+  planSkips,
+  skippedCommandLines,
+  STEP_SKIPPED_REASON,
   toApprovalContext,
   type ApprovalOpsContext,
   type CallBook
@@ -61,7 +66,7 @@ export type OpsAskFn = (req: {
   tool: string
   input: Record<string, unknown>
   ops: ApprovalOpsContext
-}) => Promise<{ allow: boolean; stop?: boolean }>
+}) => Promise<{ allow: boolean; stop?: boolean; skipSteps?: number[] }>
 
 /** Ask the operator for a secret (the sudo password of a host). null = declined or stopped. */
 export type OpsAskSecretFn = (req: { hostId: string; hostName: string; prompt: string }) => Promise<string | null>
@@ -89,6 +94,13 @@ export interface OpsRunContext {
   planApproved: boolean
   /** The last approved plan's steps, one per line. */
   planText?: string
+  /**
+   * The steps the operator skipped when approving the last plan (0-based), and their
+   * canonical command lines: a run or script matching one is refused. Replaced by the
+   * next approved plan.
+   */
+  skippedSteps: number[]
+  skippedCommands: Set<string>
   /** canUseTool parks each decided call's id here; the tool handler takes it. */
   calls: CallBook
   readScript: ReadScriptFn
@@ -234,6 +246,8 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
       sudoPasswords: new Map(),
       ...(opts.askSecret ? { askSecret: opts.askSecret } : {}),
       planApproved: false,
+      skippedSteps: [],
+      skippedCommands: new Set(),
       calls: makeCallBook(runId),
       readScript: opts.readScript,
       log,
@@ -265,7 +279,8 @@ export async function callOpsTool(
   try {
     const verdict = await session.canUseTool(`mcp__ops__${name}`, input)
     if (verdict.behavior !== 'allow') return { text: verdict.message, isError: true }
-    const r = await session.tools[name](input)
+    // The plan tool's allow carries the plan minus the skipped steps; the others pass the input through.
+    const r = await session.tools[name](verdict.updatedInput)
     return { text: r.content.map((c) => c.text).join('\n'), isError: r.isError === true }
   } catch (e) {
     return { text: `The ops tool failed: ${message(e)}`, isError: true }
@@ -359,6 +374,25 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions): CanUseT
           reason: PLAN_FIRST_REASON
         })
         return deny(`Refused: ${PLAN_FIRST_REASON}.`)
+      }
+
+      // A step the operator skipped stays skipped, whatever the rules would allow.
+      const line = callPlanLine(parsed, gate)
+      if (line !== undefined && ctx.skippedCommands.has(line)) {
+        await ctx.log({
+          kind: 'call.decided',
+          runId,
+          callId: ctx.calls.fresh(),
+          tool,
+          hostId: parsed.hostId,
+          host: entry?.host.name ?? parsed.hostId,
+          rawInput: input,
+          ...(gate.argv ? { argv: gate.argv } : {}),
+          class: gate.class,
+          decision: 'deny',
+          reason: STEP_SKIPPED_REASON
+        })
+        return deny(`Refused: ${STEP_SKIPPED_REASON}.`)
       }
 
       // Open scope: the first call on a host asks the operator once for the run. Not for a
@@ -519,7 +553,7 @@ async function decidePlan(
     ctx.scope ? { scope: ctx.scope, approvedHosts: ctx.approvedHosts, deniedHosts: ctx.deniedHosts } : undefined
   )
 
-  let answer: { allow: boolean; stop?: boolean } = { allow: false }
+  let answer: { allow: boolean; stop?: boolean; skipSteps?: number[] } = { allow: false }
   if (opts.ask && !ctx.abort.signal.aborted) {
     answer = await opts.ask({ tool: toolName, input, ops: planApprovalContext(plan, ctx.runbook.ref.name) })
   }
@@ -533,11 +567,22 @@ async function decidePlan(
     ...(s.hostName !== undefined ? { hostName: s.hostName } : {})
   }))
   if (answer.allow && !ctx.abort.signal.aborted) {
-    const ok = await ctx.log({ kind: 'plan.approved', runId: ctx.runId, by: 'user', planText, steps: logged })
+    const skips = planSkips(plan, answer.skipSteps)
+    const ok = await ctx.log({
+      kind: 'plan.approved',
+      runId: ctx.runId,
+      by: 'user',
+      planText,
+      steps: logged,
+      ...(skips.length ? { skippedSteps: skips } : {})
+    })
     if (!ok.ok) return deny('Refused: the ops ledger is unavailable, so the plan cannot be approved.')
     ctx.planApproved = true
     ctx.planText = planText
-    return { behavior: 'allow' as const, updatedInput: input }
+    // A new plan, new decisions: the earlier plan's skips go with it.
+    ctx.skippedSteps = skips
+    ctx.skippedCommands = skippedCommandLines(plan, skips)
+    return { behavior: 'allow' as const, updatedInput: planInputWithoutSkips(input, skips) }
   }
   // A rejected revision does not leave the earlier plan standing: the operator has just
   // said no to where the run was going.

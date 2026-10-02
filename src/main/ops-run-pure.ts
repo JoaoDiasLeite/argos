@@ -601,3 +601,47 @@ export function withSudoStdin(argv: string[]): string[] {
   }
   return ['sudo', '-S', '-p', '', ...kept, ...argv.slice(i)]
 }
+
+// ─── Skipped plan steps ───────────────────────────────────────────────────────────
+
+/** Why a call that matches a step the operator skipped is refused. */
+export const STEP_SKIPPED_REASON = 'step skipped by the operator'
+
+/**
+ * The operator's skips, kept only where they mean something: whole-number indices into
+ * the plan's steps, on a step that names a command (a title-only step has nothing to
+ * skip). Sorted and without repeats; anything else is dropped, not an error.
+ */
+export function planSkips(plan: ClassifiedPlan, raw: unknown): number[] {
+  if (!Array.isArray(raw)) return []
+  const ok = raw.filter(
+    (i): i is number => Number.isInteger(i) && i >= 0 && i < plan.steps.length && plan.steps[i].commands.length > 0
+  )
+  return [...new Set(ok)].sort((a, b) => a - b)
+}
+
+/** The canonical command lines of the skipped steps, as the plan preview spelled them. */
+export function skippedCommandLines(plan: ClassifiedPlan, skips: number[]): Set<string> {
+  return new Set(skips.flatMap((i) => plan.steps[i]?.commands ?? []))
+}
+
+/** The plan input without the skipped steps: what the model is told was approved. */
+export function planInputWithoutSkips(input: Record<string, unknown>, skips: number[]): Record<string, unknown> {
+  if (skips.length === 0 || !Array.isArray(input.steps)) return input
+  const skip = new Set(skips)
+  return { ...input, steps: (input.steps as unknown[]).filter((_, i) => !skip.has(i)) }
+}
+
+/** What propose_plan answers once approved; skipped steps are named 1-based. */
+export function planApprovedText(skips: number[]): string {
+  if (skips.length === 0) return PLAN_APPROVED_TEXT
+  const n = skips.map((i) => String(i + 1)).join(', ')
+  return `Plan approved. Step${skips.length > 1 ? 's' : ''} ${n} ${skips.length > 1 ? 'were' : 'was'} skipped by the operator: do not run ${skips.length > 1 ? 'them' : 'it'}. Proceed step by step.`
+}
+
+/** A run or script call as a plan step line, so it can be matched against skipped steps. */
+export function callPlanLine(input: OpsToolInput, gate: OpsGateResult): string | undefined {
+  if (input.tool === 'run') return gate.argv ? canonicalCommand(gate.argv) : canonicalLine(input.cmd)
+  if (input.tool === 'script') return scriptLine(input.name, input.args)
+  return undefined
+}

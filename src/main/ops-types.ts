@@ -128,6 +128,8 @@ export interface OpsLoggedPlanStep {
   commands: string[]
   verdict: string
   hostName?: string
+  /** Set by summarizeRun from plan.approved's skippedSteps; never written in the event's steps. */
+  skipped?: boolean
 }
 
 export type OpsAuditEvent =
@@ -164,6 +166,8 @@ export type OpsAuditEvent =
       planText?: string
       /** The plan's steps as classified when the user saw them. */
       steps?: OpsLoggedPlanStep[]
+      /** plan.approved: 0-based indices into `steps` the operator skipped. */
+      skippedSteps?: number[]
     }
   | {
       kind: 'call.decided'

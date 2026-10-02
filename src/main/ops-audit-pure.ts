@@ -264,7 +264,10 @@ export function summarizeRun(lines: OpsAuditLine[], runId: string): OpsRunSummar
         s.planDecision = 'approved'
         // A terminal run has no plan at run.start: the latest approved plan is the run's.
         if (start.event.planText === undefined && e.planText !== undefined) s.planText = e.planText
-        if (e.steps !== undefined) s.planSteps = e.steps
+        if (e.steps !== undefined) {
+          const skipped = new Set(e.skippedSteps ?? [])
+          s.planSteps = e.steps.map((p, i) => (skipped.has(i) ? { ...p, skipped: true } : p))
+        }
         break
       case 'plan.rejected':
         s.planDecision = 'rejected'

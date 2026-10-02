@@ -117,7 +117,7 @@ export function renderInternalReport(summary: OpsRunSummary): string {
     s.planSteps.forEach((p, i) => {
       const cmds = p.commands.map((c) => `\`${c}\``).join(' · ')
       const host = p.hostName ? ` (${p.hostName})` : ''
-      out.push(`${i + 1}. ${p.title}${host}${cmds ? ` – ${cmds}` : ''}`)
+      out.push(`${i + 1}. ${p.title}${host}${cmds ? ` – ${cmds}` : ''}${p.skipped ? ' (skipped)' : ''}`)
     })
   } else {
     out.push(s.planText && s.planText.trim() ? s.planText.trim() : '_No plan recorded._')

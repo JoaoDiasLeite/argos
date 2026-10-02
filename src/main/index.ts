@@ -1150,7 +1150,7 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
     hostAddress: opsHostAddress,
     ask: async ({ tool, input, ops: context }) => {
       const d = await requestToolApproval(terminalId, tool, input, abort.signal, context)
-      return { allow: d.allow, ...(d.stop ? { stop: true } : {}) }
+      return { allow: d.allow, ...(d.stop ? { stop: true } : {}), ...(d.skipSteps?.length ? { skipSteps: d.skipSteps } : {}) }
     },
     askSecret: (req) => requestOpsSecret(terminalId, req, abort.signal),
     onEvent: (line) => send('ops:event', { appSessionId: terminalId, runId: line.event.runId, line })
@@ -1245,6 +1245,8 @@ interface ApprovalDecision {
   updatedInput?: Record<string, unknown>
   /** Ops calls only: "deny and stop the run" (plan §3.4). */
   stop?: boolean
+  /** Ops plans only: 0-based indices of the plan steps the operator skipped. */
+  skipSteps?: number[]
 }
 const pendingApprovals = new Map<string, (d: ApprovalDecision) => void>()
 
@@ -1286,13 +1288,20 @@ function requestToolApproval(
 
 ipcMain.handle(
   'agent:approval-response',
-  (_, payload: { approvalId: string; allow: boolean; updatedInput?: Record<string, unknown>; stop?: boolean }) => {
+  (
+    _,
+    payload: { approvalId: string; allow: boolean; updatedInput?: Record<string, unknown>; stop?: boolean; skipSteps?: unknown }
+  ) => {
     const resolver = pendingApprovals.get(payload.approvalId)
     if (resolver) {
       pendingApprovals.delete(payload.approvalId)
       resolver({
         allow: payload.allow,
         updatedInput: payload.updatedInput,
+        // Only whole numbers get through; the session drops any that name no skippable step.
+        ...(payload.allow === true && Array.isArray(payload.skipSteps)
+          ? { skipSteps: payload.skipSteps.filter((i): i is number => Number.isInteger(i)) }
+          : {}),
         // A stop is always a deny, whatever else the payload says.
         ...(payload.stop === true ? { stop: true, allow: false } : {})
       })

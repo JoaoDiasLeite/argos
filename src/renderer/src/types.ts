@@ -1236,6 +1236,8 @@ declare global {
         updatedInput?: Record<string, unknown>
         /** Ops calls: "deny and stop the run". Always treated as a deny. */
         stop?: boolean
+        /** Ops plans, with allow: 0-based indices into `ops.planSteps` of the steps to skip. Out-of-range or title-only steps are ignored. */
+        skipSteps?: number[]
       }) => Promise<{ ok: boolean }>
       onApprovalResolved: (cb: (approvalId: string) => void) => () => void
 
