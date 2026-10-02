@@ -85,38 +85,45 @@ export default function CommandPalette({ items, onClose }: Props) {
         ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
       >
-        <input
-          className="cmd-input"
-          placeholder="Jump to a session, project, view, or model…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={onKey}
-          autoFocus
-        />
+        <div className="cmd-search">
+          <svg className="cmd-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            className="text-input"
+            placeholder="Jump to a session, project, view or model"
+            aria-label="Command palette"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={onKey}
+            autoFocus
+          />
+        </div>
         <div className="cmd-list" ref={listRef}>
-          {filtered.length === 0 && <div className="cmd-empty">No matches</div>}
+          {filtered.length === 0 && <div className="help cmd-empty">No matches</div>}
           {filtered.map((it, i) => {
             const showGroup = it.group !== lastGroup
             lastGroup = it.group
             return (
               <div key={it.id}>
-                {showGroup && <div className="cmd-group">{it.group}</div>}
+                {showGroup && <div className="eyebrow cmd-group">{it.group}</div>}
                 <div
                   className={`cmd-item ${i === active ? 'active' : ''}`}
                   onMouseEnter={() => setActive(i)}
                   onClick={() => run(i)}
                 >
                   <span className="cmd-item-title">{it.title}</span>
-                  {it.subtitle && <span className="cmd-item-sub">{it.subtitle}</span>}
+                  {it.subtitle && <span className="help cmd-item-sub">{it.subtitle}</span>}
                 </div>
               </div>
             )
           })}
         </div>
         <div className="cmd-foot">
-          <span>↑↓ navigate</span>
-          <span>↵ open</span>
-          <span>esc close</span>
+          <span className="help"><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+          <span className="help"><kbd>Enter</kbd> open</span>
+          <span className="help"><kbd>Esc</kbd> close</span>
         </div>
       </div>
     </div>

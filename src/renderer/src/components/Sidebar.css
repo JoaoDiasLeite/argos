@@ -26,74 +26,44 @@
 }
 
 /* ── Account row ──────────────────────────────────────────── */
-/* First element in the sidebar now that the duplicate brand row (the title
-   bar already shows "Argos") is gone. Named sidebar-account because
-   AccountsModal.css already owns `.account-row` (a boxed card) and component
-   styles share one global bundle. */
+/* First element in the sidebar. Named sidebar-account because AccountsModal.css
+   already owns `.account-row` and component styles share one global bundle. */
 .sidebar-account {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 10px 4px;
+  padding: 10px 10px 8px;
   position: relative;
 }
 
-/* Folds the whole list away. Quiet until hovered, like .sidebar-tab: it sits beside the
-   account row and must not compete with it. */
-.sidebar-collapse {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-sm);
-  color: var(--text-2);
-}
-.sidebar-collapse:hover { background: var(--bg-hover); color: var(--text-0); }
-
-/* ── Auth status ──────────────────────────────────────────── */
-/* A quiet flat row, not a boxed pill — the account line sits directly above the
-   tab row and session cards, and three stacked boxes read as clutter. The box
-   look only appears in the warn state, where it has to draw attention. */
+/* The quiet 28 px button that opens the account menu (or Settings when there is
+   nothing to pick): transparent border, left-aligned, the plan chip and a chevron at
+   the right. */
 .auth-status {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   flex: 1;
   min-width: 0;
-  margin: 0;
-  padding: 5px 8px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  font-size: 12px;
+  font-size: 13px;
+  color: var(--text-1);
   cursor: pointer;
   transition: background 0.14s, border-color 0.14s;
-  border: 1px solid transparent;
 }
-.auth-status.ok {
-  background: transparent;
-  color: var(--text-1);
-}
-.auth-status.ok:hover {
-  background: var(--bg-hover);
-}
-.auth-status.warn {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
-  color: var(--accent);
-}
-.auth-status.warn:hover {
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
-}
+.auth-status:hover { background: var(--bg-2); }
 
 .auth-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
+  background: var(--text-2);
 }
 .auth-dot.ok { background: var(--success); }
-.auth-dot.warn { background: var(--accent); }
 
 .auth-label {
   flex: 1;
@@ -101,7 +71,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: left;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--text-0);
 }
 
@@ -111,92 +81,34 @@
   color: var(--text-2);
 }
 
-.auth-cta {
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
 .auth-chevron {
   flex-shrink: 0;
   color: var(--text-2);
 }
 
-/* Live plan-session badge in the status chip (utilization of the 5h window). */
-.plan-badge {
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 1px 7px;
-  border-radius: 999px;
-}
-.plan-badge.ok { color: var(--success); background: color-mix(in srgb, var(--success) 14%, transparent); }
-.plan-badge.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
-.plan-badge.danger { color: var(--error); background: color-mix(in srgb, var(--error) 14%, transparent); }
+/* The plan chip and the "Connect" chip never shrink: the name is what ellipsizes. */
+.auth-status .chip { flex-shrink: 0; }
 
 /* ── Sidebar tabs ─────────────────────────────────────────── */
-.sidebar-tabs {
+/* The shared .seg-control, stretched to the column. */
+.sidebar-seg {
   display: flex;
-  align-items: center;
-  padding: 0 10px;
-  gap: 2px;
-  /* The action rows below carry their own bottom margin, so this only needs to
-     separate the tabs from them. */
-  margin-bottom: 6px;
+  width: auto;
+  margin: 0 10px;
+  flex-shrink: 0;
 }
-
-.sidebar-tab {
+.sidebar-seg button {
   flex: 1;
-  padding: 5px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-1);
-  border-radius: var(--radius-sm);
-  transition: background 0.14s, color 0.14s;
-}
-.sidebar-tab:hover { background: var(--bg-hover); color: var(--text-0); }
-.sidebar-tab.active {
-  background: color-mix(in srgb, var(--accent) 14%, var(--bg-3));
-  color: var(--text-0);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+  justify-content: center;
 }
 
-/* ── Sidebar action rows ──────────────────────────────────── */
-/* Full-width labelled rows (New terminal) between the tab row and the
-   chat list, replacing the pair of bare icon buttons that used to sit inline in
-   the tabs. Quiet by default — they're primary actions, but the chat list below
-   is what the eye should land on. */
-.sidebar-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 0 8px;
-  margin-bottom: 10px;
+/* "New terminal": the quiet button, full width, content on the left. */
+.sidebar-new {
+  justify-content: flex-start;
+  margin: 10px 10px 8px;
   flex-shrink: 0;
 }
-
-.sidebar-action {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--text-1);
-  text-align: left;
-  transition: background 0.14s, color 0.14s;
-}
-.sidebar-action:hover {
-  background: var(--bg-hover);
-  color: var(--text-0);
-}
-.sidebar-action svg {
-  flex-shrink: 0;
-  color: var(--text-2);
-  transition: color 0.14s;
-}
-.sidebar-action:hover svg { color: var(--accent); }
+.sidebar-new svg { flex-shrink: 0; }
 
 .sidebar-content {
   flex: 1;
@@ -205,107 +117,15 @@
   flex-direction: column;
 }
 
-/* ── Section header ───────────────────────────────────────── */
-.sidebar-section-header {
+/* ── Files tab: the folder row ────────────────────────────── */
+.sidebar-folder-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 12px 6px;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--text-2);
-}
-
-/* ── Session search ───────────────────────────────────────── */
-.session-search {
-  display: flex;
-  align-items: center;
   gap: 6px;
-  margin: 0 10px 8px;
-  padding: 5px 8px;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  transition: border-color 0.14s, box-shadow 0.14s;
+  padding: 10px 10px 6px 12px;
 }
-.session-search:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
-}
-
-.session-search-icon {
-  flex-shrink: 0;
-  color: var(--text-2);
-}
-
-.session-search-input {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--text-0);
-  background: transparent;
-  border: none;
-}
-.session-search-input::placeholder { color: var(--text-2); }
-
-.session-search-clear {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  color: var(--text-2);
-  transition: color 0.14s, background 0.14s;
-}
-.session-search-clear:hover { color: var(--text-0); background: var(--bg-hover); }
-
-/* ── Session list ─────────────────────────────────────────── */
-.session-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 6px 12px;
-}
-
-/* ── Project groups ───────────────────────────────────────── */
-.session-group {
-  margin-bottom: 4px;
-}
-
-.session-group-header {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  width: 100%;
-  padding: 5px 8px 5px 6px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background 0.14s, color 0.14s;
-  color: var(--text-2);
-}
-.session-group-header:hover {
-  background: var(--bg-hover);
-  color: var(--text-1);
-}
-.session-group-header:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  outline-offset: -1px;
-}
-
-.session-group-chevron {
-  flex-shrink: 0;
-  width: 10px;
-  font-size: 10px;
-  line-height: 1;
-  text-align: center;
-  color: var(--text-2);
-}
-
-.session-group-name {
-  flex: 1;
+.sidebar-folder-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -315,46 +135,119 @@
   color: var(--text-1);
 }
 
-.session-group-add {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  color: var(--text-2);
-  opacity: 0;
-  transition: color 0.14s, background 0.14s, opacity 0.1s;
+.sidebar-empty {
+  padding: 16px 12px;
+  text-align: center;
 }
-.session-group-header:hover .session-group-add,
-.session-group-header:focus-visible .session-group-add {
-  opacity: 1;
-}
-.session-group-add:hover {
-  color: var(--text-0);
-  background: var(--bg-3);
+.sidebar-open-folder {
+  margin: 4px 10px;
+  width: calc(100% - 20px);
 }
 
-/* Same footprint and hover-reveal as .session-group-add — sits just before it so the
-   two read as one cluster of header actions. */
-.session-group-rename {
+/* ── Session search ───────────────────────────────────────── */
+.sidebar-search {
+  position: relative;
+  margin: 0 10px 8px;
   flex-shrink: 0;
+}
+.sidebar-search .text-input {
+  height: 30px;
+  padding: 0 28px 0 30px;
+  font-size: 12.5px;
+}
+.sidebar-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 9px;
+  color: var(--text-2);
+  pointer-events: none;
+}
+.sidebar-search-clear {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+}
+
+/* ── Session list ─────────────────────────────────────────── */
+.session-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 6px 12px;
+}
+
+/* A small icon-only button in a row or a group header: quiet, 22 px. */
+.sidebar-icon-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius);
   color: var(--text-2);
-  opacity: 0;
-  transition: color 0.14s, background 0.14s, opacity 0.1s;
+  transition: color 0.14s, background 0.14s;
 }
-.session-group-header:hover .session-group-rename,
-.session-group-header:focus-visible .session-group-rename {
-  opacity: 1;
+.sidebar-icon-btn:hover { color: var(--text-0); background: var(--bg-3); }
+.sidebar-icon-btn.danger:hover { color: var(--error); }
+
+/* ── Project groups ───────────────────────────────────────── */
+.session-group {
+  margin-bottom: 4px;
 }
-.session-group-rename:hover { color: var(--accent); background: var(--accent-dim); }
+
+.session-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 3px 6px;
+  border-radius: var(--radius-surface);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s;
+  color: var(--text-2);
+}
+.session-group-header:hover { background: var(--bg-hover); }
+.session-group-header:focus-visible {
+  outline: 1px solid var(--border-light);
+  outline-offset: -1px;
+}
+
+.session-group-chevron {
+  flex-shrink: 0;
+  color: var(--text-2);
+}
+
+.session-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+/* The distro chip beside the name keeps its width; only the name gives way. */
+.session-group-header .chip { flex-shrink: 0; }
+
+/* Pushes the actions / count to the right edge. */
+.session-group-spacer { flex: 1; }
+
+.session-group-count {
+  flex-shrink: 0;
+  color: var(--text-2);
+}
+.session-group-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.session-group-header:hover .session-group-actions,
+.session-group-header:focus-within .session-group-actions { display: flex; }
+.session-group-header:hover .session-group-count,
+.session-group-header:focus-within .session-group-count { display: none; }
 
 /* The header's own name span, in edit mode — borrows .session-rename-input's metrics
    (see below) but needs the group name's flex-grow to keep the input from collapsing
@@ -375,10 +268,10 @@
   width: 100%;
   padding: 4px 10px;
   margin-top: 1px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-2);
   text-align: left;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-surface);
   transition: background 0.14s, color 0.14s;
 }
 .session-group-more:hover {
@@ -390,43 +283,35 @@
 .session-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  border-radius: var(--radius-sm);
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-surface);
   cursor: pointer;
   transition: background 0.14s;
-  position: relative;
 }
-.session-row:hover {
-  background: var(--bg-hover);
-}
-.session-row.active {
-  background: var(--bg-2);
-  box-shadow: inset 3px 0 0 var(--accent);
-}
+.session-row:hover { background: var(--bg-hover); }
+.session-row.active { background: var(--bg-2); }
 
 .session-row-name {
   flex: 1;
   min-width: 0;
   font-size: 13px;
+  font-weight: 500;
   color: var(--text-0);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Idle and already read: the row recedes. */
+.session-row-name.quiet { font-weight: 400; }
 
-.session-row-name.unread {
-  font-weight: 600;
-  color: var(--text-0);
-}
-
-/* Small filled dot marking a chat whose output nobody has looked at yet. Sits at the
-   row's right edge — hidden while the row is hovered (see renderSessionRow) because
-   the rename/delete buttons take that exact space. */
+/* Marks a chat whose output nobody has looked at yet. Sits at the row's right edge —
+   hidden while the row is hovered (see renderSessionRow) because the rename/delete
+   buttons take that exact space. */
 .session-unread-dot {
   flex-shrink: 0;
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--accent);
 }
@@ -441,76 +326,42 @@
 }
 
 /* ── Session status dot ───────────────────────────────────── */
-/* A small dot before the name: running (pulsing accent), waiting for approval
-   (amber), ended in error (red), or a quiet neutral dot with no status so names
-   still line up. At most one non-idle state shows at a time. */
+/* Before the name: running (--success), waiting for you (--warn), or idle (--text-2).
+   At most one non-idle state shows at a time. */
 .session-dot {
   display: inline-block;
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-}
-.session-dot.idle {
-  background: color-mix(in srgb, var(--text-2) 35%, transparent);
+  background: var(--text-2);
 }
 .session-dot.running {
-  background: var(--accent);
+  background: var(--success);
   animation: session-dot-pulse 1.4s ease-in-out infinite;
 }
 .session-dot.attention { background: var(--warn); }
 
 @keyframes session-dot-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
-  50% { opacity: 0.55; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 0%, transparent); }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 @media (prefers-reduced-motion: reduce) {
   .session-dot.running { animation: none; }
 }
 
-/* Folder chip — only shown in the flattened search view, where there's no group
-   header to say which project a hit belongs to. */
-.session-project {
-  flex-shrink: 0;
-  background: var(--bg-3);
-  border-radius: 4px;
-  padding: 1px 5px;
-  font-size: 11px;
-  color: var(--text-1);
-  max-width: 80px;
+/* Model / account / folder chips on a row: the .chip, set in mono because they name
+   something. Only shown when the row diverges from the defaults (or in a search). */
+.session-chip {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  max-width: 90px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  border: 1px solid var(--border-light);
-}
-
-.session-delete {
-  color: var(--text-2);
-  border-radius: 4px;
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   flex-shrink: 0;
-  transition: color 0.14s, background 0.14s;
 }
-.session-delete:hover { color: var(--error); background: rgba(224, 82, 82, 0.12); }
-
-/* Same footprint as the delete button — they sit side by side on hover, so anything
-   else would make the row's right edge jump between the two. */
-.session-rename {
-  color: var(--text-2);
-  border-radius: 4px;
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: color 0.14s, background 0.14s;
-}
-.session-rename:hover { color: var(--accent); background: var(--accent-dim); }
+.session-chip.account { max-width: 120px; }
 
 /* The row in edit mode. It borrows the row's own metrics so the name does not shift
    sideways the moment you start typing over it. */
@@ -521,160 +372,17 @@
   font-size: 13px;
   color: var(--text-0);
   background: var(--bg-0);
-  border: 1px solid var(--accent);
-  border-radius: 4px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-surface);
   padding: 1px 5px;
   outline: none;
-}
-
-/* ── Running: a border that travels around the row ────────── */
-/* The dot alone was too easy to miss — a chat working away in a terminal looked exactly
-   like one sitting idle. A moving edge is visible from the corner of the eye, which is
-   the whole job: you should be able to tell without reading anything.
-
-   Drawn as a conic gradient in the padding box and masked down to the 1px frame, so it
-   is a border rather than a glow and costs one compositor-driven rotation. */
-@property --session-trace-angle {
-  syntax: '<angle>';
-  initial-value: 0deg;
-  inherits: false;
-}
-
-.session-row.running::before,
-.session-row.attention::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: conic-gradient(
-    from var(--session-trace-angle),
-    transparent 0deg 250deg,
-    var(--session-trace-color) 330deg,
-    transparent 360deg
-  );
-  /* Paint the padding ring only: the two masks cover the whole box and the content box,
-     and excluding one from the other leaves exactly the 1px frame between them. */
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  animation: session-row-trace 2.6s linear infinite;
-  pointer-events: none;
-}
-.session-row.running { --session-trace-color: var(--accent); }
-/* Waiting on you outranks merely working, and says so in the same amber as its dot. */
-.session-row.attention { --session-trace-color: var(--warn); }
-
-/* The row you are looking at does not need to shout: the trace exists to catch your
-   eye from across the list, and the chat that is already on screen is the one place
-   that job is already done. */
-.session-row.active::before { display: none; }
-
-@keyframes session-row-trace {
-  to { --session-trace-angle: 360deg; }
-}
-@media (prefers-reduced-motion: reduce) {
-  /* No travel, but the row still has to read as different from an idle one — so the
-     gradient stops moving and settles into a plain tinted frame. */
-  .session-row.running::before,
-  .session-row.attention::before {
-    animation: none;
-    background: var(--session-trace-color);
-    opacity: 0.55;
-  }
-}
-
-.session-badge {
-  font-size: 10px;
-  line-height: 1;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--bg-3);
-  color: var(--text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 90px;
-  border: 1px solid var(--border-light);
-}
-
-.session-badge.account {
-  /* Wider than a bare account name needs: this badge also carries an origin
-     ("WSL · Ubuntu-DevOps"), and clipping that to 80px hides the distro. */
-  max-width: 120px;
 }
 
 /* ── Explore all chats ────────────────────────────────────── */
 /* Sits under the (account-scoped) session list and jumps to the Projects view,
    where every chat across all accounts and sources is browsable. */
 .sidebar-explore {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
   flex-shrink: 0;
   margin: 4px 10px 12px;
-  padding: 7px 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-light);
-  background: var(--bg-2);
-  color: var(--text-1);
-  font-size: 12px;
-  font-weight: 500;
-  transition: background 0.14s, color 0.14s, border-color 0.14s;
 }
-.sidebar-explore:hover {
-  background: var(--bg-hover);
-  color: var(--text-0);
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
-}
-.sidebar-explore svg { color: var(--text-2); flex-shrink: 0; }
-
-/* ── Empty state ──────────────────────────────────────────── */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 24px 16px;
-  gap: 12px;
-}
-
-.session-empty {
-  font-size: 12px;
-  color: var(--text-2);
-  text-align: center;
-  line-height: 1.5;
-}
-
-.open-folder-btn {
-  padding: 7px 16px;
-  background: var(--bg-2);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  font-size: 13px;
-  color: var(--text-0);
-  cursor: pointer;
-  transition: background 0.14s, border-color 0.14s, transform 0.14s;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.12);
-}
-.open-folder-btn:hover {
-  background: var(--bg-hover);
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-  transform: translateY(-1px);
-}
-
-/* Provider section header inside the grouped (Claude / Codex / Gemini) account picker
-   dropdown — see Sidebar.tsx's account menu. */
-.account-picker-group-label {
-  padding: 6px 10px 3px;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-2);
-}
-.account-picker-group-label.not-first {
-  margin-top: 4px;
-  border-top: 1px solid var(--border-light);
-}
+.sidebar-explore svg { flex-shrink: 0; }

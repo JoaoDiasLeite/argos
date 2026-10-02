@@ -3,7 +3,7 @@
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
-  background: var(--bg-elev, var(--bg));
+  background: var(--bg-1);
 }
 
 .chat-terminal-bar {
@@ -13,7 +13,7 @@
   gap: 8px;
   padding: 4px 8px 4px 12px;
   border-bottom: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--bg-0);
   flex: 0 0 auto;
 }
 
@@ -23,17 +23,18 @@
   gap: 8px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-dim, var(--text));
-  letter-spacing: 0.02em;
+  color: var(--text-1);
 }
 
+/* The folder the CLI started in: it only labels, so a 3 px chip in mono. */
 .chat-terminal-cwd {
+  font-family: var(--font-mono);
   font-weight: 400;
   font-size: 11px;
-  color: var(--text-faint, var(--text-dim));
+  color: var(--text-2);
   padding: 1px 6px;
-  border-radius: var(--radius-surface);
-  background: var(--bg-elev, var(--bg));
+  border-radius: 3px;
+  background: var(--bg-2);
   border: 1px solid var(--border);
 }
 
@@ -43,27 +44,22 @@
   gap: 6px;
 }
 
+/* Icon-only 24 px buttons (text size, close): quiet until hovered. */
 .chat-terminal-btn {
-  font-size: 11px;
-  padding: 3px 9px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--bg-elev, var(--bg));
-  color: var(--text);
-  cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-1);
+  cursor: pointer;
 }
-
-.chat-terminal-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.chat-terminal-btn.icon {
-  padding: 3px 5px;
-}
+.chat-terminal-btn:hover:not(:disabled) { background: var(--bg-2); color: var(--text-0); border-color: var(--border-light); }
+.chat-terminal-btn:disabled { opacity: 0.4; cursor: default; }
 
 .chat-terminal-fontsize {
   display: flex;
@@ -73,9 +69,10 @@
 }
 
 .chat-terminal-fontsize-value {
-  font-size: 11px;
-  color: var(--text-dim, var(--text));
-  min-width: 1.5em;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-1);
+  min-width: 2em;
   text-align: center;
 }
 
@@ -137,17 +134,16 @@
   color: var(--text-2);
 }
 
-.chat-terminal-restart {
+/* The shell exited: a flat --bg-1 block in the middle of the pane, the sentence and one
+   quiet button. Nothing here is the primary action of the screen, so no accent fill. */
+.chat-terminal-exited {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  padding: 8px 16px;
-  border-radius: var(--radius);
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: var(--bg-0);
-  cursor: pointer;
-  font-size: 13px;
+  min-width: 200px;
+  align-items: center;
+  text-align: center;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
 }
-

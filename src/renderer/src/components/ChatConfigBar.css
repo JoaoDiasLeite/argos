@@ -1,4 +1,4 @@
-/* The pre-launch row of the terminal setup pane: environment, folder, branch. */
+/* ── Compact bar: CLI segment, environment and folder pills, branch chip ── */
 .config-bar {
   display: flex;
   flex-wrap: nowrap;
@@ -7,15 +7,17 @@
   min-width: 0;
 }
 
+/* A pill that acts: an 8 px quiet button, 26 px tall. The branch beside it is a .chip,
+   because it only labels. */
 .config-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 26px;
   padding: 0 9px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--bg-1);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: transparent;
   color: var(--text-1);
   font-size: 12px;
   font-weight: 500;
@@ -24,64 +26,83 @@
   white-space: nowrap;
   max-width: 180px;
   overflow: hidden;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  transition: background 0.12s, color 0.12s;
 }
-
 .config-pill > span {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.config-pill svg { color: var(--text-2); flex-shrink: 0; }
+.config-pill:hover:not(:disabled) { background: var(--bg-2); color: var(--text-0); }
+.config-pill:disabled { opacity: 0.5; cursor: default; }
 
-.config-pill svg {
-  color: var(--text-2);
-  flex-shrink: 0;
+.config-branch { gap: 5px; max-width: 160px; }
+.config-branch > span { overflow: hidden; text-overflow: ellipsis; }
+.config-branch svg { flex-shrink: 0; color: var(--text-2); }
+
+.config-caret { color: var(--text-2); flex-shrink: 0; }
+
+/* ── Setup pane: a select-shaped trigger (§6), 38 px ── */
+.config-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 38px;
+  padding: 0 10px 0 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  color: var(--text-0);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s;
 }
-
-button.config-pill:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+.config-select:hover,
+.config-select[aria-expanded='true'] { border-color: var(--border-light); }
+.config-select .config-caret { margin-left: auto; }
+.config-select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.config-select.mono .config-select-value { font-family: var(--font-mono); font-size: 12.5px; }
+.config-select-detail { color: var(--text-2); }
 
-.config-pill:disabled {
-  opacity: 0.5;
-  cursor: default;
+.config-path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+.config-branch-help .mono { font-family: var(--font-mono); }
 
-/* Read-only pills (the branch) don't look clickable. */
-.config-pill.static {
-  cursor: default;
-  background: var(--bg-2);
-}
-
-.config-caret {
-  color: var(--text-2);
-  margin-left: -1px;
-}
-
-
-/* Environment dropdown */
+/* ── Environment popover: flat, 4 px, the one shadow a popover is allowed ── */
 .config-env {
   position: relative;
   flex-shrink: 0;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .config-pill { transition: none; }
-}
-
 .config-menu {
   position: absolute;
-  bottom: calc(100% + 6px);
+  top: calc(100% + 4px);
   left: 0;
   z-index: 60;
-  min-width: 180px;
+  min-width: 100%;
   max-height: 280px;
   overflow-y: auto;
   padding: 4px;
   background: var(--bg-1);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  border-radius: var(--radius-surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+/* In the compact bar the menu opens upward. */
+.config-menu.up {
+  top: auto;
+  bottom: calc(100% + 4px);
+  min-width: 180px;
 }
 
 .config-menu-item {
@@ -90,22 +111,20 @@ button.config-pill:hover:not(:disabled) {
   width: 100%;
   padding: 7px 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-surface);
   background: transparent;
   color: var(--text-1);
-  font-size: 12.5px;
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
-.config-menu-item:hover {
-  background: var(--bg-hover);
-}
-.config-menu-item.selected {
-  color: var(--accent);
-  font-weight: 600;
-}
+.config-menu-item:hover { background: var(--bg-2); color: var(--text-0); }
+.config-menu-item.selected { background: var(--bg-2); color: var(--text-0); font-weight: 600; }
 
-/* Remote working-directory editor */
+.config-menu-label { padding: 8px 10px 4px; }
+.config-menu-label:first-child { padding-top: 4px; }
+
+/* Remote working-directory editor in the compact bar */
 .config-path {
   display: flex;
   flex-direction: column;
@@ -113,51 +132,4 @@ button.config-pill:hover:not(:disabled) {
   min-width: 260px;
   padding: 10px;
 }
-.config-path-input {
-  width: 100%;
-  height: 30px;
-  padding: 0 9px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-2);
-  color: var(--text-0);
-  font-size: 12.5px;
-  font-family: var(--font-mono, monospace);
-}
-.config-path-input:focus {
-  outline: none;
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-}
-.config-path-save {
-  align-self: flex-end;
-  height: 28px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 6px;
-  background: var(--accent);
-  color: var(--bg-0);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.config-path-save:hover {
-  filter: brightness(1.05);
-}
-
-.config-menu-label {
-  padding: 8px 10px 4px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-2);
-}
-
-
-/* In the terminal setup pane this row has the whole pane, so its chips are free to wrap
-   onto a second line and sit centred. */
-.terminal-setup .config-bar {
-  flex-wrap: wrap;
-  justify-content: center;
-  margin-top: 4px;
-}
+.config-path-save { align-self: flex-end; }

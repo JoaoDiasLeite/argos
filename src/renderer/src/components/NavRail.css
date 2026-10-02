@@ -42,41 +42,37 @@
 }
 .nav-item:hover { background: var(--bg-hover); color: var(--text-0); }
 .nav-item.active {
-  background: var(--accent-dim);
+  background: var(--bg-2);
   color: var(--accent);
-  box-shadow: inset 2.5px 0 0 var(--accent);
 }
 
-/* Count pill for a rail entry (currently: open Remote/WSL sessions on Servers).
-   Accent-filled rather than the muted grey of the in-view count pills
-   (.remote-count, .terminal-count) — this one has to read at a glance from a
-   collapsed 52px entry. Pinned right into the entry's top-right corner so it
-   never sits on top of the icon, with a rail-coloured ring to keep it legible
-   against .nav-item.active's accent-dim fill. `pointer-events: none` so it
-   never eats the entry's click. */
+/* Count for a rail entry (running chats, open Servers sessions, approvals waiting): a 3 px
+   chip in the corner, --text-2 for a plain count and --warn for the one that needs you.
+   `pointer-events: none` so it never eats the entry's click. */
 .nav-item-badge {
   position: absolute;
-  /* Pushed past the entry's own corner (the 68px rail leaves 8px either side of a 52px
-     entry, so it still can't be clipped) — anything less and it sits on the icon. */
-  top: -4px;
-  right: -4px;
-  min-width: 17px;
-  height: 17px;
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
-  /* The extra bottom pixel lifts the digit by half a pixel: Segoe UI's uneven
-     ascent/descent leaves line-height:1 digits sitting low in the pill. */
-  padding: 0 4px 1px;
-  border: 1.5px solid var(--bg-1);
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--bg-0);
+  padding: 0 4px;
+  border: 1px solid var(--border-light);
+  border-radius: 3px;
+  background: var(--bg-2);
+  color: var(--text-2);
   font-size: 10px;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1;
   pointer-events: none;
+}
+.nav-item-badge.warn {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  background: color-mix(in srgb, var(--warn) 6%, var(--bg-2));
 }
 
 .nav-item-label {

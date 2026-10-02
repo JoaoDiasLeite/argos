@@ -26,37 +26,18 @@
   letter-spacing: 0.01em;
 }
 
+/* Dev only. The quiet small button (.btn-ghost.small); these rules only place it in the bar
+   and say when the second click is armed. */
 .titlebar-dev-sync {
-  display: flex;
-  align-items: center;
   gap: 5px;
-  height: 20px;
   margin-left: 4px;
-  padding: 0 8px;
-  background: rgba(250, 160, 160, 0.16);
-  color: #c24848;
-  border: 1px solid rgba(250, 160, 160, 0.6);
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
   white-space: nowrap;
   -webkit-app-region: no-drag;
-  transition: background 0.15s, border-color 0.15s;
 }
-.titlebar-dev-sync:hover {
-  background: rgba(250, 160, 160, 0.28);
-  border-color: #faa0a0;
-}
-/* The second click discards dev's data, so the armed state reads louder. */
+/* The second click discards dev's data, so the armed state reads in --error. */
 .titlebar-dev-sync.confirm {
-  background: rgba(250, 160, 160, 0.45);
-  border-color: #f08a8a;
-  color: #a83232;
-}
-.titlebar-dev-sync:disabled {
-  opacity: 0.7;
-  cursor: default;
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 55%, transparent);
 }
 .titlebar-dev-sync svg.spinning {
   animation: titlebar-dev-sync-spin 0.9s linear infinite;
@@ -72,30 +53,12 @@
   height: 100%;
 }
 
+/* "Restart to update": the quiet small button, placed before the window controls. */
 .titlebar-update-pill {
-  display: flex;
-  align-items: center;
   gap: 5px;
-  height: 20px;
   margin-right: 10px;
-  padding: 3px 10px;
-  background: var(--accent-dim);
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
   white-space: nowrap;
   -webkit-app-region: no-drag;
-  transition: background 0.15s, border-color 0.15s;
-}
-.titlebar-update-pill:hover {
-  background: color-mix(in srgb, var(--accent) 22%, var(--accent-dim));
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-}
-.titlebar-update-pill:active {
-  filter: brightness(0.95);
 }
 
 .titlebar-controls {
@@ -119,8 +82,9 @@
   background: var(--bg-hover);
   color: var(--text-0);
 }
+/* The Windows caption convention (red fill, white glyph), not a design colour. */
 .titlebar-btn.close:hover {
-  background: var(--error);
+  background: color-mix(in srgb, var(--error) 85%, transparent);
   color: #fff;
 }
 .titlebar-btn:active {

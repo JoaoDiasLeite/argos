@@ -316,27 +316,31 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
         <div className="chat-terminal-actions">
           <div className="chat-terminal-fontsize">
             <button
-              className="chat-terminal-btn icon"
+              className="chat-terminal-btn"
               onClick={() => setFontSize((s) => Math.max(MIN_FONT_SIZE, s - 1))}
-              title="Decrease font size"
-              aria-label="Decrease terminal font size"
+              title="Smaller text"
+              aria-label="Smaller text"
               disabled={fontSize <= MIN_FONT_SIZE}
             >
-              −
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
             </button>
             <span className="chat-terminal-fontsize-value">{fontSize}</span>
             <button
-              className="chat-terminal-btn icon"
+              className="chat-terminal-btn"
               onClick={() => setFontSize((s) => Math.min(MAX_FONT_SIZE, s + 1))}
-              title="Increase font size"
-              aria-label="Increase terminal font size"
+              title="Larger text"
+              aria-label="Larger text"
               disabled={fontSize >= MAX_FONT_SIZE}
             >
-              +
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
             </button>
           </div>
           <button
-            className="chat-terminal-btn"
+            className="btn-ghost small"
             onClick={() => {
               window.electronAPI.remoteShellKill(terminalId)
               setReloadKey((k) => k + 1)
@@ -345,7 +349,7 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
           >
             Restart
           </button>
-          <button className="chat-terminal-btn icon" onClick={onClose} title="Close terminal" aria-label="Close terminal">
+          <button className="chat-terminal-btn" onClick={onClose} title="Close terminal" aria-label="Close terminal">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -361,12 +365,12 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
           </div>
         )}
         {exited && (
-          <button
-            className="chat-terminal-restart"
-            onClick={() => setReloadKey((k) => k + 1)}
-          >
-            Reconnect
-          </button>
+          <div className="block chat-terminal-exited" role="status">
+            <span className="help">The shell exited.</span>
+            <button className="btn-ghost" onClick={() => setReloadKey((k) => k + 1)}>
+              Reconnect
+            </button>
+          </div>
         )}
         {/* Paste goes through term.paste unconditionally here: an SSH terminal reaches a
             real pty running a real shell, which consumes bracketed-paste markers correctly

@@ -568,7 +568,7 @@ code:not(pre code) {
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   color: var(--text-1);
   transition: background 0.15s, color 0.15s;
 }

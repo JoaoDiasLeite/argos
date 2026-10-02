@@ -69,7 +69,7 @@ export default function TitleBar({ maximized }: Props) {
         <span className="titlebar-title">Argos</span>
         {isDev && (
           <button
-            className={`titlebar-dev-sync${sync === 'confirm' ? ' confirm' : ''}`}
+            className={`btn-ghost small titlebar-dev-sync${sync === 'confirm' ? ' confirm' : ''}`}
             onClick={onSync}
             onDoubleClick={(e) => e.stopPropagation()}
             disabled={sync === 'syncing'}
@@ -107,7 +107,7 @@ export default function TitleBar({ maximized }: Props) {
 
       {updater?.state === 'downloaded' && (
         <button
-          className="titlebar-update-pill"
+          className="btn-ghost small titlebar-update-pill"
           onClick={() => window.electronAPI.updaterInstall()}
           title={`Install Argos v${updater.version ?? ''} and relaunch`}
         >

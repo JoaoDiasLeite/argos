@@ -184,7 +184,7 @@ export default function NavRail({
                 )}
                 {entry.view === 'home' && attentionCount > 0 && (
                   <span
-                    className="nav-item-badge"
+                    className="nav-item-badge warn"
                     aria-label={`${attentionCount} approval${attentionCount === 1 ? '' : 's'} waiting`}
                   >
                     {attentionCount}

@@ -1,7 +1,9 @@
-import { useEffect, useState, lazy, Suspense } from 'react'
+import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { Session, ProviderId } from '../types'
-import ChatConfigBar from './ChatConfigBar'
+import { ChatConfigFields } from './ChatConfigBar'
 import { chatTerminalId } from '../lib/terminal-id'
+import { sessionProvider } from '../lib/account-scope'
+import { CLI_PROVIDERS } from '../lib/cli-providers'
 import './Chat.css'
 
 // ChatTerminal pulls in @xterm/xterm + its addons (~300 kB), and nothing on screen needs
@@ -108,6 +110,45 @@ export default function Chat({
   // chat that already has a name of its own — a fresh one is still the placeholder "New
   // chat", and printing that above "Start a terminal" reads as two headings. The name is
   // skipped when a split-view pane header is already showing it.
+  // Which CLI the pane is about to start and under which account. The account chosen at the
+  // top of the sidebar fixes both when the chat is created, so the pane only has to say so;
+  // a chat that is being resumed names itself as resumed instead, since its CLI belongs to
+  // the conversation it already has.
+  const setupProvider = session ? sessionProvider(session) : terminalProvider
+  const setupCli = CLI_PROVIDERS.find((p) => p.id === setupProvider)?.label ?? 'Claude Code'
+  const setupAccount =
+    (setupProvider === 'codex'
+      ? session?.codexAccountName
+      : setupProvider === 'gemini'
+        ? session?.geminiAccountName
+        : session?.accountName) || 'Default'
+  const resuming = !!session?.claudeSessionId
+  const setupRef = useRef<HTMLDivElement>(null)
+  // Enter starts and Esc goes back to the list, from anywhere in the pane that does not
+  // already own the key: a focused control keeps its own Enter, an open menu or the folder
+  // field keeps its own Esc.
+  const onSetupKeyDown = (e: React.KeyboardEvent) => {
+    if (!session || e.defaultPrevented) return
+    const target = e.target as HTMLElement
+    if (e.key === 'Enter') {
+      if (target.closest('button, input, textarea, select, a, [role="menu"]')) return
+      e.preventDefault()
+      setSetup({ id: session.id, nonce: newChatNonce, pending: false })
+    } else if (e.key === 'Escape') {
+      if (target.closest('input, textarea, select')) return
+      if (setupRef.current?.querySelector('[aria-expanded="true"]')) return
+      e.preventDefault()
+      onCloseTerminal()
+    }
+  }
+  // So that Enter has somewhere to land the moment the pane appears — unless something
+  // else (another pane, a field) already holds the focus.
+  useEffect(() => {
+    if (!needsTerminalSetup) return
+    const active = document.activeElement
+    if (!active || active === document.body) setupRef.current?.focus({ preventScroll: true })
+  }, [needsTerminalSetup, session?.id])
+
   const hasTitleMeta = !!(session?.remoteHostName || session?.claudeSessionId)
   const showTitleName = !titleInHeader && !!session?.name && session.name !== 'New chat'
   const titleBlock = session && (showTitleName || hasTitleMeta) && (
@@ -115,10 +156,11 @@ export default function Chat({
       {showTitleName && <div className="chat-title-name">{session.name}</div>}
       {hasTitleMeta && (
         <div className="chat-title-meta">
-          {session.remoteHostName && (
-            <span title="Running on remote host over SSH">⇄ {session.remoteHostName}</span>
+          {session.remoteHostName && <span title="Where it runs">{session.remoteHostName}</span>}
+          {session.remoteHostName && session.claudeSessionId && (
+            <span className="chat-title-sep" aria-hidden="true">·</span>
           )}
-          {session.claudeSessionId && <span title="Resumed Claude Code session">resumed</span>}
+          {session.claudeSessionId && <span title="Resumed CLI session">resumed</span>}
         </div>
       )}
     </div>
@@ -127,20 +169,20 @@ export default function Chat({
   return (
     <div className="chat">
       {saveError && dismissedSaveError !== saveError && (
-        <div className="save-error-banner" role="alert">
+        <div className="block err save-error-banner" role="alert">
           <span className="save-error-text">
-            This chat couldn&rsquo;t be saved to disk — its name, folder and link to the CLI
+            This chat could not be saved to disk, so its name, folder and link to the CLI
             conversation may be lost if the app closes. {/* The caller hands us a
             stringified Error; its "Error: " prefix is noise in a sentence the user reads. */}
             ({saveError.replace(/^Error:\s*/, '')})
           </span>
           <button
-            className="save-error-dismiss"
+            className="icon-btn"
             onClick={() => setDismissedSaveError(saveError)}
             title="Dismiss"
             aria-label="Dismiss this warning"
           >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
@@ -148,33 +190,48 @@ export default function Chat({
       )}
 
       {session && needsTerminalSetup && (
-        <div className="terminal-setup">
-          {titleBlock}
-          <h2>{session.claudeSessionId ? 'Resume in a terminal' : 'Start a terminal'}</h2>
-          <p>
-            Pick the CLI and where it runs — it starts there and can't be moved afterwards.
-          </p>
-          {session.archivedTranscript && (
-            <div className="terminal-setup-archive">
-              <span>Argos chat from before 2.0 — transcript saved as Markdown</span>
-              <button className="btn-ghost small" onClick={() => void window.electronAPI.openChatExport(session.archivedTranscript)}>
-                Open
-              </button>
-              <button className="btn-ghost small" onClick={() => void window.electronAPI.openChatExport(session.archivedTranscript, true)}>
-                Show in folder
-              </button>
+        <div className="terminal-setup" ref={setupRef} tabIndex={-1} onKeyDown={onSetupKeyDown}>
+          <div className="terminal-setup-col">
+            {titleBlock}
+            <div>
+              <h2>{resuming ? 'Resume in a terminal' : 'Start a terminal'}</h2>
+              <p>
+                {resuming ? (
+                  <>
+                    {setupCli} · resumed as <b>{setupAccount}</b>. Pick where it runs.
+                  </>
+                ) : (
+                  <>
+                    {setupCli}, as the <b>{setupAccount}</b> account chosen above. Pick where it runs.
+                  </>
+                )}
+              </p>
             </div>
-          )}
-          <ChatConfigBar session={session} onPatch={onPatchSession} />
-          <button
-            className="btn-primary terminal-setup-start"
-            onClick={() => setSetup({ id: session.id, nonce: newChatNonce, pending: false })}
-          >
-            {session.claudeSessionId ? 'Resume in terminal' : 'Start terminal'}
-          </button>
-          {!session.projectPath && !session.remoteHostId && (
-            <span className="terminal-setup-hint">No folder chosen — it will start in your home folder.</span>
-          )}
+            {session.archivedTranscript && (
+              <div className="terminal-setup-archive">
+                <span className="help">Argos chat from before 2.0. Its transcript is saved as Markdown.</span>
+                <button className="btn-ghost small" onClick={() => void window.electronAPI.openChatExport(session.archivedTranscript)}>
+                  Open
+                </button>
+                <button className="btn-ghost small" onClick={() => void window.electronAPI.openChatExport(session.archivedTranscript, true)}>
+                  Show in folder
+                </button>
+              </div>
+            )}
+            <ChatConfigFields session={session} onPatch={onPatchSession} />
+            <div className="terminal-setup-actions">
+              <button
+                className="btn-primary terminal-setup-start"
+                onClick={() => setSetup({ id: session.id, nonce: newChatNonce, pending: false })}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+                  <polygon points="6 4 20 12 6 20" />
+                </svg>
+                {resuming ? 'Resume in terminal' : 'Start terminal'}
+              </button>
+              <span className="help">Enter starts · Esc goes back to the list</span>
+            </div>
+          </div>
         </div>
       )}
 

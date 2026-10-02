@@ -57,6 +57,10 @@
   overflow-y: auto;
 }
 
+/* Provider group heading in the menu: the .eyebrow, with room above all but the first. */
+.account-picker-group-label { padding: 6px 10px 3px; }
+.account-picker-group-label.not-first { margin-top: 6px; }
+
 .account-picker-item {
   display: flex;
   flex-direction: column;

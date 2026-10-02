@@ -41,6 +41,18 @@ function ProviderIcon({ provider }: { provider: ProviderId }) {
   )
 }
 
+// The chip's tone for a plan percentage: neutral below 70, --warn from 70, --error from 90.
+const planTone = (pct: number) => (pct >= 90 ? 'err' : pct >= 70 ? 'warn' : '')
+
+// Chevron for a group header: down when open, right when collapsed (§5).
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg className="session-group-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={open ? 'M6 9l6 6 6-6' : 'M9 6l6 6-6 6'} />
+    </svg>
+  )
+}
+
 interface Props {
   sessions: Session[]
   activeId: string
@@ -302,7 +314,7 @@ export default function Sidebar({
     : false
 
   const authLabel = !auth
-    ? 'Checking…'
+    ? 'Checking'
     : auth.mode === 'claude-code'
       ? auth.claudeCodeDetected
         ? 'Claude Code account'
@@ -575,7 +587,7 @@ export default function Sidebar({
   // there while typing — a stray click inside the input would otherwise switch chats.
   const renderRenameRow = (s: Session) => (
     <div key={s.id} className={`session-row renaming ${s.id === activeId ? 'active' : ''}`}>
-      <span className="session-dot idle" />
+      <span className="session-dot" />
       <input
         className="session-rename-input"
         autoFocus
@@ -627,7 +639,7 @@ export default function Sidebar({
     return (
       <div
         key={s.id}
-        className={`session-row ${s.id === activeId ? 'active' : ''} ${status === 'running' ? 'running' : ''} ${status === 'attention' ? 'attention' : ''}`}
+        className={`session-row ${s.id === activeId ? 'active' : ''}`}
         onClick={() => onSelectSession(s.id)}
         /* Dragging the row opens the conversation in split view (see PaneGrid). The id goes
            on a custom type, never on 'text/plain', so it can never be mistaken for a file or
@@ -644,22 +656,22 @@ export default function Sidebar({
         title={rowTitle}
       >
         {/* Neutral quiet dot when there's no status, so names stay left-aligned. */}
-        <span className={`session-dot ${status || 'idle'}`} title={statusTitle} />
+        <span className={`session-dot ${status || ''}`} title={statusTitle} />
         <span
-          className={`session-row-name ${s.unread ? 'unread' : ''}`}
+          className={`session-row-name ${!status && !s.unread ? 'quiet' : ''}`}
           onDoubleClick={(e) => { e.stopPropagation(); startRename(s) }}
         >
           {s.name || 'New chat'}
         </span>
         {showProject && s.projectPath && (
-          <span className="session-project" title={s.projectPath}>
+          <span className="chip session-chip" title={s.projectPath}>
             {s.projectPath.split(/[\\/]/).filter(Boolean).pop()}
           </span>
         )}
         {(modelLabel || accountLabel) && (
           <span className="session-row-badges">
-            {modelLabel && <span className="session-badge model">{modelLabel}</span>}
-            {accountLabel && <span className="session-badge account">{accountLabel}</span>}
+            {modelLabel && <span className="chip session-chip">{modelLabel}</span>}
+            {accountLabel && <span className="chip session-chip account">{accountLabel}</span>}
           </span>
         )}
         {/* Hidden on hover — the rename/delete buttons take the same right-edge space. */}
@@ -667,7 +679,7 @@ export default function Sidebar({
         {hoveredId === s.id && (
           <>
             <button
-              className="session-rename"
+              className="sidebar-icon-btn"
               onClick={(e) => { e.stopPropagation(); startRename(s) }}
               title="Rename (or double-click the name)"
               aria-label="Rename session"
@@ -678,7 +690,7 @@ export default function Sidebar({
               </svg>
             </button>
             <button
-              className="session-delete"
+              className="sidebar-icon-btn danger"
               onClick={(e) => { e.stopPropagation(); onDeleteSession(s.id) }}
               title="Delete"
               aria-label="Delete session"
@@ -699,29 +711,29 @@ export default function Sidebar({
       <div className="sidebar-account" ref={accountRef}>
         <button
           ref={accountBtnRef}
-          className={`auth-status ${ready ? 'ok' : 'warn'}`}
+          className="auth-status"
           onClick={isAccountPicker ? toggleAccountMenu : onOpenSettings}
           title={statusTitle}
           aria-haspopup={isAccountPicker ? 'listbox' : undefined}
           aria-expanded={isAccountPicker ? accountMenuOpen : undefined}
         >
-          <span className={`auth-dot ${ready ? 'ok' : 'warn'}`} />
+          <span className={`auth-dot ${ready ? 'ok' : ''}`} />
           {currentAccount && <ProviderIcon provider={selectedProvider} />}
           <span className="auth-label">{statusLabel}</span>
           {currentUsage && (
             <span
-              className={`plan-badge ${currentUsage.utilization >= 90 ? 'danger' : currentUsage.utilization >= 70 ? 'warn' : 'ok'}`}
+              className={`chip ${planTone(currentUsage.utilization)}`}
               title={`${statusLabel} — ${currentUsage.utilization.toFixed(0)}% used${currentUsage.resetsAt ? ` · ${fmtReset(currentUsage.resetsAt)}` : ''}`}
             >
               {currentUsage.utilization.toFixed(0)}%
             </span>
           )}
           {isAccountPicker && (
-            <svg className="auth-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <polyline points="6 9 12 15 18 9" />
+            <svg className="auth-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M6 9l6 6 6-6" />
             </svg>
           )}
-          {!ready && <span className="auth-cta">Connect</span>}
+          {!ready && <span className="chip">Connect</span>}
         </button>
         {isAccountPicker && accountMenuOpen && accountMenuPos &&
           createPortal(
@@ -752,7 +764,7 @@ export default function Sidebar({
                   seenGroup = true
                   return (
                   <div key={provider}>
-                    <div className={`account-picker-group-label ${isFirstGroup ? '' : 'not-first'}`}>{label}</div>
+                    <div className={`eyebrow account-picker-group-label ${isFirstGroup ? '' : 'not-first'}`}>{label}</div>
                     {list.map((a) => {
                       const usage =
                         provider === 'claude'
@@ -778,7 +790,7 @@ export default function Sidebar({
                             <span className="account-picker-item-name">{a.name}</span>
                             {usage && (
                               <span
-                                className={`plan-badge ${usage.utilization >= 90 ? 'danger' : usage.utilization >= 70 ? 'warn' : 'ok'}`}
+                                className={`chip ${planTone(usage.utilization)}`}
                                 title={`${usage.utilization.toFixed(0)}% used${usage.resetsAt ? ` · ${fmtReset(usage.resetsAt)}` : ''}`}
                               >
                                 {usage.utilization.toFixed(0)}%
@@ -809,17 +821,17 @@ export default function Sidebar({
                   onManageAccounts()
                 }}
               >
-                Manage accounts…
+                Manage accounts
               </button>
             </div>,
             document.body
           )}
         {onCollapse && (
           <button
-            className="sidebar-collapse"
+            className="icon-btn"
             onClick={onCollapse}
-            title="Hide the chat list — press Chat in the rail to bring it back"
-            aria-label="Hide the chat list"
+            title="Collapse sidebar (press Chat in the rail to bring it back)"
+            aria-label="Collapse sidebar"
           >
             {/* A panel with its left column ruled off, pointing left: "fold this away". */}
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -831,17 +843,11 @@ export default function Sidebar({
         )}
       </div>
 
-      <div className="sidebar-tabs">
-        <button
-          className={`sidebar-tab ${tab === 'sessions' ? 'active' : ''}`}
-          onClick={() => onTabChange('sessions')}
-        >
+      <div className="seg-control sidebar-seg" role="group" aria-label="Sidebar">
+        <button className={tab === 'sessions' ? 'on' : ''} aria-pressed={tab === 'sessions'} onClick={() => onTabChange('sessions')}>
           Chats
         </button>
-        <button
-          className={`sidebar-tab ${tab === 'files' ? 'active' : ''}`}
-          onClick={() => onTabChange('files')}
-        >
+        <button className={tab === 'files' ? 'on' : ''} aria-pressed={tab === 'files'} onClick={() => onTabChange('files')}>
           Files
         </button>
       </div>
@@ -850,34 +856,32 @@ export default function Sidebar({
           minor affordance for what is the sidebar's primary action, so New chat gets its
           own full-width row with a name on it. */}
       {tab === 'sessions' && (
-        <div className="sidebar-actions">
-          {/* A chat IS a terminal, and this row starts one without naming a folder — which
-              is asked for rather than inherited (see the setup pane in Chat.tsx). The name
-              has to say what is about to happen. */}
-          <button className="sidebar-action" onClick={() => onNewSession()} title={newLabel}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            {newLabel}
-          </button>
-        </div>
+        /* A chat IS a terminal, and this button starts one without naming a folder — which
+           is asked for rather than inherited (see the setup pane in Chat.tsx). The name
+           has to say what is about to happen. */
+        <button className="btn-ghost sidebar-new" onClick={() => onNewSession()} title={newLabel}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          {newLabel}
+        </button>
       )}
 
       <div className="sidebar-content">
         {tab === 'sessions' ? (
           <>
             {(visibleSessions.length >= 5 || searchQuery) && (
-              <div className="session-search">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="session-search-icon">
+              <div className="sidebar-search">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="sidebar-search-icon">
                   <circle cx="11" cy="11" r="8" />
                   <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
                 <input
                   ref={searchInputRef}
                   type="text"
-                  className="session-search-input"
-                  placeholder="Search chats…"
+                  className="text-input"
+                  placeholder="Search chats"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -891,12 +895,12 @@ export default function Sidebar({
                 />
                 {searchInput && (
                   <button
-                    className="session-search-clear"
+                    className="sidebar-icon-btn sidebar-search-clear"
                     onClick={clearSearch}
                     title="Clear search"
                     aria-label="Clear search"
                   >
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                       <line x1="18" y1="6" x2="6" y2="18" />
                       <line x1="6" y1="6" x2="18" y2="18" />
                     </svg>
@@ -906,12 +910,12 @@ export default function Sidebar({
             )}
             <div className="session-list">
               {visibleSessions.length === 0 && (
-                <div className="empty-state session-empty">
-                  No chats yet — send your first message and it will show up here.
+                <div className="help sidebar-empty">
+                  No chats yet. Start a terminal and it will show up here.
                 </div>
               )}
               {visibleSessions.length > 0 && filteredSessions.length === 0 && (
-                <div className="empty-state session-empty">No sessions match.</div>
+                <div className="help sidebar-empty">No chats match.</div>
               )}
               {searchQuery.trim() ? (
                 // Flatten while searching — results read as one list, collapse state
@@ -941,6 +945,7 @@ export default function Sidebar({
                           })
                         : g.basename
                   const isRenamingGroup = renamingGroupKey === g.key
+                  const groupDistro = g.sessions.find((s) => s.wslDistro)?.wslDistro
                   return (
                     <div className="session-group" key={g.key}>
                       {/* A div (not a button) so the nested "+" can be a real button —
@@ -960,7 +965,7 @@ export default function Sidebar({
                         }}
                         title={g.path || 'No folder'}
                       >
-                        <span className="session-group-chevron" aria-hidden="true">{isCollapsed ? '▸' : '▾'}</span>
+                        <Chevron open={!isCollapsed} />
                         {isRenamingGroup ? (
                           <input
                             className="session-rename-input session-group-rename-input"
@@ -987,31 +992,39 @@ export default function Sidebar({
                             {displayName}
                           </span>
                         )}
-                        {canRename && !isRenamingGroup && (
-                          <button
-                            className="session-group-rename"
-                            onClick={(e) => { e.stopPropagation(); startGroupRename(g) }}
-                            title="Rename project (or double-click the name)"
-                            aria-label={`Rename ${displayName}`}
-                          >
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <path d="M12 20h9" />
-                              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                            </svg>
-                          </button>
-                        )}
+                        {/* A group of chats inside a WSL distro says which one. */}
+                        {!isRenamingGroup && groupDistro && <span className="chip">{groupDistro}</span>}
+                        <span className="session-group-spacer" />
                         {!isRenamingGroup && (
-                          <button
-                            className="session-group-add"
-                            onClick={(e) => { e.stopPropagation(); onNewSession(g.path) }}
-                            title={`${newLabel} in ${displayName}`}
-                            aria-label={`${newLabel} in ${displayName}`}
-                          >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-                              <line x1="12" y1="5" x2="12" y2="19" />
-                              <line x1="5" y1="12" x2="19" y2="12" />
-                            </svg>
-                          </button>
+                          <>
+                            {isCollapsed && <span className="session-group-count">{g.sessions.length}</span>}
+                            <span className="session-group-actions">
+                              {canRename && (
+                                <button
+                                  className="sidebar-icon-btn"
+                                  onClick={(e) => { e.stopPropagation(); startGroupRename(g) }}
+                                  title="Rename project (or double-click the name)"
+                                  aria-label={`Rename ${displayName}`}
+                                >
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <path d="M12 20h9" />
+                                    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                                  </svg>
+                                </button>
+                              )}
+                              <button
+                                className="sidebar-icon-btn"
+                                onClick={(e) => { e.stopPropagation(); onNewSession(g.path) }}
+                                title={`${newLabel} in ${displayName}`}
+                                aria-label={`${newLabel} in ${displayName}`}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                                  <line x1="12" y1="5" x2="12" y2="19" />
+                                  <line x1="5" y1="12" x2="19" y2="12" />
+                                </svg>
+                              </button>
+                            </span>
+                          </>
                         )}
                       </div>
                       {!isCollapsed && (
@@ -1032,8 +1045,8 @@ export default function Sidebar({
                 })
               )}
             </div>
-            <button className="sidebar-explore" onClick={onExploreProjects}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <button className="btn-ghost sidebar-explore" onClick={onExploreProjects}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
@@ -1042,8 +1055,8 @@ export default function Sidebar({
           </>
         ) : (
           <>
-            <div className="sidebar-section-header">
-              <span>{projectPath ? projectPath.split(/[\\/]/).pop() : 'No folder'}</span>
+            <div className="sidebar-folder-row">
+              <span className="sidebar-folder-name">{projectPath ? projectPath.split(/[\\/]/).pop() : 'No folder'}</span>
               <button className="icon-btn" onClick={handleOpenFolder} title="Open folder" aria-label="Open folder">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
@@ -1053,11 +1066,9 @@ export default function Sidebar({
             {projectPath ? (
               <FileTree rootPath={projectPath} onOpenFile={onOpenFile} selectedPath={openFilePath} />
             ) : (
-              <div className="empty-state">
-                <button className="open-folder-btn" onClick={handleOpenFolder}>
-                  Open a folder
-                </button>
-              </div>
+              <button className="btn-ghost sidebar-open-folder" onClick={handleOpenFolder}>
+                Open a folder
+              </button>
             )}
           </>
         )}

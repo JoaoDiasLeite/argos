@@ -78,7 +78,7 @@ export default function AccountPicker({
             seenGroup = true
             return (
               <div key={provider}>
-                <div className={`account-picker-group-label ${isFirstGroup ? '' : 'not-first'}`}>{label}</div>
+                <div className={`eyebrow account-picker-group-label ${isFirstGroup ? '' : 'not-first'}`}>{label}</div>
                 {list.map((a) => {
                   const selected = a.provider === selectedProvider && a.id === selectedId
                   return (
@@ -95,7 +95,7 @@ export default function AccountPicker({
                         <span className="account-picker-item-name">{a.name}</span>
                         {a.usagePct != null && (
                           <span
-                            className={`plan-badge ${a.usagePct >= 90 ? 'danger' : a.usagePct >= 70 ? 'warn' : 'ok'}`}
+                            className={`chip ${a.usagePct >= 90 ? 'err' : a.usagePct >= 70 ? 'warn' : ''}`}
                           >
                             {a.usagePct.toFixed(0)}%
                           </span>
