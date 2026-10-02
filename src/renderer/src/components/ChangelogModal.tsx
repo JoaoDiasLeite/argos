@@ -17,8 +17,20 @@ const CHANGELOG: Entry[] = [
   {
     version: '2.0.0',
     date: '2026-10-02',
-    tag: 'new',
+    tag: 'latest',
     sections: [
+      {
+        title: 'New look',
+        items: [
+          'Every screen follows one design: rounded corners only on what you can press, flat surfaces with no card inside a card, colour only where it says something (green ran, amber waits for you, red failed), one primary button per screen, and the thing that needs you at the top of a column on the right, as the only highlighted block.',
+          'Editors that need room open as a sheet from the right instead of a modal: adding or editing a host, Permissions, Hooks, Session notifications, Accounts, Labels, the sprint and item editors, the file editor. A sheet closes with its own button or Esc, never by a stray click beside it.',
+          'Home is the day: the account’s 5-hour window at the top of the column, then what needs you, what is running and what is uncommitted; on the left the start box, the chats to pick up and the recent projects side by side.',
+          'Servers lists hosts and WSL distros on the left; clicking one opens a column with everything the old “More” menu hid: connect, new terminal, Ops, test the connection, check Claude Code, edit, delete or hide. Projects works the same way for a session. Both columns slide open on selection and shut on a click outside them.',
+          'The sprint board has the progress, the burndown, today’s standup and whatever is blocked in one column beside it, instead of three tabs. Usage keeps the history on the page and the plan limits in the column, with All or one account; the limit closest to its ceiling is the only tinted block.',
+          'Settings is one centred column of rows; the appearance page has a single preview of the theme you are editing. The setup pane for a new terminal no longer asks for the CLI: the account chosen at the top of the sidebar decides it.',
+          'A new mark: a dog’s head, Argos, in the title bar and as the app icon.'
+        ]
+      },
       {
         title: 'Changed',
         items: [
@@ -51,7 +63,8 @@ const CHANGELOG: Entry[] = [
         items: [
           'An ops runbook picked in a terminal chat started a CLI with no gate, in the home folder. Ops runs now start only from the Ops workspace, where every call goes through the gate.',
           'The ops timeline’s Stop did nothing for a terminal run. It now ends the run and revokes its session.',
-          'The pill, the taskbar progress bar and the success flag now follow terminal activity.'
+          'The pill, the taskbar progress bar and the success flag now follow terminal activity.',
+          'Planner showed an empty screen since it became a single entry in the rail; it renders again.'
         ]
       }
     ]
@@ -59,7 +72,6 @@ const CHANGELOG: Entry[] = [
   {
     version: '1.17.0',
     date: '2026-10-02',
-    tag: 'latest',
     sections: [
       {
         title: 'New',
