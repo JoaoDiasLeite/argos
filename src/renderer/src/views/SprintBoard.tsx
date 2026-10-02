@@ -23,7 +23,7 @@ import './views.css'
 import './PlannerView.css'
 import './SprintBoard.css'
 
-export type PlannerMode = 'week' | 'sprint' | 'backlog'
+export type PlannerMode = 'week' | 'sprint'
 type SprintSection = 'board' | 'standup' | 'burndown'
 
 interface SprintBoardProps {
@@ -120,11 +120,11 @@ export function PlannerModeToggle({ mode, onMode }: { mode: PlannerMode; onMode:
   return (
     <div
       className="seg-control planner-mode"
-      title="Switch between the weekly planner, the sprint board and the repo's own backlog"
+      title="Switch between the weekly planner and the sprint board"
     >
-      {(['week', 'sprint', 'backlog'] as const).map((m) => (
+      {(['week', 'sprint'] as const).map((m) => (
         <button key={m} className={mode === m ? 'on' : ''} onClick={() => onMode(m)}>
-          {m === 'week' ? 'Week' : m === 'sprint' ? 'Sprint' : 'Backlog'}
+          {m === 'week' ? 'Week' : 'Sprint'}
         </button>
       ))}
     </div>
