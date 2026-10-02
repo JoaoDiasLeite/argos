@@ -179,11 +179,7 @@ export default function OpsTimeline({ appSessionId, runbookPath, onClose }: Prop
             )}
             {run.ended?.error && <p className="ops-tl-reason">{run.ended.error}</p>}
             {!run.ended && (
-              <button className="btn-ghost small ops-tl-stop" onClick={() => {
-                // A terminal's ops run ends through ops:stop; an SDK chat's run is its agent run.
-                if (appSessionId.startsWith('opsterm_')) void window.electronAPI.opsStop(appSessionId)
-                else void window.electronAPI.stopAgent(appSessionId)
-              }}>
+              <button className="btn-ghost small ops-tl-stop" onClick={() => { void window.electronAPI.opsStop(appSessionId) }}>
                 Stop run
               </button>
             )}

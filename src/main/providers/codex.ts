@@ -4,7 +4,6 @@ import * as os from 'os'
 import * as path from 'path'
 import { costFromTokens } from './cost'
 import { resolveCodex } from './cli-resolve'
-import { runCodexAppServer } from './codex-app-server'
 import { ZERO_USAGE } from './types'
 import type { AiEngine, EngineMessage, EngineRequest } from './types'
 
@@ -306,14 +305,7 @@ export const codexEngine: AiEngine = {
     }
     const { codexHome, cleanup } = prepareCodexHome(req.mcpServers, req.env.CODEX_HOME)
     try {
-      // Per-tool approval (interactive 'ask' mode) needs codex's JSON-RPC
-      // app-server protocol — the simple `exec --json` mode has no approval
-      // callback at all. Everything else uses the simpler, one-shot path.
-      if (req.canUseTool) {
-        yield* runCodexAppServer(req, req.prompt, sandboxFor(req), codexHome)
-      } else {
-        yield* runCodexProcess(req, req.prompt, codexHome)
-      }
+      yield* runCodexProcess(req, req.prompt, codexHome)
     } finally {
       cleanup()
     }

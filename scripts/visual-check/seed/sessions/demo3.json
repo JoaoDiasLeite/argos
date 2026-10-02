@@ -2,7 +2,7 @@
   "id": "demo3",
   "name": "migration rollback",
   "projectPath": "C:/Users/demo/Projects/claude-gui",
-  "model": "claude-sonnet-4-6",
+  "provider": "claude",
   "hasTerminalActivity": true,
   "terminalStartedAt": 1783663200000,
   "createdAt": 1783663200000,

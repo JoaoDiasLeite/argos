@@ -50,14 +50,6 @@ export interface UiPrefs {
    */
   fontSize: 'sm' | 'md' | 'lg'
   onboarded: boolean
-  /**
-   * Chat or terminal: which of the two the whole app works in. Not a per-chat panel —
-   * in 'terminal' every chat IS a terminal (no composer, no transcript) and the things
-   * that only make sense against Argos's own engine are gone from the chat surface; in
-   * 'chat' the embedded terminal is not offered at all. Named `workMode` rather than the
-   * old `defaultChatView` because it no longer decides where a chat merely STARTS.
-   */
-  workMode: 'chat' | 'terminal'
   /** Planner · Week is offered (the Week | Sprint toggle). Off by default: Planner opens
    *  on the sprint board, and the weekly planner is an opt-in from Settings → General. */
   showWeekPlanner: boolean
@@ -149,13 +141,11 @@ function clampInt(value: unknown, min: number, max: number): number | undefined 
  */
 export function migrateUiPrefs(ui: UiPrefs): UiPrefs {
   const next: UiPrefs = { ...ui }
-  // `defaultChatView` said which panel a NEW chat opened in; `workMode` says which of the
-  // two the app works in. Carrying the value over keeps a config that said Terminal
-  // opening terminals — the promotion is in what the rest of the UI now does with it.
-  if (next.workMode !== 'chat' && next.workMode !== 'terminal') {
-    const legacy = (ui as { defaultChatView?: unknown }).defaultChatView
-    next.workMode = legacy === 'terminal' ? 'terminal' : 'chat'
-  }
+  // Chat or terminal (`workMode`, and before it `defaultChatView`) stopped being a choice
+  // in 2.0.0: every chat is a terminal. A stored value means nothing now, so it goes.
+  const stale = next as UiPrefs & { workMode?: unknown; defaultChatView?: unknown }
+  delete stale.workMode
+  delete stale.defaultChatView
   if (next.mode !== 'system' && next.mode !== 'light' && next.mode !== 'dark') {
     next.mode = next.theme === 'light' ? 'light' : 'dark'
   }

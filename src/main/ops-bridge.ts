@@ -8,7 +8,7 @@
  * it. The token names the session; an unknown one is dropped without a reply, and a
  * connection is bound to the first token it uses.
  *
- * The relay holds no policy. Every `call` runs here the same pipeline the SDK chat runs
+ * The relay holds no policy. Every `call` runs here through the session's pipeline
  * (ops-session.ts `callOpsTool`): classify, log, ask, execute, log. If the relay were
  * tampered with, this side still gates.
  *

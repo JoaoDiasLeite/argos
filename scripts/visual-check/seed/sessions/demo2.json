@@ -2,7 +2,7 @@
   "id": "demo2",
   "name": "staging deploy",
   "projectPath": "C:/Users/demo/Projects/claude-gui",
-  "model": "claude-sonnet-4-6",
+  "provider": "claude",
   "hasTerminalActivity": true,
   "terminalStartedAt": 1783666800000,
   "createdAt": 1783666800000,

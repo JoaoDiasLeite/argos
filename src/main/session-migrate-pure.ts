@@ -196,3 +196,25 @@ export function migrateSession(
 
   return { session: next as MigratedSession, markdown }
 }
+
+/**
+ * A pre-2.0 session with nothing to export (a terminal chat, or one never sent) still
+ * carries `model` and the SDK settings. Give it a `provider` from its model and drop
+ * the rest, so the renderer only ever sees the 2.0 shape. null = already 2.0 (or has
+ * messages, which is migrateSession's case): nothing to do, so a second run is a no-op.
+ */
+export function upgradeSession(legacy: LegacySession): Record<string, unknown> | null {
+  if (Array.isArray(legacy.messages) && legacy.messages.length > 0) return null
+  const hasStale = STRIPPED_FIELDS.some((k) => k in legacy)
+  if (!hasStale && typeof legacy.provider === 'string') return null
+  const next: Record<string, unknown> = { ...legacy }
+  for (const key of STRIPPED_FIELDS) delete next[key]
+  const provider =
+    legacy.provider === 'claude' || legacy.provider === 'codex' || legacy.provider === 'gemini'
+      ? legacy.provider
+      : providerOf(legacy.model)
+  next.provider = provider
+  // Same rule as migrateSession: a non-Claude id in this slot is not resumable by Claude.
+  if (provider !== 'claude') delete next.claudeSessionId
+  return next
+}

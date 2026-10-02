@@ -109,3 +109,13 @@
   font-size: 11px;
   color: var(--text-2);
 }
+/* A pre-2.0 chat: where its exported transcript is. */
+.terminal-setup-archive {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 8px;
+  font-size: 12px;
+  color: var(--text-1);
+}

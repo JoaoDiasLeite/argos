@@ -239,3 +239,16 @@ export function forgetProjectPrefs(sourceId: string, encodedDir: string, realPat
   // is still there and its folder simply moved; the delete leaves them alone,
   // because the work outlives the project row.
 }
+
+// ─── Pre-2.0 chat migration (docs/TERMINAL_ONLY_PLAN.md §3) ──────────────────────
+
+const SESSION_MIGRATION_KEY = 'sessionMigration'
+
+/** What the last startup migration did; null before it has ever run. */
+export function getSessionMigration<T>(): T | null {
+  return storeGet<T | null>(SESSION_MIGRATION_KEY, null)
+}
+
+export function setSessionMigration(state: unknown): void {
+  storeSet(SESSION_MIGRATION_KEY, state)
+}

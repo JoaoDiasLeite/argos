@@ -19,7 +19,7 @@ export interface TrayActions {
 function buildMenu(actions: TrayActions, overlayShortcut: string): Menu {
   return Menu.buildFromTemplate([
     { label: 'Open Argos', click: actions.onShowMain },
-    { label: 'New chat', click: actions.onNewChat },
+    { label: 'New terminal', click: actions.onNewChat },
     {
       label: overlayShortcut ? `Quick launcher (${overlayShortcut})` : 'Quick launcher',
       click: actions.onToggleOverlay

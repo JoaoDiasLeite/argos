@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Session, AuthStatus, CCAccountStatus, ProviderAccountStatus, ProviderId, ModelInfo } from '../types'
-import { idFor as idForAccount, originOf, visibleSessions as visibleSessionsFor, AccountDefaults } from '../lib/account-scope'
+import { idFor as idForAccount, originOf, provOf, sessionProvider, visibleSessions as visibleSessionsFor, AccountDefaults } from '../lib/account-scope'
+import { CLI_PROVIDERS } from '../lib/cli-providers'
 import {
   buildPosixDistroMap,
   canonicalProjectPath,
@@ -14,25 +15,6 @@ import { SESSION_DRAG_TYPE } from '../lib/pane-drop'
 import FileTree from './FileTree'
 import './Sidebar.css'
 import './AccountPicker.css'
-
-const MODEL_LABELS: Record<string, string> = {
-  'claude-opus-4-8': 'Opus 4.8',
-  'claude-opus-4-7': 'Opus 4.7',
-  'claude-opus-4-6': 'Opus 4.6',
-  'claude-sonnet-4-6': 'Sonnet 4.6',
-  'claude-sonnet-4-5': 'Sonnet 4.5',
-  'claude-haiku-4-5': 'Haiku 4.5',
-  'claude-fable-5': 'Fable 5',
-}
-
-function shortModelLabel(id: string): string {
-  if (MODEL_LABELS[id]) return MODEL_LABELS[id]
-  // strip 'claude-' prefix, capitalize first word, keep the rest
-  const stripped = id.replace(/^claude-/, '')
-  return stripped
-    .replace(/-(\d)/, ' $1')
-    .replace(/^([a-z])/, (c) => c.toUpperCase())
-}
 
 // A small monochrome glyph shown before an account name to signal its provider —
 // simplified brand marks (Claude spark / Codex hexagon / Gemini sparkle), no colors,
@@ -432,7 +414,7 @@ export default function Sidebar({
       : selectedProvider === 'codex'
         ? codexAccountUsage?.[currentAccountId]
         : undefined
-  const visibleSessions = visibleSessionsFor(sessions, models, selectedProvider, currentAccountId, accountDefaults)
+  const visibleSessions = visibleSessionsFor(sessions, selectedProvider, currentAccountId, accountDefaults)
 
   // ── Session search ──────────────────────────────────────────────────────
   const [searchInput, setSearchInput] = useState('')
@@ -624,7 +606,11 @@ export default function Sidebar({
     const statusTitle =
       status === 'attention' ? 'Waiting for approval'
         : status === 'running' ? 'Running' : undefined
-    const modelLabel = s.model && s.model !== defaultModel ? shortModelLabel(s.model) : null
+    // The CLI, when it is not the one a new chat starts on.
+    const provider = sessionProvider(s)
+    const modelLabel = provider !== provOf(models, defaultModel)
+      ? (CLI_PROVIDERS.find((p) => p.id === provider)?.label ?? null)
+      : null
     // Where it runs beats which account it carries: a chat inside a distro or on a remote
     // host runs against the CLI login that lives there, so naming the managed account it
     // was created with would be a badge that is simply untrue (see originOf).

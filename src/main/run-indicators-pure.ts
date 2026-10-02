@@ -1,9 +1,7 @@
 /**
  * What the out-of-window indicators (taskbar progress, the status pill, the attention
  * badge) should do when a terminal's CLI starts or stops working (docs/TERMINAL_ONLY_PLAN.md
- * H5). Until the SDK chat goes, its runs (`activeRuns`) count beside the busy terminals.
- *
- * Pure: index.ts holds the set and does the Electron calls.
+ * H5). Pure: index.ts holds the set and does the Electron calls.
  */
 
 export type TerminalBusyChange =
@@ -14,17 +12,12 @@ export type TerminalBusyChange =
   /** No transition (a repeat, or an idle report for a terminal that was not busy). */
   | { kind: 'none'; total: number }
 
-/** How many things are working right now, the SDK runs and the busy terminals together. */
-export function runIndicatorCount(activeRuns: number, busyTerminals: ReadonlySet<string>): number {
-  return activeRuns + busyTerminals.size
-}
-
 /** Apply one `onBusy(id, busy)` to `set` and say what it changed. */
-export function noteTerminalBusy(set: Set<string>, id: string, busy: boolean, activeRuns: number): TerminalBusyChange {
+export function noteTerminalBusy(set: Set<string>, id: string, busy: boolean): TerminalBusyChange {
   const was = set.has(id)
   if (busy) set.add(id)
   else set.delete(id)
-  const total = runIndicatorCount(activeRuns, set)
+  const total = set.size
   if (busy && !was) return { kind: 'started', total }
   if (!busy && was) return { kind: 'finished', total }
   return { kind: 'none', total }

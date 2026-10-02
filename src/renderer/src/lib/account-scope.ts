@@ -6,9 +6,17 @@
 import { ModelInfo, ProviderId, Session } from '../types'
 
 // Resolve a model id to the provider that serves it (falls back to 'claude' for unknown
-// / legacy model ids that predate the model catalog).
+// / legacy model ids that predate the model catalog). For a session, ask sessionProvider.
 export function provOf(models: ModelInfo[], modelId?: string): ProviderId {
   return models.find((m) => (modelId ?? '').startsWith(m.id))?.provider ?? 'claude'
+}
+
+/**
+ * Which CLI a chat runs. Absent only on a file the startup migration could not rewrite
+ * (main's session-migrate), which was a Claude chat unless proven otherwise.
+ */
+export function sessionProvider(s: Pick<Session, 'provider'>): ProviderId {
+  return s.provider === 'codex' || s.provider === 'gemini' ? s.provider : 'claude'
 }
 
 // The app-wide default account per provider, as tracked in App.tsx state. Passed in
@@ -26,8 +34,8 @@ export interface AccountDefaults {
 // same way now. (Previously Codex fell through to the literal 'default' account instead
 // of codexDefaultAccountId, which could file/scope an unbound Codex chat under the wrong
 // account once a non-default account became the Codex default — see NEXT_FIXES #2.)
-export function acctOf(s: Session, models: ModelInfo[], defaults: AccountDefaults): string {
-  const p = provOf(models, s.model)
+export function acctOf(s: Session, defaults: AccountDefaults): string {
+  const p = sessionProvider(s)
   return p === 'codex'
     ? (s.codexAccountId ?? defaults.codexDefaultAccountId ?? 'default')
     : p === 'gemini'
@@ -82,13 +90,12 @@ export function idFor(
 }
 
 /**
- * Whether a chat has anything behind it: a terminal that has run, a Claude Code
- * conversation it is bound to (a resumed one, or a pre-2.0 chat after migration), or a
- * pre-2.0 transcript not migrated yet. The last clause is last on purpose — it goes when
- * `messages` leaves Session (B4).
+ * Whether a chat has anything behind it: a terminal that has run, a pre-2.0 transcript
+ * the migration exported, or a Claude Code conversation it is bound to (a resumed one,
+ * or a pre-2.0 chat after migration).
  */
 export function hasHistory(s: Session): boolean {
-  return !!s.hasTerminalActivity || !!s.claudeSessionId || (s.messages?.length ?? 0) > 0
+  return !!s.hasTerminalActivity || !!s.archivedTranscript || !!s.claudeSessionId
 }
 
 // Blank "New chat" drafts (see hasHistory) stay out of the list — the Sessions section
@@ -105,24 +112,19 @@ export function hasHistory(s: Session): boolean {
 // showing up in another's list reads as a leak between them. Its row says where it runs.
 export function visibleSessions(
   sessions: Session[],
-  models: ModelInfo[],
   selectedProvider: ProviderId,
   currentAccountId: string,
   defaults: AccountDefaults
 ): Session[] {
   return sessions.filter(
-    (s) =>
-      hasHistory(s) &&
-      provOf(models, s.model) === selectedProvider &&
-      acctOf(s, models, defaults) === currentAccountId
+    (s) => hasHistory(s) && sessionProvider(s) === selectedProvider && acctOf(s, defaults) === currentAccountId
   )
 }
 
 /**
  * A chat nothing has happened in yet — the only kind an account switch may rebind.
  *
- * A terminal chat keeps no transcript of its own, so this asks hasHistory rather than
- * counting messages. Treating a terminal chat as a blank draft moved it onto the account
+ * Treating a terminal chat as a blank draft moved it onto the account
  * just picked while it was still running there — relaunching its terminal under a login
  * its conversation doesn't exist on, and filing it under an account whose list you'd
  * already left.
@@ -132,8 +134,8 @@ export function isUnstarted(s: Session): boolean {
 }
 
 /** The provider and account a chat puts the sidebar on while it is the active chat. */
-export function scopeOf(s: Session, models: ModelInfo[], defaults: AccountDefaults): string {
-  return `${provOf(models, s.model)}:${acctOf(s, models, defaults)}`
+export function scopeOf(s: Session, defaults: AccountDefaults): string {
+  return `${sessionProvider(s)}:${acctOf(s, defaults)}`
 }
 
 /**
@@ -147,11 +149,8 @@ export function scopeOf(s: Session, models: ModelInfo[], defaults: AccountDefaul
 export function nextChatAfterClose(
   closed: Session,
   remaining: Session[],
-  models: ModelInfo[],
   defaults: AccountDefaults
 ): Session | undefined {
-  const scope = scopeOf(closed, models, defaults)
-  return remaining.find(
-    (s) => hasHistory(s) && scopeOf(s, models, defaults) === scope
-  )
+  const scope = scopeOf(closed, defaults)
+  return remaining.find((s) => hasHistory(s) && scopeOf(s, defaults) === scope)
 }

@@ -76,9 +76,12 @@ export default function Chat({
   if (session && (setup?.id !== session.id || setup.nonce !== newChatNonce)) {
     // Adjusting state during the render (rather than in an effect) is deliberate: an effect
     // runs after the commit that already mounted ChatTerminal and spawned its pty.
+    // A chat from before 2.0 (an SDK chat, its transcript exported at startup) always stops
+    // here until its first terminal: it has a folder, but opening it must not spawn a CLI.
+    const archivedOnly = !!session.archivedTranscript && !session.hasTerminalActivity
     const knowsWhereItRuns =
       !!session.projectPath || !!session.remoteHostId || !!session.wslDistro || !!session.hasTerminalActivity
-    setSetup({ id: session.id, nonce: newChatNonce, pending: !knowsWhereItRuns })
+    setSetup({ id: session.id, nonce: newChatNonce, pending: archivedOnly || !knowsWhereItRuns })
   }
   const needsTerminalSetup = !!session && setup?.id === session.id && setup.pending
   const termOpen = !!session && !needsTerminalSetup
@@ -147,16 +150,27 @@ export default function Chat({
       {session && needsTerminalSetup && (
         <div className="terminal-setup">
           {titleBlock}
-          <h2>Start a terminal</h2>
+          <h2>{session.claudeSessionId ? 'Resume in a terminal' : 'Start a terminal'}</h2>
           <p>
             Pick the CLI and where it runs — it starts there and can't be moved afterwards.
           </p>
+          {session.archivedTranscript && (
+            <div className="terminal-setup-archive">
+              <span>Argos chat from before 2.0 — transcript saved as Markdown</span>
+              <button className="btn-ghost small" onClick={() => void window.electronAPI.openChatExport(session.archivedTranscript)}>
+                Open
+              </button>
+              <button className="btn-ghost small" onClick={() => void window.electronAPI.openChatExport(session.archivedTranscript, true)}>
+                Show in folder
+              </button>
+            </div>
+          )}
           <ChatConfigBar session={session} onPatch={onPatchSession} />
           <button
             className="btn-primary terminal-setup-start"
             onClick={() => setSetup({ id: session.id, nonce: newChatNonce, pending: false })}
           >
-            Start terminal
+            {session.claudeSessionId ? 'Resume in terminal' : 'Start terminal'}
           </button>
           {!session.projectPath && !session.remoteHostId && (
             <span className="terminal-setup-hint">No folder chosen — it will start in your home folder.</span>

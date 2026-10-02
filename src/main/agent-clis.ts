@@ -57,8 +57,7 @@ function execCli(
 }
 
 /**
- * `account/read` over the app-server JSON-RPC protocol (see providers/
- * codex-app-server.ts for the full protocol writeup) — this is the only way
+ * `account/read` over the `codex app-server` JSON-RPC protocol: the only way
  * to get the logged-in email/plan; `codex login status` only says yes/no.
  * Reads cached local identity, so it works even with an expired token
  * (verified live: returned a real email/plan while this exact login's

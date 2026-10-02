@@ -6,93 +6,35 @@ export interface ToolCall {
   isError?: boolean
 }
 
-export interface MessageUsage {
-  inputTokens: number
-  outputTokens: number
-  cacheReadTokens: number
-  cacheCreationTokens: number
-  costUsd: number
-}
-
-export interface Message {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  thinking?: string
-  toolCalls?: ToolCall[]
-  timestamp: number
-  /** Set when this assistant turn ended in an error. */
-  error?: boolean
-  /** Token usage for this assistant turn (shown under the message). */
-  usage?: MessageUsage
-  /**
-   * Choices the owner made in an `AskUserQuestion`. When present this turn is the
-   * decision itself — drawn as one, not as the output of a tool.
-   */
-  decisions?: AskDecision[]
-  /**
-   * Down-scaled copies of the images sent with this turn, as data URLs.
-   *
-   * Thumbnails, not the originals. The full-size base64 goes to the model and is
-   * deliberately not kept, for the same reason an attached file's contents are not:
-   * a session file is rewritten on every message, and a few megabytes of base64 in
-   * it would be paid for on every single one. Enough to see what was sent — not
-   * enough to re-send it, which the re-run path already says it does not do.
-   */
-  imageThumbnails?: string[]
-}
-
 export interface Session {
-  runState?: 'running' | 'idle' | 'interrupted'
   id: string
   name: string
-  messages: Message[]
   projectPath?: string
-  /** Claude Code engine session id, used to resume the conversation. */
+  /** Which CLI this chat's terminal runs. Set once, before launch; the CLI's own `/model`
+   *  picks the model. Absent only on a file the startup migration could not rewrite. */
+  provider?: ProviderId
+  /** A Claude Code session id to resume in the terminal (a pre-2.0 chat, or one adopted
+   *  from Projects). Claude only. */
   claudeSessionId?: string
-  /** Model override for this session (falls back to the global default). */
-  model?: string
-  /** Run options carried onto the session for the SDK engine. */
-  systemPrompt?: string
-  permissionMode?: PermissionMode
-  allowedTools?: string[]
-  useMcp?: boolean
-  /** When true, skip per-tool approval prompts (auto-accept). */
-  autoApprove?: boolean
-  /** Light chat mode: send no tools (allowedTools:[]) to cut per-turn token cost. */
-  lightMode?: boolean
   /** If set, this chat runs on a remote SSH host instead of locally. */
   remoteHostId?: string
   remoteHostName?: string
   /** If set, this chat runs inside this WSL distro. */
   wslDistro?: string
-  /** Extra working directories exposed to the engine (Claude Code --add-dir). */
-  additionalDirs?: string[]
-  /** Run this chat inside a fresh git worktree of projectPath. */
-  useWorktree?: boolean
-  /** Resolved worktree cwd, created on first send so later turns reuse it. */
-  worktreePath?: string
-  /** Set once the embedded terminal has actually launched a CLI for this chat. Keeps a
-   *  chat driven entirely from the terminal (no `messages`) visible in the sidebar and
-   *  persisted to disk — see visibleSessions() in lib/account-scope.ts. */
+  /** Set once the embedded terminal has actually launched a CLI for this chat. Keeps it
+   *  visible in the sidebar and persisted to disk — see visibleSessions() in
+   *  lib/account-scope.ts. */
   hasTerminalActivity?: boolean
   /**
    * The Claude Code session id this chat's embedded terminal was told to use, assigned
    * before the CLI launches so Argos owns the link from the start rather than watching a
    * conversation it has no name for.
    *
-   * Kept separate from `claudeSessionId` on purpose. That one is handed to the engine as
-   * `resume`, and resuming an id no session has written yet fails the whole run — so an
-   * id that is only a *plan* cannot live in that field. It is promoted to
-   * `claudeSessionId` once a transcript for it actually exists on disk.
+   * Kept separate from `claudeSessionId` on purpose: resuming an id no session has
+   * written yet fails the launch, so an id that is only a *plan* cannot live in that
+   * field. It is promoted to `claudeSessionId` once a transcript for it exists on disk.
    */
   terminalSessionId?: string
-  /** True while this chat's messages are a copy of its Claude Code transcript rather than
-   *  Argos's own record of the turns it ran. Set by the terminal sync, cleared the moment a
-   *  turn is sent from Argos's composer — from then on Argos's transcript is the one being
-   *  written to and re-importing over it would throw away streaming state, tool calls and
-   *  errors the CLI's own record does not carry. */
-  ccSynced?: boolean
   /** Which Claude Code account (login) this chat runs under. Undefined = default account. */
   accountId?: string
   accountName?: string
@@ -110,30 +52,20 @@ export interface Session {
   /** When this chat's embedded terminal first came up, in ms. The lower bound on which
    *  Codex conversations can be this chat's. */
   terminalStartedAt?: number
-  /** Which Codex account this chat runs under, when its model is a Codex model. */
+  /** Which Codex account this chat runs under, when its provider is Codex. */
   codexAccountId?: string
   codexAccountName?: string
-  /** Which Gemini account this chat runs under, when its model is a Gemini model. */
+  /** Which Gemini account this chat runs under, when its provider is Gemini. */
   geminiAccountId?: string
   geminiAccountName?: string
-  /** Ops chat: the runbook folder this chat runs under. Claude only; local only. */
-  runbookPath?: string
-  /**
-   * Set when this session was forked from another chat. Drives the "branched from …"
-   * divider shown after the copied messages. `atMessageId` is the id of the last
-   * copied message (the branch point) in this session's transcript.
-   */
-  branchedFrom?: { name: string; atMessageId: string }
-  /** True when this chat's message list grew while it was not the one on screen — a
-   *  response arrived (or a terminal transcript caught up) that nobody has looked at
-   *  yet. Cleared the moment the chat is selected. */
+  /** A chat from before 2.0 (an SDK chat): the Markdown file its transcript was exported
+   *  to at startup. Such a chat stops at the setup pane instead of launching a CLI. */
+  archivedTranscript?: string
+  /** A short line for Home's Recent list. */
+  preview?: string
+  /** True when this chat had activity while it was not the one on screen. Cleared the
+   *  moment the chat is selected. */
   unread?: boolean
-  /** Accumulated usage across this chat's turns. */
-  costUsd?: number
-  inputTokens?: number
-  outputTokens?: number
-  cacheReadTokens?: number
-  cacheCreationTokens?: number
   createdAt: number
   updatedAt: number
 }
@@ -142,11 +74,6 @@ export interface FileNode {
   name: string
   path: string
   type: 'file' | 'directory'
-}
-
-export interface TermLine {
-  kind: 'user' | 'thinking' | 'tool' | 'result' | 'error' | 'info'
-  text: string
 }
 
 export type ProviderId = 'claude' | 'codex' | 'gemini'
@@ -206,8 +133,6 @@ export interface UiPrefs {
   /** Legacy three-step UI scale. Superseded by `uiFontSize`, honoured when it is absent. */
   fontSize: 'sm' | 'md' | 'lg'
   onboarded: boolean
-  /** Which panel new chats open in. */
-  workMode: 'chat' | 'terminal'
   /** Planner · Week is offered. Off by default: Planner opens on the sprint board. */
   showWeekPlanner: boolean
 
@@ -698,16 +623,6 @@ export interface ImageAttachment {
   preview: string
 }
 
-export interface FileAttachment {
-  kind: 'file'
-  name: string
-  size: number
-  /** Full text content, delivered inline with the prompt (not persisted on the Message). */
-  content: string
-}
-
-export type Attachment = ImageAttachment | FileAttachment
-
 export type SshAuthType = 'password' | 'key' | 'agent'
 
 export interface SshHostPublic {
@@ -828,30 +743,6 @@ export interface AccountOption {
   loggedIn: boolean
   email?: string
   plan?: string
-}
-
-export type AgentEvent =
-  | { appSessionId: string; kind: 'system'; claudeSessionId?: string; tools: string[] }
-  | { appSessionId: string; kind: 'text'; content: string }
-  | { appSessionId: string; kind: 'thinking'; content: string }
-  | { appSessionId: string; kind: 'tool-use'; tool: string; input: unknown; toolId: string }
-  | { appSessionId: string; kind: 'tool-result'; toolId: string; content: string; isError: boolean }
-
-export interface AgentDone {
-  appSessionId: string
-  claudeSessionId?: string
-  costUsd: number
-  isError: boolean
-  errorText?: string
-  inputTokens?: number
-  outputTokens?: number
-  cacheReadTokens?: number
-  cacheCreationTokens?: number
-}
-
-export interface AgentError {
-  appSessionId: string
-  error: string
 }
 
 export interface ApprovalRequest {
@@ -1072,15 +963,6 @@ export interface Sprint {
   updatedAt: number
 }
 
-// ─── Slash commands & skills ──────────────────────────────────────────────────
-
-export interface SlashCommand {
-  name: string
-  kind: 'command' | 'skill'
-  scope: 'user' | 'project'
-  description?: string
-}
-
 export interface PlannerAssistResult {
   ok: boolean
   data?: unknown
@@ -1245,7 +1127,7 @@ declare global {
       notifyHookInstall: () => Promise<NotifyHookInstallResult>
 
       // Quick-launcher overlay — calls made by the OVERLAY window
-      overlaySubmit: (payload: { prompt: string; quick?: boolean }) => void
+      overlaySubmit: (payload: { prompt: string }) => void
       overlayOpenSession: (sessionId: string) => void
       overlayOpenMain: () => void
       overlayHide: () => void
@@ -1294,39 +1176,8 @@ declare global {
       // Codex plan-usage badge (the Codex analog of ccPlanUsage below), keyed by account id
       codexUsage: (force?: boolean) => Promise<Record<string, CodexAccountUsage>>
 
-      // Agent
-      sendAgent: (payload: {
-        appSessionId: string
-        claudeSessionId?: string
-        prompt: string
-        projectPath?: string
-        model?: string
-        systemPrompt?: string
-        permissionMode?: PermissionMode
-        allowedTools?: string[]
-        useMcp?: boolean
-        approvalMode?: 'ask' | 'auto'
-        images?: { mediaType: string; data: string }[]
-        files?: { name: string; content: string }[]
-        remoteHostId?: string
-        wslDistro?: string
-        additionalDirs?: string[]
-        useWorktree?: boolean
-        worktreePath?: string
-        accountId?: string
-        codexAccountId?: string
-        geminiAccountId?: string
-        /** Ops chat: run this turn under the runbook in this folder (ops-remote profile). */
-        runbookPath?: string
-      }) => void
-      stopAgent: (appSessionId: string) => Promise<{ stopped: boolean }>
-      onAgentEvent: (cb: (data: AgentEvent) => void) => () => void
-      onAgentDone: (cb: (data: AgentDone) => void) => () => void
-      onAgentError: (cb: (data: AgentError) => void) => () => void
+      // Approvals (ops terminals)
       onApprovalRequest: (cb: (data: ApprovalRequest) => void) => () => void
-      onAgentWorktree: (
-        cb: (data: { appSessionId: string; path: string; branch?: string }) => void
-      ) => () => void
       respondApproval: (payload: {
         approvalId: string
         allow: boolean
@@ -1466,13 +1317,6 @@ declare global {
       mcpList: () => Promise<McpServer[]>
       mcpUpsert: (name: string, cfg: Record<string, unknown>) => Promise<McpServer[]>
       mcpRemove: (name: string) => Promise<McpServer[]>
-
-      // Chat compaction
-      summarizeChat: (payload: {
-        transcript: string
-        model?: string
-        accountId?: string
-      }) => Promise<{ ok: boolean; summary?: string; error?: string }>
 
       // Planner
       plannerList: () => Promise<string[]>
@@ -1701,11 +1545,15 @@ declare global {
       listSessions: () => Promise<Session[]>
       saveSession: (session: Session) => Promise<{ success: boolean }>
       deleteSession: (id: string) => Promise<{ success: boolean }>
-      exportSession: (session: Session, format: 'md' | 'html') => Promise<{ saved: boolean; filePath?: string }>
-      exportMarkdown: (defaultFileName: string, content: string) => Promise<{ saved: boolean; path?: string }>
-
-      // Commands & skills
-      commandsList: (projectPath?: string) => Promise<SlashCommand[]>
+      /** What the startup migration of pre-2.0 chats did (null before it ever ran), and
+       *  the folder their Markdown transcripts are in. */
+      sessionMigrationInfo: () => Promise<{
+        state: { version: string; ranAt: number; exported: number; failed: { id: string; error: string }[] } | null
+        exportsDir: string
+      }>
+      /** Open a pre-2.0 chat's transcript (`reveal`: show it in its folder), or with no
+       *  path the exports folder itself. Only paths inside that folder. */
+      openChatExport: (filePath?: string, reveal?: boolean) => Promise<{ ok: boolean; error?: string }>
 
       // Terminal (embedded PTY)
       terminalCreate: (id: string, opts: TerminalCreateOptions) => Promise<TerminalCreateResult>

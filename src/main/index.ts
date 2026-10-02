@@ -1,6 +1,6 @@
 // First, before anything reads userData: dev moves it aside. See dev-instance.ts.
 import { isDevInstance, syncDevFromProd } from './dev-instance'
-import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions, clipboard, nativeTheme } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions, clipboard, nativeTheme, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
@@ -8,6 +8,7 @@ import { readClipboardFiles } from './clipboard-files'
 import { resolvePolicy } from './ai-policy'
 import { getEngine } from './providers/registry'
 import { collectText } from './providers/collect'
+import { buildPrompt } from './headless-prompt'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -72,19 +73,15 @@ import { Forge, forgeFromRemote, pickForgeServer } from './forge-pure'
 import {
   getStatus,
   getLog,
-  createWorktree,
   getRepoName,
   getRemoteUrl
 } from './git'
-import { listCommands } from './commands'
 import {
   listHosts,
   saveHost,
   deleteHost,
   testConnection,
   testClaude,
-  runRemote,
-  stopRemote,
   SshHost
 } from './ssh'
 import { listSshKeys, generateKey, readPublicKey } from './ssh-keys'
@@ -109,20 +106,17 @@ import {
   remoteShellKill,
   remoteShellKillAll
 } from './remote-shell'
-import { listDistros, testDistro, testDistroClaude, runWsl, stopWsl, runWslOneShot, uncToWslPath, wslHistory, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths } from './wsl'
+import { listDistros, testDistro, testDistroClaude, runWslOneShot, uncToWslPath, wslHistory, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
-import { needsApproval } from './tool-approval-pure'
 import { createLedger, type OpsLedger } from './ops-audit'
 import { createExecutor, createSshBackend, type OpsExecutor } from './ops-exec'
 import { createFakeBackend } from './ops-backend-fake'
 import { loadRunbook, readScript } from './ops-runbook'
-import { finishOpsRun, prepareOpsRun, type ApprovalOpsContext, type OpsRunContext } from './ops-run'
-import { bridgeSessionFor, openOpsSession } from './ops-session'
+import { bridgeSessionFor, finishOpsRun, openOpsSession, type ApprovalOpsContext, type OpsRunContext } from './ops-session'
 import { newOpsToken, registerToken, revokeToken, startOpsBridge, stopOpsBridge } from './ops-bridge'
 import { removeOpsMcpConfig, writeOpsMcpConfig } from './ops-mcp-config'
 import { opsRelayCommand, type OpsCli } from './ops-mcp-config-pure'
 import { OPS_MCP_FLAG, runOpsRelay } from './ops-relay'
-import type { CanUseTool } from './providers/types'
 import { OPS_MAX_TIMEOUT_MS } from './ops-types'
 import { posixToWslUnc } from './local-fs-pure'
 import {
@@ -135,6 +129,8 @@ import {
   setProjectArchived,
   reloadStore
 } from './store'
+import { getSessionMigration, setSessionMigration } from './store'
+import { migrateLegacySessions, type MigrationState } from './session-migrate'
 import {
   loadAccounts,
   listAccountStatus,
@@ -181,7 +177,7 @@ import {
 import { createOverlayWindow, hideOverlay, toggleOverlay, registerOverlayShortcut, reregisterOverlayShortcut, overlayShortcut } from './overlay'
 import { createToastWindow, showToast, hideToast, sendToToast } from './toast'
 import { createPillWindow, showPill, hidePill, hidePillSoon, sendToPill } from './pill'
-import { noteTerminalBusy, runIndicatorCount } from './run-indicators-pure'
+import { noteTerminalBusy } from './run-indicators-pure'
 import { successBadge, errorBadge, approvalBadge } from './badges'
 import { createTray, updateTrayShortcutLabel } from './tray'
 import { initUpdater, getUpdaterState, checkNow, quitAndInstall } from './updater'
@@ -318,26 +314,16 @@ function routeLaunchAction(action: LaunchAction | null): void {
   }
 }
 
-// In-flight agent runs keyed by app session id, so we can stop them.
-const activeRuns = new Map<string, AbortController>()
-
 // Terminals whose CLI is working right now, fed from terminal:create's onBusy (plan H5).
-// They drive the same out-of-window indicators as activeRuns. (Not `busyTerminals`:
-// that is terminal.ts's own list, which the renderer seeds itself from.)
+// They drive the out-of-window indicators: taskbar progress, the pill, the attention
+// badge. (Not `busyTerminals`: that is terminal.ts's own list, which the renderer
+// seeds itself from.)
 const busyTerminalSet = new Set<string>()
 
-/** SDK runs plus busy terminals: what the taskbar, the pill and the hide/minimize cue count. */
+/** What the taskbar, the pill and the hide/minimize cue count. */
 function runsInFlight(): number {
-  return runIndicatorCount(activeRuns.size, busyTerminalSet)
+  return busyTerminalSet.size
 }
-
-// The provider that last ran each app session. A resume token is provider-specific
-// (a Claude session id ≠ a Codex thread id ≠ a Gemini session id), so if a session
-// switches provider mid-conversation we must NOT feed the old provider's token to
-// the new engine — we start it fresh instead. (Reload-then-immediately-switch can't
-// be detected here since the token's origin provider isn't persisted; that rare
-// case falls back to the engine rejecting an unknown token.)
-const sessionProvider = new Map<string, string>()
 
 // True while the main window is destroyed/hidden/minimized/unfocused. When a run
 // needs attention (approval, completion) in this state we surface it out-of-window
@@ -352,7 +338,7 @@ function mainWindowInactive(): boolean {
   )
 }
 
-// Taskbar progress: an indeterminate bar while any run is in flight, cleared to
+// Taskbar progress: an indeterminate bar while any terminal is working, cleared to
 // none at zero. setProgressBar is a no-op on unsupported platforms — safe to call.
 function updateRunIndicators(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return
@@ -386,9 +372,34 @@ function resolveApprovalEverywhere(approvalId: string): void {
 }
 
 const sessionsDir = path.join(app.getPath('userData'), 'sessions')
+// Where the pre-2.0 migration puts each SDK chat's transcript, and its original JSON.
+const chatExportsDir = path.join(app.getPath('userData'), 'exports', 'chats')
+const sessionsBackupDir = path.join(app.getPath('userData'), 'sessions-pre-2.0')
 
 function ensureDirs(): void {
   if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true })
+}
+
+/**
+ * The pre-2.0 chat migration (plan §3): started once at startup, right after ensureDirs.
+ * session:list waits on it, so the renderer never sees a session in the old shape.
+ * Never rejects: a file that fails is left as it was and retried next launch.
+ */
+let sessionsMigrated: Promise<void> = Promise.resolve()
+
+function startSessionMigration(): void {
+  sessionsMigrated = migrateLegacySessions({
+    sessionsDir,
+    backupDir: sessionsBackupDir,
+    exportsDir: chatExportsDir,
+    writeState: (state) => setSessionMigration(state)
+  })
+    .then((r) => {
+      if (r.exported || r.upgraded || r.failed.length) {
+        console.log(`[sessions] pre-2.0 migration: ${r.exported} exported, ${r.upgraded} upgraded, ${r.failed.length} failed`)
+      }
+    })
+    .catch((e) => console.warn('[sessions] pre-2.0 migration failed:', e))
 }
 
 /**
@@ -580,6 +591,7 @@ app.whenReady().then(async () => {
   // notification clicks to this checkout's electron.exe.
   if (!is.dev) app.setAsDefaultProtocolClient(PROTOCOL)
   ensureDirs()
+  startSessionMigration()
   loadAuthState()
   // A Claude Code self-update that renamed the CLI but never wrote the replacement leaves every
   // launch failing with a raw shell error (most visibly in a chat terminal). Put it back before
@@ -669,7 +681,7 @@ app.whenReady().then(async () => {
   // Independent of the toggle: clear the entries left behind under the app's former name.
   if (!is.dev) void removeLegacyExplorerContextMenu()
 
-  // Windows Jump List (recent projects + New chat), refreshed on save below.
+  // Windows Jump List (recent projects + New terminal), refreshed on save below.
   refreshJumpList()
 
   // A --folder / --new-chat first launch (Explorer menu or Jump List while the app
@@ -741,11 +753,11 @@ ipcMain.on('pill:open-main', () => {
   hidePill()
   showMainWindow()
 })
-ipcMain.on('overlay:submit', (_, payload: { prompt: string; quick?: boolean }) => {
+ipcMain.on('overlay:submit', (_, payload: { prompt: string }) => {
   if (!payload || typeof payload.prompt !== 'string' || !payload.prompt.trim()) return
   hideOverlay()
   showMainWindow()
-  sendToMainWindow('app:overlay-prompt', { prompt: payload.prompt, quick: !!payload.quick })
+  sendToMainWindow('app:overlay-prompt', { prompt: payload.prompt })
 })
 ipcMain.on('overlay:open-session', (_, sessionId: string) => {
   if (typeof sessionId !== 'string' || !sessionId) return
@@ -1138,94 +1150,7 @@ ipcMain.handle('ops:terminal-session', async (_, terminalId: string, runbookPath
   return opening
 })
 
-// ─── Agent run ─────────────────────────────────────────────────────────────
-
-interface SendPayload {
-  appSessionId: string
-  claudeSessionId?: string
-  prompt: string
-  projectPath?: string
-  model?: string
-  systemPrompt?: string
-  permissionMode?: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan'
-  allowedTools?: string[]
-  useMcp?: boolean
-  /**
-   * Light mode = full SDK isolation: no tools, no MCP, and no filesystem settings
-   * (so global plugin/skill marketplaces like superpowers never load). Normal chats
-   * still skip the `user` settings tier to avoid dragging those plugins into context.
-   */
-  lightMode?: boolean
-  /** 'ask' = prompt before mutating tools; 'auto' = current auto-accept behavior. */
-  approvalMode?: 'ask' | 'auto'
-  /** Pasted/attached images to include with this turn. */
-  images?: { mediaType: string; data: string }[]
-  /** Attached text files — appended to the prompt as delimited blocks. */
-  files?: { name: string; content: string }[]
-  /** If set, run on this remote SSH host instead of locally. */
-  remoteHostId?: string
-  /** If set, run inside this WSL distro instead of locally. */
-  wslDistro?: string
-  /** Extra working directories exposed to the engine (Claude --add-dir). */
-  additionalDirs?: string[]
-  /** Run this local chat inside a fresh git worktree of projectPath. */
-  useWorktree?: boolean
-  /** Previously-created worktree cwd for this chat — reused across turns. */
-  worktreePath?: string
-  /** Which Claude Code account (config dir) to run under. Undefined = machine default. */
-  accountId?: string
-  /** Which Codex account to run under, when the active model is a Codex model. */
-  codexAccountId?: string
-  /** Which Gemini account to run under, when the active model is a Gemini model. */
-  geminiAccountId?: string
-  /**
-   * Ops chat: the runbook folder this turn runs under (docs/OPS_AGENT_PLAN.md). Switches
-   * the run to the ops-remote profile, the ops MCP server and the gate's canUseTool, and
-   * ignores every tool, MCP, prompt and approval setting above.
-   */
-  runbookPath?: string
-}
-
-/**
- * Append attached text files to the prompt as clearly delimited blocks, AFTER the
- * user's own text. Works for both the plain-string and structured (image) paths.
- */
-function appendFiles(text: string, files: { name: string; content: string }[] | undefined): string {
-  if (!files || files.length === 0) return text
-  const blocks = files
-    .map((f) => `--- Attached file: ${f.name} ---\n${f.content}\n--- End of ${f.name} ---`)
-    .join('\n\n')
-  return text ? `${text}\n\n${blocks}` : blocks
-}
-
-/**
- * Build the `prompt` for query(). A plain string is the proven fast path; when images are
- * attached we must use the structured streaming-input form (one user message with text +
- * image content blocks). The generator completing signals end-of-input so the run finishes.
- * Attached text files are folded into the text portion in either case.
- */
-function buildPrompt(
-  text: string,
-  images: { mediaType: string; data: string }[] | undefined,
-  files: { name: string; content: string }[] | undefined,
-  sessionId: string
-): string | AsyncIterable<unknown> {
-  const fullText = appendFiles(text, files)
-  if (!images || images.length === 0) return fullText
-  const content: unknown[] = [{ type: 'text', text: fullText }]
-  for (const img of images) {
-    content.push({ type: 'image', source: { type: 'base64', media_type: img.mediaType, data: img.data } })
-  }
-  async function* gen(): AsyncIterable<unknown> {
-    yield {
-      type: 'user',
-      message: { role: 'user', content },
-      parent_tool_use_id: null,
-      session_id: sessionId
-    }
-  }
-  return gen()
-}
+// ─── Approvals (ops) ──────────────────────────────────────────────────────────
 
 function send(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload)
@@ -1327,390 +1252,6 @@ ipcMain.handle('ops:secret-response', (_, payload: { requestId: string; value: s
   const resolver = payload && typeof payload.requestId === 'string' ? pendingSecrets.get(payload.requestId) : undefined
   if (resolver) resolver(typeof payload.value === 'string' ? payload.value : null)
   return { ok: true }
-})
-
-/** Forward a headless backend's event to the renderer. */
-function relayAgentEvent(e: Record<string, unknown>): void {
-  send('agent:event', e)
-}
-
-ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
-  const { appSessionId, claudeSessionId, prompt, projectPath } = payload
-
-  // Remote/WSL runs take a plain prompt string (no structured image path), so fold any
-  // attached text files straight into the prompt text here.
-  const promptWithFiles = appendFiles(prompt, payload.files)
-
-  // An ops chat runs here, on the local engine, and reaches servers only through the
-  // gated ops tools. A remote or WSL transport would run the CLI with no gate at all, so
-  // the combination is refused rather than quietly dropping the runbook.
-  if (payload.runbookPath && (payload.remoteHostId || payload.wslDistro)) {
-    send('agent:error', { appSessionId, error: 'Ops chats run locally; a runbook cannot be used on a remote or WSL chat.' })
-    return
-  }
-
-  // Headless remote transports cannot pause at individual tools. Ask for the
-  // whole run explicitly, without changing the session's permission preference.
-  if ((payload.remoteHostId || payload.wslDistro) && payload.approvalMode !== 'auto') {
-    const gate = new AbortController()
-    activeRuns.set(appSessionId, gate)
-    updateRunIndicators()
-    const decision = await requestToolApproval(appSessionId, 'RemoteRun', {
-      target: payload.wslDistro || payload.remoteHostId,
-      folder: projectPath || 'Remote home directory',
-      prompt,
-      permissions: 'This run can edit files. Per-tool approvals are unavailable on this transport; commands follow the remote CLI policy.'
-    }, gate.signal)
-    activeRuns.delete(appSessionId)
-    updateRunIndicators()
-    if (!decision.allow || gate.signal.aborted) {
-      send('agent:error', { appSessionId, error: 'Remote run was not approved.' })
-      return
-    }
-  }
-
-  // Remote host: drive the remote machine's Claude Code over SSH instead of the local SDK.
-  if (payload.remoteHostId) {
-    runRemote(appSessionId, payload.remoteHostId, promptWithFiles, payload.model, claudeSessionId, projectPath, {
-      onEvent: relayAgentEvent,
-      onDone: (d) => send('agent:done', { appSessionId, ...d }),
-      onError: (msg) => send('agent:error', { appSessionId, error: msg })
-    })
-    return
-  }
-
-  // WSL distro: drive that distro's Claude Code via wsl.exe.
-  if (payload.wslDistro) {
-    runWsl(appSessionId, payload.wslDistro, promptWithFiles, payload.model, claudeSessionId, projectPath, undefined, {
-      onEvent: relayAgentEvent,
-      onDone: (d) => send('agent:done', { appSessionId, ...d }),
-      onError: (msg) => send('agent:error', { appSessionId, error: msg })
-    })
-    return
-  }
-
-  const abort = new AbortController()
-  activeRuns.set(appSessionId, abort)
-  updateRunIndicators()
-
-  // Surface background activity in the status pill if the app isn't in view. Display
-  // is best-effort — never let it interfere with the run.
-  try {
-    if (mainWindowInactive()) {
-      showPill()
-      sendToPill('pill:update', {
-        state: 'running',
-        sessionName: prompt.slice(0, 40),
-        tool: null
-      })
-    }
-  } catch {
-    /* pill is decorative — ignore any failure */
-  }
-
-  // Worktree: a `useWorktree` chat runs inside a fresh git worktree of projectPath. Create
-  // it lazily on the first send, reuse it on later turns (worktreePath), and notify the
-  // renderer so it persists the path onto the session. Best-effort — fall back to the repo
-  // root if creation fails, so a run never dies over a worktree hiccup.
-  const opsMode = !!payload.runbookPath
-  let effectiveCwd = projectPath
-  if (!opsMode && payload.useWorktree && projectPath && fs.existsSync(projectPath)) {
-    if (payload.worktreePath && fs.existsSync(payload.worktreePath)) {
-      effectiveCwd = payload.worktreePath
-    } else {
-      const wt = await createWorktree(projectPath, appSessionId)
-      if (wt.ok && wt.path) {
-        effectiveCwd = wt.path
-        send('agent:worktree', { appSessionId, path: wt.path, branch: wt.branch })
-      }
-    }
-  }
-
-  // An ops run's cwd is the runbook folder: Read/Grep/Glob may look there and nowhere else.
-  const runbookDir = payload.runbookPath ? path.resolve(payload.runbookPath) : undefined
-  const cwd = runbookDir ?? (effectiveCwd && fs.existsSync(effectiveCwd) ? effectiveCwd : os.homedir())
-  const policy = resolvePolicy({
-    profile: opsMode ? 'ops-remote' : payload.lightMode ? 'interactive-light' : 'interactive-chat',
-    requestedModel: payload.model
-  })
-
-  // Account: a non-default account points the engine at its own CLAUDE_CONFIG_DIR (its own
-  // subscription login). Strip any API key so the account's OAuth login is what's used.
-  const env = buildSubprocessEnv()
-  const configDir = accountConfigDir(payload.accountId)
-  if (configDir) {
-    env.CLAUDE_CONFIG_DIR = configDir
-    delete env.ANTHROPIC_API_KEY
-  }
-  const mcpServers = !opsMode && payload.useMcp ? mcpServersForProject(projectPath) : undefined
-  const askMode = payload.approvalMode !== 'auto' && payload.permissionMode !== 'bypassPermissions'
-
-  // Ops: load the runbook, check the hosts, log run.start, and get the gate's canUseTool
-  // and the ops MCP server. Any refusal ends the turn here, before the model is called.
-  let ops: { ctx: OpsRunContext; systemAppend: string; mcpServer: unknown; canUseTool: CanUseTool } | null = null
-  if (payload.runbookPath) {
-    const fail = (error: string): void => {
-      activeRuns.delete(appSessionId)
-      updateRunIndicators()
-      if (activeRuns.size === 0) hidePillSoon(4000)
-      flagAttention('error')
-      send('agent:error', { appSessionId, error })
-    }
-    if (providerFor(policy.model) !== 'claude') {
-      fail('Ops chats run on Claude only.')
-      return
-    }
-    const prepared = await prepareOpsRun({
-      appSessionId,
-      runbookPath: payload.runbookPath,
-      model: policy.model,
-      ...(payload.accountId ? { account: payload.accountId } : {}),
-      ledger: getOpsLedger(),
-      executor: getOpsExecutor(),
-      abort,
-      loadRunbook,
-      readScript,
-      hostAddress: opsHostAddress,
-      ask: async ({ tool, input, ops: context }) => {
-        const d = await requestToolApproval(appSessionId, tool, input, abort.signal, context)
-        return { allow: d.allow, ...(d.stop ? { stop: true } : {}) }
-      },
-      askSecret: (req) => requestOpsSecret(appSessionId, req, abort.signal),
-      onEvent: (line) => send('ops:event', { appSessionId, runId: line.event.runId, line })
-    })
-    if (!prepared.ok) {
-      fail(prepared.error)
-      return
-    }
-    if (abort.signal.aborted) {
-      // Stopped while the hosts were being checked.
-      await finishOpsRun(prepared.ctx, { ok: false, costUsd: 0, aborted: true })
-      fail('The ops run was stopped before it started.')
-      return
-    }
-    ops = prepared
-    // A tool call may wait in the per-host queue and then run for the policy's timeout;
-    // the CLI's default 60 s wait on an in-process MCP call would cut it off first.
-    env.CLAUDE_CODE_STREAM_CLOSE_TIMEOUT ??= String(2 * OPS_MAX_TIMEOUT_MS)
-    env.MCP_TOOL_TIMEOUT ??= String(2 * OPS_MAX_TIMEOUT_MS)
-  }
-  const opsCtx = ops?.ctx ?? null
-  /** Log run.end for an ops run; a no-op otherwise, and only the first call counts. */
-  const endOps = async (r: Parameters<typeof finishOpsRun>[1]): Promise<void> => {
-    if (opsCtx) await finishOpsRun(opsCtx, r)
-  }
-
-  // In 'ask' mode, prompt the renderer before any tool that is not on the read-only
-  // allowlist runs (see tool-approval-pure.ts for why it is an allowlist).
-  const canUseTool = askMode
-    ? async (toolName: string, input: Record<string, unknown>) => {
-        if (!needsApproval(toolName)) {
-          return { behavior: 'allow' as const, updatedInput: input }
-        }
-        const approvalId = nextApprovalId()
-        const req = { appSessionId, approvalId, tool: toolName, input }
-        send('agent:approval-request', req)
-        // If the main window can't show the modal right now (hidden/unfocused in the
-        // tray), also surface the request in the always-on-top toast and cue the
-        // taskbar, so the run doesn't stall where nobody can see it.
-        if (mainWindowInactive()) {
-          toastApprovals.add(approvalId)
-          sendToToast('toast:approval', req)
-          showToast()
-          flagAttention('approval')
-        }
-        const decision = await new Promise<ApprovalDecision>((resolve) => {
-          pendingApprovals.set(approvalId, resolve)
-          abort.signal.addEventListener('abort', () => {
-            if (pendingApprovals.delete(approvalId)) {
-              resolveApprovalEverywhere(approvalId)
-              resolve({ allow: false })
-            }
-          })
-        })
-        return decision.allow
-          ? { behavior: 'allow' as const, updatedInput: decision.updatedInput ?? input }
-          : { behavior: 'deny' as const, message: 'Denied by user.' }
-      }
-    : undefined
-
-  // Drop a resume token that belongs to a different provider than this run targets.
-  const providerId = providerFor(policy.model)
-  // Non-Claude accounts have no CLAUDE_CONFIG_DIR equivalent to fall back on — inject
-  // CODEX_HOME when the active model is Codex and needs one. Gemini's login lives in the
-  // OS keyring as a single machine-wide account, so providerAccountEnv('gemini', ...)
-  // always returns {} and no env override is injected for it.
-  if (providerId === 'codex') Object.assign(env, providerAccountEnv('codex', payload.codexAccountId))
-  else if (providerId === 'gemini') Object.assign(env, providerAccountEnv('gemini', payload.geminiAccountId))
-  const prevProvider = sessionProvider.get(appSessionId)
-  const resumeToken =
-    claudeSessionId && (!prevProvider || prevProvider === providerId) ? claudeSessionId : undefined
-  sessionProvider.set(appSessionId, providerId)
-
-  // Whether the run ended in error, so the pill's grace period can be longer for
-  // failures (set in the catch / cleared on the normal completion path).
-  let runErrored = false
-  try {
-    const stream = getEngine(providerId).run({
-      prompt: buildPrompt(prompt, payload.images, payload.files, claudeSessionId ?? '') as string,
-      model: policy.model,
-      cwd,
-      env,
-      abortController: abort,
-      includePartialMessages: true,
-      settingSources: policy.settingSources,
-      ...(ops
-        ? {
-            // The gate's canUseTool on every turn, whatever the chat's ask/auto toggle says
-            // (plan §6): mutate+auto is what policy.json already expresses.
-            permissionMode: 'default' as const,
-            canUseTool: ops.canUseTool,
-            ...(policy.systemPrompt ? { systemPrompt: { ...policy.systemPrompt, append: ops.systemAppend } } : {}),
-            ...(policy.disallowedTools ? { disallowedTools: policy.disallowedTools } : {}),
-            ...(policy.maxTurns !== undefined ? { maxTurns: policy.maxTurns } : {}),
-            additionalDirectories: [cwd],
-            mcpServers: { ops: ops.mcpServer }
-          }
-        : {
-            permissionMode: askMode ? ('default' as const) : payload.permissionMode ?? 'acceptEdits',
-            ...(canUseTool ? { canUseTool } : {}),
-            // A custom agent's prompt replaces Claude Code's; otherwise take whatever
-            // the profile decided (see CLAUDE_CODE_PROMPT in ai-policy.ts).
-            ...(payload.systemPrompt
-              ? { systemPrompt: payload.systemPrompt }
-              : policy.systemPrompt
-                ? { systemPrompt: policy.systemPrompt }
-                : {}),
-            ...(payload.allowedTools ? { allowedTools: payload.allowedTools } : {}),
-            ...(payload.additionalDirs && payload.additionalDirs.length
-              ? { additionalDirectories: payload.additionalDirs.filter((d) => fs.existsSync(d)) }
-              : {}),
-            ...(mcpServers && Object.keys(mcpServers).length
-              ? { mcpServers: mcpServers as Record<string, never> }
-              : {})
-          }),
-      ...(resumeToken ? { resume: resumeToken } : {})
-    })
-
-    let capturedSessionId = claudeSessionId
-
-    for await (const message of stream) {
-      switch (message.type) {
-        case 'init': {
-          if (message.sessionId) capturedSessionId = message.sessionId
-          send('agent:event', {
-            appSessionId,
-            kind: 'system',
-            claudeSessionId: capturedSessionId,
-            tools: message.tools
-          })
-          break
-        }
-
-        case 'text-delta': {
-          send('agent:event', { appSessionId, kind: 'text', content: message.text })
-          break
-        }
-
-        case 'thinking-delta': {
-          send('agent:event', { appSessionId, kind: 'thinking', content: message.text })
-          break
-        }
-
-        case 'tool-use': {
-          send('agent:event', {
-            appSessionId,
-            kind: 'tool-use',
-            tool: message.name,
-            input: message.input,
-            toolId: message.id
-          })
-          // Cheap live status for the pill; the hidden window just ignores it.
-          sendToPill('pill:update', { state: 'running', tool: message.name })
-          break
-        }
-
-        case 'tool-result': {
-          send('agent:event', {
-            appSessionId,
-            kind: 'tool-result',
-            toolId: message.toolUseId,
-            content: message.content,
-            isError: message.isError
-          })
-          break
-        }
-
-        case 'result': {
-          if (message.sessionId) capturedSessionId = message.sessionId
-          await endOps({
-            ok: !message.isError,
-            costUsd: message.costUsd,
-            usage: message.usage,
-            ...(abort.signal.aborted ? { aborted: true } : {}),
-            ...(message.isError && message.errorText ? { error: message.errorText } : {})
-          })
-          // Cue the taskbar if the user has stepped away while this run finished.
-          flagAttention(message.isError ? 'error' : 'success')
-          sendToPill('pill:update', { state: message.isError ? 'error' : 'done' })
-          send('agent:done', {
-            appSessionId,
-            claudeSessionId: capturedSessionId,
-            costUsd: message.costUsd,
-            isError: message.isError,
-            errorText: message.errorText,
-            inputTokens: message.usage.inputTokens,
-            outputTokens: message.usage.outputTokens,
-            cacheReadTokens: message.usage.cacheReadTokens,
-            cacheCreationTokens: message.usage.cacheCreationTokens
-          })
-          break
-        }
-
-        case 'error': {
-          await endOps({ ok: false, costUsd: 0, error: message.message, ...(abort.signal.aborted ? { aborted: true } : {}) })
-          flagAttention('error')
-          send('agent:error', { appSessionId, error: message.message })
-          break
-        }
-      }
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    await endOps({ ok: false, costUsd: 0, error: msg, ...(abort.signal.aborted ? { aborted: true } : {}) })
-    flagAttention('error')
-    send('agent:error', { appSessionId, error: msg })
-    runErrored = true
-    sendToPill('pill:update', { state: 'error' })
-  } finally {
-    // A stream that ended with neither a result nor an error still closes its run.
-    await endOps({
-      ok: false,
-      costUsd: 0,
-      ...(abort.signal.aborted ? { aborted: true } : { error: 'The run ended without a result.' })
-    })
-    activeRuns.delete(appSessionId)
-    updateRunIndicators()
-    // Once nothing is running, let the finished/errored state linger briefly then
-    // hide. A new run starting in the grace period cancels this via showPill().
-    if (activeRuns.size === 0) hidePillSoon(runErrored ? 4000 : 2500)
-  }
-})
-
-ipcMain.handle('agent:stop', (_, appSessionId: string) => {
-  const ctrl = activeRuns.get(appSessionId)
-  if (ctrl) {
-    ctrl.abort()
-    activeRuns.delete(appSessionId)
-    updateRunIndicators()
-    // Reflect the stop in the pill and let it fade after the short success grace.
-    sendToPill('pill:update', { state: 'done' })
-    if (activeRuns.size === 0) hidePillSoon(2500)
-    return { stopped: true }
-  }
-  if (stopRemote(appSessionId)) return { stopped: true }
-  if (stopWsl(appSessionId)) return { stopped: true }
-  return { stopped: false }
 })
 
 // ─── SSH hosts / remote ─────────────────────────────────────────────────────
@@ -2008,16 +1549,24 @@ ipcMain.handle('cc:project-delete', (_, sourceId: string, encodedDir: string) =>
  * operating system refusing the rename, which the move reports as it comes.
  */
 function busyProjectPaths(): string[] {
-  const out: string[] = []
-  for (const id of activeRuns.keys()) {
+  const out = new Set<string>()
+  const infos = new Map(listTerminals().map((t) => [t.id, t]))
+  for (const id of busyTerminalSet) {
+    // The pty's own working folder, whatever opened it (a chat, an ops terminal).
+    const cwd = infos.get(id)?.cwd
+    if (cwd) out.add(cwd)
+    // A chat's terminal is `chatterm_<sessionId>` (renderer lib/terminal-id.ts): its
+    // session's project folder, in case the CLI was started below or beside it.
+    const m = /^chatterm_([A-Za-z0-9_-]{1,128})$/.exec(id)
+    if (!m) continue
     try {
-      const s = readJsonFile<{ projectPath?: string }>(path.join(sessionsDir, `${id}.json`))
-      if (s.projectPath) out.push(s.projectPath)
+      const s = readJsonFile<{ projectPath?: string }>(path.join(sessionsDir, `${m[1]}.json`))
+      if (s.projectPath) out.add(s.projectPath)
     } catch {
       // Unsaved session — nothing to read a path from.
     }
   }
-  return out
+  return [...out]
 }
 
 ipcMain.handle('cc:project-move', (_, sourceId: string, encodedDir: string, toPath: string) =>
@@ -2080,12 +1629,12 @@ ipcMain.handle('mcp:remove', (_, name: string) => removeGlobalMcpServer(name))
 
 /**
  * A terminal's CLI started or stopped working (plan H5): the taskbar bar, the pill and,
- * on busy→idle with the window out of view, the success badge, as an SDK run's start and
- * end feed them. Decorative: never let it disturb the terminal.
+ * on busy→idle with the window out of view, the success badge. Decorative: never let it
+ * disturb the terminal.
  */
 function onTerminalBusy(id: string, busy: boolean): void {
   try {
-    const change = noteTerminalBusy(busyTerminalSet, id, busy, activeRuns.size)
+    const change = noteTerminalBusy(busyTerminalSet, id, busy)
     if (change.kind === 'none') return
     updateRunIndicators()
     if (change.kind === 'started') {
@@ -2225,38 +1774,6 @@ ipcMain.on('remote-shell:resize', (_, id: string, cols: number, rows: number) =>
   remoteShellResize(id, cols, rows)
 )
 ipcMain.handle('remote-shell:kill', (_, id: string) => remoteShellKill(id))
-
-// ─── Chat compaction (summarize a long session into a fresh one) ───────────────
-
-ipcMain.handle(
-  'chat:summarize',
-  async (_, payload: { transcript: string; model?: string; accountId?: string }) => {
-    const abort = new AbortController()
-    const env = buildSubprocessEnv()
-    const configDir = accountConfigDir(payload.accountId)
-    if (configDir) {
-      env.CLAUDE_CONFIG_DIR = configDir
-      delete env.ANTHROPIC_API_KEY
-    }
-    const policy = resolvePolicy({ profile: 'headless-reasoning', requestedModel: payload.model })
-    const prompt = `Summarize the following conversation so it can seed a fresh session with minimal tokens while preserving everything needed to continue. Write a dense, structured brief (markdown) covering: the goal/task, key decisions and constraints, current state, important file paths or identifiers, and open next steps. Omit chit-chat. Output ONLY the summary.\n\n=== CONVERSATION ===\n${payload.transcript}`
-    try {
-      const stream = getEngine(providerFor(policy.model)).run({
-        prompt,
-        ...policy,
-        cwd: os.homedir(),
-        env,
-        abortController: abort,
-        permissionMode: 'bypassPermissions'
-      })
-      const { text, isError, errorText } = await collectText(stream)
-      if (isError) return { ok: false as const, error: errorText || 'The model returned an error.' }
-      return { ok: true as const, summary: text.trim() }
-    } catch (err: unknown) {
-      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
-    }
-  }
-)
 
 // ─── Planner ──────────────────────────────────────────────────────────────────
 
@@ -2811,7 +2328,8 @@ ipcMain.handle('fs:delete', (_, targetPath: string) => fsDelete(targetPath))
 
 // ─── Sessions ─────────────────────────────────────────────────────────────────
 
-ipcMain.handle('session:list', () => {
+ipcMain.handle('session:list', async () => {
+  await sessionsMigrated
   try {
     return fs
       .readdirSync(sessionsDir)
@@ -2835,9 +2353,32 @@ ipcMain.handle('session:save', (_, session: unknown) => {
   fs.writeFileSync(`${filename}.tmp`, JSON.stringify(session, null, 2))
   fs.renameSync(`${filename}.tmp`, filename)
   // Keep the "Recent projects" Jump List current. Debounced inside refreshJumpList,
-  // so the burst of saves during a streaming turn only rebuilds once.
+  // so a burst of saves only rebuilds once.
   refreshJumpList()
   return { success: true }
+})
+
+// The pre-2.0 migration's record and where its transcripts are (Settings → General).
+ipcMain.handle('sessions:migration-info', async () => {
+  await sessionsMigrated
+  return { state: getSessionMigration<MigrationState>(), exportsDir: chatExportsDir }
+})
+
+/**
+ * Open a migrated chat's transcript, show it in its folder, or (no path) open the
+ * folder itself. Only inside the exports folder: this is not a general file opener.
+ */
+ipcMain.handle('sessions:open-export', async (_, filePath?: string, reveal?: boolean) => {
+  const target = typeof filePath === 'string' && filePath ? path.resolve(filePath) : chatExportsDir
+  const rel = path.relative(chatExportsDir, target)
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return { ok: false, error: 'Not a chat export.' }
+  if (!fs.existsSync(target)) return { ok: false, error: 'The file is gone.' }
+  if (reveal) {
+    shell.showItemInFolder(target)
+    return { ok: true }
+  }
+  const error = await shell.openPath(target)
+  return error ? { ok: false, error } : { ok: true }
 })
 
 ipcMain.handle('session:delete', (_, sessionId: string) => {
@@ -2849,168 +2390,3 @@ ipcMain.handle('session:delete', (_, sessionId: string) => {
   return { success: true }
 })
 
-// ─── Commands / Skills discovery ──────────────────────────────────────────────
-
-ipcMain.handle('commands:list', (_, projectPath?: string) => listCommands(projectPath))
-
-// ─── Session export ──────────────────────────────────────────────────────────
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
-
-ipcMain.handle(
-  'session:export',
-  async (
-    _,
-    session: {
-      name: string
-      messages: {
-        role: string
-        content: string
-        thinking?: string
-        toolCalls?: { tool: string; input: unknown; result?: string; isError?: boolean }[]
-        timestamp: number
-      }[]
-      projectPath?: string
-    },
-    format: 'md' | 'html'
-  ) => {
-    if (!mainWindow) return { saved: false }
-
-    const title = session.name || 'Chat export'
-    const date = new Date().toLocaleString()
-
-    if (format === 'md') {
-      const lines: string[] = []
-      lines.push(`# ${title}`)
-      if (session.projectPath) lines.push(`\n_Project: ${session.projectPath}_`)
-      lines.push(`\n_Exported: ${date}_\n`)
-      lines.push('---\n')
-      for (const msg of session.messages) {
-        const role = msg.role === 'user' ? '## User' : '## Assistant'
-        const ts = new Date(msg.timestamp).toLocaleTimeString()
-        lines.push(`${role} _(${ts})_\n`)
-        if (msg.thinking) lines.push(`> _Thinking:_ ${msg.thinking}\n`)
-        if (msg.content) lines.push(msg.content)
-        if (msg.toolCalls && msg.toolCalls.length > 0) {
-          for (const tc of msg.toolCalls) {
-            lines.push(`\n**Tool:** \`${tc.tool}\``)
-            lines.push(`\`\`\`json\n${JSON.stringify(tc.input, null, 2)}\n\`\`\``)
-            if (tc.result !== undefined) {
-              lines.push(`**Result${tc.isError ? ' (error)' : ''}:**`)
-              lines.push(`\`\`\`\n${tc.result.slice(0, 2000)}\n\`\`\``)
-            }
-          }
-        }
-        lines.push('\n---\n')
-      }
-      const content = lines.join('\n')
-      const result = await dialog.showSaveDialog(mainWindow, {
-        title: 'Export chat as Markdown',
-        defaultPath: `${title.replace(/[/\\?%*:|"<>]/g, '-')}.md`,
-        filters: [{ name: 'Markdown', extensions: ['md'] }, { name: 'All files', extensions: ['*'] }]
-      })
-      if (result.canceled || !result.filePath) return { saved: false }
-      try {
-        fs.writeFileSync(result.filePath, content, 'utf-8')
-      } catch {
-        return { saved: false, reason: 'write-error' }
-      }
-      return { saved: true, filePath: result.filePath }
-    }
-
-    // HTML export
-    const msgHtml = session.messages.map((msg) => {
-      const role = msg.role === 'user' ? 'user' : 'assistant'
-      const ts = new Date(msg.timestamp).toLocaleTimeString()
-      let body = ''
-      if (msg.thinking) body += `<div class="thinking"><strong>Thinking:</strong> ${escapeHtml(msg.thinking)}</div>`
-      if (msg.content) body += `<div class="content"><pre>${escapeHtml(msg.content)}</pre></div>`
-      if (msg.toolCalls && msg.toolCalls.length > 0) {
-        for (const tc of msg.toolCalls) {
-          body += `<div class="tool-call"><span class="tool-name">Tool: ${escapeHtml(tc.tool)}</span>`
-          let inputStr = ''
-          try { inputStr = JSON.stringify(tc.input, null, 2) } catch { inputStr = String(tc.input) }
-          body += `<pre class="tool-input">${escapeHtml(inputStr)}</pre>`
-          if (tc.result !== undefined) {
-            body += `<div class="tool-result ${tc.isError ? 'error' : ''}"><strong>Result${tc.isError ? ' (error)' : ''}:</strong><pre>${escapeHtml(tc.result.slice(0, 2000))}</pre></div>`
-          }
-          body += '</div>'
-        }
-      }
-      return `<div class="message ${role}"><div class="msg-header"><span class="role">${role}</span><span class="ts">${escapeHtml(ts)}</span></div><div class="msg-body">${body}</div></div>`
-    }).join('\n')
-
-    const meta = session.projectPath ? `<div class="meta">Project: ${escapeHtml(session.projectPath)}</div>` : ''
-    const htmlContent = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${escapeHtml(title)}</title>
-<style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.6; max-width: 860px; margin: 0 auto; padding: 24px 16px; background: #1c1b19; color: #efece8; }
-  h1 { font-size: 20px; margin-bottom: 4px; }
-  .meta { color: #7c766e; font-size: 12px; margin-bottom: 4px; }
-  .exported { color: #7c766e; font-size: 12px; margin-bottom: 24px; }
-  .message { margin-bottom: 16px; border-radius: 8px; overflow: hidden; border: 1px solid #302c28; }
-  .msg-header { display: flex; justify-content: space-between; padding: 8px 12px; background: #252320; font-size: 12px; }
-  .role { font-weight: 600; text-transform: capitalize; }
-  .message.user .role { color: #df7a52; }
-  .message.assistant .role { color: #7c83ff; }
-  .ts { color: #7c766e; }
-  .msg-body { padding: 12px; }
-  pre { background: #141312; border: 1px solid #302c28; border-radius: 4px; padding: 10px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 6px 0; }
-  .content pre { background: transparent; border: none; padding: 0; margin: 0; }
-  .thinking { color: #8c7fd6; font-style: italic; font-size: 12px; margin-bottom: 8px; }
-  .tool-call { margin-top: 10px; border-left: 3px solid #48423a; padding-left: 10px; }
-  .tool-name { font-weight: 600; font-size: 12px; color: #e3a857; }
-  .tool-result.error pre { color: #e36460; }
-</style>
-</head>
-<body>
-<h1>${escapeHtml(title)}</h1>
-${meta}
-<div class="exported">Exported: ${date}</div>
-${msgHtml}
-</body>
-</html>`
-
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: 'Export chat as HTML',
-      defaultPath: `${title.replace(/[/\\?%*:|"<>]/g, '-')}.html`,
-      filters: [{ name: 'HTML', extensions: ['html'] }, { name: 'All files', extensions: ['*'] }]
-    })
-    if (result.canceled || !result.filePath) return { saved: false }
-    try {
-      fs.writeFileSync(result.filePath, htmlContent, 'utf-8')
-    } catch {
-      return { saved: false, reason: 'write-error' }
-    }
-    return { saved: true, filePath: result.filePath }
-  }
-)
-
-// Strip characters illegal in Windows file names (also fine on macOS/Linux).
-function sanitizeFileName(name: string): string {
-  const cleaned = name.replace(/[/\\?%*:|"<>]/g, '-').trim()
-  return cleaned || 'chat'
-}
-
-ipcMain.handle('app:export-markdown', async (_, defaultFileName: string, content: string) => {
-  if (!mainWindow) return { saved: false }
-  const fileName = sanitizeFileName(defaultFileName).replace(/\.md$/i, '') + '.md'
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'Export chat as Markdown',
-    defaultPath: path.join(app.getPath('documents'), fileName),
-    filters: [{ name: 'Markdown', extensions: ['md'] }, { name: 'All files', extensions: ['*'] }]
-  })
-  if (result.canceled || !result.filePath) return { saved: false }
-  try {
-    fs.writeFileSync(result.filePath, content, 'utf-8')
-  } catch {
-    return { saved: false }
-  }
-  return { saved: true, path: result.filePath }
-})

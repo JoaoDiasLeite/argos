@@ -56,7 +56,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   notifyHookInstall: () => ipcRenderer.invoke('notify-hook:install'),
 
   // Quick-launcher overlay — calls made by the OVERLAY window
-  overlaySubmit: (payload: { prompt: string; quick?: boolean }) =>
+  overlaySubmit: (payload: { prompt: string }) =>
     ipcRenderer.send('overlay:submit', payload),
   overlayOpenSession: (sessionId: string) => ipcRenderer.send('overlay:open-session', sessionId),
   overlayOpenMain: () => ipcRenderer.send('overlay:open-main'),
@@ -117,35 +117,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Codex plan-usage badge (the Codex analog of ccPlanUsage below)
   codexUsage: (force?: boolean) => ipcRenderer.invoke('codex-usage:get', force),
 
-  // Agent
-  sendAgent: (payload: unknown) => ipcRenderer.send('agent:send', payload),
-  stopAgent: (appSessionId: string) => ipcRenderer.invoke('agent:stop', appSessionId),
-  onAgentEvent: (cb: (data: unknown) => void) => {
-    const fn = (_: unknown, data: unknown) => cb(data)
-    ipcRenderer.on('agent:event', fn)
-    return () => ipcRenderer.removeListener('agent:event', fn)
-  },
-  onAgentDone: (cb: (data: unknown) => void) => {
-    const fn = (_: unknown, data: unknown) => cb(data)
-    ipcRenderer.on('agent:done', fn)
-    return () => ipcRenderer.removeListener('agent:done', fn)
-  },
-  onAgentError: (cb: (data: unknown) => void) => {
-    const fn = (_: unknown, data: unknown) => cb(data)
-    ipcRenderer.on('agent:error', fn)
-    return () => ipcRenderer.removeListener('agent:error', fn)
-  },
+  // Approvals (ops terminals)
   onApprovalRequest: (cb: (data: unknown) => void) => {
     const fn = (_: unknown, data: unknown) => cb(data)
     ipcRenderer.on('agent:approval-request', fn)
     return () => ipcRenderer.removeListener('agent:approval-request', fn)
-  },
-  // A git worktree was created for a `useWorktree` chat — carries the resolved cwd so the
-  // renderer can persist it on the session and reuse it on later turns.
-  onAgentWorktree: (cb: (data: { appSessionId: string; path: string; branch?: string }) => void) => {
-    const fn = (_: unknown, data: { appSessionId: string; path: string; branch?: string }) => cb(data)
-    ipcRenderer.on('agent:worktree', fn)
-    return () => ipcRenderer.removeListener('agent:worktree', fn)
   },
   respondApproval: (payload: unknown) => ipcRenderer.invoke('agent:approval-response', payload),
   // An approval was answered (by the toast or the main modal): drop it in the other UI.
@@ -285,9 +261,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   mcpUpsert: (name: string, cfg: unknown) => ipcRenderer.invoke('mcp:upsert', name, cfg),
   mcpRemove: (name: string) => ipcRenderer.invoke('mcp:remove', name),
 
-  // Chat compaction
-  summarizeChat: (payload: unknown) => ipcRenderer.invoke('chat:summarize', payload),
-
   // Planner
   plannerList: () => ipcRenderer.invoke('planner:list'),
   plannerGet: (weekStart: string) => ipcRenderer.invoke('planner:get', weekStart),
@@ -409,13 +382,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listSessions: () => ipcRenderer.invoke('session:list'),
   saveSession: (session: unknown) => ipcRenderer.invoke('session:save', session),
   deleteSession: (id: string) => ipcRenderer.invoke('session:delete', id),
-  exportSession: (session: unknown, format: 'md' | 'html') =>
-    ipcRenderer.invoke('session:export', session, format),
-  exportMarkdown: (defaultFileName: string, content: string) =>
-    ipcRenderer.invoke('app:export-markdown', defaultFileName, content),
-
-  // Commands & skills
-  commandsList: (projectPath?: string) => ipcRenderer.invoke('commands:list', projectPath),
+  // Pre-2.0 chats: what the startup migration exported, and opening its Markdown files.
+  sessionMigrationInfo: () => ipcRenderer.invoke('sessions:migration-info'),
+  openChatExport: (filePath?: string, reveal?: boolean) => ipcRenderer.invoke('sessions:open-export', filePath, reveal),
 
   // Terminal (embedded PTY)
   terminalCreate: (id: string, opts: unknown) => ipcRenderer.invoke('terminal:create', id, opts),

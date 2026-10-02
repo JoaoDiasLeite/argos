@@ -118,7 +118,7 @@ export const claudeEngine: AiEngine = {
 
     // Map the provider-neutral request onto SDK options. Optional fields are only
     // set when present so the SDK's own defaults apply otherwise (e.g. an omitted
-    // maxTurns stays uncapped, an omitted includePartialMessages stays false).
+    // maxTurns stays uncapped).
     const options: NonNullable<Parameters<typeof query>[0]['options']> = {
       ...sdkExecutable(),
       model: req.model,
@@ -135,11 +135,7 @@ export const claudeEngine: AiEngine = {
       ...(req.maxTurns !== undefined ? { maxTurns: req.maxTurns } : {}),
       ...(req.mcpServers ? { mcpServers: req.mcpServers as Record<string, never> } : {}),
       ...(req.systemPrompt ? { systemPrompt: req.systemPrompt } : {}),
-      ...(req.resume ? { resume: req.resume } : {}),
-      ...(req.includePartialMessages !== undefined
-        ? { includePartialMessages: req.includePartialMessages }
-        : {}),
-      ...(req.canUseTool ? { canUseTool: req.canUseTool } : {})
+      ...(req.resume ? { resume: req.resume } : {})
     }
 
     const stream = query({ prompt: req.prompt, options })

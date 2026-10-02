@@ -1,11 +1,9 @@
 /**
- * The `ops` tools as the model sees them: names, descriptions and argument schemas. One
- * definition for both servers that expose them, the SDK chat's in-process server
- * (ops-tools.ts) and the stdio relay a terminal CLI starts (ops-relay.ts), so the two
- * front ends describe the same tools in the same words.
+ * The `ops` tools as the model sees them: names, descriptions and argument schemas, for
+ * the stdio relay a terminal CLI starts (ops-relay.ts).
  *
- * Pure: zod is handed in, because both callers load it at runtime from the ESM graph
- * their MCP library uses, and the schemas must be that instance's.
+ * Pure: zod is handed in, because the relay loads it at runtime from the ESM graph its
+ * MCP library uses, and the schemas must be that instance's.
  */
 import type { z as ZodNs } from 'zod'
 

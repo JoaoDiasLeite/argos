@@ -2,7 +2,7 @@
   "id": "demo",
   "name": "demo chat",
   "projectPath": "C:/Users/demo/Projects/claude-gui",
-  "model": "claude-sonnet-4-6",
+  "provider": "claude",
   "hasTerminalActivity": true,
   "terminalStartedAt": 1783670400000,
   "createdAt": 1783670400000,

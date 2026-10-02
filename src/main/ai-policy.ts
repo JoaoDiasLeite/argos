@@ -10,30 +10,17 @@ import { getConfig, providerFor, ProviderId } from './config'
  *   2. which tools are reachable (mutating tools are stripped from context, not
  *      merely gated, so a bypassPermissions run cannot invoke them), and
  *   3. the model ceiling + turn cap (pure-reasoning utility calls must never
- *      burn Opus/Fable budget, and no headless run may loop unbounded), and
- *   4. whether Claude Code's own system prompt loads, and in its cache-stable
- *      form (see CLAUDE_CODE_PROMPT — user-facing chat wants it, headless
- *      utility calls must not pay for it).
+ *      burn Opus/Fable budget, and no headless run may loop unbounded).
  *
- * Strict by default: profiles grant the minimum. Callers opt into more via the
- * explicit `interactive-*` profiles.
+ * Strict by default: profiles grant the minimum. Interactive work runs in the
+ * terminal, under the CLI's own settings, not through here.
  */
 
 export type AiProfile =
-  /** User-facing chat. Keeps this project's settings/CLAUDE.md; drops the user tier. */
-  | 'interactive-chat'
-  /** User-facing chat in light mode: full isolation, no settings tiers. */
-  | 'interactive-light'
-  /** One-shot utility reasoning (summarize, standup, planner assist, suggestions). */
+  /** One-shot utility reasoning (standup, planner assist, sprint backfill). */
   | 'headless-reasoning'
   /** Ask a question over configured MCP servers + read-only file tools. */
   | 'mcp-ask'
-  /**
-   * Ops chat over a runbook (docs/OPS_AGENT_PLAN.md §6). Claude only: the remote reach is
-   * the in-process `ops` MCP server, and every local tool that could touch this machine
-   * is removed from context rather than gated.
-   */
-  | 'ops-remote'
 
 export interface ResolvePolicyInput {
   profile: AiProfile
@@ -52,41 +39,9 @@ export interface ResolvedPolicy {
   settingSources: ('user' | 'project' | 'local')[]
   /** Present only when the profile pins an explicit tool allowlist. */
   allowedTools?: string[]
-  /** Present only when the profile removes tools from context. */
-  disallowedTools?: string[]
   /** Present only when the profile caps agentic turns. */
   maxTurns?: number
-  /** Present only when the profile wants Claude Code's own system prompt. */
-  systemPrompt?: {
-    type: 'preset'
-    preset: 'claude_code'
-    excludeDynamicSections?: boolean
-    /** Extra system text after Claude Code's own (ops: the preamble + RUNBOOK.md). */
-    append?: string
-  }
 }
-
-/**
- * Claude Code's own system prompt, minus the per-run dynamic sections (working
- * directory, auto-memory, **git status**). Two reasons, both measured in this repo:
- *
- *  1. Without it the SDK sends no Claude Code prompt at all — the chat runs on tool
- *     definitions alone and behaves unlike the CLI. It costs ~5.3k tokens, written
- *     to cache once.
- *  2. `excludeDynamicSections` is what makes that prefix *stable*. Git status lives
- *     inside the cached prefix, so one edited file invalidates ~7.7k tokens and
- *     forces a re-write at the 1h-TTL rate (2× input) on the next turn — which is
- *     most turns, in a coding session. Measured on a dirty tree: 7,711 tokens
- *     re-written per turn with it off, 0 with it on. The stripped context is
- *     re-injected as the first user message, so the model still sees it.
- *
- * Claude-only: the preset means nothing to the Codex/Gemini engines.
- */
-const CLAUDE_CODE_PROMPT = {
-  type: 'preset',
-  preset: 'claude_code',
-  excludeDynamicSections: true
-} as const
 
 const READ_ONLY_TOOLS = ['Read', 'Grep', 'Glob']
 
@@ -103,32 +58,6 @@ const CHEAP_CEILING: Record<ProviderId, string> = {
 // so the cap is the real backstop against runaway spend (alongside the timeout).
 const REASONING_MAX_TURNS = 2
 const MCP_ASK_MAX_TURNS = 15
-/** An ops run is a plan plus one call per step; 60 covers the longest runbook (the
- * PostgreSQL upgrade) with room for the reads between its mutate steps. */
-const OPS_MAX_TURNS = 60
-
-/**
- * Removed from an ops chat's context (plan §1.3): everything that could run a command,
- * write a file, reach the network or spawn another agent on THIS machine. A tool that
- * is not in context cannot be argued into running; a gated one can.
- */
-export const OPS_DISALLOWED_TOOLS = [
-  'Bash',
-  'Write',
-  'Edit',
-  'MultiEdit',
-  'NotebookEdit',
-  'WebFetch',
-  'WebSearch',
-  'Agent',
-  'Task',
-  'KillShell',
-  'KillBash'
-]
-
-/** The ops tools by their SDK names; ops-tools.ts registers the server as `ops`. */
-export const OPS_MCP_TOOLS = ['mcp__ops__run', 'mcp__ops__script', 'mcp__ops__read', 'mcp__ops__list', 'mcp__ops__write']
-
 /** Coarse model-family tier for ceiling comparisons, scoped per provider (each
  * provider's model-id conventions are unrelated). Higher = more expensive. */
 function tierOf(providerId: ProviderId, model: string): number {
@@ -160,31 +89,12 @@ function clampToCheapTier(providerId: ProviderId, requested: string | undefined,
   return tierOf(providerId, base) > tierOf(providerId, ceiling) ? ceiling : base
 }
 
-/** The caller's explicit model, or the configured default. No ceiling applied. */
-function requestedOrDefault(requested: string | undefined, fallback: string): string {
-  return requested && requested.trim() ? requested.trim() : fallback
-}
-
 export function resolvePolicy(input: ResolvePolicyInput): ResolvedPolicy {
   const fallback = getConfig().defaultModel
   const { requestedModel } = input
   const providerId = providerFor(requestedModel ?? fallback)
 
   switch (input.profile) {
-    case 'interactive-chat':
-      return {
-        model: requestedOrDefault(requestedModel, fallback),
-        settingSources: ['project', 'local'],
-        ...(providerId === 'claude' ? { systemPrompt: CLAUDE_CODE_PROMPT } : {})
-      }
-
-    case 'interactive-light':
-      return {
-        model: requestedOrDefault(requestedModel, fallback),
-        settingSources: [],
-        ...(providerId === 'claude' ? { systemPrompt: CLAUDE_CODE_PROMPT } : {})
-      }
-
     case 'headless-reasoning':
       return {
         model: clampToCheapTier(providerId, requestedModel, fallback),
@@ -202,23 +112,6 @@ export function resolvePolicy(input: ResolvePolicyInput): ResolvedPolicy {
           ...READ_ONLY_TOOLS
         ],
         maxTurns: MCP_ASK_MAX_TURNS
-      }
-
-    case 'ops-remote':
-      // The user's own work on the user's model, so no cheap clamp. No settings tiers: no
-      // plugin, skill or project hook rides into a session that can reach servers.
-      //
-      // No `allowedTools`, on purpose: in the SDK that list means "auto-approved without
-      // calling canUseTool", so naming mcp__ops__* there would skip the gate's `ask`, and
-      // naming Read would let it read anywhere on this machine. Every call goes through
-      // the ops canUseTool instead (ops-run.ts), which allows Read/Grep/Glob only inside
-      // the runbook folder and runs the gate for the ops tools.
-      return {
-        model: requestedOrDefault(requestedModel, fallback),
-        settingSources: [],
-        disallowedTools: OPS_DISALLOWED_TOOLS,
-        maxTurns: OPS_MAX_TURNS,
-        systemPrompt: CLAUDE_CODE_PROMPT
       }
   }
 }

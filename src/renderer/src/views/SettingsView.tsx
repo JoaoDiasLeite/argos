@@ -176,6 +176,17 @@ export default function SettingsView({
   const [showHooks, setShowHooks] = useState(false)
   const [showNotifyHook, setShowNotifyHook] = useState(false)
 
+  // ── Chats from before 2.0 ──
+  // How many SDK chats the startup migration exported as Markdown. Fetched here, like
+  // `system` below: nothing else in the app needs it.
+  const [archivedChats, setArchivedChats] = useState(0)
+  useEffect(() => {
+    window.electronAPI
+      .sessionMigrationInfo()
+      .then((info) => setArchivedChats(info.state?.exported ?? 0))
+      .catch(() => {})
+  }, [])
+
   // ── System integration ──
   // These prefs live in config.ts alongside `ui`, but App.tsx has never fetched them;
   // they are read here so App's props stay untouched. `registeredShortcut` reflects what
@@ -394,6 +405,21 @@ export default function SettingsView({
                       </div>
                     </div>
                   </>
+                )}
+
+                {archivedChats > 0 && (
+                  <div className="settings-row">
+                    <div className="settings-row-text">
+                      <span className="settings-row-label">Chats from before 2.0</span>
+                      <span className="settings-row-hint">
+                        {archivedChats === 1 ? '1 chat' : `${archivedChats} chats`} saved as Markdown when Argos
+                        became terminal-only.
+                      </span>
+                    </div>
+                    <button className="btn-ghost small" onClick={() => void window.electronAPI.openChatExport()}>
+                      Open folder
+                    </button>
+                  </div>
                 )}
               </section>
 

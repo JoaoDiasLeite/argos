@@ -24,7 +24,7 @@ import ApprovalModal from './components/ApprovalModal'
 import PlanReviewSheet from './components/PlanReviewSheet'
 import SecretPrompt from './components/SecretPrompt'
 import { readRecentRunbooks } from './lib/recent-runbooks'
-import { modelForProvider } from './lib/cli-providers'
+import { CLI_PROVIDERS } from './lib/cli-providers'
 import PendingRuns, { PendingRun } from './components/PendingRuns'
 import FileEditor from './components/FileEditor'
 import { readLocalFile, writeLocalFile } from './lib/local-file-io'
@@ -38,7 +38,7 @@ import ChangelogModal from './components/ChangelogModal'
 import ShortcutsModal from './components/ShortcutsModal'
 import { modLabel } from './lib/shortcuts'
 import { UiPrefs, UiPrefsPatch } from './types'
-import { provOf, acctOf, originOf, nextChatAfterClose, isUnstarted, hasHistory, AccountDefaults } from './lib/account-scope'
+import { provOf, acctOf, originOf, nextChatAfterClose, isUnstarted, hasHistory, sessionProvider, AccountDefaults } from './lib/account-scope'
 import type {
   HomeAttention,
   HomeRunning,
@@ -130,7 +130,7 @@ function applyUi(ui: UiPrefs) {
  */
 const ADOPT_RETRY_MS = 60_000
 
-function newSession(projectPath?: string, model?: string, accountId?: string): Session {
+function newSession(projectPath: string | undefined, provider: ProviderId, accountId?: string): Session {
   const now = Date.now()
   // A folder given as a WSL share (`\\wsl.localhost\<distro>\…`) makes this a WSL chat,
   // and it has to be recorded as one. The terminal already behaves that way — the main
@@ -145,11 +145,10 @@ function newSession(projectPath?: string, model?: string, accountId?: string): S
   return {
     id: generateId(),
     name: 'New chat',
-    messages: [],
     projectPath: wsl ? wsl.posixPath : projectPath,
     wslDistro: wsl?.distro,
     remoteHostName: wsl ? `WSL · ${wsl.distro}` : undefined,
-    model,
+    provider,
     accountId,
     // Name the Claude Code session this chat would start in a terminal, here, at birth —
     // not later, from the chat pane. The terminal is created during the chat's first
@@ -379,9 +378,13 @@ export default function App() {
   }, [seenKey])
 
   const activeSession = sessions.find((s) => s.id === activeId)
-  // Which CLI a session's model belongs to. A plain lookup, but it has callers that must
-  // agree — the sidebar's scope and the embedded terminal.
-  const providerOf = (s?: Session): ProviderId => provOf(models, s?.model || defaultModel)
+  // The CLI a new chat starts on: the default model's provider (the model itself is for
+  // background tasks; a terminal's CLI picks its own with /model). Also which account
+  // store the sidebar's account picker is scoped to with no chat open.
+  const defaultProvider: ProviderId = provOf(models, defaultModel)
+  // Which CLI a session runs, or the default for no session. Callers that must agree —
+  // the sidebar's scope and the embedded terminal — all read it here.
+  const providerOf = (s?: Session): ProviderId => (s ? sessionProvider(s) : defaultProvider)
   // The open file belongs to the chat's project tree, so it goes stale the moment we point at
   // a different folder or leave the chat view (where the Files tab lives) entirely.
   const activeProjectPath = activeSession?.projectPath
@@ -569,9 +572,8 @@ export default function App() {
       id?: string
     }): string => {
       const prompt = opts.prompt?.trim() || undefined
-      const provider = opts.provider ?? provOf(models, defaultModel)
-      // TODO(B4): `provider` on the session instead of a model that implies it.
-      const s = newSession(opts.projectPath, modelForProvider(models, provider, defaultModel))
+      const provider = opts.provider ?? defaultProvider
+      const s = newSession(opts.projectPath, provider)
       if (opts.id) s.id = opts.id
       const name = opts.name ?? prompt
       if (name) s.name = name.slice(0, 40)
@@ -604,7 +606,7 @@ export default function App() {
     const prompt = payload.prompt.trim()
     if (!prompt) return
     const base = sessionsRef.current.find((s) => s.id === activeIdRef.current)
-    const provider = provOf(models, base?.model || defaultModel)
+    const provider = providerOf(base)
     startTerminal({
       prompt,
       projectPath: base?.projectPath,
@@ -714,8 +716,6 @@ export default function App() {
               ? {
                   ...s,
                   projectPath: undefined,
-                  additionalDirs: undefined,
-                  useWorktree: false,
                   wslDistro: undefined,
                   remoteHostId: undefined,
                   remoteHostName: undefined
@@ -747,7 +747,7 @@ export default function App() {
     }
     const s = newSession(
       ask ? undefined : folder ?? activeSession?.projectPath,
-      defaultModel,
+      defaultProvider,
       activeSession?.accountId ?? defaultAccountId
     )
     setSessions((prev) => [s, ...prev])
@@ -801,7 +801,7 @@ export default function App() {
       // so that would switch accounts just for closing a chat.
       if (activeId === id) {
         const defaults: AccountDefaults = { defaultAccountId, codexDefaultAccountId, geminiDefaultAccountId }
-        const successor = (closed && nextChatAfterClose(closed, next, models, defaults)?.id) || ''
+        const successor = (closed && nextChatAfterClose(closed, next, defaults)?.id) || ''
         // Whatever happens, no pane may be left pointed at a chat that no longer exists.
         if (!successor) {
           // Nothing to land on: the pane goes (with a single pane, exactly the old
@@ -886,9 +886,6 @@ export default function App() {
     window.electronAPI.ccPlanUsage(true).then(setPlanReport).catch(() => {})
   }
 
-  // The provider the app-wide default model belongs to — drives which account store the
-  // sidebar's account picker is scoped to.
-  const defaultProvider: ProviderId = models.find((m) => defaultModel.startsWith(m.id))?.provider ?? 'claude'
   // The active chat's provider and that provider's account. Drives which CLI the embedded
   // terminal launches and under which account, and which account the sidebar row, its
   // usage badge and the session list are scoped to — so opening a chat bound to another
@@ -978,8 +975,8 @@ export default function App() {
     if (
       active &&
       isUnstarted(active) &&
-      provOf(models, active.model) === provider &&
-      acctOf(active, models, effectiveDefaults) === accountId
+      sessionProvider(active) === provider &&
+      acctOf(active, effectiveDefaults) === accountId
     ) {
       setView('chat')
       return
@@ -1012,18 +1009,13 @@ export default function App() {
     const accountId = cc.sourceId.startsWith('account:')
       ? cc.sourceId.slice('account:'.length)
       : defaultAccountId
-    // The model only decides which CLI launches, and this is a Claude Code conversation:
-    // falling back to a default that belongs to another provider would start the wrong one.
-    // TODO(B4): `provider: 'claude'` once Session carries it.
-    const claudeModel =
-      provOf(models, defaultModel) === 'claude' ? defaultModel : models.find((m) => m.provider === 'claude')?.id ?? defaultModel
+    // A Claude Code conversation: it resumes in Claude Code, whatever the default is.
     const s: Session = {
       id: generateId(),
       name: cc.title,
-      messages: [],
       projectPath,
       claudeSessionId: cc.sessionId,
-      model: cc.model || claudeModel,
+      provider: 'claude',
       accountId,
       wslDistro: isWsl ? cc.distro : undefined,
       remoteHostName: isWsl ? `WSL · ${cc.distro}` : undefined,
@@ -1188,7 +1180,7 @@ export default function App() {
         // conversation over there, where none of that applies.
         !s.wslDistro &&
         !s.remoteHostId &&
-        provOf(models, s.model || defaultModel) === 'codex'
+        sessionProvider(s) === 'codex'
     )
     // Cleared for this round up front: a chat whose turn produced no thread is flagged
     // again by its next transition, and holding the flag would retry on every tick.
@@ -1554,8 +1546,8 @@ export default function App() {
       if (origin) {
         return { id: s.id, name: s.name, attention, done, account: origin.label }
       }
-      const acctId = acctOf(s, models, defaults)
-      const provider = provOf(models, s.model)
+      const acctId = acctOf(s, defaults)
+      const provider = sessionProvider(s)
       const list =
         provider === 'codex' ? codexAccounts : provider === 'gemini' ? geminiAccounts : accounts
       const name = list.find((a) => a.id === acctId)?.name ?? s.accountName ?? acctId
@@ -1768,7 +1760,7 @@ export default function App() {
         kind: 'chat',
         id: s.id,
         name: s.name,
-        detail: models.find((m) => m.id === (s.model || defaultModel))?.label,
+        detail: CLI_PROVIDERS.find((p) => p.id === sessionProvider(s))?.label,
         attention: attentionIds.has(s.id)
       }))
     // A chat already covers its own Claude Code session, so the matching CLI row (same
@@ -2113,7 +2105,7 @@ export default function App() {
       parts.push(`Scheduled for: ${dayNames[task.day]}.`)
     }
     parts.push('Please start working on it.')
-    const provider = provOf(models, activeSession?.model || defaultModel)
+    const provider = providerOf(activeSession)
     startTerminal({
       prompt: parts.join(' '),
       name: task.title,

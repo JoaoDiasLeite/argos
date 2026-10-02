@@ -5,7 +5,6 @@ import type { ExecResult } from './ops-exec-pure'
 import type { LoadedRunbook } from './ops-runbook-pure'
 import type { OpsGateResult, OpsHostRef, OpsPolicy } from './ops-types'
 import {
-  buildOpsSystemAppend,
   callKey,
   execIsError,
   finishedEventFrom,
@@ -16,7 +15,6 @@ import {
   makeCallBook,
   mcpInputToOpsInput,
   OPS_HEAD_BYTES,
-  OPS_PREAMBLE,
   opsHostsFor,
   opsToolFromSdkName,
   readResultText,
@@ -44,36 +42,6 @@ const exec = (over: Partial<ExecResult> = {}): ExecResult => ({
   stderrBytes: 0,
   truncated: false,
   ...over
-})
-
-describe('OPS_PREAMBLE', () => {
-  it('carries every rule of plan §7', () => {
-    expect(OPS_PREAMBLE).toContain('mcp__ops__*')
-    expect(OPS_PREAMBLE).toContain('no local shell')
-    expect(OPS_PREAMBLE).toContain('Follow RUNBOOK.md literally')
-    expect(OPS_PREAMBLE).toMatch(/Before any mutate call, state what it changes and how it is reverted/)
-    expect(OPS_PREAMBLE).toMatch(/Never chain commands/)
-    expect(OPS_PREAMBLE).toMatch(/Use a script when the runbook provides one/)
-    expect(OPS_PREAMBLE).toMatch(/non-zero exit code verbatim/)
-    expect(OPS_PREAMBLE).toMatch(/failed verification step/)
-    expect(OPS_PREAMBLE).toMatch(/formal European Portuguese, never Brazilian/)
-  })
-
-  it('has no em or en dashes of its own', () => {
-    expect(OPS_PREAMBLE).not.toMatch(/[–—]/)
-  })
-})
-
-describe('buildOpsSystemAppend', () => {
-  it('puts the preamble first and the runbook verbatim in a named block', () => {
-    const out = buildOpsSystemAppend('PRE', '# Steps\n1. Check nginx\n\n', 'nginx-config-reload')
-    expect(out.startsWith('PRE\n\n')).toBe(true)
-    expect(out).toContain('<runbook name="nginx-config-reload">\n# Steps\n1. Check nginx\n</runbook>')
-  })
-
-  it('says so when RUNBOOK.md is empty', () => {
-    expect(buildOpsSystemAppend('PRE', '  \n', 'x')).toContain('(RUNBOOK.md is empty.)')
-  })
 })
 
 describe('opsHostsFor', () => {
@@ -541,9 +509,5 @@ describe('plan', () => {
       queuedBehind: 0,
       runbook: 'rb'
     })
-  })
-
-  it('the preamble tells the model to plan first', () => {
-    expect(OPS_PREAMBLE).toContain('mcp__ops__propose_plan')
   })
 })

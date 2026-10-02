@@ -118,7 +118,7 @@ describe('migrateLegacySessions', () => {
     const after = fs.readFileSync(path.join(sessionsDir, 'a.json'), 'utf-8')
 
     const second = await run()
-    expect(second).toEqual({ exported: 0, skipped: 2, failed: [] })
+    expect(second).toEqual({ exported: 0, upgraded: 0, skipped: 2, failed: [] })
     expect(fs.readdirSync(exportsDir)).toHaveLength(2)
     expect(fs.readdirSync(backupDir)).toHaveLength(2)
     expect(fs.readFileSync(path.join(sessionsDir, 'a.json'), 'utf-8')).toBe(after)
@@ -144,12 +144,26 @@ describe('migrateLegacySessions', () => {
     fs.writeFileSync(path.join(backupDir, 'a.json'), raw)
 
     const res = await run()
-    expect(res).toEqual({ exported: 1, skipped: 0, failed: [] })
+    expect(res).toEqual({ exported: 1, upgraded: 0, skipped: 0, failed: [] })
     expect(readSession('a.json')).not.toHaveProperty('messages')
   })
 
   it('treats a missing sessions dir as empty', async () => {
     fs.rmSync(sessionsDir, { recursive: true })
-    expect(await run()).toEqual({ exported: 0, skipped: 0, failed: [] })
+    expect(await run()).toEqual({ exported: 0, upgraded: 0, skipped: 0, failed: [] })
+  })
+
+  it('rewrites a messageless pre-2.0 session to the 2.0 shape without exporting it', async () => {
+    writeSession('t.json', JSON.stringify({ id: 't', name: 'T', model: 'gemini-3-flash-preview', permissionMode: 'default', hasTerminalActivity: true, createdAt: T0, updatedAt: T0 }))
+    const res = await run()
+    expect(res).toEqual({ exported: 0, upgraded: 1, skipped: 0, failed: [] })
+    const t = readSession('t.json')
+    expect(t.provider).toBe('gemini')
+    expect(t).not.toHaveProperty('model')
+    expect(t).not.toHaveProperty('permissionMode')
+    expect(t.hasTerminalActivity).toBe(true)
+    expect(fs.existsSync(backupDir)).toBe(false)
+    expect(fs.existsSync(exportsDir)).toBe(false)
+    expect((await run()).upgraded).toBe(0)
   })
 })

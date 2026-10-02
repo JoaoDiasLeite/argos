@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Session, WslDistro, SshHostPublic, ModelInfo } from '../types'
-import { provOf } from '../lib/account-scope'
-import { CLI_PROVIDERS, modelForProvider } from '../lib/cli-providers'
+import { Session, WslDistro, SshHostPublic } from '../types'
+import { sessionProvider } from '../lib/account-scope'
+import { CLI_PROVIDERS } from '../lib/cli-providers'
 import './ChatConfigBar.css'
 
 interface Props {
@@ -23,7 +23,6 @@ const basename = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ||
 export default function ChatConfigBar({ session, onPatch }: Props) {
   const [distros, setDistros] = useState<WslDistro[]>([])
   const [hosts, setHosts] = useState<SshHostPublic[]>([])
-  const [models, setModels] = useState<ModelInfo[]>([])
   const [envOpen, setEnvOpen] = useState(false)
   const [pathOpen, setPathOpen] = useState(false)
   const [pathDraft, setPathDraft] = useState('')
@@ -34,14 +33,12 @@ export default function ChatConfigBar({ session, onPatch }: Props) {
   const isRemote = !!session.remoteHostId
   const isWsl = !isRemote && !!session.wslDistro
   const isLocal = !isRemote && !isWsl
-  // TODO(B4): `session.provider`.
-  const provider = provOf(models, session.model)
+  const provider = sessionProvider(session)
 
   // Only ever mounted on the setup pane, so these are loaded lazily.
   useEffect(() => {
     window.electronAPI.wslList().then(setDistros).catch(() => {})
     window.electronAPI.sshList().then(setHosts).catch(() => {})
-    window.electronAPI.getModels().then(setModels).catch(() => {})
   }, [])
 
   // Read the git branch of the chosen local folder (drives the branch pill).
@@ -146,8 +143,7 @@ export default function ChatConfigBar({ session, onPatch }: Props) {
             aria-pressed={provider === p.id}
             onClick={() => {
               if (provider === p.id) return
-              const model = modelForProvider(models, p.id, session.model)
-              if (model) onPatch({ model })
+              onPatch({ provider: p.id })
             }}
           >
             {p.label}

@@ -3,7 +3,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { readJsonFile, writeJsonFileAtomic } from './json-file'
-import { LegacySession, exportFileName, migrateSession } from './session-migrate-pure'
+import { LegacySession, exportFileName, migrateSession, upgradeSession } from './session-migrate-pure'
 
 export interface MigrationState {
   version: '2.0.0'
@@ -21,6 +21,8 @@ export interface MigrateLegacySessionsOptions {
 
 export interface MigrateLegacySessionsResult {
   exported: number
+  /** Messageless pre-2.0 sessions rewritten to the 2.0 shape (no export, no backup). */
+  upgraded: number
   skipped: number
   failed: { id: string; error: string }[]
 }
@@ -46,7 +48,7 @@ function writeOnce(p: string, data: Buffer | string): void {
  */
 export async function migrateLegacySessions(opts: MigrateLegacySessionsOptions): Promise<MigrateLegacySessionsResult> {
   const { sessionsDir, backupDir, exportsDir, writeState } = opts
-  const result: MigrateLegacySessionsResult = { exported: 0, skipped: 0, failed: [] }
+  const result: MigrateLegacySessionsResult = { exported: 0, upgraded: 0, skipped: 0, failed: [] }
 
   let files: string[]
   try {
@@ -68,7 +70,14 @@ export async function migrateLegacySessions(opts: MigrateLegacySessionsOptions):
       const exportPath = path.join(exportsDir, name)
       const outcome = migrateSession(legacy, exportPath)
       if ('skip' in outcome) {
-        result.skipped++
+        // Nothing to export; settings only, so no backup either.
+        const upgraded = upgradeSession(legacy)
+        if (upgraded) {
+          writeJsonFileAtomic(src, upgraded)
+          result.upgraded++
+        } else {
+          result.skipped++
+        }
         continue
       }
 

@@ -46,7 +46,6 @@ const LEGACY: UiPrefs = {
   density: 'comfortable',
   fontSize: 'md',
   onboarded: true,
-  workMode: 'chat',
   showWeekPlanner: false
 }
 

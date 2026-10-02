@@ -4,7 +4,6 @@ import * as os from 'os'
 import * as path from 'path'
 import { costFromTokens } from './cost'
 import { resolveGemini } from './cli-resolve'
-import { runGeminiAcp } from './gemini-acp'
 import { ZERO_USAGE } from './types'
 import type { AiEngine, EngineMessage, EngineRequest } from './types'
 
@@ -249,13 +248,6 @@ export const geminiEngine: AiEngine = {
       yield { type: 'error', message: 'Gemini engine only supports plain-text prompts right now.' }
       return
     }
-    // Per-tool approval (interactive 'ask' mode) needs gemini's ACP JSON-RPC
-    // protocol — the simple `stream-json` mode has no approval callback at
-    // all. Everything else uses the simpler, one-shot path.
-    if (req.canUseTool) {
-      yield* runGeminiAcp(req, req.prompt)
-    } else {
-      yield* runGeminiProcess(req, req.prompt)
-    }
+    yield* runGeminiProcess(req, req.prompt)
   }
 }

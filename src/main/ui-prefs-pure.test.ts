@@ -8,8 +8,7 @@ import { applyUiPatch, migrateUiPrefs, resolveUiPrefs, UiPrefs } from './ui-pref
 // nothing else.
 
 /** Exactly the shape an older build wrote — no mode, no light, no dark, and the
-    pre-workMode key for chat-vs-terminal. Cast because that key is no longer in the
-    model: reading it is the migration's whole job. */
+    old key for chat-vs-terminal. Cast because that key is no longer in the model. */
 const LEGACY = {
   theme: 'dark',
   palette: 'gruvbox',
@@ -46,18 +45,11 @@ describe('migration', () => {
     expect(migrated.fonts).toBeUndefined()
   })
 
-  it('carries a legacy defaultChatView over to workMode', () => {
-    // A config that opened new chats in the terminal must come out of migration in
-    // terminal mode — the setting is promoted, not reset.
-    expect(migrateUiPrefs(LEGACY).workMode).toBe('terminal')
-    expect(
-      migrateUiPrefs({ ...LEGACY, defaultChatView: 'chat' } as unknown as UiPrefs).workMode
-    ).toBe('chat')
-  })
-
-  it('defaults workMode to chat when neither key is present', () => {
-    const { defaultChatView, ...noMode } = LEGACY as UiPrefs & { defaultChatView?: string }
-    expect(migrateUiPrefs(noMode as UiPrefs).workMode).toBe('chat')
+  it('drops the chat-vs-terminal keys, which no longer mean anything', () => {
+    // Before 2.0.0 the app worked in chat or terminal mode (`defaultChatView`, then
+    // `workMode`). Every chat is a terminal now, so neither key survives migration.
+    expect(migrateUiPrefs(LEGACY)).not.toHaveProperty('defaultChatView')
+    expect(migrateUiPrefs({ ...LEGACY, workMode: 'chat' } as unknown as UiPrefs)).not.toHaveProperty('workMode')
   })
 
   it('backfills showWeekPlanner as off when it is absent', () => {
@@ -68,17 +60,11 @@ describe('migration', () => {
     expect(migrateUiPrefs({ ...LEGACY, showWeekPlanner: true }).showWeekPlanner).toBe(true)
   })
 
-  it('leaves an explicit workMode alone', () => {
-    const current = { ...LEGACY, workMode: 'chat' } as unknown as UiPrefs
-    expect(migrateUiPrefs(current).workMode).toBe('chat')
-  })
-
   it('leaves an already-migrated config alone', () => {
-    // Fully migrated means workMode is already there too — LEGACY still carries the old
-    // key, so spell the new one out rather than letting migration add it.
+    // Fully migrated means the old chat-vs-terminal key is gone too.
+    const { defaultChatView: _gone, ...rest } = LEGACY as UiPrefs & { defaultChatView?: string }
     const current: UiPrefs = {
-      ...LEGACY,
-      workMode: 'terminal',
+      ...rest,
       showWeekPlanner: true,
       mode: 'system',
       light: { palette: 'notion', accent: '#112233' },

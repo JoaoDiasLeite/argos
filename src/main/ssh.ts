@@ -4,7 +4,6 @@ import * as path from 'path'
 import { Client, ConnectConfig } from 'ssh2'
 import { randomUUID } from 'crypto'
 import { verifyHostKey } from './ssh-trust'
-import { handleStreamLine, makeLineBuffer, StreamState } from './claude-stream'
 
 export type SshAuthType = 'password' | 'key' | 'agent'
 
@@ -217,97 +216,4 @@ export function testClaude(id: string): Promise<{ ok: boolean; message: string }
       done({ ok: false, message: e instanceof Error ? e.message : String(e) })
     }
   })
-}
-
-const activeConns = new Map<string, Client>()
-
-function shQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`
-}
-
-export interface RemoteRunHandlers {
-  onEvent: (e: Record<string, unknown>) => void
-  onDone: (d: { claudeSessionId?: string; costUsd: number; isError: boolean; errorText?: string }) => void
-  onError: (msg: string) => void
-}
-
-/**
- * Run the remote host's Claude Code in headless stream-json mode and translate its line
- * events into the same shapes the local Agent SDK path emits, so the chat UI is identical.
- */
-export function runRemote(
-  appSessionId: string,
-  hostId: string,
-  prompt: string,
-  model: string | undefined,
-  claudeSessionId: string | undefined,
-  cwd: string | undefined,
-  h: RemoteRunHandlers
-): void {
-  const host = getHost(hostId)
-  if (!host) {
-    h.onError('SSH host not found')
-    return
-  }
-
-  const conn = new Client()
-  activeConns.set(appSessionId, conn)
-  const state: StreamState = { sessionId: claudeSessionId }
-
-  conn.on('ready', () => {
-    const claude = host.claudePath || 'claude'
-    const flags = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-mode', 'acceptEdits']
-    if (model) flags.push('--model', model)
-    if (claudeSessionId) flags.push('--resume', claudeSessionId)
-    // Per-chat folder (from the config bar) overrides the host's default remote path.
-    const dir = cwd || host.remotePath
-    const cd = dir ? `cd ${shQuote(dir)} && ` : ''
-    const cmd = `${cd}${claude} ${flags.join(' ')}`
-
-    conn.exec(cmd, (err, stream) => {
-      if (err) {
-        h.onError(err.message)
-        conn.end()
-        activeConns.delete(appSessionId)
-        return
-      }
-
-      let stderr = ''
-      const lines = makeLineBuffer((line) => handleStreamLine(line, appSessionId, state, h))
-
-      stream.on('data', (d: Buffer) => lines.push(d.toString()))
-      stream.stderr.on('data', (d: Buffer) => (stderr += d.toString()))
-      stream.on('close', (code: number) => {
-        lines.flush()
-        if (code && code !== 0 && stderr.trim()) h.onError(stderr.trim().slice(0, 500))
-        conn.end()
-        activeConns.delete(appSessionId)
-      })
-
-      // Send the prompt over stdin and close it so `claude -p` runs once and exits.
-      stream.end(prompt)
-    })
-  })
-
-  conn.on('error', (e) => {
-    h.onError(e.message)
-    activeConns.delete(appSessionId)
-  })
-
-  try {
-    conn.connect(buildConnectConfig(host))
-  } catch (e) {
-    h.onError(e instanceof Error ? e.message : String(e))
-    activeConns.delete(appSessionId)
-  }
-}
-
-export function stopRemote(appSessionId: string): boolean {
-  const conn = activeConns.get(appSessionId)
-  if (conn) {
-    conn.end()
-    activeConns.delete(appSessionId)
-    return true
-  }
-  return false
 }

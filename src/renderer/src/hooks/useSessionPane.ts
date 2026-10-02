@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react'
 import { ModelInfo, ProviderId, Session } from '../types'
-import { provOf } from '../lib/account-scope'
+import { provOf, sessionProvider } from '../lib/account-scope'
 import type { Props as ChatProps } from '../components/Chat'
 
 /**
@@ -72,8 +72,8 @@ export function useSessionPane(sessionId: string, api: SessionPaneApi): ChatProp
   const newChatNonce = highestNonce.current
   // Which CLI this chat runs — decides which binary the embedded terminal launches, and
   // therefore which account store the id below has to come from.
-  // TODO(B4): read `session.provider` once `model` is replaced by it.
-  const terminalProvider: ProviderId = provOf(models, session?.model || defaultModel)
+  // No session yet: the CLI a new chat starts on, the default model's provider.
+  const terminalProvider: ProviderId = session ? sessionProvider(session) : provOf(models, defaultModel)
   // Each provider keeps its own accounts, so the fallback has to be that provider's
   // default; a chat bound to a Codex account must not fall back to a Claude one.
   // Deliberately not acctOf() from account-scope: that one ends in a literal 'default'

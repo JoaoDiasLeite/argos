@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { acctOf, hasHistory, idFor, isUnstarted, nextChatAfterClose, originOf, provOf, visibleSessions, AccountDefaults } from './account-scope'
+import { acctOf, hasHistory, idFor, isUnstarted, nextChatAfterClose, originOf, provOf, sessionProvider, visibleSessions, AccountDefaults } from './account-scope'
 import { ModelInfo, Session } from '../types'
 
 // Minimal model catalog — only the fields provOf reads (id, provider).
@@ -14,7 +14,6 @@ const models: ModelInfo[] = [
 function makeSession(overrides: Partial<Session> & { id: string }): Session {
   return {
     name: overrides.id,
-    messages: [],
     hasTerminalActivity: true,
     createdAt: 0,
     updatedAt: 0,
@@ -32,6 +31,17 @@ describe('provOf', () => {
   it('falls back to claude for an unknown/undefined model id', () => {
     expect(provOf(models, undefined)).toBe('claude')
     expect(provOf(models, 'some-unlisted-model')).toBe('claude')
+  })
+})
+
+describe('sessionProvider', () => {
+  it('reads the provider a chat carries', () => {
+    expect(sessionProvider({ provider: 'codex' })).toBe('codex')
+    expect(sessionProvider({ provider: 'gemini' })).toBe('gemini')
+  })
+
+  it('treats a chat with none (a file the migration could not rewrite) as Claude', () => {
+    expect(sessionProvider({})).toBe('claude')
   })
 })
 
@@ -79,34 +89,34 @@ describe('acctOf', () => {
   }
 
   it('files a legacy Claude chat under the current Claude default account', () => {
-    const s = makeSession({ id: 's1', model: 'claude-opus-4-8' })
-    expect(acctOf(s, models, { ...defaults, defaultAccountId: 'claude-work' })).toBe('claude-work')
+    const s = makeSession({ id: 's1', provider: 'claude' })
+    expect(acctOf(s, { ...defaults, defaultAccountId: 'claude-work' })).toBe('claude-work')
   })
 
   it('files a bound Claude chat under its own account regardless of the default', () => {
-    const s = makeSession({ id: 's2', model: 'claude-opus-4-8', accountId: 'claude-personal' })
-    expect(acctOf(s, models, { ...defaults, defaultAccountId: 'claude-work' })).toBe('claude-personal')
+    const s = makeSession({ id: 's2', provider: 'claude', accountId: 'claude-personal' })
+    expect(acctOf(s, { ...defaults, defaultAccountId: 'claude-work' })).toBe('claude-personal')
   })
 
   it('files a bound Codex chat under its own account', () => {
-    const s = makeSession({ id: 's3', model: 'codex-mini', codexAccountId: 'codex-work' })
-    expect(acctOf(s, models, defaults)).toBe('codex-work')
+    const s = makeSession({ id: 's3', provider: 'codex', codexAccountId: 'codex-work' })
+    expect(acctOf(s, defaults)).toBe('codex-work')
   })
 
   it('REGRESSION: an unbound Codex chat falls back to the Codex default account, not the literal "default"', () => {
-    const s = makeSession({ id: 's4', model: 'codex-mini' })
+    const s = makeSession({ id: 's4', provider: 'codex' })
     const withNonDefaultCodex: AccountDefaults = { ...defaults, codexDefaultAccountId: 'codex-work' }
     // The fix: acctOf must resolve to the current Codex default...
-    expect(acctOf(s, models, withNonDefaultCodex)).toBe('codex-work')
-    expect(acctOf(s, models, withNonDefaultCodex)).toBe(withNonDefaultCodex.codexDefaultAccountId)
+    expect(acctOf(s, withNonDefaultCodex)).toBe('codex-work')
+    expect(acctOf(s, withNonDefaultCodex)).toBe(withNonDefaultCodex.codexDefaultAccountId)
     // ...whereas the old (buggy) behavior would have returned the literal 'default',
     // which is a different value once a non-default account becomes the Codex default.
-    expect(acctOf(s, models, withNonDefaultCodex)).not.toBe('default')
+    expect(acctOf(s, withNonDefaultCodex)).not.toBe('default')
   })
 
   it('files an unbound Gemini chat under the Gemini default account', () => {
-    const s = makeSession({ id: 's5', model: 'gemini-2-5-pro' })
-    expect(acctOf(s, models, { ...defaults, geminiDefaultAccountId: 'gemini-work' })).toBe('gemini-work')
+    const s = makeSession({ id: 's5', provider: 'gemini' })
+    expect(acctOf(s, { ...defaults, geminiDefaultAccountId: 'gemini-work' })).toBe('gemini-work')
   })
 })
 
@@ -131,38 +141,38 @@ describe('visibleSessions', () => {
     geminiDefaultAccountId: 'default'
   }
 
-  const claudeDefaultChat = makeSession({ id: 'c1', model: 'claude-opus-4-8' })
-  const claudePersonalChat = makeSession({ id: 'c2', model: 'claude-opus-4-8', accountId: 'claude-personal' })
-  const codexBoundChat = makeSession({ id: 'x1', model: 'codex-mini', codexAccountId: 'codex-side' })
-  const codexUnboundChat = makeSession({ id: 'x2', model: 'codex-mini' })
-  const draftChat = makeSession({ id: 'd1', model: 'claude-opus-4-8', hasTerminalActivity: false })
+  const claudeDefaultChat = makeSession({ id: 'c1', provider: 'claude' })
+  const claudePersonalChat = makeSession({ id: 'c2', provider: 'claude', accountId: 'claude-personal' })
+  const codexBoundChat = makeSession({ id: 'x1', provider: 'codex', codexAccountId: 'codex-side' })
+  const codexUnboundChat = makeSession({ id: 'x2', provider: 'codex' })
+  const draftChat = makeSession({ id: 'd1', provider: 'claude', hasTerminalActivity: false })
   const allSessions = [claudeDefaultChat, claudePersonalChat, codexBoundChat, codexUnboundChat, draftChat]
 
   // Runs inside a distro, on a Claude model, carrying an accountId it does not use.
   const wslChat = makeSession({
     id: 'w1',
-    model: 'claude-opus-4-8',
+    provider: 'claude',
     accountId: 'claude-personal',
     wslDistro: 'Ubuntu-DevOps'
   })
-  const sshChat = makeSession({ id: 's1', model: 'claude-opus-4-8', remoteHostId: 'h1' })
-  const codexWslChat = makeSession({ id: 'w2', model: 'codex-mini', wslDistro: 'Ubuntu-DevOps' })
+  const sshChat = makeSession({ id: 's1', provider: 'claude', remoteHostId: 'h1' })
+  const codexWslChat = makeSession({ id: 'w2', provider: 'codex', wslDistro: 'Ubuntu-DevOps' })
 
   it('1) no active chat: scopes to the selected provider default account, excluding drafts', () => {
     const currentClaudeId = idFor('claude', 'claude', undefined, defaults.defaultAccountId)
-    const result = visibleSessions(allSessions, models, 'claude', currentClaudeId, defaults)
+    const result = visibleSessions(allSessions, 'claude', currentClaudeId, defaults)
     expect(result.map((s) => s.id)).toEqual(['c1'])
   })
 
   it('2) active chat on a non-default Claude account: that account is in effect', () => {
     const currentClaudeId = idFor('claude', 'claude', 'claude-personal', defaults.defaultAccountId)
-    const result = visibleSessions(allSessions, models, 'claude', currentClaudeId, defaults)
+    const result = visibleSessions(allSessions, 'claude', currentClaudeId, defaults)
     expect(result.map((s) => s.id)).toEqual(['c2'])
   })
 
   it('3) active Codex chat on a non-default account: filed/scoped under that account', () => {
     const currentCodexId = idFor('codex', 'codex', 'codex-side', defaults.codexDefaultAccountId)
-    const result = visibleSessions(allSessions, models, 'codex', currentCodexId, defaults)
+    const result = visibleSessions(allSessions, 'codex', currentCodexId, defaults)
     expect(result.map((s) => s.id)).toEqual(['x1'])
   })
 
@@ -170,8 +180,8 @@ describe('visibleSessions', () => {
     // It runs against the distro's own login, but it was started on claude-personal, and
     // showing it on claude-work too leaks one account's chats into the other's list.
     const withOrigins = [...allSessions, wslChat, sshChat]
-    const onWork = visibleSessions(withOrigins, models, 'claude', 'claude-work', defaults)
-    const onPersonal = visibleSessions(withOrigins, models, 'claude', 'claude-personal', defaults)
+    const onWork = visibleSessions(withOrigins, 'claude', 'claude-work', defaults)
+    const onPersonal = visibleSessions(withOrigins, 'claude', 'claude-personal', defaults)
     expect(onWork.map((s) => s.id)).toEqual(['c1', 's1'])
     expect(onPersonal.map((s) => s.id)).toEqual(['c2', 'w1'])
   })
@@ -180,8 +190,8 @@ describe('visibleSessions', () => {
     // Where it runs is not which CLI it runs: a Codex account's list is no place for a
     // Claude chat, distro or no distro.
     const withOrigins = [...allSessions, wslChat, codexWslChat]
-    const onClaude = visibleSessions(withOrigins, models, 'claude', 'claude-personal', defaults)
-    const onCodex = visibleSessions(withOrigins, models, 'codex', 'codex-work', defaults)
+    const onClaude = visibleSessions(withOrigins, 'claude', 'claude-personal', defaults)
+    const onCodex = visibleSessions(withOrigins, 'codex', 'codex-work', defaults)
     expect(onClaude.map((s) => s.id)).toContain('w1')
     expect(onClaude.map((s) => s.id)).not.toContain('w2')
     expect(onCodex.map((s) => s.id)).toContain('w2')
@@ -189,15 +199,15 @@ describe('visibleSessions', () => {
   })
 
   it('keeps an origin draft out of the list like any other draft', () => {
-    const draft = makeSession({ id: 'w3', model: 'claude-opus-4-8', wslDistro: 'Ubuntu', hasTerminalActivity: false })
-    const result = visibleSessions([...allSessions, draft], models, 'claude', 'claude-work', defaults)
+    const draft = makeSession({ id: 'w3', provider: 'claude', wslDistro: 'Ubuntu', hasTerminalActivity: false })
+    const result = visibleSessions([...allSessions, draft], 'claude', 'claude-work', defaults)
     expect(result.map((s) => s.id)).not.toContain('w3')
   })
 
   it('4) unbound legacy Codex chat scopes under the Codex default account (the regression fix)', () => {
     const currentCodexId = idFor('codex', 'codex', undefined, defaults.codexDefaultAccountId)
     expect(currentCodexId).toBe('codex-work')
-    const result = visibleSessions(allSessions, models, 'codex', currentCodexId, defaults)
+    const result = visibleSessions(allSessions, 'codex', currentCodexId, defaults)
     expect(result.map((s) => s.id)).toEqual(['x2'])
   })
 })
@@ -206,64 +216,63 @@ describe('nextChatAfterClose', () => {
   const defaults: AccountDefaults = { defaultAccountId: 'personal' }
 
   it('stays on the closed chat’s account rather than taking the first chat in the list', () => {
-    const closed = makeSession({ id: 'closed', model: 'claude-opus-4-8', accountId: 'work' })
-    const other = makeSession({ id: 'other', model: 'claude-opus-4-8', accountId: 'personal' })
-    const same = makeSession({ id: 'same', model: 'claude-opus-4-8', accountId: 'work' })
-    expect(nextChatAfterClose(closed, [other, same], models, defaults)?.id).toBe('same')
+    const closed = makeSession({ id: 'closed', provider: 'claude', accountId: 'work' })
+    const other = makeSession({ id: 'other', provider: 'claude', accountId: 'personal' })
+    const same = makeSession({ id: 'same', provider: 'claude', accountId: 'work' })
+    expect(nextChatAfterClose(closed, [other, same], defaults)?.id).toBe('same')
   })
 
   it('lands on nothing when no other chat is on that account', () => {
-    const closed = makeSession({ id: 'closed', model: 'claude-opus-4-8', accountId: 'work' })
-    const other = makeSession({ id: 'other', model: 'claude-opus-4-8', accountId: 'personal' })
-    expect(nextChatAfterClose(closed, [other], models, defaults)).toBeUndefined()
+    const closed = makeSession({ id: 'closed', provider: 'claude', accountId: 'work' })
+    const other = makeSession({ id: 'other', provider: 'claude', accountId: 'personal' })
+    expect(nextChatAfterClose(closed, [other], defaults)).toBeUndefined()
   })
 
   it('does not cross providers', () => {
-    const closed = makeSession({ id: 'closed', model: 'claude-opus-4-8', accountId: 'default' })
-    const codex = makeSession({ id: 'codex', model: 'codex-mini', codexAccountId: 'default' })
-    expect(nextChatAfterClose(closed, [codex], models, {})).toBeUndefined()
+    const closed = makeSession({ id: 'closed', provider: 'claude', accountId: 'default' })
+    const codex = makeSession({ id: 'codex', provider: 'codex', codexAccountId: 'default' })
+    expect(nextChatAfterClose(closed, [codex], {})).toBeUndefined()
   })
 
   it('skips blank drafts the sidebar does not list', () => {
-    const closed = makeSession({ id: 'closed', model: 'claude-opus-4-8', accountId: 'work' })
-    const draft = makeSession({ id: 'draft', model: 'claude-opus-4-8', accountId: 'work', hasTerminalActivity: false })
-    const terminal = makeSession({ id: 'term', model: 'claude-opus-4-8', accountId: 'work' })
-    expect(nextChatAfterClose(closed, [draft, terminal], models, defaults)?.id).toBe('term')
+    const closed = makeSession({ id: 'closed', provider: 'claude', accountId: 'work' })
+    const draft = makeSession({ id: 'draft', provider: 'claude', accountId: 'work', hasTerminalActivity: false })
+    const terminal = makeSession({ id: 'term', provider: 'claude', accountId: 'work' })
+    expect(nextChatAfterClose(closed, [draft, terminal], defaults)?.id).toBe('term')
   })
 
   it('lands on a WSL chat only when it was created on the same account', () => {
-    const wsl = makeSession({ id: 'wsl', model: 'claude-opus-4-8', accountId: 'work', wslDistro: 'Ubuntu' })
-    const onWork = makeSession({ id: 'w', model: 'claude-opus-4-8', accountId: 'work' })
-    const onPersonal = makeSession({ id: 'p', model: 'claude-opus-4-8', accountId: 'personal' })
-    expect(nextChatAfterClose(onWork, [wsl], models, defaults)?.id).toBe('wsl')
-    expect(nextChatAfterClose(onPersonal, [wsl], models, defaults)).toBeUndefined()
+    const wsl = makeSession({ id: 'wsl', provider: 'claude', accountId: 'work', wslDistro: 'Ubuntu' })
+    const onWork = makeSession({ id: 'w', provider: 'claude', accountId: 'work' })
+    const onPersonal = makeSession({ id: 'p', provider: 'claude', accountId: 'personal' })
+    expect(nextChatAfterClose(onWork, [wsl], defaults)?.id).toBe('wsl')
+    expect(nextChatAfterClose(onPersonal, [wsl], defaults)).toBeUndefined()
   })
 })
 
 describe('isUnstarted', () => {
   it('is a chat with no terminal use, no conversation and no transcript', () => {
-    expect(isUnstarted(makeSession({ id: 'd', model: 'claude-opus-4-8', hasTerminalActivity: false }))).toBe(true)
+    expect(isUnstarted(makeSession({ id: 'd', provider: 'claude', hasTerminalActivity: false }))).toBe(true)
   })
 
   it('is not a terminal chat — it may be running', () => {
-    expect(isUnstarted(makeSession({ id: 't', model: 'claude-opus-4-8' }))).toBe(false)
+    expect(isUnstarted(makeSession({ id: 't', provider: 'claude' }))).toBe(false)
   })
 })
 
 describe('hasHistory', () => {
-  const blank = { model: 'claude-opus-4-8', hasTerminalActivity: false }
+  const blank = { provider: 'claude' as const, hasTerminalActivity: false }
   it('is false for a blank draft', () => {
     expect(hasHistory(makeSession({ id: 'b', ...blank }))).toBe(false)
   })
   it('counts terminal use', () => {
-    expect(hasHistory(makeSession({ id: 't', model: 'claude-opus-4-8' }))).toBe(true)
+    expect(hasHistory(makeSession({ id: 't', provider: 'claude' }))).toBe(true)
   })
   it('counts a bound Claude Code conversation that has not run here yet (resumed, or migrated)', () => {
     expect(hasHistory(makeSession({ id: 'c', ...blank, claudeSessionId: 'abc' }))).toBe(true)
   })
-  it('counts a pre-2.0 transcript the migration has not archived yet', () => {
-    const old = makeSession({ id: 'o', ...blank, messages: [{ id: 'm1', role: 'user', content: 'hi', timestamp: 0 }] })
-    expect(hasHistory(old)).toBe(true)
+  it('counts a pre-2.0 chat the migration exported', () => {
+    expect(hasHistory(makeSession({ id: 'o', ...blank, archivedTranscript: 'C:/x/chat.md' }))).toBe(true)
   })
   it('does not count the id a fresh chat reserves for its terminal', () => {
     expect(hasHistory(makeSession({ id: 'p', ...blank, terminalSessionId: 'reserved' }))).toBe(false)

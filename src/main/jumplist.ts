@@ -4,7 +4,7 @@ import * as path from 'path'
 import { readJsonFile } from './json-file'
 
 // Windows Jump List: the menu that pops from the taskbar/Start icon on right-click.
-// We surface a "New chat" task plus the most recently active project folders, each
+// We surface a "New terminal" task plus the most recently active project folders, each
 // re-launching the app with the same argv routing as the Explorer context menu.
 
 const sessionsDir = path.join(app.getPath('userData'), 'sessions')
@@ -31,17 +31,10 @@ function recentProjects(max: number): RecentProject[] {
   }
   for (const f of files) {
     try {
-      const s = readJsonFile<{
-        projectPath?: string
-        updatedAt?: number
-        messages?: { timestamp?: number }[]
-      }>(path.join(sessionsDir, f))
+      const s = readJsonFile<{ projectPath?: string; updatedAt?: number }>(path.join(sessionsDir, f))
       const p = s.projectPath
       if (!p || typeof p !== 'string') continue
-      const last =
-        s.updatedAt ||
-        s.messages?.reduce((m, msg) => Math.max(m, msg.timestamp ?? 0), 0) ||
-        0
+      const last = s.updatedAt || 0
       byPath.set(p, Math.max(byPath.get(p) ?? 0, last))
     } catch {
       /* skip unreadable/corrupt session file */
@@ -76,9 +69,10 @@ function buildAndSet(): void {
           {
             type: 'task',
             program: exe,
+            // --new-chat stays the argv, so a Jump List pinned by an older build still works.
             args: argsFor('--new-chat'),
-            title: 'New chat',
-            description: 'Start a new Argos chat',
+            title: 'New terminal',
+            description: 'Start a new Argos terminal',
             iconPath: exe,
             iconIndex: 0
           }

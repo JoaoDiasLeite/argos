@@ -11,10 +11,8 @@ import type { query as QueryFn } from '@anthropic-ai/claude-agent-sdk'
  * `user` message types, `stream_event` deltas, etc). `claude.ts` is the one place
  * that SDK-shape knowledge lives; it maps SDK messages into this union.
  *
- * The shape mirrors what `claude-stream.ts`'s `handleStreamLine` already produces
- * for the WSL/SSH remote backends, so all three paths (local SDK, WSL, SSH) — and,
- * going forward, Codex/Gemini — converge on one wire format the renderer consumes
- * uniformly.
+ * Only headless runs go through here now (planner assist, standup, sprint backfill,
+ * MCP ask); interactive work runs in the terminal.
  */
 
 export interface EngineUsage {
@@ -47,18 +45,6 @@ export type EngineMessage =
     }
   | { type: 'error'; message: string }
 
-/** Decision returned from a tool-approval request. Same shape regardless of which
- * underlying mechanism raised it (SDK `canUseTool` callback, or a future engine's
- * own approval protocol). */
-export type CanUseToolResult =
-  | { behavior: 'allow'; updatedInput: Record<string, unknown> }
-  | { behavior: 'deny'; message: string }
-
-export type CanUseTool = (
-  toolName: string,
-  input: Record<string, unknown>
-) => Promise<CanUseToolResult>
-
 // Derive the prompt/options types the Claude engine still needs from the SDK's own
 // `query` signature, so that seam stays in lockstep with the installed SDK version
 // without hand-maintaining a parallel type. Non-Claude engines only ever see the
@@ -82,7 +68,7 @@ export interface EngineRequest {
   additionalDirectories?: string[]
   /** Tools removed from context entirely (cannot be invoked even under bypass). */
   disallowedTools?: string[]
-  /** Agentic-turn cap. Omit for uncapped (interactive chat). */
+  /** Agentic-turn cap. Omit for uncapped. */
   maxTurns?: number
   /** MCP servers to expose, keyed by name. Shape is engine-specific until each
    * engine's own MCP config translation lands. */
@@ -92,10 +78,6 @@ export interface EngineRequest {
    * `sessionId`. Each engine interprets its own token — a Claude Code session id, a
    * codex thread id, a gemini session id, etc. */
   resume?: string
-  /** Stream partial assistant deltas (interactive chat wants this; headless does not). */
-  includePartialMessages?: boolean
-  /** Per-tool approval callback (interactive 'ask' mode). */
-  canUseTool?: CanUseTool
 }
 
 export interface AiEngine {

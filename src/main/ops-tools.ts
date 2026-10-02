@@ -1,20 +1,17 @@
 /**
- * The in-process `ops` MCP server (docs/OPS_AGENT_PLAN.md §1.2): mcp__ops__propose_plan, run, script,
- * read, list and write, the model's only reach to a server. The gate's decision was
+ * The handlers of the `ops` tools (docs/OPS_AGENT_PLAN.md §1.2): propose_plan, run, script,
+ * read, list and write, the model's only reach to a server. A terminal CLI reaches them
+ * through the stdio relay (ops-relay.ts) and the bridge (ops-bridge.ts → callOpsTool). The gate's decision was
  * already taken and logged in canUseTool (ops-session.ts); each handler here runs the same
  * deterministic classify again and refuses a deny, so a call that somehow skipped
  * canUseTool still cannot run. Then it executes through the executor's per-host queue
  * and logs `call.started` before and `call.finished` after.
  *
- * Handlers never throw: the SDK would surface a throw as a tool error with a stack, and
+ * Handlers never throw: a throw would reach the model as a tool error with a stack, and
  * the ledger would miss the call's end. Every path returns a CallToolResult.
  *
- * No Electron here. The SDK and zod are ESM, reached through the same runtime dynamic
- * import providers/claude.ts uses, and zod is loaded from the same module graph as the
- * SDK so its schemas are the instances the SDK expects.
+ * No Electron here.
  */
-import type { createSdkMcpServer as CreateServerFn, tool as ToolFn } from '@anthropic-ai/claude-agent-sdk'
-import type { z as ZodNs } from 'zod'
 import { classify } from './ops-gate-pure'
 import { effectiveLimits } from './ops-policy-pure'
 import {
@@ -36,7 +33,7 @@ import {
 } from './ops-run-pure'
 import { failedExec, type ExecResult } from './ops-exec-pure'
 import type { OpsRunContext } from './ops-session'
-import { opsServerInstructions, opsToolDefs, type OpsToolHost } from './ops-tool-defs-pure'
+import type { OpsToolHost } from './ops-tool-defs-pure'
 import type { OpsAuditEvent, OpsGateResult, OpsToolInput, OpsToolName } from './ops-types'
 
 /** The MCP tool result shape, kept local so this file needs no @modelcontextprotocol import. */
@@ -338,53 +335,9 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
   }
 }
 
-// ─── SDK server ──────────────────────────────────────────────────────────────────
-
-const dynamicImport = new Function('specifier', 'return import(specifier)') as (s: string) => Promise<unknown>
-
-interface SdkParts {
-  createSdkMcpServer: typeof CreateServerFn
-  tool: typeof ToolFn
-  z: typeof ZodNs
-}
-
-let sdkParts: SdkParts | null = null
-
-async function loadSdkParts(): Promise<SdkParts> {
-  if (!sdkParts) {
-    const sdk = (await dynamicImport('@anthropic-ai/claude-agent-sdk')) as {
-      createSdkMcpServer: typeof CreateServerFn
-      tool: typeof ToolFn
-    }
-    const zod = (await dynamicImport('zod')) as { z: typeof ZodNs }
-    sdkParts = { createSdkMcpServer: sdk.createSdkMcpServer, tool: sdk.tool, z: zod.z }
-  }
-  return sdkParts
-}
+// ─── Hosts ──────────────────────────────────────────────────────────────────────
 
 /** The run's hosts as the shared tool definitions list them. */
 export function opsToolHosts(ctx: OpsRunContext): OpsToolHost[] {
   return [...ctx.hosts.byId.values()].map((h) => ({ id: h.host.id, name: h.host.name, groups: [...h.groups] }))
-}
-
-/**
- * Build the `ops` server for `mcpServers: { ops: … }`. Returns the SDK's
- * McpSdkServerConfigWithInstance; typed as unknown at the seam because EngineRequest's
- * mcpServers is engine-agnostic. Names, descriptions and schemas come from
- * ops-tool-defs-pure.ts, shared with the terminal relay (ops-relay.ts).
- */
-export async function createOpsMcpServer(ctx: OpsRunContext, handlers = createOpsToolHandlers(ctx)): Promise<unknown> {
-  const { createSdkMcpServer, tool, z } = await loadSdkParts()
-  const hosts = opsToolHosts(ctx)
-  const as = (r: OpsToolResult) => r as never
-
-  return createSdkMcpServer({
-    name: 'ops',
-    version: '1.0.0',
-    instructions: opsServerInstructions(ctx.runbook.ref.name, hosts),
-    alwaysLoad: true,
-    tools: opsToolDefs(z, hosts).map((d) =>
-      tool(d.name, d.description, d.shape, async (args) => as(await handlers[d.name](args as Record<string, unknown>)))
-    )
-  })
 }

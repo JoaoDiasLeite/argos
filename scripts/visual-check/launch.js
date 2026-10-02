@@ -92,9 +92,8 @@ if (ccSession) {
 
 // Patch the seeded config before the app reads it. VISUAL_CHECK_CONFIG_PATCH is a JSON
 // object, merged one level deep into the copied config.json. It exists for settings the
-// renderer cannot be talked into after startup — `ui.workMode: 'terminal'` above all,
-// which is what puts real terminals on screen instead of chat transcripts, and so the
-// only way to photograph anything about how terminals render.
+// renderer cannot be talked into after startup — a theme, a density, `ui.onboarded`, a
+// planner toggle — so a shot can be taken in a state the seed itself does not carry.
 //
 // Written here rather than in run.ps1 because PowerShell 5.1 writes UTF-8 with a BOM by
 // default, and the seed files are deliberately BOM-free.

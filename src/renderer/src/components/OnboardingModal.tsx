@@ -62,7 +62,7 @@ export default function OnboardingModal({ onFinish }: Props) {
               </svg>
             </div>
             <h2 id="onboarding-modal-title">Welcome to Argos</h2>
-            <p>A desktop control center for Claude Code — chat, projects, usage, and remote/WSL backends, all in one place.</p>
+            <p>A desktop control center for Claude Code, Codex and Antigravity: their terminals, your projects, usage, and remote/WSL hosts, all in one place.</p>
             <button className="btn-primary" onClick={() => setStep(1)}>Get started</button>
           </div>
         )}
@@ -86,7 +86,7 @@ export default function OnboardingModal({ onFinish }: Props) {
               <div className="auth-option-body">
                 <div className="auth-option-title">Use my Claude Code account {detected && <span className="status-pill ok">Detected</span>}</div>
                 <div className="auth-option-desc">
-                  Reuses the CLI login — no API key needed.{' '}
+                  Terminals and background tasks reuse the CLI login — no API key needed.{' '}
                   {!detected && 'Run `claude` once and log in, then click Re-check.'}
                 </div>
               </div>
@@ -100,7 +100,7 @@ export default function OnboardingModal({ onFinish }: Props) {
               <div className="auth-option-radio"><span className={auth?.mode === 'api-key' ? 'on' : ''} /></div>
               <div className="auth-option-body">
                 <div className="auth-option-title">Use an API key {auth?.hasApiKey && <span className="status-pill ok">Saved</span>}</div>
-                <div className="auth-option-desc">Stored encrypted in your OS keychain.</div>
+                <div className="auth-option-desc">Stored encrypted in your OS keychain. Terminals and background tasks (standup, planner assist) use it.</div>
               </div>
             </button>
 

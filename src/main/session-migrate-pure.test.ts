@@ -5,6 +5,7 @@ import {
   exportFileName,
   migrateSession,
   providerOf,
+  upgradeSession,
   sessionToMarkdown
 } from './session-migrate-pure'
 
@@ -166,5 +167,44 @@ describe('exportFileName', () => {
   it('uses now when createdAt is missing', () => {
     const now = new Date(2025, 0, 9, 12).getTime()
     expect(exportFileName(fixture({ createdAt: undefined }), now)).toBe('2025-01-09-fix-the-tls-handshake-abc-123.md')
+  })
+})
+
+describe('upgradeSession', () => {
+  const terminalChat = (over: Partial<LegacySession> = {}): LegacySession => {
+    const { messages: _m, ...rest } = fixture()
+    return { ...rest, hasTerminalActivity: true, permissionMode: 'default', lightMode: false, ...over } as LegacySession
+  }
+
+  it('gives a messageless pre-2.0 session a provider and drops the SDK fields', () => {
+    const out = upgradeSession(terminalChat({ model: 'gpt-5.6-sol', messages: [] }))
+    expect(out).not.toBeNull()
+    expect(out!.provider).toBe('codex')
+    for (const k of STRIPPED_FIELDS) expect(out).not.toHaveProperty(k)
+    expect(out!.hasTerminalActivity).toBe(true)
+    expect(out!.projectPath).toBe('C:/work/argos')
+    expect(out).not.toHaveProperty('claudeSessionId')
+  })
+
+  it('keeps a Claude session id for Claude, and defaults to Claude without a model', () => {
+    const { model: _m, ...noModel } = terminalChat()
+    const out = upgradeSession(noModel as LegacySession)
+    expect(out!.provider).toBe('claude')
+    expect(out!.claudeSessionId).toBe('cc-1')
+  })
+
+  it('leaves a 2.0 session and a session with messages alone', () => {
+    const { messages: _m, model: _model, ...current } = fixture()
+    expect(upgradeSession({ ...current, provider: 'gemini' } as LegacySession)).toBeNull()
+    expect(upgradeSession(fixture())).toBeNull()
+  })
+
+  it('keeps an existing provider over the model', () => {
+    expect(upgradeSession(terminalChat({ provider: 'gemini', model: 'claude-opus-5' }))!.provider).toBe('gemini')
+  })
+
+  it('is idempotent', () => {
+    const once = upgradeSession(terminalChat())!
+    expect(upgradeSession(once as LegacySession)).toBeNull()
   })
 })

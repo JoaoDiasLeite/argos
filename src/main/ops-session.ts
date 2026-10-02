@@ -1,12 +1,11 @@
 /**
- * One ops session, whatever the front end (docs/OPS_AGENT_PLAN.md §1, §4, §5, §9 Phase 5):
- * the SDK chat (ops-run.ts, in-process MCP server) and a terminal CLI (ops-bridge.ts, a
- * stdio relay over a local socket) both open their run here, so there is one code path
- * for runbook load, reachability, `run.start`, the gate-and-log decision, the plan-first
- * rule, the sudo password, the approval and `run.end`.
+ * One ops session (docs/OPS_AGENT_PLAN.md §1, §4, §5, §9 Phase 5): a terminal CLI reaches
+ * it through ops-bridge.ts (a stdio relay over a local socket). One code path for runbook
+ * load, reachability, `run.start`, the gate-and-log decision, the plan-first rule, the
+ * sudo password, the approval and `run.end`.
  *
  * - `canUseTool` is the decision: it runs the gate and logs it BEFORE anything executes.
- *   The SDK calls it itself; the bridge calls it through `callOpsTool`.
+ *   The bridge calls it through `callOpsTool`.
  * - `tools` are the handlers that execute an allowed call and log its start and end.
  *
  * No Electron here: loading the runbook and re-reading scripts touch the stored-host
@@ -39,9 +38,15 @@ import type { LoadedRunbook, LoadRunbookResult } from './ops-runbook-pure'
 import type { OpsExecutor } from './ops-exec-pure'
 import type { OpsLedger } from './ops-audit'
 import type { OpsAuditEvent, OpsAuditLine } from './ops-types'
-import type { CanUseTool, CanUseToolResult } from './providers/types'
 
 export type { ApprovalOpsContext } from './ops-run-pure'
+
+/** The gate's verdict on one tool call. */
+export type CanUseToolResult =
+  | { behavior: 'allow'; updatedInput: Record<string, unknown> }
+  | { behavior: 'deny'; message: string }
+
+export type CanUseTool = (toolName: string, input: Record<string, unknown>) => Promise<CanUseToolResult>
 
 /** How long each host gets to answer before the run refuses to start (plan §4). */
 export const OPS_REACH_TIMEOUT_MS = 15_000
@@ -93,10 +98,10 @@ export interface OpsRunContext {
 }
 
 export interface OpsSessionOptions {
-  /** The chat's id, or the terminal's id for a terminal session: what `ops:event` and the ledger key on. */
+  /** The terminal's id: what `ops:event` and the ledger key on. */
   appSessionId: string
   runbookPath: string
-  /** The model, or for a terminal session the CLI that runs it (the ledger's `run.start.model`). */
+  /** The CLI that runs the session (the ledger's `run.start.model`). */
   model: string
   account?: string
   ledger: OpsLedger
@@ -119,7 +124,7 @@ export interface OpsSession {
   ctx: OpsRunContext
   /** The gate's decision for one tool call, by its SDK name (`mcp__ops__run`, …). Logs before anything runs. */
   canUseTool: CanUseTool
-  /** The functions that execute an allowed call; the MCP servers call these. */
+  /** The functions that execute an allowed call; callOpsTool runs these after an allow. */
   tools: OpsToolHandlers
 }
 
@@ -210,9 +215,8 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
 }
 
 /**
- * One tool call from a front end that is not the SDK (the terminal bridge): the decision
- * canUseTool takes for the SDK, then, when it allows, the handler the SDK's server would
- * call, on the same input. `tool` is the bare name (`run`, `propose_plan`, …).
+ * One tool call from the terminal bridge: canUseTool's decision, then, when it allows,
+ * the handler on the same input. `tool` is the bare name (`run`, `propose_plan`, …).
  */
 export async function callOpsTool(
   session: OpsSession,

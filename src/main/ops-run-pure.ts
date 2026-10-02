@@ -1,8 +1,8 @@
 /**
  * The decisions of an ops run that need no Electron, SDK or disk (docs/OPS_AGENT_PLAN.md
- * §3.4, §5, §7): the fixed preamble, the system-prompt append, MCP input validation, the
- * approval context the modal shows, the `call.finished` event, and the text the model
- * reads back. ops-run.ts and ops-tools.ts wire these to the SDK and the executor.
+ * §3.4, §5): MCP input validation, the approval context the modal shows, the
+ * `call.finished` event, and the text the model reads back. ops-session.ts and
+ * ops-tools.ts wire these to the gate and the executor.
  */
 import * as path from 'path'
 import { sha256Hex } from './ops-audit-pure'
@@ -10,36 +10,6 @@ import type { LoadedRunbook } from './ops-runbook-pure'
 import type { ExecResult, OpsListResult, OpsReadResult, OpsWriteResult } from './ops-exec-pure'
 import { canonicalCommand, classify, parseSimpleCommand } from './ops-gate-pure'
 import type { OpsAuditEvent, OpsGateResult, OpsHostRef, OpsPolicy, OpsToolInput, OpsToolName } from './ops-types'
-
-// ─── System prompt ────────────────────────────────────────────────────────────────
-
-/**
- * Plan §7, fixed. It is the same on every ops run so a test can assert it is there; the
- * runbook's own RUNBOOK.md follows it and may add rules, never remove these.
- */
-export const OPS_PREAMBLE = [
-  'You are operating servers for the operator through an Argos ops run.',
-  '',
-  '- Plan first. Before any other mcp__ops__* call, call mcp__ops__propose_plan once with the full list of steps you intend to run. Nothing runs until the operator approves the plan.',
-  "- Write each plan step as an object, not a string: a title in the operator's words, the hostId, and the exact command (cmd, or commands when one step runs several, at most 8) or the script and its args, spelled exactly as you will send them. The operator reviews each step with the gate's verdict on that exact command.",
-  '- Do not run a step that was not in the approved plan. If the work needs a step the plan did not list, call mcp__ops__propose_plan again with the revised full list and wait for its approval.',
-  '- You operate servers through the mcp__ops__* tools only. You have no local shell, and the local machine is out of reach.',
-  '- Follow RUNBOOK.md literally. If a step is not covered by it, say so and stop. Do not improvise an equivalent command.',
-  '- Before any mutate call, state what it changes and how it is reverted.',
-  '- Never chain commands. One simple command per call: no ;, &&, ||, pipes, redirections or subshells. Use a script when the runbook provides one.',
-  '- Report every non-zero exit code verbatim before deciding what to do next.',
-  '- A failed verification step (a read whose output the runbook says must match) ends the run. Do not proceed to a mutate step past a failed check, even if asked.',
-  '- Write to the operator in formal European Portuguese, never Brazilian Portuguese, and never use em dashes or en dashes. Commands and output stay in code blocks, exactly as returned.'
-].join('\n')
-
-/**
- * What goes into `systemPrompt.append`: the preamble, then the runbook verbatim between
- * markers, so the model can tell the fixed rules from the runbook's own.
- */
-export function buildOpsSystemAppend(preamble: string, guidelines: string, runbookName: string): string {
-  const body = guidelines.trim() === '' ? '(RUNBOOK.md is empty.)' : guidelines.trimEnd()
-  return `${preamble}\n\n<runbook name="${runbookName}">\n${body}\n</runbook>\n`
-}
 
 // ─── Hosts ────────────────────────────────────────────────────────────────────────
 
