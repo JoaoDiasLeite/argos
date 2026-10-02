@@ -61,13 +61,7 @@ const EXEMPT_PREFIXES = ['hljs-']
  * Format: `class :: <every file that defines it bare>`, sorted, so that a third file
  * joining an existing collision also fails rather than hiding behind the entry.
  */
-const BASELINE = [
-  'account-picker-btn :: src/renderer/src/components/AccountPicker.css | src/renderer/src/views/PlannerView.css | src/renderer/src/views/SprintBoard.css',
-  'assist-runwith-field :: src/renderer/src/views/PlannerView.css | src/renderer/src/views/SprintBoard.css',
-  'model-picker-btn :: src/renderer/src/components/ModelPicker.css | src/renderer/src/views/PlannerView.css | src/renderer/src/views/SprintBoard.css',
-  'planner-label :: src/renderer/src/views/PlannerView.css | src/renderer/src/views/SprintBoard.css',
-  'task-del :: src/renderer/src/views/PlannerView.css | src/renderer/src/views/SprintBoard.css'
-]
+const BASELINE: string[] = []
 
 function listStylesheets(dir: string, out: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

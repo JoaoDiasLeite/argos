@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import {
   Sprint,
   SprintItem,
@@ -15,16 +14,15 @@ import {
   ProviderAccountStatus,
   ProviderId
 } from '../types'
-import Menu, { MoreIcon, CaretDownIcon } from '../components/Menu'
+import Menu, { MoreIcon } from '../components/Menu'
+import Sheet from '../components/Sheet'
 import { originOf, kindLabel, FORGE_NAMES } from '../lib/sprint-origin'
 import ModelPicker from '../components/ModelPicker'
 import AccountPicker, { AccountPickerItem } from '../components/AccountPicker'
 import './views.css'
-import './PlannerView.css'
 import './SprintBoard.css'
 
 export type PlannerMode = 'week' | 'sprint'
-type SprintSection = 'board' | 'standup' | 'burndown'
 
 interface SprintBoardProps {
   mode: PlannerMode
@@ -57,6 +55,7 @@ function firstModelForProvider(models: ModelInfo[], provider: ProviderId): strin
 }
 
 // ─── Date helpers (local time, never round-trip through UTC) ────────────────────
+const dayMs = 86_400_000
 const pad = (n: number) => String(n).padStart(2, '0')
 const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 function parseYmd(s: string): Date {
@@ -67,6 +66,23 @@ function addDays(dateStr: string, n: number): string {
   const d = parseYmd(dateStr)
   d.setDate(d.getDate() + n)
   return ymd(d)
+}
+// Fixed English names, as the rest of the UI: a locale would turn "Sep" into "Sept".
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+/** "29 Sep" */
+function fmtShort(dateStr: string): string {
+  const d = parseYmd(dateStr)
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}`
+}
+/** "Thu 2 Oct" */
+function fmtDay(dateStr: string): string {
+  return `${WEEKDAYS[parseYmd(dateStr).getDay()]} ${fmtShort(dateStr)}`
+}
+/** "Tue" within the last week, "29 Sep" before that. */
+function fmtSince(dateStr: string): string {
+  const days = Math.round((parseYmd(ymd(new Date())).getTime() - parseYmd(dateStr).getTime()) / dayMs)
+  return days >= 0 && days < 7 ? WEEKDAYS[parseYmd(dateStr).getDay()] : fmtShort(dateStr)
 }
 const uid = () =>
   crypto?.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.round(Math.random() * 1e6)}`
@@ -82,6 +98,9 @@ const STATUS_LABELS: Record<SprintStatus, string> = {
   completed: 'Completed'
 }
 
+/** Enter on a sheet is ignored this long after it opens (§6). */
+const ENTER_GRACE_MS = 400
+
 /**
  * The forge a sprint talks to: whatever its last import used, else GitLab. The probe
  * corrects it from the project's git remote as soon as the importer opens.
@@ -94,33 +113,104 @@ function pointsOf(i: SprintItem): number {
   return typeof i.points === 'number' && i.points > 0 ? i.points : 0
 }
 
+/** The last segment of the sprint's project folder: "Portal municipal". */
+function projectNameOf(s: Sprint): string | undefined {
+  return s.projectPath?.split(/[\\/]/).filter(Boolean).pop()
+}
+
+/** How many blockers a standup lists: one per non-empty line, bullets stripped. */
+function blockerCount(text: string): number {
+  return text
+    .split('\n')
+    .map((l) => l.replace(/^[\s\-*•]+/, '').trim())
+    .filter(Boolean).length
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** Does a standup's Blockers text name this item, by its title or its forge reference? */
+function mentions(text: string, item: SprintItem): boolean {
+  if (!text.trim()) return false
+  const title = item.title.trim().toLowerCase()
+  if (title.length >= 4 && text.toLowerCase().includes(title)) return true
+  const ref = originOf(item)?.ref
+  return !!ref && new RegExp(`(^|[^\\w])${escapeRe(ref)}(?!\\d)`).test(text)
+}
+
+/** "Waiting on the client's IdP team." when the blockers text says who it waits on. */
+function waitingOn(text: string): string | undefined {
+  const m = text.match(/waiting on ([^.\n]+)/i)
+  return m ? `Waiting on ${m[1].trim()}.` : undefined
+}
+
+interface BlockInfo {
+  item: SprintItem
+  /** The first standup of the unbroken run that names it. */
+  since: string
+  waiting?: string
+}
+
+/**
+ * Items have no blocked flag, so "blocked" is read from the standups: an open item that
+ * the latest standup (today or before) names in its Blockers is blocked, since the
+ * earliest standup of the unbroken run that names it. A standup whose Blockers no longer
+ * name it clears it.
+ */
+// TODO(port): SprintItem has no blocked flag, so there is nothing for "Unblock" to clear.
+function blockedItems(sprint: Sprint): BlockInfo[] {
+  const today = ymd(new Date())
+  const past = sprint.standups
+    .filter((s) => s.date <= today)
+    .sort((a, b) => b.date.localeCompare(a.date))
+  const latest = past[0]
+  if (!latest || !latest.blockers.trim()) return []
+  const out: BlockInfo[] = []
+  for (const item of sprint.items) {
+    if (item.status === 'done' || !mentions(latest.blockers, item)) continue
+    let since = latest.date
+    for (const s of past.slice(1)) {
+      if (!mentions(s.blockers, item)) break
+      since = s.date
+    }
+    out.push({ item, since, waiting: waitingOn(latest.blockers) })
+  }
+  return out
+}
+
 // What happens to the unfinished items when a sprint is completed.
 type CarryChoice =
   | { kind: 'keep' }
   | { kind: 'existing'; sprintId: string }
   | { kind: 'new'; name: string }
 
-const dayMs = 86_400_000
 /** Inclusive length of a sprint in days — reused for the sprint that follows it. */
 function sprintLengthDays(s: Sprint): number {
   const n = Math.round((parseYmd(s.endDate).getTime() - parseYmd(s.startDate).getTime()) / dayMs) + 1
   return n > 0 ? n : 14
 }
 
-/** "Sprint 3 — Checkout" → "Sprint 4 — Checkout"; falls back to a plain count. */
+/** "Sprint 3 — Checkout" -> "Sprint 4 — Checkout"; falls back to a plain count. */
 function nextSprintName(prev: string, count: number): string {
   const m = prev.match(/(\d+)/)
   return m ? prev.replace(/\d+/, String(Number(m[1]) + 1)) : `Sprint ${count + 1}`
+}
+
+/** Enter submits a sheet's form, except on a control with its own Enter, and never in the
+ *  first moments after the sheet opened, so the keystroke that opened it cannot submit it. */
+function enterSubmits(e: ReactKeyboardEvent, openedAt: number, submit: () => void) {
+  if (e.key !== 'Enter') return
+  const tag = (e.target as HTMLElement).tagName
+  if (tag === 'BUTTON' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'A') return
+  if (Date.now() - openedAt < ENTER_GRACE_MS) return
+  e.preventDefault()
+  submit()
 }
 
 // Shared Week|Sprint segmented toggle — rendered by both PlannerView and SprintBoard so
 // the control sits in the same header slot regardless of the active mode.
 export function PlannerModeToggle({ mode, onMode }: { mode: PlannerMode; onMode: (m: PlannerMode) => void }) {
   return (
-    <div
-      className="seg-control planner-mode"
-      title="Switch between the weekly planner and the sprint board"
-    >
+    <div className="seg-control planner-mode" title="Switch between the weekly planner and the sprint board">
       {(['week', 'sprint'] as const).map((m) => (
         <button key={m} className={mode === m ? 'on' : ''} onClick={() => onMode(m)}>
           {m === 'week' ? 'Week' : 'Sprint'}
@@ -129,6 +219,17 @@ export function PlannerModeToggle({ mode, onMode }: { mode: PlannerMode; onMode:
     </div>
   )
 }
+
+type SprintDraft = {
+  name: string
+  goal: string
+  startDate: string
+  endDate: string
+  status: SprintStatus
+  projectPath?: string
+}
+
+type ItemDraft = { title: string; status: ItemStatus; points: number | null; notes: string | null }
 
 export default function SprintBoard({
   mode,
@@ -148,21 +249,12 @@ export default function SprintBoard({
   const [loading, setLoading] = useState(true)
   const [drag, setDrag] = useState<string | null>(null)
   const [overCol, setOverCol] = useState<ItemStatus | null>(null)
-  const [editingItemId, setEditingItemId] = useState<string | null>(null)
-  const [sprintModal, setSprintModal] = useState<'new' | 'edit' | null>(null)
+  // The item sheet: an existing item's id, or 'new' for one being added to To do.
+  const [itemSheet, setItemSheet] = useState<string | null>(null)
+  const [sprintSheet, setSprintSheet] = useState<'new' | 'edit' | null>(null)
   const [completeOpen, setCompleteOpen] = useState(false)
   const [backfillOpen, setBackfillOpen] = useState(false)
   const [standupDate, setStandupDate] = useState(() => ymd(new Date()))
-  // Which section of the sprint is shown — persisted like the Week/Sprint mode.
-  const [section, setSection] = useState<SprintSection>(
-    () => (['board', 'standup', 'burndown'].includes(localStorage.getItem('sprint.section') || '')
-      ? (localStorage.getItem('sprint.section') as SprintSection)
-      : 'board')
-  )
-  const changeSection = (s: SprintSection) => {
-    setSection(s)
-    localStorage.setItem('sprint.section', s)
-  }
   const [genBusy, setGenBusy] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -178,7 +270,7 @@ export default function SprintBoard({
   })
   const [runModel, setRunModel] = useState<string>(defaultModel)
 
-  // Accounts across all providers, pre-ordered claude → codex → gemini, for the picker.
+  // Accounts across all providers, pre-ordered claude -> codex -> gemini, for the picker.
   const runAccountItems: AccountPickerItem[] = useMemo(
     () => [
       ...accounts.map((a) => ({ provider: 'claude' as const, id: a.id, name: a.name, loggedIn: a.loggedIn, email: a.email, plan: a.plan })),
@@ -246,14 +338,7 @@ export default function SprintBoard({
   }
 
   // ─── Sprint CRUD ──────────────────────────────────────────────────────────
-  const createSprint = (draft: {
-    name: string
-    goal: string
-    startDate: string
-    endDate: string
-    status: SprintStatus
-    projectPath?: string
-  }) => {
+  const createSprint = (draft: SprintDraft) => {
     const now = Date.now()
     const s: Sprint = {
       id: uid(),
@@ -270,7 +355,7 @@ export default function SprintBoard({
     }
     persist(s)
     setActiveId(s.id)
-    setSprintModal(null)
+    setSprintSheet(null)
   }
   // Sprint-level fields (name, dates, status…) stay editable even once completed —
   // that's how a sprint gets reopened.
@@ -283,7 +368,7 @@ export default function SprintBoard({
     const list = await window.electronAPI.sprintDelete(active.id)
     setSprints(list)
     setActiveId(list[0]?.id ?? '')
-    setSprintModal(null)
+    setSprintSheet(null)
   }
 
   // ─── Closing a sprint ─────────────────────────────────────────────────────
@@ -338,15 +423,43 @@ export default function SprintBoard({
 
   const reopenSprint = () => patchSprint({ status: 'active' })
 
+  // The open sprint that follows this one, if any: where a blocked item can go.
+  const nextSprint = useMemo(() => {
+    if (!active) return null
+    return (
+      sprints
+        .filter((s) => s.id !== active.id && s.status !== 'completed' && s.startDate > active.startDate)
+        .sort((a, b) => a.startDate.localeCompare(b.startDate))[0] ?? null
+    )
+  }, [sprints, active])
+
+  // Hand one item to another sprint; it starts over there like a carried item.
+  // TODO(port): there is no backlog model, so a blocked item offers no "Move to backlog".
+  const moveToSprint = (item: SprintItem, target: Sprint) => {
+    if (!active || active.status === 'completed') return
+    persistAll([
+      { ...active, items: active.items.filter((i) => i.id !== item.id), updatedAt: Date.now() },
+      { ...target, items: [...target.items, { ...item, completedAt: null, prevStatus: null }], updatedAt: Date.now() }
+    ])
+  }
+
   // ─── Item CRUD ────────────────────────────────────────────────────────────
-  const addItem = (status: ItemStatus, title: string) => {
-    const t = title.trim()
+  const addItem = (draft: ItemDraft) => {
+    const t = draft.title.trim()
     if (!t) return
     mutate((s) => ({
       ...s,
       items: [
         ...s.items,
-        { id: uid(), title: t, status, points: null, createdAt: Date.now(), completedAt: status === 'done' ? Date.now() : null }
+        {
+          id: uid(),
+          title: t,
+          notes: draft.notes?.trim() || null,
+          status: draft.status,
+          points: draft.points,
+          createdAt: Date.now(),
+          completedAt: draft.status === 'done' ? Date.now() : null
+        }
       ]
     }))
   }
@@ -358,9 +471,8 @@ export default function SprintBoard({
   const deleteItem = (id: string) => mutate((s) => ({ ...s, items: s.items.filter((i) => i.id !== id) }))
   const moveItem = (id: string, status: ItemStatus) => updateItem(id, { status })
 
-  // The card checkbox steps an item forward through the workflow (todo → in-progress →
-  // done); checking a done item steps it back to whatever it was before (not straight
-  // to the backlog).
+  // The item's hover control steps it forward through the workflow (todo -> in-progress ->
+  // done); on a done item it steps back to whatever it was before (not straight to To do).
   const advanceItem = (item: SprintItem) => {
     if (item.status === 'done') {
       const back = item.prevStatus && item.prevStatus !== 'done' ? item.prevStatus : 'in-progress'
@@ -370,7 +482,7 @@ export default function SprintBoard({
     }
   }
 
-  // Column header "check all" advances every item in that column one step forward.
+  // The column head's control advances every item in that column one step forward.
   const advanceAll = (status: ItemStatus) => {
     const next = NEXT_STATUS[status]
     if (next === status) return
@@ -380,7 +492,7 @@ export default function SprintBoard({
     }))
   }
 
-  // Persist the last GitLab backfill so re-opening the importer is instant.
+  // Persist the last forge backfill so re-opening the importer is instant.
   const cacheBackfill = (cache: SprintBackfillCache) => mutate((s) => ({ ...s, backfillCache: cache }))
 
   // Append imported issues / change requests (from the forge backfill) as fresh To-do items.
@@ -473,7 +585,7 @@ export default function SprintBoard({
     onStandupChat?.(
       context,
       "Let's talk through my day. Help me prioritise what to focus on today and think through how to clear any blockers.",
-      `Standup chat · ${fmtDate(standupDate)}`
+      `Standup chat · ${fmtDay(standupDate)}`
     )
   }
 
@@ -483,8 +595,7 @@ export default function SprintBoard({
     const total = items.reduce((n, i) => n + pointsOf(i), 0)
     const done = items.filter((i) => i.status === 'done').reduce((n, i) => n + pointsOf(i), 0)
     const byCol = (st: ItemStatus) => items.filter((i) => i.status === st)
-    const pct = total ? Math.round((done / total) * 100) : 0
-    return { total, done, remaining: total - done, count: items.length, byCol, pct }
+    return { total, done, count: items.length, byCol }
   }, [active])
 
   // Whole days from today (inclusive) to the sprint's end; 0 once the end has passed.
@@ -492,70 +603,85 @@ export default function SprintBoard({
     if (!active) return 0
     const today = parseYmd(ymd(new Date()))
     const end = parseYmd(active.endDate)
-    const diff = Math.round((end.getTime() - today.getTime()) / 86400000)
+    const diff = Math.round((end.getTime() - today.getTime()) / dayMs)
     return Math.max(0, diff + 1)
   }, [active])
+  const daysLeftLabel = daysLeft === 0 ? 'sprint ended' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`
 
-  const editingItem = active?.items.find((i) => i.id === editingItemId) ?? null
+  const blocked = useMemo(() => (active ? blockedItems(active) : []), [active])
+  const blockedById = useMemo(() => new Map(blocked.map((b) => [b.item.id, b])), [blocked])
+
+  const editingItem = itemSheet && itemSheet !== 'new' ? active?.items.find((i) => i.id === itemSheet) ?? null : null
   // A completed sprint is a closed record — the board stops taking edits until reopened.
   const locked = active?.status === 'completed'
 
+  const projectName = active ? projectNameOf(active) : undefined
+  const title = !active
+    ? 'Sprints'
+    : projectName && !active.name.toLowerCase().includes(projectName.toLowerCase())
+      ? `${active.name} · ${projectName}`
+      : active.name
+
+  const todayYmd = ymd(new Date())
+  const earlier = (active?.standups ?? [])
+    .filter((s) => s.date < todayYmd && (s.yesterday.trim() || s.today.trim() || s.blockers.trim()))
+    .sort((a, b) => b.date.localeCompare(a.date))
+
   return (
     <div className="view">
-      <div className="view-header planner-header">
-        <div className="sprint-head-left">
-          {onMode && <PlannerModeToggle mode={mode} onMode={onMode} />}
-          {active && (
-            <div>
-              <h1 className="sprint-title">
-                {active.name}
-                {locked && <span className="sprint-badge completed">Completed</span>}
-              </h1>
-              <p className="view-sub">
-                {parseYmd(active.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                {' – '}
-                {parseYmd(active.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                {' · '}
-                {stats.done}/{stats.total} pts · {stats.count} items
-                {' · '}
-                {daysLeft === 0 ? 'sprint ended' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}
-              </p>
-            </div>
-          )}
+      <div className="sb-head">
+        <div className="sb-head-text">
+          <div className="sb-title-row">
+            <h1>{title}</h1>
+            {locked && <span className="chip ok">Completed</span>}
+            {sprints.length > 0 && <SprintSwitcher sprints={sprints} activeId={activeId} onSelect={setActiveId} />}
+          </div>
+          <p className="sb-sub">
+            {active ? (
+              <>
+                {fmtShort(active.startDate)} – {fmtShort(active.endDate)} · {stats.done} / {stats.total} pts ·{' '}
+                {stats.count} item{stats.count === 1 ? '' : 's'} · {daysLeftLabel}
+              </>
+            ) : (
+              'Plan work on a board, log daily standups, and track a burndown.'
+            )}
+          </p>
         </div>
-        <div className="planner-header-actions">
-          {sprints.length > 0 && (
-            <SprintSwitcher
-              sprints={sprints}
-              activeId={activeId}
-              onSelect={setActiveId}
-            />
-          )}
-          {active && (
-            <Menu
-              triggerClass="assist-btn sb-icon-btn"
-              triggerTitle="More sprint actions"
-              triggerContent={<MoreIcon />}
-              align="right"
-              items={[
-                ...(locked
-                  ? [{ label: 'Reopen sprint', icon: <ReopenIcon />, onClick: reopenSprint }]
-                  : [
-                      {
-                        label: `Import from ${FORGE_NAMES[forgeOf(active)]}`,
-                        icon: <ImportIcon />,
-                        onClick: () => setBackfillOpen(true)
-                      },
-                      { label: 'Complete sprint', icon: <FlagIcon />, onClick: () => setCompleteOpen(true) }
-                    ]),
-                { label: 'Sprint settings', icon: <GearIcon />, onClick: () => setSprintModal('edit') }
-              ]}
-            />
-          )}
-          <button className="assist-btn primary" onClick={() => setSprintModal('new')}>
-            + New sprint
-          </button>
-        </div>
+        {onMode && <PlannerModeToggle mode={mode} onMode={onMode} />}
+        {active && (
+          <Menu
+            triggerClass="btn-ghost sb-icon-btn"
+            ariaLabel="More"
+            triggerTitle="More"
+            triggerContent={<MoreIcon />}
+            align="right"
+            items={[
+              ...(locked
+                ? [{ label: 'Reopen sprint', icon: <ReopenIcon />, onClick: reopenSprint }]
+                : [
+                    {
+                      label: `Import from ${FORGE_NAMES[forgeOf(active)]}`,
+                      icon: <ImportIcon />,
+                      onClick: () => setBackfillOpen(true)
+                    },
+                    { label: 'Complete sprint', icon: <FlagIcon />, onClick: () => setCompleteOpen(true) }
+                  ]),
+              { label: 'Sprint settings', icon: <GearIcon />, onClick: () => setSprintSheet('edit') },
+              { label: 'New sprint', icon: <PlusIcon />, onClick: () => setSprintSheet('new') }
+            ]}
+          />
+        )}
+        {active &&
+          (locked ? (
+            <button type="button" className="btn-primary" onClick={reopenSprint}>
+              Reopen sprint
+            </button>
+          ) : (
+            <button type="button" className="btn-primary" onClick={() => setItemSheet('new')}>
+              <PlusIcon />
+              Add item
+            </button>
+          ))}
       </div>
 
       {loading ? (
@@ -564,79 +690,24 @@ export default function SprintBoard({
           <span className="view-loading-text">Loading sprints…</span>
         </div>
       ) : !active ? (
-        <div className="sprint-empty">
-          <div className="sprint-empty-card">
-            <h2>No sprints yet</h2>
-            <p>Create your first sprint to plan work on a Scrum board, log daily standups, and track a burndown.</p>
-            <button className="assist-btn primary wide" onClick={() => setSprintModal('new')}>
-              + New sprint
-            </button>
-          </div>
+        <div className="sb-empty">
+          <h2>No sprints yet</h2>
+          <p className="help">Create a sprint to plan work on a board, log daily standups, and track a burndown.</p>
+          <button type="button" className="btn-primary" onClick={() => setSprintSheet('new')}>
+            <PlusIcon />
+            New sprint
+          </button>
         </div>
       ) : (
-        <div className="view-scroll sprint-scroll">
-          <div className="planner-stats sprint-stats">
-            <div className="stat-card">
-              <div className="stat-ico sched"><Spark /></div>
-              <div className="stat-body">
-                <div className="stat-value">{stats.total}</div>
-                <div className="stat-label">Total points</div>
-              </div>
-            </div>
-            <div className="stat-card">
-              <MiniRing pct={stats.pct} />
-              <div className="stat-body">
-                <div className="stat-value">
-                  {stats.done}
-                  <span className="stat-sub">/{stats.total || 0}</span>
-                </div>
-                <div className="stat-label">Points done</div>
-              </div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-ico deep">↓</div>
-              <div className="stat-body">
-                <div className="stat-value">{stats.remaining}</div>
-                <div className="stat-label">Remaining</div>
-              </div>
-            </div>
-          </div>
-
-          {locked && (
-            <div className="sprint-closed-banner">
-              <span>
-                This sprint is completed — the board is read-only. Reopen it to change anything.
-              </span>
-              <button className="assist-btn" onClick={reopenSprint}>Reopen sprint</button>
-            </div>
-          )}
-
-          {active.goal?.trim() && (
-            <div className="sprint-goal">
-              <span className="planner-label">Sprint goal</span>
-              <p>{active.goal}</p>
-            </div>
-          )}
-
-          {/* Section tabs — keep the scroll focused on one thing at a time. */}
-          <div className="seg-control sprint-tabs">
-            {(['board', 'standup', 'burndown'] as SprintSection[]).map((s) => (
-              <button key={s} className={section === s ? 'on' : ''} onClick={() => changeSection(s)}>
-                {s === 'board' ? 'Board' : s === 'standup' ? 'Standup' : 'Burndown'}
-              </button>
-            ))}
-          </div>
-
-          {/* Kanban board */}
-          {section === 'board' && (
-          <div className={`sprint-board ${locked ? 'locked' : ''}`}>
+        <div className="sb-page">
+          <div className={`sb-board ${locked ? 'locked' : ''}`}>
             {COLUMNS.map((col) => {
               const colItems = stats.byCol(col.status)
               const pts = colItems.reduce((n, i) => n + pointsOf(i), 0)
               return (
                 <div
                   key={col.status}
-                  className={`sprint-col ${overCol === col.status ? 'over' : ''} ${col.status}`}
+                  className={`sb-lane ${overCol === col.status ? 'over' : ''}`}
                   onDragOver={(e) => {
                     if (drag) {
                       e.preventDefault()
@@ -652,104 +723,134 @@ export default function SprintBoard({
                     setOverCol(null)
                   }}
                 >
-                  <div className="sprint-col-head">
-                    <label className="sprint-col-check-wrap">
-                      {col.status !== 'done' && !locked && (
-                        <input
-                          type="checkbox"
-                          className="sprint-col-check"
-                          checked={false}
-                          disabled={colItems.length === 0}
-                          onChange={() => advanceAll(col.status)}
-                          title={`Move all to ${col.status === 'todo' ? 'In progress' : 'Done'}`}
-                        />
-                      )}
-                      <span className="sprint-col-name">{col.label}</span>
-                    </label>
-                    <span className="sprint-col-count">
-                      {colItems.length}
-                      {pts > 0 && <em> · {pts}p</em>}
+                  <div className="sb-lane-head">
+                    <span className="sb-lane-name">{col.label}</span>
+                    <span className="sb-muted">
+                      {colItems.length} · {pts} p
                     </span>
+                    {col.status !== 'done' && !locked && (
+                      <button
+                        type="button"
+                        className="sb-ic sb-lane-advance"
+                        disabled={colItems.length === 0}
+                        onClick={() => advanceAll(col.status)}
+                        aria-label={col.status === 'todo' ? 'Move all to In progress' : 'Mark all done'}
+                        title={col.status === 'todo' ? 'Move all to In progress' : 'Mark all done'}
+                      >
+                        {col.status === 'todo' ? <ArrowRightIcon /> : <CheckIcon />}
+                      </button>
+                    )}
                   </div>
-                  <div className="sprint-col-items">
+                  <div className="sb-lane-items">
                     {colItems.map((i) => (
                       <ItemCard
                         key={i.id}
                         item={i}
                         locked={locked}
+                        blockedSince={blockedById.get(i.id)?.since}
                         onDragStart={() => setDrag(i.id)}
                         onDragEnd={() => {
                           setDrag(null)
                           setOverCol(null)
                         }}
-                        onOpen={() => setEditingItemId(i.id)}
+                        onOpen={() => setItemSheet(i.id)}
                         onAdvance={() => advanceItem(i)}
                         onDelete={() => deleteItem(i.id)}
                       />
                     ))}
-                    {!locked && <AddItemInline onAdd={(t) => addItem(col.status, t)} />}
+                    {!locked && (
+                      <AddItemRow onAdd={(t) => addItem({ title: t, status: col.status, points: null, notes: null })} />
+                    )}
                   </div>
                 </div>
               )
             })}
           </div>
-          )}
 
-          {section === 'burndown' && <BurndownChart sprint={active} total={stats.total} />}
+          <aside className="sb-side" aria-label="Sprint progress and standup">
+            <section className="sb-sec">
+              {active.goal?.trim() && <p className="sb-goal">{active.goal}</p>}
+              <div className="sb-progress-head">
+                <span className="sb-t3">
+                  {stats.done} of {stats.total} points
+                </span>
+                <span className="sb-muted">{daysLeftLabel}</span>
+              </div>
+              <div className="sb-bar">
+                <span style={{ width: `${stats.total ? Math.round((stats.done / stats.total) * 100) : 0}%` }} />
+              </div>
+              <Burndown sprint={active} total={stats.total} />
+            </section>
 
-          {section === 'standup' && (
-          <StandupSection
-            locked={locked}
-            date={standupDate}
-            onDate={setStandupDate}
-            standup={standupFor(standupDate)}
-            history={[...active.standups].sort((a, b) => b.date.localeCompare(a.date))}
-            onPatch={(patch) => patchStandup(standupDate, patch)}
-            onEditHistory={setStandupDate}
-            onDeleteHistory={deleteStandup}
-            onGenerate={generateStandup}
-            genBusy={genBusy}
-            genError={genError}
-            hasProject={!!active.projectPath}
-            onDiscuss={onStandupChat ? discussStandup : undefined}
-            runAccountItems={runAccountItems}
-            runProvider={runProvider}
-            runAccountId={runAccountId}
-            onPickRunAccount={pickRunAccount}
-            runModels={runModels}
-            runModel={runModel}
-            onPickRunModel={setRunModel}
-          />
-          )}
+            {blocked.length > 0 && (
+              <BlockedBlock
+                info={blocked[0]}
+                more={blocked.length - 1}
+                locked={locked}
+                nextSprint={nextSprint}
+                onMove={(target) => moveToSprint(blocked[0].item, target)}
+              />
+            )}
+
+            <StandupPanel
+              key={standupDate}
+              locked={locked}
+              date={standupDate}
+              onDate={setStandupDate}
+              standup={standupFor(standupDate)}
+              earlier={earlier}
+              onSave={(patch) => patchStandup(standupDate, patch)}
+              onDelete={() => deleteStandup(standupDate)}
+              onGenerate={generateStandup}
+              genBusy={genBusy}
+              genError={genError}
+              hasProject={!!active.projectPath}
+              onDiscuss={onStandupChat ? discussStandup : undefined}
+              runAccountItems={runAccountItems}
+              runProvider={runProvider}
+              runAccountId={runAccountId}
+              onPickRunAccount={pickRunAccount}
+              runModels={runModels}
+              runModel={runModel}
+              onPickRunModel={setRunModel}
+            />
+          </aside>
         </div>
       )}
 
-      {sprintModal && (
-        <SprintModal
-          mode={sprintModal}
-          sprint={sprintModal === 'edit' ? active : null}
+      {sprintSheet && (
+        <SprintSheet
+          mode={sprintSheet}
+          sprint={sprintSheet === 'edit' ? active : null}
           onCreate={createSprint}
-          onPatch={patchSprint}
+          onSave={(patch) => {
+            patchSprint(patch)
+            setSprintSheet(null)
+          }}
           onDelete={deleteSprint}
-          onClose={() => setSprintModal(null)}
+          onClose={() => setSprintSheet(null)}
         />
       )}
 
-      {editingItem && (
-        <ItemModal
+      {itemSheet && (itemSheet === 'new' || editingItem) && (
+        <ItemSheet
           item={editingItem}
           locked={locked}
-          onPatch={(patch) => updateItem(editingItem.id, patch)}
-          onDelete={() => {
-            deleteItem(editingItem.id)
-            setEditingItemId(null)
+          onSave={(draft) => {
+            if (editingItem) updateItem(editingItem.id, draft)
+            else addItem(draft)
+            setItemSheet(null)
           }}
-          onClose={() => setEditingItemId(null)}
+          onDelete={() => {
+            if (editingItem) deleteItem(editingItem.id)
+            setItemSheet(null)
+          }}
+          onClose={() => setItemSheet(null)}
         />
       )}
 
       {completeOpen && active && (
-        <CompleteSprintModal
+        <CompleteSprintSheet
           sprint={active}
           targets={sprints.filter((s) => s.id !== active.id && s.status !== 'completed')}
           suggestedName={nextSprintName(active.name, sprints.length)}
@@ -759,7 +860,7 @@ export default function SprintBoard({
       )}
 
       {backfillOpen && active && (
-        <BacklogBackfillModal
+        <BacklogBackfillSheet
           sprint={active}
           model={runModel}
           accountId={runAccountId}
@@ -803,15 +904,17 @@ function SprintSwitcher({
   const active = sprints.find((s) => s.id === activeId)
   return (
     <Menu
-      triggerClass="assist-btn sprint-switcher-trigger"
+      triggerClass="sb-switch"
       triggerTitle="Switch sprint"
+      ariaLabel="Switch sprint"
       triggerContent={
         <>
-          <span className="sprint-switcher-current">{active?.name ?? 'Select sprint'}</span>
-          <CaretDownIcon />
+          <span className={`sb-status-dot ${active?.status ?? 'planning'}`} />
+          <span className="sb-switch-name">{active?.name ?? 'Select sprint'}</span>
+          <ChevronDownIcon />
         </>
       }
-      align="right"
+      align="left"
       items={[...sprints]
         // Open sprints first, completed ones parked underneath — a closed sprint is
         // history, not something you want at the top of the list every day.
@@ -819,7 +922,7 @@ function SprintSwitcher({
         .map((s) => ({
           label: s.name,
           group: s.status === 'completed' ? 'Completed' : 'Open',
-          icon: <span className={`sprint-status-dot ${s.status}`} title={STATUS_LABELS[s.status]} />,
+          icon: <span className={`sb-status-dot ${s.status}`} title={STATUS_LABELS[s.status]} />,
           active: s.id === activeId,
           onClick: () => onSelect(s.id)
         }))}
@@ -827,11 +930,15 @@ function SprintSwitcher({
   )
 }
 
-// ─── Item card ──────────────────────────────────────────────────────────────
+// ─── Item on the board ──────────────────────────────────────────────────────────
+// Open items are flat blocks; done items are rows. Neither carries a coloured edge: the
+// one tinted block on the board is the blocked item.
 function ItemCard(props: {
   item: SprintItem
-  /** The sprint is completed: show the card, take no edits. */
+  /** The sprint is completed: show the item, take no edits. */
   locked?: boolean
+  /** Set when the standups name this item as blocked. */
+  blockedSince?: string
   onDragStart: () => void
   onDragEnd: () => void
   onOpen: () => void
@@ -840,95 +947,786 @@ function ItemCard(props: {
 }) {
   const i = props.item
   const origin = originOf(i)
-  const advanceTitle =
-    i.status === 'done'
-      ? 'Move back a step'
-      : i.status === 'todo'
-        ? 'Move to In progress'
-        : 'Mark done'
-  return (
-    <div
-      className={`sprint-item ${i.status === 'done' ? 'done' : ''}`}
-      draggable={!props.locked}
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = 'move'
-        props.onDragStart()
-      }}
-      onDragEnd={props.onDragEnd}
-      onClick={props.onOpen}
-      title={props.locked ? 'Click to view · sprint completed' : 'Click to edit · drag to move'}
-    >
-      <div className="sprint-item-main">
-        <button
-          className={`task-check ${i.status === 'done' ? 'on' : ''} ${i.status === 'in-progress' ? 'partial' : ''}`}
-          disabled={props.locked}
-          onClick={(e) => {
-            e.stopPropagation()
-            props.onAdvance()
-          }}
-          title={props.locked ? '' : advanceTitle}
-        >
-          {i.status === 'done' ? '✓' : ''}
-        </button>
-        <span className="sprint-item-title">{i.title}</span>
-        {!props.locked && (
-          <button
-            className="task-del"
-            onClick={(e) => {
-              e.stopPropagation()
-              props.onDelete()
-            }}
-            title="Delete"
-          >
-            ×
-          </button>
-        )}
+  const pts = pointsOf(i)
+  const advanceLabel =
+    i.status === 'done' ? 'Move back to In progress' : i.status === 'todo' ? 'Move to In progress' : 'Mark done'
+  const shared = {
+    draggable: !props.locked,
+    onDragStart: (e: React.DragEvent) => {
+      e.dataTransfer.effectAllowed = 'move'
+      props.onDragStart()
+    },
+    onDragEnd: props.onDragEnd,
+    onClick: props.onOpen,
+    role: 'button',
+    tabIndex: 0,
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' && e.target === e.currentTarget) props.onOpen()
+    },
+    title: props.locked ? 'Sprint completed: click to view' : 'Click to edit · drag to move'
+  }
+  const actions = !props.locked && (
+    <span className="sb-item-actions">
+      <button
+        type="button"
+        className="sb-ic"
+        aria-label={advanceLabel}
+        title={advanceLabel}
+        onClick={(e) => {
+          e.stopPropagation()
+          props.onAdvance()
+        }}
+      >
+        {i.status === 'done' ? <UndoIcon /> : i.status === 'todo' ? <CircleIcon /> : <HalfCircleIcon />}
+      </button>
+      <button
+        type="button"
+        className="sb-ic danger"
+        aria-label="Delete item"
+        title="Delete item"
+        onClick={(e) => {
+          e.stopPropagation()
+          props.onDelete()
+        }}
+      >
+        <XIcon />
+      </button>
+    </span>
+  )
+
+  if (i.status === 'done') {
+    return (
+      <div className="sb-done-row" {...shared}>
+        <span className="sb-done-check">
+          <CheckIcon />
+        </span>
+        <span className="sb-done-title">{i.title}</span>
+        {actions}
+        {pts > 0 && <span className="sb-pts">{pts} p</span>}
       </div>
-      {(pointsOf(i) > 0 || origin) && (
-        <div className="sprint-item-meta">
+    )
+  }
+
+  return (
+    <div className={`block sb-item ${props.blockedSince ? 'warn' : ''}`} {...shared}>
+      <div className="sb-item-row">
+        <span className="sb-item-title">{i.title}</span>
+        {actions}
+        {pts > 0 && <span className="sb-pts">{pts} p</span>}
+      </div>
+      {(origin || props.blockedSince) && (
+        <div className="sb-item-meta">
           {origin && (
-            <span
-              className={`sprint-ref ${origin.kind}`}
-              title={`${kindLabel(origin.forge, origin.kind)} on ${FORGE_NAMES[origin.forge]}`}
-            >
+            <span className="chip sb-ref" title={`${kindLabel(origin.forge, origin.kind)} on ${FORGE_NAMES[origin.forge]}`}>
               {origin.ref}
             </span>
           )}
-          {pointsOf(i) > 0 && <span className="sprint-points">{pointsOf(i)} pts</span>}
+          {props.blockedSince && <span className="sb-blocked-since">blocked since {fmtSince(props.blockedSince)}</span>}
         </div>
       )}
     </div>
   )
 }
 
-function AddItemInline({ onAdd }: { onAdd: (t: string) => void }) {
+/** "Add item" at the foot of a column; opens into a title input in place. */
+function AddItemRow({ onAdd }: { onAdd: (t: string) => void }) {
+  const [open, setOpen] = useState(false)
   const [val, setVal] = useState('')
+  // Esc closes without adding; the blur that follows must not add what it just discarded.
+  const discard = useRef(false)
+  if (!open) {
+    return (
+      <button type="button" className="sb-add" onClick={() => setOpen(true)}>
+        <PlusIcon />
+        Add item
+      </button>
+    )
+  }
   return (
-    <input
-      className="add-task-inline"
-      placeholder="+ add item"
-      value={val}
-      onChange={(e) => setVal(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && val.trim()) {
-          onAdd(val)
+    <div className="sb-add-form">
+      <input
+        className="text-input"
+        autoFocus
+        placeholder="Item title"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && val.trim()) {
+            onAdd(val)
+            setVal('')
+          } else if (e.key === 'Escape') {
+            e.stopPropagation()
+            discard.current = true
+            setVal('')
+            setOpen(false)
+          }
+        }}
+        onBlur={() => {
+          if (!discard.current && val.trim()) onAdd(val)
+          discard.current = false
           setVal('')
-        }
-      }}
-      onBlur={() => {
-        if (val.trim()) {
-          onAdd(val)
-          setVal('')
-        }
-      }}
-    />
+          setOpen(false)
+        }}
+      />
+      <span className="help">Enter adds · Esc cancels</span>
+    </div>
   )
 }
 
-// ─── Complete sprint modal ────────────────────────────────────────────────────
+// ─── Burndown (hand-rolled SVG, no chart deps) ──────────────────────────────────
+function Burndown({ sprint, total }: { sprint: Sprint; total: number }) {
+  const data = useMemo(() => {
+    const start = parseYmd(sprint.startDate)
+    const end = parseYmd(sprint.endDate)
+    const rawDays = Math.round((end.getTime() - start.getTime()) / dayMs) + 1
+    const n = Math.max(2, Math.min(rawDays, 60)) // guard: at least 2 points, cap runaway ranges
+    const todayStr = ymd(new Date())
+
+    // Points completed on or before each day, using completedAt (or the sprint start for
+    // legacy done items that predate completedAt tracking).
+    const doneOnOrBefore = (dayStr: string): number =>
+      sprint.items
+        .filter((i) => i.status === 'done')
+        .filter((i) => {
+          const when = i.completedAt ? ymd(new Date(i.completedAt)) : sprint.startDate
+          return when <= dayStr
+        })
+        .reduce((sum, i) => sum + pointsOf(i), 0)
+
+    const ideal: number[] = []
+    const actual: (number | null)[] = []
+    for (let i = 0; i < n; i++) {
+      const dayStr = addDays(sprint.startDate, i)
+      ideal.push(total - (total * i) / (n - 1))
+      // Only draw the actual line through today — the future is unknown.
+      actual.push(dayStr <= todayStr ? total - doneOnOrBefore(dayStr) : null)
+    }
+    return { n, ideal, actual }
+  }, [sprint, total])
+
+  if (total === 0) return <p className="help">Add story points to items to see the burndown.</p>
+
+  const W = 420
+  const H = 90
+  const top = 6
+  const base = 76
+  const padX = 4
+  const x = (i: number) => padX + (i / (data.n - 1)) * (W - 2 * padX)
+  const y = (v: number) => top + (1 - v / total) * (base - top)
+
+  const idealPts = data.ideal.map((v, i) => `${x(i)},${y(v)}`).join(' ')
+  const actualPairs = data.actual
+    .map((v, i) => (v === null ? null : { i, v }))
+    .filter((p): p is { i: number; v: number } => p !== null)
+  const actualPts = actualPairs.map((p) => `${x(p.i)},${y(p.v)}`).join(' ')
+  const last = actualPairs[actualPairs.length - 1]
+  const diff = last ? Math.round(last.v - data.ideal[last.i]) : null
+  const abs = Math.abs(diff ?? 0)
+  const where =
+    diff === null
+      ? ''
+      : diff === 0
+        ? ' · on the line'
+        : ` · ${abs} point${abs === 1 ? '' : 's'} ${diff > 0 ? 'above' : 'below'} the line`
+
+  return (
+    <>
+      <svg className="sb-burndown" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Burndown">
+        <line className="sb-bd-base" x1={0} y1={base} x2={W} y2={base} />
+        <polyline className="sb-bd-ideal" points={idealPts} />
+        {actualPts && <polyline className="sb-bd-actual" points={actualPts} />}
+        {last && <circle className="sb-bd-dot" cx={x(last.i)} cy={y(last.v)} r={3} />}
+        <text className="sb-bd-label" x={0} y={H - 1}>
+          {fmtShort(sprint.startDate)}
+        </text>
+        <text className="sb-bd-label" x={W} y={H - 1} textAnchor="end">
+          {fmtShort(sprint.endDate)}
+        </text>
+      </svg>
+      <p className="sb-cap">Ideal dashed · actual in accent{where}</p>
+    </>
+  )
+}
+
+// ─── The blocked item: the one tinted block in the column ───────────────────────
+function BlockedBlock(props: {
+  info: BlockInfo
+  /** Other blocked items not shown in their own block. */
+  more: number
+  locked?: boolean
+  nextSprint: Sprint | null
+  onMove: (target: Sprint) => void
+}) {
+  const { info } = props
+  return (
+    <div className="block warn sb-blocked">
+      <div className="sb-blocked-head">
+        <span className="sb-blocked-title">Blocked</span>
+        <span className="sb-muted">since {fmtSince(info.since)}</span>
+      </div>
+      <div className="sb-blocked-item">{info.item.title}</div>
+      <p className="help">
+        {info.waiting ? `${info.waiting} ` : ''}Mention it in today's standup or move it out of the sprint.
+        {props.more > 0 && ` ${props.more} more item${props.more === 1 ? ' is' : 's are'} blocked.`}
+      </p>
+      {!props.locked && props.nextSprint && (
+        <div className="sb-blocked-actions">
+          <button type="button" className="btn-ghost small" onClick={() => props.onMove(props.nextSprint!)}>
+            Move to next sprint
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Standup: the chosen day, then earlier days folded to one line each ─────────
+type StandupFields = Pick<DailyStandup, 'yesterday' | 'today' | 'blockers'>
+const STANDUP_FIELDS: { key: keyof StandupFields; label: string; hint: string }[] = [
+  { key: 'yesterday', label: 'Yesterday', hint: 'What did you get done?' },
+  { key: 'today', label: 'Today', hint: 'What are you working on?' },
+  { key: 'blockers', label: 'Blockers', hint: 'Anything in the way?' }
+]
+
+function StandupPanel(props: {
+  /** The sprint is completed: the standups are history, not a form. */
+  locked?: boolean
+  date: string
+  onDate: (d: string) => void
+  standup: DailyStandup
+  earlier: DailyStandup[]
+  onSave: (patch: StandupFields) => void
+  onDelete: () => void
+  onGenerate: () => void
+  genBusy: boolean
+  genError: string | null
+  hasProject: boolean
+  onDiscuss?: () => void
+  // Cross-provider "Run with" selector governing Generate (and the backfill sheet).
+  runAccountItems: AccountPickerItem[]
+  runProvider: ProviderId
+  runAccountId: string
+  onPickRunAccount: (provider: ProviderId, id: string) => void
+  runModels: ModelInfo[]
+  runModel: string
+  onPickRunModel: (modelId: string) => void
+}) {
+  const today = ymd(new Date())
+  const s = props.standup
+  const isToday = props.date === today
+  const hasContent = !!(s.yesterday.trim() || s.today.trim() || s.blockers.trim())
+  const [editing, setEditing] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [draft, setDraft] = useState<StandupFields>({ yesterday: s.yesterday, today: s.today, blockers: s.blockers })
+
+  // A save or a Generate lands as a new standup version: show it as read.
+  useEffect(() => {
+    setDraft({ yesterday: s.yesterday, today: s.today, blockers: s.blockers })
+    setEditing(false)
+    setConfirmDelete(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.updatedAt])
+
+  const form = !props.locked && (editing || !hasContent)
+  const dirty = draft.yesterday !== s.yesterday || draft.today !== s.today || draft.blockers !== s.blockers
+  const save = () => {
+    props.onSave(draft)
+    setEditing(false)
+  }
+  const discuss = props.onDiscuss && (
+    <button type="button" className="btn-text" onClick={props.onDiscuss}>
+      Discuss in chat
+    </button>
+  )
+
+  return (
+    <section className="sb-sec sb-standup">
+      <div className="sb-standup-head">
+        <span className="sb-t3">Standup · {fmtDay(props.date)}</span>
+        <span className="sb-grow" />
+        <button type="button" className="sb-ic" aria-label="Previous day" title="Previous day" onClick={() => props.onDate(addDays(props.date, -1))}>
+          <ChevronIcon dir="left" />
+        </button>
+        <button type="button" className="sb-ic" aria-label="Next day" title="Next day" onClick={() => props.onDate(addDays(props.date, 1))}>
+          <ChevronIcon dir="right" />
+        </button>
+        {!isToday && (
+          <button type="button" className="btn-text" onClick={() => props.onDate(today)}>
+            Today
+          </button>
+        )}
+        {!props.locked && (
+          <button
+            type="button"
+            className="btn-ghost small"
+            onClick={props.onGenerate}
+            disabled={props.genBusy}
+            title={
+              props.hasProject
+                ? 'Draft this standup from your git commits and board'
+                : 'Draft from your board (set a project folder in Sprint settings to include git commits)'
+            }
+          >
+            {props.genBusy ? 'Generating…' : 'Generate'}
+          </button>
+        )}
+      </div>
+
+      {!props.locked && (
+        <div className="sb-runwith">
+          <span className="sb-muted">Run with</span>
+          <AccountPicker
+            compact
+            items={props.runAccountItems}
+            selectedProvider={props.runProvider}
+            selectedId={props.runAccountId}
+            onPick={props.onPickRunAccount}
+            onManage={() => {}}
+            disabled={props.genBusy}
+          />
+          <ModelPicker
+            variant="select"
+            models={props.runModels}
+            value={props.runModel}
+            onChange={props.onPickRunModel}
+            disabled={props.genBusy}
+          />
+        </div>
+      )}
+
+      {props.genError && <p className="sb-error">{props.genError}</p>}
+
+      {form ? (
+        <>
+          <dl className="sb-dl">
+            {STANDUP_FIELDS.map((f) => (
+              <div key={f.key} className="sb-dl-row">
+                <dt>{f.label}</dt>
+                <dd>
+                  <textarea
+                    className="text-input textarea"
+                    rows={2}
+                    aria-label={f.label}
+                    placeholder={f.hint}
+                    value={draft[f.key]}
+                    onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                  />
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <div className="sb-standup-actions">
+            <button type="button" className="btn-ghost small" onClick={save} disabled={!dirty}>
+              Save
+            </button>
+            {editing && (
+              <button
+                type="button"
+                className="btn-text"
+                onClick={() => {
+                  setDraft({ yesterday: s.yesterday, today: s.today, blockers: s.blockers })
+                  setEditing(false)
+                }}
+              >
+                Cancel
+              </button>
+            )}
+            {discuss}
+          </div>
+        </>
+      ) : hasContent ? (
+        <>
+          <dl className="sb-dl">
+            {STANDUP_FIELDS.map((f) => (
+              <div key={f.key} className="sb-dl-row">
+                <dt>{f.label}</dt>
+                <dd className={s[f.key].trim() ? '' : 'empty'}>{s[f.key].trim() || 'Nothing noted'}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="sb-standup-actions">
+            {!props.locked && (
+              <button type="button" className="btn-text" onClick={() => setEditing(true)}>
+                Edit
+              </button>
+            )}
+            {discuss}
+            <span className="sb-grow" />
+            {!props.locked &&
+              (confirmDelete ? (
+                <>
+                  <span className="help">Delete this standup?</span>
+                  <button type="button" className="btn-text" onClick={() => setConfirmDelete(false)}>
+                    Keep
+                  </button>
+                  <button type="button" className="btn-text danger" onClick={props.onDelete}>
+                    Delete
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="btn-text danger" onClick={() => setConfirmDelete(true)}>
+                  Delete standup
+                </button>
+              ))}
+          </div>
+        </>
+      ) : (
+        <p className="help">No standup for this day.</p>
+      )}
+
+      {props.earlier.length > 0 && (
+        <>
+          <div className="divider-caption sb-divcap">
+            Earlier · {props.earlier.length} standup{props.earlier.length === 1 ? '' : 's'}
+          </div>
+          <div className="sb-earlier">
+            {props.earlier.map((h) => {
+              const n = blockerCount(h.blockers)
+              return (
+                <button
+                  type="button"
+                  key={h.date}
+                  className={`sb-earlier-row ${h.date === props.date ? 'on' : ''}`}
+                  onClick={() => props.onDate(h.date)}
+                >
+                  <span className={`sb-dot ${n ? 'warn' : ''}`} />
+                  <span>{fmtDay(h.date)}</span>
+                  <span className="sb-earlier-right">{n === 0 ? 'no blockers' : `${n} blocker${n === 1 ? '' : 's'}`}</span>
+                </button>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
+// ─── Sheet footer: buttons on one row, the keyboard line under them ─────────────
+function SheetFoot({ children, help }: { children: React.ReactNode; help?: string }) {
+  return (
+    <div className="sb-foot">
+      <div className="sb-foot-row">{children}</div>
+      {help && <span className="help sb-foot-help">{help}</span>}
+    </div>
+  )
+}
+
+// ─── Sprint settings / new sprint ───────────────────────────────────────────────
+function SprintSheet(props: {
+  mode: 'new' | 'edit'
+  sprint: Sprint | null
+  onCreate: (draft: SprintDraft) => void
+  onSave: (patch: Partial<Sprint>) => void
+  onDelete: () => void
+  onClose: () => void
+}) {
+  const sprint = props.mode === 'edit' ? props.sprint : null
+  const today = ymd(new Date())
+  const [d, setD] = useState<SprintDraft>(() => ({
+    name: sprint?.name ?? '',
+    goal: sprint?.goal ?? '',
+    startDate: sprint?.startDate ?? today,
+    endDate: sprint?.endDate ?? addDays(today, 13),
+    status: sprint?.status ?? 'active',
+    projectPath: sprint?.projectPath
+  }))
+  const set = (patch: Partial<SprintDraft>) => setD((p) => ({ ...p, ...patch }))
+  const [confirming, setConfirming] = useState(false)
+  const openedAt = useRef(Date.now())
+  const valid = !!d.startDate && !!d.endDate && d.endDate >= d.startDate
+
+  const submit = () => {
+    if (!valid) return
+    if (sprint) props.onSave({ ...d, name: d.name.trim() || sprint.name, goal: d.goal.trim() })
+    else props.onCreate(d)
+  }
+  const pickFolder = async () => {
+    const folder = await window.electronAPI.openFolder()
+    if (folder) set({ projectPath: folder })
+  }
+  // A sprint still in planning keeps that choice on offer; new ones start active.
+  const statuses: SprintStatus[] = sprint?.status === 'planning' ? ['planning', 'active', 'completed'] : ['active', 'completed']
+
+  return (
+    <Sheet
+      title={sprint ? 'Sprint settings' : 'New sprint'}
+      width={520}
+      onClose={props.onClose}
+      footer={
+        confirming && sprint ? (
+          <SheetFoot help="Its items and standups go with it. This cannot be undone.">
+            <span className="sb-confirm">Delete {sprint.name}?</span>
+            <span className="sb-grow" />
+            <button type="button" className="btn-ghost" onClick={() => setConfirming(false)}>
+              Keep
+            </button>
+            <button type="button" className="btn-primary danger" onClick={props.onDelete}>
+              Delete
+            </button>
+          </SheetFoot>
+        ) : (
+          <SheetFoot help="Enter saves · Esc cancels">
+            {sprint && (
+              <button type="button" className="btn-text danger" onClick={() => setConfirming(true)}>
+                Delete sprint
+              </button>
+            )}
+            <span className="sb-grow" />
+            <button type="button" className="btn-ghost" onClick={props.onClose}>
+              Cancel
+            </button>
+            <button type="button" className="btn-primary" onClick={submit} disabled={!valid}>
+              {sprint ? 'Save' : 'Create sprint'}
+            </button>
+          </SheetFoot>
+        )
+      }
+    >
+      <div className="sb-form" onKeyDown={(e) => enterSubmits(e, openedAt.current, submit)}>
+        <div className="form-group">
+          <label htmlFor="sb-sprint-name">Name</label>
+          <input
+            id="sb-sprint-name"
+            className="text-input"
+            value={d.name}
+            autoFocus
+            placeholder="Sprint 14"
+            onChange={(e) => set({ name: e.target.value })}
+          />
+        </div>
+        <div className="form-group">
+          <label htmlFor="sb-sprint-goal">
+            Goal<span className="optional">optional</span>
+          </label>
+          <textarea
+            id="sb-sprint-goal"
+            className="text-input textarea"
+            rows={2}
+            value={d.goal}
+            placeholder="The one outcome this sprint is about"
+            onChange={(e) => set({ goal: e.target.value })}
+          />
+        </div>
+        <div className="sb-form-row">
+          <div className="form-group grow">
+            <label htmlFor="sb-sprint-start">Start</label>
+            <input
+              id="sb-sprint-start"
+              type="date"
+              className="text-input sb-date"
+              value={d.startDate}
+              onChange={(e) => set({ startDate: e.target.value })}
+            />
+          </div>
+          <div className="form-group grow">
+            <label htmlFor="sb-sprint-end">End</label>
+            <input
+              id="sb-sprint-end"
+              type="date"
+              className="text-input sb-date"
+              value={d.endDate}
+              onChange={(e) => set({ endDate: e.target.value })}
+            />
+          </div>
+        </div>
+        {!valid && <p className="help">The end date comes on or after the start date.</p>}
+        <div className="form-group">
+          <label>Status</label>
+          <div className="seg-control" role="radiogroup" aria-label="Status">
+            {statuses.map((st) => (
+              <button
+                type="button"
+                key={st}
+                role="radio"
+                aria-checked={d.status === st}
+                className={d.status === st ? 'on' : ''}
+                onClick={() => set({ status: st })}
+              >
+                {STATUS_LABELS[st]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="form-group">
+          <label htmlFor="sb-sprint-folder">
+            Project folder<span className="optional">optional</span>
+          </label>
+          <div className="sb-folder-row">
+            <input
+              id="sb-sprint-folder"
+              className="text-input mono"
+              readOnly
+              value={d.projectPath ?? ''}
+              placeholder="None, standups use the board only"
+              title={d.projectPath}
+            />
+            <button type="button" className="btn-ghost small" onClick={pickFolder}>
+              Browse
+            </button>
+            {d.projectPath && (
+              <button type="button" className="btn-text" onClick={() => set({ projectPath: undefined })}>
+                Clear
+              </button>
+            )}
+          </div>
+          <span className="help">A git repository lets Generate read your recent commits for the standup.</span>
+        </div>
+      </div>
+    </Sheet>
+  )
+}
+
+// ─── Item editor ────────────────────────────────────────────────────────────────
+function ItemSheet(props: {
+  /** Null for a new item, which goes to To do unless another status is picked. */
+  item: SprintItem | null
+  /** The sprint is completed: the item opens for reading only. */
+  locked?: boolean
+  onSave: (draft: ItemDraft) => void
+  onDelete: () => void
+  onClose: () => void
+}) {
+  const i = props.item
+  const locked = !!props.locked
+  const origin = i ? originOf(i) : null
+  const [d, setD] = useState<ItemDraft>(() => ({
+    title: i?.title ?? '',
+    status: i?.status ?? 'todo',
+    points: i?.points ?? null,
+    notes: i?.notes ?? null
+  }))
+  const set = (patch: Partial<ItemDraft>) => setD((p) => ({ ...p, ...patch }))
+  const [confirming, setConfirming] = useState(false)
+  const openedAt = useRef(Date.now())
+  const valid = !!d.title.trim()
+  const submit = () => {
+    if (!valid || locked) return
+    props.onSave({ ...d, title: d.title.trim(), notes: d.notes?.trim() || null })
+  }
+
+  const footer = locked ? (
+    <SheetFoot>
+      <span className="help">Sprint completed, read only.</span>
+      <span className="sb-grow" />
+      <button type="button" className="btn-ghost" onClick={props.onClose}>
+        Close
+      </button>
+    </SheetFoot>
+  ) : confirming ? (
+    <SheetFoot help="This cannot be undone.">
+      <span className="sb-confirm">Delete this item?</span>
+      <span className="sb-grow" />
+      <button type="button" className="btn-ghost" onClick={() => setConfirming(false)}>
+        Keep
+      </button>
+      <button type="button" className="btn-primary danger" onClick={props.onDelete}>
+        Delete
+      </button>
+    </SheetFoot>
+  ) : (
+    <SheetFoot help="Enter saves · Esc cancels">
+      {i && (
+        <button type="button" className="btn-text danger" onClick={() => setConfirming(true)}>
+          Delete item
+        </button>
+      )}
+      <span className="sb-grow" />
+      <button type="button" className="btn-ghost" onClick={props.onClose}>
+        Cancel
+      </button>
+      <button type="button" className="btn-primary" onClick={submit} disabled={!valid}>
+        {i ? 'Save' : 'Add item'}
+      </button>
+    </SheetFoot>
+  )
+
+  return (
+    <Sheet title={i ? 'Item' : 'New item'} width={480} onClose={props.onClose} footer={footer}>
+      <div className="sb-form" onKeyDown={(e) => enterSubmits(e, openedAt.current, submit)}>
+        <div className="form-group">
+          <label htmlFor="sb-item-title">Title</label>
+          <input
+            id="sb-item-title"
+            className="text-input"
+            value={d.title}
+            placeholder="What needs doing"
+            autoFocus={!locked}
+            readOnly={locked}
+            onChange={(e) => set({ title: e.target.value })}
+          />
+        </div>
+        {origin && (
+          <div className="sb-origin">
+            <span className="chip sb-ref">{origin.ref}</span>
+            <span className="sb-muted">{kindLabel(origin.forge, origin.kind)}</span>
+            {i?.url ? (
+              <a className="btn-text" href={i.url} target="_blank" rel="noreferrer">
+                Open in {FORGE_NAMES[origin.forge]}
+              </a>
+            ) : (
+              <span className="help">No link; import it again to pick one up.</span>
+            )}
+          </div>
+        )}
+        <div className="form-group">
+          <label>Status</label>
+          <div className="seg-control" role="radiogroup" aria-label="Status">
+            {COLUMNS.map((c) => (
+              <button
+                type="button"
+                key={c.status}
+                role="radio"
+                aria-checked={d.status === c.status}
+                className={d.status === c.status ? 'on' : ''}
+                disabled={locked}
+                onClick={() => set({ status: c.status })}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="form-group">
+          <label htmlFor="sb-item-points">
+            Story points<span className="optional">optional</span>
+          </label>
+          <input
+            id="sb-item-points"
+            type="number"
+            min={0}
+            className="text-input sb-points-input"
+            value={d.points ?? ''}
+            readOnly={locked}
+            onChange={(e) => {
+              const n = Number(e.target.value)
+              set({ points: e.target.value === '' || !(n > 0) ? null : Math.round(n) })
+            }}
+          />
+        </div>
+        <div className="form-group">
+          <label htmlFor="sb-item-notes">
+            Notes<span className="optional">optional</span>
+          </label>
+          <textarea
+            id="sb-item-notes"
+            className="text-input textarea"
+            rows={4}
+            value={d.notes ?? ''}
+            placeholder="Detail, acceptance criteria"
+            readOnly={locked}
+            onChange={(e) => set({ notes: e.target.value || null })}
+          />
+        </div>
+      </div>
+    </Sheet>
+  )
+}
+
+// ─── Complete sprint ────────────────────────────────────────────────────────────
 // Closing a sprint is the moment you decide what happens to the work that did not
-// land, so the dialog leads with the numbers and then asks exactly that.
-function CompleteSprintModal(props: {
+// land, so the sheet leads with the numbers and then asks exactly that.
+function CompleteSprintSheet(props: {
   sprint: Sprint
   /** Sprints the leftovers can be handed to (everything open but this one). */
   targets: Sprint[]
@@ -947,12 +1745,6 @@ function CompleteSprintModal(props: {
   const [targetId, setTargetId] = useState(props.targets[0]?.id ?? '')
   const [newName, setNewName] = useState(props.suggestedName)
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
   const confirm = () => {
     if (unfinished.length === 0 || kind === 'keep') return props.onComplete({ kind: 'keep' })
     if (kind === 'existing') {
@@ -966,737 +1758,95 @@ function CompleteSprintModal(props: {
     {
       kind: 'existing',
       label: 'Move to an existing sprint',
-      hint: 'Hand them to a sprint already on the board.',
+      hint: props.targets.length === 1 ? `Hand them to ${props.targets[0].name}.` : 'Hand them to a sprint already on the board.',
       hidden: props.targets.length === 0
     },
     {
       kind: 'new',
       label: 'Move to a new sprint',
-      hint: `Starts ${addDays(s.endDate, 1)}, same length as this one.`
+      hint: `Starts ${fmtShort(addDays(s.endDate, 1))}, the same length as this one.`
     },
     { kind: 'keep', label: 'Leave them here', hint: 'They stay on the closed sprint as a record.' }
   ]
 
-  return createPortal(
-    <div className="task-modal-overlay" onClick={props.onClose}>
-      <div className="task-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="task-modal-head">
-          <span className="task-modal-heading">Complete sprint</span>
-          <button className="chip-x lg" onClick={props.onClose}>×</button>
-        </div>
-        <div className="task-modal-body">
-          <div className="sprint-close-summary">
-            <div>
-              <strong>{donePts}</strong>
-              <span>/{total} pts done</span>
-            </div>
-            <div>
-              <strong>{s.items.length - unfinished.length}</strong>
-              <span>/{s.items.length} items done</span>
-            </div>
-            <div className={unfinished.length ? 'warn' : ''}>
-              <strong>{unfinished.length}</strong>
-              <span>unfinished{leftPts > 0 ? ` · ${leftPts} pts` : ''}</span>
-            </div>
-          </div>
+  return (
+    <Sheet
+      title="Complete sprint"
+      width={520}
+      onClose={props.onClose}
+      footer={
+        <SheetFoot>
+          <span className="sb-grow" />
+          <button type="button" className="btn-ghost" onClick={props.onClose}>
+            Cancel
+          </button>
+          <button type="button" className="btn-primary" onClick={confirm}>
+            Complete sprint
+          </button>
+        </SheetFoot>
+      }
+    >
+      <div className="sb-form">
+        <p className="sb-summary">
+          {donePts} of {total} points done · {s.items.length - unfinished.length} of {s.items.length} items
+          {leftPts > 0 && ` · ${leftPts} points left`}
+        </p>
 
-          {unfinished.length === 0 ? (
-            <p className="sprint-close-note">Everything landed — nothing to carry over.</p>
-          ) : (
-            <div className="task-modal-field">
-              <span className="task-modal-label">Unfinished items</span>
-              <div className="sprint-close-choices">
-                {choices
-                  .filter((c) => !c.hidden)
-                  .map((c) => (
-                    <label key={c.kind} className={`sprint-close-choice ${kind === c.kind ? 'on' : ''}`}>
-                      <input
-                        type="radio"
-                        name="carry"
-                        checked={kind === c.kind}
-                        onChange={() => setKind(c.kind)}
-                      />
-                      <span className="sprint-close-choice-body">
-                        <span className="sprint-close-choice-label">{c.label}</span>
-                        <span className="sprint-close-choice-hint">{c.hint}</span>
-                      </span>
-                    </label>
-                  ))}
-              </div>
-
-              {kind === 'existing' && props.targets.length > 0 && (
-                <div className="pill-row sprint-close-targets">
-                  {props.targets.map((t) => (
-                    <button
-                      key={t.id}
-                      className={`pill ${targetId === t.id ? 'on' : ''}`}
-                      onClick={() => setTargetId(t.id)}
-                    >
-                      {t.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {kind === 'new' && (
+        {unfinished.length === 0 ? (
+          <p className="help">Everything landed, nothing to carry over.</p>
+        ) : (
+          <>
+            <div className="eyebrow">Unfinished items · {unfinished.length}</div>
+            <div className="sb-choices" role="radiogroup" aria-label="Unfinished items">
+              {choices
+                .filter((c) => !c.hidden)
+                .map((c) => (
+                  <div key={c.kind}>
+                    <RadioRow on={kind === c.kind} label={c.label} hint={c.hint} onPick={() => setKind(c.kind)} />
+                    {c.kind === 'existing' && kind === 'existing' && props.targets.length > 1 && (
+                      <div className="sb-choice-sub" role="radiogroup" aria-label="Sprint">
+                        {props.targets.map((t) => (
+                          <RadioRow key={t.id} on={targetId === t.id} label={t.name} onPick={() => setTargetId(t.id)} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+            </div>
+            {kind === 'new' && (
+              <div className="form-group">
+                <label htmlFor="sb-next-name">Next sprint name</label>
                 <input
-                  className="text-input sprint-close-name"
+                  id="sb-next-name"
+                  className="text-input"
                   value={newName}
-                  placeholder="Next sprint name"
                   onChange={(e) => setNewName(e.target.value)}
                 />
-              )}
-            </div>
-          )}
-        </div>
-        <div className="task-modal-foot">
-          <button className="btn-text" onClick={props.onClose}>Cancel</button>
-          <button className="assist-btn primary" onClick={confirm}>
-            {unfinished.length === 0 || kind === 'keep'
-              ? 'Complete sprint'
-              : `Complete & move ${unfinished.length} item${unfinished.length === 1 ? '' : 's'}`}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  )
-}
-
-// ─── Item editor modal ────────────────────────────────────────────────────────
-const POINT_CHOICES = [1, 2, 3, 5, 8, 13]
-function ItemModal(props: {
-  item: SprintItem
-  /** The sprint is completed: the item opens for reading only. */
-  locked?: boolean
-  onPatch: (patch: Partial<SprintItem>) => void
-  onDelete: () => void
-  onClose: () => void
-}) {
-  const i = props.item
-  const locked = !!props.locked
-  const origin = originOf(i)
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-  return createPortal(
-    <div className="task-modal-overlay" onClick={props.onClose}>
-      <div className="task-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="task-modal-head">
-          <span className="task-modal-heading">{locked ? 'Item' : 'Edit item'}</span>
-          <button className="chip-x lg" onClick={props.onClose}>×</button>
-        </div>
-        <div className="task-modal-body">
-          <textarea
-            className="text-input task-modal-title"
-            rows={2}
-            value={i.title}
-            placeholder="Item title"
-            autoFocus={!locked}
-            readOnly={locked}
-            onChange={(e) => props.onPatch({ title: e.target.value })}
-          />
-
-          {origin && (
-            <div className="task-modal-field">
-              <span className="task-modal-label">{kindLabel(origin.forge, origin.kind)}</span>
-              <div className="sprint-origin-row">
-                <span className={`sprint-ref ${origin.kind}`}>{origin.ref}</span>
-                {i.url ? (
-                  <a className="sprint-origin-link" href={i.url} target="_blank" rel="noreferrer">
-                    Open in {FORGE_NAMES[origin.forge]}
-                  </a>
-                ) : (
-                  <span className="sprint-origin-hint">No link — re-import to pick one up</span>
-                )}
               </div>
-            </div>
-          )}
-
-          <div className="task-modal-field">
-            <span className="task-modal-label">Status</span>
-            <div className="pill-row">
-              {COLUMNS.map((c) => (
-                <button
-                  key={c.status}
-                  className={`pill ${i.status === c.status ? 'on' : ''}`}
-                  disabled={locked}
-                  onClick={() => props.onPatch({ status: c.status })}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="task-modal-field">
-            <span className="task-modal-label">Story points</span>
-            <div className="pill-row">
-              <button
-                className={`pill ${!i.points ? 'on' : ''}`}
-                disabled={locked}
-                onClick={() => props.onPatch({ points: null })}
-              >
-                —
-              </button>
-              {POINT_CHOICES.map((p) => (
-                <button
-                  key={p}
-                  className={`pill ${i.points === p ? 'on' : ''}`}
-                  disabled={locked}
-                  onClick={() => props.onPatch({ points: p })}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="task-modal-field">
-            <span className="task-modal-label">Notes</span>
-            <textarea
-              className="text-input"
-              rows={3}
-              value={i.notes ?? ''}
-              placeholder="Optional detail, acceptance criteria…"
-              readOnly={locked}
-              onChange={(e) => props.onPatch({ notes: e.target.value || null })}
-            />
-          </div>
-        </div>
-        <div className="task-modal-foot">
-          {locked ? (
-            <span className="task-modal-note">Sprint completed — read only</span>
-          ) : (
-            <button className="btn-text danger" onClick={props.onDelete}>Delete item</button>
-          )}
-          <button className="assist-btn primary" onClick={props.onClose}>
-            {locked ? 'Close' : 'Done'}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  )
-}
-
-// ─── Sprint create/settings modal ──────────────────────────────────────────────
-function SprintModal(props: {
-  mode: 'new' | 'edit'
-  sprint: Sprint | null
-  onCreate: (draft: {
-    name: string
-    goal: string
-    startDate: string
-    endDate: string
-    status: SprintStatus
-    projectPath?: string
-  }) => void
-  onPatch: (patch: Partial<Sprint>) => void
-  onDelete: () => void
-  onClose: () => void
-}) {
-  const isEdit = props.mode === 'edit' && props.sprint
-  const today = ymd(new Date())
-  const [name, setName] = useState(props.sprint?.name ?? '')
-  const [goal, setGoal] = useState(props.sprint?.goal ?? '')
-  const [startDate, setStartDate] = useState(props.sprint?.startDate ?? today)
-  const [endDate, setEndDate] = useState(props.sprint?.endDate ?? addDays(today, 13))
-  const [status, setStatus] = useState<SprintStatus>(props.sprint?.status ?? 'active')
-  const [projectPath, setProjectPath] = useState<string | undefined>(props.sprint?.projectPath)
-
-  const pickFolder = async () => {
-    const folder = await window.electronAPI.openFolder()
-    if (folder) {
-      setProjectPath(folder)
-      commitEdit({ projectPath: folder })
-    }
-  }
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
-  // In edit mode, changes patch the live sprint immediately (consistent with the debounced save).
-  const commitEdit = (patch: Partial<Sprint>) => isEdit && props.onPatch(patch)
-
-  const statuses: SprintStatus[] = ['planning', 'active', 'completed']
-  return createPortal(
-    <div className="task-modal-overlay" onClick={props.onClose}>
-      <div className="task-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="task-modal-head">
-          <span className="task-modal-heading">{isEdit ? 'Sprint settings' : 'New sprint'}</span>
-          <button className="chip-x lg" onClick={props.onClose}>×</button>
-        </div>
-        <div className="task-modal-body">
-          <div className="task-modal-field">
-            <span className="task-modal-label">Name</span>
-            <input
-              className="text-input"
-              value={name}
-              autoFocus
-              placeholder="e.g. Sprint 14 — Checkout revamp"
-              onChange={(e) => {
-                setName(e.target.value)
-                commitEdit({ name: e.target.value })
-              }}
-            />
-          </div>
-          <div className="task-modal-field">
-            <span className="task-modal-label">Goal</span>
-            <textarea
-              className="text-input"
-              rows={2}
-              value={goal}
-              placeholder="The one outcome this sprint is about"
-              onChange={(e) => {
-                setGoal(e.target.value)
-                commitEdit({ goal: e.target.value })
-              }}
-            />
-          </div>
-          <div className="task-modal-times">
-            <label>
-              <span className="task-modal-label">Start</span>
-              <input
-                type="date"
-                className="text-input"
-                value={startDate}
-                onChange={(e) => {
-                  setStartDate(e.target.value)
-                  commitEdit({ startDate: e.target.value })
-                }}
-              />
-            </label>
-            <label>
-              <span className="task-modal-label">End</span>
-              <input
-                type="date"
-                className="text-input"
-                value={endDate}
-                onChange={(e) => {
-                  setEndDate(e.target.value)
-                  commitEdit({ endDate: e.target.value })
-                }}
-              />
-            </label>
-          </div>
-          <div className="task-modal-field">
-            <span className="task-modal-label">Status</span>
-            <div className="pill-row">
-              {statuses.map((st) => (
-                <button
-                  key={st}
-                  className={`pill ${status === st ? 'on' : ''}`}
-                  onClick={() => {
-                    setStatus(st)
-                    commitEdit({ status: st })
-                  }}
-                >
-                  {STATUS_LABELS[st]}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="task-modal-field">
-            <span className="task-modal-label">Project folder</span>
-            <div className="sprint-project-row">
-              <span className="sprint-project-path" title={projectPath}>
-                {projectPath || 'None — standups use the board only'}
-              </span>
-              <button className="assist-btn" onClick={pickFolder}>
-                {projectPath ? 'Change' : 'Choose'}
-              </button>
-              {projectPath && (
-                <button
-                  className="btn-text danger"
-                  onClick={() => {
-                    setProjectPath(undefined)
-                    commitEdit({ projectPath: undefined })
-                  }}
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-            <span className="sprint-project-hint">
-              A git repo lets “Generate” read your recent commits for the standup.
-            </span>
-          </div>
-        </div>
-        <div className="task-modal-foot">
-          {isEdit ? (
-            <button className="btn-text danger" onClick={props.onDelete}>Delete sprint</button>
-          ) : (
-            <span />
-          )}
-          {isEdit ? (
-            <button className="assist-btn primary" onClick={props.onClose}>Done</button>
-          ) : (
-            <button
-              className="assist-btn primary"
-              onClick={() => props.onCreate({ name, goal, startDate, endDate, status, projectPath })}
-            >
-              Create sprint
-            </button>
-          )}
-        </div>
-      </div>
-    </div>,
-    document.body
-  )
-}
-
-// ─── Standup section (editor + saved history) ──────────────────────────────────
-function fmtDate(dateStr: string): string {
-  return parseYmd(dateStr).toLocaleDateString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric'
-  })
-}
-
-function StandupSection(props: {
-  /** The sprint is completed: the standups are history, not a form. */
-  locked?: boolean
-  date: string
-  onDate: (d: string) => void
-  standup: DailyStandup
-  history: DailyStandup[]
-  onPatch: (patch: Partial<Omit<DailyStandup, 'date'>>) => void
-  onEditHistory: (date: string) => void
-  onDeleteHistory: (date: string) => void
-  onGenerate: () => void
-  genBusy: boolean
-  genError: string | null
-  hasProject: boolean
-  onDiscuss?: () => void
-  // Cross-provider "Run with" selector governing Generate (and the backfill modal).
-  runAccountItems: AccountPickerItem[]
-  runProvider: ProviderId
-  runAccountId: string
-  onPickRunAccount: (provider: ProviderId, id: string) => void
-  runModels: ModelInfo[]
-  runModel: string
-  onPickRunModel: (modelId: string) => void
-}) {
-  const today = ymd(new Date())
-  const s = props.standup
-  const isToday = props.date === today
-  return (
-    <div className="standup">
-      <div className="standup-head">
-        <span className="planner-label">Daily standup</span>
-        <div className="standup-head-right">
-          {!props.locked && (
-          <div className="assist-runwith standup-runwith">
-            <div className="assist-runwith-field">
-              <span className="assist-runwith-label">Account</span>
-              <AccountPicker
-                items={props.runAccountItems}
-                selectedProvider={props.runProvider}
-                selectedId={props.runAccountId}
-                onPick={props.onPickRunAccount}
-                onManage={() => {}}
-                disabled={props.genBusy}
-              />
-            </div>
-            <div className="assist-runwith-field">
-              <span className="assist-runwith-label">Model</span>
-              <ModelPicker models={props.runModels} value={props.runModel} onChange={props.onPickRunModel} disabled={props.genBusy} />
-            </div>
-          </div>
-          )}
-          {!props.locked && (
-          <div className="sb-split">
-            <button
-              className="assist-btn primary sb-split-main"
-              onClick={props.onGenerate}
-              disabled={props.genBusy}
-              title={
-                props.hasProject
-                  ? 'Draft this standup from your git commits and board'
-                  : 'Draft from your board (set a project folder in Sprint settings to include git commits)'
-              }
-            >
-              <Spark /> {props.genBusy ? 'Generating…' : 'Generate'}
-            </button>
-            {props.onDiscuss && (
-              <Menu
-                triggerClass="assist-btn primary sb-split-caret"
-                triggerTitle="More standup actions"
-                triggerContent={<CaretDownIcon />}
-                align="right"
-                items={[
-                  { label: 'Discuss in chat', icon: <ChatIcon />, onClick: props.onDiscuss }
-                ]}
-              />
             )}
-          </div>
-          )}
-          <div className="standup-datenav">
-            {!isToday && (
-              <button className="btn-ghost small" onClick={() => props.onDate(today)}>
-                Today
-              </button>
-            )}
-            <button className="standup-nav-btn" title="Previous day" onClick={() => props.onDate(addDays(props.date, -1))}>
-              <ChevronIcon dir="left" />
-            </button>
-            <input
-              type="date"
-              className="text-input standup-date-input"
-              value={props.date}
-              onChange={(e) => e.target.value && props.onDate(e.target.value)}
-            />
-            <button className="standup-nav-btn" title="Next day" onClick={() => props.onDate(addDays(props.date, 1))}>
-              <ChevronIcon dir="right" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {props.genError && <div className="assist-error standup-error">{props.genError}</div>}
-
-      <div className="standup-grid">
-        <StandupField
-          label="Yesterday"
-          hint="What did you get done?"
-          value={s.yesterday}
-          readOnly={props.locked}
-          onChange={(v) => props.onPatch({ yesterday: v })}
-        />
-        <StandupField
-          label="Today"
-          hint="What are you working on?"
-          value={s.today}
-          readOnly={props.locked}
-          onChange={(v) => props.onPatch({ today: v })}
-        />
-        <StandupField
-          label="Blockers"
-          hint="Anything in the way?"
-          value={s.blockers}
-          readOnly={props.locked}
-          onChange={(v) => props.onPatch({ blockers: v })}
-          tone="warn"
-        />
-      </div>
-
-      {props.history.length > 0 && (
-        <div className="standup-history">
-          <span className="planner-label">Standup history</span>
-          <div className="standup-history-list">
-            {props.history.map((h) => (
-              <StandupHistoryCard
-                key={h.date}
-                standup={h}
-                active={h.date === props.date}
-                locked={props.locked}
-                onEdit={() => props.onEditHistory(h.date)}
-                onDelete={() => props.onDeleteHistory(h.date)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function StandupField(props: {
-  label: string
-  hint: string
-  value: string
-  readOnly?: boolean
-  onChange: (v: string) => void
-  tone?: 'warn'
-}) {
-  return (
-    <div className={`standup-field ${props.tone ?? ''}`}>
-      <span className="standup-field-label">{props.label}</span>
-      <textarea
-        className="text-input standup-textarea"
-        rows={4}
-        placeholder={props.hint}
-        value={props.value}
-        readOnly={props.readOnly}
-        onChange={(e) => props.onChange(e.target.value)}
-      />
-    </div>
-  )
-}
-
-function StandupHistoryCard(props: {
-  standup: DailyStandup
-  active: boolean
-  /** The sprint is completed: keep the entry, drop the delete. */
-  locked?: boolean
-  onEdit: () => void
-  onDelete: () => void
-}) {
-  const [open, setOpen] = useState(false)
-  const h = props.standup
-  const preview = (h.today || h.yesterday || h.blockers || '').replace(/\s+/g, ' ').slice(0, 90)
-  return (
-    <div className={`standup-hcard ${props.active ? 'active' : ''}`}>
-      <div className="standup-hcard-head" onClick={() => setOpen((v) => !v)}>
-        <span className="standup-hcard-date">{fmtDate(h.date)}</span>
-        {!open && preview && <span className="standup-hcard-preview">{preview}</span>}
-        {h.blockers.trim() && <span className="standup-blocked-dot" title="Had blockers" />}
-        <button
-          className="btn-ghost small"
-          onClick={(e) => {
-            e.stopPropagation()
-            props.onEdit()
-          }}
-          title="Load into the editor"
-        >
-          Edit
-        </button>
-        {!props.locked && (
-          <button
-            className="task-del"
-            onClick={(e) => {
-              e.stopPropagation()
-              props.onDelete()
-            }}
-            title="Delete standup"
-          >
-            ×
-          </button>
+          </>
         )}
       </div>
-      {open && (
-        <div className="standup-hcard-body">
-          {h.yesterday.trim() && <StandupReadRow label="Yesterday" text={h.yesterday} />}
-          {h.today.trim() && <StandupReadRow label="Today" text={h.today} />}
-          {h.blockers.trim() && <StandupReadRow label="Blockers" text={h.blockers} tone="warn" />}
-        </div>
-      )}
-    </div>
+    </Sheet>
   )
 }
 
-function StandupReadRow({ label, text, tone }: { label: string; text: string; tone?: 'warn' }) {
+/** A flat choice row with the shared radio mark (`.auth-option-radio`), not a card. */
+function RadioRow({ on, label, hint, onPick }: { on: boolean; label: string; hint?: string; onPick: () => void }) {
   return (
-    <div className={`standup-read ${tone ?? ''}`}>
-      <span className="standup-read-label">{label}</span>
-      <p>{text}</p>
-    </div>
+    <button type="button" role="radio" aria-checked={on} className={`sb-choice ${on ? 'on' : ''}`} onClick={onPick}>
+      <span className="auth-option-radio">
+        <span className={on ? 'on' : ''} />
+      </span>
+      <span className="sb-choice-body">
+        <span className="sb-choice-label">{label}</span>
+        {hint && <span className="help">{hint}</span>}
+      </span>
+    </button>
   )
 }
 
-// ─── Burndown chart (hand-rolled SVG, no chart deps) ────────────────────────────
-function BurndownChart({ sprint, total }: { sprint: Sprint; total: number }) {
-  const data = useMemo(() => {
-    const start = parseYmd(sprint.startDate)
-    const end = parseYmd(sprint.endDate)
-    const rawDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1
-    const n = Math.max(2, Math.min(rawDays, 60)) // guard: at least 2 points, cap runaway ranges
-    const todayStr = ymd(new Date())
-
-    // Points completed on or before each day, using completedAt (or the sprint start for
-    // legacy done items that predate completedAt tracking).
-    const doneOnOrBefore = (dayStr: string): number =>
-      sprint.items
-        .filter((i) => i.status === 'done')
-        .filter((i) => {
-          const when = i.completedAt ? ymd(new Date(i.completedAt)) : sprint.startDate
-          return when <= dayStr
-        })
-        .reduce((sum, i) => sum + pointsOf(i), 0)
-
-    const days: string[] = []
-    const ideal: number[] = []
-    const actual: (number | null)[] = []
-    for (let i = 0; i < n; i++) {
-      const dayStr = addDays(sprint.startDate, i)
-      days.push(dayStr)
-      ideal.push(total - (total * i) / (n - 1))
-      // Only draw the actual line through today — the future is unknown.
-      actual.push(dayStr <= todayStr ? total - doneOnOrBefore(dayStr) : null)
-    }
-    return { n, days, ideal, actual }
-  }, [sprint, total])
-
-  if (total === 0) {
-    return (
-      <div className="burndown">
-        <span className="planner-label">Burndown</span>
-        <p className="burndown-empty">Add story points to items to see the sprint burndown.</p>
-      </div>
-    )
-  }
-
-  const W = 640
-  const H = 240
-  const padL = 34
-  const padR = 12
-  const padT = 14
-  const padB = 26
-  const maxY = total
-  const x = (i: number) => padL + (i / (data.n - 1)) * (W - padL - padR)
-  const y = (v: number) => padT + (1 - v / maxY) * (H - padT - padB)
-
-  const idealPts = data.ideal.map((v, i) => `${x(i)},${y(v)}`).join(' ')
-  const actualPairs = data.actual
-    .map((v, i) => (v === null ? null : { i, v }))
-    .filter((p): p is { i: number; v: number } => p !== null)
-  const actualPts = actualPairs.map((p) => `${x(p.i)},${y(p.v)}`).join(' ')
-
-  // A couple of y gridlines (0, half, full) and sparse x labels (start / mid / end).
-  const yTicks = [0, Math.round(total / 2), total]
-  const xLabelIdx = [0, Math.floor((data.n - 1) / 2), data.n - 1]
-
-  return (
-    <div className="burndown">
-      <div className="burndown-head">
-        <span className="planner-label">Burndown</span>
-        <div className="burndown-legend">
-          <span className="bd-key ideal">Ideal</span>
-          <span className="bd-key actual">Actual</span>
-        </div>
-      </div>
-      <svg className="burndown-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Sprint burndown chart">
-        {yTicks.map((t) => (
-          <g key={t}>
-            <line className="bd-grid" x1={padL} y1={y(t)} x2={W - padR} y2={y(t)} />
-            <text className="bd-axis" x={padL - 6} y={y(t) + 3} textAnchor="end">{t}</text>
-          </g>
-        ))}
-        {xLabelIdx.map((i) => (
-          <text key={i} className="bd-axis" x={x(i)} y={H - 8} textAnchor="middle">
-            {parseYmd(data.days[i]).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-          </text>
-        ))}
-        <polyline className="bd-line ideal" points={idealPts} />
-        {actualPts && <polyline className="bd-line actual" points={actualPts} />}
-        {actualPairs.map((p) => (
-          <circle key={p.i} className="bd-dot" cx={x(p.i)} cy={y(p.v)} r={2.6} />
-        ))}
-      </svg>
-    </div>
-  )
-}
-
-function MiniRing({ pct }: { pct: number }) {
-  const p = Math.max(0, Math.min(100, pct))
-  return (
-    <div className="mini-ring">
-      <svg viewBox="0 0 36 36" width="40" height="40">
-        <circle className="ring-bg" cx="18" cy="18" r="15.9" />
-        <circle className="ring-fg good" cx="18" cy="18" r="15.9" strokeDasharray={`${p}, 100`} transform="rotate(-90 18 18)" />
-      </svg>
-      <span className="mini-ring-num">{p}%</span>
-    </div>
-  )
-}
-
-// ─── Backlog backfill from GitLab MCP ──────────────────────────────────────────
+// ─── Import from the forge (backfill through its MCP) ───────────────────────────
 function relBackfillTime(ms: number): string {
   const diff = Date.now() - ms
   if (diff < 60_000) return 'just now'
@@ -1713,22 +1863,22 @@ function kindLabels(forge: Forge): Record<BackfillKind, string> {
     both: 'Both'
   }
 }
-/** Used mid-sentence ("Fetch pull requests", "No open issues came back"). */
+/** Used mid-sentence ("No open issues came back"). */
 function kindNoun(forge: Forge, kind: BackfillKind): string {
   const changes = forge === 'github' ? 'pull requests' : 'merge requests'
-  return kind === 'issues' ? 'issues' : kind === 'merge-requests' ? changes : `issues & ${changes}`
+  return kind === 'issues' ? 'issues' : kind === 'merge-requests' ? changes : `issues and ${changes}`
 }
 
 const SOURCE_LABELS: Record<string, string> = {
-  'git-remote': 'from git remote',
-  'mcp-default': 'MCP default project',
+  'git-remote': 'from the git remote',
+  'mcp-default': 'the MCP default project',
   instructions: 'from your input',
-  guess: 'best guess'
+  guess: 'a best guess'
 }
 
-function BacklogBackfillModal(props: {
+function BacklogBackfillSheet(props: {
   sprint: Sprint
-  /** The "Run with" selection from the standup header — the same account+model runs both. */
+  /** The "Run with" selection from the standup — the same account+model runs both. */
   model: string
   accountId: string
   onAdd: (rows: BackfillRow[]) => void
@@ -1736,7 +1886,7 @@ function BacklogBackfillModal(props: {
   onClose: () => void
 }) {
   const cache = props.sprint.backfillCache
-  // Phase 1 — load the MCP and resolve which GitLab project it's attributed to.
+  // Phase 1 — load the MCP and resolve which project it's attributed to.
   const [resolving, setResolving] = useState(!cache)
   const [resolveError, setResolveError] = useState<string | null>(null)
   const [project, setProject] = useState(cache?.project ?? '')
@@ -1758,7 +1908,7 @@ function BacklogBackfillModal(props: {
       : null
   )
 
-  // Phase 2 — fetch that project's open issues and/or pending merge requests.
+  // Phase 2 — fetch that project's open issues and/or pending change requests.
   // The cache belongs to one kind of fetch, so switching kind empties the list
   // rather than showing issues under a "Merge requests" heading.
   const [kind, setKind] = useState<BackfillKind>(cache?.kind ?? 'issues')
@@ -1783,7 +1933,7 @@ function BacklogBackfillModal(props: {
   const isDup = (title: string) => existing.has(title.trim().toLowerCase())
   const busy = resolving || fetching
 
-  // Pre-select fetched issues that aren't already on the board (skip duplicates).
+  // Pre-select fetched rows that aren't already on the board (skip duplicates).
   const preselect = (rows: { title: string }[]) =>
     setSelected(new Set(rows.map((f, i) => (isDup(f.title) ? -1 : i)).filter((i) => i >= 0)))
 
@@ -1816,9 +1966,6 @@ function BacklogBackfillModal(props: {
     // Cached results hydrate the initial state above — only probe when there's no cache.
     if (cache) preselect(cache.items ?? [])
     else resolveProject()
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -1887,30 +2034,67 @@ function BacklogBackfillModal(props: {
     props.onClose()
   }
 
-  return createPortal(
-    <div className="task-modal-overlay" onClick={props.onClose}>
-      <div className="task-modal backfill-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="task-modal-head">
-          <span className="task-modal-heading">
-            <ImportIcon /> Import from {forgeName}
-          </span>
-          <button className="chip-x lg" onClick={props.onClose}>×</button>
-        </div>
-        <div className="task-modal-body">
-          {/* Phase 1 — which project the MCP is attributed to */}
-          {resolving ? (
-            <div className="assist-loading">
-              <div className="view-spinner" />
-              <span>Loading the forge MCP and finding the attributed repository…</span>
+  const meta = [
+    info?.source ? SOURCE_LABELS[info.source] ?? info.source : null,
+    typeof info?.openIssueCount === 'number' ? `${info.openIssueCount} open issues` : null,
+    typeof info?.openMrCount === 'number' ? `${info.openMrCount} open ${forge === 'github' ? 'PRs' : 'MRs'}` : null,
+    cachedAt ? `cached ${relBackfillTime(cachedAt)}` : null
+  ].filter(Boolean)
+  const newCount = items.filter((it) => !isDup(it.title)).length
+  const dupCount = items.length - newCount
+  const n = selected.size
+
+  return (
+    <Sheet
+      title={`Import from ${forgeName}`}
+      width={560}
+      onClose={props.onClose}
+      footer={
+        <SheetFoot>
+          <span className="sb-grow" />
+          <button type="button" className="btn-ghost" onClick={props.onClose}>
+            Cancel
+          </button>
+          <button type="button" className="btn-primary" onClick={addSelected} disabled={busy || n === 0}>
+            {n === 0 ? 'Add items' : `Add ${n} item${n === 1 ? '' : 's'}`}
+          </button>
+        </SheetFoot>
+      }
+    >
+      <div className="sb-form">
+        {resolving ? (
+          <div className="sb-loading">
+            <div className="view-spinner" />
+            <span>Loading the forge MCP and finding the attributed repository…</span>
+          </div>
+        ) : (
+          <>
+            <div className="form-group">
+              <label htmlFor="sb-bf-project">Attributed project</label>
+              <input
+                id="sb-bf-project"
+                className="text-input mono"
+                placeholder="group/subgroup/project, or a filter"
+                value={project}
+                onChange={(e) => setProject(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !busy && fetchIssues()}
+              />
+              {info?.note && <span className="help">{info.note}</span>}
+              {meta.length > 0 && <span className="help">{meta.join(' · ')}</span>}
+              {info?.url && (
+                <span className="help sb-bf-url" title={info.url}>
+                  {info.url}
+                </span>
+              )}
             </div>
-          ) : (
-            <div className="backfill-attribution">
-              <span className="planner-label">Attributed project</span>
-              {info?.note && <p className="backfill-attr-note">{info.note}</p>}
-              <div className="seg-control backfill-kind">
+            <div className="sb-bf-kind">
+              <div className="seg-control" role="radiogroup" aria-label="What to import">
                 {(['issues', 'merge-requests', 'both'] as BackfillKind[]).map((k) => (
                   <button
+                    type="button"
                     key={k}
+                    role="radio"
+                    aria-checked={kind === k}
                     className={kind === k ? 'on' : ''}
                     disabled={busy}
                     onClick={() => changeKind(k)}
@@ -1919,172 +2103,135 @@ function BacklogBackfillModal(props: {
                   </button>
                 ))}
               </div>
-              <div className="backfill-project-row">
-                <input
-                  className="text-input"
-                  placeholder="group/subgroup/project — or a filter"
-                  value={project}
-                  onChange={(e) => setProject(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && !busy && fetchIssues()}
-                />
-                <button className="assist-btn primary" onClick={() => fetchIssues()} disabled={busy}>
-                  {fetching
-                    ? 'Fetching…'
-                    : hasFetched && items.length > 0
-                      ? 'Refresh'
-                      : `Fetch ${kindNoun(forge, kind)}`}
-                </button>
-              </div>
-              <div className="backfill-attr-meta">
-                {info?.source && <span className="backfill-source">{SOURCE_LABELS[info.source] ?? info.source}</span>}
-                {typeof info?.openIssueCount === 'number' && (
-                  <span className="backfill-attr-count">{info.openIssueCount} open issues</span>
-                )}
-                {typeof info?.openMrCount === 'number' && (
-                  <span className="backfill-attr-count">
-                    {info.openMrCount} open {forge === 'github' ? 'PRs' : 'MRs'}
-                  </span>
-                )}
-                {info?.url && <span className="backfill-attr-url" title={info.url}>{info.url}</span>}
-                {cachedAt && <span className="backfill-cached">cached {relBackfillTime(cachedAt)}</span>}
-              </div>
-              {resolveError && (
-                <div className="assist-error">{resolveError} — you can still type a project above and fetch.</div>
-              )}
+              <button type="button" className="btn-ghost" onClick={() => fetchIssues()} disabled={busy}>
+                {fetching ? 'Fetching…' : 'Fetch'}
+              </button>
             </div>
-          )}
+            {resolveError && (
+              <div className="block err sb-msg">{resolveError} You can still type a project above and fetch.</div>
+            )}
+          </>
+        )}
 
-          {/* Phase 2 — the project's open issues */}
-          {fetching && (
-            <div className="assist-loading">
-              <div className="view-spinner" />
-              <span>Reading open {kindNoun(forge, kind)} from {forgeName}…</span>
+        {fetching && (
+          <div className="sb-loading">
+            <div className="view-spinner" />
+            <span>
+              Reading open {kindNoun(forge, kind)} from {forgeName}…
+            </span>
+          </div>
+        )}
+        {fetchError && !fetching && <div className="block err sb-msg">{fetchError}</div>}
+        {fetchWarning && !fetching && !fetchError && <div className="block warn sb-msg">{fetchWarning}</div>}
+        {hasFetched && !fetching && !fetchError && items.length === 0 && (
+          <p className="help">No open {kindNoun(forge, kind)} came back. Try a different repository or filter above.</p>
+        )}
+        {!fetching && items.length > 0 && (
+          <div className="sb-bf">
+            <div className="sb-bf-bar">
+              <span className="sb-muted">
+                {newCount} new{dupCount > 0 && ` · ${dupCount} already in sprint`} · {n} selected
+              </span>
+              <span className="sb-grow" />
+              <button type="button" className="btn-text" onClick={() => setSelected(new Set(items.map((_, i) => i)))}>
+                All
+              </button>
+              <button type="button" className="btn-text" onClick={() => setSelected(new Set())}>
+                None
+              </button>
             </div>
-          )}
-          {fetchError && !fetching && <div className="assist-error">{fetchError}</div>}
-          {fetchWarning && !fetching && !fetchError && (
-            <div className="assist-error warn">{fetchWarning}</div>
-          )}
-          {hasFetched && !fetching && !fetchError && items.length === 0 && (
-            <p className="burndown-empty">
-              No open {kindNoun(forge, kind)} came back. Try a different repository or filter above.
-            </p>
-          )}
-          {!fetching && items.length > 0 && (
-            <>
-              <div className="backfill-actions-row">
-                <span className="backfill-count">
-                  {items.filter((it) => !isDup(it.title)).length} new
-                  {items.some((it) => isDup(it.title)) &&
-                    ` · ${items.filter((it) => isDup(it.title)).length} already added`}
-                  {' · '}
-                  {selected.size} selected
-                </span>
-                <div className="backfill-selbtns">
-                  <button className="btn-ghost small" onClick={() => setSelected(new Set(items.map((_, i) => i)))}>All</button>
-                  <button className="btn-ghost small" onClick={() => setSelected(new Set())}>None</button>
-                </div>
-              </div>
-              <div className="backfill-list">
-                {items.map((it, i) => {
-                  const dup = isDup(it.title)
-                  return (
-                    <label key={i} className={`backfill-row ${dup ? 'dup' : ''}`}>
-                      <input type="checkbox" checked={selected.has(i)} onChange={() => toggle(i)} />
-                      <span className="backfill-row-body">
-                        <span className="backfill-row-title">
-                          {it.kind === 'merge-request' ? (
-                            <span className="backfill-kind-tag mr">{forge === 'github' ? 'PR' : 'MR'}</span>
-                          ) : (
-                            kind === 'both' && it.kind === 'issue' && (
-                              <span className="backfill-kind-tag issue">Issue</span>
-                            )
-                          )}
-                          {it.title}
-                        </span>
-                        {it.notes?.trim() && <span className="backfill-row-notes">{it.notes}</span>}
-                      </span>
-                      {typeof it.points === 'number' && it.points > 0 && (
-                        <span className="sprint-points">{it.points} pts</span>
-                      )}
-                      {dup && <span className="backfill-dup-tag">already added</span>}
-                    </label>
-                  )
-                })}
-              </div>
-            </>
-          )}
-        </div>
-        <div className="task-modal-foot">
-          <button className="btn-text" onClick={props.onClose}>Cancel</button>
-          <button className="assist-btn primary" onClick={addSelected} disabled={busy || selected.size === 0}>
-            Add {selected.size || ''} to sprint
-          </button>
-        </div>
+            <div className="sb-bf-list">
+              {items.map((it, i) => {
+                const dup = isDup(it.title)
+                const rowKind = it.kind ?? (kind === 'merge-requests' ? 'merge-request' : 'issue')
+                return (
+                  <label key={i} className={`sb-bf-row ${dup ? 'dup' : ''}`}>
+                    <input type="checkbox" checked={selected.has(i)} onChange={() => toggle(i)} />
+                    <span className="sb-bf-body">
+                      <span className="sb-bf-title">{it.title}</span>
+                      {it.notes?.trim() && <span className="help sb-bf-notes">{it.notes}</span>}
+                    </span>
+                    {it.ref && <span className="chip sb-ref">{it.ref}</span>}
+                    <span className="chip">{rowKind === 'merge-request' ? (forge === 'github' ? 'PR' : 'MR') : 'Issue'}</span>
+                    {typeof it.points === 'number' && it.points > 0 && <span className="sb-pts">{it.points} p</span>}
+                    {dup && <span className="sb-muted">already in sprint</span>}
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
-    </div>,
-    document.body
+    </Sheet>
   )
 }
 
-function ImportIcon() {
+// ─── Icons (24-unit viewBox, 2 px stroke, round caps) ───────────────────────────
+function Svg({ children, size = 14 }: { children: React.ReactNode; size?: number }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="7 10 12 15 17 10" />
-      <line x1="12" y1="15" x2="12" y2="3" />
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
     </svg>
   )
 }
-
+function PlusIcon() {
+  return <Svg><path d="M12 5v14M5 12h14" /></Svg>
+}
+function CheckIcon() {
+  return <Svg><path d="M20 6L9 17l-5-5" /></Svg>
+}
+function XIcon() {
+  return <Svg><path d="M6 6l12 12M18 6L6 18" /></Svg>
+}
+function CircleIcon() {
+  return <Svg><circle cx="12" cy="12" r="8" /></Svg>
+}
+function HalfCircleIcon() {
+  return (
+    <Svg>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" />
+    </Svg>
+  )
+}
+function UndoIcon() {
+  return <Svg><path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" /></Svg>
+}
+function ArrowRightIcon() {
+  return <Svg><path d="M5 12h14M13 6l6 6-6 6" /></Svg>
+}
+function ChevronDownIcon() {
+  return <Svg size={13}><path d="M6 9l6 6 6-6" /></Svg>
+}
 function ChevronIcon({ dir }: { dir: 'left' | 'right' }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points={dir === 'left' ? '15 18 9 12 15 6' : '9 18 15 12 9 6'} />
-    </svg>
-  )
+  return <Svg><path d={dir === 'left' ? 'M15 18l-6-6 6-6' : 'M9 18l6-6-6-6'} /></Svg>
 }
-
+function ImportIcon() {
+  return <Svg><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></Svg>
+}
 function GearIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <Svg>
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
+    </Svg>
   )
 }
-
 function FlagIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 22V4a6 6 0 0 1 8 0 6 6 0 0 0 8 0v10a6 6 0 0 1-8 0 6 6 0 0 0-8 0" />
-    </svg>
-  )
+  return <Svg><path d="M4 22V4a6 6 0 0 1 8 0 6 6 0 0 0 8 0v10a6 6 0 0 1-8 0 6 6 0 0 0-8 0" /></Svg>
 }
-
 function ReopenIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-      <polyline points="3 3 3 8 8 8" />
-    </svg>
-  )
-}
-
-function Spark() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />
-    </svg>
-  )
-}
-
-function ChatIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-    </svg>
-  )
+  return <Svg><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" /></Svg>
 }
 
 // Serialize the current standup + board into a compact context block for the discuss chat.

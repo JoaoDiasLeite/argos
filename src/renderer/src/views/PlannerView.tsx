@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { WeekPlan, PlannerTask, WeeklyPriority, Effort, PlannerAssistMode, CCAccountStatus, ModelInfo, SavedReview, ProviderAccountStatus } from '../types'
 import ModelPicker from '../components/ModelPicker'
 import AccountPicker from '../components/AccountPicker'
+import Sheet from '../components/Sheet'
 import SprintBoard, { PlannerModeToggle, PlannerMode } from './SprintBoard'
 import './views.css'
 import './PlannerView.css'
@@ -18,7 +18,7 @@ interface PlannerProps {
   geminiAccounts: ProviderAccountStatus[]
   codexDefaultAccountId: string
   geminiDefaultAccountId: string
-  /** Settings → General "Show the weekly planner". Off, the Planner is the sprint board
+  /** Settings -> General "Show the weekly planner". Off, the Planner is the sprint board
    *  alone: no Week | Sprint toggle, and a saved 'week' mode is ignored. */
   showWeek: boolean
   onRunTask?: (task: PlannerTask) => void
@@ -29,7 +29,9 @@ interface PlannerProps {
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const PRIORITY_COLORS = ['#d97757', '#5cb37e', '#8c7fd6', '#5b9bd5', '#d9a441', '#c879a8']
+// Priorities are neutral chips told apart by their titles; `WeeklyPriority.color` stays in
+// the stored shape for older weeks but is no longer written or drawn.
+const NO_COLOR = ''
 const EFFORTS: Effort[] = ['light', 'medium', 'deep']
 
 // Start screen copy for the modes that run on demand (no notes/image needed first).
@@ -61,7 +63,7 @@ function parseYmd(s: string): Date {
 }
 function mondayOf(d: Date): string {
   const x = new Date(d)
-  const offset = (x.getDay() + 6) % 7 // Sun=0 → 6, Mon=1 → 0 …
+  const offset = (x.getDay() + 6) % 7 // Sun=0 -> 6, Mon=1 -> 0 …
   x.setDate(x.getDate() - offset)
   x.setHours(0, 0, 0, 0)
   return ymd(x)
@@ -223,7 +225,7 @@ export default function PlannerView({
       ...w,
       priorities: [
         ...w.priorities,
-        { id: uid(), title: t, color: PRIORITY_COLORS[w.priorities.length % PRIORITY_COLORS.length] }
+        { id: uid(), title: t, color: NO_COLOR }
       ]
     }))
     setNewPriority('')
@@ -279,10 +281,10 @@ export default function PlannerView({
   }
 
   const applyDraft = (data: any) => {
-    const priorities: WeeklyPriority[] = (data.priorities ?? []).map((p: any, i: number) => ({
+    const priorities: WeeklyPriority[] = (data.priorities ?? []).map((p: any) => ({
       id: uid(),
       title: String(p.title ?? p),
-      color: PRIORITY_COLORS[i % PRIORITY_COLORS.length]
+      color: NO_COLOR
     }))
     const byTitle = new Map(priorities.map((p) => [p.title.toLowerCase(), p.id]))
     const tasks: PlannerTask[] = (data.tasks ?? []).map((t: any) => ({
@@ -406,14 +408,24 @@ export default function PlannerView({
         </div>
         <div className="planner-header-actions">
           <div className="week-nav">
-            <button className="btn-ghost icon" title="Previous week" onClick={() => setWeekStart((w) => shiftWeek(w, -1))}>
-              ‹
+            <button
+              className="btn-ghost planner-icon-btn"
+              title="Previous week"
+              aria-label="Previous week"
+              onClick={() => setWeekStart((w) => shiftWeek(w, -1))}
+            >
+              <ChevronIcon dir="left" />
             </button>
             <button className="btn-ghost" onClick={() => setWeekStart(mondayOf(new Date()))}>
               This week
             </button>
-            <button className="btn-ghost icon" title="Next week" onClick={() => setWeekStart((w) => shiftWeek(w, 1))}>
-              ›
+            <button
+              className="btn-ghost planner-icon-btn"
+              title="Next week"
+              aria-label="Next week"
+              onClick={() => setWeekStart((w) => shiftWeek(w, 1))}
+            >
+              <ChevronIcon dir="right" />
             </button>
           </div>
           <div className="seg-control week-span" title="Show weekend or work week only">
@@ -435,19 +447,19 @@ export default function PlannerView({
             ))}
           </div>
           <div className="assist-bar">
-            <button className="assist-btn primary" onClick={() => startAssist('review')} disabled={assistBusy}>
+            <button className="btn-primary" onClick={() => startAssist('review')} disabled={assistBusy}>
               <Spark /> Review my week
             </button>
-            <button className="assist-btn" onClick={() => startAssist('draft')} disabled={assistBusy}>
+            <button className="btn-ghost" onClick={() => startAssist('draft')} disabled={assistBusy}>
               Draft a week
             </button>
-            <button className="assist-btn" onClick={() => startAssist('import')} disabled={assistBusy}>
+            <button className="btn-ghost" onClick={() => startAssist('import')} disabled={assistBusy}>
               <ImageIcon /> Import image
             </button>
-            <button className="assist-btn" onClick={() => startAssist('rebalance')} disabled={assistBusy || stats.total === 0}>
+            <button className="btn-ghost" onClick={() => startAssist('rebalance')} disabled={assistBusy || stats.total === 0}>
               Rebalance
             </button>
-            <button className="assist-btn" onClick={() => startAssist('reflect')} disabled={assistBusy || stats.total === 0}>
+            <button className="btn-ghost" onClick={() => startAssist('reflect')} disabled={assistBusy || stats.total === 0}>
               Reflect
             </button>
           </div>
@@ -464,9 +476,6 @@ export default function PlannerView({
           {/* Summary strip */}
           <div className="planner-stats">
             <div className="stat-card">
-              <div className="stat-ico sched">
-                <Spark />
-              </div>
               <div className="stat-body">
                 <div className="stat-value">{stats.total}</div>
                 <div className="stat-label">Tasks scheduled</div>
@@ -483,7 +492,6 @@ export default function PlannerView({
               </div>
             </div>
             <div className="stat-card">
-              <div className="stat-ico deep">◆</div>
               <div className="stat-body">
                 <div className="stat-value">{stats.deep}</div>
                 <div className="stat-label">Deep-work blocks</div>
@@ -523,11 +531,15 @@ export default function PlannerView({
               <label className="planner-label">Weekly priorities</label>
               <div className="priority-chips">
                 {week.priorities.map((p) => (
-                  <span className="priority-chip" key={p.id} style={{ ['--pc' as any]: p.color }}>
-                    <span className="priority-dot" />
+                  <span className="chip priority-chip" key={p.id}>
                     {p.title}
-                    <button className="chip-x" onClick={() => removePriority(p.id)} title="Remove">
-                      ×
+                    <button
+                      className="chip-x"
+                      onClick={() => removePriority(p.id)}
+                      title="Remove priority"
+                      aria-label={`Remove ${p.title}`}
+                    >
+                      <XIcon size={12} />
                     </button>
                   </span>
                 ))}
@@ -814,7 +826,6 @@ function TaskCard(props: {
       onDragEnd={props.onDragEnd}
       onClick={props.onOpen}
       title="Click to edit · drag to move"
-      style={props.priority ? { ['--accent-edge' as any]: props.priority.color } : undefined}
     >
       <div className="task-main">
         <button
@@ -824,8 +835,9 @@ function TaskCard(props: {
             props.onToggle(!t.done)
           }}
           title={t.done ? 'Mark not done' : 'Mark done'}
+          aria-label={t.done ? 'Mark not done' : 'Mark done'}
         >
-          {t.done ? '✓' : ''}
+          {t.done && <CheckIcon size={11} />}
         </button>
         <span className="task-title">{t.title}</span>
         {props.onRun && (
@@ -847,9 +859,10 @@ function TaskCard(props: {
             e.stopPropagation()
             props.onDelete()
           }}
-          title="Delete"
+          title="Delete task"
+          aria-label="Delete task"
         >
-          ×
+          <XIcon size={13} />
         </button>
       </div>
       <div className="task-meta">
@@ -859,12 +872,8 @@ function TaskCard(props: {
             {t.endTime ? `–${t.endTime}` : ''}
           </span>
         )}
-        <span className={`effort-tag ${t.effort ?? 'medium'}`}>{t.effort ?? 'medium'}</span>
-        {props.priority && (
-          <span className="task-prio" style={{ ['--pc' as any]: props.priority.color }}>
-            {props.priority.title}
-          </span>
-        )}
+        <span className="chip effort-tag">{t.effort ?? 'medium'}</span>
+        {props.priority && <span className="chip task-prio">{props.priority.title}</span>}
       </div>
     </div>
   )
@@ -964,18 +973,8 @@ function AssistDrawer(props: {
 
   const r = props.result
   const isDraftLike = props.mode === 'draft' || props.mode === 'import'
-  return createPortal(
-    <div className="assist-overlay" onClick={props.onClose}>
-      <div className="assist-drawer" onClick={(e) => e.stopPropagation()}>
-        <div className="assist-drawer-head">
-          <span className="assist-title">
-            <Spark /> {titles[props.mode]}
-          </span>
-          <button className="chip-x lg" onClick={props.onClose}>
-            ×
-          </button>
-        </div>
-
+  return (
+    <Sheet title={titles[props.mode]} width={560} onClose={props.onClose}>
         {/* Per-run account + model — custom pickers (native <select> popups don't render in
             this frameless/transparent window). Kept outside the scrollable body so the
             dropdown menus aren't clipped. */}
@@ -1000,7 +999,7 @@ function AssistDrawer(props: {
           </div>
           <div className="assist-runwith-field">
             <span className="assist-runwith-label">Model</span>
-            <ModelPicker models={props.models} value={props.runModel} onChange={props.onPickModel} disabled={props.busy} />
+            <ModelPicker variant="select" models={props.models} value={props.runModel} onChange={props.onPickModel} disabled={props.busy} />
           </div>
         </div>
 
@@ -1020,7 +1019,7 @@ function AssistDrawer(props: {
                 onChange={(e) => props.setNotes(e.target.value)}
                 autoFocus
               />
-              <button className="assist-btn primary wide" onClick={props.onRunWithNotes} disabled={!props.notes.trim()}>
+              <button className="btn-primary planner-wide" onClick={props.onRunWithNotes} disabled={!props.notes.trim()}>
                 <Spark /> Draft my week
               </button>
             </div>
@@ -1050,10 +1049,10 @@ function AssistDrawer(props: {
               </div>
               {props.image && (
                 <div className="assist-apply-row">
-                  <button className="assist-btn primary" onClick={props.onRunImage}>
+                  <button className="btn-primary" onClick={props.onRunImage}>
                     <Spark /> Read calendar
                   </button>
-                  <button className="assist-btn" onClick={() => props.setImage(null)}>
+                  <button className="btn-ghost" onClick={() => props.setImage(null)}>
                     Clear
                   </button>
                 </div>
@@ -1065,7 +1064,7 @@ function AssistDrawer(props: {
           {!props.needNotes && !props.needImage && !r && !props.busy && (
             <div className="assist-notes">
               <p className="assist-hint">{START_HINTS[props.mode]}</p>
-              <button className="assist-btn primary wide" onClick={props.onStart}>
+              <button className="btn-primary planner-wide" onClick={props.onStart}>
                 <Spark /> {START_LABELS[props.mode]}
               </button>
             </div>
@@ -1087,31 +1086,25 @@ function AssistDrawer(props: {
                 <>
                   {typeof r.score === 'number' && <ScoreRing score={r.score} />}
                   {r.summary && <p className="assist-summary">{r.summary}</p>}
-                  {Array.isArray(r.warnings) && r.warnings.length > 0 && (
-                    <div className="assist-section">
-                      <h4>⚠ Watch out</h4>
-                      <ul className="assist-list warn">
-                        {r.warnings.map((w: string, i: number) => (
-                          <li key={i}>{w}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  {renderList('Watch out', r.warnings, 'warn')}
                   {Array.isArray(r.suggestions) && r.suggestions.length > 0 && (
                     <div className="assist-section">
                       <h4>Suggestions</h4>
                       <ul className="assist-list">
                         {r.suggestions.map((s: any, i: number) => (
                           <li key={i}>
-                            <strong>{s.title}</strong>
-                            {s.detail && <span> — {s.detail}</span>}
+                            <ListMark />
+                            <span>
+                              <strong>{s.title}</strong>
+                              {s.detail && <span> — {s.detail}</span>}
+                            </span>
                           </li>
                         ))}
                       </ul>
                     </div>
                   )}
                   <div className="assist-apply-row">
-                    <button className="assist-btn primary" onClick={() => props.onSaveReview('review', r)}>
+                    <button className="btn-primary" onClick={() => props.onSaveReview('review', r)}>
                       Save review to week
                     </button>
                   </div>
@@ -1122,11 +1115,11 @@ function AssistDrawer(props: {
               {props.mode === 'reflect' && (
                 <>
                   {r.summary && <p className="assist-summary">{r.summary}</p>}
-                  {renderList('✓ Wins', r.wins, 'good')}
-                  {renderList('✗ Misses', r.misses, 'warn')}
-                  {renderList('→ Try next week', r.adjustments)}
+                  {renderList('Wins', r.wins, 'good')}
+                  {renderList('Misses', r.misses, 'warn')}
+                  {renderList('Try next week', r.adjustments)}
                   <div className="assist-apply-row">
-                    <button className="assist-btn primary" onClick={() => props.onSaveReview('reflect', r)}>
+                    <button className="btn-primary" onClick={() => props.onSaveReview('reflect', r)}>
                       Save reflection to week
                     </button>
                   </div>
@@ -1146,7 +1139,10 @@ function AssistDrawer(props: {
                       <h4>Priorities</h4>
                       <ul className="assist-list">
                         {r.priorities.map((p: any, i: number) => (
-                          <li key={i}>{p.title ?? p}</li>
+                          <li key={i}>
+                            <ListMark />
+                            <span>{p.title ?? p}</span>
+                          </li>
                         ))}
                       </ul>
                     </div>
@@ -1159,17 +1155,17 @@ function AssistDrawer(props: {
                           <li key={i}>
                             <span className="draft-day">{t.day >= 0 && t.day <= 6 ? DAY_SHORT[t.day] : '—'}</span>
                             {t.title}
-                            {t.effort && <span className={`effort-tag inline ${t.effort}`}>{t.effort}</span>}
+                            {t.effort && <span className="chip effort-tag inline">{t.effort}</span>}
                           </li>
                         ))}
                       </ul>
                     </div>
                   )}
                   <div className="assist-apply-row">
-                    <button className="assist-btn primary" onClick={() => props.onApplyDraft(r)}>
+                    <button className="btn-primary" onClick={() => props.onApplyDraft(r)}>
                       Apply (replaces current week)
                     </button>
-                    <button className="assist-btn" onClick={props.onClose}>
+                    <button className="btn-ghost" onClick={props.onClose}>
                       Discard
                     </button>
                   </div>
@@ -1192,37 +1188,37 @@ function AssistDrawer(props: {
                                 <span className="draft-day">
                                   {m.day === null ? 'Backlog' : DAY_SHORT[m.day] ?? '?'}
                                 </span>
-                                {task ? task.title : '(unknown task)'}
-                                {m.reason && <span className="move-reason"> — {m.reason}</span>}
+                                <span>
+                                  {task ? task.title : '(unknown task)'}
+                                  {m.reason && <span className="move-reason"> — {m.reason}</span>}
+                                </span>
                               </li>
                             )
                           })}
                         </ul>
                       </div>
                       <div className="assist-apply-row">
-                        <button className="assist-btn primary" onClick={() => props.onApplyRebalance(r)}>
+                        <button className="btn-primary" onClick={() => props.onApplyRebalance(r)}>
                           Apply moves
                         </button>
-                        <button className="assist-btn" onClick={props.onClose}>
+                        <button className="btn-ghost" onClick={props.onClose}>
                           Discard
                         </button>
                       </div>
                     </>
                   ) : (
-                    <p className="assist-summary">Claude thinks your week is already well balanced. 👍</p>
+                    <p className="assist-summary">Claude thinks your week is already well balanced.</p>
                   )}
                 </>
               )}
             </>
           )}
         </div>
-      </div>
-    </div>,
-    document.body
+    </Sheet>
   )
 }
 
-// ─── Task editor modal (pill selectors — native <select> popups don't render here) ──
+// ─── Task editor sheet (segmented and pill selectors: native <select> popups don't render here) ──
 function TaskModal(props: {
   task: PlannerTask
   priorities: WeeklyPriority[]
@@ -1231,116 +1227,115 @@ function TaskModal(props: {
   onClose: () => void
 }) {
   const t = props.task
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-  return createPortal(
-    <div className="task-modal-overlay" onClick={props.onClose}>
-      <div className="task-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="task-modal-head">
-          <span className="task-modal-heading">Edit task</span>
-          <button className="chip-x lg" onClick={props.onClose}>
-            ×
+  return (
+    <Sheet
+      title="Edit task"
+      width={480}
+      onClose={props.onClose}
+      footer={
+        <>
+          <button className="btn-text danger" onClick={props.onDelete}>
+            Delete task
           </button>
-        </div>
-        <div className="task-modal-body">
+          <span className="planner-grow" />
+          <button className="btn-primary" onClick={props.onClose}>
+            Done
+          </button>
+        </>
+      }
+    >
+      <div className="planner-form">
+        <div className="form-group">
+          <label htmlFor="planner-task-title">Title</label>
           <textarea
-            className="text-input task-modal-title"
+            id="planner-task-title"
+            className="text-input textarea"
             rows={2}
             value={t.title}
             placeholder="Task title"
             autoFocus
             onChange={(e) => props.onPatch({ title: e.target.value })}
           />
-
-          <div className="task-modal-field">
-            <span className="task-modal-label">Day</span>
-            <div className="pill-row">
-              {DAY_SHORT.map((d, i) => (
-                <button key={i} className={`pill ${t.day === i ? 'on' : ''}`} onClick={() => props.onPatch({ day: i })}>
-                  {d}
-                </button>
-              ))}
-              <button className={`pill ${t.day === null ? 'on' : ''}`} onClick={() => props.onPatch({ day: null })}>
-                Backlog
-              </button>
-            </div>
-          </div>
-
-          <div className="task-modal-times">
-            <label>
-              <span className="task-modal-label">Start</span>
-              <input
-                type="time"
-                className="text-input"
-                value={t.timeOfDay ?? ''}
-                onChange={(e) => props.onPatch({ timeOfDay: e.target.value || null })}
-              />
-            </label>
-            <label>
-              <span className="task-modal-label">End</span>
-              <input
-                type="time"
-                className="text-input"
-                value={t.endTime ?? ''}
-                onChange={(e) => props.onPatch({ endTime: e.target.value || null })}
-              />
-            </label>
-          </div>
-
-          <div className="task-modal-field">
-            <span className="task-modal-label">Effort</span>
-            <div className="pill-row">
-              {EFFORTS.map((ef) => (
-                <button
-                  key={ef}
-                  className={`pill effort-tag ${ef} ${(t.effort ?? 'medium') === ef ? 'on' : ''}`}
-                  onClick={() => props.onPatch({ effort: ef })}
-                >
-                  {ef}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="task-modal-field">
-            <span className="task-modal-label">Priority</span>
-            <div className="pill-row">
-              <button className={`pill ${!t.priorityId ? 'on' : ''}`} onClick={() => props.onPatch({ priorityId: null })}>
-                None
-              </button>
-              {props.priorities.map((p) => (
-                <button
-                  key={p.id}
-                  className={`pill ${t.priorityId === p.id ? 'on' : ''}`}
-                  style={{ ['--pc' as any]: p.color }}
-                  onClick={() => props.onPatch({ priorityId: p.id })}
-                >
-                  <span className="pill-dot" />
-                  {p.title}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <label className="task-modal-done">
-            <input type="checkbox" checked={t.done} onChange={(e) => props.onPatch({ done: e.target.checked })} />
-            <span>Mark as done</span>
-          </label>
         </div>
-        <div className="task-modal-foot">
-          <button className="btn-text danger" onClick={props.onDelete}>
-            Delete task
-          </button>
-          <button className="assist-btn primary" onClick={props.onClose}>
-            Done
-          </button>
+
+        <div className="form-group">
+          <label>Day</label>
+          <div className="seg-control" role="radiogroup" aria-label="Day">
+            {DAY_SHORT.map((d, i) => (
+              <button key={i} role="radio" aria-checked={t.day === i} className={t.day === i ? 'on' : ''} onClick={() => props.onPatch({ day: i })}>
+                {d}
+              </button>
+            ))}
+            <button role="radio" aria-checked={t.day === null} className={t.day === null ? 'on' : ''} onClick={() => props.onPatch({ day: null })}>
+              Backlog
+            </button>
+          </div>
         </div>
+
+        <div className="planner-form-row">
+          <div className="form-group grow">
+            <label htmlFor="planner-task-start">Start</label>
+            <input
+              id="planner-task-start"
+              type="time"
+              className="text-input"
+              value={t.timeOfDay ?? ''}
+              onChange={(e) => props.onPatch({ timeOfDay: e.target.value || null })}
+            />
+          </div>
+          <div className="form-group grow">
+            <label htmlFor="planner-task-end">End</label>
+            <input
+              id="planner-task-end"
+              type="time"
+              className="text-input"
+              value={t.endTime ?? ''}
+              onChange={(e) => props.onPatch({ endTime: e.target.value || null })}
+            />
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label>Effort</label>
+          <div className="seg-control" role="radiogroup" aria-label="Effort">
+            {EFFORTS.map((ef) => (
+              <button
+                key={ef}
+                role="radio"
+                aria-checked={(t.effort ?? 'medium') === ef}
+                className={(t.effort ?? 'medium') === ef ? 'on' : ''}
+                onClick={() => props.onPatch({ effort: ef })}
+              >
+                {ef[0].toUpperCase() + ef.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label>Priority</label>
+          <div className="pill-row">
+            <button className={`pill ${!t.priorityId ? 'on' : ''}`} onClick={() => props.onPatch({ priorityId: null })}>
+              None
+            </button>
+            {props.priorities.map((p) => (
+              <button
+                key={p.id}
+                className={`pill ${t.priorityId === p.id ? 'on' : ''}`}
+                onClick={() => props.onPatch({ priorityId: p.id })}
+              >
+                {p.title}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <label className="task-modal-done">
+          <input type="checkbox" checked={t.done} onChange={(e) => props.onPatch({ done: e.target.checked })} />
+          <span>Mark as done</span>
+        </label>
       </div>
-    </div>,
-    document.body
+    </Sheet>
   )
 }
 
@@ -1373,53 +1368,81 @@ function ReviewCard({ review, flash, onDelete }: { review: SavedReview; flash?: 
             onDelete()
           }}
           title="Delete review"
+          aria-label="Delete review"
         >
-          ×
+          <XIcon size={13} />
         </button>
         <svg
-          width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
-          style={{ transform: open ? 'rotate(90deg)' : '', transition: 'transform 0.15s', color: 'var(--text-2)', flexShrink: 0 }}
+          className={`review-card-chev ${open ? 'open' : ''}`}
+          width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          aria-hidden="true"
         >
-          <polyline points="9 18 15 12 9 6" />
+          <path d="M9 18l6-6-6-6" />
         </svg>
       </div>
       {review.summary && <p className="review-card-summary">{review.summary}</p>}
       {open && (
         <div className="review-card-body">
-          {renderList('⚠ Watch out', review.warnings, 'warn')}
+          {renderList('Watch out', review.warnings, 'warn')}
           {review.suggestions && review.suggestions.length > 0 && (
             <div className="assist-section">
               <h4>Suggestions</h4>
               <ul className="assist-list">
                 {review.suggestions.map((s, i) => (
                   <li key={i}>
-                    <strong>{s.title}</strong>
-                    {s.detail && <span> — {s.detail}</span>}
+                    <ListMark />
+                    <span>
+                      <strong>{s.title}</strong>
+                      {s.detail && <span> — {s.detail}</span>}
+                    </span>
                   </li>
                 ))}
               </ul>
             </div>
           )}
-          {renderList('✓ Wins', review.wins, 'good')}
-          {renderList('✗ Misses', review.misses, 'warn')}
-          {renderList('→ Try next week', review.adjustments)}
+          {renderList('Wins', review.wins, 'good')}
+          {renderList('Misses', review.misses, 'warn')}
+          {renderList('Try next week', review.adjustments)}
         </div>
       )}
     </div>
   )
 }
 
-function renderList(title: string, items: unknown, tone?: string) {
+function renderList(title: string, items: unknown, tone?: 'good' | 'warn') {
   if (!Array.isArray(items) || items.length === 0) return null
   return (
     <div className="assist-section">
       <h4>{title}</h4>
-      <ul className={`assist-list ${tone ?? ''}`}>
+      <ul className="assist-list">
         {items.map((it, i) => (
-          <li key={i}>{String(it)}</li>
+          <li key={i}>
+            <ListMark tone={tone} />
+            <span>{String(it)}</span>
+          </li>
         ))}
       </ul>
     </div>
+  )
+}
+
+/** The mark before a list row: a check for wins, an alert for warnings, else a dot. */
+function ListMark({ tone }: { tone?: 'good' | 'warn' }) {
+  return (
+    <span className={`assist-mark ${tone ?? ''}`} aria-hidden="true">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        {tone === 'good' ? (
+          <path d="M20 6L9 17l-5-5" />
+        ) : tone === 'warn' ? (
+          <>
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 8v4M12 16h.01" />
+          </>
+        ) : (
+          <circle cx="12" cy="12" r="2.5" fill="currentColor" />
+        )}
+      </svg>
+    </span>
   )
 }
 
@@ -1499,4 +1522,21 @@ function Spark() {
       <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />
     </svg>
   )
+}
+
+function Icon({ size, children }: { size: number; children: React.ReactNode }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children}
+    </svg>
+  )
+}
+function XIcon({ size = 14 }: { size?: number }) {
+  return <Icon size={size}><path d="M6 6l12 12M18 6L6 18" /></Icon>
+}
+function CheckIcon({ size = 14 }: { size?: number }) {
+  return <Icon size={size}><path d="M20 6L9 17l-5-5" /></Icon>
+}
+function ChevronIcon({ dir }: { dir: 'left' | 'right' }) {
+  return <Icon size={16}><path d={dir === 'left' ? 'M15 18l-6-6 6-6' : 'M9 18l6-6-6-6'} /></Icon>
 }
