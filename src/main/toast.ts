@@ -10,8 +10,8 @@ import { hardenWebContents } from './window-security'
 // doing — and it does NOT dismiss on blur: it persists until the request is
 // answered. Mouse clicks still work on a non-focusable window.
 
-const TOAST_WIDTH = 380
-const TOAST_HEIGHT = 170
+const TOAST_WIDTH = 420
+const TOAST_HEIGHT = 160
 const MARGIN = 12
 
 let toastWindow: BrowserWindow | null = null
