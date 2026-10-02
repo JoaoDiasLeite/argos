@@ -143,6 +143,11 @@ import { createExecutor, createSshBackend, type OpsExecutor } from './ops-exec'
 import { createFakeBackend } from './ops-backend-fake'
 import { loadRunbook, readScript } from './ops-runbook'
 import { finishOpsRun, prepareOpsRun, type ApprovalOpsContext, type OpsRunContext } from './ops-run'
+import { bridgeSessionFor, openOpsSession } from './ops-session'
+import { newOpsToken, registerToken, revokeToken, startOpsBridge, stopOpsBridge } from './ops-bridge'
+import { removeOpsMcpConfig, writeOpsMcpConfig } from './ops-mcp-config'
+import { opsRelayCommand, type OpsCli } from './ops-mcp-config-pure'
+import { OPS_MCP_FLAG, runOpsRelay } from './ops-relay'
 import type { CanUseTool } from './providers/types'
 import { OPS_MAX_TIMEOUT_MS } from './ops-types'
 import { posixToWslUnc } from './local-fs-pure'
@@ -265,10 +270,18 @@ let trayHintShown = false
 // path below is guarded on it. See notify-hook.ts.
 const notifyMode = notifyHookMode(process.argv)
 
+// `argos --ops-mcp`: the ops MCP relay a terminal CLI started (ops-relay.ts), speaking MCP
+// on stdio. Like the hook roles it opens nothing, takes no lock and starts no service.
+// The configs Argos writes start the relay under ELECTRON_RUN_AS_NODE instead, which never
+// reaches this file (see ops-mcp-config-pure.ts for why); this is the fallback for a hand
+// launch.
+const opsMcpMode = process.argv.includes(OPS_MCP_FLAG)
+if (opsMcpMode) void runOpsRelay({ exit: (code) => app.exit(code) })
+
 // Second launches (e.g. clicking the exe while the app lives in the tray) focus
 // the running instance instead of spawning a duplicate. The hook process does its
 // own lock handling — it uses the result to find out whether Argos is running.
-if (!notifyMode) {
+if (!notifyMode && !opsMcpMode) {
   if (!app.requestSingleInstanceLock()) {
     // Otherwise a second `npm run dev` just returns to the prompt, under a screen of
     // Chromium cache errors from the directory the running instance holds.
@@ -555,6 +568,8 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  // The ops relay runs on its own from the top of this file; nothing here is for it.
+  if (opsMcpMode) return
   // The hook roles end here. Nothing below this block runs in them: they must not
   // migrate userData, repair the CLI, start the scheduler, or open a window.
   if (notifyMode) {
@@ -693,6 +708,7 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   killAllTerminals()
+  endAllTerminalOps('the terminals were closed')
   remoteShellKillAll()
   sftpDisconnectAll()
   if (!hasTray && process.platform !== 'darwin') app.quit()
@@ -705,6 +721,8 @@ app.on('before-quit', () => {
   // Before the ssh sessions go: an ops exec ended by the disconnect would otherwise read
   // as a dropped connection rather than an abort.
   opsExecutor?.abortAll('app quit')
+  endAllTerminalOps('app quit')
+  void stopOpsBridge()
   sftpDisconnectAll()
 })
 
@@ -982,6 +1000,139 @@ ipcMain.handle('ops:session-events', async (_, appSessionId: string) => {
   const r = await getOpsLedger().readSession(appSessionId)
   if (!r.ok) return r
   return { ok: true, events: r.lines.map((line) => ({ appSessionId, runId: line.event.runId, line })) }
+})
+
+// ─── Ops from the terminal (docs/OPS_AGENT_PLAN.md §9 Phase 5) ────────────────
+
+// One ops session per terminal id: a run that starts here, before the CLI is launched,
+// and ends when the pty exits or the terminal is closed. The CLI reaches it through the
+// `ops` MCP relay, which connects to the bridge with this session's token.
+interface TerminalOpsSession {
+  runId: string
+  runbookPath: string
+  provider: OpsCli
+  token: string
+  endpoint: string
+  mcpConfigPath: string
+  /** userData/ops-mcp/<terminalId>/<runId>: the config, removed with the token. */
+  dir: string
+  guarantee: 'tools-and-local-shell' | 'tools-only'
+  ctx: OpsRunContext
+  abort: AbortController
+}
+const terminalOps = new Map<string, TerminalOpsSession>()
+// A second request for the same terminal while the first is still checking hosts gets
+// the first one's answer rather than a second run.
+const terminalOpsOpening = new Map<string, Promise<TerminalOpsResult>>()
+
+type TerminalOpsResult =
+  | {
+      ok: true
+      runId: string
+      env: Record<string, string>
+      mcpConfigPath: string
+      guarantee: 'tools-and-local-shell' | 'tools-only'
+    }
+  | { ok: false; error: string }
+
+function terminalOpsReply(s: TerminalOpsSession): TerminalOpsResult {
+  return {
+    ok: true,
+    runId: s.runId,
+    // MCP_TOOL_TIMEOUT: Claude Code gives an MCP call far less than a modal wait plus a
+    // ten-minute exec by default; the other CLIs take their timeouts from the config file.
+    env: { ARGOS_OPS_PIPE: s.endpoint, ARGOS_OPS_TOKEN: s.token, MCP_TOOL_TIMEOUT: String(3 * OPS_MAX_TIMEOUT_MS) },
+    mcpConfigPath: s.mcpConfigPath,
+    guarantee: s.guarantee
+  }
+}
+
+/** Log run.end for a terminal's ops session (once), revoke its token and remove its config. */
+async function endTerminalOps(terminalId: string, r: { ok: boolean; error?: string; aborted?: boolean }): Promise<void> {
+  const s = terminalOps.get(terminalId)
+  if (!s) return
+  terminalOps.delete(terminalId)
+  revokeToken(s.token)
+  // Ends a pending approval or sudo prompt and any exec still running on a host.
+  s.abort.abort()
+  removeOpsMcpConfig(s.dir)
+  await finishOpsRun(s.ctx, { ok: r.ok, costUsd: 0, ...(r.aborted ? { aborted: true } : {}), ...(r.error ? { error: r.error } : {}) })
+}
+
+function endAllTerminalOps(reason: string): void {
+  for (const id of [...terminalOps.keys()]) void endTerminalOps(id, { ok: false, aborted: true, error: reason })
+}
+
+async function openTerminalOps(terminalId: string, runbookPath: string, provider: OpsCli): Promise<TerminalOpsResult> {
+  const existing = terminalOps.get(terminalId)
+  if (existing && !existing.ctx.ended) {
+    // A remount reattaches to the same live pty, whose CLI holds this token: hand back the
+    // same session, or the running relay is orphaned.
+    if (existing.runbookPath === runbookPath && existing.provider === provider) return terminalOpsReply(existing)
+    await endTerminalOps(terminalId, { ok: true, error: 'replaced by a new ops session on the same terminal' })
+  }
+
+  const abort = new AbortController()
+  const opened = await openOpsSession({
+    appSessionId: terminalId,
+    runbookPath,
+    model: `${provider} CLI (terminal)`,
+    ledger: getOpsLedger(),
+    executor: getOpsExecutor(),
+    abort,
+    loadRunbook,
+    readScript,
+    hostAddress: opsHostAddress,
+    ask: async ({ tool, input, ops: context }) => {
+      const d = await requestToolApproval(terminalId, tool, input, abort.signal, context)
+      return { allow: d.allow, ...(d.stop ? { stop: true } : {}) }
+    },
+    askSecret: (req) => requestOpsSecret(terminalId, req, abort.signal),
+    onEvent: (line) => send('ops:event', { appSessionId: terminalId, runId: line.event.runId, line })
+  })
+  if (!opened.ok) return { ok: false, error: opened.error }
+
+  const { ctx } = opened
+  const dir = path.join(app.getPath('userData'), 'ops-mcp', terminalId, ctx.runId)
+  try {
+    const { endpoint } = await startOpsBridge({ socketDir: app.getPath('userData') })
+    const token = newOpsToken()
+    const env = { ARGOS_OPS_PIPE: endpoint, ARGOS_OPS_TOKEN: token }
+    const config = writeOpsMcpConfig(dir, provider, opsRelayCommand(process.execPath, app.getAppPath(), path.join), env, {
+      runbookPath: ctx.runbook.ref.path
+    })
+    registerToken(token, bridgeSessionFor(opened))
+    const s: TerminalOpsSession = {
+      runId: ctx.runId,
+      runbookPath,
+      provider,
+      token,
+      endpoint,
+      mcpConfigPath: config.path,
+      dir,
+      guarantee: provider === 'claude' ? 'tools-and-local-shell' : 'tools-only',
+      ctx,
+      abort
+    }
+    terminalOps.set(terminalId, s)
+    return terminalOpsReply(s)
+  } catch (e) {
+    const error = `Could not start the ops bridge: ${e instanceof Error ? e.message : String(e)}`
+    removeOpsMcpConfig(dir)
+    await finishOpsRun(ctx, { ok: false, costUsd: 0, error })
+    return { ok: false, error }
+  }
+}
+
+ipcMain.handle('ops:terminal-session', async (_, terminalId: string, runbookPath: string, provider: OpsCli) => {
+  if (typeof terminalId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(terminalId)) return { ok: false, error: 'Invalid terminal id.' }
+  if (typeof runbookPath !== 'string' || runbookPath.trim() === '') return { ok: false, error: 'No runbook folder given.' }
+  if (provider !== 'claude' && provider !== 'codex' && provider !== 'gemini') return { ok: false, error: `Unknown CLI: ${String(provider)}` }
+  const pending = terminalOpsOpening.get(terminalId)
+  if (pending) return pending
+  const opening = openTerminalOps(terminalId, runbookPath, provider).finally(() => terminalOpsOpening.delete(terminalId))
+  terminalOpsOpening.set(terminalId, opening)
+  return opening
 })
 
 // ─── Agent run ─────────────────────────────────────────────────────────────
@@ -1983,18 +2134,24 @@ ipcMain.handle(
       provider?: 'claude' | 'codex' | 'gemini'
       resumeSessionId?: string
       pinSessionId?: string
+      /** An ops terminal: what ops:terminal-session returned (env + config), forwarded as is. */
+      ops?: { env: Record<string, string>; mcpConfigPath: string }
       cols: number
       rows: number
     }
-  ) =>
+  ) => {
     // Returns { ok, shell, cliLaunched, reused, buffer }. The scrollback of a reused pty comes
     // back in this invoke result rather than over 'terminal:data' on purpose — that way the
     // renderer controls the ordering itself and can replay history before any live chunk.
-    createTerminal(
+    const r = createTerminal(
       id,
       opts,
       (tid, data) => send('terminal:data', { id: tid, data }),
-      (tid, exitCode) => send('terminal:exit', { id: tid, exitCode }),
+      (tid, exitCode) => {
+        send('terminal:exit', { id: tid, exitCode })
+        // One ops run per CLI launch: the pty going away ends it.
+        void endTerminalOps(tid, exitCode === 0 ? { ok: true } : { ok: false, error: `the terminal exited with code ${exitCode}` })
+      },
       // Pushed on the transition rather than polled: the renderer turns this straight into
       // a running dot, and a poll slow enough to be cheap would be too slow to be right.
       (tid, busy) => send('terminal:busy', { id: tid, busy }),
@@ -2002,6 +2159,11 @@ ipcMain.handle(
       // terminal-osc-pure.ts. `waiting` separates "it needs you" from "it is done".
       (tid, waiting) => send('terminal:notify', { id: tid, waiting })
     )
+    // A session opened for a terminal that then failed to start would otherwise stay open
+    // with no pty to end it.
+    if (!r.ok && terminalOps.has(id)) void endTerminalOps(id, { ok: false, error: r.error ?? 'the terminal did not start' })
+    return r
+  }
 )
 // Which ptys are mid-burst right now. The renderer hears transitions only from the moment
 // it subscribes, so it seeds itself from this — otherwise a chat already working when the
@@ -2014,8 +2176,21 @@ ipcMain.on('terminal:write', (_, id: string, data: string) => writeTerminal(id, 
 ipcMain.on('terminal:resize', (_, id: string, cols: number, rows: number) =>
   resizeTerminal(id, cols, rows)
 )
-ipcMain.handle('terminal:kill', (_, id: string) => killTerminal(id))
-ipcMain.on('terminal:kill-deferred', (_, id: string) => killTerminalDeferred(id))
+// killTerminal drops the pty without its onExit, so a closed ops terminal ends its run here.
+ipcMain.handle('terminal:kill', (_, id: string) => {
+  const r = killTerminal(id)
+  void endTerminalOps(id, { ok: true })
+  return r
+})
+ipcMain.on('terminal:kill-deferred', (_, id: string) => {
+  killTerminalDeferred(id)
+  if (!terminalOps.has(id)) return
+  // The deferred kill fires after 250 ms unless a re-create for the same id cancels it
+  // (a remount); only a terminal that is really gone ends its run.
+  setTimeout(() => {
+    if (!listTerminals().some((t) => t.id === id)) void endTerminalOps(id, { ok: true })
+  }, 500)
+})
 // The ptys this process holds, for the terminal grid. No consumer count: unmounting
 // a terminal view never kills anything, so there is nothing to reference-count.
 ipcMain.handle('terminal:list', () => listTerminals())

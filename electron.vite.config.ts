@@ -4,7 +4,17 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/main/index.ts'),
+          // The ops MCP relay a terminal CLI starts under ELECTRON_RUN_AS_NODE: its own
+          // bundle, so it never loads electron or the app (see ops-mcp-config-pure.ts).
+          'ops-relay': resolve('src/main/ops-relay-main.ts')
+        }
+      }
+    }
   },
   preload: {
     plugins: [externalizeDepsPlugin()]

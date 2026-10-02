@@ -404,6 +404,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   respondOpsSecret: (payload: { requestId: string; value: string | null }) =>
     ipcRenderer.invoke('ops:secret-response', payload),
+  // An ops terminal (plan §9 Phase 5): opens the run and returns the env + MCP config to launch the CLI with.
+  opsTerminalSession: (terminalId: string, runbookPath: string, provider: 'claude' | 'codex' | 'gemini') =>
+    ipcRenderer.invoke('ops:terminal-session', terminalId, runbookPath, provider),
   sftpDisconnect: (hostId: string) => ipcRenderer.invoke('sftp:disconnect', hostId),
 
   // WSL

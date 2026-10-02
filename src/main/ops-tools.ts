@@ -1,7 +1,7 @@
 /**
  * The in-process `ops` MCP server (docs/OPS_AGENT_PLAN.md §1.2): mcp__ops__propose_plan, run, script,
  * read, list and write, the model's only reach to a server. The gate's decision was
- * already taken and logged in canUseTool (ops-run.ts); each handler here runs the same
+ * already taken and logged in canUseTool (ops-session.ts); each handler here runs the same
  * deterministic classify again and refuses a deny, so a call that somehow skipped
  * canUseTool still cannot run. Then it executes through the executor's per-host queue
  * and logs `call.started` before and `call.finished` after.
@@ -35,7 +35,8 @@ import {
   writeResultText
 } from './ops-run-pure'
 import { failedExec, type ExecResult } from './ops-exec-pure'
-import type { OpsRunContext } from './ops-run'
+import type { OpsRunContext } from './ops-session'
+import { opsServerInstructions, opsToolDefs, type OpsToolHost } from './ops-tool-defs-pure'
 import type { OpsAuditEvent, OpsGateResult, OpsToolInput, OpsToolName } from './ops-types'
 
 /** The MCP tool result shape, kept local so this file needs no @modelcontextprotocol import. */
@@ -361,69 +362,29 @@ async function loadSdkParts(): Promise<SdkParts> {
   return sdkParts
 }
 
-/** The hosts the model may name, in every tool description: the id is what it must send. */
-function hostList(ctx: OpsRunContext): string {
-  const rows = [...ctx.hosts.byId.values()].map((h) => `- ${h.host.name} (hostId: ${h.host.id}; groups: ${h.groups.join(', ')})`)
-  return rows.length ? rows.join('\n') : '- (no hosts)'
+/** The run's hosts as the shared tool definitions list them. */
+export function opsToolHosts(ctx: OpsRunContext): OpsToolHost[] {
+  return [...ctx.hosts.byId.values()].map((h) => ({ id: h.host.id, name: h.host.name, groups: [...h.groups] }))
 }
-
-const RULES =
-  'One simple command only: no chaining (;, &&, ||), no pipes, redirections, subshells or variable assignments. ' +
-  'Use the scripts the runbook provides for anything that needs more than one command. ' +
-  'Every call is checked against the runbook policy and may be refused or need the operator\'s approval.'
 
 /**
  * Build the `ops` server for `mcpServers: { ops: … }`. Returns the SDK's
  * McpSdkServerConfigWithInstance; typed as unknown at the seam because EngineRequest's
- * mcpServers is engine-agnostic.
+ * mcpServers is engine-agnostic. Names, descriptions and schemas come from
+ * ops-tool-defs-pure.ts, shared with the terminal relay (ops-relay.ts).
  */
 export async function createOpsMcpServer(ctx: OpsRunContext, handlers = createOpsToolHandlers(ctx)): Promise<unknown> {
   const { createSdkMcpServer, tool, z } = await loadSdkParts()
-  const hosts = `Hosts in this runbook:\n${hostList(ctx)}`
+  const hosts = opsToolHosts(ctx)
   const as = (r: OpsToolResult) => r as never
 
   return createSdkMcpServer({
     name: 'ops',
     version: '1.0.0',
-    instructions: `Remote operations for runbook ${ctx.runbook.ref.name}. ${RULES}\n${hosts}`,
+    instructions: opsServerInstructions(ctx.runbook.ref.name, hosts),
     alwaysLoad: true,
-    tools: [
-      tool(
-        'propose_plan',
-        'Call this once, before any other ops tool: list the steps you intend to run, one per entry, naming the host and the command or script. Nothing runs until the operator approves the plan.',
-        { steps: z.array(z.string().min(1)).min(1).max(40) },
-        async (args) => as(await handlers.propose_plan(args))
-      ),
-      tool(
-        'run',
-        `Run one command on a runbook host over SSH and return its exit code, stdout and stderr. ${RULES}\n${hosts}`,
-        { hostId: z.string(), cmd: z.string() },
-        async (args) => as(await handlers.run(args))
-      ),
-      tool(
-        'script',
-        `Run one of the runbook's scripts (by file name, from its scripts/ folder) on a host, with arguments as separate strings. ${RULES}\n${hosts}`,
-        { hostId: z.string(), name: z.string(), args: z.array(z.string()).default([]) },
-        async (args) => as(await handlers.script(args))
-      ),
-      tool(
-        'read',
-        `Read a text file on a host. The path must be absolute and inside the runbook's read paths. ${RULES}\n${hosts}`,
-        { hostId: z.string(), path: z.string() },
-        async (args) => as(await handlers.read(args))
-      ),
-      tool(
-        'list',
-        `List a directory on a host. The path must be absolute and inside the runbook's read paths. ${RULES}\n${hosts}`,
-        { hostId: z.string(), path: z.string() },
-        async (args) => as(await handlers.list(args))
-      ),
-      tool(
-        'write',
-        `Write a text file on a host. The path must be absolute and inside the runbook's write paths; the previous file may be backed up first. ${RULES}\n${hosts}`,
-        { hostId: z.string(), path: z.string(), content: z.string() },
-        async (args) => as(await handlers.write(args))
-      )
-    ]
+    tools: opsToolDefs(z, hosts).map((d) =>
+      tool(d.name, d.description, d.shape, async (args) => as(await handlers[d.name](args as Record<string, unknown>)))
+    )
   })
 }

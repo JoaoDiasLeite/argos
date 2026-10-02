@@ -1320,6 +1320,9 @@ export interface PlannerAssistResult {
 
 export interface TerminalCreateOptions {
   cwd?: string
+  /** An ops terminal: the relay token env and the MCP config the CLI starts with (see
+   *  docs/OPS_AGENT_PLAN.md phase 5). Local shells only. */
+  ops?: { env: Record<string, string>; mcpConfigPath: string }
   /** The account id for the chat's provider (Claude account, CODEX_HOME account, or Gemini account). */
   accountId?: string
   /** Run inside this WSL distro (for WSL-backed chats). */
@@ -1893,6 +1896,26 @@ declare global {
       ) => () => void
       /** Answer a secret request; `value: null` declines. */
       respondOpsSecret: (payload: { requestId: string; value: string | null }) => Promise<{ ok: true }>
+      /**
+       * Open the ops run of a terminal (one run per CLI launch; run.end when the pty exits
+       * or the terminal is closed). Idempotent while that run is open: the same terminal id
+       * gets the same token back. `appSessionId` of its ops:event lines and approvals is
+       * the terminal id. Pass `env` and `mcpConfigPath` to terminalCreate as `ops`.
+       */
+      opsTerminalSession: (
+        terminalId: string,
+        runbookPath: string,
+        provider: 'claude' | 'codex' | 'gemini'
+      ) => Promise<
+        | {
+            ok: true
+            runId: string
+            env: Record<string, string>
+            mcpConfigPath: string
+            guarantee: 'tools-and-local-shell' | 'tools-only'
+          }
+        | { ok: false; error: string }
+      >
       sftpDisconnect: (hostId: string) => Promise<{ ok: boolean }>
 
       // WSL
