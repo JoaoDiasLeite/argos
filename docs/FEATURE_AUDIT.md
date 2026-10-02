@@ -132,13 +132,65 @@ no use. Hiding is cheap; removing is better when nothing would be missed.
 | Git and review | Git modal, review panel, Checkpoints, terminal bar, Home "uncommitted" | |
 | Floating windows | Overlay, pill, toast, tray, jump list, Explorer menu | Three always-on-top windows. |
 
-## 6. How the module profile would work (for the `hide` calls)
+## 6. Decisions · 2026-10-02
 
-A module is a rail group or a standalone entry. `config.ui.modules` lists the enabled ones;
-the rail, the palette's Go-to list, the shortcuts sheet and the deep-link validator all read
-the same list. Two presets, chosen at onboarding and switchable in Settings → General:
+Taken with the owner in three rounds. One app, no module profiles: after the removals there
+is little left to hide, so the only toggle is Planner · Week in Settings.
 
-- **Ops**: Servers (Remote & WSL, Ops), Chat in terminal work mode, Usage, Settings.
-- **Full**: everything that survives this audit.
+### Remove
 
-A hidden module keeps its data and its main-process code; only the entry points go.
+| What | Why | Drags along |
+|---|---|---|
+| **The SDK chat** (composer, transcript, MessageBubble, panes of transcripts, Quick chat, Light mode, per-chat Approve/Auto, model/account pickers on the composer, ⋯ export menu, long-session banner, agent output panel) | The owner works in the terminal. The CLI prompts for its own tools; Argos's per-tool approvals only ever gated the SDK path. | `ui.workMode` (terminal is the only mode); the ops chat SDK mode (Ops workspace becomes terminal-only); `agent:send`'s SDK branch, `canUseTool` for chats, `providers/*` engines stay only for headless uses (sprint backfill, planner assist); Home start box starts a terminal; standup opens a terminal with the prompt. |
+| **Planner · Backlog** + memory panel + memory diagnostic | Never used. | `backlog.ts`, `backlog-pure.ts`, `memory-diagnostic*.ts`, `memory:diagnose`, `backlog:*` IPC. The repo's BACKLOG files are untouched. |
+| **Routines** + scheduler engine | Never used. | `scheduler.ts`, `scheduler-safety.ts`, `scheduler:*` IPC, Home "next up", standup "schedule as routine", tray's keep-alive reason. Saved routines under `userData/scheduler/` are left on disk, never run again. |
+| **Agents** and **Rooms** | Palette-only, not used. | `agents.ts`, `rooms:get-layout`, `AgentDef` on sessions, `@agent` mentions in the composer (goes with the composer anyway), Sprint/Planner "run with agent". |
+| **Live** | Unreachable. | `LiveView.tsx` only. `live-sessions*.ts`, `takeover-pure.ts`, `process-identity.ts` stay: they feed the busy state in Chat and Home and the terminal's transcript link. |
+| **Git modal, Review panel, Checkpoints, authorship ledger** | Git is done in the terminal. Without SDK tool-use events the ledger and checkpoints have no primary source. | `checkpoints.ts`, `authorship*.ts`, `git.ts` keeps only what Home "uncommitted work", the branch pill and worktrees use; `project-prefs` verify command; `WorkspaceReview.tsx`, `GitModal.tsx`, `CheckpointsModal.tsx`, `DiffView.tsx` if nothing else uses it. `docs/REVIEW_GATE_PLAN.md` phases 2–3 are cancelled. |
+| **CLAUDE.md modal** | Its only entry point was the SDK chat's menu. | `ClaudeMdModal.tsx`. |
+| **Home "Plan & spend"** | Duplicate of Usage and the sidebar badge. | One section of `HomeView.tsx`. |
+
+### Hide
+
+| What | How |
+|---|---|
+| **Planner · Week** | A toggle in Settings → General ("Show the weekly planner"), default off. The Sprint board is what Planner opens on. |
+
+### Keep
+
+Home (minus plan & spend), Chat as terminal, Projects with tags, labels, peek and project
+actions, Planner · Sprint (with forge backfill and standup, standup now a terminal), Usage
+and the sidebar plan badge, Servers (Remote & WSL, Connect with SFTP + editor + terminal,
+Ops, MCP), Settings with Permissions / Hooks / Notify-hook, quick-launcher, pill, toast,
+tray, badges, jump list, Explorer menu, command palette, shortcuts sheet, changelog,
+onboarding, accounts.
+
+MCP view and the three Claude Code settings modals had no preference from the owner; kept,
+because the CLI reads the same config they edit and the notify hook is what makes session
+notifications work.
+
+## 7. Order of removals (2.0.0)
+
+One removal per commit, each compiling and passing tests on its own; `npm run typecheck`
+against each staged tree. Small and independent first, the SDK chat last because
+everything else gets simpler once it is gone and because it is the one that needs the
+most care.
+
+1. **Live** — one view and its routing. Warm-up.
+2. **Agents + Rooms** — views, store, IPC, session fields, palette entries.
+3. **Backlog + memory** — mode, store, IPC, the Planner toggle loses one option.
+4. **Routines + scheduler** — view, engine, IPC, Home "next up", tray keep-alive reason,
+   the `routine-*` ai-policy profiles.
+5. **Git / Review / Checkpoints / authorship** — modals, panel, stores, IPC, the chat and
+   terminal-bar buttons, palette entries.
+6. **CLAUDE.md modal; Home plan & spend.**
+7. **Week behind a toggle** — Settings → General, default off; Planner opens on Sprint.
+8. **SDK chat** — in its own sub-plan (`docs/TERMINAL_ONLY_PLAN.md`, to write before
+   starting): what the Chat view becomes, what `Session` loses, what `agent:send` keeps
+   (nothing interactive), how Home's start box, Sprint's standup and the Ops workspace
+   start a terminal instead, what happens to existing sessions with transcripts (read-only
+   view or export, never silent loss), and the `ApprovalModal` that stays for ops asks.
+9. **Changelog for 2.0.0** written as the removals land, one line each: what left and why.
+
+Each step ends with `docs/FEATURE_AUDIT.md` updated: the row moves from this plan to a
+"Removed in" column with its commit.
