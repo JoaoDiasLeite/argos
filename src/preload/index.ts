@@ -362,6 +362,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // An ops terminal (plan §9 Phase 5): opens the run and returns the env + MCP config to launch the CLI with.
   opsTerminalSession: (terminalId: string, runbookPath: string, provider: 'claude' | 'codex' | 'gemini') =>
     ipcRenderer.invoke('ops:terminal-session', terminalId, runbookPath, provider),
+  // Stop a terminal's ops run (plan H4): run.end aborted, in-flight exec and prompts ended.
+  opsStop: (terminalId: string) => ipcRenderer.invoke('ops:stop', terminalId),
   sftpDisconnect: (hostId: string) => ipcRenderer.invoke('sftp:disconnect', hostId),
 
   // WSL

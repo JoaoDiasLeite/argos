@@ -1626,6 +1626,12 @@ declare global {
           }
         | { ok: false; error: string }
       >
+      /**
+       * Stop a terminal's ops run: aborts a pending approval or sudo prompt and any exec in
+       * flight, revokes the relay's token and logs run.end as aborted. The CLI keeps running;
+       * its ops calls are refused from then on. `ok: false` = no open ops run on that terminal.
+       */
+      opsStop: (terminalId: string) => Promise<{ ok: boolean }>
       sftpDisconnect: (hostId: string) => Promise<{ ok: boolean }>
 
       // WSL

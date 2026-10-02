@@ -181,6 +181,7 @@ import {
 import { createOverlayWindow, hideOverlay, toggleOverlay, registerOverlayShortcut, reregisterOverlayShortcut, overlayShortcut } from './overlay'
 import { createToastWindow, showToast, hideToast, sendToToast } from './toast'
 import { createPillWindow, showPill, hidePill, hidePillSoon, sendToPill } from './pill'
+import { noteTerminalBusy, runIndicatorCount } from './run-indicators-pure'
 import { successBadge, errorBadge, approvalBadge } from './badges'
 import { createTray, updateTrayShortcutLabel } from './tray'
 import { initUpdater, getUpdaterState, checkNow, quitAndInstall } from './updater'
@@ -320,6 +321,16 @@ function routeLaunchAction(action: LaunchAction | null): void {
 // In-flight agent runs keyed by app session id, so we can stop them.
 const activeRuns = new Map<string, AbortController>()
 
+// Terminals whose CLI is working right now, fed from terminal:create's onBusy (plan H5).
+// They drive the same out-of-window indicators as activeRuns. (Not `busyTerminals`:
+// that is terminal.ts's own list, which the renderer seeds itself from.)
+const busyTerminalSet = new Set<string>()
+
+/** SDK runs plus busy terminals: what the taskbar, the pill and the hide/minimize cue count. */
+function runsInFlight(): number {
+  return runIndicatorCount(activeRuns.size, busyTerminalSet)
+}
+
 // The provider that last ran each app session. A resume token is provider-specific
 // (a Claude session id ≠ a Codex thread id ≠ a Gemini session id), so if a session
 // switches provider mid-conversation we must NOT feed the old provider's token to
@@ -345,7 +356,7 @@ function mainWindowInactive(): boolean {
 // none at zero. setProgressBar is a no-op on unsupported platforms — safe to call.
 function updateRunIndicators(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return
-  if (activeRuns.size > 0) mainWindow.setProgressBar(2, { mode: 'indeterminate' })
+  if (runsInFlight() > 0) mainWindow.setProgressBar(2, { mode: 'indeterminate' })
   else mainWindow.setProgressBar(-1)
 }
 
@@ -476,10 +487,10 @@ function createWindow(): void {
   // If a run is in flight when the user hides or minimizes the window mid-run, bring
   // up the pill at that moment so background activity stays visible.
   mainWindow.on('hide', () => {
-    if (activeRuns.size > 0) showPill()
+    if (runsInFlight() > 0) showPill()
   })
   mainWindow.on('minimize', () => {
-    if (activeRuns.size > 0) showPill()
+    if (runsInFlight() > 0) showPill()
   })
   // Keep the renderer's maximize/restore icon and corner rounding in sync.
   mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximized', true))
@@ -1084,6 +1095,16 @@ async function openTerminalOps(terminalId: string, runbookPath: string, provider
     return { ok: false, error }
   }
 }
+
+// The timeline's "Stop run" for a terminal's ops session (plan H4). endTerminalOps aborts
+// the session's controller (a pending approval or sudo prompt, any exec in flight on a
+// host), revokes the relay's token and logs run.end as aborted; the CLI itself keeps
+// running, but its ops calls are refused from here on.
+ipcMain.handle('ops:stop', async (_, terminalId: string): Promise<{ ok: boolean }> => {
+  if (typeof terminalId !== 'string' || !terminalOps.has(terminalId)) return { ok: false }
+  await endTerminalOps(terminalId, { ok: false, aborted: true, error: 'stopped by the operator' })
+  return { ok: true }
+})
 
 ipcMain.handle('ops:terminal-session', async (_, terminalId: string, runbookPath: string, provider: OpsCli) => {
   if (typeof terminalId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(terminalId)) return { ok: false, error: 'Invalid terminal id.' }
@@ -2036,6 +2057,46 @@ ipcMain.handle('mcp:remove', (_, name: string) => removeGlobalMcpServer(name))
 
 // ─── Terminal (embedded PTY) ────────────────────────────────────────────────
 
+/**
+ * A terminal's CLI started or stopped working (plan H5): the taskbar bar, the pill and,
+ * on busy→idle with the window out of view, the success badge, as an SDK run's start and
+ * end feed them. Decorative: never let it disturb the terminal.
+ */
+function onTerminalBusy(id: string, busy: boolean): void {
+  try {
+    const change = noteTerminalBusy(busyTerminalSet, id, busy, activeRuns.size)
+    if (change.kind === 'none') return
+    updateRunIndicators()
+    if (change.kind === 'started') {
+      if (mainWindowInactive()) {
+        const info = listTerminals().find((t) => t.id === id)
+        showPill()
+        sendToPill('pill:update', {
+          state: 'running',
+          sessionName: info ? path.basename(info.cwd) || info.provider : 'Terminal',
+          tool: null
+        })
+      }
+      return
+    }
+    // flagAttention is a no-op while the window has focus.
+    flagAttention('success')
+    if (change.total === 0) {
+      sendToPill('pill:update', { state: 'done' })
+      hidePillSoon(2500)
+    }
+  } catch {
+    /* indicators are decorative */
+  }
+}
+
+/** A pty that went away without an idle transition: drop it from the count, quietly. */
+function dropBusyTerminal(id: string): void {
+  if (!busyTerminalSet.delete(id)) return
+  updateRunIndicators()
+  if (runsInFlight() === 0) hidePillSoon(2500)
+}
+
 ipcMain.handle(
   'terminal:create',
   (
@@ -2064,12 +2125,17 @@ ipcMain.handle(
       (tid, data) => send('terminal:data', { id: tid, data }),
       (tid, exitCode) => {
         send('terminal:exit', { id: tid, exitCode })
+        // terminal.ts forgets an exited pty's busy state without an idle transition.
+        dropBusyTerminal(tid)
         // One ops run per CLI launch: the pty going away ends it.
         void endTerminalOps(tid, exitCode === 0 ? { ok: true } : { ok: false, error: `the terminal exited with code ${exitCode}` })
       },
       // Pushed on the transition rather than polled: the renderer turns this straight into
       // a running dot, and a poll slow enough to be cheap would be too slow to be right.
-      (tid, busy) => send('terminal:busy', { id: tid, busy }),
+      (tid, busy) => {
+        send('terminal:busy', { id: tid, busy })
+        onTerminalBusy(tid, busy)
+      },
       // The CLI asking for the user back, read out of its own output — see
       // terminal-osc-pure.ts. `waiting` separates "it needs you" from "it is done".
       (tid, waiting) => send('terminal:notify', { id: tid, waiting })
@@ -2094,6 +2160,7 @@ ipcMain.on('terminal:resize', (_, id: string, cols: number, rows: number) =>
 // killTerminal drops the pty without its onExit, so a closed ops terminal ends its run here.
 ipcMain.handle('terminal:kill', (_, id: string) => {
   const r = killTerminal(id)
+  dropBusyTerminal(id)
   void endTerminalOps(id, { ok: true })
   return r
 })
