@@ -19,6 +19,7 @@ import type {
   OpsHostRef,
   OpsLoggedPlanStep,
   OpsRunbookRef,
+  OpsScope,
   OpsToolName
 } from './ops-types'
 
@@ -186,6 +187,13 @@ export interface OpsRunSummary {
   runbook: OpsRunbookRef
   hosts: OpsHostRef[]
   model: string
+  /** The intervention's description, ticket, client and scope, from run.start. */
+  task?: string
+  ticket?: string
+  client?: string
+  scope?: OpsScope
+  /** Open scope: the operator's answer per host, in the order given. */
+  hostAnswers?: { hostId: string; host: string; answer: 'approved' | 'denied' }[]
   planText?: string
   /** The latest approved plan's steps, when the ledger recorded them. */
   planSteps?: OpsLoggedPlanStep[]
@@ -234,6 +242,10 @@ export function summarizeRun(lines: OpsAuditLine[], runId: string): OpsRunSummar
     calls: []
   }
   if (start.event.planText !== undefined) s.planText = start.event.planText
+  if (start.event.task !== undefined) s.task = start.event.task
+  if (start.event.ticket !== undefined) s.ticket = start.event.ticket
+  if (start.event.client !== undefined) s.client = start.event.client
+  if (start.event.scope !== undefined) s.scope = start.event.scope
   const calls = new Map<string, OpsCallSummary>()
   const callFor = (callId: string): OpsCallSummary => {
     let c = calls.get(callId)
@@ -297,6 +309,10 @@ export function summarizeRun(lines: OpsAuditLine[], runId: string): OpsRunSummar
         break
       case 'sudo.password-supplied':
         break
+      case 'host.approved':
+      case 'host.denied':
+        ;(s.hostAnswers ??= []).push({ hostId: e.hostId, host: e.host, answer: e.kind === 'host.approved' ? 'approved' : 'denied' })
+        break
       case 'run.end':
         s.endedAt = at
         s.ok = e.ok
@@ -308,4 +324,56 @@ export function summarizeRun(lines: OpsAuditLine[], runId: string): OpsRunSummar
   }
   s.calls = [...calls.values()]
   return s
+}
+
+// ─── Run list (INTERVENTIONS_PLAN §3, the start screen's history) ────────────────
+
+/** One line of the history list: enough to name a run and reopen its report. */
+export interface OpsRunListItem {
+  runId: string
+  appSessionId: string
+  startedAt: string
+  endedAt?: string
+  /** The runbook folder's name. */
+  runbook: string
+  /** The hosts the run was about: its locked host, the hosts an open run touched, or (before interventions) every runbook host. */
+  hostNames: string[]
+  task?: string
+  ok?: boolean
+  aborted?: boolean
+  calls: number
+  costUsd?: number
+}
+
+/** The ids of the hosts a run was about, in the sense of OpsRunListItem.hostNames. */
+function runHostIds(s: OpsRunSummary): string[] {
+  if (s.scope?.kind === 'host') return [s.scope.hostId]
+  if (s.scope?.kind === 'open') {
+    const ids = [...s.calls.map((c) => c.hostId), ...(s.hostAnswers ?? []).filter((a) => a.answer === 'approved').map((a) => a.hostId)]
+    return [...new Set(ids.filter((id) => id !== ''))]
+  }
+  return s.hosts.map((h) => h.id)
+}
+
+/** Whether a run belongs in one host's history. */
+export function runTouchesHost(s: OpsRunSummary, hostId: string): boolean {
+  return runHostIds(s).includes(hostId)
+}
+
+export function runListItem(s: OpsRunSummary, appSessionId: string): OpsRunListItem {
+  const nameOf = (id: string): string =>
+    s.hosts.find((h) => h.id === id)?.name ?? s.calls.find((c) => c.hostId === id)?.host ?? s.hostAnswers?.find((a) => a.hostId === id)?.host ?? id
+  return {
+    runId: s.runId,
+    appSessionId,
+    startedAt: s.startedAt,
+    ...(s.endedAt !== undefined ? { endedAt: s.endedAt } : {}),
+    runbook: s.runbook.name,
+    hostNames: runHostIds(s).map(nameOf),
+    ...(s.task !== undefined ? { task: s.task } : {}),
+    ...(s.ok !== undefined ? { ok: s.ok } : {}),
+    ...(s.aborted !== undefined ? { aborted: s.aborted } : {}),
+    calls: s.calls.length,
+    ...(s.costUsd !== undefined ? { costUsd: s.costUsd } : {})
+  }
 }

@@ -226,3 +226,70 @@ describe('verify on a day with no file', () => {
     expect(await ledger.verify('2026-01-01')).toEqual({ ok: true, lines: 0 })
   })
 })
+
+describe('listRuns', () => {
+  let ldir: string
+  beforeEach(() => {
+    ldir = fs.mkdtempSync(path.join(os.tmpdir(), 'argos-ledger-runs-'))
+  })
+  afterEach(() => {
+    fs.rmSync(ldir, { recursive: true, force: true })
+  })
+
+  const DB = { id: 'h2', name: 'db-01', host: '10.20.0.12' }
+  const startOf = (runId: string, over: Record<string, unknown> = {}): OpsAuditEvent =>
+    ({ ...START, runId, hosts: [HOST, DB], planText: undefined, ...over }) as OpsAuditEvent
+  const decidedOn = (runId: string, callId: string, hostId: string, host: string): OpsAuditEvent =>
+    ({ ...DECIDED, runId, callId, hostId, host }) as OpsAuditEvent
+
+  it('folds each run, newest first, across day files, and filters by host', async () => {
+    const ledger = createLedger(ldir)
+    // Before interventions: no scope, about every runbook host.
+    await ledger.append(startOf('old'), new Date('2026-03-04T10:00:00.000Z'))
+    // Locked to web-01, crossing midnight, ended.
+    await ledger.append(
+      startOf('locked', { hosts: [HOST], scope: { kind: 'host', hostId: 'h1' }, task: 'Reload nginx', appSessionId: 't1' }),
+      new Date('2026-03-05T23:59:00.000Z')
+    )
+    await ledger.append(decidedOn('locked', 'c1', 'h1', 'web-01'), new Date('2026-03-05T23:59:30.000Z'))
+    await ledger.append({ kind: 'run.end', runId: 'locked', ok: true, costUsd: 0.25 }, new Date('2026-03-06T00:00:10.000Z'))
+    // Open, touched db-01 only.
+    await ledger.append(startOf('open', { scope: { kind: 'open' } }), new Date('2026-03-06T09:00:00.000Z'))
+    await ledger.append({ kind: 'host.approved', runId: 'open', hostId: 'h2', host: 'db-01', by: 'user' }, new Date('2026-03-06T09:00:01.000Z'))
+    await ledger.append(decidedOn('open', 'c1', 'h2', 'db-01'), new Date('2026-03-06T09:00:02.000Z'))
+
+    const all = await ledger.listRuns()
+    expect(all.ok && all.runs.map((r) => r.runId)).toEqual(['open', 'locked', 'old'])
+    expect(all.ok && all.runs[1]).toEqual({
+      runId: 'locked',
+      appSessionId: 't1',
+      startedAt: '2026-03-05T23:59:00.000Z',
+      endedAt: '2026-03-06T00:00:10.000Z',
+      runbook: 'nginx-config-reload',
+      hostNames: ['web-01'],
+      task: 'Reload nginx',
+      ok: true,
+      calls: 1,
+      costUsd: 0.25
+    })
+    expect(all.ok && all.runs[0]).toMatchObject({ hostNames: ['db-01'], calls: 1 })
+    expect(all.ok && all.runs[0]).not.toHaveProperty('ok')
+
+    const web = await ledger.listRuns({ hostId: 'h1' })
+    expect(web.ok && web.runs.map((r) => r.runId)).toEqual(['locked', 'old'])
+    const db = await ledger.listRuns({ hostId: 'h2' })
+    expect(db.ok && db.runs.map((r) => r.runId)).toEqual(['open', 'old'])
+    const one = await ledger.listRuns({ limit: 1 })
+    expect(one.ok && one.runs.map((r) => r.runId)).toEqual(['open'])
+  })
+
+  it('looks through the newest 30 day files only, and an empty ledger has no runs', async () => {
+    expect(await createLedger(path.join(ldir, 'not-yet')).listRuns()).toEqual({ ok: true, runs: [] })
+    const ledger = createLedger(ldir)
+    await ledger.append(startOf('ancient'), new Date('2026-01-01T10:00:00.000Z'))
+    for (let d = 0; d < 30; d++) {
+      await ledger.append(OTHER, new Date(Date.parse('2026-02-01T10:00:00.000Z') + d * 86_400_000))
+    }
+    expect(await ledger.listRuns()).toEqual({ ok: true, runs: [] })
+  })
+})

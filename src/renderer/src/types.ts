@@ -759,7 +759,9 @@ export interface ApprovalOpsContext {
   hostName: string
   /** `user@host:port` for the header; never a secret. */
   hostAddress: string
-  tool: 'run' | 'script' | 'read' | 'list' | 'write' | 'plan'
+  /** 'host': the first touch of a host in an open intervention ("Allow for this
+   *  intervention?"); hostName/hostAddress are the host asked for, `reason` says why. */
+  tool: 'run' | 'script' | 'read' | 'list' | 'write' | 'plan' | 'host'
   /** For tool 'plan': the steps the model proposes for this run, each already classified
    *  by the gate so the review sheet can say what will happen before anything runs. */
   planSteps?: OpsPlanStep[]
@@ -793,6 +795,21 @@ export interface OpsPlanStep {
   sudo?: boolean
 }
 
+/** What a runbook allows, in counts the start screen says in plain words (`ops:load-runbook`). */
+export interface OpsPolicySummary {
+  /** Read rules that run without asking. */
+  autoReads: number
+  /** Rules, scripts and the write block that ask the operator each time. */
+  asks: number
+  /** Rules and scripts that change a host, plus the write block when there is one. */
+  mutates: number
+  scripts: number
+  /** The read block's path patterns, as written. */
+  readPaths: string[]
+  /** The first paragraph of RUNBOOK.md after its title, ≤ 300 chars, whitespace collapsed. */
+  guidelinesHead: string
+}
+
 /** What `ops:load-runbook` returns: enough for the picker, never a secret. */
 export type OpsRunbookInfo =
   | {
@@ -803,8 +820,43 @@ export type OpsRunbookInfo =
       warnings: string[]
       platform?: string
       strict: boolean
+      summary: OpsPolicySummary
     }
   | { ok: false; error: string; errors?: string[] }
+
+/**
+ * Which hosts one intervention may touch (docs/INTERVENTIONS_PLAN.md §2). `host` locks the
+ * run to one stored host; `open` lets the model ask for any host the runbook allows, once
+ * per host per run.
+ */
+export type OpsScope = { kind: 'host'; hostId: string } | { kind: 'open' }
+
+/** One intervention, as the start screen hands it to `opsTerminalSession`. */
+export interface OpsIntervention {
+  runbookPath: string
+  scope: OpsScope
+  /** The operator's words; the CLI's first message and the client report's Assunto. */
+  task: string
+  ticket?: string
+  client?: string
+}
+
+/** One run in the history list (`ops:runs`), newest first. */
+export interface OpsRunListItem {
+  runId: string
+  appSessionId: string
+  startedAt: string
+  endedAt?: string
+  /** The runbook folder's name. */
+  runbook: string
+  /** The locked host, the hosts an open run touched, or (older runs) every runbook host. */
+  hostNames: string[]
+  task?: string
+  ok?: boolean
+  aborted?: boolean
+  calls: number
+  costUsd?: number
+}
 
 /**
  * One ledger line of a live ops run, as main wrote it (`ops:event`). `line.event.kind`
@@ -1458,8 +1510,7 @@ declare global {
        */
       opsTerminalSession: (
         terminalId: string,
-        runbookPath: string,
-        provider: 'claude' | 'codex' | 'gemini'
+        intervention: OpsIntervention
       ) => Promise<
         | {
             ok: true
@@ -1467,9 +1518,15 @@ declare global {
             env: Record<string, string>
             mcpConfigPath: string
             guarantee: 'tools-and-local-shell' | 'tools-only'
+            /** The CLI's first message ("Read RUNBOOK.md … then: <task>"), one line, to type into the terminal. */
+            initialPrompt: string
           }
         | { ok: false; error: string }
       >
+      /** Run summaries from the ledger (newest 30 day files), newest first, only those about `hostId` when given. */
+      opsRuns: (opts: { hostId?: string; limit?: number }) => Promise<{ ok: true; runs: OpsRunListItem[] } | { ok: false; error: string }>
+      /** Open a valid runbook's RUNBOOK.md or policy.json in the system's default app. */
+      opsOpenRunbookFile: (dir: string, which: 'RUNBOOK.md' | 'policy.json') => Promise<{ ok: true } | { ok: false; error: string }>
       /**
        * Stop a terminal's ops run: aborts a pending approval or sudo prompt and any exec in
        * flight, revokes the relay's token and logs run.end as aborted. The CLI keeps running;

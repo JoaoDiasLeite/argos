@@ -115,7 +115,7 @@ function baseOptions(fake: FakeBackend, abort = new AbortController()): OpsSessi
 async function start(
   script: FakeScript = {},
   ask?: OpsAskFn,
-  extra: { plan?: boolean; askSecret?: OpsAskSecretFn } = {}
+  extra: { plan?: boolean; askSecret?: OpsAskSecretFn } & Pick<OpsSessionOptions, 'scope' | 'task' | 'ticket' | 'client'> = {}
 ): Promise<{
   fake: FakeBackend
   session: Extract<OpenOpsSessionResult, { ok: true }>
@@ -132,7 +132,11 @@ async function start(
     onEvent: (line) => live.push(line),
     runId: 'run-1',
     ...(ask ? { ask } : {}),
-    ...(extra.askSecret ? { askSecret: extra.askSecret } : {})
+    ...(extra.askSecret ? { askSecret: extra.askSecret } : {}),
+    ...(extra.scope ? { scope: extra.scope } : {}),
+    ...(extra.task !== undefined ? { task: extra.task } : {}),
+    ...(extra.ticket !== undefined ? { ticket: extra.ticket } : {}),
+    ...(extra.client !== undefined ? { client: extra.client } : {})
   })
   if (!r.ok) throw new Error(r.error)
   if (extra.plan !== false) r.ctx.planApproved = true
@@ -602,5 +606,173 @@ describe('sudo password per run', () => {
     expect(res.text).toContain('Operator declined to supply the sudo password.')
     expect(hostCalls(fake)).toHaveLength(1)
     expect(await kinds()).not.toContain('sudo.password-supplied')
+  })
+})
+
+describe('intervention scope', () => {
+  const WEB_STATUS = { hostId: 'h1', cmd: 'systemctl status nginx' }
+  const DB_STATUS = { hostId: 'h2', cmd: 'systemctl status postgresql' }
+
+  /** Both hosts in the policy, each with a read rule, so only the scope tells them apart. */
+  beforeEach(() => {
+    const policyFile = path.join(rbDir, 'policy.json')
+    const policy = JSON.parse(fs.readFileSync(policyFile, 'utf-8'))
+    policy.hosts.db = ['db-01']
+    policy.allow.push({ hosts: ['db'], cmd: '^systemctl status postgresql$', class: 'read', title: 'Estado da base de dados' })
+    fs.writeFileSync(policyFile, JSON.stringify(policy))
+  })
+
+  it('a locked scope reaches and records only its host, and logs the task, ticket and client', async () => {
+    const { fake } = await start({}, undefined, {
+      scope: { kind: 'host', hostId: 'h1' },
+      task: '  Reload nginx after\nthe certificate change ',
+      ticket: 'WM-1234',
+      client: '  '
+    })
+    expect(fake.calls.filter((c) => c.kind === 'reachable').map((c) => c.hostId)).toEqual(['h1'])
+    const startEv = (await lines())[0].event
+    expect(startEv).toMatchObject({
+      kind: 'run.start',
+      hosts: [HOSTS[0]],
+      task: 'Reload nginx after\nthe certificate change',
+      ticket: 'WM-1234',
+      scope: { kind: 'host', hostId: 'h1' }
+    })
+    expect(startEv).not.toHaveProperty('client')
+  })
+
+  it('an empty task is left out of run.start', async () => {
+    await start({}, undefined, { scope: { kind: 'host', hostId: 'h1' }, task: '  ' })
+    expect((await lines())[0].event).not.toHaveProperty('task')
+  })
+
+  it('a locked scope on a host the runbook does not know refuses to start', async () => {
+    const fake = createFakeBackend()
+    const r = await openOpsSession({ ...baseOptions(fake), scope: { kind: 'host', hostId: 'nope' } })
+    expect(r.ok).toBe(false)
+    expect(!r.ok && r.error).toMatch(/not in any host group of runbook nginx-config-reload/)
+    expect(fake.calls).toEqual([])
+  })
+
+  it('a locked scope refuses another host whatever the policy says, logs the deny, and hides it from hello', async () => {
+    const asked: string[] = []
+    const { fake, session, call } = await start(
+      {},
+      async (req) => {
+        asked.push(req.tool)
+        return { allow: true }
+      },
+      { scope: { kind: 'host', hostId: 'h1' } }
+    )
+    expect(bridgeSessionFor(session).hello().hosts.map((h) => h.id)).toEqual(['h1'])
+    expect(await call('run', DB_STATUS)).toEqual({ text: "Refused: outside this intervention's scope: db-01.", isError: true })
+    expect((await call('run', WEB_STATUS)).isError).toBe(false)
+    expect(asked).toEqual([])
+    expect(hostCalls(fake).map((c) => c.hostId)).toEqual(['h1'])
+    expect((await lines())[1].event).toMatchObject({
+      kind: 'call.decided',
+      hostId: 'h2',
+      host: 'db-01',
+      decision: 'deny',
+      reason: "outside this intervention's scope: db-01"
+    })
+  })
+
+  it('an open scope asks once per host, then allows without asking', async () => {
+    const asked: Parameters<OpsAskFn>[0][] = []
+    const { fake, call } = await start(
+      { exec: () => ({ stdout: 'active' }) },
+      async (req) => {
+        asked.push(req)
+        return { allow: true }
+      },
+      { scope: { kind: 'open' } }
+    )
+    // Two calls on a new host at once share one prompt.
+    const [a, b] = await Promise.all([call('run', DB_STATUS), call('run', DB_STATUS)])
+    expect(a.isError || b.isError).toBe(false)
+    expect((await call('run', DB_STATUS)).isError).toBe(false)
+    expect(asked).toEqual([
+      {
+        tool: 'mcp__ops__host',
+        input: { hostId: 'h2' },
+        ops: {
+          hostName: 'db-01',
+          hostAddress: 'ops@h2:22',
+          tool: 'host',
+          class: 'read',
+          reason: 'first use of this host in an open intervention',
+          queuedBehind: 0,
+          runbook: 'nginx-config-reload'
+        }
+      }
+    ])
+    expect(hostCalls(fake)).toHaveLength(3)
+    const k = await kinds()
+    expect(k.filter((x) => x === 'host.approved')).toHaveLength(1)
+    expect(k.indexOf('host.approved')).toBeLessThan(k.indexOf('call.decided'))
+    expect((await lines()).find((l) => l.event.kind === 'host.approved')?.event).toEqual({
+      kind: 'host.approved',
+      runId: 'run-1',
+      hostId: 'h2',
+      host: 'db-01',
+      by: 'user'
+    })
+  })
+
+  it('an open scope keeps a refused host refused for the rest of the run, asking once', async () => {
+    let asks = 0
+    const { fake, call } = await start(
+      {},
+      async () => {
+        asks++
+        return { allow: false }
+      },
+      { scope: { kind: 'open' } }
+    )
+    const msg = { text: 'Refused: the operator refused db-01 for this intervention.', isError: true }
+    expect(await call('run', DB_STATUS)).toEqual(msg)
+    expect(await call('run', DB_STATUS)).toEqual(msg)
+    expect(asks).toBe(1)
+    expect(hostCalls(fake)).toEqual([])
+    expect(await kinds()).toEqual(['run.start', 'host.denied', 'call.decided', 'call.decided'])
+  })
+
+  it('an open scope does not ask about a host for a call the gate refuses anyway', async () => {
+    let asks = 0
+    const { call } = await start({}, async () => (asks++, { allow: true }), { scope: { kind: 'open' } })
+    expect((await call('run', { hostId: 'h2', cmd: 'rm -rf /var/lib/pgsql' })).text).toMatch(/^Refused by the runbook policy: /)
+    expect(asks).toBe(0)
+  })
+
+  it('stop on a host prompt aborts the run', async () => {
+    const { abort, call } = await start({}, async () => ({ allow: false, stop: true }), { scope: { kind: 'open' } })
+    expect(await call('run', DB_STATUS)).toEqual({ text: 'Denied by the operator, who stopped the run.', isError: true })
+    expect(abort.signal.aborted).toBe(true)
+    expect(await kinds()).toEqual(['run.start', 'host.denied', 'call.decided'])
+  })
+
+  it('the plan preview marks a step on a host outside a locked scope as denied', async () => {
+    const asked: Parameters<OpsAskFn>[0][] = []
+    const { call } = await start(
+      {},
+      async (req) => {
+        asked.push(req)
+        return { allow: false }
+      },
+      { plan: false, scope: { kind: 'host', hostId: 'h1' } }
+    )
+    await call('propose_plan', {
+      steps: [
+        { title: 'check nginx', hostId: 'h1', cmd: 'systemctl status nginx' },
+        { title: 'check the database', hostId: 'h2', cmd: 'systemctl status postgresql' }
+      ]
+    })
+    const ops = asked[0].ops
+    expect(ops.planSteps?.map((s) => [s.verdict, s.reason])).toEqual([
+      ['runs', 'Estado do serviço web'],
+      ['denied', "outside this intervention's scope: db-01"]
+    ])
+    expect(ops.planSummary).toEqual({ runs: 1, asks: 0, denied: 1, mutates: 0 })
   })
 })

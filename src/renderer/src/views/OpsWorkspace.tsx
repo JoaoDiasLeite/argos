@@ -147,7 +147,19 @@ export default function OpsWorkspace({
           launches.delete(terminalId)
           if (alive) await window.electronAPI.terminalKill(terminalId)
         }
-        const res = await window.electronAPI.opsTerminalSession(terminalId, runbookPath, PROVIDER)
+        // Interim until the intervention start screen lands: locked to the runbook's first host.
+        const rb = await window.electronAPI.opsLoadRunbook(runbookPath)
+        if (seq !== startSeqRef.current) return
+        const hostId = rb.ok ? rb.hosts[0]?.id : undefined
+        if (!hostId) {
+          setTerm({ kind: 'error', error: rb.ok ? 'No stored SSH host belongs to this runbook.' : rb.error })
+          return
+        }
+        const res = await window.electronAPI.opsTerminalSession(terminalId, {
+          runbookPath,
+          scope: { kind: 'host', hostId },
+          task: ''
+        })
         if (seq !== startSeqRef.current) return
         if (!res.ok) {
           setTerm({ kind: 'error', error: res.error })

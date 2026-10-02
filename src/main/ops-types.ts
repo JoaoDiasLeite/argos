@@ -103,6 +103,15 @@ export interface OpsGateResult {
   denylist?: string
 }
 
+// ─── Intervention scope (docs/INTERVENTIONS_PLAN.md §2) ──────────────────────────
+
+/**
+ * Which hosts one intervention may touch. `host` locks the run to one stored host: a call
+ * naming any other is refused whatever the policy says. `open` lets the model reach any
+ * host the policy knows, asking the operator once per host per run.
+ */
+export type OpsScope = { kind: 'host'; hostId: string } | { kind: 'open' }
+
 // ─── Audit ledger ────────────────────────────────────────────────────────────────
 
 export interface OpsRunbookRef {
@@ -131,6 +140,20 @@ export type OpsAuditEvent =
       model: string
       account?: string
       planText?: string
+      /** The operator's words for what this intervention is for (INTERVENTIONS_PLAN §2). */
+      task?: string
+      ticket?: string
+      client?: string
+      /** Absent on runs from before interventions, when every runbook host was in reach. */
+      scope?: OpsScope
+    }
+  | {
+      /** The operator's answer to the first touch of a host in an open intervention. */
+      kind: 'host.approved' | 'host.denied'
+      runId: string
+      hostId: string
+      host: string
+      by: 'user'
     }
   | {
       kind: 'plan.approved' | 'plan.rejected'

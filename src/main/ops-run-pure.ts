@@ -9,7 +9,8 @@ import { sha256Hex } from './ops-audit-pure'
 import type { LoadedRunbook } from './ops-runbook-pure'
 import type { ExecResult, OpsListResult, OpsReadResult, OpsWriteResult } from './ops-exec-pure'
 import { canonicalCommand, classify, parseSimpleCommand } from './ops-gate-pure'
-import type { OpsAuditEvent, OpsGateResult, OpsHostRef, OpsPolicy, OpsToolInput, OpsToolName } from './ops-types'
+import { hostDeniedReason, outOfScopeReason, scopeVerdict } from './ops-scope-pure'
+import type { OpsAuditEvent, OpsGateResult, OpsHostRef, OpsPolicy, OpsScope, OpsToolInput, OpsToolName } from './ops-types'
 
 // ─── Hosts ────────────────────────────────────────────────────────────────────────
 
@@ -30,7 +31,9 @@ export function opsHostsFor(runbook: LoadedRunbook): OpsHosts {
 export interface ApprovalOpsContext {
   hostName: string
   hostAddress: string
-  tool: OpsToolName | 'plan'
+  /** 'host': the first touch of a host in an open intervention; hostName/hostAddress are
+   *  the host asked for. */
+  tool: OpsToolName | 'plan' | 'host'
   /** For tool 'plan': the steps the model proposes for this run, each classified at plan time. */
   planSteps?: OpsPlanStep[]
   /** For tool 'plan': the totals the review sheet leads with. */
@@ -192,12 +195,26 @@ function planHost(hostsById: Map<string, HostEntry>, hostId: string | undefined)
  * for the review sheet. Nothing here executes or logs, and the real gate still runs on
  * every later call, so a step approved here can still be refused there.
  */
-export function classifyPlanSteps(steps: PlanStepInput[], policy: OpsPolicy, hostsById: Map<string, HostEntry>): ClassifiedPlan {
+export function classifyPlanSteps(
+  steps: PlanStepInput[],
+  policy: OpsPolicy,
+  hostsById: Map<string, HostEntry>,
+  /** The intervention's scope: a step on a host it excludes is shown as denied. */
+  scope?: { scope: OpsScope; approvedHosts?: ReadonlySet<string>; deniedHosts?: ReadonlySet<string> }
+): ClassifiedPlan {
   const summary: OpsPlanSummary = { runs: 0, asks: 0, denied: 0, mutates: 0 }
   const out: OpsPlanStep[] = []
   for (const step of steps) {
     const entry = planHost(hostsById, step.hostId)
     const hasWork = step.commands.length > 0 || step.script !== undefined
+    // Only a refusal shows here: a host still to be asked about asks on its first call.
+    if (entry && scope && scopeVerdict(scope.scope, entry.host.id, scope.approvedHosts ?? new Set(), scope.deniedHosts) === 'deny') {
+      const commands = [...step.commands.map(canonicalLine), ...(step.script ? [scriptLine(step.script.name, step.script.args)] : [])]
+      const reason = scope.scope.kind === 'host' ? outOfScopeReason(entry.host.name) : hostDeniedReason(entry.host.name)
+      out.push({ title: step.title, hostName: entry.host.name, commands, verdict: 'denied', reason })
+      summary.denied++
+      continue
+    }
     if (!entry || !hasWork) {
       const commands = [...step.commands.map(canonicalLine), ...(step.script ? [scriptLine(step.script.name, step.script.args)] : [])]
       const reason = !hasWork

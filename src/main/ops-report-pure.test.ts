@@ -371,3 +371,62 @@ describe('client report titles after the first VM run', () => {
     expect(out).not.toContain('Procedeu-se')
   })
 })
+
+describe('reports of an intervention (task, ticket, client, scope)', () => {
+  const INTERVENTION = run([READ_WEB, SUDO_RESTART], {
+    hosts: [HOSTS[0]],
+    task: '  Reiniciar o tomcat9 no\nweb-1 após a renovação do certificado.  ',
+    ticket: 'WM-1234',
+    client: 'Câmara Municipal de Exemplo',
+    scope: { kind: 'host', hostId: 'h1' }
+  })
+
+  it('the client Assunto is the sanitised task, and the header names client and ticket', () => {
+    const out = renderClientReport(INTERVENTION, OPTS)
+    const head = out.split('\n').slice(0, 7)
+    expect(head).toEqual([
+      '## Assunto',
+      '',
+      'Intervenção técnica: Reiniciar o [omitido] no [servidor de aplicações] após a renovação do certificado',
+      '',
+      '## Descrição',
+      '',
+      'Cliente: Câmara Municipal de Exemplo · Ticket: WM-1234'
+    ])
+    expect(out).toContain('\n\nFoi efetuada uma intervenção técnica no [servidor de aplicações], em 05-03-2026.')
+  })
+
+  it('the header carries only the parts present, and none when neither is', () => {
+    const ticketOnly = renderClientReport(run([READ_WEB], { ticket: 'WM-9' }), OPTS)
+    expect(ticketOnly).toContain('## Descrição\n\nTicket: WM-9\n\nFoi efetuada')
+    const neither = renderClientReport(run([READ_WEB], { client: '  ' }), OPTS)
+    expect(neither).toContain('## Descrição\n\nFoi efetuada')
+    // No task: the runbook-name subject, as before interventions.
+    expect(neither).toContain('Intervenção técnica: Verificar e reiniciar servico\n')
+  })
+
+  it('the internal report lists task, ticket, client and scope in its header', () => {
+    const out = renderInternalReport(INTERVENTION)
+    expect(out).toContain(
+      [
+        '- Run: `run-42`',
+        '- Task: Reiniciar o tomcat9 no web-1 após a renovação do certificado.',
+        '- Ticket: WM-1234',
+        '- Client: Câmara Municipal de Exemplo',
+        '- Scope: locked to web-1',
+        '- Runbook:'
+      ].join('\n')
+    )
+    const open = renderInternalReport(
+      run([READ_WEB], {
+        scope: { kind: 'open' },
+        hostAnswers: [
+          { hostId: 'h1', host: 'web-1', answer: 'approved' },
+          { hostId: 'h2', host: 'pg-main', answer: 'denied' }
+        ]
+      })
+    )
+    expect(open).toContain('- Scope: open (any host the runbook allows); web-1 approved, pg-main denied\n')
+    expect(renderInternalReport(GOLDEN)).not.toMatch(/- (Task|Ticket|Client|Scope):/)
+  })
+})

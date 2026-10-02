@@ -112,6 +112,9 @@ import { createLedger, type OpsLedger } from './ops-audit'
 import { createExecutor, createSshBackend, type OpsExecutor } from './ops-exec'
 import { createFakeBackend } from './ops-backend-fake'
 import { loadRunbook, readScript } from './ops-runbook'
+import { summarizePolicy } from './ops-policy-pure'
+import { interventionPrompt } from './ops-scope-pure'
+import type { OpsScope } from './ops-types'
 import { bridgeSessionFor, finishOpsRun, openOpsSession, type ApprovalOpsContext, type OpsRunContext } from './ops-session'
 import { newOpsToken, registerToken, revokeToken, startOpsBridge, stopOpsBridge } from './ops-bridge'
 import { removeOpsMcpConfig, writeOpsMcpConfig } from './ops-mcp-config'
@@ -937,8 +940,29 @@ ipcMain.handle('ops:load-runbook', async (_, dir: string) => {
     hosts: rb.hosts.map((h) => ({ id: h.host.id, name: h.host.name, host: h.host.host, groups: h.groups })),
     warnings: rb.warnings,
     ...(rb.ref.platform ? { platform: rb.ref.platform } : {}),
-    strict: rb.policy.strict
+    strict: rb.policy.strict,
+    summary: summarizePolicy(rb.policy, rb.guidelines)
   }
+})
+
+// "Open RUNBOOK.md" / "Open policy.json" on the start screen. Only a folder that loads as
+// a runbook, and only those two names, so this cannot be pointed at an arbitrary file.
+ipcMain.handle('ops:open-runbook-file', async (_, dir: string, which: string) => {
+  if (typeof dir !== 'string' || dir.trim() === '') return { ok: false, error: 'No runbook folder given.' }
+  if (which !== 'RUNBOOK.md' && which !== 'policy.json') return { ok: false, error: `Not a runbook file: ${String(which)}` }
+  const r = await loadRunbook(dir)
+  if (!r.ok) return { ok: false, error: r.error }
+  const error = await shell.openPath(path.join(r.runbook.ref.path, which))
+  return error ? { ok: false, error } : { ok: true }
+})
+
+// The start screen's "Earlier on <server>": run summaries from the ledger, newest first.
+ipcMain.handle('ops:runs', async (_, opts?: { hostId?: string; limit?: number }) => {
+  const o = opts && typeof opts === 'object' ? opts : {}
+  return getOpsLedger().listRuns({
+    ...(typeof o.hostId === 'string' && o.hostId !== '' ? { hostId: o.hostId } : {}),
+    ...(typeof o.limit === 'number' ? { limit: o.limit } : {})
+  })
 })
 
 ipcMain.handle('ops:report', async (_, runId: string, kind: 'internal' | 'client', runbookPath?: string) => {
@@ -1005,6 +1029,9 @@ ipcMain.handle('ops:session-events', async (_, appSessionId: string) => {
 interface TerminalOpsSession {
   runId: string
   runbookPath: string
+  /** The intervention as asked for, so a remount with the same one reattaches. */
+  interventionKey: string
+  initialPrompt: string
   provider: OpsCli
   token: string
   endpoint: string
@@ -1027,8 +1054,42 @@ type TerminalOpsResult =
       env: Record<string, string>
       mcpConfigPath: string
       guarantee: 'tools-and-local-shell' | 'tools-only'
+      /** The CLI's first message, for the renderer to type into the terminal. */
+      initialPrompt: string
     }
   | { ok: false; error: string }
+
+/** One intervention as the start screen describes it (docs/INTERVENTIONS_PLAN.md §2). */
+interface OpsIntervention {
+  runbookPath: string
+  scope: OpsScope
+  task: string
+  ticket?: string
+  client?: string
+}
+
+function parseIntervention(v: unknown): OpsIntervention | { error: string } {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return { error: 'No intervention given.' }
+  const o = v as Record<string, unknown>
+  if (typeof o.runbookPath !== 'string' || o.runbookPath.trim() === '') return { error: 'No runbook folder given.' }
+  const sc = o.scope as Record<string, unknown> | null | undefined
+  let scope: OpsScope
+  if (sc && sc.kind === 'open') scope = { kind: 'open' }
+  else if (sc && sc.kind === 'host' && typeof sc.hostId === 'string' && sc.hostId !== '') scope = { kind: 'host', hostId: sc.hostId }
+  else return { error: 'The intervention names no server.' }
+  if (typeof o.task !== 'string') return { error: 'The intervention has no task.' }
+  const text = (x: unknown, max: number): string | undefined =>
+    typeof x === 'string' && x.trim() !== '' ? x.trim().slice(0, max) : undefined
+  const ticket = text(o.ticket, 200)
+  const client = text(o.client, 200)
+  return {
+    runbookPath: o.runbookPath,
+    scope,
+    task: o.task.trim().slice(0, 4000),
+    ...(ticket ? { ticket } : {}),
+    ...(client ? { client } : {})
+  }
+}
 
 function terminalOpsReply(s: TerminalOpsSession): TerminalOpsResult {
   return {
@@ -1038,7 +1099,8 @@ function terminalOpsReply(s: TerminalOpsSession): TerminalOpsResult {
     // ten-minute exec by default; the other CLIs take their timeouts from the config file.
     env: { ARGOS_OPS_PIPE: s.endpoint, ARGOS_OPS_TOKEN: s.token, MCP_TOOL_TIMEOUT: String(3 * OPS_MAX_TIMEOUT_MS) },
     mcpConfigPath: s.mcpConfigPath,
-    guarantee: s.guarantee
+    guarantee: s.guarantee,
+    initialPrompt: s.initialPrompt
   }
 }
 
@@ -1058,12 +1120,16 @@ function endAllTerminalOps(reason: string): void {
   for (const id of [...terminalOps.keys()]) void endTerminalOps(id, { ok: false, aborted: true, error: reason })
 }
 
-async function openTerminalOps(terminalId: string, runbookPath: string, provider: OpsCli): Promise<TerminalOpsResult> {
+async function openTerminalOps(terminalId: string, intervention: OpsIntervention): Promise<TerminalOpsResult> {
+  // Claude Code only (39badc7): the one CLI whose own shell and file tools can be switched off.
+  const provider: OpsCli = 'claude'
+  const { runbookPath, scope, task, ticket, client } = intervention
+  const interventionKey = JSON.stringify([runbookPath, scope, task, ticket ?? '', client ?? ''])
   const existing = terminalOps.get(terminalId)
   if (existing && !existing.ctx.ended) {
     // A remount reattaches to the same live pty, whose CLI holds this token: hand back the
     // same session, or the running relay is orphaned.
-    if (existing.runbookPath === runbookPath && existing.provider === provider) return terminalOpsReply(existing)
+    if (existing.interventionKey === interventionKey) return terminalOpsReply(existing)
     await endTerminalOps(terminalId, { ok: true, error: 'replaced by a new ops session on the same terminal' })
   }
 
@@ -1071,6 +1137,10 @@ async function openTerminalOps(terminalId: string, runbookPath: string, provider
   const opened = await openOpsSession({
     appSessionId: terminalId,
     runbookPath,
+    scope,
+    task,
+    ...(ticket ? { ticket } : {}),
+    ...(client ? { client } : {}),
     model: `${provider} CLI (terminal)`,
     ledger: getOpsLedger(),
     executor: getOpsExecutor(),
@@ -1100,6 +1170,8 @@ async function openTerminalOps(terminalId: string, runbookPath: string, provider
     const s: TerminalOpsSession = {
       runId: ctx.runId,
       runbookPath,
+      interventionKey,
+      initialPrompt: interventionPrompt(task),
       provider,
       token,
       endpoint,
@@ -1150,13 +1222,13 @@ ipcMain.handle(
   }
 )
 
-ipcMain.handle('ops:terminal-session', async (_, terminalId: string, runbookPath: string, provider: OpsCli) => {
+ipcMain.handle('ops:terminal-session', async (_, terminalId: string, intervention: unknown) => {
   if (typeof terminalId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(terminalId)) return { ok: false, error: 'Invalid terminal id.' }
-  if (typeof runbookPath !== 'string' || runbookPath.trim() === '') return { ok: false, error: 'No runbook folder given.' }
-  if (provider !== 'claude' && provider !== 'codex' && provider !== 'gemini') return { ok: false, error: `Unknown CLI: ${String(provider)}` }
+  const parsed = parseIntervention(intervention)
+  if ('error' in parsed) return { ok: false, error: parsed.error }
   const pending = terminalOpsOpening.get(terminalId)
   if (pending) return pending
-  const opening = openTerminalOps(terminalId, runbookPath, provider).finally(() => terminalOpsOpening.delete(terminalId))
+  const opening = openTerminalOps(terminalId, parsed).finally(() => terminalOpsOpening.delete(terminalId))
   terminalOpsOpening.set(terminalId, opening)
   return opening
 })

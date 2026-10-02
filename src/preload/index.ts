@@ -333,8 +333,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   respondOpsSecret: (payload: { requestId: string; value: string | null }) =>
     ipcRenderer.invoke('ops:secret-response', payload),
   // An ops terminal (plan §9 Phase 5): opens the run and returns the env + MCP config to launch the CLI with.
-  opsTerminalSession: (terminalId: string, runbookPath: string, provider: 'claude' | 'codex' | 'gemini') =>
-    ipcRenderer.invoke('ops:terminal-session', terminalId, runbookPath, provider),
+  // One intervention (docs/INTERVENTIONS_PLAN.md §2): runbook, scope, task, ticket, client.
+  opsTerminalSession: (
+    terminalId: string,
+    intervention: {
+      runbookPath: string
+      scope: { kind: 'host'; hostId: string } | { kind: 'open' }
+      task: string
+      ticket?: string
+      client?: string
+    }
+  ) => ipcRenderer.invoke('ops:terminal-session', terminalId, intervention),
+  // The start screen's history: run summaries from the ledger, newest first.
+  opsRuns: (opts: { hostId?: string; limit?: number }) => ipcRenderer.invoke('ops:runs', opts),
+  // Open a valid runbook's RUNBOOK.md or policy.json in the system's editor.
+  opsOpenRunbookFile: (dir: string, which: 'RUNBOOK.md' | 'policy.json') =>
+    ipcRenderer.invoke('ops:open-runbook-file', dir, which),
   // Stop a terminal's ops run (plan H4): run.end aborted, in-flight exec and prompts ended.
   opsStop: (terminalId: string) => ipcRenderer.invoke('ops:stop', terminalId),
   promptFileWrite: (sessionId: string, text: string) => ipcRenderer.invoke('prompts:write', sessionId, text),

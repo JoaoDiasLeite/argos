@@ -10,7 +10,16 @@
  */
 import { promises as fsp } from 'fs'
 import * as path from 'path'
-import { buildLine, parseLedger, runEvents, summarizeRun, verifyChain } from './ops-audit-pure'
+import {
+  buildLine,
+  parseLedger,
+  runEvents,
+  runListItem,
+  runTouchesHost,
+  summarizeRun,
+  verifyChain,
+  type OpsRunListItem
+} from './ops-audit-pure'
 import { clientReportWarnings, renderClientReport, renderInternalReport } from './ops-report-pure'
 import type { OpsAuditEvent, OpsAuditLine, OpsHostRef } from './ops-types'
 
@@ -27,6 +36,11 @@ export interface OpsLedger {
    * reopened chat's timeline. Scans the newest SESSION_SCAN_FILES day files only.
    */
   readSession(appSessionId: string): Promise<{ ok: true; lines: OpsAuditLine[] } | { ok: false; error: string }>
+  /**
+   * Run summaries for the history list, newest first: every run that starts in the newest
+   * SESSION_SCAN_FILES day files, only those about `hostId` when given, at most `limit`.
+   */
+  listRuns(opts?: { hostId?: string; limit?: number }): Promise<{ ok: true; runs: OpsRunListItem[] } | { ok: false; error: string }>
   report(
     runId: string,
     kind: 'internal' | 'client',
@@ -39,8 +53,11 @@ export interface OpsLedger {
 const DAY_FILE = /^\d{4}-\d{2}-\d{2}\.jsonl$/
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 const TAIL_CHUNK = 64 * 1024
-/** How many day files readSession looks through, newest first. */
+/** How many day files readSession and listRuns look through, newest first. */
 export const SESSION_SCAN_FILES = 30
+/** listRuns' default and ceiling for `limit`. */
+export const RUN_LIST_DEFAULT = 50
+export const RUN_LIST_MAX = 500
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 const dayOf = (at: Date): string => at.toISOString().slice(0, 10)
@@ -189,6 +206,41 @@ export function createLedger(dir: string): OpsLedger {
           }
           const lines = runIds.size === 0 ? [] : days.flat().filter((l) => runIds.has(l.event.runId))
           return { ok: true as const, lines }
+        } catch (e) {
+          return { ok: false as const, error: `Could not read the ops ledger: ${message(e)}` }
+        }
+      })
+    },
+
+    listRuns(opts = {}) {
+      return enqueue(async () => {
+        try {
+          const limit =
+            typeof opts.limit === 'number' && Number.isFinite(opts.limit) && opts.limit > 0
+              ? Math.min(Math.floor(opts.limit), RUN_LIST_MAX)
+              : RUN_LIST_DEFAULT
+          const files = (await dayFiles()).reverse().slice(0, SESSION_SCAN_FILES).reverse()
+          // One pass groups the lines by run, so each run is folded from its own lines only.
+          const byRun = new Map<string, OpsAuditLine[]>()
+          const starts: { runId: string; appSessionId: string }[] = []
+          for (const f of files) {
+            for (const l of await readDay(f.slice(0, 10))) {
+              const id = l.event.runId
+              let group = byRun.get(id)
+              if (!group) byRun.set(id, (group = []))
+              group.push(l)
+              if (l.event.kind === 'run.start') starts.push({ runId: id, appSessionId: l.event.appSessionId })
+            }
+          }
+          const runs: OpsRunListItem[] = []
+          for (const { runId, appSessionId } of starts) {
+            const s = summarizeRun(byRun.get(runId) ?? [], runId)
+            if (!s) continue
+            if (opts.hostId !== undefined && !runTouchesHost(s, opts.hostId)) continue
+            runs.push(runListItem(s, appSessionId))
+          }
+          runs.sort((a, b) => (a.startedAt < b.startedAt ? 1 : a.startedAt > b.startedAt ? -1 : 0))
+          return { ok: true as const, runs: runs.slice(0, limit) }
         } catch (e) {
           return { ok: false as const, error: `Could not read the ops ledger: ${message(e)}` }
         }

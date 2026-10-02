@@ -337,7 +337,11 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
 
 // ─── Hosts ──────────────────────────────────────────────────────────────────────
 
-/** The run's hosts as the shared tool definitions list them. */
+/** The run's hosts as the shared tool definitions list them: only its own host when the
+ *  intervention is locked to one, so the model is not offered hosts it would be refused. */
 export function opsToolHosts(ctx: OpsRunContext): OpsToolHost[] {
-  return [...ctx.hosts.byId.values()].map((h) => ({ id: h.host.id, name: h.host.name, groups: [...h.groups] }))
+  const scope = ctx.scope
+  return [...ctx.hosts.byId.values()]
+    .filter((h) => scope?.kind !== 'host' || h.host.id === scope.hostId)
+    .map((h) => ({ id: h.host.id, name: h.host.name, groups: [...h.groups] }))
 }

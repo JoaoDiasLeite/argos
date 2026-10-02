@@ -4,6 +4,9 @@ import {
   resolveHostGroups,
   effectiveApproval,
   effectiveLimits,
+  guidelinesHead,
+  summarizePolicy,
+  GUIDELINES_HEAD_MAX,
   OPS_MAX_CONCURRENT_PER_HOST,
   OPS_MAX_READ_BYTES,
   type PolicyParseErr,
@@ -430,5 +433,74 @@ describe('effectiveLimits', () => {
 
   it('falls back to the default for a nonsense value it was handed unvalidated', () => {
     expect(effectiveLimits({ ...base, limits: { timeoutMs: -5 } }).timeoutMs).toBe(OPS_DEFAULT_TIMEOUT_MS)
+  })
+})
+
+describe('summarizePolicy', () => {
+  const base: OpsPolicy = {
+    version: 1,
+    strict: true,
+    hosts: { web: ['web-01'] },
+    allow: [
+      { hosts: ['web'], cmd: '^uptime$', class: 'read' },
+      { hosts: ['web'], cmd: '^df -h$', class: 'read', approval: 'auto' },
+      { hosts: ['web'], cmd: '^journalctl -u nginx$', class: 'read', approval: 'ask' },
+      { hosts: ['web'], cmd: '^sudo systemctl reload nginx$', class: 'mutate' },
+      { hosts: ['web'], cmd: '^sudo systemctl restart nginx$', class: 'mutate', approval: 'auto' }
+    ],
+    scripts: [
+      { name: 'check.sh', sha256: CHECK_SHA, hosts: ['web'], class: 'read' },
+      { name: 'reload.sh', sha256: RELOAD_SHA, hosts: ['web'], class: 'mutate' }
+    ],
+    read: { paths: ['^/etc/nginx/.*$', '^/var/log/nginx/.*$'] }
+  }
+
+  it('counts what runs on its own, what asks and what changes a host', () => {
+    expect(summarizePolicy(base, '# Reload nginx\n\nCheck the config, then reload.\n')).toEqual({
+      autoReads: 2,
+      asks: 3,
+      mutates: 3,
+      scripts: 2,
+      readPaths: ['^/etc/nginx/.*$', '^/var/log/nginx/.*$'],
+      guidelinesHead: 'Check the config, then reload.'
+    })
+  })
+
+  it('a write block is one more change, and asks unless it says auto', () => {
+    expect(summarizePolicy({ ...base, write: { paths: ['^/etc/nginx/.*$'] } }, '')).toMatchObject({ asks: 4, mutates: 4 })
+    expect(summarizePolicy({ ...base, write: { paths: ['^/etc/nginx/.*$'], approval: 'auto' } }, '')).toMatchObject({
+      asks: 3,
+      mutates: 4
+    })
+  })
+
+  it('an empty policy is all zeros', () => {
+    expect(summarizePolicy({ version: 1, strict: true, hosts: {}, allow: [], scripts: [] }, '')).toEqual({
+      autoReads: 0,
+      asks: 0,
+      mutates: 0,
+      scripts: 0,
+      readPaths: [],
+      guidelinesHead: ''
+    })
+  })
+})
+
+describe('guidelinesHead', () => {
+  it('is the first paragraph after the title, on one line, skipping sub-headings', () => {
+    expect(guidelinesHead('﻿# Title\r\n\r\n## When\r\nUse this when\r\n  nginx   fails.\r\n\r\nSecond paragraph.')).toBe(
+      'Use this when nginx fails.'
+    )
+  })
+
+  it('without a title, is the first paragraph', () => {
+    expect(guidelinesHead('First words.\n\nMore.')).toBe('First words.')
+  })
+
+  it('is cut at a word to 300 characters with an ellipsis', () => {
+    const long = `# T\n${'word '.repeat(100)}`
+    const head = guidelinesHead(long)
+    expect(head.length).toBeLessThanOrEqual(GUIDELINES_HEAD_MAX)
+    expect(head.endsWith('word…')).toBe(true)
   })
 })

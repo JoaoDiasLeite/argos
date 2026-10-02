@@ -493,3 +493,63 @@ export function parsePolicy(
 
   return { ok: true, policy, warnings }
 }
+
+// ─── Summary (INTERVENTIONS_PLAN §3: "What this runbook allows") ────────────────
+
+export interface OpsPolicySummary {
+  /** Read rules that run without asking. */
+  autoReads: number
+  /** Rules, scripts and the write block that ask the operator each time. */
+  asks: number
+  /** Rules and scripts that change a host, plus the write block when there is one. */
+  mutates: number
+  scripts: number
+  /** The read block's path patterns, as written. */
+  readPaths: string[]
+  /** The first paragraph of RUNBOOK.md after its title, whitespace collapsed. */
+  guidelinesHead: string
+}
+
+export const GUIDELINES_HEAD_MAX = 300
+
+/**
+ * The first paragraph of a RUNBOOK.md after its H1: the first run of non-blank lines that
+ * are not headings, on one line, at most GUIDELINES_HEAD_MAX characters (cut at a word,
+ * with an ellipsis). Empty when the file has no such paragraph.
+ */
+export function guidelinesHead(markdown: string): string {
+  const lines = markdown.replace(/^﻿/, '').split(/\r?\n/)
+  const h1 = lines.findIndex((l) => /^#\s/.test(l))
+  const para: string[] = []
+  for (const l of lines.slice(h1 + 1)) {
+    if (l.trim() === '' || /^#{1,6}\s/.test(l)) {
+      if (para.length) break
+      continue
+    }
+    para.push(l.trim())
+  }
+  const text = para.join(' ').replace(/\s+/g, ' ').trim()
+  if (text.length <= GUIDELINES_HEAD_MAX) return text
+  const cut = text.slice(0, GUIDELINES_HEAD_MAX - 1)
+  const space = cut.lastIndexOf(' ')
+  return `${(space > GUIDELINES_HEAD_MAX / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, '')}…`
+}
+
+/** What a runbook allows, in counts the start screen can say in plain words. */
+export function summarizePolicy(policy: OpsPolicy, guidelines: string): OpsPolicySummary {
+  const writeAsks = policy.write ? effectiveApproval({ class: 'mutate', approval: policy.write.approval }) === 'ask' : false
+  return {
+    autoReads: policy.allow.filter((r) => r.class === 'read' && effectiveApproval(r) === 'auto').length,
+    asks:
+      policy.allow.filter((r) => effectiveApproval(r) === 'ask').length +
+      policy.scripts.filter((r) => effectiveApproval(r) === 'ask').length +
+      (writeAsks ? 1 : 0),
+    mutates:
+      policy.allow.filter((r) => r.class === 'mutate').length +
+      policy.scripts.filter((r) => r.class === 'mutate').length +
+      (policy.write ? 1 : 0),
+    scripts: policy.scripts.length,
+    readPaths: [...(policy.read?.paths ?? [])],
+    guidelinesHead: guidelinesHead(guidelines)
+  }
+}

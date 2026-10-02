@@ -37,7 +37,8 @@ import { OPS_BRIDGE_TOOLS, type OpsBridgeTool } from './ops-tool-defs-pure'
 import type { LoadedRunbook, LoadRunbookResult } from './ops-runbook-pure'
 import type { OpsExecutor } from './ops-exec-pure'
 import type { OpsLedger } from './ops-audit'
-import type { OpsAuditEvent, OpsAuditLine, OpsLoggedPlanStep, OpsToolName } from './ops-types'
+import { hostApprovalContext, hostDeniedReason, outOfScopeReason, scopeVerdict } from './ops-scope-pure'
+import type { OpsAuditEvent, OpsAuditLine, OpsHostRef, OpsLoggedPlanStep, OpsScope, OpsToolName } from './ops-types'
 
 export type { ApprovalOpsContext } from './ops-run-pure'
 
@@ -95,12 +96,25 @@ export interface OpsRunContext {
   log: (event: OpsAuditEvent) => Promise<{ ok: true } | { ok: false; error: string }>
   /** Set once run.end is written, so a result and a later catch do not both log it. */
   ended: boolean
+  /** The intervention's scope (INTERVENTIONS_PLAN §2). Absent: every runbook host, no host prompt. */
+  scope?: OpsScope
+  /** Open scope: hosts the operator allowed or refused for this run, by id. */
+  approvedHosts: Set<string>
+  deniedHosts: Set<string>
+  /** Open scope: the host prompt in flight per host, so two calls on a new host ask once. */
+  hostAsks: Map<string, Promise<'allow' | 'deny' | 'stop' | 'none'>>
 }
 
 export interface OpsSessionOptions {
   /** The terminal's id: what `ops:event` and the ledger key on. */
   appSessionId: string
   runbookPath: string
+  /** Which hosts this intervention may touch. Absent: every runbook host, as before interventions. */
+  scope?: OpsScope
+  /** The operator's description of the intervention, and its ticket and client; logged on run.start. */
+  task?: string
+  ticket?: string
+  client?: string
   /** The CLI that runs the session (the ledger's `run.start.model`). */
   model: string
   account?: string
@@ -154,11 +168,18 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
     if (runbook.hosts.length === 0) {
       return { ok: false, error: `No stored SSH host belongs to any host group of runbook ${runbook.ref.name}.` }
     }
+    // A locked intervention reaches and records only its host; the others stay known to
+    // the gate so a call naming one is refused with the scope's reason, not as unknown.
+    const scope = opts.scope
+    const inReach = scope?.kind === 'host' ? runbook.hosts.filter((h) => h.host.id === scope.hostId) : runbook.hosts
+    if (scope?.kind === 'host' && inReach.length === 0) {
+      return { ok: false, error: `This host is not in any host group of runbook ${runbook.ref.name}; add it to a group in policy.json.` }
+    }
 
     // Reachability before anything is logged or the model is called. Once, no retry: on a
     // client VPN a retry loop is a lockout waiting to happen.
     const reach = await Promise.all(
-      runbook.hosts.map(async (h) => {
+      inReach.map(async (h) => {
         try {
           return { h, r: await opts.executor.backend.reachable(h.host.id, OPS_REACH_TIMEOUT_MS) }
         } catch (e) {
@@ -192,9 +213,13 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
       runId,
       appSessionId: opts.appSessionId,
       runbook: runbook.ref,
-      hosts: runbook.hosts.map((h) => h.host),
+      hosts: inReach.map((h) => h.host),
       model: opts.model,
-      ...(opts.account ? { account: opts.account } : {})
+      ...(opts.account ? { account: opts.account } : {}),
+      ...(opts.task?.trim() ? { task: opts.task.trim() } : {}),
+      ...(opts.ticket?.trim() ? { ticket: opts.ticket.trim() } : {}),
+      ...(opts.client?.trim() ? { client: opts.client.trim() } : {}),
+      ...(scope ? { scope } : {})
     })
     if (!started.ok) return { ok: false, error: `The ops ledger is unavailable, so the run did not start: ${started.error}` }
 
@@ -212,7 +237,11 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
       calls: makeCallBook(runId),
       readScript: opts.readScript,
       log,
-      ended: false
+      ended: false,
+      ...(scope ? { scope } : {}),
+      approvedHosts: new Set(),
+      deniedHosts: new Set(),
+      hostAsks: new Map()
     }
 
     return { ok: true, ctx, canUseTool: makeOpsCanUseTool(ctx, opts), tools: createOpsToolHandlers(ctx) }
@@ -292,6 +321,24 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions): CanUseT
       }
 
       const entry = ctx.hosts.byId.get(parsed.hostId)
+      // A locked scope is absolute, so it comes before the gate: another host is refused
+      // whatever the policy says. A host outside the policy is left to the gate.
+      if (entry && ctx.scope?.kind === 'host' && scopeVerdict(ctx.scope, parsed.hostId, ctx.approvedHosts) === 'deny') {
+        const reason = outOfScopeReason(entry.host.name)
+        await ctx.log({
+          kind: 'call.decided',
+          runId,
+          callId: ctx.calls.fresh(),
+          tool,
+          hostId: parsed.hostId,
+          host: entry.host.name,
+          rawInput: input,
+          class: 'mutate',
+          decision: 'deny',
+          reason
+        })
+        return deny(`Refused: ${reason}.`)
+      }
       const gate = classify(parsed, ctx.runbook.policy, entry?.host ?? null, entry?.groups ?? [])
 
       if (!ctx.planApproved) {
@@ -312,6 +359,34 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions): CanUseT
           reason: PLAN_FIRST_REASON
         })
         return deny(`Refused: ${PLAN_FIRST_REASON}.`)
+      }
+
+      // Open scope: the first call on a host asks the operator once for the run. Not for a
+      // call the gate refuses anyway, and not before the plan is approved (above).
+      if (entry && ctx.scope?.kind === 'open' && gate.decision !== 'deny') {
+        const verdict = await hostVerdict(ctx, opts, entry.host, parsed.hostId)
+        if (verdict !== 'allow') {
+          const reason = verdict === 'none' ? 'no operator is available to allow this host' : hostDeniedReason(entry.host.name)
+          await ctx.log({
+            kind: 'call.decided',
+            runId,
+            callId: ctx.calls.fresh(),
+            tool,
+            hostId: parsed.hostId,
+            host: entry.host.name,
+            rawInput: input,
+            ...(gate.argv ? { argv: gate.argv } : {}),
+            ...(gate.path ? { path: gate.path } : {}),
+            class: gate.class,
+            decision: 'deny',
+            reason
+          })
+          if (verdict === 'stop') {
+            ctx.abort.abort()
+            return deny('Denied by the operator, who stopped the run.')
+          }
+          return deny(`Refused: ${reason}.`)
+        }
       }
 
       const key = callKey(parsed)
@@ -382,6 +457,45 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions): CanUseT
 }
 
 /**
+ * Open scope: whether this run may touch a host, asking the operator the first time and
+ * logging the answer (`host.approved` / `host.denied`). A refusal holds for the rest of
+ * the run; a stop is a refusal that also ends the run. 'none': nobody to ask (no ask hook,
+ * or the run is already stopping), which refuses this call without recording an answer.
+ * Calls that arrive while the prompt is open wait for the same answer.
+ */
+async function hostVerdict(
+  ctx: OpsRunContext,
+  opts: OpsSessionOptions,
+  host: OpsHostRef,
+  hostId: string
+): Promise<'allow' | 'deny' | 'stop' | 'none'> {
+  if (!ctx.scope) return 'allow'
+  const v = scopeVerdict(ctx.scope, hostId, ctx.approvedHosts, ctx.deniedHosts)
+  if (v !== 'ask') return v
+  const ask = opts.ask
+  if (!ask || ctx.abort.signal.aborted) return 'none'
+  let pending = ctx.hostAsks.get(hostId)
+  if (!pending) {
+    pending = (async () => {
+      const address = opts.hostAddress ? opts.hostAddress(hostId) : host.host
+      const answer = await ask({
+        tool: 'mcp__ops__host',
+        input: { hostId },
+        ops: hostApprovalContext(host, address, ctx.runbook.ref.name)
+      })
+      // An answer that lands after a stop is not an approval.
+      if (ctx.abort.signal.aborted && !answer.stop) return 'none' as const
+      const allowed = answer.allow
+      ;(allowed ? ctx.approvedHosts : ctx.deniedHosts).add(hostId)
+      await ctx.log({ kind: allowed ? 'host.approved' : 'host.denied', runId: ctx.runId, hostId, host: host.name, by: 'user' })
+      return allowed ? ('allow' as const) : answer.stop ? ('stop' as const) : ('deny' as const)
+    })().finally(() => ctx.hostAsks.delete(hostId))
+    ctx.hostAsks.set(hostId, pending)
+  }
+  return pending
+}
+
+/**
  * `mcp__ops__propose_plan` (plan §1.7): the whole plan goes to the operator through the
  * same approval pipeline as an `ask`. Approved → `plan.approved` and the other ops tools
  * open; rejected → `plan.rejected`, and they stay (or become) closed until a plan is
@@ -398,7 +512,12 @@ async function decidePlan(
   if (!Array.isArray(steps)) return deny(`Refused: ${steps.error}.`)
   // A preview of what the gate would say for each step: nothing runs or is logged here,
   // and every later call is still classified on its own.
-  const plan = classifyPlanSteps(steps, ctx.runbook.policy, ctx.hosts.byId)
+  const plan = classifyPlanSteps(
+    steps,
+    ctx.runbook.policy,
+    ctx.hosts.byId,
+    ctx.scope ? { scope: ctx.scope, approvedHosts: ctx.approvedHosts, deniedHosts: ctx.deniedHosts } : undefined
+  )
 
   let answer: { allow: boolean; stop?: boolean } = { allow: false }
   if (opts.ask && !ctx.abort.signal.aborted) {

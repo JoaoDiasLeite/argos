@@ -65,6 +65,20 @@ export function clientReportWarnings(summary: OpsRunSummary): string[] {
   return out
 }
 
+/** Operator-typed text on one line, so a newline cannot break the report's structure. */
+const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim()
+
+function scopeLine(s: OpsRunSummary): string {
+  if (!s.scope) return 'not recorded'
+  if (s.scope.kind === 'host') {
+    const id = s.scope.hostId
+    const name = s.hosts.find((h) => h.id === id)?.name ?? id
+    return `locked to ${name}`
+  }
+  const answers = (s.hostAnswers ?? []).map((a) => `${a.host} ${a.answer}`)
+  return `open (any host the runbook allows)${answers.length ? `; ${answers.join(', ')}` : ''}`
+}
+
 function callStatus(c: OpsCallSummary): string {
   if (c.decision === 'deny') return 'not run (denied)'
   if (c.answer === 'deny') return 'not run (refused at the prompt)'
@@ -80,6 +94,10 @@ export function renderInternalReport(summary: OpsRunSummary): string {
   const out: string[] = []
   out.push(`# Ops run: ${s.runbook.name}`, '')
   out.push(`- Run: \`${s.runId}\``)
+  if (s.task) out.push(`- Task: ${oneLine(s.task)}`)
+  if (s.ticket) out.push(`- Ticket: ${oneLine(s.ticket)}`)
+  if (s.client) out.push(`- Client: ${oneLine(s.client)}`)
+  if (s.scope) out.push(`- Scope: ${scopeLine(s)}`)
   out.push(`- Runbook: \`${s.runbook.path}\` (policy sha256 \`${s.runbook.policySha256}\`)`)
   if (s.runbook.platform) out.push(`- Platform: ${s.runbook.platform}`)
   out.push(`- Started: ${s.startedAt}`)
@@ -316,7 +334,10 @@ export function renderClientReport(summary: OpsRunSummary, opts: ClientReportOpt
   const s = summary
   const clean = (text: string): string => sanitizeForClient(text, { ...opts, ...executableTerms(s) })
 
-  const name = s.runbook.name.replace(/[-_]+/g, ' ').trim()
+  // The operator's task is the subject when there is one; it is free text, so it goes
+  // through the full sanitiser like anything else from the ledger.
+  const task = s.task ? oneLine(s.task).replace(/[.\s]+$/, '') : ''
+  const name = task || s.runbook.name.replace(/[-_]+/g, ' ').trim()
   const subject = clean(name ? name[0].toUpperCase() + name.slice(1) : 'Intervenção')
 
   const day = ptDate(s.startedAt)
@@ -338,6 +359,10 @@ export function renderClientReport(summary: OpsRunSummary, opts: ClientReportOpt
   // depends on the noun's gender, which a title does not declare. Repeated titles (the same
   // check on several services) are listed once.
   const titleClean = (text: string): string => sanitizeForClient(text, { ...opts, argv: [], paths: [] })
+  const header = [
+    ...(s.client && oneLine(s.client) ? [`Cliente: ${titleClean(oneLine(s.client))}`] : []),
+    ...(s.ticket && oneLine(s.ticket) ? [`Ticket: ${titleClean(oneLine(s.ticket))}`] : [])
+  ].join(' · ')
   const steps = s.calls.filter(concluded)
   const seen = new Set<string>()
   const lines: string[] = []
@@ -357,7 +382,9 @@ export function renderClientReport(summary: OpsRunSummary, opts: ClientReportOpt
 
   const out: string[] = []
   out.push('## Assunto', '', `Intervenção técnica: ${subject}`, '')
-  out.push('## Descrição', '', desc.join(' '), '')
+  out.push('## Descrição', '')
+  if (header) out.push(header, '')
+  out.push(desc.join(' '), '')
   if (lines.length) out.push(...lines.map((l) => `- ${l}`), '')
   if (notConcluded) out.push('Uma ou mais operações não foram concluídas nesta janela.', '')
   out.push('## Motivo', '', motive, '')
