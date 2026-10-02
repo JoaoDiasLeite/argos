@@ -1,6 +1,5 @@
 import * as path from 'path'
 import { isRootPath } from './local-fs-pure'
-import type { RoomsLayout } from './store'
 
 /**
  * The decisions behind changing a project's folder, with nothing that touches the
@@ -11,9 +10,7 @@ import type { RoomsLayout } from './store'
  * nine blocks before its first write, and every one of the refusals below is a case
  * that, taken wrongly, either loses a folder or leaves the app pointing at nothing.
  * The writes themselves are three renames and some JSON; the judgement is here.
- *
- * `import type { RoomsLayout }` is erased at compile time, so this module stays
- * loadable in a plain test process even though store.ts reaches Electron at load.
+
  */
 
 /** Strip trailing separators so `C:\dev\foo\` and `C:\dev\foo` compare as one path. */
@@ -160,31 +157,6 @@ export function rekeyProjectPath(
   const rest = norm.slice(from.length)
   const to = trimTrailingSep(toPath)
   return to + (to.includes('/') && !to.includes('\\') ? rest.replace(/\\/g, '/') : rest)
-}
-
-/**
- * Re-key a rooms layout, which is keyed by the project's real path.
- *
- * Anything under the moved folder is re-keyed too, and correctly so: a project
- * nested inside the one being moved moved with it. `__unassigned__` and other
- * non-path keys never match a real folder, so they pass through untouched.
- */
-export function rekeyRoomsLayout(layout: RoomsLayout, fromPath: string, toPath: string): RoomsLayout {
-  const order: string[] = []
-  for (const key of layout.order) {
-    const next = rekeyProjectPath(key, fromPath, toPath) ?? key
-    // Same reason as `rekeyProjectKeys`: the destination may already have a room.
-    if (!order.includes(next)) order.push(next)
-  }
-  const names: Record<string, string> = {}
-  for (const [key, value] of Object.entries(layout.names)) {
-    const next = rekeyProjectPath(key, fromPath, toPath) ?? key
-    // First one wins, so a pre-existing name at the destination is not overwritten
-    // by the moved project's — the destination's name is the one the user set last
-    // for that folder.
-    if (!(next in names)) names[next] = value
-  }
-  return { order, names }
 }
 
 /**

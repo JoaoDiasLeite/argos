@@ -4,7 +4,6 @@ import {
   rekeyProjectKeys,
   rekeyProjectNames,
   rekeyProjectPath,
-  rekeyRoomsLayout,
   sameVolume,
   verifyTarget,
   volumeOf
@@ -207,41 +206,6 @@ describe('rekeyProjectPath', () => {
   it('keeps POSIX separators when the destination is a POSIX path', () => {
     // A WSL project's stored path is POSIX on both sides of the move.
     expect(rekeyProjectPath('/home/me/foo/src', '/home/me/foo', '/home/me/bar')).toBe('/home/me/bar/src')
-  })
-})
-
-describe('rekeyRoomsLayout', () => {
-  it('rewrites order and names for the moved project', () => {
-    expect(
-      rekeyRoomsLayout(
-        { order: ['C:\\dev\\foo', 'C:\\dev\\other'], names: { 'C:\\dev\\foo': 'Foo' } },
-        'C:\\dev\\foo',
-        'C:\\dev\\bar'
-      )
-    ).toEqual({ order: ['C:\\dev\\bar', 'C:\\dev\\other'], names: { 'C:\\dev\\bar': 'Foo' } })
-  })
-
-  it('leaves non-path room keys alone', () => {
-    expect(
-      rekeyRoomsLayout({ order: ['__unassigned__', 'C:\\dev\\foo'], names: {} }, 'C:\\dev\\foo', 'C:\\dev\\bar')
-    ).toEqual({ order: ['__unassigned__', 'C:\\dev\\bar'], names: {} })
-  })
-
-  it('rewrites a nested project, which moved with its parent', () => {
-    expect(
-      rekeyRoomsLayout({ order: ['C:\\dev\\foo\\sub'], names: {} }, 'C:\\dev\\foo', 'C:\\dev\\bar')
-    ).toEqual({ order: ['C:\\dev\\bar\\sub'], names: {} })
-  })
-
-  it('does not duplicate a room the destination already had', () => {
-    expect(
-      rekeyRoomsLayout({ order: ['C:\\dev\\foo', 'C:\\dev\\bar'], names: {} }, 'C:\\dev\\foo', 'C:\\dev\\bar')
-    ).toEqual({ order: ['C:\\dev\\bar'], names: {} })
-  })
-
-  it('leaves an untouched layout equal to what it was', () => {
-    const layout = { order: ['C:\\dev\\other'], names: { 'C:\\dev\\other': 'Other' } }
-    expect(rekeyRoomsLayout(layout, 'C:\\dev\\foo', 'C:\\dev\\bar')).toEqual(layout)
   })
 })
 

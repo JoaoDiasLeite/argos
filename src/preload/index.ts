@@ -285,12 +285,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   mcpUpsert: (name: string, cfg: unknown) => ipcRenderer.invoke('mcp:upsert', name, cfg),
   mcpRemove: (name: string) => ipcRenderer.invoke('mcp:remove', name),
 
-  // Agents
-  agentsList: () => ipcRenderer.invoke('agents:list'),
-  agentsSave: (agent: unknown) => ipcRenderer.invoke('agents:save', agent),
-  agentsDelete: (id: string) => ipcRenderer.invoke('agents:delete', id),
-  agentsSuggest: (accountId?: string) => ipcRenderer.invoke('agents:suggest', { accountId }),
-
   // Chat compaction
   summarizeChat: (payload: unknown) => ipcRenderer.invoke('chat:summarize', payload),
 
@@ -419,10 +413,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('wsl:clipboard-image-capable', distro),
   wslToLinuxPaths: (distro: string, paths: string[]) =>
     ipcRenderer.invoke('wsl:to-linux-paths', distro, paths),
-
-  // Rooms (persisted board layout: room order + custom names)
-  roomsGetLayout: () => ipcRenderer.invoke('rooms:get-layout'),
-  roomsSetLayout: (layout: unknown) => ipcRenderer.invoke('rooms:set-layout', layout),
 
   // Project names (sidebar custom display names, keyed by projectKey())
   ccProjectNames: () => ipcRenderer.invoke('projects:get-names'),

@@ -273,18 +273,17 @@
            hover lift · accent-tinted borders.
 
    This block deliberately spans several view-owned card classes
-   (.usage-card, .account-card, .agent-card, .ssh-card,
+   (.usage-card, .account-card, .ssh-card,
    .mcp-card, .search-hit) at once — it's a single cross-cutting "elevated
    surface" trait, not a competing redefinition of any one of them (no
    property here overlaps with what each owning view's stylesheet sets).
    Kept here on purpose so the trait stays defined exactly once instead of
-   being copy-pasted into six files.
+   being copy-pasted into five files.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Elevated card surfaces */
 .usage-card,
 .account-card,
-.agent-card,
 .ssh-card,
 .mcp-card,
 .search-hit {
@@ -298,7 +297,6 @@
 /* Lift on hover for the clickable cards */
 .usage-card:hover,
 .account-card:hover,
-.agent-card:hover,
 .ssh-card:hover,
 .search-hit:hover {
   transform: translateY(-2px);

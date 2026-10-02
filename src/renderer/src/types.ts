@@ -52,9 +52,7 @@ export interface Session {
   claudeSessionId?: string
   /** Model override for this session (falls back to the global default). */
   model?: string
-  /** If launched from a CC Agent, the agent's run options. */
-  agentId?: string
-  agentName?: string
+  /** Run options carried onto the session for the SDK engine. */
   systemPrompt?: string
   permissionMode?: PermissionMode
   allowedTools?: string[]
@@ -663,35 +661,6 @@ export interface McpServer {
 
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan'
 
-export interface AgentDef {
-  id: string
-  name: string
-  icon: string
-  systemPrompt: string
-  model: string
-  permissionMode: PermissionMode
-  allowedTools: string[]
-  defaultProjectPath?: string
-  createdAt: number
-  updatedAt: number
-}
-
-/** A candidate agent proposed by `agentsSuggest`, from history analysis. Not yet a real AgentDef. */
-export interface AgentSuggestion {
-  name: string
-  icon: string
-  systemPrompt: string
-  allowedTools: string[]
-  reason: string
-}
-
-export interface AgentsSuggestResult {
-  ok: boolean
-  data?: { suggestions: AgentSuggestion[] }
-  error?: string
-  costUsd: number
-}
-
 export interface ClaudeMdFile {
   scope: string
   path: string
@@ -883,13 +852,6 @@ export interface WslDistro {
 
 /** The Remote Session ("Connect") view's target — an SSH host or a WSL distro. */
 export type RemoteTarget = { kind: 'ssh'; host: SshHostPublic } | { kind: 'wsl'; distro: string }
-
-export interface RoomsLayout {
-  /** Room keys (project path, or '__unassigned__') in the user's preferred order. */
-  order: string[]
-  /** Room key -> custom display name, overriding the default folder-name label. */
-  names: Record<string, string>
-}
 
 export type AuthMode = 'claude-code' | 'api-key'
 
@@ -1692,12 +1654,6 @@ declare global {
       mcpUpsert: (name: string, cfg: Record<string, unknown>) => Promise<McpServer[]>
       mcpRemove: (name: string) => Promise<McpServer[]>
 
-      // Agents
-      agentsList: () => Promise<AgentDef[]>
-      agentsSave: (agent: AgentDef) => Promise<AgentDef>
-      agentsDelete: (id: string) => Promise<AgentDef[]>
-      agentsSuggest: (accountId?: string) => Promise<AgentsSuggestResult>
-
       // Chat compaction
       summarizeChat: (payload: {
         transcript: string
@@ -1924,10 +1880,6 @@ declare global {
       /** Windows paths as the distro names them (its own `wslpath`), null per path it
        *  cannot reach; null overall when the distro could not be asked. */
       wslToLinuxPaths: (distro: string, paths: string[]) => Promise<(string | null)[] | null>
-
-      // Rooms (persisted board layout: room order + custom names)
-      roomsGetLayout: () => Promise<RoomsLayout>
-      roomsSetLayout: (layout: RoomsLayout) => Promise<boolean>
 
       // Project names (sidebar custom display names, keyed by projectKey())
       ccProjectNames: () => Promise<Record<string, string>>

@@ -8,9 +8,6 @@ import './ApprovalModal.css'
 interface Props {
   request: ApprovalRequest
   onDecide: (allow: boolean) => void
-  // Optional session label, shown small in the header — used by the Rooms inline flow
-  // where more than one session may have pending approvals.
-  sessionName?: string
   inline?: boolean
   // "Deny and stop the run" - only offered when the caller wires it (ops requests).
   onStop?: () => void
@@ -41,7 +38,7 @@ function OpsBody({ ops }: { ops: ApprovalOpsContext }) {
   )
 }
 
-export default function ApprovalModal({ request, onDecide, sessionName, inline = false, onStop }: Props) {
+export default function ApprovalModal({ request, onDecide, inline = false, onStop }: Props) {
   const { tool, input, ops } = request
   const dialogRef = useRef<HTMLDivElement>(null)
   // Esc is handled by the existing keydown handler (deny), so we pass escapeToClose: false
@@ -121,7 +118,6 @@ export default function ApprovalModal({ request, onDecide, sessionName, inline =
           <h3 id={`approval-${request.approvalId}`}>
             <span className="approval-tool">{tool}</span> wants to {verb}
           </h3>
-          {sessionName && <div className="approval-session">{sessionName}</div>}
         </div>
         {!ops && filePath && <div className="approval-path">{filePath}</div>}
         <div className="approval-body">{renderBody()}</div>

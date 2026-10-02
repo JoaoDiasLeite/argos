@@ -184,7 +184,7 @@ export interface Props {
    *  `PaneGrid`'s `pane-head`) — so this component must not draw it a second time.
    *  Optional and defaulted to false: every other mounter of `Chat` (the single-pane
    *  case included) keeps today's title exactly as it is. The rest of the title block
-   *  (agent badge / remote host / resumed marker) still renders here regardless, since
+   *  (remote host / resumed marker) still renders here regardless, since
    *  the pane header has no room for it and none of it is duplicated elsewhere. */
   titleInHeader?: boolean
 }
@@ -702,16 +702,15 @@ export default function Chat(
   // Title block: session name plus one quiet meta line replacing the header adornments.
   // The name is skipped when a split-view pane header is already showing it (`titleInHeader`)
   // — otherwise the same chat name would be drawn twice, once in `.pane-head` and once here.
-  // The meta line (agent badge / remote host / resumed marker) has no equivalent in the pane
+  // The meta line (remote host / resumed marker) has no equivalent in the pane
   // header, so it always renders when present, in either mode.
-  const hasTitleMeta = !!(session?.agentName || session?.remoteHostName || session?.claudeSessionId)
+  const hasTitleMeta = !!(session?.remoteHostName || session?.claudeSessionId)
   const showTitleName = !titleInHeader
   const titleBlock = session && (showTitleName || hasTitleMeta) && (
     <div className="chat-title-block">
       {showTitleName && <div className="chat-title-name">{session.name || 'New chat'}</div>}
       {hasTitleMeta && (
         <div className="chat-title-meta">
-          {session.agentName && <span title="Agent this chat runs as">{session.agentName}</span>}
           {session.remoteHostName && (
             <span title="Running on remote host over SSH">⇄ {session.remoteHostName}</span>
           )}

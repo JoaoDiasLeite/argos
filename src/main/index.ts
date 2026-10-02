@@ -70,7 +70,6 @@ import {
   removeGlobalMcpServer,
   mcpServersForProject
 } from './mcp'
-import { listAgents, saveAgent, deleteAgent, AgentDef } from './agents'
 import { listWeeks, getWeek, saveWeek, deleteWeek, WeekPlan } from './planner'
 import { listSprints, getSprint, saveSprint, deleteSprint, Sprint } from './sprints'
 import {
@@ -154,9 +153,6 @@ import { posixToWslUnc } from './local-fs-pure'
 import {
   getHiddenDistros,
   setDistroHidden,
-  getRoomsLayout,
-  setRoomsLayout,
-  RoomsLayout,
   getProjectNames,
   setProjectName,
   getFavoriteProjects,
@@ -1762,14 +1758,6 @@ ipcMain.handle('wsl:drive-map', () => listWslDriveMap())
 ipcMain.handle('wsl:clipboard-image-capable', (_, distro: string) => wslClipboardImageCapable(distro))
 ipcMain.handle('wsl:to-linux-paths', (_, distro: string, paths: string[]) => wslToLinuxPaths(distro, paths))
 
-// ─── Rooms (persisted board layout) ───────────────────────────────────────────
-
-ipcMain.handle('rooms:get-layout', () => getRoomsLayout())
-ipcMain.handle('rooms:set-layout', (_, layout: RoomsLayout) => {
-  setRoomsLayout(layout)
-  return true
-})
-
 // ─── Project names (sidebar custom display names) ─────────────────────────────
 
 ipcMain.handle('projects:get-names', () => getProjectNames())
@@ -2091,15 +2079,6 @@ ipcMain.handle('mcp:upsert', (_, name: string, cfg: Record<string, unknown>) =>
   upsertGlobalMcpServer(name, cfg)
 )
 ipcMain.handle('mcp:remove', (_, name: string) => removeGlobalMcpServer(name))
-
-// ─── Agents ───────────────────────────────────────────────────────────────────
-
-ipcMain.handle('agents:list', () => listAgents())
-ipcMain.handle('agents:save', (_, agent: AgentDef) => saveAgent(agent))
-ipcMain.handle('agents:delete', (_, id: string) => {
-  deleteAgent(id)
-  return listAgents()
-})
 
 // ─── Scheduler / Routines ─────────────────────────────────────────────────────
 
@@ -2694,149 +2673,6 @@ ipcMain.handle(
     }
   }
 )
-
-// ─── Agent suggestions (history digest) ────────────────────────────────────
-
-const AGENT_ICON_OPTIONS = ['🤖', '🧠', '🔧', '🔍', '📝', '🚀', '🛡️', '⚡', '📊', '🧪']
-const AGENT_TOOL_OPTIONS = ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'Task', 'TodoWrite']
-
-/**
- * Build a compact, privacy-conscious digest of recent sessions for the suggestion prompt.
- * Only short excerpts (first-prompt snippet, tool counts) leave the machine — never full
- * message content. Capped at ~6000 chars, dropping the oldest lines first if needed.
- */
-function buildHistoryDigest(): { digest: string; sessionCount: number } {
-  let files: string[]
-  try {
-    files = fs.readdirSync(sessionsDir).filter((f) => f.endsWith('.json'))
-  } catch {
-    return { digest: '', sessionCount: 0 }
-  }
-
-  type SessionLike = {
-    id: string
-    name?: string
-    messages?: { role: string; content?: string; toolCalls?: { tool: string }[] }[]
-    projectPath?: string
-    updatedAt?: number
-  }
-
-  const sessions: SessionLike[] = []
-  for (const f of files) {
-    try {
-      const s = readJsonFile<SessionLike>(path.join(sessionsDir, f))
-      if (s && Array.isArray(s.messages) && s.messages.length > 0) sessions.push(s)
-    } catch {
-      // Skip corrupt/unreadable session files.
-    }
-  }
-
-  sessions.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
-  const recent = sessions.slice(0, 40)
-
-  const overallTools = new Map<string, number>()
-  const projects = new Set<string>()
-  const lines: string[] = []
-
-  for (const s of recent) {
-    const toolCounts = new Map<string, number>()
-    let firstUserPrompt = ''
-    for (const m of s.messages ?? []) {
-      for (const tc of m.toolCalls ?? []) {
-        toolCounts.set(tc.tool, (toolCounts.get(tc.tool) ?? 0) + 1)
-        overallTools.set(tc.tool, (overallTools.get(tc.tool) ?? 0) + 1)
-      }
-      if (!firstUserPrompt && m.role === 'user' && typeof m.content === 'string' && m.content.trim()) {
-        firstUserPrompt = m.content.trim()
-      }
-    }
-    const projectBase = s.projectPath ? path.basename(s.projectPath) : 'no-project'
-    projects.add(projectBase)
-    const promptSnippet = firstUserPrompt.slice(0, 140).replace(/\s+/g, ' ')
-    const toolsStr = [...toolCounts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([t, n]) => `${t}×${n}`)
-      .join(' ')
-    const name = (s.name || 'Untitled').replace(/\s+/g, ' ').trim()
-    lines.push(
-      `- [${projectBase}] "${name}" | first user prompt: "${promptSnippet}" | tools: ${toolsStr || 'none'}`
-    )
-  }
-
-  const header = [
-    `Sessions analyzed: ${recent.length}`,
-    `Distinct projects: ${[...projects].slice(0, 20).join(', ') || 'none'}`,
-    `Overall tool usage: ${[...overallTools.entries()].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t}×${n}`).join(' ') || 'none'}`,
-    ''
-  ].join('\n')
-
-  // Keep the whole digest under ~6000 chars, dropping the oldest (end of list) lines first.
-  const MAX_CHARS = 6000
-  let body = lines.join('\n')
-  while (header.length + body.length > MAX_CHARS && lines.length > 0) {
-    lines.pop()
-    body = lines.join('\n')
-  }
-
-  return { digest: header + body, sessionCount: recent.length }
-}
-
-function buildAgentSuggestPrompt(digest: string): string {
-  return `You are helping configure reusable "agents" inside a desktop GUI for coding CLIs (Claude Code, Codex and Antigravity). Each agent is a saved preset with a name, icon, system prompt, and a set of allowed tools, that the user can launch for recurring kinds of work.
-
-Below is a digest of the user's recent chat sessions (project name, session name, their first prompt, and which tools were used). Based on real patterns in this history, propose 3-5 agent definitions the user would plausibly reuse. Be specific to what they actually do — do not propose generic-sounding agents unrelated to the digest.
-
-History digest:
-${digest}
-
-Respond with ONLY a single JSON object, no markdown fences, no prose outside the JSON, of exactly this shape:
-{
-  "suggestions": [
-    {
-      "name": "<short agent name, max 30 chars>",
-      "icon": "<one of: ${AGENT_ICON_OPTIONS.join(' ')}>",
-      "systemPrompt": "<2-4 sentences, second person ('You are...'), specific to the user's observed patterns>",
-      "allowedTools": ["<subset of: ${AGENT_TOOL_OPTIONS.join(', ')}>"],
-      "reason": "<one short sentence on why, referencing their history>"
-    }
-  ]
-}`
-}
-
-ipcMain.handle('agents:suggest', async (_, payload: { accountId?: string } = {}) => {
-  const abort = new AbortController()
-  const env = buildSubprocessEnv()
-  const configDir = accountConfigDir(payload.accountId)
-  if (configDir) {
-    env.CLAUDE_CONFIG_DIR = configDir
-    delete env.ANTHROPIC_API_KEY
-  }
-  try {
-    const { digest } = buildHistoryDigest()
-    const policy = resolvePolicy({ profile: 'headless-reasoning', requestedModel: 'claude-haiku-4-5' })
-    const stream = getEngine(providerFor(policy.model)).run({
-      prompt: buildAgentSuggestPrompt(digest),
-      ...policy,
-      cwd: os.homedir(),
-      env,
-      abortController: abort,
-      permissionMode: 'bypassPermissions'
-    })
-
-    const { text, costUsd, isError, errorText } = await collectText(stream)
-
-    if (isError) return { ok: false as const, error: errorText || 'The model returned an error.', costUsd }
-    try {
-      const data = extractJson(text)
-      return { ok: true as const, data, costUsd }
-    } catch {
-      return { ok: false as const, error: 'Could not parse the model’s response as JSON.', costUsd }
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return { ok: false as const, error: msg, costUsd: 0 }
-  }
-})
 
 // ─── CLAUDE.md ──────────────────────────────────────────────────────────────
 

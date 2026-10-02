@@ -10,7 +10,6 @@ import {
   TermLine,
   ModelInfo,
   CCSessionMeta,
-  AgentDef,
   ApprovalRequest,
   CCAccountStatus,
   ProviderAccountStatus,
@@ -91,8 +90,6 @@ import './styles/App.css'
 import './views/views.css'
 
 const ProjectsView = lazy(() => import('./views/ProjectsView'))
-const AgentsView = lazy(() => import('./views/AgentsView'))
-const RoomsView = lazy(() => import('./views/RoomsView'))
 const UsageView = lazy(() => import('./views/UsageView'))
 const McpView = lazy(() => import('./views/McpView'))
 const PlannerView = lazy(() => import('./views/PlannerView'))
@@ -192,8 +189,6 @@ function newSession(projectPath?: string, model?: string, accountId?: string): S
 
 // Labels for the segmented sub-nav shown above a group's active view.
 const MEMBER_LABELS: Record<string, string> = {
-  agents: 'Agents',
-  rooms: 'Rooms',
   planner: 'Planner',
   scheduled: 'Routines',
   mcp: 'MCP',
@@ -827,7 +822,7 @@ export default function App() {
   }, [])
 
   // Answer a specific queued approval by id: send the response, prune it from the
-  // queue, and log against its own session. Used both by the inline Rooms flow and
+  // queue, and log against its own session. Used by the inline chat approval and
   // (via respondApproval) the head-of-queue global modal.
   const respondApprovalById = (approvalId: string, allow: boolean) => {
     const req = approvalQueue.find((r) => r.approvalId === approvalId)
@@ -1243,7 +1238,7 @@ export default function App() {
   createSessionRef.current = createSession
 
   // Navigation from the nav rail / command palette, as opposed to the setView calls that
-  // already pick a specific chat to land on (createSession, pickAccount, deployAgent, …).
+  // already pick a specific chat to land on (createSession, pickAccount, …).
   //
   // Arriving at the chat view creates nothing. It used to land you on a new chat, which
   // read as convenience while a chat was just a blank composer — but a chat is a real
@@ -2779,29 +2774,6 @@ export default function App() {
     }
   }
 
-  // Run a custom agent
-  const runAgent = (agent: AgentDef) => {
-    const s: Session = {
-      id: generateId(),
-      name: agent.name,
-      messages: [],
-      projectPath: agent.defaultProjectPath,
-      model: agent.model,
-      agentId: agent.id,
-      agentName: agent.name,
-      accountId: defaultAccountId,
-      systemPrompt: agent.systemPrompt,
-      permissionMode: agent.permissionMode,
-      allowedTools: agent.allowedTools,
-      useMcp: false,
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    }
-    setSessions((prev) => [s, ...prev])
-    setActiveId(s.id)
-    setView('chat')
-  }
-
   // Open server (Remote/WSL) sessions, kept alive in a background layer (rendered below,
   // outside any `view ===` guard) so switching to Chat/Servers/etc. never tears down a live
   // terminal or SFTP connection — only closing a tab does. A target can have several
@@ -3065,54 +3037,6 @@ export default function App() {
     [defaultModel, defaultAccountId]
   )
 
-  // Rooms view: deploy an agent into a room (project folder) with a first prompt.
-  // Builds the session exactly like runAgent does (agent's run options carried onto the
-  // session) but — unlike runAgent — immediately fires the prompt, and stays on the Rooms
-  // view instead of switching to chat, so the user watches the chip appear and pulse.
-  const deployAgent = (agent: AgentDef, projectPath: string | undefined, prompt: string) => {
-    const text = prompt.trim()
-    if (!text) return
-
-    const s: Session = {
-      id: generateId(),
-      name: text.slice(0, 40),
-      messages: [],
-      projectPath,
-      model: agent.model,
-      agentId: agent.id,
-      agentName: agent.name,
-      accountId: defaultAccountId,
-      systemPrompt: agent.systemPrompt,
-      permissionMode: agent.permissionMode,
-      allowedTools: agent.allowedTools,
-      useMcp: false,
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    }
-
-    const userMsg: Message = { id: generateId(), role: 'user', content: text, timestamp: Date.now() }
-    const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
-
-    // Guard: no auth → same treatment as startOverlayPrompt's blocked path — keep the
-    // prompt visible as a failed turn (error + Retry from chat) instead of dropping it.
-    if (!ready) {
-      s.messages = [userMsg, { ...assistantMsg, content: 'Not signed in — connect Claude Code or an API key in Settings, then press Retry.', error: true }]
-      setSessions((prev) => [s, ...prev])
-      window.electronAPI.saveSession(s)
-      return
-    }
-
-    s.messages = [userMsg, assistantMsg]
-    setSessions((prev) => [s, ...prev])
-    // Deliberately no setActiveId/setView('chat') here — stay in Rooms so the new
-    // occupant chip appears and starts pulsing in place.
-    startRun(s.id)
-    setTerminalOpen(true)
-    addTermFor(s.id, { kind: 'user', text: text.slice(0, 120) })
-
-    window.electronAPI.sendAgent(buildAgentPayload(s, text))
-  }
-
   const handleSetDefaultModel = async (modelId: string) => {
     setDefaultModel(modelId)
     await window.electronAPI.setDefaultModel(modelId)
@@ -3223,8 +3147,6 @@ export default function App() {
     const views: { v: View; label: string }[] = [
       { v: 'chat', label: 'Chat' },
       { v: 'projects', label: 'Projects' },
-      { v: 'agents', label: 'Agents' },
-      { v: 'rooms', label: 'Rooms' },
       { v: 'planner', label: 'Planner' },
       { v: 'scheduled', label: 'Routines' },
       { v: 'usage', label: 'Usage' },
@@ -3664,22 +3586,6 @@ export default function App() {
             />
           )}
           <Suspense fallback={<ViewLoading />}>
-            {view === 'agents' && <AgentsView models={models} defaultModel={defaultModel} onRun={runAgent} />}
-            {view === 'rooms' && (
-              <RoomsView
-                sessions={sessions}
-                runningIds={runningIds}
-                attentionIds={attentionIds}
-                approvals={approvalQueue}
-                onRespondApproval={respondApprovalById}
-                onOpenSession={(id) => {
-                  setActiveId(id)
-                  setView('chat')
-                }}
-                onOpenAgentsView={() => setView('agents')}
-                onDeploy={deployAgent}
-              />
-            )}
             {view === 'planner' && (
               <PlannerView
                 accounts={accounts}
@@ -3794,7 +3700,7 @@ export default function App() {
       )}
       {/* Suppressed only where Chat renders the same request inline — which it does in
           chat mode alone. In terminal mode the chat pane is a terminal, so a run Argos
-          itself is driving (Planner, Rooms, a routine) has nowhere else to ask. */}
+          itself is driving (Planner, a routine) has nowhere else to ask. */}
       {secretQueue.length > 0 && (
         <SecretPrompt
           key={secretQueue[0].requestId}
@@ -3812,7 +3718,7 @@ export default function App() {
           onStop={stopHeadApproval}
         />
       )}
-      {secretQueue.length === 0 && !headIsPlan && view !== 'rooms' && approvalQueue.length > 0 && !(view === 'chat' && workMode === 'chat' && visibleIds.has(approvalQueue[0].appSessionId)) && !(view === 'ops-workspace' && opsChatVisibleId === approvalQueue[0].appSessionId) && (
+      {secretQueue.length === 0 && !headIsPlan && approvalQueue.length > 0 && !(view === 'chat' && workMode === 'chat' && visibleIds.has(approvalQueue[0].appSessionId)) && !(view === 'ops-workspace' && opsChatVisibleId === approvalQueue[0].appSessionId) && (
         <ApprovalModal
           request={approvalQueue[0]}
           onDecide={respondApproval}

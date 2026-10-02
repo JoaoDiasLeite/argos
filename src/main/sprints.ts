@@ -7,7 +7,7 @@ import type { BackfillKind } from './sprint-backfill-pure'
 import type { Forge } from './forge-pure'
 
 // A sprint is a multi-week Scrum artifact, stored as one JSON file per sprint keyed
-// by its id in userData/sprints (mirroring the agents.ts / planner.ts pattern). Unlike
+// by its id in userData/sprints (mirroring the planner.ts pattern). Unlike
 // WeekPlan (Monday-keyed), a sprint spans an arbitrary date range, so it gets its own
 // store rather than being embedded in the week planner.
 

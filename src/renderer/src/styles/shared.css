@@ -140,7 +140,6 @@ select.text-input { cursor: pointer; }
   color: var(--text-2);
 }
 .form-group.grow { flex: 1; }
-.form-group.icon-group { flex-shrink: 0; }
 
 /* The explanatory line under a control. Ten-odd components render one; its only
    definition used to sit in SettingsModal.css, which made every other user depend on

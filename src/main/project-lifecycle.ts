@@ -240,7 +240,7 @@ export async function moveProjectFolder(
     warnings.push(`the project map in ${src.claudeJsonPath} was not updated: ${(e as Error).message}`)
   }
 
-  // D. Pins, filing, rooms, and the records that name a project path.
+  // D. Pins, filing, and the records that name a project path.
   warnings.push(
     ...rekeyProjectPrefs({
       sourceId,

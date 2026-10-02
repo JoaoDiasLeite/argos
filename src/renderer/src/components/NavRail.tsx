@@ -15,8 +15,6 @@ export const ALL_VIEWS = [
   'home',
   'chat',
   'projects',
-  'agents',
-  'rooms',
   'planner',
   'scheduled',
   'usage',
@@ -64,21 +62,6 @@ const ICONS: Record<string, JSX.Element> = {
     <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
   ),
   projects: <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />,
-  agents: (
-    <>
-      <rect x="3" y="11" width="18" height="10" rx="2" />
-      <circle cx="12" cy="5" r="2" />
-      <path d="M12 7v4M8 16h.01M16 16h.01" />
-    </>
-  ),
-  rooms: (
-    <>
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <line x1="12" y1="3" x2="12" y2="21" />
-      <line x1="3" y1="12" x2="12" y2="12" />
-      <path d="M7 12v6M17 3v9" />
-    </>
-  ),
   planner: (
     <>
       <rect x="3" y="4" width="18" height="18" rx="2" />
@@ -143,7 +126,6 @@ export function groupOwnsView(group: ViewGroup, view: View): boolean {
 }
 
 export const VIEW_GROUPS: ViewGroup[] = [
-  { key: 'agents', label: 'Agents', members: ['agents', 'rooms'] },
   { key: 'planner', label: 'Planner', members: ['planner', 'scheduled'] },
   { key: 'servers', label: 'Servers', members: ['remote', 'ops', 'mcp'], extras: ['remote-session', 'ops-workspace'] }
 ]
@@ -154,16 +136,13 @@ type RailEntry =
   | { kind: 'single'; view: View; label: string }
   | { kind: 'group'; group: ViewGroup }
 
-// Agents is kept out of the rail for now — the view, its routing and everything that
-// reaches it from elsewhere are untouched, so putting the entry back is a matter of
-// restoring its line here.
 const RAIL: RailEntry[] = [
   { kind: 'single', view: 'home', label: 'Home' },
   { kind: 'single', view: 'chat', label: 'Chat' },
   { kind: 'single', view: 'projects', label: 'Projects' },
-  { kind: 'group', group: VIEW_GROUPS[1] },
+  { kind: 'group', group: VIEW_GROUPS[0] },
   { kind: 'single', view: 'usage', label: 'Usage' },
-  { kind: 'group', group: VIEW_GROUPS[2] }
+  { kind: 'group', group: VIEW_GROUPS[1] }
 ]
 
 export default function NavRail({

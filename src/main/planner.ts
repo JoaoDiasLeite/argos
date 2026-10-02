@@ -4,7 +4,7 @@ import * as path from 'path'
 import { readJsonFile } from './json-file'
 
 // A weekly plan is keyed by its Monday (ISO date, e.g. "2026-06-15") and stored
-// as one JSON file per week, mirroring the agents.ts pattern.
+// as one JSON file per week.
 
 export type Effort = 'light' | 'medium' | 'deep'
 

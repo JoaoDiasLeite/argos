@@ -64,34 +64,6 @@ export function setDistroHidden(distro: string, hidden: boolean): string[] {
   return next
 }
 
-// ─── Rooms layout (room order + custom names) ─────────────────────────────────
-
-export interface RoomsLayout {
-  /** Room keys (project path, or '__unassigned__') in the user's preferred order. */
-  order: string[]
-  /** Room key -> custom display name, overriding the default folder-name label. */
-  names: Record<string, string>
-}
-
-const DEFAULT_ROOMS_LAYOUT: RoomsLayout = { order: [], names: {} }
-
-export function getRoomsLayout(): RoomsLayout {
-  const raw = storeGet<Partial<RoomsLayout>>('rooms-layout', DEFAULT_ROOMS_LAYOUT)
-  return {
-    order: Array.isArray(raw?.order) ? raw.order.filter((k): k is string => typeof k === 'string') : [],
-    names:
-      raw && typeof raw.names === 'object' && raw.names !== null
-        ? Object.fromEntries(
-            Object.entries(raw.names).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-          )
-        : {}
-  }
-}
-
-export function setRoomsLayout(layout: RoomsLayout): void {
-  storeSet('rooms-layout', layout)
-}
-
 // ─── Project names (sidebar custom display names) ─────────────────────────────
 
 /**
@@ -249,23 +221,13 @@ export function forgetProjectPrefs(sourceId: string, encodedDir: string, realPat
   storeSet(FAVOURITES_KEY, favourites)
   const archived = getArchivedProjects().filter((k) => k !== key)
   storeSet(ARCHIVED_KEY, archived)
-  // `rooms-layout` is keyed by the project's real path rather than by
+  // `project-names` is keyed by the project's real path rather than by
   // `<sourceId>:<encodedDir>`, so it is cleared only when the caller could resolve
   // one. See `rekeyProjectPrefs` in project-prefs.ts for the full inventory of what
-  // names a project; these two lists plus this layout are what *filing* means, and
-  // filing for a directory that is gone is nothing but a ghost row waiting to
-  // reappear.
+  // names a project; filing for a directory that is gone is nothing but a ghost row
+  // waiting to reappear. The key is the renderer's projectKey() (separators unified to
+  // `/` as well as case-folded), so the match normalises the same way.
   if (realPath) {
-    const layout = getRoomsLayout()
-    const gone = realPath.replace(/[\\/]+$/, '').toLowerCase()
-    const matches = (k: string): boolean => k.replace(/[\\/]+$/, '').toLowerCase() === gone
-    setRoomsLayout({
-      order: layout.order.filter((k) => !matches(k)),
-      names: Object.fromEntries(Object.entries(layout.names).filter(([k]) => !matches(k)))
-    })
-    // `project-names` is keyed by the renderer's projectKey() (separators unified to
-    // `/` as well as case-folded), so the match has to normalise the same way rather
-    // than reusing `matches` above, which only strips a trailing separator.
     const goneNameKey = projectNameKey(realPath)
     const projectNames = getProjectNames()
     setProjectNames(Object.fromEntries(Object.entries(projectNames).filter(([k]) => k !== goneNameKey)))

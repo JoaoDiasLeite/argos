@@ -65,7 +65,7 @@
   overflow-wrap: anywhere;
 }
 
-/* One quiet line replacing the agent badge / remote pill / resumed icon. */
+/* One quiet line replacing the remote pill / resumed icon. */
 .chat-title-meta {
   display: flex;
   flex-wrap: wrap;

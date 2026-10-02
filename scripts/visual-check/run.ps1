@@ -4,7 +4,7 @@
   dir, seeded config + demo session) and screenshots it for visual verification.
 
 .PARAMETER View
-  Optional view to deep-link to after startup (chat, projects, agents, rooms,
+  Optional view to deep-link to after startup (chat, projects,
   planner, scheduled, usage, mcp, remote). Defaults to whatever the app opens on.
 
 .PARAMETER OutFile

@@ -80,7 +80,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     items: [
       { keys: ['Enter'], action: 'Send' },
       { keys: ['Shift', 'Enter'], action: 'New line' },
-      { keys: ['@'], action: 'Mention a file or agent', note: 'opens the picker' },
+      { keys: ['@'], action: 'Mention a file', note: 'opens the picker' },
       { keys: ['↑'], action: 'Previous item', note: 'while the picker is open' },
       { keys: ['↓'], action: 'Next item', note: 'while the picker is open' },
       { keys: ['Tab'], action: 'Accept the highlighted item', note: 'Enter does the same' },

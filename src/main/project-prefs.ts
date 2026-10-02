@@ -2,17 +2,15 @@ import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { readJsonFile, writeJsonFileAtomic } from './json-file'
-import { rekeyProjectKeys, rekeyProjectNames, rekeyProjectPath, rekeyRoomsLayout } from './project-move-pure'
+import { rekeyProjectKeys, rekeyProjectNames, rekeyProjectPath } from './project-move-pure'
 import {
   getArchivedProjects,
   getFavoriteProjects,
   getProjectNames,
-  getRoomsLayout,
   projectKey,
   setArchivedProjects,
   setFavoriteProjects,
-  setProjectNames,
-  setRoomsLayout
+  setProjectNames
 } from './store'
 
 /**
@@ -25,16 +23,14 @@ import {
  *
  *  1. `store.json` → `favoriteProjects`   — keyed `<sourceId>:<encodedDir>`
  *  2. `store.json` → `archivedProjects`   — same key shape
- *  3. `store.json` → `rooms-layout.order[]` — keyed by the project's real path
- *  4. `store.json` → `rooms-layout.names{}` — same
- *  5. `<userData>/sessions/*.json`  → `projectPath`
- *  6. `<userData>/scheduler/*.json` → `projectPath`
- *  7. `<userData>/sprints/*.json`   → `projectPath`
- *  8. the source's `.claude.json` → the `projects` object, keyed by real path —
+ *  3. `<userData>/sessions/*.json`  → `projectPath`
+ *  4. `<userData>/scheduler/*.json` → `projectPath`
+ *  5. `<userData>/sprints/*.json`   → `projectPath`
+ *  6. the source's `.claude.json` → the `projects` object, keyed by real path —
  *     handled by the caller in project-lifecycle.ts, because it needs the source's
  *     own config path. Listed here so the inventory is complete rather than
- *     accidentally seven items long.
- *  9. `store.json` → `project-names{}` — the sidebar's custom project display names,
+ *     accidentally five items long.
+ *  7. `store.json` → `project-names{}` — the sidebar's custom project display names,
  *     keyed by the renderer's `projectKey()` (case-folded, `/`-normalised path)
  *     rather than the real path, so matching on a move has to be case-insensitive too.
  *
@@ -104,11 +100,6 @@ export function rekeyProjectPrefs(args: {
     setArchivedProjects(rekeyProjectKeys(getArchivedProjects(), fromKey, toKey))
   } catch (e) {
     warnings.push(`archived projects: ${(e as Error).message}`)
-  }
-  try {
-    setRoomsLayout(rekeyRoomsLayout(getRoomsLayout(), fromPath, toPath))
-  } catch (e) {
-    warnings.push(`rooms layout: ${(e as Error).message}`)
   }
   try {
     setProjectNames(rekeyProjectNames(getProjectNames(), fromPath, toPath))
