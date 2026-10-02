@@ -416,7 +416,7 @@ export default function SettingsView({
                   <span className="srow-label">Model for background tasks</span>
                   <span className="help">Runs headless work: standup, sprint backfill and planner assist.</span>
                 </div>
-                <ModelPicker models={models} value={defaultModel} onChange={onSetDefaultModel} />
+                <ModelPicker models={models} value={defaultModel} onChange={onSetDefaultModel} variant="select" />
               </div>
 
               {ui && (

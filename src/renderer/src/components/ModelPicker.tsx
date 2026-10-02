@@ -4,6 +4,9 @@ import { ModelInfo } from '../types'
 import './ModelPicker.css'
 
 interface Props {
+  /** Drawn as a 4 px select (the value, a chevron at the right) instead of the chat-bar pill. */
+  variant?: 'select'
+
   models: ModelInfo[]
   value: string
   onChange: (modelId: string) => void
@@ -20,7 +23,7 @@ interface MenuPos {
   maxHeight: number
 }
 
-export default function ModelPicker({ models, value, onChange, compact, disabled }: Props) {
+export default function ModelPicker({ models, value, onChange, compact, disabled, variant }: Props) {
   const [open, setOpen] = useState(false)
   const [menuPos, setMenuPos] = useState<MenuPos | null>(null)
   const ref = useRef<HTMLDivElement>(null)
@@ -76,7 +79,7 @@ export default function ModelPicker({ models, value, onChange, compact, disabled
   const current = models.find((m) => value.startsWith(m.id)) ?? models[0]
 
   return (
-    <div className={`model-picker ${compact ? 'compact' : ''}`} ref={ref}>
+    <div className={`model-picker ${compact ? 'compact' : ''} ${variant === 'select' ? 'as-select' : ''}`} ref={ref}>
       <button className="model-picker-btn" onClick={toggle} disabled={disabled} aria-haspopup="listbox" aria-expanded={open}>
         <span className="model-picker-label">{current?.label ?? value}</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">

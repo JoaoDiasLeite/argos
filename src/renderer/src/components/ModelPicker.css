@@ -19,6 +19,23 @@
 .model-picker-btn:hover { background: var(--bg-hover); }
 .model-picker.compact .model-picker-btn { padding: 4px 8px; font-size: 12px; }
 
+/* The select variant (Settings): a 4 px input-shaped surface with the value and a chevron
+   at the right (SYSTEM-DESIGN.md §6). The menu keeps the look above. */
+.model-picker.as-select { width: 260px; flex-shrink: 0; }
+@media (max-width: 620px) { .model-picker.as-select { width: 100%; } }
+.model-picker.as-select .model-picker-btn {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px 0 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 400;
+}
+.model-picker.as-select .model-picker-btn:hover { background: var(--bg-1); border-color: var(--border-light); }
+.model-picker.as-select .model-picker-btn svg { margin-left: auto; color: var(--text-2); }
+.model-picker.as-select .model-picker-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .model-picker-menu {
   /* Positioning (fixed + viewport coords) comes inline from the component — the
      menu is portaled to <body> so scrollable ancestors can't clip it. z-index

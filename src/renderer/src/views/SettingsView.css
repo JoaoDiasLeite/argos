@@ -125,8 +125,7 @@
 .srow > .seg-control,
 .srow > .btn-ghost,
 .srow > .btn-primary,
-.srow > .text-input,
-.srow > .model-picker { flex-shrink: 0; }
+.srow > .text-input { flex-shrink: 0; }
 
 .settings-select { width: 220px; }
 .settings-date { width: 160px; }
@@ -148,22 +147,6 @@
 .settings-result.ok { color: var(--success); }
 .settings-result.err { color: var(--error); }
 
-/* The background-model picker is a select in this screen: a 4 px surface, the value, a
-   chevron at the right. Its menu keeps ModelPicker's own look. */
-.srow .model-picker { width: 260px; }
-.srow .model-picker-btn {
-  width: 100%;
-  height: 36px;
-  padding: 0 10px 0 12px;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-surface);
-  font-size: 13px;
-  font-weight: 400;
-}
-.srow .model-picker-btn:hover { background: var(--bg-1); border-color: var(--border-light); }
-.srow .model-picker-btn svg { margin-left: auto; color: var(--text-2); }
-.srow .model-picker-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Narrow window ──
    The nav gives up its column and becomes a scrolling strip along the top. Nothing
@@ -195,5 +178,5 @@
   .srow > .seg-control,
   .srow > .btn-ghost,
   .srow > .btn-primary { align-self: flex-start; }
-  .settings-select, .settings-date, .srow .model-picker { width: 100%; }
+  .settings-select, .settings-date { width: 100%; }
 }
