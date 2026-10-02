@@ -571,7 +571,9 @@ export default function SettingsView({
                     role="status"
                   >
                     {verifyResult.ok
-                      ? `Chain intact · ${verifyResult.lines} lines`
+                      ? verifyResult.lines === 0
+                        ? 'No entries for that day'
+                        : `Chain intact · ${verifyResult.lines} lines`
                       : verifyResult.brokenAt !== undefined
                         ? `Chain broken at line ${verifyResult.brokenAt}: ${verifyResult.reason}`
                         : `Chain broken: ${verifyResult.reason}`}

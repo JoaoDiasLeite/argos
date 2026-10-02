@@ -150,10 +150,10 @@ describe('ops ledger on disk', () => {
     expect(await ledger.verify('2026-03-05')).toMatchObject({ ok: false, brokenAt: 2 })
   })
 
-  it('verify refuses a bad date and a missing day', async () => {
+  it('verify refuses a bad date and reads a missing day as empty', async () => {
     const ledger = createLedger(dir)
     expect(await ledger.verify('05-03-2026')).toMatchObject({ ok: false })
-    expect(await ledger.verify('2026-01-01')).toMatchObject({ ok: false, reason: /No ledger file/ })
+    expect(await ledger.verify('2026-01-01')).toEqual({ ok: true, lines: 0 })
   })
 
   it('renders the internal report with the argv and the client report without it', async () => {
@@ -216,5 +216,13 @@ describe('ops ledger on disk', () => {
   it('reports an empty folder that does not exist yet', async () => {
     const missing = path.join(dir, 'not-yet')
     expect(await createLedger(missing).info()).toEqual({ dir: missing, files: 0, bytes: 0 })
+  })
+})
+
+describe('verify on a day with no file', () => {
+  it('is empty, not broken', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'argos-ledger-empty-'))
+    const ledger = createLedger(dir)
+    expect(await ledger.verify('2026-01-01')).toEqual({ ok: true, lines: 0 })
   })
 })

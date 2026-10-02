@@ -222,7 +222,9 @@ export default function OpsView({ onOpen }: Props) {
             {verifyResult && (
               <span className={`ops-view-verify${verifyResult.ok ? ' ok' : ' bad'}`} role="status">
                 {verifyResult.ok
-                  ? `Today intact · ${verifyResult.lines} lines`
+                  ? verifyResult.lines === 0
+                    ? 'No entries today yet'
+                    : `Today intact · ${verifyResult.lines} lines`
                   : verifyResult.brokenAt !== undefined
                     ? `Broken at line ${verifyResult.brokenAt}: ${verifyResult.reason}`
                     : `Broken: ${verifyResult.reason}`}

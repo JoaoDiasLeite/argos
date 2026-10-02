@@ -213,7 +213,8 @@ export function createLedger(dir: string): OpsLedger {
         try {
           return verifyChain(await fsp.readFile(fileFor(date), 'utf-8'))
         } catch (e) {
-          if (isMissing(e)) return { ok: false as const, reason: `No ledger file for ${date}.` }
+          // No file is no entries, not a broken chain: the day simply has not been written to.
+          if (isMissing(e)) return { ok: true as const, lines: 0 }
           return { ok: false as const, reason: `Could not read the ledger for ${date}: ${message(e)}` }
         }
       })
