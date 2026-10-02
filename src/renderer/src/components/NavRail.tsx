@@ -24,6 +24,11 @@ export const ALL_VIEWS = [
   'mcp',
   'remote',
   'remote-session',
+  'ops',
+  // A runbook's workspace, opened from the Ops list — an extra of the Servers group, like
+  // 'remote-session'. Reached by deep link it has no runbook to show and falls back to
+  // the list (see App.tsx).
+  'ops-workspace',
   // A full screen rather than a modal, so it is a view like any other — and being in
   // this list is what makes it reachable from a deep link. It is deliberately absent
   // from RAIL below: its entry lives at the bottom of the rail, next to Changelog,
@@ -113,6 +118,14 @@ const ICONS: Record<string, JSX.Element> = {
     <>
       <path d="M5 9l-3 3 3 3M19 9l3 3-3 3M14 4l-4 16" />
     </>
+  ),
+  // A clipboard with a checklist: a runbook is a list of steps someone signs off on.
+  ops: (
+    <>
+      <rect x="5" y="4" width="14" height="18" rx="2" />
+      <path d="M9 2h6v4H9z" />
+      <path d="m8.5 12 1.5 1.5 3-3M8.5 17.5h7" />
+    </>
   )
 }
 
@@ -136,7 +149,7 @@ export function groupOwnsView(group: ViewGroup, view: View): boolean {
 export const VIEW_GROUPS: ViewGroup[] = [
   { key: 'agents', label: 'Agents', members: ['agents', 'rooms'] },
   { key: 'planner', label: 'Planner', members: ['planner', 'scheduled'] },
-  { key: 'servers', label: 'Servers', members: ['remote', 'mcp'], extras: ['remote-session'] }
+  { key: 'servers', label: 'Servers', members: ['remote', 'ops', 'mcp'], extras: ['remote-session', 'ops-workspace'] }
 ]
 
 // A rail entry is either a standalone view or a group of views. Groups use the

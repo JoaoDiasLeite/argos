@@ -1,0 +1,159 @@
+/* ── OpsWorkspace.css ────────────────────────────────────────────────────────
+   One runbook's workspace: header, hosts strip, then the terminal (with the ops
+   timeline beside it) or the chat. Laid out like RemoteSessionView. Classes are
+   prefixed `ops-ws-`. ───────────────────────────────────────────────────────── */
+
+.ops-ws { padding: 0; }
+
+.ops-ws-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+  -webkit-app-region: drag;
+}
+.ops-ws-header > * { -webkit-app-region: no-drag; }
+.ops-ws-spacer { flex: 1; -webkit-app-region: drag; }
+
+.ops-ws-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ops-ws-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ops-ws-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
+  background: var(--bg-3);
+}
+.ops-ws-tag.strict { color: var(--accent); background: var(--accent-dim); }
+
+.ops-ws-guarantee {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-light);
+  white-space: nowrap;
+  cursor: help;
+}
+.ops-ws-guarantee.tools-and-local-shell {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+.ops-ws-guarantee.tools-only {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+
+.ops-ws-seg { flex-shrink: 0; }
+.ops-ws-seg button { padding: 5px 11px; font-size: 12px; }
+
+.ops-ws-hosts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+  font-size: 12.5px;
+  flex: 0 0 auto;
+}
+.ops-ws-host {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-0);
+}
+.ops-ws-host-name { font-weight: 500; }
+.ops-ws-pill {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--text-1);
+  background: var(--bg-3);
+}
+.ops-ws-muted { color: var(--text-2); }
+.ops-ws-bad { color: var(--error); }
+.ops-ws-warn { color: var(--warn); cursor: help; }
+
+.ops-ws-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-2);
+  flex-shrink: 0;
+}
+.ops-ws-dot.checking { animation: ops-ws-pulse 1.2s ease-in-out infinite; }
+.ops-ws-dot.ok { background: var(--success); }
+.ops-ws-dot.error { background: var(--error); }
+
+@keyframes ops-ws-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.ops-ws-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.ops-ws-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ops-ws-chat { background: var(--bg-0); }
+
+.ops-ws-state {
+  margin: auto;
+  max-width: 560px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-1);
+  white-space: pre-wrap;
+}
+.ops-ws-state.bad { color: var(--error); }
+
+.ops-ws-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  font-size: 12px;
+  color: var(--text-1);
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}

@@ -1,0 +1,148 @@
+/* ── OpsView.css ─────────────────────────────────────────────────────────────
+   Servers → Ops: the runbook list and the ledger line. Same capped, centred column
+   as the Remote & WSL list (RemoteView.css), so the two screens under Servers share
+   one left edge. Classes are prefixed `ops-view-`. ─────────────────────────── */
+
+.ops-view-col {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.ops-view-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ops-view-error {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--error) 22%, transparent);
+  border-radius: var(--radius-sm);
+}
+.ops-view-error ul { margin: 6px 0 0 18px; }
+
+.ops-view-empty {
+  padding: 28px 20px;
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius);
+  color: var(--text-1);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.ops-view-empty code,
+.ops-view-meta.mono {
+  font-family: var(--font-mono);
+}
+.ops-view-empty code { font-size: 12px; color: var(--text-0); }
+
+.ops-view-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+.ops-view-row-wrap {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.ops-view-row-wrap:last-child { border-bottom: none; }
+
+.ops-view-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 0 16px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.ops-view-row:hover { background: var(--bg-hover); }
+.ops-view-row.bad .ops-view-name { color: var(--text-1); }
+
+.ops-view-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text-0);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ops-view-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
+  background: var(--bg-3);
+}
+.ops-view-tag.strict {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.ops-view-detail {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 14px;
+}
+
+.ops-view-meta {
+  font-size: 12.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.ops-view-meta.warn { color: var(--warn); flex-shrink: 0; }
+.ops-view-meta.error { color: var(--error); }
+.ops-view-detail > .ops-view-meta:not(.mono) { flex-shrink: 0; }
+
+.ops-view-forget { margin-right: 12px; flex-shrink: 0; }
+
+.ops-view-ledger {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 22px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  font-size: 12.5px;
+  color: var(--text-1);
+}
+.ops-view-ledger-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  white-space: nowrap;
+}
+.ops-view-verify { flex-shrink: 0; }
+.ops-view-verify.ok { color: var(--success); }
+.ops-view-verify.bad { color: var(--error); }

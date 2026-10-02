@@ -12,6 +12,7 @@ import { imagePasteRoute } from '../lib/terminal-image-paste'
 import { registerTerminalLinks } from '../lib/terminal-links'
 import { terminalPathsText } from '../lib/terminal-file-paths'
 import { isTerminalReport } from '../lib/terminal-reports'
+import type { OpsTerminalLaunch } from '../lib/ops-terminal'
 import './ChatTerminal.css'
 
 interface Props {
@@ -81,6 +82,10 @@ interface Props {
    *  Read once, when the terminal is created — flipping it later does not move a live
    *  terminal between renderers. */
   accelerated?: boolean
+  /** An ops terminal (Ops workspace): the relay token env and MCP config main issued for
+   *  this launch, forwarded into `terminalCreate` as-is. Read when the pty is created, like
+   *  everything else here; a new launch is a remount. */
+  ops?: OpsTerminalLaunch
 }
 
 // The embedded terminal's palette lives in terminal-theme.ts, shared with
@@ -136,7 +141,7 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onOpenGit, onToggleReview, reviewOpen = false, onActive, initialPrompt, onInitialPromptSent, accelerated }: Props) {
+export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onOpenGit, onToggleReview, reviewOpen = false, onActive, initialPrompt, onInitialPromptSent, accelerated, ops }: Props) {
   // An explicit prop wins; otherwise the surrounding view decides (false by default).
   const accelFromContext = useContext(TerminalAccelContext)
   // The setup effect below runs once and cannot close over a prop that changes later, and
@@ -153,6 +158,8 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
   resumeRef.current = resumeSessionId
   const pinRef = useRef(pinSessionId)
   pinRef.current = pinSessionId
+  const opsRef = useRef(ops)
+  opsRef.current = ops
   // Auto-launch claude when the terminal opens; skipped for an explicit "Restart".
   const autoStartRef = useRef(true)
   const [exited, setExited] = useState(false)
@@ -715,6 +722,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         provider,
         resumeSessionId: resumeRef.current,
         pinSessionId: pinRef.current,
+        ...(opsRef.current ? { ops: opsRef.current } : {}),
         cols,
         rows
       })

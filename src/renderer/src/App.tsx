@@ -26,6 +26,7 @@ import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
 import ResizeHandles from './components/ResizeHandles'
 import PaneGrid from './components/PaneGrid'
+import ChatPane from './components/ChatPane'
 import { SessionPaneApi } from './hooks/useSessionPane'
 import TerminalPanel from './components/TerminalPanel'
 import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, groupOwnsView } from './components/NavRail'
@@ -97,6 +98,8 @@ const McpView = lazy(() => import('./views/McpView'))
 const PlannerView = lazy(() => import('./views/PlannerView'))
 const RemoteView = lazy(() => import('./views/RemoteView'))
 const RemoteSessionView = lazy(() => import('./views/RemoteSessionView'))
+const OpsView = lazy(() => import('./views/OpsView'))
+const OpsWorkspace = lazy(() => import('./views/OpsWorkspace'))
 const ScheduledView = lazy(() => import('./views/ScheduledView'))
 const SettingsView = lazy(() => import('./views/SettingsView'))
 const HomeView = lazy(() => import('./views/HomeView'))
@@ -194,7 +197,8 @@ const MEMBER_LABELS: Record<string, string> = {
   planner: 'Planner',
   scheduled: 'Routines',
   mcp: 'MCP',
-  remote: 'Remote & WSL'
+  remote: 'Remote & WSL',
+  ops: 'Ops'
 }
 
 // An open Remote/WSL "Connect" session, rendered as a persistent tab (see the
@@ -2934,6 +2938,35 @@ export default function App() {
     )
   }
 
+  // Servers → Ops. The workspace is an extra of the Servers group, like a Remote/WSL
+  // session; which runbook it shows lives here so the view itself stays a plain string.
+  const [opsWorkspace, setOpsWorkspace] = useState<{ runbookPath: string } | null>(null)
+  /** The ops chat the workspace has on screen in Chat mode — its approvals render inline
+   *  there, so the global modal steps aside for it as it does for the chat view. */
+  const [opsChatVisibleId, setOpsChatVisibleId] = useState<string | null>(null)
+  const openOpsWorkspace = (runbookPath: string) => {
+    setOpsWorkspace({ runbookPath })
+    setView('ops-workspace')
+  }
+  // The workspace's Chat mode: this runbook's ops chat, made the way connectOps makes one
+  // (Claude model, runbookPath set), or the newest existing one for the same runbook.
+  const openOpsChat = (runbookPath: string, name: string): string => {
+    const existing = sessions.find((s) => s.runbookPath === runbookPath)
+    if (existing) {
+      setActiveId(existing.id)
+      return existing.id
+    }
+    const model =
+      provOf(models, defaultModel) === 'claude' ? defaultModel : models.find((m) => m.provider === 'claude')?.id ?? defaultModel
+    const s = newSession(undefined, model, defaultAccountId)
+    s.name = `${name} (ops)`
+    s.runbookPath = runbookPath
+    setSessions((prev) => [s, ...prev])
+    setActiveId(s.id)
+    addTerm({ kind: 'info', text: `ops chat under ${runbookPath}` })
+    return s.id
+  }
+
   const connectWsl = (distro: string, cwd?: string) => {
     const s = newSession(cwd, defaultModel, defaultAccountId)
     s.name = `${distro} (WSL)`
@@ -3193,7 +3226,8 @@ export default function App() {
       { v: 'scheduled', label: 'Routines' },
       { v: 'usage', label: 'Usage' },
       { v: 'mcp', label: 'MCP' },
-      { v: 'remote', label: 'Remote & WSL' }
+      { v: 'remote', label: 'Remote & WSL' },
+      { v: 'ops', label: 'Ops' }
     ]
     for (const { v, label } of views) items.push({ id: `view:${v}`, title: `Go to ${label}`, group: 'Views', run: () => goToView(v) })
     items.push({ id: 'settings', title: 'Open Settings', group: 'Views', run: () => setView('settings') })
@@ -3585,7 +3619,9 @@ export default function App() {
           `flex: 1` — rendering both at once would split the content area between them.
           The session layer keeps the whole area to itself exactly as before; the way back
           out is its Back button or the Servers rail entry (see NavRail's onClickGroup). */}
-      {activeGroup && view !== 'remote-session' && (
+      {/* The Ops workspace takes the whole area the same way, once it has a runbook; a deep
+          link to it without one falls back to the Ops list inside the shell. */}
+      {activeGroup && view !== 'remote-session' && !(view === 'ops-workspace' && opsWorkspace) && (
         <div className="view-with-subnav">
           <div className="view-subnav">
             <div className="view-subnav-group">
@@ -3661,6 +3697,7 @@ export default function App() {
               />
             )}
             {view === 'mcp' && <McpView />}
+            {(view === 'ops' || view === 'ops-workspace') && <OpsView onOpen={openOpsWorkspace} />}
             {view === 'remote' && (
               <RemoteView
                 onConnect={connectRemote}
@@ -3675,6 +3712,21 @@ export default function App() {
             )}
           </Suspense>
         </div>
+      )}
+
+      {view === 'ops-workspace' && opsWorkspace && (
+        <Suspense fallback={<ViewLoading />}>
+          <OpsWorkspace
+            key={opsWorkspace.runbookPath}
+            runbookPath={opsWorkspace.runbookPath}
+            onBack={() => setView('ops')}
+            openChat={openOpsChat}
+            /* The chat pane as the chat view renders it, forced to chat mode: in terminal
+               work mode Chat would show its own terminal, which is not the ops SDK path. */
+            renderChat={(id) => <ChatPane sessionId={id} api={{ ...paneApi, workMode: 'chat' }} />}
+            onChatVisible={setOpsChatVisibleId}
+          />
+        </Suspense>
       )}
 
       {/* Always-mounted regardless of `view` (only the CSS display toggles) — this is what
@@ -3741,7 +3793,7 @@ export default function App() {
       )}
       {/* While a password is being asked, the approval modal waits: its window-level Esc would
           otherwise deny the call behind the prompt. */}
-      {secretQueue.length === 0 && view !== 'rooms' && approvalQueue.length > 0 && !(view === 'chat' && workMode === 'chat' && visibleIds.has(approvalQueue[0].appSessionId)) && (
+      {secretQueue.length === 0 && view !== 'rooms' && approvalQueue.length > 0 && !(view === 'chat' && workMode === 'chat' && visibleIds.has(approvalQueue[0].appSessionId)) && !(view === 'ops-workspace' && opsChatVisibleId === approvalQueue[0].appSessionId) && (
         <ApprovalModal
           request={approvalQueue[0]}
           onDecide={respondApproval}
