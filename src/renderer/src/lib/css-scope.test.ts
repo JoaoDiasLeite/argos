@@ -66,7 +66,6 @@ const BASELINE = [
   'account-picker-btn :: src/renderer/src/components/AccountPicker.css | src/renderer/src/views/PlannerView.css | src/renderer/src/views/SprintBoard.css',
   'assist-runwith-field :: src/renderer/src/views/PlannerView.css | src/renderer/src/views/SprintBoard.css',
   'cc-row-tag-btn :: src/renderer/src/components/SessionTags.css | src/renderer/src/views/ProjectsView.css',
-  'diff-view :: src/renderer/src/components/DiffView.css | src/renderer/src/components/MessageBubble.css',
   'model-picker-btn :: src/renderer/src/components/ModelPicker.css | src/renderer/src/views/PlannerView.css | src/renderer/src/views/SprintBoard.css',
   'peek :: src/renderer/src/components/SessionPeek.css | src/renderer/src/views/ProjectsView.css',
   'planner-label :: src/renderer/src/views/PlannerView.css | src/renderer/src/views/SprintBoard.css',

@@ -161,7 +161,7 @@
 }
 
 /* ── Sidebar action rows ──────────────────────────────────── */
-/* Full-width labelled rows (New chat / Quick chat) between the tab row and the
+/* Full-width labelled rows (New terminal) between the tab row and the
    chat list, replacing the pair of bare icon buttons that used to sit inline in
    the tabs. Quiet by default — they're primary actions, but the chat list below
    is what the eye should land on. */
@@ -459,7 +459,6 @@
   animation: session-dot-pulse 1.4s ease-in-out infinite;
 }
 .session-dot.attention { background: #e2b341; }
-.session-dot.error { background: var(--error); }
 
 @keyframes session-dot-pulse {
   0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }

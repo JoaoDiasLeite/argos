@@ -9,23 +9,14 @@
  * filter box, and the DOM paste event never fired at all. The report that surfaced it
  * was "I can't paste images", which sounded like an image problem and was not.
  *
- * So the keystroke is handled here instead, which is also what makes pasting an image
- * work: the composer's `onPaste` never ran, because there was no paste event to run
- * on.
+ * So the keystroke is handled here instead. Only text is inserted: an image on the
+ * clipboard has nowhere to go in a plain field (the chat composer that took one is gone;
+ * a terminal pastes images through its own path).
  *
  * Terminals are deliberately untouched. They have their own bracketed-paste-aware
  * path, and taking the keystroke away from them would reintroduce the raw double
  * paste from the other direction.
  */
-
-/** Dispatched on `window` when an image was pasted; the composer listens for it. */
-export const CLIPBOARD_IMAGE_EVENT = 'argos:clipboard-image'
-
-export interface ClipboardImageDetail {
-  mediaType: string
-  /** base64, no data: prefix. */
-  data: string
-}
 
 /** Is this element inside a terminal, which handles its own paste? */
 export function insideTerminal(el: Element | null): boolean {
@@ -111,12 +102,6 @@ export function installEditingKeys(): () => void {
     e.preventDefault()
 
     void window.electronAPI.clipboardRead().then((res) => {
-      if (res.image) {
-        window.dispatchEvent(
-          new CustomEvent<ClipboardImageDetail>(CLIPBOARD_IMAGE_EVENT, { detail: res.image })
-        )
-        return
-      }
       if (res.text) insertText(res.text)
     })
   }

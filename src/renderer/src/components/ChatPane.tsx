@@ -16,14 +16,15 @@ export default function ChatPane({
   sessionId: string
   api: SessionPaneApi
   /** Forwarded to `Chat` as-is — see its doc comment. Defaults to false there, so a plain
-   *  `<ChatPane sessionId api />` (single-pane case) keeps today's in-transcript title. */
+   *  `<ChatPane sessionId api />` (single-pane case) draws the name itself. */
   titleInHeader?: boolean
 }) {
   const props = useSessionPane(sessionId, api)
   // A pane pointed at a session that no longer exists (closed, or not loaded yet) renders
   // nothing rather than Chat's empty state — the empty state belongs to "no chat open".
   if (!props.session) return null
-  /* Deliberately NOT keyed by sessionId: Chat holds the unsent composer text in state, and
-     remounting per chat would throw away a draft every time you switch. */
+  /* Not keyed by sessionId, and it does not need to be: Chat tracks its setup-pane decision
+     per chat id itself, and keys its ChatTerminal by session id, so switching chats already
+     gives each one its own terminal. */
   return <Chat {...props} titleInHeader={titleInHeader} />
 }

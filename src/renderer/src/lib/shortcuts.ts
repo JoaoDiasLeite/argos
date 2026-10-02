@@ -48,7 +48,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     where: 'App.tsx — window keydown',
     items: [
       { keys: [MOD, 'K'], action: 'Command palette' },
-      { keys: [MOD, 'N'], action: 'New chat' },
+      { keys: [MOD, 'N'], action: 'New terminal' },
       { keys: [MOD, '/'], action: 'Show this list' },
       { keys: [MOD, '1'], action: 'Focus the first pane', note: '…2, 3 for the rest' },
       { keys: [MOD, 'Shift', 'W'], action: 'Close the focused pane', note: 'the chat itself is untouched' }
@@ -59,8 +59,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     where: 'main/overlay.ts, overlay/Overlay.tsx',
     items: [
       { keys: [OVERLAY_CHORD], action: 'Show or hide the launcher', note: 'works with Argos in the background' },
-      { keys: ['Enter'], action: 'Start a new chat' },
-      { keys: [MOD, 'Enter'], action: 'Start a quick chat', note: 'cheapest model' },
+      { keys: ['Enter'], action: 'Start a new terminal' },
       { keys: ['Esc'], action: 'Dismiss' }
     ]
   },
@@ -72,26 +71,6 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ['↓'], action: 'Next result' },
       { keys: ['Enter'], action: 'Run the highlighted result' },
       { keys: ['Esc'], action: 'Close' }
-    ]
-  },
-  {
-    title: 'Writing a message',
-    where: 'components/Chat.tsx — composer',
-    items: [
-      { keys: ['Enter'], action: 'Send' },
-      { keys: ['Shift', 'Enter'], action: 'New line' },
-      { keys: ['↑'], action: 'Previous item', note: 'while the picker is open' },
-      { keys: ['↓'], action: 'Next item', note: 'while the picker is open' },
-      { keys: ['Tab'], action: 'Accept the highlighted item', note: 'Enter does the same' },
-      { keys: ['Esc'], action: 'Close the picker' }
-    ]
-  },
-  {
-    title: 'Editing a sent message',
-    where: 'components/MessageBubble.tsx',
-    items: [
-      { keys: [MOD, 'Enter'], action: 'Save and resend' },
-      { keys: ['Esc'], action: 'Cancel the edit' }
     ]
   },
   {

@@ -68,9 +68,6 @@ interface Props {
   attentionIds: Set<string>
   tab: 'files' | 'sessions'
   onTabChange: (tab: 'files' | 'sessions') => void
-  /** The app's mode (ui.workMode). Read-only here — it is switched in Settings;
-   *  the sidebar only needs it to know what a chat currently is. */
-  mode: 'chat' | 'terminal'
   onSelectSession: (id: string) => void
   /** A conversation started (id) or stopped (null) being dragged toward the panes. */
   onSessionDrag?: (sessionId: string | null) => void
@@ -79,7 +76,6 @@ interface Props {
   /** Starts a new chat. Pass a folder path to scope it to a project's group (the
    *  per-group `+` button); the sidebar header `+` calls this with no argument. */
   onNewSession: (projectPath?: string) => void
-  onNewQuickChat?: () => void
   onDeleteSession: (id: string) => void
   /** Rename a chat. The name is the app's, but when the chat has a Claude Code session
    *  behind it the same title is written into that transcript too, so the two never
@@ -156,11 +152,9 @@ export default function Sidebar({
   attentionIds,
   tab,
   onTabChange,
-  mode,
   onSelectSession,
   onSessionDrag,
   onNewSession,
-  onNewQuickChat,
   onDeleteSession,
   onRenameSession,
   projectPath,
@@ -315,9 +309,9 @@ export default function Sidebar({
     if (path) onSetProject(path)
   }
 
-  // What starting one is called here, in the app's current mode — the same wording the
-  // welcome pane uses, so the two entry points to the same action don't disagree.
-  const newLabel = mode === 'terminal' ? 'New terminal' : 'New chat'
+  // What starting one is called here — the same wording the welcome pane uses, so the two
+  // entry points to the same action don't disagree. A chat is a terminal now.
+  const newLabel = 'New terminal'
 
   const authReady = auth
     ? auth.mode === 'api-key'
@@ -463,10 +457,9 @@ export default function Sidebar({
     return visibleSessions.filter((s) => {
       if (s.name?.toLowerCase().includes(q)) return true
       const base = s.projectPath?.split(/[\\/]/).filter(Boolean).pop()
-      if (base?.toLowerCase().includes(q)) return true
-      return s.messages.some(
-        (m) => (m.role === 'user' || m.role === 'assistant') && m.content?.toLowerCase().includes(q)
-      )
+      // Name and folder only: a terminal chat keeps no transcript of its own here, and
+      // Projects searches the CLI transcripts themselves (cc:search).
+      return !!base?.toLowerCase().includes(q)
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleSessions, searchQuery])
@@ -622,19 +615,15 @@ export default function Sidebar({
   // search view, where there's no group header to say which folder a hit belongs to.
   const renderSessionRow = (s: Session, showProject = false) => {
     if (renamingId === s.id) return renderRenameRow(s)
-    // Status dot: approval waiting > running > last-message error. At most one.
-    const lastMsg = s.messages[s.messages.length - 1]
+    // Status dot: approval waiting > running. At most one.
     const status = attentionIds.has(s.id)
       ? 'attention'
       : runningIds.has(s.id)
         ? 'running'
-        : lastMsg?.error
-          ? 'error'
-          : null
+        : null
     const statusTitle =
       status === 'attention' ? 'Waiting for approval'
-        : status === 'running' ? 'Running'
-          : status === 'error' ? 'Ended with an error' : undefined
+        : status === 'running' ? 'Running' : undefined
     const modelLabel = s.model && s.model !== defaultModel ? shortModelLabel(s.model) : null
     // Where it runs beats which account it carries: a chat inside a distro or on a remote
     // host runs against the CLI login that lives there, so naming the managed account it
@@ -655,9 +644,8 @@ export default function Sidebar({
         className={`session-row ${s.id === activeId ? 'active' : ''} ${status === 'running' ? 'running' : ''} ${status === 'attention' ? 'attention' : ''}`}
         onClick={() => onSelectSession(s.id)}
         /* Dragging the row opens the conversation in split view (see PaneGrid). The id goes
-           on a custom type, never on 'text/plain': the Chat composer accepts files dropped
-           on it and tells them apart by the drag's types — with a type of our own the two
-           gestures can never get confused. A plain click still works exactly as before. */
+           on a custom type, never on 'text/plain', so it can never be mistaken for a file or
+           text drag landing on a terminal. A plain click still works exactly as before. */
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData(SESSION_DRAG_TYPE, s.id)
@@ -877,9 +865,9 @@ export default function Sidebar({
           own full-width row with a name on it. */}
       {tab === 'sessions' && (
         <div className="sidebar-actions">
-          {/* In terminal mode a chat IS a terminal, and this row starts one without naming a
-              folder — which is now asked for rather than inherited (see the setup pane in
-              Chat.tsx). The name has to say what is about to happen. */}
+          {/* A chat IS a terminal, and this row starts one without naming a folder — which
+              is asked for rather than inherited (see the setup pane in Chat.tsx). The name
+              has to say what is about to happen. */}
           <button className="sidebar-action" onClick={() => onNewSession()} title={newLabel}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
               <line x1="12" y1="5" x2="12" y2="19" />
@@ -887,18 +875,6 @@ export default function Sidebar({
             </svg>
             {newLabel}
           </button>
-          {onNewQuickChat && mode === 'chat' && (
-            <button
-              className="sidebar-action"
-              onClick={onNewQuickChat}
-              title="Quick chat — runs on the cheapest model"
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-              </svg>
-              Quick chat
-            </button>
-          )}
         </div>
       )}
 

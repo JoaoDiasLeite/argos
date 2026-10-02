@@ -334,10 +334,12 @@ export default function SettingsView({
               <section className="settings-card">
                 <div className="settings-row">
                   <div className="settings-row-text">
-                    <span className="settings-row-label">Default model</span>
+                    <span className="settings-row-label">
+                      Model for background tasks (standup, sprint backfill, planner assist)
+                    </span>
                     <span className="settings-row-hint">
-                      New chats use this model. Change it per-chat from the header. Adaptive
-                      thinking, tools enabled (file edits auto-approved).
+                      What Argos runs headless work on. A terminal picks its own model with the
+                      CLI&rsquo;s /model.
                     </span>
                   </div>
                   <ModelPicker models={models} value={defaultModel} onChange={onSetDefaultModel} />
@@ -364,31 +366,6 @@ export default function SettingsView({
                           onClick={() => onSetUi({ density: 'compact' })}
                         >
                           Compact
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <span className="settings-row-label">Mode</span>
-                        <span className="settings-row-hint">
-                          Chat gives you Argos&rsquo;s own composer and transcript. Terminal runs
-                          every chat as the CLI itself — no composer, no Quick chat. Also on the
-                          toggle at the top of the sidebar.
-                        </span>
-                      </div>
-                      <div className="seg-control">
-                        <button
-                          className={ui.workMode === 'chat' ? 'on' : ''}
-                          onClick={() => onSetUi({ workMode: 'chat' })}
-                        >
-                          Chat
-                        </button>
-                        <button
-                          className={ui.workMode === 'terminal' ? 'on' : ''}
-                          onClick={() => onSetUi({ workMode: 'terminal' })}
-                        >
-                          Terminal
                         </button>
                       </div>
                     </div>

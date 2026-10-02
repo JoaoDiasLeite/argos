@@ -8,7 +8,6 @@ import './ApprovalModal.css'
 interface Props {
   request: ApprovalRequest
   onDecide: (allow: boolean) => void
-  inline?: boolean
   // "Deny and stop the run" - only offered when the caller wires it (ops requests).
   onStop?: () => void
 }
@@ -38,23 +37,22 @@ function OpsBody({ ops }: { ops: ApprovalOpsContext }) {
   )
 }
 
-export default function ApprovalModal({ request, onDecide, inline = false, onStop }: Props) {
+export default function ApprovalModal({ request, onDecide, onStop }: Props) {
   const { tool, input, ops } = request
   const dialogRef = useRef<HTMLDivElement>(null)
   // Esc is handled by the existing keydown handler (deny), so we pass escapeToClose: false
   // to avoid a double call. Focus trap + focus-restore still apply.
-  useModalA11y(dialogRef, () => onDecide(false), { escapeToClose: false, enabled: !inline })
+  useModalA11y(dialogRef, () => onDecide(false), { escapeToClose: false })
 
   // Keyboard: Enter = allow, Esc = deny.
   useEffect(() => {
-    if (inline) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onDecide(true)
       else if (e.key === 'Escape') onDecide(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onDecide, inline])
+  }, [onDecide])
 
   const filePath = str(input.file_path || input.path)
 
@@ -104,11 +102,11 @@ export default function ApprovalModal({ request, onDecide, inline = false, onSto
     tool === 'RemoteRun' ? 'start a remote run' : tool === 'Bash' ? 'run a command' : tool === 'Write' ? 'create / overwrite a file' : 'use a tool'
 
   return (
-    <div className={inline ? 'approval-inline' : 'modal-backdrop'}>
+    <div className="modal-backdrop">
       <div
         className="modal approval-modal"
-        role={inline ? 'region' : 'dialog'}
-        aria-modal={inline ? undefined : true}
+        role="dialog"
+        aria-modal
         aria-labelledby={`approval-${request.approvalId}`}
         tabIndex={-1}
         ref={dialogRef}
@@ -123,7 +121,7 @@ export default function ApprovalModal({ request, onDecide, inline = false, onSto
         <div className="approval-body">{renderBody()}</div>
         <div className="modal-footer approval-footer">
           <button className="btn-secondary" onClick={() => onDecide(false)}>
-            Deny {!inline && <span className="kbd">Esc</span>}
+            Deny <span className="kbd">Esc</span>
           </button>
           {ops && onStop && (
             <button className="btn-secondary approval-stop" onClick={onStop}>
@@ -131,7 +129,7 @@ export default function ApprovalModal({ request, onDecide, inline = false, onSto
             </button>
           )}
           <button className="btn-primary" onClick={() => onDecide(true)}>
-            Allow once {!inline && <span className="kbd">Ctrl/⌘↵</span>}
+            Allow once <span className="kbd">Ctrl/⌘↵</span>
           </button>
         </div>
       </div>

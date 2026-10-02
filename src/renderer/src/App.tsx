@@ -1,13 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
 import {
   Session,
-  Message,
-  ToolCall,
-  AgentEvent,
-  AgentDone,
-  AgentError,
   AuthStatus,
-  TermLine,
   ModelInfo,
   CCSessionMeta,
   ApprovalRequest,
@@ -15,7 +9,6 @@ import {
   ProviderAccountStatus,
   ProviderId,
   PlannerTask,
-  UsageLimits,
   PlanUsageReport,
   CcSessionTarget,
   LiveSession
@@ -24,9 +17,7 @@ import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
 import ResizeHandles from './components/ResizeHandles'
 import PaneGrid from './components/PaneGrid'
-import ChatPane from './components/ChatPane'
 import { SessionPaneApi } from './hooks/useSessionPane'
-import TerminalPanel from './components/TerminalPanel'
 import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, groupOwnsView } from './components/NavRail'
 import ServerTabs from './components/ServerTabs'
 import ApprovalModal from './components/ApprovalModal'
@@ -46,7 +37,6 @@ import ChangelogModal from './components/ChangelogModal'
 import ShortcutsModal from './components/ShortcutsModal'
 import { modLabel } from './lib/shortcuts'
 import { UiPrefs, UiPrefsPatch } from './types'
-import { sessionToReplaySeed } from './lib/markdown-export'
 import { provOf, acctOf, originOf, nextChatAfterClose, isUnstarted, AccountDefaults } from './lib/account-scope'
 import type {
   HomeAttention,
@@ -160,9 +150,6 @@ function newSession(projectPath?: string, model?: string, accountId?: string): S
     remoteHostName: wsl ? `WSL · ${wsl.distro}` : undefined,
     model,
     accountId,
-    // MCP off by default: loading every configured MCP server injects all their tool
-    // schemas into every turn's context. Toggle it on per-chat when a chat needs them.
-    useMcp: false,
     // Name the Claude Code session this chat would start in a terminal, here, at birth —
     // not later, from the chat pane. The terminal is created during the chat's first
     // render, and a session id patched in from an effect arrives after that spawn has
@@ -233,12 +220,6 @@ export default function App() {
   // A stable dependency for the effects below: `visibleIds` is a new Set whenever `panes`
   // changes identity, and React could not compare a Set anyway.
   const visibleKey = useMemo(() => [...visibleIds].sort().join('|'), [visibleIds])
-  const [compacting, setCompacting] = useState(false)
-  // Per-session run state: each id in the set has an agent run in flight. The main
-  // process already routes concurrent runs by appSessionId, so the renderer only
-  // needs to track which sessions are busy (no global mutex). Always update
-  // immutably via `new Set(prev)`.
-  const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
   /**
    * Terminal ids whose CLI is waiting on the user rather than working.
    *
@@ -250,8 +231,6 @@ export default function App() {
    * attentionIds reads it; it is filled beside the busy signal, far below.
    */
   const [waitingTerminalIds, setWaitingTerminalIds] = useState<Set<string>>(new Set())
-  const [terminalLines, setTerminalLines] = useState<TermLine[]>([])
-  const [terminalOpen, setTerminalOpen] = useState(false)
   const [changelogOpen, setChangelogOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -276,12 +255,13 @@ export default function App() {
     })
   // File opened from the sidebar's Files tab, shown in the FileEditor modal.
   const [openFilePath, setOpenFilePath] = useState<string | null>(null)
-  // Chats the user hid from the pending-requests bar; cleared per id when that run ends.
+  // Chats the user hid from the pending-requests bar; cleared per id when that chat next
+  // starts working (see the busy-transition effect below).
   const [dismissedRunIds, setDismissedRunIds] = useState<Set<string>>(new Set())
-  // Bumped every time we deliberately land on a new chat, so Chat can bring the composer
-  // forward even when the "open new chats in" pref is Terminal (see Chat's effect).
+  // Bumped every time we deliberately land on a new chat — part of the key Chat uses to
+  // decide whether to show its setup pane again (see Chat).
   // Per session, not one global counter: with several panes on screen a global bump would
-  // reach every pane at once and they would fight over the caret. The values come from a
+  // reach every pane at once. The values come from a
   // single shared sequence so that landing on chat B right after chat A still reads as a
   // change to the pane that followed you there (see useSessionPane).
   const [newChatNonces, setNewChatNonces] = useState<Record<string, number>>({})
@@ -314,14 +294,10 @@ export default function App() {
   const [models, setModels] = useState<ModelInfo[]>([])
   const [defaultModel, setDefaultModel] = useState('claude-opus-4-8')
   const [ui, setUi] = useState<UiPrefs | null>(null)
-  // Chat or terminal, for the whole app. Read in one place so every surface that has to
-  // change shape (the chat pane, the sidebar's actions, Home's start box, approvals)
-  // agrees on it — see ui-prefs-pure.ts for what the two modes mean.
-  const workMode = ui?.workMode ?? 'chat'
-  // Prompts waiting to be typed into a chat's terminal, by session id. In terminal mode
-  // "start this" cannot post a message into a transcript that does not exist, so the text
-  // is parked here and ChatTerminal types it into the CLI once that CLI is up. Cleared as
-  // soon as it is sent: a restart must not re-run the task.
+  // Prompts waiting to be typed into a chat's terminal, by session id. "Start this" has no
+  // transcript to post into, so the text is parked here and ChatTerminal types it into the
+  // CLI once that CLI is up. Cleared as soon as it is sent: a restart must not re-run the
+  // task.
   const [terminalPrompts, setTerminalPrompts] = useState<Record<string, string>>({})
   const clearTerminalPrompt = useCallback((sid: string) => {
     setTerminalPrompts((prev) => {
@@ -351,11 +327,6 @@ export default function App() {
   const [geminiDefaultAccountId, setGeminiDefaultAccountId] = useState('default')
   const [accountsOpen, setAccountsOpen] = useState(false)
   const [maximized, setMaximized] = useState(false)
-  const [limits, setLimits] = useState<UsageLimits>({ hourUsd: 0, sessionUsd: 0, weekUsd: 0 })
-  // Tracks which budget windows are currently over-limit, to avoid re-notifying on each turn.
-  const overLimitRef = useRef<{ hour: boolean; session: boolean; week: boolean }>({ hour: false, session: false, week: false })
-  // Inline banner: null = no banner, or a message string.
-  const [budgetBanners, setBudgetBanners] = useState<string[]>([])
   // Live plan usage pushed by the main-process watcher — feeds the sidebar badge.
   const [planReport, setPlanReport] = useState<PlanUsageReport | null>(null)
   // Codex plan-usage badge data, keyed by Codex account id — the Codex analog of
@@ -379,43 +350,11 @@ export default function App() {
   const seenKey = view === 'chat' ? visibleKey : ''
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
-  const limitsRef = useRef(limits)
-  limitsRef.current = limits
-  // Mirror of runningIds for listener callbacks registered once (same pattern as
-  // sessionsRef/activeIdRef). Kept in sync on every render.
-  const runningIdsRef = useRef(runningIds)
-  runningIdsRef.current = runningIds
   // Mirror of panes for the pane-focus keyboard shortcuts, registered once on mount
   // (same pattern as sessionsRef/activeIdRef).
   const panesRef = useRef(panes)
   panesRef.current = panes
 
-  // Add/remove a session id from the running set (immutable Set updates).
-  const startRun = useCallback((sid: string) => {
-    setSessions((prev) => prev.map((s) => s.id === sid ? { ...s, runState: 'running' } : s))
-    setRunningIds((prev) => {
-      const next = new Set(prev)
-      next.add(sid)
-      return next
-    })
-  }, [])
-  const endRun = useCallback((sid: string) => {
-    setSessions((prev) => prev.map((s) => s.id === sid ? { ...s, runState: 'idle' } : s))
-    setRunningIds((prev) => {
-      if (!prev.has(sid)) return prev
-      const next = new Set(prev)
-      next.delete(sid)
-      return next
-    })
-    // Dismissing a chat from the pending bar only hides that run. Forgetting it here means
-    // the chat's NEXT request shows up again rather than being silently suppressed forever.
-    setDismissedRunIds((prev) => {
-      if (!prev.has(sid)) return prev
-      const next = new Set(prev)
-      next.delete(sid)
-      return next
-    })
-  }, [])
   // Latest createSession, so the global ⌘N handler never calls a stale closure.
   // An optional projectPath overrides the inherited folder (used by --folder launches).
   const createSessionRef = useRef<(projectPath?: string) => void>(() => {})
@@ -465,23 +404,6 @@ export default function App() {
     setDismissedRunIds((prev) => new Set(prev).add(sid))
   }, [])
 
-  const ready = auth ? (auth.mode === 'api-key' ? auth.hasApiKey : auth.claudeCodeDetected || auth.hasApiKey) : false
-
-  const addTerm = useCallback((line: TermLine) => {
-    setTerminalLines((prev) => [...prev.slice(-499), line])
-  }, [])
-
-  // With concurrent runs, terminal lines from different sessions interleave. When
-  // more than one run is active, prefix each entry with the producing session's short
-  // name so lines are attributable. Cheap: just prepends to the text at the call site.
-  const addTermFor = useCallback((sid: string, line: TermLine) => {
-    if (runningIdsRef.current.size > 1) {
-      const name = sessionsRef.current.find((s) => s.id === sid)?.name || 'chat'
-      line = { ...line, text: `[${name.slice(0, 14)}] ${line.text}` }
-    }
-    setTerminalLines((prev) => [...prev.slice(-499), line])
-  }, [])
-
   const refreshAuth = useCallback(async () => {
     const status = await window.electronAPI.authStatus()
     setAuth(status)
@@ -520,7 +442,6 @@ export default function App() {
       setModels(models)
       setDefaultModel(config.defaultModel)
       setUi(config.ui)
-      setLimits(config.limits)
       applyUi(config.ui)
       // No auto-created blank draft: with no saved chats the main area shows the
       // welcome pane until the user explicitly starts one.
@@ -530,7 +451,7 @@ export default function App() {
       // the whole session.
       const restored = restore(saved.map((s) => s.id))
       if (saved.length > 0) {
-        setSessions(saved.map((s) => s.runState === 'running' ? { ...s, runState: 'interrupted' as const } : s))
+        setSessions(saved)
         // No panes came back (first run, or a wiped/invalid entry) — fall back to the
         // pre-panes behaviour of just focusing the first saved session.
         if (restored.panes.length === 0) {
@@ -552,8 +473,8 @@ export default function App() {
     })
   }, [])
 
-  // Persist partial output periodically, including continuous streams. A recovered
-  // running marker becomes "interrupted" on startup; no command is replayed.
+  // Persist changed sessions periodically (unread flags, names, links picked up by the
+  // terminal sync). The explicit saves elsewhere cover what must not wait for a tick.
   const savedSessionsRef = useRef(new Map<string, Session>())
   const [saveError, setSaveError] = useState('')
   useEffect(() => {
@@ -574,181 +495,11 @@ export default function App() {
     return () => clearInterval(timer)
   }, [])
 
-  const appendToLastAssistant = (sid: string, update: (m: Message) => Message) => {
-    setSessions((prev) =>
-      prev.map((s) => {
-        if (s.id !== sid) return s
-        const msgs = [...s.messages]
-        const last = msgs[msgs.length - 1]
-        if (last?.role === 'assistant') msgs[msgs.length - 1] = update(last)
-        return { ...s, messages: msgs }
-      })
-    )
-  }
-
-  // Agent event listeners
+  // Approval listeners — the queue is fed by ops runs (the gate in main), never by a chat.
   useEffect(() => {
-    const offEvent = window.electronAPI.onAgentEvent((data: AgentEvent) => {
-      const sid = data.appSessionId
-      if (data.kind === 'system') {
-        if (data.claudeSessionId) {
-          setSessions((prev) =>
-            prev.map((s) => (s.id === sid ? { ...s, claudeSessionId: data.claudeSessionId } : s))
-          )
-        }
-        addTermFor(sid, { kind: 'info', text: `session started · ${data.tools.length} tools available` })
-        return
-      }
-      if (data.kind === 'text') {
-        appendToLastAssistant(sid, (m) => ({ ...m, content: m.content + data.content }))
-        return
-      }
-      if (data.kind === 'thinking') {
-        addTermFor(sid, { kind: 'thinking', text: data.content })
-        appendToLastAssistant(sid, (m) => ({ ...m, thinking: (m.thinking ?? '') + data.content }))
-        return
-      }
-      if (data.kind === 'tool-use') {
-        const inputStr = typeof data.input === 'object' ? JSON.stringify(data.input) : String(data.input)
-        addTermFor(sid, { kind: 'tool', text: `${data.tool}(${inputStr.slice(0, 200)})` })
-        const call: ToolCall = { id: data.toolId, tool: data.tool, input: data.input }
-        appendToLastAssistant(sid, (m) => ({ ...m, toolCalls: [...(m.toolCalls ?? []), call] }))
-        return
-      }
-      if (data.kind === 'tool-result') {
-        addTermFor(sid, { kind: data.isError ? 'error' : 'result', text: data.content.slice(0, 300) || '(no output)' })
-        appendToLastAssistant(sid, (m) => ({
-          ...m,
-          toolCalls: (m.toolCalls ?? []).map((c) =>
-            c.id === data.toolId ? { ...c, result: data.content, isError: data.isError } : c
-          )
-        }))
-        return
-      }
-    })
-
-    const offDone = window.electronAPI.onAgentDone((data: AgentDone) => {
-      endRun(data.appSessionId)
-      if (data.isError && data.errorText) addTermFor(data.appSessionId, { kind: 'error', text: data.errorText })
-      addTermFor(data.appSessionId, { kind: 'info', text: `done · $${data.costUsd.toFixed(4)}` })
-
-      // Budget alerting — fetch fresh config + usage windows and check against limits.
-      // Fire-and-forget; non-blocking on the run flow. Any failure is swallowed so
-      // the post-run state updates (cost accounting, session save) always complete.
-      Promise.all([
-        window.electronAPI.ccUsage(false),
-        window.electronAPI.getConfig()
-      ]).then(([report, config]) => {
-        // Always sync limits state so the UI and future checks are fresh.
-        const freshLimits = config.limits
-        setLimits(freshLimits)
-        limitsRef.current = freshLimits
-
-        const win = report.windows
-        const over = overLimitRef.current
-        const newBanners: string[] = []
-
-        const check = (key: 'hour' | 'session' | 'week', costUsd: number, limit: number, label: string) => {
-          // Treat 0 / unset as "no limit for this window" — reset latch and skip.
-          if (!limit || limit <= 0) {
-            if (over[key]) over[key] = false
-            return
-          }
-          const exceeded = costUsd >= limit
-          if (exceeded && !over[key]) {
-            // Crossing from under → over: fire notification once and latch.
-            over[key] = true
-            window.electronAPI.notify(
-              `Budget limit reached: ${label}`,
-              `You've spent $${costUsd.toFixed(2)} this ${label.toLowerCase()} (limit $${limit.toFixed(2)}).`
-            )
-          } else if (!exceeded && over[key]) {
-            // Usage dropped back under (new period rolled over) — re-arm the latch.
-            over[key] = false
-          }
-          if (exceeded) newBanners.push(`${label} budget exceeded: $${costUsd.toFixed(2)} / $${limit.toFixed(2)}`)
-        }
-
-        check('hour', win.hour.costUsd, freshLimits.hourUsd, 'Hour')
-        check('session', win.session.costUsd, freshLimits.sessionUsd, 'Session')
-        check('week', win.week.costUsd, freshLimits.weekUsd, 'Week')
-        // Replace (not accumulate) banners — prevents stacking duplicates across turns.
-        setBudgetBanners(newBanners)
-      }).catch(() => { /* usage fetch failure is non-fatal — silently swallow */ })
-      if (!document.hasFocus()) {
-        const sess = sessionsRef.current.find((s) => s.id === data.appSessionId)
-        const where = sess?.name ? `“${sess.name}”` : 'chat'
-        window.electronAPI.notify(
-          data.isError ? 'Claude run failed' : 'Claude finished',
-          data.isError ? data.errorText || 'The run ended with an error.' : `${where} is ready.`
-        )
-      }
-      const turnUsage = {
-        inputTokens: data.inputTokens ?? 0,
-        outputTokens: data.outputTokens ?? 0,
-        cacheReadTokens: data.cacheReadTokens ?? 0,
-        cacheCreationTokens: data.cacheCreationTokens ?? 0,
-        costUsd: data.costUsd ?? 0
-      }
-      setSessions((prev) => {
-        const updated = prev.map((s) => {
-          if (s.id !== data.appSessionId) return s
-          // Attach this turn's usage to the last assistant message.
-          let lastAssistant = -1
-          for (let i = s.messages.length - 1; i >= 0; i--) {
-            if (s.messages[i].role === 'assistant') {
-              lastAssistant = i
-              break
-            }
-          }
-          const messages =
-            lastAssistant >= 0
-              ? s.messages.map((m, i) => (i === lastAssistant ? { ...m, usage: turnUsage } : m))
-              : s.messages
-          return {
-            ...s,
-            messages,
-            claudeSessionId: data.claudeSessionId ?? s.claudeSessionId,
-            updatedAt: Date.now(),
-            costUsd: (s.costUsd ?? 0) + (data.costUsd ?? 0),
-            inputTokens: (s.inputTokens ?? 0) + (data.inputTokens ?? 0),
-            outputTokens: (s.outputTokens ?? 0) + (data.outputTokens ?? 0),
-            cacheReadTokens: (s.cacheReadTokens ?? 0) + (data.cacheReadTokens ?? 0),
-            cacheCreationTokens: (s.cacheCreationTokens ?? 0) + (data.cacheCreationTokens ?? 0),
-            // The turn finished while this chat wasn't on screen — same signal as a
-            // terminal chat's transcript catching up in the background. Visibility, not
-            // focus: a run that finished in a pane you were watching is not news.
-            ...(!seenIdsRef.current.has(s.id) ? { unread: true } : {})
-          }
-        })
-        const session = updated.find((s) => s.id === data.appSessionId)
-        if (session) window.electronAPI.saveSession(session)
-        return updated
-      })
-    })
-
-    const offErr = window.electronAPI.onAgentError((data: AgentError) => {
-      endRun(data.appSessionId)
-      addTermFor(data.appSessionId, { kind: 'error', text: data.error })
-      appendToLastAssistant(data.appSessionId, (m) => ({
-        ...m,
-        content: m.content || `Error: ${data.error}`,
-        error: true
-      }))
-      if (!document.hasFocus()) window.electronAPI.notify('Claude run failed', data.error.slice(0, 120))
-    })
-
     const offApproval = window.electronAPI.onApprovalRequest((data: ApprovalRequest) => {
       approvalSinceRef.current.set(data.approvalId, Date.now())
       setApprovalQueue((prev) => [...prev, data])
-    })
-
-    // A git worktree was created for a `useWorktree` chat — persist its path so later
-    // turns (and the embedded terminal) reuse it instead of re-creating one each send.
-    const offWorktree = window.electronAPI.onAgentWorktree((data) => {
-      setSessions((prev) =>
-        prev.map((s) => (s.id === data.appSessionId ? { ...s, worktreePath: data.path } : s))
-      )
     })
 
     // An approval answered elsewhere (e.g. the always-on-top toast while this
@@ -759,24 +510,18 @@ export default function App() {
     })
 
     return () => {
-      offEvent()
-      offDone()
-      offErr()
       offApproval()
-      offWorktree()
       offResolved()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Answer a specific queued approval by id: send the response, prune it from the
-  // queue, and log against its own session. Used by the inline chat approval and
-  // (via respondApproval) the head-of-queue global modal.
+  // queue. Used by the head-of-queue global modal (via respondApproval).
   const respondApprovalById = (approvalId: string, allow: boolean) => {
     const req = approvalQueue.find((r) => r.approvalId === approvalId)
     if (!req) return
     window.electronAPI.respondApproval({ approvalId, allow })
-    addTermFor(req.appSessionId, { kind: allow ? 'info' : 'error', text: `${allow ? 'allowed' : 'denied'} ${req.tool}` })
     approvalSinceRef.current.delete(approvalId)
     setApprovalQueue((prev) => prev.filter((r) => r.approvalId !== approvalId))
   }
@@ -786,7 +531,6 @@ export default function App() {
     const req = approvalQueue.find((r) => r.approvalId === approvalId)
     if (!req) return
     window.electronAPI.respondApproval({ approvalId, allow: false, stop: true })
-    addTermFor(req.appSessionId, { kind: 'error', text: `denied ${req.tool} and stopped the run` })
     approvalSinceRef.current.delete(approvalId)
     setApprovalQueue((prev) => prev.filter((r) => r.approvalId !== approvalId))
   }
@@ -797,164 +541,12 @@ export default function App() {
     if (head) respondApprovalById(head.approvalId, allow)
   }
 
-  // Shared helper — builds the sendAgent payload from a session + prompt.
-  // Both sendMessage, retryTurn, and editAndResend call this so params stay identical.
-  const buildAgentPayload = useCallback(
-    (
-      session: Session,
-      text: string,
-      images?: { mediaType: string; data: string }[],
-      files?: { name: string; content: string }[]
-    ) => ({
-      appSessionId: session.id,
-      claudeSessionId: session.claudeSessionId,
-      prompt: text,
-      projectPath: session.projectPath,
-      model: session.model || defaultModel,
-      systemPrompt: session.systemPrompt,
-      permissionMode: session.permissionMode,
-      // Light mode = no tools at all (drops tool schemas from every turn) and full
-      // settings isolation in the main process (drops global plugins/skills too).
-      allowedTools: session.lightMode ? [] : session.allowedTools,
-      useMcp: session.lightMode ? false : session.useMcp ?? false,
-      lightMode: session.lightMode ?? false,
-      approvalMode: (session.autoApprove ? 'auto' : 'ask') as 'auto' | 'ask',
-      images,
-      files,
-      remoteHostId: session.remoteHostId,
-      wslDistro: session.wslDistro,
-      additionalDirs: session.additionalDirs,
-      useWorktree: session.useWorktree,
-      worktreePath: session.worktreePath,
-      accountId: session.accountId ?? defaultAccountId,
-      // Falls back to the current Codex default account, mirroring the sidebar's
-      // acctOf (src/renderer/src/lib/account-scope.ts) — an unbound Codex chat must
-      // run on the same account it's filed/scoped under, not the literal 'default'.
-      codexAccountId: session.codexAccountId ?? codexDefaultAccountId,
-      geminiAccountId: session.geminiAccountId,
-      runbookPath: session.runbookPath
-    }),
-    [defaultModel, defaultAccountId, codexDefaultAccountId]
-  )
-
-  const sendMessage = useCallback(
-    (
-      sid: string,
-      text: string,
-      images?: { mediaType: string; data: string }[],
-      files?: { name: string; content: string }[],
-      imageThumbnails?: string[]
-    ) => {
-      const session = sessions.find((s) => s.id === sid)
-      if (!session || runningIds.has(session.id)) return
-
-      // The transcript shows only the filenames of attached files; the full content
-      // rides along in the prompt (see main/index.ts buildPrompt), never in
-      // message.content — keeps stored sessions and future re-sends light.
-      // NOTE: edited-resend re-sends text only and will NOT re-attach these files.
-      const displayContent = files && files.length
-        ? `${text}\n\n📎 attached: ${files.map((f) => f.name).join(', ')}`
-        : text
-
-      // The thumbnails ride on the message, the full-size images only on the payload:
-      // the transcript shows what was sent without the session file carrying it.
-      const userMsg: Message = {
-        id: generateId(),
-        role: 'user',
-        content: displayContent,
-        timestamp: Date.now(),
-        ...(imageThumbnails?.length ? { imageThumbnails } : {})
-      }
-      const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
-
-      const updated: Session = {
-        ...session,
-        name: session.messages.length === 0 && session.name === 'New chat' ? text.slice(0, 40) : session.name,
-        messages: [...session.messages, userMsg, assistantMsg],
-        // Argos's own record takes over from here — the terminal sync must not
-        // re-import over it and lose this turn's streaming state.
-        ccSynced: false,
-        updatedAt: Date.now()
-      }
-
-      setSessions((prev) => prev.map((s) => (s.id === session.id ? updated : s)))
-      startRun(session.id)
-      setTerminalOpen(true)
-      addTermFor(session.id, { kind: 'user', text: text.slice(0, 120) })
-
-      window.electronAPI.sendAgent(buildAgentPayload(session, text, images, files))
-    },
-    [sessions, runningIds, startRun, addTermFor, buildAgentPayload]
-  )
-
-  // Retry the last failed turn: reset the trailing assistant message and re-send
-  // the last user message's content. Uses a ref so the listener-registered callback
-  // always sees current state (same pattern as createSessionRef).
-  const retryTurnRef = useRef<(sid: string) => void>(() => {})
-  const retryTurn = useCallback((sid: string) => {
-    const session = sessionsRef.current.find((s) => s.id === sid)
-    if (!session || runningIdsRef.current.has(sid)) return
-
-    // Find the last user message that precedes the failed assistant message.
-    const msgs = session.messages
-    const lastUserIdx = msgs.map((m) => m.role).lastIndexOf('user')
-    if (lastUserIdx === -1) return
-    const lastUserMsg = msgs[lastUserIdx]
-
-    // Reset the trailing assistant message in-place (clear error state).
-    const freshAssistant: Message = {
-      ...msgs[msgs.length - 1],
-      content: '',
-      toolCalls: [],
-      thinking: undefined,
-      error: false
-    }
-    const nextMsgs = [...msgs.slice(0, msgs.length - 1), freshAssistant]
-    setSessions((prev) =>
-      prev.map((s) => (s.id === sid ? { ...s, messages: nextMsgs } : s))
-    )
-
-    startRun(sid)
-    setTerminalOpen(true)
-    addTermFor(sid, { kind: 'info', text: 'retrying…' })
-
-    // Re-run sends text only — original images are not persisted on Message.
-    window.electronAPI.sendAgent(buildAgentPayload(session, lastUserMsg.content))
-  }, [startRun, addTermFor, buildAgentPayload])
-  retryTurnRef.current = retryTurn
-
-  // Edit a user message and resend: truncates history to before that message,
-  // then appends a fresh user + assistant pair with the new text.
-  const editAndResend = useCallback(
-    (sid: string, messageId: string, newText: string) => {
-      if (!newText.trim()) return
-      const session = sessionsRef.current.find((s) => s.id === sid)
-      if (!session || runningIdsRef.current.has(sid)) return
-
-      const idx = session.messages.findIndex((m) => m.id === messageId)
-      if (idx === -1) return
-
-      const userMsg: Message = { id: generateId(), role: 'user', content: newText.trim(), timestamp: Date.now() }
-      const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
-
-      const nextMsgs = [...session.messages.slice(0, idx), userMsg, assistantMsg]
-      setSessions((prev) =>
-        prev.map((s) => (s.id === sid ? { ...s, messages: nextMsgs, updatedAt: Date.now() } : s))
-      )
-
-      startRun(sid)
-      setTerminalOpen(true)
-      addTermFor(sid, { kind: 'user', text: newText.trim().slice(0, 120) })
-
-      // Re-run sends text only — original images are not persisted on Message.
-      window.electronAPI.sendAgent(buildAgentPayload(session, newText.trim()))
-    },
-    [startRun, addTermFor, buildAgentPayload]
-  )
-
-  // Launch a new chat from the quick-launcher overlay (global shortcut) or tray.
-  // If a run is already in progress or auth is missing, the prompt is preserved as a
-  // failed turn (error + Retry) instead of being silently dropped.
+  // Launch a new terminal chat from the quick-launcher overlay (global shortcut), the tray,
+  // Home's start box or the planner. The chat is created with its folder, model and account
+  // decided here — they are what the CLI launches under — and the prompt is handed to the
+  // terminal to type once the CLI is up. `ready` is not consulted: signing in is the CLI's
+  // business. The overlay's old `quick` flag is ignored.
+  // TODO(B3b): becomes `startTerminal({ prompt, projectPath, provider, accountId, name })`.
   const startOverlayPrompt = useCallback(
     (payload: {
       prompt: string
@@ -965,60 +557,25 @@ export default function App() {
       projectPath?: string
       modelId?: string
       accountId?: string
+      /** The chat's name; the prompt's first 40 characters when absent. */
+      name?: string
     }) => {
       const prompt = payload.prompt.trim()
       if (!prompt) return
       const base = sessionsRef.current.find((s) => s.id === activeIdRef.current)
       const s = newSession(
         payload.projectPath ?? base?.projectPath,
-        payload.modelId ?? (payload.quick ? 'claude-haiku-4-5' : defaultModel),
+        payload.modelId ?? defaultModel,
         payload.accountId ?? base?.accountId ?? defaultAccountId
       )
-      s.name = prompt.slice(0, 40)
-
-      // Terminal mode: no transcript to post into and no run for Argos to drive. The chat
-      // is created the same way — folder, model and account all still decided here, and
-      // they are what the CLI launches under — and the prompt is handed to the terminal to
-      // type. `ready` is not consulted: signing in is the CLI's business in this mode.
-      if (workMode === 'terminal') {
-        setSessions((prev) => [s, ...prev])
-        setActiveId(s.id)
-        setView('chat')
-        setTerminalPrompts((prev) => ({ ...prev, [s.id]: prompt }))
-        window.electronAPI.saveSession(s)
-        return
-      }
-
-      const userMsg: Message = { id: generateId(), role: 'user', content: prompt, timestamp: Date.now() }
-      const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
-
-      // Each overlay prompt starts a FRESH session, so other in-flight runs no longer
-      // block it — concurrent runs are supported. Only missing auth blocks, and only
-      // Anthropic auth: a Codex or Antigravity run has nothing to do with `ready`, and
-      // used to be refused on a signed-out Claude.
-      const runModelId = s.model ?? defaultModel
-      const runProvider = models.find((m) => runModelId.startsWith(m.id))?.provider ?? 'claude'
-      const blocked =
-        runProvider === 'claude' && !ready
-          ? 'Not signed in — connect Claude Code or an API key in Settings, then press Retry.'
-          : null
-
-      s.messages = blocked
-        ? [userMsg, { ...assistantMsg, content: blocked, error: true }]
-        : [userMsg, assistantMsg]
+      s.name = (payload.name ?? prompt).slice(0, 40)
       setSessions((prev) => [s, ...prev])
       setActiveId(s.id)
       setView('chat')
-      if (blocked) {
-        window.electronAPI.saveSession(s)
-        return
-      }
-      startRun(s.id)
-      setTerminalOpen(true)
-      addTermFor(s.id, { kind: 'user', text: prompt.slice(0, 120) })
-      window.electronAPI.sendAgent(buildAgentPayload(s, prompt))
+      setTerminalPrompts((prev) => ({ ...prev, [s.id]: prompt }))
+      window.electronAPI.saveSession(s)
     },
-    [defaultModel, defaultAccountId, ready, workMode, startRun, addTermFor, buildAgentPayload]
+    [defaultModel, defaultAccountId]
   )
   const startOverlayPromptRef = useRef(startOverlayPrompt)
   startOverlayPromptRef.current = startOverlayPrompt
@@ -1082,37 +639,27 @@ export default function App() {
     return map
   }, [planReport])
 
-  // Stop only the ACTIVE session's run. agent:stop takes the appSessionId and aborts
-  // just that run's AbortController in the main process, leaving other runs untouched.
-  const stopRun = useCallback(async (sid: string) => {
-    await window.electronAPI.stopAgent(sid)
-    endRun(sid)
-    addTermFor(sid, { kind: 'info', text: 'stopped' })
-  }, [endRun, addTermFor])
-
   // projectPath, when a string, overrides the folder normally inherited from the
   // active session (e.g. an Explorer "Open with Argos" or Jump List launch).
   // The `typeof` guard lets this double as a plain onClick handler — a click event
   // arg is ignored rather than mistaken for a folder path.
-  // An unused chat: no messages, and never driven through the embedded terminal either.
+  // An unused chat: never driven through the embedded terminal (see isUnstarted).
   // Preferring the active one keeps you where you are when it already qualifies.
   const blankDraft = (): Session | undefined => {
-    const unused = (s: Session) => s.messages.length === 0 && !s.hasTerminalActivity
-    if (activeSession && unused(activeSession)) return activeSession
-    return sessions.find(unused)
+    if (activeSession && isUnstarted(activeSession)) return activeSession
+    return sessions.find(isUnstarted)
   }
 
   const createSession = (projectPath?: unknown) => {
     const folder = typeof projectPath === 'string' ? projectPath : undefined
-    // Terminal mode, and no folder named by whoever asked (the sidebar's own New terminal
-    // row, the welcome pane, the command palette): don't infer one. A terminal is a CLI
-    // process that starts where it is told and cannot be moved afterwards, so inheriting
-    // the folder from whichever chat happened to be open is a guess the user is left to
-    // discover. Chat.tsx asks instead (see needsTerminalSetup). Chat mode keeps inheriting:
-    // there the folder is on show in the config bar under the composer, and repointing it
-    // costs nothing. A folder that WAS named — a project group's "+", "Open with Argos",
-    // Home's start box — is a choice already made, and skips the question.
-    const ask = workMode === 'terminal' && !folder
+    // No folder named by whoever asked (the sidebar's own New terminal row, the welcome
+    // pane, the command palette): don't infer one. A terminal is a CLI process that starts
+    // where it is told and cannot be moved afterwards, so inheriting the folder from
+    // whichever chat happened to be open is a guess the user is left to discover. Chat.tsx
+    // asks instead (see needsTerminalSetup). A folder that WAS named — a project group's
+    // "+", "Open with Argos", Home's start box — is a choice already made, and skips the
+    // question.
+    const ask = !folder
     // An untouched draft IS the new chat — a chat only earns its own row once it has been
     // used. So reuse a blank one rather than stacking another, repointing it at whichever
     // folder was asked for so a project group's "+" still lands you inside that project.
@@ -1167,8 +714,8 @@ export default function App() {
     setSessions((prev) => [s, ...prev])
     setActiveId(s.id)
     setView('chat')
-    // Bump the nonce so the chat pane greets the new draft (composer highlight + focus)
-    // the same way it does for every other New chat entry point.
+    // Bump the nonce so the chat pane asks its setup question afresh, the same way it does
+    // for every other New terminal entry point.
     bumpNewChatNonce(s.id)
   }
   createSessionRef.current = createSession
@@ -1176,22 +723,17 @@ export default function App() {
   // Navigation from the nav rail / command palette, as opposed to the setView calls that
   // already pick a specific chat to land on (createSession, pickAccount, …).
   //
-  // Arriving at the chat view creates nothing. It used to land you on a new chat, which
-  // read as convenience while a chat was just a blank composer — but a chat is a real
-  // thing (in terminal mode, a CLI process starting in some folder), and spawning one
-  // every time you passed through the view is not something anyone asked for. A chat is
-  // created when you press New chat, and only then.
+  // Arriving at the chat view creates nothing. A chat is a real thing — a CLI process
+  // starting in some folder — and spawning one every time you passed through the view is
+  // not something anyone asked for. A chat is created when you press New terminal, and
+  // only then.
   //
-  // What you get instead: the chat you were in if it has anything in it, and otherwise
-  // the welcome pane — start one, or pick one from the sidebar. An untouched draft is
-  // let go of rather than deleted: it stays available for the next New chat to reuse
-  // (see blankDraft), it just stops being what the view opens on.
-  //
-  // Terminal mode goes further: the view always opens on the welcome pane, whatever was
-  // last active. A terminal is a live CLI process, and dropping back into one you left
-  // running — at whatever prompt or half-typed command it sits on — is not what pressing
-  // Chat in the rail asks for. The terminal keeps running and stays one click away in the
-  // sidebar; the rail entry means "New terminal, or pick one".
+  // What you get instead: the welcome pane, whatever was last active. A terminal is a live
+  // CLI process, and dropping back into one you left running — at whatever prompt or
+  // half-typed command it sits on — is not what pressing Chat in the rail asks for. The
+  // terminal keeps running and stays one click away in the sidebar; the rail entry means
+  // "New terminal, or pick one". An untouched draft is let go of rather than deleted: it
+  // stays available for the next New terminal to reuse (see blankDraft).
   const goToView = (v: View) => {
     // Chat pressed while already in Chat: nothing to navigate to, so the click shows or
     // hides the chat list — the way to get it back once it is collapsed.
@@ -1200,33 +742,11 @@ export default function App() {
       return
     }
     if (v === 'chat' && view !== 'chat') {
-      const active = sessions.find((s) => s.id === activeIdRef.current)
-      const unused = active && active.messages.length === 0 && !active.hasTerminalActivity
-      if (workMode === 'terminal' || unused) setActiveId('')
+      setActiveId('')
       setView('chat')
       return
     }
     setView(v)
-  }
-
-  // Quick chat: forces the current provider's cheapest model for throwaway / trivial questions.
-  const createQuickChat = () => {
-    const model = cheapestModelForProvider(defaultProvider) ?? defaultModel
-    // Same draft reuse as createSession, but the point of a quick chat is the model, so a
-    // reused draft gets switched onto it.
-    const draft = blankDraft()
-    if (draft) {
-      setSessions((prev) => prev.map((s) => (s.id === draft.id ? { ...s, model } : s)))
-      setActiveId(draft.id)
-      setView('chat')
-      bumpNewChatNonce(draft.id)
-      return
-    }
-    const s = newSession(activeSession?.projectPath, model, activeSession?.accountId ?? defaultAccountId)
-    setSessions((prev) => [s, ...prev])
-    setActiveId(s.id)
-    setView('chat')
-    bumpNewChatNonce(s.id)
   }
 
   const deleteSession = async (id: string) => {
@@ -1266,7 +786,7 @@ export default function App() {
     })
   }
 
-  // Leave the terminal that IS the chat (terminal mode). Unlike unmounting the pane,
+  // Leave the terminal that IS the chat. Unlike unmounting the pane,
   // this is explicit: the pty goes, because a terminal you closed should not still be
   // running behind the welcome pane. The chat stays in the sidebar — reopening it
   // starts a fresh terminal in the same folder.
@@ -1282,8 +802,8 @@ export default function App() {
     setSessions((prev) => prev.map((s) => (s.id === activeId ? { ...s, projectPath: path } : s)))
   }
 
-  // Patch the active draft session from the new-chat config bar (folder, environment,
-  // extra dirs, worktree toggle). Only meaningful before the first message is sent.
+  // Patch a session from the setup pane's config bar (folder, environment) or from the
+  // terminal's own activity.
   const patchSession = (sid: string, patch: Partial<Session>) => {
     let patched: Session | undefined
     setSessions((prev) =>
@@ -1293,24 +813,14 @@ export default function App() {
         return patched
       })
     )
-    // A chat driven purely from the embedded terminal never goes through the normal
-    // agent:send → saveSession path, so without this it'd vanish on restart even after
-    // hasTerminalActivity makes it visible in the sidebar for the rest of this run. The
+    // Saved at once rather than on the next autosave tick: without this a chat could vanish
+    // on a restart right after hasTerminalActivity made it visible in the sidebar. The
     // terminal's session id has to survive the same way and for a sharper reason: it is
     // the only record of which Claude Code conversation that terminal started, and losing
     // it means the chat can never be matched back to its own transcript.
     if ((patch.hasTerminalActivity || patch.terminalSessionId || patch.terminalStartedAt) && patched) {
       window.electronAPI.saveSession(patched)
     }
-  }
-
-  const setSessionModel = (sid: string, modelId: string) => {
-    setSessions((prev) => prev.map((s) => (s.id === sid ? { ...s, model: modelId } : s)))
-  }
-
-  const exportSession = (sid: string, format: Parameters<typeof window.electronAPI.exportSession>[1]) => {
-    const session = sessions.find((s) => s.id === sid)
-    if (session) window.electronAPI.exportSession(session, format)
   }
 
   // Account selection is app-level: it sets the DEFAULT account used for new chats.
@@ -1353,14 +863,6 @@ export default function App() {
         : (activeSession?.accountId ?? defaultAccountId)
   const firstModelForProvider = (provider: ProviderId): string | undefined =>
     models.find((m) => m.provider === provider)?.id
-  // Cheapest released model of a provider (by input+output price), for Quick chat.
-  const cheapestModelForProvider = (provider: ProviderId): string | undefined => {
-    const inProvider = models.filter((m) => m.provider === provider)
-    const priced = inProvider.filter((m) => m.inputPrice > 0 || m.outputPrice > 0)
-    const pool = priced.length ? priced : inProvider
-    if (pool.length === 0) return undefined
-    return pool.reduce((a, b) => (a.inputPrice + a.outputPrice <= b.inputPrice + b.outputPrice ? a : b)).id
-  }
 
   // Generalized version of switchDefaultAccount above, covering all three providers. Also
   // switches the app's default model to that provider's top model when the pick crosses a
@@ -1406,13 +908,13 @@ export default function App() {
   const pickAccount = async (provider: ProviderId, accountId: string) => {
     // The chat this lands on is the active one in every branch below that keeps a chat at
     // all (it either stays put or has the active draft rebound onto the picked account);
-    // the remaining branch goes to the welcome pane, where there is no composer to greet.
+    // the remaining branch goes to the welcome pane, where there is no chat to greet.
     bumpNewChatNonce(activeIdRef.current)
     await switchDefaultProviderAccount(provider, accountId)
 
     // Resolve chats with the just-picked account as this provider's default — state from
     // switchDefaultProviderAccount hasn't flushed yet, and an unbound legacy chat must
-    // resolve the same way its run will (see account-scope.ts / buildAgentPayload).
+    // resolve the same way its terminal will (see account-scope.ts / useSessionPane).
     const effectiveDefaults: AccountDefaults = {
       defaultAccountId: provider === 'claude' ? accountId : defaultAccountId,
       codexDefaultAccountId: provider === 'codex' ? accountId : codexDefaultAccountId,
@@ -1431,12 +933,12 @@ export default function App() {
           ? { geminiAccountId: accountId, geminiAccountName: name }
           : { accountId, accountName: name }
 
-    // Already on this account with nothing typed yet (the switch may have rebound an empty
-    // draft) — that IS the new-chat page, so stay put.
+    // Already on this account with an unstarted draft (the switch may have rebound it) —
+    // that IS the new-chat page, so stay put.
     const active = sessions.find((s) => s.id === activeIdRef.current)
     if (
       active &&
-      active.messages.length === 0 &&
+      isUnstarted(active) &&
       provOf(models, active.model) === provider &&
       acctOf(active, models, effectiveDefaults) === accountId
     ) {
@@ -1455,121 +957,10 @@ export default function App() {
     setView('chat')
   }
 
-  const toggleAutoApprove = (sid: string) => {
-    setSessions((prev) => prev.map((s) => (s.id === sid ? { ...s, autoApprove: !s.autoApprove } : s)))
-  }
-
-  const toggleLightMode = (sid: string) => {
-    setSessions((prev) => prev.map((s) => (s.id === sid ? { ...s, lightMode: !s.lightMode } : s)))
-  }
-
-  // Summarize the current (long) session and start a FRESH one seeded with the summary as
-  // system context — so each turn re-sends a compact brief instead of the whole transcript.
-  const compactSession = async (sid: string) => {
-    const session = sessions.find((s) => s.id === sid)
-    if (!session || compacting) return
-    setCompacting(true)
-    const transcript = session.messages
-      .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
-      .join('\n\n')
-    const res = await window.electronAPI.summarizeChat({
-      transcript,
-      model: session.model || defaultModel,
-      accountId: session.accountId ?? defaultAccountId
-    })
-    setCompacting(false)
-    if (!res.ok || !res.summary) {
-      addTerm({ kind: 'error', text: res.error || 'Compaction failed.' })
-      return
-    }
-    const s = newSession(
-      session.projectPath,
-      session.model || defaultModel,
-      session.accountId ?? defaultAccountId
-    )
-    s.name = session.name
-    s.lightMode = session.lightMode
-    s.systemPrompt = `Context carried over from a previous (compacted) session:\n\n${res.summary}`
-    s.messages = [
-      {
-        id: generateId(),
-        role: 'assistant',
-        content: `**Session compacted to save tokens.** History is fresh; the summary below is carried forward as context.\n\n${res.summary}`,
-        timestamp: Date.now()
-      }
-    ]
-    setSessions((prev) => [s, ...prev])
-    setActiveId(s.id)
-    window.electronAPI.saveSession(s)
-  }
-
-  // Fork a chat from any message point into a new session. Unlike Compact (which
-  // summarizes via an LLM call), this is instant and client-side: it deep-copies the
-  // messages up to and including the branch point for visual continuity, and seeds the
-  // new session's context through the SAME channel Compact uses — the `systemPrompt`
-  // field, re-sent on every turn by buildAgentPayload. The branched session gets NO
-  // claudeSessionId: the Claude Code engine can only resume from a session's latest
-  // point, so a truncated fork must rebuild context client-side (via the seed).
-  const branchSession = (sid: string, messageId: string) => {
-    const parent = sessionsRef.current.find((s) => s.id === sid)
-    if (!parent) return
-    const idx = parent.messages.findIndex((m) => m.id === messageId)
-    if (idx === -1) return
-
-    // Deep copy messages[0..idx] inclusive — display history for the new transcript.
-    // structuredClone keeps message ids, so branchedFrom.atMessageId lines up.
-    const sliced = parent.messages.slice(0, idx + 1).map((m) => structuredClone(m))
-
-    // Name: "<parent> (branch)", deduping with "(branch 2)", "(branch 3)"… on collision.
-    const existing = new Set(sessionsRef.current.map((s) => s.name))
-    let name = `${parent.name} (branch)`
-    for (let n = 2; existing.has(name); n++) name = `${parent.name} (branch ${n})`
-
-    // Compact serialization of the slice → the context carrier. Combine with the
-    // parent's own systemPrompt (e.g. an agent's instructions) so both survive.
-    const seed = sessionToReplaySeed({ ...parent, messages: sliced })
-    const carryOver = `Context carried over from a previous (branched) session:\n\n${seed}`
-    const systemPrompt = parent.systemPrompt ? `${parent.systemPrompt}\n\n${carryOver}` : carryOver
-
-    const now = Date.now()
-    const s: Session = {
-      id: generateId(),
-      name,
-      messages: sliced,
-      projectPath: parent.projectPath,
-      model: parent.model,
-      accountId: parent.accountId,
-      accountName: parent.accountName,
-      systemPrompt,
-      permissionMode: parent.permissionMode,
-      allowedTools: parent.allowedTools,
-      useMcp: parent.useMcp,
-      autoApprove: parent.autoApprove,
-      lightMode: parent.lightMode,
-      // Intentionally NO claudeSessionId — the fork rebuilds context via the seed.
-      branchedFrom: { name: parent.name, atMessageId: sliced[sliced.length - 1].id },
-      createdAt: now,
-      updatedAt: now
-    }
-    setSessions((prev) => [s, ...prev])
-    setActiveId(s.id)
-    setView('chat')
-    window.electronAPI.saveSession(s)
-  }
-
-
-  // Resume a real Claude Code session from the Projects view (local or WSL).
+  // Resume a real Claude Code session from the Projects view (local or WSL): a chat bound
+  // to that conversation, whose terminal starts with `--resume`. Nothing is copied — the
+  // CLI's transcript is the record.
   const resumeCCSession = async (cc: CCSessionMeta) => {
-    const transcript = await window.electronAPI.ccReadSession(cc.sourceId, cc.encodedDir, cc.sessionId)
-    const messages: Message[] = transcript.map((m) => ({
-      id: generateId(),
-      role: m.role,
-      content: m.text,
-      thinking: m.thinking,
-      toolCalls: m.toolCalls,
-      timestamp: m.timestamp,
-      decisions: m.decisions
-    }))
     const isWsl = cc.kind === 'wsl'
     // A WSL session whose recorded cwd is actually a Windows mount (/mnt/c/…, /c/Users/…)
     // is a legacy artifact — don't reuse it; let it default to the distro's $HOME.
@@ -1582,26 +973,29 @@ export default function App() {
     const accountId = cc.sourceId.startsWith('account:')
       ? cc.sourceId.slice('account:'.length)
       : defaultAccountId
+    // The model only decides which CLI launches, and this is a Claude Code conversation:
+    // falling back to a default that belongs to another provider would start the wrong one.
+    // TODO(B4): `provider: 'claude'` once Session carries it.
+    const claudeModel =
+      provOf(models, defaultModel) === 'claude' ? defaultModel : models.find((m) => m.provider === 'claude')?.id ?? defaultModel
     const s: Session = {
       id: generateId(),
       name: cc.title,
-      messages,
+      messages: [],
       projectPath,
       claudeSessionId: cc.sessionId,
-      model: cc.model || defaultModel,
+      model: cc.model || claudeModel,
       accountId,
-      useMcp: false,
       wslDistro: isWsl ? cc.distro : undefined,
       remoteHostName: isWsl ? `WSL · ${cc.distro}` : undefined,
-      autoApprove: isWsl ? true : undefined,
+      hasTerminalActivity: true,
       createdAt: cc.createdAt || Date.now(),
       updatedAt: Date.now()
     }
     setSessions((prev) => [s, ...prev])
     setActiveId(s.id)
     setView('chat')
-    setTerminalLines([])
-    addTerm({ kind: 'info', text: `resuming ${isWsl ? cc.distro + ' ' : ''}session ${cc.sessionId.slice(0, 8)}` })
+    window.electronAPI.saveSession(s)
   }
 
   // What a notification click (or any `argos://session?…` link) opens: the conversation
@@ -1652,18 +1046,19 @@ export default function App() {
   }
   openCcTargetRef.current = openCcTarget
 
-  // Pull each terminal-driven chat's transcript in from disk once the CLI it launched
-  // has actually written one. A chat qualifies while it's still showing nothing of its
-  // own (`ccSynced`, or never had any messages to begin with) — the moment a turn goes
-  // through Argos's composer this stops touching that chat, so a re-import can never
-  // clobber streaming state the transcript file doesn't carry.
+  // Read each terminal chat's transcript from disk once the CLI it launched has written
+  // one, for what the chat itself shows: its name (the CLI's title, while the chat is still
+  // "New chat"), the conversation id the CLI settled on, how recently it moved (the sidebar
+  // sorts on it) and whether it moved while nobody was looking (unread). The messages
+  // themselves are not copied: the terminal is the transcript.
+  //
+  // How long each transcript was last time, by chat id — what "it grew" is measured
+  // against. In memory only: the first read after a launch just records the length, so a
+  // conversation that moved while the app was closed is not flagged unread on startup.
+  const transcriptLengthRef = useRef<Map<string, number>>(new Map())
   const syncTerminalChats = useCallback(async () => {
     const candidates = sessionsRef.current.filter(
-      (s) =>
-        s.projectPath &&
-        (s.claudeSessionId || s.terminalSessionId) &&
-        s.hasTerminalActivity &&
-        (s.messages.length === 0 || s.ccSynced)
+      (s) => s.projectPath && (s.claudeSessionId || s.terminalSessionId) && s.hasTerminalActivity
     )
     for (const s of candidates) {
       const sessionId = (s.claudeSessionId || s.terminalSessionId) as string
@@ -1694,49 +1089,31 @@ export default function App() {
       if (!transcript) continue
 
       const nameFromTitle = transcript.title && s.name === 'New chat' ? transcript.title : undefined
-      const messagesChanged = transcript.messages.length !== s.messages.length
+      const length = transcript.messages.length
+      const previous = transcriptLengthRef.current.get(s.id)
+      transcriptLengthRef.current.set(s.id, length)
+      const grew = previous !== undefined && length > previous
+      const lastAt = transcript.messages[length - 1]?.timestamp
+      const movedAt = lastAt && lastAt > s.updatedAt ? lastAt : undefined
       const sessionIdChanged = s.claudeSessionId !== sessionId
-      const syncedChanged = s.ccSynced !== true
-      // A tick where the transcript hasn't grown, the id was already promoted, no
-      // title landed and the flag is already set would still produce a *new* session
-      // object every time this runs — and this runs on a timer, which would re-save
-      // every terminal chat forever for no reason.
-      if (!messagesChanged && !sessionIdChanged && !nameFromTitle && !syncedChanged) continue
+      const markUnread = grew && !s.unread && !seenIdsRef.current.has(s.id)
+      // A tick where nothing moved would still produce a *new* session object every time
+      // this runs — and this runs on a timer, which would re-save every terminal chat
+      // forever for no reason.
+      if (!sessionIdChanged && !nameFromTitle && !movedAt && !markUnread) continue
 
       setSessions((prev) =>
         prev.map((cur) => {
           if (cur.id !== s.id) return cur
           return {
             ...cur,
-            ...(messagesChanged
-              ? {
-                  messages: transcript.messages.map((m) => ({
-                    id: generateId(),
-                    role: m.role,
-                    content: m.text,
-                    thinking: m.thinking,
-                    toolCalls: m.toolCalls,
-                    timestamp: m.timestamp,
-                    decisions: m.decisions
-                  })),
-                  // Sorted on in the sidebar, so a terminal chat that has been talking
-                  // for an hour must not still sort as of the moment it was created.
-                  updatedAt:
-                    transcript.messages[transcript.messages.length - 1]?.timestamp || Date.now()
-                }
-              : {}),
             claudeSessionId: sessionId,
             ...(nameFromTitle ? { name: nameFromTitle } : {}),
-            ccSynced: true,
+            ...(movedAt ? { updatedAt: movedAt } : {}),
             // The terminal wrote new turns while this chat wasn't on screen — reads
-            // seenIdsRef (not seenIds) because syncTerminalChats has no deps and
-            // would otherwise close over whichever panes were open when it was first
-            // created.
-            ...(messagesChanged &&
-            transcript.messages.length > s.messages.length &&
-            !seenIdsRef.current.has(s.id)
-              ? { unread: true }
-              : {})
+            // seenIdsRef (not seenIds) because syncTerminalChats has no deps and would
+            // otherwise close over whichever panes were open when it was first created.
+            ...(markUnread ? { unread: true } : {})
           }
         })
       )
@@ -1829,9 +1206,9 @@ export default function App() {
           touched.push(updated)
           return updated
         })
-        // A terminal-driven chat never goes through the agent:send save path, so without
-        // this the link and the name would be lost on restart and re-claimed from
-        // scratch — against a listing that by then has other chats' threads in it too.
+        // Saved at once rather than on the next autosave tick, so the link and the name are
+        // never lost on a restart and re-claimed from scratch — against a listing that by
+        // then has other chats' threads in it too.
         for (const s of touched) window.electronAPI.saveSession(s)
         return next
       })
@@ -1915,10 +1292,9 @@ export default function App() {
   /**
    * Claude Code session ids the live registry currently reports as busy.
    *
-   * A chat driven from the embedded terminal never goes through `startRun`, so nothing
-   * in Argos knew whether it was working or sitting idle — the list looked the same
-   * either way. The registry does know, and now that each terminal chat pins its own
-   * session id, its rows can be matched back to chats.
+   * Nothing in Argos itself knows whether a terminal chat's CLI is working or sitting
+   * idle. The registry does, and since each terminal chat pins its own session id, its
+   * rows can be matched back to chats.
    */
   const [liveBusyIds, setLiveBusyIds] = useState<Set<string>>(new Set())
   // Raw registry rows, kept alongside liveBusyIds so Home's "running" list can show
@@ -2077,33 +1453,25 @@ export default function App() {
   }, [liveSessions, adoptSessionId])
 
   /**
-   * What the sidebar shows as running: Argos's own in-flight runs, plus any chat whose
-   * Claude Code session the registry reports busy.
-   *
-   * Deliberately NOT fed back into `runningIds` itself. That set also gates whether a
-   * turn can be sent, and a terminal chat being busy is not a reason to refuse the
-   * composer — this is a display, not a lock.
+   * What the sidebar shows as running: any chat whose Claude Code session the registry
+   * reports busy, or whose terminal is producing output.
    */
   const displayRunningIds = useMemo(() => {
-    if (!liveBusyIds.size && !busyTerminalIds.size) return runningIds
-    const out = new Set(runningIds)
+    const out = new Set<string>()
+    if (!liveBusyIds.size && !busyTerminalIds.size) return out
     for (const s of sessions) {
       const ccId = s.claudeSessionId || s.terminalSessionId
       if (ccId && liveBusyIds.has(ccId)) out.add(s.id)
-      // Only ever adds, never clears: where Claude Code reports its own status that
-      // remains the more precise answer, and this is here to cover the chats it says
-      // nothing about — every codex and Antigravity terminal, and any Claude one whose
-      // registry entry could not be read.
+      // Where Claude Code reports its own status that remains the more precise answer,
+      // and this is here to cover the chats it says nothing about — every codex and
+      // Antigravity terminal, and any Claude one whose registry entry could not be read.
       else if (busyTerminalIds.has(chatTerminalId(s.id))) out.add(s.id)
     }
     return out
-  }, [runningIds, liveBusyIds, busyTerminalIds, sessions])
+  }, [liveBusyIds, busyTerminalIds, sessions])
 
-  // Chats still working, for the window-wide pending bar. Reads displayRunningIds, not
-  // runningIds: a chat driven from the embedded terminal never goes through startRun, so
-  // keying off Argos's own runs alone left the strip empty for exactly the chats you most
-  // need to find your way back to. The chat you're already looking at is left out — its own
-  // header already shows it streaming, so listing it is just noise.
+  // Chats still working, for the window-wide pending bar. The chat you're already looking
+  // at is left out — you can see it working, so listing it is just noise.
   // A chat that finished while you were elsewhere stays on as `done` until it is read: the
   // toast is gone by the time you're back, and this is where you were already looking.
   const pendingRuns = useMemo<PendingRun[]>(() => {
@@ -2117,9 +1485,9 @@ export default function App() {
         !seenIds.has(s.id) &&
         (displayRunningIds.has(s.id) ? !dismissedRunIds.has(s.id) : !!s.unread)
     )
-    // Which account each run is actually billed to, resolved exactly the way the run
-    // itself resolves it (acctOf mirrors buildAgentPayload's fallbacks), so an unbound
-    // chat is never labelled with an account it isn't running on.
+    // Which account each run is actually billed to, resolved exactly the way the terminal
+    // resolves it (acctOf mirrors its fallbacks), so an unbound chat is never labelled
+    // with an account it isn't running on.
     // Keyed by provider too: 'default' means a different login on Codex than it does on
     // Claude, so two runs sharing the bare id are still two accounts.
     //
@@ -2177,14 +1545,19 @@ export default function App() {
     activeChatAccountId
   ])
 
-  // endRun forgets a dismissal once Argos's own run finishes, but a terminal chat never
-  // reaches endRun. Clear dismissals for anything that stopped running, so the chat's next
-  // burst of work surfaces again instead of staying hidden for the rest of the session.
+  // Dismissing a chat from the pending bar only hides that burst of work. Forgetting the
+  // dismissal the moment the chat starts working again (idle → busy) means its next burst
+  // surfaces instead of staying hidden for the rest of the session.
+  const prevBusyRef = useRef(displayRunningIds)
   useEffect(() => {
+    const started = [...displayRunningIds].filter((id) => !prevBusyRef.current.has(id))
+    prevBusyRef.current = displayRunningIds
+    if (!started.length) return
     setDismissedRunIds((prev) => {
-      if (prev.size === 0) return prev
-      const next = new Set([...prev].filter((id) => displayRunningIds.has(id)))
-      return next.size === prev.size ? prev : next
+      if (!started.some((id) => prev.has(id))) return prev
+      const next = new Set(prev)
+      for (const id of started) next.delete(id)
+      return next
     })
   }, [displayRunningIds])
 
@@ -2350,10 +1723,6 @@ export default function App() {
   }, [approvalQueue, sessions, resolveHomeProjectName])
 
   const homeRunning = useMemo<HomeRunning[]>(() => {
-    // displayRunningIds, not runningIds: a chat driven from the embedded terminal never
-    // goes through startRun, and the CLI row that would have covered it is filtered out
-    // just below as a duplicate — so keying off Argos's own runs dropped exactly those
-    // chats off this list entirely.
     const chats: HomeRunning[] = sessions
       .filter((s) => displayRunningIds.has(s.id))
       .map((s) => ({
@@ -2458,15 +1827,17 @@ export default function App() {
 
   const homeRecent = useMemo<HomeRecent[]>(
     () =>
+      // TODO(B3b): terminal chats, with `preview` from the session; the messages read
+      // here only exist on pre-2.0 chats until the migration archives them.
       sessions
-        .filter((s) => s.messages.length > 0)
+        .filter((s) => s.messages.length > 0 || s.hasTerminalActivity)
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .slice(0, 3)
         .map((s) => {
           const last = s.messages[s.messages.length - 1]
           // The transcript is markdown; a one-line preview that keeps the fences and
           // hashes reads as noise, so the marks come out before the truncation.
-          const flat = last.content
+          const flat = (last?.content ?? '')
             .replace(/```[\s\S]*?```/g, ' ')
             .replace(/[#*`>]/g, '')
             .replace(/\s+/g, ' ')
@@ -2665,6 +2036,8 @@ export default function App() {
   }
 
 
+  // "New chat on host": a terminal chat whose CLI runs on that host over SSH.
+  // TODO(B3b): `startTerminal({ remoteHostId })`.
   const connectRemote = (host: SshHostPublic) => {
     const s = newSession(host.remotePath, defaultModel, defaultAccountId)
     s.name = `${host.name} (remote)`
@@ -2673,52 +2046,32 @@ export default function App() {
     setSessions((prev) => [s, ...prev])
     setActiveId(s.id)
     setView('chat')
-    addTerm({ kind: 'info', text: `remote session on ${host.name}` })
   }
 
-  // "Ops chat" on an SSH host card: a local Claude chat under the most recent runbook
-  // that names this host. None does → the most recent runbook anyway, and the config
-  // bar's hosts line shows the host is not in it.
+  // "Ops chat" on an SSH host card: the Ops workspace for the most recent runbook that
+  // names this host. None does → the most recent runbook anyway. The ops chat it used to
+  // open ran on the SDK; ops now lives in the workspace's gated terminal only (H1).
   const connectOps = async (host: SshHostPublic) => {
     const recents = readRecentRunbooks()
     if (recents.length === 0) return
     let runbookPath = recents[0]
-    let matched = false
     for (const dir of recents) {
       try {
         const info = await window.electronAPI.opsLoadRunbook(dir)
         if (info.ok && info.hosts.some((h) => h.id === host.id)) {
           runbookPath = dir
-          matched = true
           break
         }
       } catch {
         /* an unreadable runbook just doesn't match */
       }
     }
-    // Ops runs on the Claude engine only; keep the default model when it is a Claude
-    // one, else take the first Claude model there is.
-    const model =
-      provOf(models, defaultModel) === 'claude' ? defaultModel : models.find((m) => m.provider === 'claude')?.id ?? defaultModel
-    const s = newSession(undefined, model, defaultAccountId)
-    s.name = `${host.name} (ops)`
-    s.runbookPath = runbookPath
-    setSessions((prev) => [s, ...prev])
-    setActiveId(s.id)
-    setView('chat')
-    addTerm(
-      matched
-        ? { kind: 'info', text: `ops chat for ${host.name} under ${runbookPath}` }
-        : { kind: 'error', text: `no recent runbook names ${host.name}; opened ${runbookPath}` }
-    )
+    openOpsWorkspace(runbookPath)
   }
 
   // Servers → Ops. The workspace is an extra of the Servers group, like a Remote/WSL
   // session; which runbook it shows lives here so the view itself stays a plain string.
   const [opsWorkspace, setOpsWorkspace] = useState<{ runbookPath: string } | null>(null)
-  /** The ops chat the workspace has on screen in Chat mode — its approvals render inline
-   *  there, so the global modal steps aside for it as it does for the chat view. */
-  const [opsChatVisibleId, setOpsChatVisibleId] = useState<string | null>(null)
   /** The ops terminal the workspace has on screen in Terminal mode — a plan for its run is
    *  reviewed in the workspace's side column, so the drawer steps aside for it. */
   const [opsTerminalVisibleId, setOpsTerminalVisibleId] = useState<string | null>(null)
@@ -2726,8 +2079,9 @@ export default function App() {
     setOpsWorkspace({ runbookPath })
     setView('ops-workspace')
   }
-  // The workspace's Chat mode: this runbook's ops chat, made the way connectOps makes one
-  // (Claude model, runbookPath set), or the newest existing one for the same runbook.
+  // The workspace's Chat mode: this runbook's ops chat (Claude model, runbookPath set), or
+  // the newest existing one for the same runbook. Nothing renders it any more (see
+  // renderChat below). TODO(B3b): goes with OpsWorkspace's chat mode.
   const openOpsChat = (runbookPath: string, name: string): string => {
     const existing = sessions.find((s) => s.runbookPath === runbookPath)
     if (existing) {
@@ -2741,10 +2095,10 @@ export default function App() {
     s.runbookPath = runbookPath
     setSessions((prev) => [s, ...prev])
     setActiveId(s.id)
-    addTerm({ kind: 'info', text: `ops chat under ${runbookPath}` })
     return s.id
   }
 
+  // TODO(B3b): `startTerminal({ wslDistro })`.
   const connectWsl = (distro: string, cwd?: string) => {
     const s = newSession(cwd, defaultModel, defaultAccountId)
     s.name = `${distro} (WSL)`
@@ -2753,69 +2107,39 @@ export default function App() {
     setSessions((prev) => [s, ...prev])
     setActiveId(s.id)
     setView('chat')
-    addTerm({ kind: 'info', text: `WSL session on ${distro}` })
   }
 
+  // A planner task opens a terminal in the active chat's folder with the task typed in.
+  // One line on purpose: a raw newline written into the pty is Enter, not part of the
+  // prompt (ConPTY does not bracket it).
   const runPlannerTask = (task: PlannerTask) => {
-    // Guard: no auth → nothing can run. A planner task spawns a FRESH session, so
-    // concurrent runs are fine — no global streaming refusal.
-    if (!ready) {
-      addTerm({ kind: 'error', text: 'Not authenticated — cannot run planner task.' })
-      return
-    }
-
-    const s = newSession(activeSession?.projectPath, activeSession?.model || defaultModel, activeSession?.accountId ?? defaultAccountId)
-    s.name = task.title.slice(0, 40)
-
     const parts: string[] = [`Help me with this planned task: "${task.title}".`]
-    if (task.notes) parts.push(`\nNotes: ${task.notes}`)
-    if (task.effort) parts.push(`\nEffort level: ${task.effort}`)
+    if (task.notes) parts.push(`Notes: ${task.notes.replace(/\s*\n\s*/g, ' ')}`)
+    if (task.effort) parts.push(`Effort level: ${task.effort}.`)
     if (typeof task.day === 'number') {
       const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-      parts.push(`\nScheduled for: ${dayNames[task.day]}`)
+      parts.push(`Scheduled for: ${dayNames[task.day]}.`)
     }
-    parts.push('\nPlease start working on it.')
-    const prompt = parts.join('')
-
-    const userMsg: Message = { id: generateId(), role: 'user', content: prompt, timestamp: Date.now() }
-    const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
-    s.messages = [userMsg, assistantMsg]
-
-    setSessions((prev) => [s, ...prev])
-    setActiveId(s.id)
-    setView('chat')
-    startRun(s.id)
-    setTerminalOpen(true)
-    addTermFor(s.id, { kind: 'user', text: prompt.slice(0, 120) })
-
-    window.electronAPI.sendAgent(buildAgentPayload(s, prompt))
+    parts.push('Please start working on it.')
+    startOverlayPrompt({
+      prompt: parts.join(' '),
+      name: task.title,
+      projectPath: activeSession?.projectPath,
+      modelId: activeSession?.model || defaultModel,
+      accountId: activeSession?.accountId ?? defaultAccountId
+    })
   }
 
-  // Sprint standup → "Discuss" opens a light (tools-off) chat seeded with the day's
-  // standup + board as system context, so it's a cheap talk-it-through session that
-  // can't touch the repo. Mirrors runPlannerTask's spawn-and-fire flow.
+  // Sprint standup → "Discuss" opens a terminal with the day's standup + board and the
+  // opener typed in, flattened onto one line (see runPlannerTask for why).
+  // TODO(B3b): write `context` to userData/prompts/<sessionId>.md (main IPC) and type
+  // "Read <path>, then: <opener>" instead; open with no folder rather than the active one.
   const startStandupChat = useCallback(
     (context: string, opener: string, name: string) => {
-      if (!ready) {
-        addTerm({ kind: 'error', text: 'Not authenticated — cannot start chat.' })
-        return
-      }
-      const s = newSession(undefined, defaultModel, defaultAccountId)
-      s.name = name
-      s.lightMode = true
-      s.systemPrompt = context
-      const userMsg: Message = { id: generateId(), role: 'user', content: opener, timestamp: Date.now() }
-      const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
-      s.messages = [userMsg, assistantMsg]
-      setSessions((prev) => [s, ...prev])
-      setActiveId(s.id)
-      setView('chat')
-      startRun(s.id)
-      setTerminalOpen(true)
-      addTermFor(s.id, { kind: 'user', text: opener.slice(0, 120) })
-      window.electronAPI.sendAgent(buildAgentPayload(s, opener))
+      const flat = context.replace(/\s*\n\s*/g, ' ').trim()
+      startOverlayPrompt({ prompt: `${opener} Context: ${flat}`, name })
     },
-    [ready, defaultModel, defaultAccountId, startRun, addTerm, addTermFor, buildAgentPayload]
+    [startOverlayPrompt]
   )
 
   const handleSetDefaultModel = async (modelId: string) => {
@@ -2880,12 +2204,7 @@ export default function App() {
 
   const paletteItems: CommandItem[] = useMemo(() => {
     const items: CommandItem[] = []
-    items.push({ id: 'new', title: 'New chat', group: 'Actions', subtitle: '⌘N', run: createSession })
-    // Quick chat is Argos's own engine on the cheapest model — meaningless in terminal
-    // mode, where the CLI chooses its own.
-    if (workMode === 'chat') {
-      items.push({ id: 'new-quick', title: 'Quick chat (cheapest model)', group: 'Actions', run: createQuickChat })
-    }
+    items.push({ id: 'new', title: 'New terminal', group: 'Actions', subtitle: '⌘N', run: createSession })
     items.push({
       id: 'shortcuts',
       title: 'Keyboard shortcuts',
@@ -2917,15 +2236,6 @@ export default function App() {
         }
       })
     }
-    for (const m of models) {
-      items.push({
-        id: `model:${m.id}`,
-        title: `Use ${m.label}`,
-        subtitle: 'this chat',
-        group: 'Switch model',
-        run: () => setSessionModel(activeId, m.id)
-      })
-    }
     for (const a of accounts) {
       items.push({
         id: `account:${a.id}`,
@@ -2937,7 +2247,7 @@ export default function App() {
     }
     return items
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, models, accounts, workMode, activeId])
+  }, [sessions, accounts])
 
   // What the Remote & WSL list's SSH dots are allowed to claim. A host counts as reachable
   // only once one of its sessions has actually connected; a host whose sessions have all
@@ -3022,35 +2332,17 @@ export default function App() {
   // React.memo, make the actions stable first; only then does memoizing this pay.
   const paneApi: SessionPaneApi = {
     sessions,
-    runningIds,
-    approvalQueue,
     models,
     defaultModel,
-    ready,
-    workMode,
     terminalPrompts,
     newChatNonces,
-    compacting,
     saveError,
     defaultAccountId,
     codexDefaultAccountId,
     geminiDefaultAccountId,
-    sendMessage,
-    stopRun,
-    retryTurn,
-    editAndResend,
-    branchSession,
     patchSession,
-    setSessionModel,
-    toggleAutoApprove,
-    toggleLightMode,
-    compactSession,
     closeChatTerminal,
-    exportSession,
-    clearTerminalPrompt,
-    onApproval: respondApprovalById,
-    createSession,
-    openSettings: () => setView('settings')
+    clearTerminalPrompt
   }
 
   return (
@@ -3107,11 +2399,9 @@ export default function App() {
               attentionIds={attentionIds}
               tab={sidebarTab}
               onTabChange={setSidebarTab}
-              mode={workMode}
               onSelectSession={setActiveId}
               onSessionDrag={setDraggingSessionId}
               onNewSession={createSession}
-              onNewQuickChat={createQuickChat}
               onDeleteSession={deleteSession}
               onRenameSession={renameSessionById}
               projectPath={activeSession?.projectPath}
@@ -3139,8 +2429,8 @@ export default function App() {
           )}
           <div className="main-area">
             {!activeSession ? (
-              /* No chat open yet: the composer/chat header only appear once the user
-                 explicitly starts or picks a chat. */
+              /* No chat open yet: a terminal only appears once the user explicitly starts
+                 or picks one. */
               <div
                 className={`welcome-pane ${welcomeDropOver ? 'pane-drop-over' : ''}`}
                 /* No panes means no zones: the only possible drop is "open this conversation",
@@ -3176,36 +2466,14 @@ export default function App() {
                   <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
                 <h2>How can I help?</h2>
-                <p>
-                  {workMode === 'terminal'
-                    ? 'Start a new terminal, or pick a chat from the sidebar.'
-                    : 'Start a new chat, or pick one from the sidebar.'}
-                </p>
+                <p>Start a new terminal, or pick a chat from the sidebar.</p>
                 <div className="welcome-actions">
                   <button className="btn-primary" onClick={createSession}>
-                    {workMode === 'terminal' ? 'New terminal' : 'New chat'}
+                    New terminal
                   </button>
-                  {workMode === 'chat' && (
-                    <button className="welcome-quick" onClick={createQuickChat}>Quick chat</button>
-                  )}
                 </div>
               </div>
             ) : (
-            <>
-            {budgetBanners.length > 0 && (
-              <div className="budget-banner">
-                {budgetBanners.map((msg, i) => (
-                  <div key={i} className="budget-banner-item">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                      <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-                    </svg>
-                    {msg}
-                  </div>
-                ))}
-                <button className="budget-banner-close" onClick={() => setBudgetBanners([])} aria-label="Dismiss">✕</button>
-              </div>
-            )}
             <PaneGrid
               panes={panes}
               layout={layout}
@@ -3218,13 +2486,6 @@ export default function App() {
               draggingSessionId={draggingSessionId}
               onDropSession={applyDrop}
             />
-            <TerminalPanel
-              lines={terminalLines}
-              open={terminalOpen}
-              onToggle={() => setTerminalOpen((v) => !v)}
-              onClear={() => setTerminalLines([])}
-            />
-            </>
             )}
           </div>
         </>
@@ -3364,10 +2625,15 @@ export default function App() {
             runbookPath={opsWorkspace.runbookPath}
             onBack={() => setView('ops')}
             openChat={openOpsChat}
-            /* The chat pane as the chat view renders it, forced to chat mode: in terminal
-               work mode Chat would show its own terminal, which is not the ops SDK path. */
-            renderChat={(id) => <ChatPane sessionId={id} api={{ ...paneApi, workMode: 'chat' }} />}
-            onChatVisible={setOpsChatVisibleId}
+            /* The ops chat ran on the SDK composer, which is gone. Rendering the chat pane
+               here would now start an ungated CLI with no runbook, so the mode only points
+               back at the terminal. TODO(B3b): OpsWorkspace loses its chat mode. */
+            renderChat={() => (
+              <div className="ops-ws-state">
+                The ops chat has been retired. Switch to Terminal to run this runbook.
+              </div>
+            )}
+            onChatVisible={() => {}}
             onTerminalVisible={setOpsTerminalVisibleId}
             pendingPlan={workspacePlan}
             onPlanDecide={respondApproval}
@@ -3421,9 +2687,6 @@ export default function App() {
           }}
         />
       )}
-      {/* Suppressed only where Chat renders the same request inline — which it does in
-          chat mode alone. In terminal mode the chat pane is a terminal, so a run Argos
-          itself is driving (Planner) has nowhere else to ask. */}
       {secretQueue.length > 0 && (
         <SecretPrompt
           key={secretQueue[0].requestId}
@@ -3441,7 +2704,7 @@ export default function App() {
           onStop={stopHeadApproval}
         />
       )}
-      {secretQueue.length === 0 && !headIsPlan && approvalQueue.length > 0 && !(view === 'chat' && workMode === 'chat' && visibleIds.has(approvalQueue[0].appSessionId)) && !(view === 'ops-workspace' && opsChatVisibleId === approvalQueue[0].appSessionId) && (
+      {secretQueue.length === 0 && !headIsPlan && approvalQueue.length > 0 && (
         <ApprovalModal
           request={approvalQueue[0]}
           onDecide={respondApproval}

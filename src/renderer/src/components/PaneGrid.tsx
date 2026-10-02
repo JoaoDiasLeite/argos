@@ -277,10 +277,9 @@ export default function PaneGrid({
   // would answer nothing.
   const [over, setOver] = useState<{ index: number; kind: DropKind } | null>(null)
 
-  // `dragenter`/`dragleave` fire for every child the cursor crosses (the chat, the composer,
-  // the terminal), so a plain `dragleave` handler would blink the highlight off dozens of
-  // times inside one pane. Counting enters against leaves per pane — the same trick `Chat`
-  // uses for its file drop — means the highlight only clears when the count really returns
+  // `dragenter`/`dragleave` fire for every child the cursor crosses (the chat, the
+  // terminal), so a plain `dragleave` handler would blink the highlight off dozens of
+  // times inside one pane. Counting enters against leaves per pane means the highlight only clears when the count really returns
   // to zero, i.e. when the cursor has left the pane itself.
   const dragDepth = useRef(new Map<number, number>())
   const resetDrag = () => {

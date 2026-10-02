@@ -151,6 +151,3 @@
   font-size: 13px;
 }
 
-/* Active state for the chat-header terminal toggle now lives in Chat.css
-   alongside the rest of .header-icon-btn (the button is rendered by Chat,
-   not by this component). */

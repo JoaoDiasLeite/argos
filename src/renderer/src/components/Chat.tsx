@@ -1,269 +1,87 @@
-import { Fragment, useEffect, useRef, useState, lazy, Suspense } from 'react'
-import { Session, ModelInfo, Attachment, SlashCommand, ProviderId, ApprovalRequest } from '../types'
-import MessageBubble from './MessageBubble'
-import ModelPicker from './ModelPicker'
+import { useEffect, useState, lazy, Suspense } from 'react'
+import { Session, ProviderId } from '../types'
 import ChatConfigBar from './ChatConfigBar'
-import ApprovalModal from './ApprovalModal'
-import { sessionToMarkdown } from '../lib/markdown-export'
-import { CLIPBOARD_IMAGE_EVENT, ClipboardImageDetail } from '../lib/clipboard-paste'
 import { chatTerminalId } from '../lib/terminal-id'
 import './Chat.css'
 
-// ChatTerminal pulls in @xterm/xterm + its addons (~300 kB) but is only ever
-// rendered once the user opens the embedded terminal (`termOpen`, default
-// false) — so it's loaded lazily instead of bundled into the initial chunk.
+// ChatTerminal pulls in @xterm/xterm + its addons (~300 kB), and nothing on screen needs
+// it until a chat is actually opened — so it's loaded lazily instead of bundled into the
+// initial chunk.
 const ChatTerminal = lazy(() => import('./ChatTerminal'))
-
-// The ops timeline only exists for chats with a runbook (`session.runbookPath`), so a
-// normal chat never loads it.
-const OpsTimeline = lazy(() => import('./OpsTimeline'))
-
-// ── Text-file attachment limits & heuristics ─────────────────────────────────
-const MAX_FILE_ATTACHMENTS = 5
-const MAX_FILE_BYTES = 200 * 1024
-// Extensions that are almost certainly binary — images among these go through the
-// existing image path instead, so anything here reaching the text path is rejected.
-const BINARY_EXTENSIONS = new Set([
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'zip', 'exe', 'dll', 'bin'
-])
-
-/**
- * The image types the chat can attach, by extension.
- *
- * Needed because a file does not always arrive with a MIME type: a `.png` copied in
- * Explorer and pasted here reaches the renderer with `type === ''`, and classifying
- * by `type` alone then sent it down the text path — where the extension denylist
- * above rejected it as "a binary file". Which it is, and which is exactly what the
- * image path is for.
- */
-const IMAGE_EXTENSIONS: Record<string, string> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  gif: 'image/gif',
-  webp: 'image/webp'
-}
-
-/** Longest edge of a stored thumbnail, in px. Big enough to recognise a screenshot. */
-const THUMB_MAX = 320
-
-/**
- * A small JPEG copy of an image, as a data URL, for the transcript to keep.
- *
- * Falls back to the original on any failure: showing a heavier image is a much
- * smaller problem than losing it from the history, which is the bug this exists to
- * fix.
- */
-function makeThumbnail(dataUrl: string): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image()
-    img.onload = () => {
-      try {
-        const scale = Math.min(1, THUMB_MAX / Math.max(img.width, img.height))
-        const canvas = document.createElement('canvas')
-        canvas.width = Math.max(1, Math.round(img.width * scale))
-        canvas.height = Math.max(1, Math.round(img.height * scale))
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return resolve(dataUrl)
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-        resolve(canvas.toDataURL('image/jpeg', 0.7))
-      } catch {
-        resolve(dataUrl)
-      }
-    }
-    img.onerror = () => resolve(dataUrl)
-    img.src = dataUrl
-  })
-}
-
-/** The media type to attach this file as, or null if it is not an image. */
-function imageMediaType(file: File): string | null {
-  if (file.type.startsWith('image/')) return file.type
-  const ext = file.name.includes('.') ? file.name.split('.').pop()!.toLowerCase() : ''
-  return IMAGE_EXTENSIONS[ext] ?? null
-}
-
-// Human-readable byte size, e.g. 14560 → "14.2 KB".
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  const kb = bytes / 1024
-  if (kb < 1024) return `${kb.toFixed(1)} KB`
-  return `${(kb / 1024).toFixed(1)} MB`
-}
-
-// Ellipsize the middle of a long filename so the extension stays visible.
-function middleEllipsis(name: string, max = 28): string {
-  if (name.length <= max) return name
-  const keep = max - 1
-  const head = Math.ceil(keep / 2)
-  const tail = Math.floor(keep / 2)
-  return `${name.slice(0, head)}…${name.slice(name.length - tail)}`
-}
-
-/**
- * Approximate the context footprint currently re-sent on every turn: walk back to
- * the last assistant message that carries usage and sum its input + cache tokens
- * (that turn's input + cacheRead + cacheCreation ≈ the whole conversation re-sent).
- * Returns null for old sessions where no message has usage.
- */
-function contextTokens(session?: Session): number | null {
-  if (!session) return null
-  for (let i = session.messages.length - 1; i >= 0; i--) {
-    const u = session.messages[i].usage
-    if (u) return u.inputTokens + u.cacheReadTokens + u.cacheCreationTokens
-  }
-  return null
-}
 
 export interface Props {
   session?: Session
-  streaming: boolean
-  /** Non-empty when the last autosave of this session's transcript failed. */
+  /** Non-empty when the last autosave of this chat's record failed. */
   saveError: string
-  /** The approval (if any) queued for this chat, rendered inline instead of as a global modal. */
-  approval?: ApprovalRequest
-  onApproval: (approvalId: string, allow: boolean) => void
-  onSendMessage: (
-    text: string,
-    images?: { mediaType: string; data: string }[],
-    files?: { name: string; content: string }[],
-    /** Down-scaled copies for the transcript to keep — see Message.imageThumbnails. */
-    imageThumbnails?: string[]
-  ) => void
-  onStop: () => void
-  onOpenSettings: () => void
-  ready: boolean
-  models: ModelInfo[]
-  currentModel: string
-  onModelChange: (modelId: string) => void
-  /** The active chat's provider — forwarded to ChatTerminal to launch the right CLI. */
+  /** The chat's provider — forwarded to ChatTerminal to launch the right CLI. */
   terminalProvider: ProviderId
   /** The account (for terminalProvider) this chat is bound to — forwarded to ChatTerminal. */
   terminalAccountId?: string
-  /** The app's mode (ui.workMode). 'terminal' means this chat IS a terminal: no
-   *  composer, no transcript, and no way to toggle back. 'chat' never offers one. */
-  mode: 'chat' | 'terminal'
-  /** In terminal mode, a prompt to type into the CLI once it is up — Home's start box
-   *  hands one over so "start this here" lands in the terminal rather than nowhere. */
+  /** A prompt to type into the CLI once it is up — Home's start box, the quick launcher
+   *  and the planner hand one over so "start this here" lands in the terminal. */
   initialTerminalPrompt?: string
   /** Fired once that prompt has been sent, so App can forget it (it must not be
    *  replayed if the terminal restarts). */
   onInitialTerminalPromptSent?: () => void
-  /** Bumped by App whenever it deliberately lands you on a new chat (switching account,
-   *  returning to the chat view) — drives the composer's accent sweep. */
+  /** Bumped by App whenever it deliberately lands you on a chat (New terminal, switching
+   *  account) — part of the key that decides whether the setup pane is shown. */
   newChatNonce: number
-  autoApprove: boolean
-  onToggleAutoApprove: () => void
-  lightMode: boolean
-  onToggleLightMode: () => void
-  onStartFresh: () => void
-  onCompact: () => void
-  compacting: boolean
-  onRetry: () => void
-  onEditResend: (messageId: string, newText: string) => void
-  onBranch: (messageId: string) => void
-  onExportSession: (format: 'md' | 'html') => void
-  /** Patch the active draft session (folder / environment / extra dirs) from the new-chat bar. */
+  /** Patch this chat (folder / environment) from the setup pane, and record the
+   *  terminal's activity. */
   onPatchSession: (patch: Partial<Session>) => void
-  /** Terminal mode only: leave this terminal — the pty is torn down and the view
-   *  falls back to the welcome pane. The chat itself stays in the sidebar. */
+  /** Leave this terminal — the pty is torn down and the view falls back to the welcome
+   *  pane. The chat itself stays in the sidebar. */
   onCloseTerminal: () => void
   /** True when a split-view pane header is already drawing this chat's name (see
-   *  `PaneGrid`'s `pane-head`) — so this component must not draw it a second time.
-   *  Optional and defaulted to false: every other mounter of `Chat` (the single-pane
-   *  case included) keeps today's title exactly as it is. The rest of the title block
-   *  (remote host / resumed marker) still renders here regardless, since
-   *  the pane header has no room for it and none of it is duplicated elsewhere. */
+   *  `PaneGrid`'s `pane-head`) — so this component must not draw it a second time. The
+   *  rest of the title block (remote host / resumed marker) still renders, since the
+   *  pane header has no room for it. */
   titleInHeader?: boolean
 }
 
-export default function Chat(
-{
+/**
+ * A chat, which is a terminal: the CLI running in an embedded xterm, plus the one
+ * pre-launch pane that decides where it runs.
+ */
+export default function Chat({
   session,
-  streaming,
   saveError,
-  approval,
-  onApproval,
-  onSendMessage,
-  onStop,
-  onOpenSettings,
-  ready,
-  models,
-  currentModel,
-  onModelChange,
   terminalProvider,
   terminalAccountId,
-  mode,
   initialTerminalPrompt,
   onInitialTerminalPromptSent,
   newChatNonce,
-  autoApprove,
-  onToggleAutoApprove,
-  lightMode,
-  onToggleLightMode,
-  onStartFresh,
-  onCompact,
-  compacting,
-  onRetry,
-  onEditResend,
-  onBranch,
-  onExportSession,
   onPatchSession,
   onCloseTerminal,
   titleInHeader = false
 }: Props) {
-  const [exportMenuOpen, setExportMenuOpen] = useState(false)
-  // Ops chats only: whether the timeline panel shows. Open by default (keyed by chat, so
-  // every ops chat starts open) so the first call is visible without a click.
-  const [opsClosed, setOpsClosed] = useState<Record<string, boolean>>({})
-  const isOpsChat = !!session?.runbookPath
-  const opsOpen = isOpsChat && !!session && !opsClosed[session.id]
-  const toggleOps = () => {
-    if (!session) return
-    if (opsOpen) {
-      setOpsClosed((m) => ({ ...m, [session.id]: true }))
-      return
-    }
-    setOpsClosed((m) => ({ ...m, [session.id]: false }))
-  }
-  const [markdownCopied, setMarkdownCopied] = useState(false)
-  const [markdownSaved, setMarkdownSaved] = useState(false)
-  // Long-session banners the user has waved away, keyed by session id. In-memory only:
-  // the warning is worth re-stating in a fresh app run, but not on every render.
-  const [dismissedBanners, setDismissedBanners] = useState<Record<string, boolean>>({})
-  // Which provider's model the active chat is running — the model picker filters to it.
-  const activeProvider = models.find((m) => currentModel.startsWith(m.id))?.provider ?? 'claude'
-  // Which pane this chat is, decided by the app's mode alone. There is deliberately no
-  // per-chat override any more: the two modes are whole working surfaces, and a chat that
-  // could be flipped between them left the terminal-mode user with a composer that has no
-  // business existing (and the chat-mode user with a pane the mode says is not there).
-  // Terminal mode: the pty is created on the same render that mounts ChatTerminal, so where
-  // it runs has to be settled BEFORE that — a CLI already launched in the wrong folder has
-  // no undo. A terminal that arrives with no folder at all (New terminal from the welcome
-  // pane, with no chat open to inherit one from) therefore opens on a setup pane: pick the
+  // The pty is created on the same render that mounts ChatTerminal, so where it runs has
+  // to be settled BEFORE that — a CLI already launched in the wrong folder has no undo. A
+  // terminal that arrives with no folder at all (New terminal from the welcome pane, with
+  // no chat open to inherit one from) therefore opens on a setup pane: pick the
   // environment and folder, then Start. One that already knows where it runs (a project
   // group's "+", Open with Argos, Home's start box, a WSL/SSH environment, or any chat
   // that has already had a terminal in it) skips it — that choice was made elsewhere.
   //
-  // Decided once per chat, the first time it is rendered in terminal mode, and then left
-  // alone: the setup pane's own config bar patches the session as you use it, so re-deriving
-  // this on every render would launch the pty mid-edit — choosing "WSL" clears projectPath
-  // and picking the distro would read as "configured" before a folder was ever named.
+  // Decided once per chat, the first time it is rendered, and then left alone: the setup
+  // pane's own config bar patches the session as you use it, so re-deriving this on every
+  // render would launch the pty mid-edit — choosing "WSL" clears projectPath and picking
+  // the distro would read as "configured" before a folder was ever named.
   // The nonce is part of the key, not just the id: pressing New terminal on a chat that is
   // already the open draft is the one way this has to be asked again, and the answer would
   // otherwise be frozen from the first time the chat was seen. It cannot be re-derived from
   // the session alone — after Start with no folder chosen, the session still knows nothing
   // about where it runs, and that would snap straight back to the setup pane.
   const [setup, setSetup] = useState<{ id: string; nonce: number; pending: boolean } | null>(null)
-  if (session && mode === 'terminal' && (setup?.id !== session.id || setup.nonce !== newChatNonce)) {
+  if (session && (setup?.id !== session.id || setup.nonce !== newChatNonce)) {
     // Adjusting state during the render (rather than in an effect) is deliberate: an effect
     // runs after the commit that already mounted ChatTerminal and spawned its pty.
     const knowsWhereItRuns =
       !!session.projectPath || !!session.remoteHostId || !!session.wslDistro || !!session.hasTerminalActivity
     setSetup({ id: session.id, nonce: newChatNonce, pending: !knowsWhereItRuns })
   }
-  const needsTerminalSetup = mode === 'terminal' && !!session && setup?.id === session.id && setup.pending
-  const termOpen = !!session && mode === 'terminal' && !needsTerminalSetup
+  const needsTerminalSetup = !!session && setup?.id === session.id && setup.pending
+  const termOpen = !!session && !needsTerminalSetup
   // Backfill for chats that predate newSession handing every chat an id of its own.
   // Naming the session before the CLI does is what makes the title, the transcript and
   // the running dot findable at all — left to the CLI, that id is invented inside the pty
@@ -278,410 +96,20 @@ export default function Chat(
     if (!termOpen || !chatId || hasClaudeId || hasTerminalId) return
     onPatchSession({ terminalSessionId: crypto.randomUUID() })
   }, [termOpen, chatId, hasClaudeId, hasTerminalId, onPatchSession])
-  // When App deliberately moves you to a new chat, put the caret in the composer. The
-  // accent sweep that goes with it is driven by remounting the band (see the composer
-  // markup), not from here. In terminal mode there is no composer to focus — the terminal
-  // takes focus itself once the CLI is up.
-  useEffect(() => {
-    if (!session || newChatNonce === 0 || mode === 'terminal') return
-    textareaRef.current?.focus()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newChatNonce])
-  const [input, setInput] = useState('')
-  const [attachments, setAttachments] = useState<Attachment[]>([])
-  // Transient inline feedback (e.g. rejected attachment); clears itself after ~4s.
-  const [attachNotice, setAttachNotice] = useState<string | null>(null)
-  // True while files are being dragged over the chat, to show the drop overlay.
-  const [dragging, setDragging] = useState(false)
-  // dragenter/dragleave fire per descendant; count them so the overlay only clears
-  // once the pointer has truly left the chat root.
-  const dragDepth = useRef(0)
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const pickerListRef = useRef<HTMLDivElement>(null)
-  const approvalRef = useRef<HTMLDivElement>(null)
   // The save-error banner has no real "resolved" signal from the caller (saveError just
   // clears itself once a save succeeds), so "dismiss" only has to mean "stop showing me
   // *this* failure" — tracked by comparing against the last message the user waved away.
   const [dismissedSaveError, setDismissedSaveError] = useState('')
 
-  // ── Slash-command picker ──────────────────────────────────────────────────
-  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([])
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const [pickerActive, setPickerActive] = useState(0)
-
-  // Fetch command list whenever the project path changes.
-  useEffect(() => {
-    let cancelled = false
-    window.electronAPI.commandsList(session?.projectPath).then((cmds) => {
-      if (!cancelled) setSlashCommands(cmds)
-    }).catch(() => { /* ignore */ })
-    return () => { cancelled = true }
-  }, [session?.projectPath])
-
-  // Compute the query string after the leading slash (first word only).
-  const slashQuery = (() => {
-    if (!input.startsWith('/')) return null
-    // Only show picker before the user has added a space + args
-    const space = input.indexOf(' ')
-    if (space !== -1) return null
-    return input.slice(1).toLowerCase()
-  })()
-
-  // Filtered list based on what they've typed after '/'.
-  const pickerItems = slashQuery !== null
-    ? slashCommands.filter((c) =>
-        slashQuery === '' || c.name.toLowerCase().includes(slashQuery) ||
-        (c.description ?? '').toLowerCase().includes(slashQuery)
-      )
-    : []
-
-  // Open/close the picker; reset selection to 0 on every open.
-  useEffect(() => {
-    const shouldOpen = slashQuery !== null && pickerItems.length > 0
-    setPickerOpen(shouldOpen)
-    if (shouldOpen) setPickerActive(0)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slashQuery])
-
-  // Keep the active index in bounds when the filtered list shrinks.
-  useEffect(() => {
-    if (pickerItems.length > 0) {
-      setPickerActive((prev) => (prev >= pickerItems.length ? pickerItems.length - 1 : prev))
-    }
-    if (pickerItems.length === 0) setPickerOpen(false)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pickerItems.length])
-
-  // Scroll active item into view.
-  useEffect(() => {
-    const el = pickerListRef.current?.querySelector('.slash-picker-item.active') as HTMLElement | null
-    el?.scrollIntoView({ block: 'nearest' })
-  }, [pickerActive])
-
-  const acceptPickerItem = (item: SlashCommand) => {
-    const insertion = item.kind === 'skill'
-      ? `Use the "${item.name}" skill to `
-      : `/${item.name} `
-    setInput(insertion)
-    setPickerOpen(false)
-    setTimeout(() => textareaRef.current?.focus(), 0)
-  }
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [session?.messages])
-
-  // A fresh approval is easy to miss if the transcript is long and scrolled up — pull
-  // it into view the moment it shows up, same as a new message would be.
-  useEffect(() => {
-    if (approval) approvalRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [approval?.approvalId])
-
-  const handleCopyMarkdown = () => {
-    if (!session) return
-    navigator.clipboard.writeText(sessionToMarkdown(session)).then(() => {
-      // Keep the dropdown open long enough for the "Copied ✓" label to be seen,
-      // then close it (closing immediately would hide the only feedback).
-      setMarkdownCopied(true)
-      setTimeout(() => {
-        setMarkdownCopied(false)
-        setExportMenuOpen(false)
-      }, 1200)
-    })
-  }
-
-  const handleSaveMarkdown = async () => {
-    if (!session) return
-    const md = sessionToMarkdown(session)
-    const result = await window.electronAPI.exportMarkdown(session.name || 'chat', md)
-    if (result.saved) {
-      setMarkdownSaved(true)
-      setTimeout(() => setMarkdownSaved(false), 1500)
-    }
-  }
-
-  const handleSend = async () => {
-    if (streaming) {
-      onStop()
-      return
-    }
-    const text = input.trim()
-    if (!text && attachments.length === 0) return
-    const imageAttachments = attachments.filter(
-      (a): a is Extract<Attachment, { kind: 'image' }> => a.kind === 'image'
-    )
-    const images = imageAttachments.map((a) => ({ mediaType: a.mediaType, data: a.data }))
-    // Shrunk before the send so the transcript can show what was attached without
-    // carrying the full-size copy in the session file forever.
-    const thumbnails = await Promise.all(imageAttachments.map((a) => makeThumbnail(a.preview)))
-    const files = attachments
-      .filter((a): a is Extract<Attachment, { kind: 'file' }> => a.kind === 'file')
-      .map((a) => ({ name: a.name, content: a.content }))
-    setInput('')
-    setAttachments([])
-    resetTextareaHeight()
-    // Sensible fallback prompt when the user attaches without typing.
-    const fallback = images.length ? 'Describe these image(s).' : 'See the attached file(s).'
-    onSendMessage(
-      text || fallback,
-      images.length ? images : undefined,
-      files.length ? files : undefined,
-      thumbnails.length ? thumbnails : undefined
-    )
-  }
-
-  // Show a brief red notice above the input; auto-clears after ~4s.
-  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const showNotice = (msg: string) => {
-    setAttachNotice(msg)
-    if (noticeTimer.current) clearTimeout(noticeTimer.current)
-    noticeTimer.current = setTimeout(() => setAttachNotice(null), 4000)
-  }
-
-  // Route each incoming file: images go through the existing base64 image path; anything
-  // else is read as text and attached as a file chip. Enforce limits (max 5 files, 200 KB
-  // each) and reject likely-binary content at add time.
-  const addFiles = (files: FileList | File[]) => {
-    // Reserve remaining file slots up front (reads are async, so count optimistically).
-    let fileSlots = MAX_FILE_ATTACHMENTS - attachments.filter((a) => a.kind === 'file').length
-    for (const file of Array.from(files)) {
-      // Classified by extension as well as MIME type — see imageMediaType. The
-      // media type stored here is what reaches the API, so it can never be the
-      // empty string the file may have arrived with.
-      const mediaType = imageMediaType(file)
-      if (mediaType) {
-        const reader = new FileReader()
-        reader.onload = () => {
-          const result = reader.result as string
-          const data = result.split(',')[1] ?? ''
-          setAttachments((prev) => [...prev, { kind: 'image', mediaType, data, preview: result }])
-        }
-        reader.readAsDataURL(file)
-        continue
-      }
-      const ext = file.name.includes('.') ? file.name.split('.').pop()!.toLowerCase() : ''
-      if (BINARY_EXTENSIONS.has(ext)) {
-        showNotice(`Can't attach "${file.name}" — looks like a binary file.`)
-        continue
-      }
-      if (file.size > MAX_FILE_BYTES) {
-        showNotice(`"${file.name}" is too large (max ${formatSize(MAX_FILE_BYTES)}).`)
-        continue
-      }
-      if (fileSlots <= 0) {
-        showNotice(`Only ${MAX_FILE_ATTACHMENTS} files can be attached per message.`)
-        break
-      }
-      fileSlots--
-      const reader = new FileReader()
-      reader.onload = () => {
-        const content = reader.result as string
-        // NUL byte ⇒ almost certainly binary content that slipped past the denylist.
-        if (content.includes(String.fromCharCode(0))) {
-          showNotice(`Can't attach "${file.name}" — looks like a binary file.`)
-          return
-        }
-        setAttachments((prev) => [...prev, { kind: 'file', name: file.name, size: file.size, content }])
-      }
-      reader.readAsText(file)
-    }
-  }
-
-  /**
-   * Paste an image, from either of the two shapes a clipboard hands one over in.
-   *
-   * A screenshot has no file behind it and arrives only as an `image/*` item. A file
-   * copied in Explorer arrives in `files` instead, and Windows does not always put a
-   * MIME type on it — so reading `items` alone silently dropped every pasted image
-   * file, with no attachment and no message to say why.
-   */
-  /**
-   * An image pasted with Ctrl+V.
-   *
-   * It arrives as a window event rather than through `onPaste` because the DOM paste
-   * event does not fire in this app at all — the application menu carries no Edit
-   * roles, so the keystroke is handled by lib/clipboard-paste.ts instead, which reads
-   * the clipboard in the main process and announces what it found.
-   *
-   * Attached only while this chat can actually take an attachment, so a paste while a
-   * run is streaming does not quietly queue one onto the next message.
-   */
-  useEffect(() => {
-    if (!ready) return
-    const onImage = (e: Event) => {
-      const { mediaType, data } = (e as CustomEvent<ClipboardImageDetail>).detail
-      setAttachments((prev) => [
-        ...prev,
-        { kind: 'image', mediaType, data, preview: `data:${mediaType};base64,${data}` }
-      ])
-    }
-    window.addEventListener(CLIPBOARD_IMAGE_EVENT, onImage)
-    return () => window.removeEventListener(CLIPBOARD_IMAGE_EVENT, onImage)
-  }, [ready])
-
-  const handlePaste = (e: React.ClipboardEvent) => {
-    const items = Array.from(e.clipboardData.items)
-    const images = items
-      .filter((i) => i.type.startsWith('image/'))
-      .map((i) => i.getAsFile())
-      .filter((f): f is File => !!f)
-    if (images.length) {
-      e.preventDefault()
-      addFiles(images)
-      return
-    }
-    const files = Array.from(e.clipboardData.files)
-    if (files.length) {
-      e.preventDefault()
-      addFiles(files)
-      return
-    }
-    // Nothing usable came across. Say so only when the clipboard actually held
-    // something file-shaped: a plain text paste must stay silent, or the composer
-    // nags on every Ctrl+V. Silence here is what made a failed image paste
-    // indistinguishable from the app ignoring the keystroke entirely.
-    if (items.some((i) => i.kind === 'file')) {
-      showNotice("Couldn't read that from the clipboard — try dragging the file in instead.")
-    }
-  }
-
-  // ── Drag & drop files onto the chat ────────────────────────────────────────
-  const dndActive = ready && !streaming
-  const dragHasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes('Files')
-  const handleDragEnter = (e: React.DragEvent) => {
-    if (!dndActive || !dragHasFiles(e)) return
-    e.preventDefault()
-    dragDepth.current += 1
-    setDragging(true)
-  }
-  const handleDragOver = (e: React.DragEvent) => {
-    if (!dndActive || !dragHasFiles(e)) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
-  }
-  const handleDragLeave = (e: React.DragEvent) => {
-    if (!dragHasFiles(e)) return
-    dragDepth.current = Math.max(0, dragDepth.current - 1)
-    if (dragDepth.current === 0) setDragging(false)
-  }
-  const handleDrop = (e: React.DragEvent) => {
-    dragDepth.current = 0
-    setDragging(false)
-    if (!dragHasFiles(e)) return
-    // Prevent the browser from navigating away to the dropped file.
-    e.preventDefault()
-    if (!dndActive) return
-    if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files)
-  }
-
-  const removeAttachment = (idx: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== idx))
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (pickerOpen) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        setPickerActive((a) => Math.min(a + 1, pickerItems.length - 1))
-        return
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        setPickerActive((a) => Math.max(a - 1, 0))
-        return
-      }
-      if (e.key === 'Enter' || e.key === 'Tab') {
-        e.preventDefault()
-        // Don't accept during IME composition (keyCode 229 is the IME sentinel)
-        if (e.nativeEvent.isComposing || e.keyCode === 229) return
-        const item = pickerItems[pickerActive]
-        if (item) acceptPickerItem(item)
-        return
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        setPickerOpen(false)
-        return
-      }
-    }
-    // Don't send during IME composition
-    if (e.key === 'Enter' && !e.shiftKey && !streaming && !e.nativeEvent.isComposing && e.keyCode !== 229) {
-      e.preventDefault()
-      handleSend()
-    }
-  }
-
-  // Close the picker when the textarea loses focus (e.g. user clicks elsewhere).
-  // Use a short delay so a click on a picker item fires its onClick before the list unmounts.
-  const handleBlur = () => {
-    setTimeout(() => setPickerOpen(false), 150)
-  }
-
-  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value)
-    const ta = e.target
-    ta.style.height = 'auto'
-    ta.style.height = Math.min(ta.scrollHeight, 200) + 'px'
-  }
-
-  const resetTextareaHeight = () => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-    }
-  }
-
-  const isEmpty = !session || session.messages.length === 0
-
-  const formatTokens = (n: number): string => {
-    if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k'
-    return String(n)
-  }
-
-  // Headline counts only input+output — cache traffic dwarfs them and reads as
-  // "tokens spent" when it's mostly cheap re-reads; the tooltip keeps the breakdown.
-  const ioTokens = (session?.inputTokens ?? 0) + (session?.outputTokens ?? 0)
-  const cacheTokens = (session?.cacheReadTokens ?? 0) + (session?.cacheCreationTokens ?? 0)
-
-  // Real context footprint (last-turn input + cache). null on old sessions w/o usage.
-  const ctxTokens = contextTokens(session)
-  const ctxColor =
-    ctxTokens != null && ctxTokens >= 150_000
-      ? 'var(--error)'
-      : ctxTokens != null && ctxTokens >= 100_000
-        ? '#e2b341'
-        : undefined
-  // The single cost/context readout under the composer — the header chip and the separate
-  // context indicator both folded into this one. Shown whenever there's any usage at all.
-  const showUsageReadout = !!session && ((session.costUsd ?? 0) > 0 || ioTokens + cacheTokens > 0)
-  const usageTooltip = session
-    ? [
-        `Input: ${formatTokens(session.inputTokens ?? 0)} tok`,
-        `Output: ${formatTokens(session.outputTokens ?? 0)} tok`,
-        `Cache read: ${formatTokens(session.cacheReadTokens ?? 0)} tok`,
-        `Cache write: ${formatTokens(session.cacheCreationTokens ?? 0)} tok`,
-        '',
-        'Context is the approximate payload re-sent on each turn (last turn\'s input + cache tokens). Compact the chat to shrink it.'
-      ].join('\n')
-    : undefined
-
-  // Warn on real context when we have it; fall back to message count for old sessions.
-  const showLongSessionBanner =
-    (ctxTokens != null ? ctxTokens >= 120_000 : !!session && session.messages.length >= 40) &&
-    !!session &&
-    !dismissedBanners[session.id]
-
-  // Title block: session name plus one quiet meta line replacing the header adornments.
-  // The name is skipped when a split-view pane header is already showing it (`titleInHeader`)
-  // — otherwise the same chat name would be drawn twice, once in `.pane-head` and once here.
-  // The meta line (remote host / resumed marker) has no equivalent in the pane
-  // header, so it always renders when present, in either mode.
+  // Title block for the setup pane: the chat's name plus one quiet meta line. Only for a
+  // chat that already has a name of its own — a fresh one is still the placeholder "New
+  // chat", and printing that above "Start a terminal" reads as two headings. The name is
+  // skipped when a split-view pane header is already showing it.
   const hasTitleMeta = !!(session?.remoteHostName || session?.claudeSessionId)
-  const showTitleName = !titleInHeader
+  const showTitleName = !titleInHeader && !!session?.name && session.name !== 'New chat'
   const titleBlock = session && (showTitleName || hasTitleMeta) && (
     <div className="chat-title-block">
-      {showTitleName && <div className="chat-title-name">{session.name || 'New chat'}</div>}
+      {showTitleName && <div className="chat-title-name">{session.name}</div>}
       {hasTitleMeta && (
         <div className="chat-title-meta">
           {session.remoteHostName && (
@@ -694,83 +122,13 @@ export default function Chat(
   )
 
   return (
-    <div
-      className="chat"
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      {dragging && (
-        <div className="chat-drop-overlay">
-          <div className="chat-drop-inner">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            <span>Drop files to attach</span>
-          </div>
-        </div>
-      )}
-      {/* Floating action cluster over the transcript. Hidden while the embedded terminal
-          is open: it would float over xterm's own surface, and ChatTerminal already
-          renders its own close control to get you back to the chat. */}
-      {!termOpen && !needsTerminalSetup && (
-        <div className={`chat-float-actions ${exportMenuOpen ? 'open' : ''}`}>
-          {/* Only while the panel is closed: open, it has its own Close button, and the
-              float cluster sits exactly where the panel's heading does (seen in the first
-              visual check — "Ops" drawn over "Close"). */}
-          {isOpsChat && !opsOpen && (
-            <button
-              className={`header-icon-btn chat-ops-toggle${opsOpen ? ' term-active' : ''}`}
-              onClick={toggleOps}
-              title={opsOpen ? 'Hide the ops timeline' : 'Show the ops timeline'}
-              aria-pressed={opsOpen}
-            >
-              Ops
-            </button>
-          )}
-          <div className="header-menu-wrap" style={{ position: 'relative' }}>
-            <button
-              className="header-icon-btn"
-              onClick={() => setExportMenuOpen((v) => !v)}
-              title="More"
-              aria-label="More"
-              aria-haspopup="menu"
-              aria-expanded={exportMenuOpen}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" />
-              </svg>
-            </button>
-            {exportMenuOpen && (
-              <div className="header-menu-dropdown" onMouseLeave={() => setExportMenuOpen(false)}>
-                <button disabled={isEmpty} onClick={() => { setExportMenuOpen(false); handleSaveMarkdown() }}>
-                  {markdownSaved ? 'Saved ✓' : 'Export as .md'}
-                </button>
-                <button disabled={isEmpty} onClick={handleCopyMarkdown}>
-                  {markdownCopied ? 'Copied ✓' : 'Copy as Markdown'}
-                </button>
-                <button disabled={isEmpty} onClick={() => { setExportMenuOpen(false); onExportSession('html') }}>Export as HTML</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Row below the floating actions: the transcript/composer column, plus the optional
-          side panel (the ops timeline). Kept as a flex row (rather than folding it into the
-          same column) so the panel gets its own independent scroll and never has to fight the
-          transcript for height. */}
-      <div className="chat-body">
-      <div className="chat-main">
+    <div className="chat">
       {saveError && dismissedSaveError !== saveError && (
         <div className="save-error-banner" role="alert">
           <span className="save-error-text">
-            This chat's transcript couldn't be saved to disk — recent messages may be lost if
-            the app closes. {/* The caller hands us a stringified Error; its "Error: " prefix
-            is noise in a sentence the user reads. */}
+            This chat couldn&rsquo;t be saved to disk — its name, folder and link to the CLI
+            conversation may be lost if the app closes. {/* The caller hands us a
+            stringified Error; its "Error: " prefix is noise in a sentence the user reads. */}
             ({saveError.replace(/^Error:\s*/, '')})
           </span>
           <button
@@ -785,54 +143,10 @@ export default function Chat(
           </button>
         </div>
       )}
-      <div className="chat-messages" style={termOpen || needsTerminalSetup ? { display: 'none' } : undefined}>
-        {isEmpty ? (
-          <div className="chat-empty">
-            {titleBlock}
-            <div className="welcome">
-              <div className="welcome-icon">
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="10" stroke="var(--accent)" strokeWidth="1" />
-                  <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
-              </div>
-              <h2>What&rsquo;s up next?</h2>
-              <p>Set the folder, environment, and any extra directories below, then describe a task to get started.</p>
-            </div>
-          </div>
-        ) : (
-          <>
-            {titleBlock}
-            {session!.messages.map((msg, idx) => {
-              const isLast = idx === session!.messages.length - 1
-              const showBranchDivider = session!.branchedFrom?.atMessageId === msg.id
-              return (
-                <Fragment key={msg.id}>
-                  <MessageBubble
-                    message={msg}
-                    streaming={streaming && isLast && msg.role === 'assistant'}
-                    onRetry={isLast && msg.role === 'assistant' && msg.error ? onRetry : undefined}
-                    onEditResend={onEditResend}
-                    onBranch={onBranch}
-                  />
-                  {showBranchDivider && (
-                    <div className="branch-divider" role="separator">
-                      <span className="branch-divider-mark" aria-hidden="true">&#9090;</span>
-                      branched from &ldquo;{session!.branchedFrom!.name}&rdquo; here
-                    </div>
-                  )}
-                </Fragment>
-              )
-            })}
-          </>
-        )}
-        <div ref={bottomRef} />
-      </div>
 
       {session && needsTerminalSetup && (
         <div className="terminal-setup">
-          {/* No titleBlock here: the chat's name is still the placeholder "New chat" at this
-              point, and printing it above "Start a terminal" reads as two headings. */}
+          {titleBlock}
           <h2>Start a terminal</h2>
           <p>
             Pick where it runs — the CLI starts there and can't be moved afterwards.
@@ -881,282 +195,6 @@ export default function Chat(
           />
         </Suspense>
       )}
-
-      {/* Rendered outside the composer's display:none wrapper below — a run in a chat
-          with the terminal open still needs approving, and it has nowhere else to show
-          up (the global modal is deliberately suppressed for the chat on screen). */}
-      {/* An ops plan is never inline: App shows it as the review sheet. */}
-      {session && approval && mode === 'chat' && approval.ops?.tool !== 'plan' && (
-        <div ref={approvalRef} className="chat-approval-inline">
-          <ApprovalModal
-            request={approval}
-            onDecide={(allow) => onApproval(approval.approvalId, allow)}
-            inline
-          />
-        </div>
-      )}
-
-      <div className="chat-input-area" style={termOpen || needsTerminalSetup ? { display: 'none' } : undefined}>
-      <div className="chat-input-column">
-        {session && showLongSessionBanner && (
-          <div className="long-session-banner">
-            <span className="long-session-text">
-              {ctxTokens != null ? (
-                <>
-                  This chat's context is ~{formatTokens(ctxTokens)} tokens — the whole history is
-                  re-sent every turn, which burns quota. Compact it or start fresh.
-                </>
-              ) : (
-                <>
-                  This chat has {session.messages.length} messages — the whole history is re-sent
-                  every turn, which burns tokens. Compact it or start fresh.
-                </>
-              )}
-            </span>
-            <div className="long-session-actions">
-              <button onClick={onCompact} disabled={compacting}>
-                {compacting ? 'Compacting…' : 'Compact'}
-              </button>
-              <button onClick={onStartFresh} disabled={compacting}>
-                Start fresh
-              </button>
-              <button
-                className="long-session-dismiss"
-                onClick={() => setDismissedBanners((prev) => ({ ...prev, [session.id]: true }))}
-                title="Dismiss"
-                aria-label="Dismiss this warning"
-              >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        )}
-        {attachNotice && <div className="attach-notice">{attachNotice}</div>}
-        {attachments.length > 0 && (
-          <div className="attachments">
-            {attachments.map((a, i) =>
-              a.kind === 'image' ? (
-                <div className="attachment" key={i}>
-                  <img src={a.preview} alt="attachment" />
-                  <button className="attachment-remove" onClick={() => removeAttachment(i)} title="Remove" aria-label="Remove attachment">
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
-                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                </div>
-              ) : (
-                <div className="file-chip" key={i} title={`${a.name} · ${formatSize(a.size)}`}>
-                  <svg className="file-chip-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                  </svg>
-                  <span className="file-chip-name">{middleEllipsis(a.name)}</span>
-                  <span className="file-chip-size">{formatSize(a.size)}</span>
-                  <button className="file-chip-remove" onClick={() => removeAttachment(i)} title="Remove" aria-label="Remove attachment">
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
-                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                </div>
-              )
-            )}
-          </div>
-        )}
-        {/* The composer as one unit — input plus the options row — so the new-chat sweep
-            crosses the whole thing instead of just the strip of chips. */}
-        <div className="composer-shell">
-        {/* Keyed on the nonce so every New chat press mounts a fresh band and therefore
-            restarts the sweep. Toggling a class instead silently no-ops whenever the class
-            is still applied from a previous press, which left the highlight dead after the
-            first couple of presses. */}
-        <span className="composer-sheen" aria-hidden="true">
-          {newChatNonce > 0 && <span key={newChatNonce} className="composer-sheen-band" />}
-        </span>
-        <div className="input-wrapper">
-          {pickerOpen && (
-            <div className="slash-picker" role="listbox" aria-label="Slash commands">
-              <div className="slash-picker-list" ref={pickerListRef}>
-                {pickerItems.length === 0 ? (
-                  <div className="slash-picker-empty">No matches</div>
-                ) : (
-                  pickerItems.map((item, i) => (
-                    <div
-                      key={`${item.kind}:${item.scope}:${item.name}`}
-                      className={`slash-picker-item${i === pickerActive ? ' active' : ''}`}
-                      role="option"
-                      aria-selected={i === pickerActive}
-                      onMouseEnter={() => setPickerActive(i)}
-                      onClick={() => acceptPickerItem(item)}
-                    >
-                      <span className="slash-picker-name">/{item.name}</span>
-                      {item.description && (
-                        <span className="slash-picker-desc">{item.description}</span>
-                      )}
-                      <span className="slash-picker-badges">
-                        <span className={`slash-badge slash-badge-kind-${item.kind}`}>
-                          {item.kind}
-                        </span>
-                        {item.scope === 'project' && (
-                          <span className="slash-badge slash-badge-scope-project">project</span>
-                        )}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-              <div className="slash-picker-foot">
-                <span>↑↓ navigate</span>
-                <span>↵ Tab accept</span>
-                <span>esc dismiss</span>
-              </div>
-            </div>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              if (e.target.files) addFiles(e.target.files)
-              // Reset so picking the same file again re-fires onChange.
-              e.target.value = ''
-            }}
-          />
-          <button
-            className="attach-btn"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={!ready || streaming}
-            title="Attach image or file"
-            aria-label="Attach image or file"
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-            </svg>
-          </button>
-          {/* Placeholder stays provider-neutral: a chat runs on Codex or Gemini just as
-              readily as on Claude, and the chip row below already names the model. */}
-          <textarea
-            ref={textareaRef}
-            className="chat-input"
-            placeholder={ready ? 'Describe a task or ask a question…  (paste images or drop/attach files)' : 'Connect your account in Settings to start'}
-            value={input}
-            onChange={handleInput}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            onBlur={handleBlur}
-            rows={1}
-            disabled={!ready}
-          />
-          <button
-            className={`send-btn ${streaming ? 'stop' : input.trim() || attachments.length ? 'active' : ''}`}
-            onClick={handleSend}
-            disabled={(!input.trim() && attachments.length === 0 && !streaming) || !ready}
-            title={streaming ? 'Stop' : 'Send (Enter)'}
-            aria-label={streaming ? 'Stop' : 'Send'}
-          >
-            {streaming ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                <rect x="6" y="6" width="12" height="12" rx="2" />
-              </svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-            )}
-          </button>
-        </div>
-
-        {/* Persistent chip row under the composer: where the chat runs (ChatConfigBar) plus
-            the model / mode controls that used to live in the header. Connect account leads
-            because it's the only path to a working app — it must never be hover-only. */}
-        <div className="composer-chips">
-          {!ready && (
-            <button className="header-btn warning chip-connect" onClick={onOpenSettings}>
-              Connect account
-            </button>
-          )}
-          {session && <ChatConfigBar session={session} onPatch={onPatchSession} disabled={!ready} />}
-          <div className="composer-chips-right">
-            {models.some((m) => m.provider === activeProvider) && (
-              <ModelPicker
-                models={models.filter((m) => m.provider === activeProvider)}
-                value={currentModel}
-                onChange={onModelChange}
-                compact
-              />
-            )}
-            <div className="chip-toggle-group">
-              <button
-                className={`approve-toggle ${autoApprove ? 'auto' : 'ask'}`}
-                onClick={onToggleAutoApprove}
-                title={autoApprove ? 'Auto-approving all tools — click to require approval' : 'Asking before file edits & commands — click to auto-approve'}
-                aria-label={autoApprove ? 'Auto-approving all tools — click to require approval' : 'Asking before file edits & commands — click to auto-approve'}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  {autoApprove ? (
-                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-                  ) : (
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                  )}
-                </svg>
-                {autoApprove ? 'Auto' : 'Approve'}
-              </button>
-              <button
-                className={`approve-toggle ${lightMode ? 'auto' : 'ask'}`}
-                onClick={onToggleLightMode}
-                title={
-                  lightMode
-                    ? 'Light mode ON — no tools sent (cheapest for plain chat). Click to enable tools.'
-                    : 'Tools enabled. Click for Light mode: no tools, fewer tokens per turn (best for plain Q&A).'
-                }
-                aria-label="Toggle light (no-tools) chat mode"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-                </svg>
-                {lightMode ? 'Light' : 'Full'}
-              </button>
-            </div>
-          </div>
-        </div>
-        </div>
-
-        {/* The one place cost/context is stated. Keyboard hint only on a fresh chat. */}
-        {(isEmpty || showUsageReadout) && (
-          <div className="input-hint">
-            {isEmpty && <span>Enter to send · Shift+Enter for newline</span>}
-            {showUsageReadout && (
-              <span
-                className="usage-readout"
-                style={ctxColor ? { color: ctxColor } : undefined}
-                title={usageTooltip}
-              >
-                {ctxTokens != null && `${formatTokens(ctxTokens)} ctx · `}
-                ${(session!.costUsd ?? 0) < 0.01
-                  ? (session!.costUsd ?? 0).toFixed(4)
-                  : (session!.costUsd ?? 0).toFixed(2)}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-      </div>
-      </div>
-
-      {session && opsOpen && (
-        <Suspense fallback={null}>
-          <OpsTimeline
-            key={session.id}
-            appSessionId={session.id}
-            runbookPath={session.runbookPath}
-            onClose={toggleOps}
-          />
-        </Suspense>
-      )}
-      </div>
     </div>
   )
 }

@@ -52,10 +52,10 @@ export default function Overlay() {
     }
   }, [])
 
-  const submit = (quick: boolean) => {
+  const submit = () => {
     const text = prompt.trim()
     if (!text) return
-    window.electronAPI.overlaySubmit({ prompt: text, quick })
+    window.electronAPI.overlaySubmit({ prompt: text })
     setPrompt('')
   }
 
@@ -64,7 +64,7 @@ export default function Overlay() {
   const onInputKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault()
-      if (prompt.trim()) submit(e.ctrlKey || e.metaKey)
+      if (prompt.trim()) submit()
       else if (selected >= 0 && recent[selected]) openSession(recent[selected].id)
       return
     }
@@ -98,7 +98,7 @@ export default function Overlay() {
           placeholder="Ask anything…"
           autoFocus
           spellCheck={false}
-          aria-label="Prompt for a new chat"
+          aria-label="Prompt for a new terminal"
         />
         <button
           className="overlay-open-app"
@@ -130,13 +130,12 @@ export default function Overlay() {
           </button>
         ))}
         {recent.length === 0 && (
-          <div className="overlay-empty">Type a prompt and press Enter to start a chat.</div>
+          <div className="overlay-empty">Type a prompt and press Enter to start a terminal.</div>
         )}
       </div>
 
       <div className="overlay-footer">
-        <span><kbd>Enter</kbd> new chat</span>
-        <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> quick chat</span>
+        <span><kbd>Enter</kbd> new terminal</span>
         <span><kbd>Esc</kbd> dismiss</span>
         {shortcut && <span className="overlay-shortcut">{shortcut}</span>}
       </div>
