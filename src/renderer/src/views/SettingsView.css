@@ -233,3 +233,16 @@
   color: var(--text-2);
   max-width: 62ch;
 }
+
+
+/* ── Ops audit ── */
+.settings-ops-path {
+  display: block;
+  margin: 4px 0;
+  word-break: break-all;
+  user-select: text;
+}
+.settings-ops-verify { align-items: center; }
+.settings-ops-date { width: 160px; font-size: 12.5px; padding: 7px 10px; }
+.settings-ops-result { margin-top: 10px; user-select: text; }
+.settings-ops-broken { color: var(--warn); }

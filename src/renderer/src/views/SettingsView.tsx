@@ -21,7 +21,7 @@ import AppearanceSettings from '../components/AppearanceSettings'
 import './views.css'
 import './SettingsView.css'
 
-type SectionId = 'appearance' | 'general' | 'connection' | 'system' | 'about'
+type SectionId = 'appearance' | 'general' | 'connection' | 'system' | 'ops' | 'about'
 
 interface Props {
   models: ModelInfo[]
@@ -77,6 +77,16 @@ const SECTIONS: { id: SectionId; label: string; icon: JSX.Element }[] = [
     )
   },
   {
+    id: 'ops',
+    label: 'Ops audit',
+    icon: (
+      <>
+        <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" />
+        <polyline points="9 12 11 14 15 10" />
+      </>
+    )
+  },
+  {
     id: 'about',
     label: 'About',
     icon: (
@@ -90,6 +100,15 @@ const SECTIONS: { id: SectionId; label: string; icon: JSX.Element }[] = [
 ]
 
 const isWindows = window.electronAPI.platform === 'win32'
+
+function humanBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// Ledger files are named by UTC day, so "today" must be the UTC date, not the local one.
+const utcToday = () => new Date().toISOString().slice(0, 10)
 
 export default function SettingsView({
   models,
@@ -108,6 +127,50 @@ export default function SettingsView({
   useEffect(() => {
     pane.current?.scrollTo({ top: 0 })
   }, [section])
+
+  // ── Ops audit ──
+  const [ledger, setLedger] = useState<{ dir: string; files: number; bytes: number } | null>(null)
+  const [verifyDate, setVerifyDate] = useState(utcToday)
+  const [verifying, setVerifying] = useState(false)
+  const [verifyResult, setVerifyResult] = useState<
+    { ok: true; lines: number } | { ok: false; brokenAt?: number; reason: string } | null
+  >(null)
+  const [dirCopied, setDirCopied] = useState(false)
+
+  useEffect(() => {
+    if (section !== 'ops') return
+    let cancelled = false
+    window.electronAPI
+      .opsLedgerInfo()
+      .then((info) => !cancelled && setLedger(info))
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [section])
+
+  const verifyLedger = async () => {
+    setVerifying(true)
+    setVerifyResult(null)
+    try {
+      setVerifyResult(await window.electronAPI.opsVerify(verifyDate))
+    } catch (e) {
+      setVerifyResult({ ok: false, reason: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setVerifying(false)
+    }
+  }
+
+  const copyLedgerDir = async () => {
+    if (!ledger) return
+    try {
+      await navigator.clipboard.writeText(ledger.dir)
+      setDirCopied(true)
+      setTimeout(() => setDirCopied(false), 1500)
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
 
   const [showPerms, setShowPerms] = useState(false)
   const [showHooks, setShowHooks] = useState(false)
@@ -447,6 +510,74 @@ export default function SettingsView({
               ) : (
                 <p className="field-hint">Loading system preferences…</p>
               )}
+            </>
+          )}
+
+          {section === 'ops' && (
+            <>
+              <h1 className="settings-title">Ops audit</h1>
+              <p className="settings-lead">
+                The ledger is append-only, written by Argos only, and never deleted by it.
+              </p>
+
+              <section className="settings-card">
+                {ledger ? (
+                  <div className="settings-row">
+                    <div className="settings-row-text">
+                      <span className="settings-row-label">Ledger folder</span>
+                      <code className="settings-code settings-ops-path">{ledger.dir}</code>
+                      <span className="settings-row-hint">
+                        {ledger.files} day {ledger.files === 1 ? 'file' : 'files'} ·{' '}
+                        {humanBytes(ledger.bytes)}
+                      </span>
+                    </div>
+                    <button className="btn-secondary small" onClick={copyLedgerDir}>
+                      {dirCopied ? 'Copied' : 'Copy path'}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="field-hint">Loading…</p>
+                )}
+              </section>
+
+              <section className="settings-card">
+                <h3 className="settings-h">Verify a day</h3>
+                <div className="settings-actions settings-ops-verify">
+                  <input
+                    type="date"
+                    className="text-input settings-ops-date"
+                    value={verifyDate}
+                    onChange={(e) => {
+                      setVerifyDate(e.target.value)
+                      setVerifyResult(null)
+                    }}
+                    aria-label="Ledger day (UTC)"
+                  />
+                  <button
+                    className="btn-secondary small"
+                    onClick={verifyLedger}
+                    disabled={verifying || !verifyDate}
+                  >
+                    {verifying
+                      ? 'Verifying…'
+                      : verifyDate === utcToday()
+                        ? 'Verify today’s ledger'
+                        : 'Verify this day'}
+                  </button>
+                </div>
+                {verifyResult && (
+                  <p
+                    className={`field-hint settings-ops-result ${verifyResult.ok ? '' : 'settings-ops-broken'}`}
+                    role="status"
+                  >
+                    {verifyResult.ok
+                      ? `Chain intact · ${verifyResult.lines} lines`
+                      : verifyResult.brokenAt !== undefined
+                        ? `Chain broken at line ${verifyResult.brokenAt}: ${verifyResult.reason}`
+                        : `Chain broken: ${verifyResult.reason}`}
+                  </p>
+                )}
+              </section>
             </>
           )}
 
