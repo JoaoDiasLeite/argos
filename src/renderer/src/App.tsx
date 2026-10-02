@@ -46,6 +46,7 @@ import type {
   HomeProject,
   HomeRecent,
   HomeStart,
+  HomePlan,
   HomeStartChoice,
   HomeStartOptions
 } from './views/HomeView'
@@ -1673,6 +1674,7 @@ export default function App() {
         // look. An ordinary Windows path already round-trips through canonicalProjectPath
         // unchanged, so this is a no-op for the common case.
         path: canonicalProjectPath(v.path, v.wslDistro, homeKeyCtx),
+        wslDistro: v.wslDistro,
         // Carried forward for homeRecentProjects' lastUsed, so that memo doesn't have to
         // re-scan `sessions` to recover what this one already computed.
         updatedAt: v.updatedAt
@@ -1743,7 +1745,8 @@ export default function App() {
           ? resolveHomeProjectName(session.projectPath, session.wslDistro)
           : undefined,
         since: approvalSinceRef.current.get(r.approvalId),
-        actionLabel: 'Review'
+        // What the button does: it opens the chat (or the ops workspace) holding the request.
+        actionLabel: 'Open'
       }
     })
     return approvals
@@ -1780,7 +1783,7 @@ export default function App() {
   // should only re-run when the entries themselves change, not every time a repo name
   // or rename arrives, or it would restart every row's spinner mid-flight.
   const [homeRepoStatus, setHomeRepoStatus] = useState<
-    Record<string, { branch?: string; fileCount: number; loading?: boolean; error?: string }>
+    Record<string, { branch?: string; fileCount: number; loading?: boolean; error?: string; noGit?: boolean }>
   >({})
   useEffect(() => {
     if (view !== 'home') return
@@ -1798,7 +1801,7 @@ export default function App() {
           if (cancelled) return
           setHomeRepoStatus((prev) => ({
             ...prev,
-            [entry.key]: { branch: status.branch, fileCount: status.files.length }
+            [entry.key]: { branch: status.branch, fileCount: status.files.length, noGit: !status.isRepo }
           }))
         })
         .catch(() => {
@@ -1818,11 +1821,11 @@ export default function App() {
   // name > basename), disambiguated by parent folder on collisions — replacing the local
   // labelFor() this used to have, which only knew about basenames.
   //
-  // homeRepoEntries splits into two Home sections rather than one: `repos` for folders
-  // known to have uncommitted work (or that failed to report status at all), and
-  // `recentProjects` for everything else — clean repos and ones still loading. A loading
-  // row can't be asserted to have changes yet, so it can never land in `repos`; it shows
-  // up as a loading `recentProjects` row until gitStatus settles one way or the other.
+  // homeRepoEntries feeds two Home sections: `recentProjects` lists every one of them
+  // (the left side's "Recent projects"), and `repos` only the folders known to have
+  // uncommitted work or that failed to report status at all (the column's "Uncommitted
+  // work"). A loading row can't be asserted to have changes yet, so it never lands in
+  // `repos` until gitStatus settles.
   const [homeRepos, homeRecentProjects] = useMemo<[HomeRepo[], HomeProject[]]>(() => {
     const names = projectDisplayNames(homeRepoEntries, { custom: homeProjectNames, repos: homeRepoNames })
     const repos: HomeRepo[] = []
@@ -1838,15 +1841,16 @@ export default function App() {
           fileCount: status?.fileCount ?? 0,
           error: status?.error
         })
-      } else {
-        recentProjects.push({
-          key: e.key,
-          name,
-          branch: status?.branch,
-          lastUsed: e.updatedAt,
-          loading: status?.loading
-        })
       }
+      recentProjects.push({
+        key: e.key,
+        name,
+        branch: status?.branch,
+        lastUsed: e.updatedAt,
+        loading: status?.loading,
+        wslDistro: e.wslDistro,
+        noGit: status?.noGit
+      })
     }
     recentProjects.sort((a, b) => b.lastUsed - a.lastUsed)
     return [repos, recentProjects]
@@ -1859,7 +1863,8 @@ export default function App() {
       sessions
         .filter((s) => s.hasTerminalActivity)
         .sort((a, b) => b.updatedAt - a.updatedAt)
-        .slice(0, 3)
+        // Home shows six and folds the rest under "Show N more".
+        .slice(0, 12)
         .map((s) => ({
           id: s.id,
           name: s.name,
@@ -1923,12 +1928,46 @@ export default function App() {
     return {
       projects,
       accounts: [
-        ...accounts.map((a) => ({ id: a.id, name: a.name, provider: 'claude' as const })),
-        ...codexAccounts.filter((a) => a.loggedIn).map((a) => ({ id: a.id, name: a.name, provider: 'codex' as const })),
-        ...geminiAccounts.filter((a) => a.loggedIn).map((a) => ({ id: a.id, name: a.name, provider: 'gemini' as const }))
+        ...accounts.map((a) => ({ id: a.id, name: a.name, email: a.email, provider: 'claude' as const })),
+        ...codexAccounts
+          .filter((a) => a.loggedIn)
+          .map((a) => ({ id: a.id, name: a.name, email: a.email, provider: 'codex' as const })),
+        ...geminiAccounts
+          .filter((a) => a.loggedIn)
+          .map((a) => ({ id: a.id, name: a.name, email: a.email, provider: 'gemini' as const }))
       ]
     }
   }, [sessions, homeKeyCtx, resolveHomeProjectName, accounts, codexAccounts, geminiAccounts])
+
+  // The header's subtitle: the account a Start would run on and how far into its plan
+  // window it is, from the same usage the sidebar's plan badge reads. Null when that
+  // account is not logged in, so Home can point at Settings instead.
+  const homePlan = useMemo<HomePlan | null>(() => {
+    if (defaultProvider === 'codex') {
+      const a = codexAccounts.find((x) => x.id === codexDefaultAccountId)
+      if (!a?.loggedIn) return null
+      return { accountName: a.name, ...codexAccountUsage[a.id] }
+    }
+    if (defaultProvider === 'gemini') {
+      const a = geminiAccounts.find((x) => x.id === geminiDefaultAccountId)
+      return a?.loggedIn ? { accountName: a.name } : null
+    }
+    const a = accounts.find((x) => x.id === homeStart.accountId)
+    if (!a?.loggedIn) return null
+    // accountUsage is the five-hour window by construction (see its memo).
+    const usage = accountUsage[a.id]
+    return usage ? { accountName: a.name, ...usage, windowMinutes: 300 } : { accountName: a.name }
+  }, [
+    defaultProvider,
+    codexAccounts,
+    codexDefaultAccountId,
+    codexAccountUsage,
+    geminiAccounts,
+    geminiDefaultAccountId,
+    accounts,
+    accountUsage,
+    homeStart.accountId
+  ])
 
   const onHomePickFolder = useCallback(async () => {
     return window.electronAPI.openFolder()
@@ -2490,6 +2529,7 @@ export default function App() {
             recent={homeRecent}
             start={homeStart}
             startOptions={homeStartOptions}
+            plan={homePlan}
             onAct={onHomeAct}
             onStart={onHomeStart}
             onPickFolder={onHomePickFolder}

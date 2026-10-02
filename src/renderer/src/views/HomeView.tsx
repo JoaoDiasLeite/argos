@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, ReactNode, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { ProviderId } from '../types'
 import { CLI_PROVIDERS } from '../lib/cli-providers'
@@ -34,14 +34,17 @@ export interface HomeRepo {
   error?: string
 }
 
-/** A clean-or-unknown project — everything `repos` no longer carries once it's
- *  filtered down to just what's actually dirty (see the `repos` prop below). */
+/** A recently used project, dirty or not — the left side's "Recent projects". */
 export interface HomeProject {
   key: string
   name: string
   branch?: string
   lastUsed: number
   loading?: boolean
+  /** Set for a folder inside a WSL distro; shown as a neutral chip. */
+  wslDistro?: string
+  /** gitStatus answered and the folder is not a repository. */
+  noGit?: boolean
 }
 
 export interface HomeRecent {
@@ -70,7 +73,16 @@ export interface HomeStartChoice {
 export interface HomeStartOptions {
   projects: { path: string; name: string }[]
   /** Every logged-in account, across providers. Filtered to the chosen CLI's. */
-  accounts: { id: string; name: string; provider: ProviderId }[]
+  accounts: { id: string; name: string; email?: string; provider: ProviderId }[]
+}
+
+/** The account a Start runs on and how far into its plan window it is (the header's
+ *  subtitle). No usage fields when the provider reports none (Antigravity). */
+export interface HomePlan {
+  accountName: string
+  utilization?: number
+  resetsAt?: string
+  windowMinutes?: number
 }
 
 interface Props {
@@ -81,12 +93,17 @@ interface Props {
   recent: HomeRecent[]
   start: HomeStart
   startOptions: HomeStartOptions
+  /** Null when no account is logged in for the default CLI. */
+  plan: HomePlan | null
   onAct: (id: string) => void
   onStart: (prompt: string, choice: HomeStartChoice) => void
   onPickFolder: () => Promise<string | null>
   onOpenSession: (id: string) => void
   onOpenRepo: (key: string) => void
 }
+
+/** How many "Pick up where you left off" rows show before the rest fold. */
+const RECENT_SHOWN = 6
 
 /** Own copy on purpose — ProjectsView has its own, and this isn't shared across files
  *  (convention 1: no cross-file coupling to save a few lines). */
@@ -102,112 +119,102 @@ function timeAgo(ts: number): string {
   return `${d}d ago`
 }
 
-/** How long a run has been going, from `startedAt`. Own copy — ProjectsView
- *  has its own version, by the same convention. */
-function duration(startedAt: number): string {
-  if (!startedAt) return ''
-  const diff = Math.max(0, Date.now() - startedAt)
-  const m = Math.floor(diff / 60000)
-  if (m < 1) return '<1m'
-  if (m < 60) return `${m}m`
+/** "18 min" / "2 h 5 min" for how long something has been going or waiting. */
+function minutesSince(ts: number): string {
+  const m = Math.floor(Math.max(0, Date.now() - ts) / 60000)
+  if (m < 1) return '<1 min'
+  if (m < 60) return `${m} min`
   const h = Math.floor(m / 60)
   const rem = m % 60
-  if (h < 24) return rem ? `${h}h ${rem}m` : `${h}h`
-  const d = Math.floor(h / 24)
-  return `${d}d`
+  if (h < 24) return rem ? `${h} h ${rem} min` : `${h} h`
+  return `${Math.floor(h / 24)} d`
 }
 
-/** "resets in 3h 12m" / "resets Mon 14:00" for a plan window's reset timestamp. Own
- *  copy of UsageView's formatter by the same convention as `timeAgo` above — the raw
- *  ISO string is unreadable on a card, and the two views are free to diverge. */
-/** "waiting 40s" / "waiting 4m" for how long an attention item has been sitting there. */
-function waitingFor(since?: number): string {
-  if (!since) return ''
-  const diff = Math.max(0, Date.now() - since)
-  const s = Math.floor(diff / 1000)
-  if (s < 60) return `waiting ${s}s`
-  return `waiting ${Math.floor(s / 60)}m`
+/** "Thursday, 2 October". */
+function dayTitle(d: Date): string {
+  const weekday = d.toLocaleDateString('en-GB', { weekday: 'long' })
+  const month = d.toLocaleDateString('en-GB', { month: 'long' })
+  return `${weekday}, ${d.getDate()} ${month}`
 }
 
-function TerminalIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="4 17 10 11 4 5" />
-      <line x1="12" y1="19" x2="20" y2="19" />
-    </svg>
-  )
+/** "5-hour window" / "weekly window" from the window's length in minutes. */
+function windowName(minutes?: number): string {
+  if (!minutes) return 'plan window'
+  if (minutes === 10080) return 'weekly window'
+  if (minutes < 1440) return `${Math.round(minutes / 60)}-hour window`
+  return `${Math.round(minutes / 1440)}-day window`
 }
 
-function DocIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-    </svg>
-  )
+/** "resets 19:40" today, "resets Fri 09:00" on another day. */
+function resetLabel(iso?: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const hm = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  const sameDay = d.toDateString() === new Date().toDateString()
+  return sameDay ? `resets ${hm}` : `resets ${d.toLocaleDateString('en-GB', { weekday: 'short' })} ${hm}`
 }
 
-function FolderIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-    </svg>
-  )
+function planLine(plan: HomePlan | null): string {
+  if (!plan) return 'No account connected · Settings › Connection'
+  const who = `${plan.accountName} account`
+  if (plan.utilization === undefined) return who
+  const pct = `${who} at ${plan.utilization.toFixed(0)} % of the ${windowName(plan.windowMinutes)}`
+  const reset = resetLabel(plan.resetsAt)
+  return reset ? `${pct} · ${reset}` : pct
 }
 
 function ChevronIcon() {
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-      <polyline points="6 9 12 15 18 9" />
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 9l6 6 6-6" />
     </svg>
   )
 }
 
-function CheckIcon() {
+function PlayIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="20 6 9 17 4 12" />
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polygon points="6 4 20 12 6 20 6 4" />
     </svg>
   )
 }
 
-function AttentionIcon({ mono }: { mono?: boolean }) {
-  if (mono) return <TerminalIcon />
-  return <DocIcon />
-}
-
-interface PillItem {
+interface SelectItem {
   key: string
   label: string
-  /** Optional heading rendered above the first item of each run. */
-  group?: string
+  /** Muted text after the label (an account's email). */
+  detail?: string
 }
 
-// Where the (portaled) menu should sit, in viewport coordinates. Anchored to the
-// pill's left edge, opens upward when there isn't enough room below — same scheme
-// as ModelPicker, so menus never get clipped by the view's scroll container.
+// Where the (portaled) list should sit, in viewport coordinates. Anchored to the
+// trigger's left edge, at least as wide as it, opening upward when there isn't room
+// below — the list never gets clipped by the page's scroll container.
 interface MenuPos {
   top?: number
   bottom?: number
   left: number
+  minWidth: number
   maxHeight: number
 }
 
-/** The house picker pattern (see ModelPicker): a button that portals a fixed-position
- *  menu to <body>, closes on outside click / Escape / scroll / resize, and returns
- *  focus to the button on close so keyboard use isn't stranded in a detached portal. */
-function PillPicker({
-  buttonLabel,
+/** A select-shaped trigger (§6) that portals a 4 px list of flat rows to <body>. Closes
+ *  on outside click / Escape / scroll / resize and returns focus to the trigger, so
+ *  keyboard use isn't stranded in a detached portal. */
+function HomeSelect({
+  value,
   ariaLabel,
+  className,
   items,
   selectedKey,
   onSelect,
   footerLabel,
   onFooter
 }: {
-  buttonLabel: string
+  value: ReactNode
   ariaLabel: string
-  items: PillItem[]
+  className: string
+  items: SelectItem[]
   selectedKey: string | undefined
   onSelect: (key: string) => void
   footerLabel?: string
@@ -235,6 +242,7 @@ function PillPicker({
     const openUp = spaceBelow < 200 && r.top > spaceBelow
     setMenuPos({
       left: Math.max(8, r.left),
+      minWidth: r.width,
       ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
       maxHeight: Math.max(160, (openUp ? r.top : spaceBelow) - 8)
     })
@@ -273,7 +281,7 @@ function PillPicker({
   }, [open])
 
   const moveFocus = (dir: 1 | -1) => {
-    const focusable = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('.home-pill-item') ?? [])
+    const focusable = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('.home-select-item') ?? [])
     if (focusable.length === 0) return
     const idx = focusable.indexOf(document.activeElement as HTMLButtonElement)
     const next = idx === -1 ? 0 : (idx + dir + focusable.length) % focusable.length
@@ -281,33 +289,33 @@ function PillPicker({
   }
 
   return (
-    <div className="home-pill-wrap">
+    <>
       <button
         ref={btnRef}
         type="button"
-        className="home-start-chip home-start-chip--btn"
+        className={`home-select ${className}`}
         onClick={toggle}
+        aria-label={ariaLabel}
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        {buttonLabel}
+        <span className="home-select-value">{value}</span>
         <ChevronIcon />
       </button>
       {open &&
         menuPos &&
         createPortal(
           <div
-            className="home-pill-menu"
+            className="home-select-menu"
             ref={menuRef}
             role="menu"
             aria-label={ariaLabel}
             style={{
-              position: 'fixed',
               top: menuPos.top,
               bottom: menuPos.bottom,
               left: menuPos.left,
-              maxHeight: menuPos.maxHeight,
-              overflowY: 'auto'
+              minWidth: menuPos.minWidth,
+              maxHeight: menuPos.maxHeight
             }}
             onKeyDown={(e) => {
               if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -316,48 +324,56 @@ function PillPicker({
               }
             }}
           >
-            {items.length === 0 && <div className="home-pill-empty">Nothing yet</div>}
-            {items.map((it, i) => (
-              <div key={it.key} className="home-pill-row">
-                {it.group && it.group !== items[i - 1]?.group && (
-                  <span className="home-pill-group">{it.group}</span>
-                )}
-                <button
-                  type="button"
-                  className={`home-pill-item ${it.key === selectedKey ? 'selected' : ''}`}
-                  role="menuitemradio"
-                  aria-checked={it.key === selectedKey}
-                  onClick={() => {
-                    onSelect(it.key)
-                    close(true)
-                  }}
-                >
-                  <span className="home-pill-item-label">{it.label}</span>
-                  {it.key === selectedKey && <CheckIcon />}
-                </button>
-              </div>
+            {items.length === 0 && <div className="home-select-empty">Nothing yet</div>}
+            {items.map((it) => (
+              <button
+                key={it.key}
+                type="button"
+                className={`home-select-item ${it.key === selectedKey ? 'selected' : ''}`}
+                role="menuitemradio"
+                aria-checked={it.key === selectedKey}
+                onClick={() => {
+                  onSelect(it.key)
+                  close(true)
+                }}
+              >
+                <span className="home-select-item-label">{it.label}</span>
+                {it.detail && <span className="home-select-detail">{it.detail}</span>}
+              </button>
             ))}
             {footerLabel && onFooter && (
-              <>
-                <div className="home-pill-sep" />
-                <button
-                  type="button"
-                  className="home-pill-item home-pill-item--action"
-                  role="menuitem"
-                  onClick={() => {
-                    onFooter()
-                    close(true)
-                  }}
-                >
-                  {footerLabel}
-                </button>
-              </>
+              <button
+                type="button"
+                className="home-select-item home-select-footer"
+                role="menuitem"
+                onClick={() => {
+                  onFooter()
+                  close(true)
+                }}
+              >
+                {footerLabel}
+              </button>
             )}
           </div>,
           document.body
         )}
-    </div>
+    </>
   )
+}
+
+/** A whole row that opens something: Enter / Space act like a click. */
+function rowProps(onOpen: () => void) {
+  return {
+    role: 'button' as const,
+    tabIndex: 0,
+    onClick: onOpen,
+    onKeyDown: (e: ReactKeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        onOpen()
+      }
+    }
+  }
 }
 
 export default function HomeView({
@@ -368,6 +384,7 @@ export default function HomeView({
   recent,
   start,
   startOptions,
+  plan,
   onAct,
   onStart,
   onPickFolder,
@@ -375,6 +392,7 @@ export default function HomeView({
   onOpenRepo
 }: Props) {
   const [prompt, setPrompt] = useState('')
+  const [recentOpen, setRecentOpen] = useState(false)
 
   // Local choice, seeded from `start`. Each field tracks whether the user has
   // touched it (`touchedRef`): an untouched field keeps following `start` as it
@@ -401,7 +419,7 @@ export default function HomeView({
     setChoice((prev) => ({ ...prev, [key]: value }))
   }
 
-  // Folders picked via "New project…" this session, so they show up in the list
+  // Folders picked via "New project" this session, so they show up in the list
   // (and stay selected) even though they're not in `startOptions.projects` yet.
   const [extraProjects, setExtraProjects] = useState<{ path: string; name: string }[]>([])
 
@@ -414,9 +432,9 @@ export default function HomeView({
     setChoice((prev) => ({ ...prev, projectPath: path }))
   }
 
-  const projectItems = useMemo<PillItem[]>(() => {
+  const projectItems = useMemo<SelectItem[]>(() => {
     const seen = new Set<string>()
-    const out: PillItem[] = []
+    const out: SelectItem[] = []
     for (const p of [...startOptions.projects, ...extraProjects]) {
       if (seen.has(p.path)) continue
       seen.add(p.path)
@@ -425,16 +443,16 @@ export default function HomeView({
     return out
   }, [startOptions.projects, extraProjects])
 
-  const cliItems: PillItem[] = CLI_PROVIDERS.map((p) => ({ key: p.id, label: p.label }))
+  const cliItems: SelectItem[] = CLI_PROVIDERS.map((p) => ({ key: p.id, label: p.label }))
 
   // An account only means anything next to its own CLI — a Codex login cannot run Claude
-  // Code. The pill therefore shows the chosen CLI's accounts only.
+  // Code. The select therefore offers the chosen CLI's accounts only.
   const chosenProvider: ProviderId = choice.provider ?? 'claude'
-  const accountItems = useMemo<PillItem[]>(
+  const accountItems = useMemo<SelectItem[]>(
     () =>
       startOptions.accounts
         .filter((a) => a.provider === chosenProvider)
-        .map((a) => ({ key: a.id, label: a.name })),
+        .map((a) => ({ key: a.id, label: a.name, detail: a.email })),
     [startOptions.accounts, chosenProvider]
   )
 
@@ -450,38 +468,9 @@ export default function HomeView({
   const projectLabel =
     projectItems.find((p) => p.key === choice.projectPath)?.label ?? start.projectName ?? 'Project'
   const cliLabel = cliItems.find((p) => p.key === chosenProvider)?.label ?? 'CLI'
+  const chosenAccount = accountItems.find((a) => a.key === choice.accountId)
   const accountLabel =
-    accountItems.find((a) => a.key === choice.accountId)?.label ??
-    start.accountName ??
-    choice.accountId ??
-    start.accountId ??
-    'Account'
-
-  // Whether each column has anything in it. A column with no sections still held its
-  // track and left a third of the window blank — and an empty first column is the
-  // ordinary case, not the exception: most of the time nothing is waiting on you and
-  // nothing is running. An absent column is not rendered at all.
-  const hasAttentionCol = attention.length > 0 || running.length > 0
-  const hasRecentCol = recent.length > 0
-  const hasSideCol =
-    repos.length > 0 || recentProjects.length > 0
-
-  const nothing =
-    attention.length === 0 &&
-    running.length === 0 &&
-    repos.length === 0 &&
-    recentProjects.length === 0 &&
-    recent.length === 0
-
-  // `repos` is already filtered to just what's dirty or errored (no more "clean" rows
-  // here) — this still guards on fileCount in case a caller passes a stale zero.
-  const dirtyCount = repos.filter((r) => !r.loading && !r.error && r.fileCount > 0).length
-  const todayLabel = new Date().toLocaleDateString([], {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric'
-  })
+    chosenAccount?.label ?? start.accountName ?? choice.accountId ?? start.accountId ?? 'Account'
 
   function submitStart() {
     const trimmed = prompt.trim()
@@ -492,85 +481,30 @@ export default function HomeView({
     setPrompt('')
   }
 
-  // Header chips jump to their section and give it a brief highlight, so "N need
-  // you" etc. actually lead somewhere instead of just naming a count.
-  const attentionSectionRef = useRef<HTMLElement>(null)
-  const runningSectionRef = useRef<HTMLElement>(null)
-  const reposSectionRef = useRef<HTMLElement>(null)
-  const [flash, setFlash] = useState<'attention' | 'running' | 'dirty' | null>(null)
-  const flashTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Nothing live and nothing to resume: the page is the start box and one line.
+  const nothing = attention.length === 0 && running.length === 0 && recent.length === 0
 
-  useEffect(() => {
-    return () => {
-      if (flashTimeout.current) clearTimeout(flashTimeout.current)
-    }
-  }, [])
-
-  function jumpTo(section: 'attention' | 'running' | 'dirty', ref: { current: HTMLElement | null }) {
-    ref.current?.scrollIntoView({ block: 'nearest' })
-    if (flashTimeout.current) clearTimeout(flashTimeout.current)
-    setFlash(section)
-    flashTimeout.current = setTimeout(() => setFlash(null), 1500)
-  }
-
-  const attentionPhrase =
-    attention.length === 1 ? 'One item needs you' : `${attention.length} items need you`
-  const runningPhrase =
-    running.length === 1 ? 'One session is running' : `${running.length} sessions are running`
-  const dirtyPhrase =
-    dirtyCount === 1 ? 'One project has uncommitted changes' : `${dirtyCount} projects have uncommitted changes`
+  const oldestSince = attention.reduce<number | undefined>(
+    (min, a) => (a.since && (min === undefined || a.since < min) ? a.since : min),
+    undefined
+  )
+  const shownRecent = recentOpen ? recent : recent.slice(0, RECENT_SHOWN)
+  const hiddenRecent = recent.length - shownRecent.length
 
   return (
     <div className="view">
-      <div className="view-header home-header">
-        <div>
-          <h1>Home</h1>
-          <p className="view-sub">{todayLabel}</p>
-        </div>
-        <div className="home-header-chips">
-          {attention.length > 0 && (
-            <button
-              type="button"
-              className="home-chip home-chip--warn home-chip--link"
-              onClick={() => jumpTo('attention', attentionSectionRef)}
-              title={attentionPhrase}
-              aria-label={attentionPhrase}
-            >
-              {attention.length === 1 ? '1 needs you' : `${attention.length} need you`}
-            </button>
-          )}
-          {running.length > 0 && (
-            <button
-              type="button"
-              className="home-chip home-chip--link"
-              onClick={() => jumpTo('running', runningSectionRef)}
-              title={runningPhrase}
-              aria-label={runningPhrase}
-            >
-              {running.length === 1 ? '1 running' : `${running.length} running`}
-            </button>
-          )}
-          {dirtyCount > 0 && (
-            <button
-              type="button"
-              className="home-chip home-chip--link"
-              onClick={() => jumpTo('dirty', reposSectionRef)}
-              title={dirtyPhrase}
-              aria-label={dirtyPhrase}
-            >
-              {dirtyCount === 1 ? '1 with changes' : `${dirtyCount} with changes`}
-            </button>
-          )}
-        </div>
-      </div>
+      <div className="home-page">
+        <div className="home-main">
+          <header className="home-head">
+            <h1>{dayTitle(new Date())}</h1>
+            <p className="home-sub">{planLine(plan)}</p>
+          </header>
 
-        <div className="view-scroll">
           <div className="home-start">
             <textarea
               aria-label="What are we doing?"
-              className="home-start-input"
+              className="text-input textarea home-start-input"
               placeholder="What are we doing?"
-              rows={2}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={(e) => {
@@ -581,241 +515,178 @@ export default function HomeView({
               }}
             />
             <div className="home-start-row">
-              <div className="home-start-chips">
-                <PillPicker
-                  buttonLabel={projectLabel}
-                  ariaLabel="Project"
-                  items={projectItems}
-                  selectedKey={choice.projectPath}
-                  onSelect={(key) => pick('projectPath', key)}
-                  footerLabel="New project…"
-                  onFooter={handleNewProject}
+              <HomeSelect
+                value={projectLabel}
+                ariaLabel="Project"
+                className="project"
+                items={projectItems}
+                selectedKey={choice.projectPath}
+                onSelect={(key) => pick('projectPath', key)}
+                footerLabel="New project"
+                onFooter={handleNewProject}
+              />
+              <HomeSelect
+                value={cliLabel}
+                ariaLabel="CLI"
+                className="cli"
+                items={cliItems}
+                selectedKey={chosenProvider}
+                onSelect={(key) => pickProvider(key as ProviderId)}
+              />
+              {startOptions.accounts.length > 0 && (
+                <HomeSelect
+                  value={
+                    <>
+                      {accountLabel}
+                      {chosenAccount?.detail && <span className="home-select-detail"> · {chosenAccount.detail}</span>}
+                    </>
+                  }
+                  ariaLabel="Account"
+                  className="account"
+                  items={accountItems}
+                  selectedKey={choice.accountId}
+                  onSelect={(key) => pick('accountId', key)}
                 />
-                <PillPicker
-                  buttonLabel={cliLabel}
-                  ariaLabel="CLI"
-                  items={cliItems}
-                  selectedKey={chosenProvider}
-                  onSelect={(key) => pickProvider(key as ProviderId)}
-                />
-                {startOptions.accounts.length > 0 && (
-                  <PillPicker
-                    buttonLabel={accountLabel}
-                    ariaLabel="Account"
-                    items={accountItems}
-                    selectedKey={choice.accountId}
-                    onSelect={(key) => pick('accountId', key)}
-                  />
-                )}
-              </div>
-              <button
-                className="btn-primary home-start-btn"
-                disabled={!prompt.trim()}
-                onClick={submitStart}
-              >
+              )}
+              <span className="home-grow" />
+              <button className="btn-primary" disabled={!prompt.trim()} onClick={submitStart}>
+                <PlayIcon />
                 Start
               </button>
             </div>
+            <p className="help">Ctrl+Enter starts in a new terminal · the folder is the project's root</p>
           </div>
 
-          {nothing ? (
-            <div className="view-empty">
-              <span className="view-empty-msg">
-                Nothing running, nothing waiting. Start something above.
-              </span>
-            </div>
-          ) : (
-          <div className="home-grid">
-            {/* Three source-order groups (a/b/c), reflowed by CSS alone: 3 columns above
-               1500px, folding to 2 (b+c share a column) then 1 below that — see the
-               `.home-col-*` rules in HomeView.css. Never duplicate a section to hide one
-               copy per breakpoint; only the grid-column assignment changes. */}
-            {hasAttentionCol && (
-            <div className="home-col home-col-a">
-              {attention.length > 0 && (
-                <section
-                  ref={attentionSectionRef}
-                  className={`home-section home-section--attention ${flash === 'attention' ? 'home-section--flash' : ''}`}
-                  aria-label="Needs you"
-                >
-                  <h2 className="home-section-title">Needs you</h2>
-                  <div className="home-attention-block">
-                    {attention.map((a) => (
-                      <div key={a.id} className="home-attention-row">
-                        <span className="home-attention-icon" aria-hidden="true">
-                          <AttentionIcon mono={a.mono} />
-                        </span>
-                        <div className="home-row-main">
-                          <span className="home-row-name">{a.title}</span>
-                          <span className={`home-attention-detail ${a.mono ? 'mono' : ''}`}>{a.detail}</span>
-                          {(a.context || a.since) && (
-                            <span className="home-attention-meta">
-                              {a.context}
-                              {a.context && a.since ? ' · ' : ''}
-                              {waitingFor(a.since)}
-                            </span>
-                          )}
-                        </div>
-                        <button className="btn-ghost small home-attention-btn" onClick={() => onAct(a.id)}>
-                          {a.actionLabel}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {running.length > 0 && (
-                <section
-                  ref={runningSectionRef}
-                  className={`home-section ${flash === 'running' ? 'home-section--flash' : ''}`}
-                  aria-label="Running"
-                >
-                  <h2 className="home-section-title">Running</h2>
-                  <div className="home-list">
-                    {running.map((r) => {
-                      const clickable = r.kind === 'chat'
-                      const dur = r.startedAt ? duration(r.startedAt) : ''
-                      return (
-                        <div
-                          key={r.id}
-                          className={`home-row home-running-row ${r.attention ? 'attention' : ''} ${clickable ? 'clickable' : ''}`}
-                          onClick={clickable ? () => onOpenSession(r.id) : undefined}
-                          role={clickable ? 'button' : undefined}
-                          tabIndex={clickable ? 0 : undefined}
-                          onKeyDown={
-                            clickable
-                              ? (e) => {
-                                  if (e.key === 'Enter' || e.key === ' ') onOpenSession(r.id)
-                                }
-                              : undefined
-                          }
-                        >
-                          <span className={`home-dot ${r.attention ? 'attention' : 'running'}`} aria-hidden="true" />
-                          <span className="home-row-name">{r.name}</span>
-                          <span className="home-running-kind">{r.kind === 'chat' ? 'Chat' : 'CLI'}</span>
-                          <span className="home-running-spacer" />
-                          {r.detail && <span className="home-running-detail">{r.detail}</span>}
-                          {dur && <span className="home-running-duration">{dur}</span>}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </section>
-              )}
-            </div>
-            )}
-
-            {hasRecentCol && (
-            <div className="home-col home-col-b">
-              {recent.length > 0 && (
-                <section className="home-section" aria-label="Pick up where you left off">
-                  <h2 className="home-section-title">Pick up where you left off</h2>
-                  <div className="home-list">
-                    {recent.map((r) => (
-                      <div
-                        key={r.id}
-                        className="home-row home-recent-row clickable"
-                        onClick={() => onOpenSession(r.id)}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') onOpenSession(r.id)
-                        }}
-                      >
-                        <div className="home-row-main">
-                          <div className="home-row-top">
-                            <span className="home-row-name">{r.name}</span>
-                            {r.projectName && <span className="home-row-project">{r.projectName}</span>}
-                            <span className="home-recent-time">{timeAgo(r.updatedAt)}</span>
-                          </div>
-                          <div className="home-recent-preview">{r.preview}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-            </div>
-            )}
-
-            {hasSideCol && (
-            <div className="home-col home-col-c">
-              {repos.length > 0 && (
-                <section
-                  ref={reposSectionRef}
-                  className={`home-section ${flash === 'dirty' ? 'home-section--flash' : ''}`}
-                  aria-label="Uncommitted work"
-                >
-                  <h2 className="home-section-title">Uncommitted work</h2>
-                  <div className="home-list">
-                    {repos.map((r) => (
-                      <div key={r.key} className="home-row home-repo-row">
-                        <div className="home-row-main">
-                          <div className="home-row-top">
-                            <span className="home-row-name">{r.name}</span>
-                            {r.branch && <span className="home-row-project">{r.branch}</span>}
-                          </div>
-                          {r.error && (
-                            <div className="home-repo-error" role="alert">
-                              {r.error}
-                            </div>
-                          )}
-                        </div>
-                        {r.loading ? (
-                          <span className="home-repo-loading">
-                            <span className="view-spinner small" />
+          <div className="home-body">
+            {nothing ? (
+              <p className="help">Nothing running, nothing waiting. Start something above.</p>
+            ) : (
+              <>
+                {recent.length > 0 && (
+                  <section aria-label="Pick up where you left off">
+                    <h2 className="eyebrow home-eyebrow">Pick up where you left off</h2>
+                    {shownRecent.map((r) => (
+                      <div key={r.id} className="home-row home-recent" {...rowProps(() => onOpenSession(r.id))}>
+                        <div className="home-recent-top">
+                          <span className="home-name">{r.name}</span>
+                          <span className="home-right">
+                            {[r.projectName, timeAgo(r.updatedAt)].filter(Boolean).join(' · ')}
                           </span>
-                        ) : r.error ? null : (
-                          <button className="btn-ghost small" onClick={() => onOpenRepo(r.key)}>
-                            <FolderIcon />
-                            {r.fileCount === 1 ? '1 file' : `${r.fileCount} files`}
-                          </button>
-                        )}
+                        </div>
+                        {r.preview && <span className="help home-preview">{r.preview}</span>}
                       </div>
                     ))}
-                  </div>
-                </section>
-              )}
+                    {hiddenRecent > 0 && (
+                      <button type="button" className="btn-text home-more" onClick={() => setRecentOpen(true)}>
+                        Show {hiddenRecent} more
+                      </button>
+                    )}
+                  </section>
+                )}
 
-              {recentProjects.length > 0 && (
-                <section className="home-section" aria-label="Recent projects">
-                  <h2 className="home-section-title">Recent projects</h2>
-                  <div className="home-list">
+                {recentProjects.length > 0 && (
+                  <section aria-label="Recent projects">
+                    <h2 className="eyebrow home-eyebrow">Recent projects</h2>
                     {recentProjects.map((p) => (
-                      <div
-                        key={p.key}
-                        className="home-row home-project-row clickable"
-                        onClick={() => onOpenRepo(p.key)}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') onOpenRepo(p.key)
-                        }}
-                      >
-                        <div className="home-row-main">
-                          <div className="home-row-top">
-                            <span className="home-row-name">{p.name}</span>
-                            {p.branch && <span className="home-row-project">{p.branch}</span>}
-                          </div>
-                        </div>
+                      <div key={p.key} className="home-row" {...rowProps(() => onOpenRepo(p.key))}>
+                        <span className="home-name">{p.name}</span>
+                        {p.wslDistro && <span className="chip">{p.wslDistro}</span>}
                         {p.loading ? (
-                          <span className="home-repo-loading">
-                            <span className="view-spinner small" />
-                          </span>
+                          <span className="view-spinner small" aria-label="Reading git status" />
+                        ) : p.noGit ? (
+                          <span className="home-muted">no git</span>
                         ) : (
-                          <span className="home-project-time">{timeAgo(p.lastUsed)}</span>
+                          p.branch && <span className="home-branch">{p.branch}</span>
                         )}
+                        <span className="home-right">{timeAgo(p.lastUsed)}</span>
                       </div>
                     ))}
-                  </div>
-                </section>
-              )}
-            </div>
+                  </section>
+                )}
+              </>
             )}
           </div>
-          )}
         </div>
+
+        <aside className="home-side" aria-label="What is live">
+          {attention.length > 0 && (
+            <div className="block warn home-needs" role="region" aria-label="Needs you">
+              <div className="home-needs-head">
+                <span className="home-needs-title">Needs you · {attention.length}</span>
+                {oldestSince && <span className="home-right">oldest {minutesSince(oldestSince)}</span>}
+              </div>
+              {attention.map((a) => (
+                <div key={a.id} className="home-needs-row">
+                  <div className="home-needs-main">
+                    <span className="home-name">{a.title}</span>
+                    {a.detail &&
+                      (a.mono ? (
+                        <span className="home-needs-cmd">{a.detail}</span>
+                      ) : (
+                        <span className="help home-needs-text">{a.detail}</span>
+                      ))}
+                  </div>
+                  <button className="btn-ghost small" onClick={() => onAct(a.id)}>
+                    {a.actionLabel}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <section className="home-sec" aria-label="Running">
+            <h2 className="eyebrow">Running · {running.length}</h2>
+            {running.length === 0 && <p className="help">Nothing running.</p>}
+            {/* TODO(port): an ops intervention as a running row with an --accent dot
+                ("Ops · <host> · 41 min"); Home receives no ops runs today. */}
+            {running.map((r) => {
+              const clickable = r.kind === 'chat'
+              const right = [r.detail, r.startedAt ? minutesSince(r.startedAt) : '']
+                .filter(Boolean)
+                .join(' · ')
+              return (
+                <div
+                  key={r.id}
+                  className={`home-row home-live ${clickable ? '' : 'static'}`}
+                  {...(clickable ? rowProps(() => onOpenSession(r.id)) : {})}
+                >
+                  <span className="home-dot ok" aria-hidden="true" />
+                  <span className="home-name">{r.name}</span>
+                  <span className="home-right">{right}</span>
+                </div>
+              )
+            })}
+          </section>
+
+          {!nothing && repos.length > 0 && (
+            <section className="home-sec" aria-label="Uncommitted work">
+              <h2 className="eyebrow">Uncommitted work · {repos.length}</h2>
+              {repos.map((r) => (
+                <div key={r.key} className="home-row home-live static">
+                  <span className="home-name">{r.name}</span>
+                  {r.branch && <span className="home-branch">{r.branch}</span>}
+                  <span className="home-grow" />
+                  {r.loading ? (
+                    <span className="view-spinner small" aria-label="Counting changes" />
+                  ) : r.error ? (
+                    <span className="home-error" role="alert">
+                      {r.error}
+                    </span>
+                  ) : (
+                    <button className="btn-ghost small" onClick={() => onOpenRepo(r.key)}>
+                      {r.fileCount === 1 ? '1 file' : `${r.fileCount} files`}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </section>
+          )}
+
+          {/* TODO(port): "Earlier today · N finished" (finished chats and ops runs from
+              today, with exit codes and a Report link); the renderer has no cheap source
+              for it without new IPC. */}
+        </aside>
+      </div>
     </div>
   )
 }

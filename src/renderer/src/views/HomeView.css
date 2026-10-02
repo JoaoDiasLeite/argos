@@ -1,477 +1,185 @@
-/* Home — a presentation-only dashboard view. All classes scoped `home-` (convention 6). The view-level vocabulary (`.view-*`) comes from views.css, which
-   every view already shares. The status dot is deliberately NOT Sidebar's `.session-dot`:
-   that rule lives in a component's own stylesheet, and a view that borrows it renders
-   correctly only for as long as that component happens to be mounted. */
+/* ── HomeView.css ────────────────────────────────────────────────────────────
+   Home (wireframe 5B): on the left what you start and pick up (the day, the start box,
+   recent sessions and projects); on the right a 460 px column of what is live, with
+   "Needs you" as the one tinted block at the top. Flat rows, sections separated by
+   --border, selects 4 px, buttons 8 px. Classes are prefixed `home-`. ─────────────── */
 
-/* ── Header ── */
-.home-header-chips {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
+.home-page { flex: 1; min-height: 0; display: flex; }
 
-.home-chip {
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-1);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  white-space: nowrap;
-}
-.home-chip--warn {
-  color: var(--warn);
-  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
-  background: color-mix(in srgb, var(--warn) 10%, var(--bg-2));
-}
+/* ── Left: content ── */
+.home-main { flex: 1; min-width: 0; overflow-y: auto; padding-bottom: 28px; }
 
-/* Chips are buttons now — they jump to their section. Keep the same pill look,
-   just make the interactivity legible on hover/focus. */
-.home-chip--link {
-  cursor: pointer;
-  transition: border-color 0.14s, background 0.14s;
+.home-head {
+  padding: 18px 24px 4px;
+  -webkit-app-region: drag;
 }
-.home-chip--link:hover,
-.home-chip--link:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+.home-head h1 {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--text-0);
 }
-.home-chip--warn.home-chip--link:hover,
-.home-chip--warn.home-chip--link:focus-visible {
-  border-color: color-mix(in srgb, var(--warn) 65%, var(--border));
-}
-
-/* Brief highlight a chip's target section gets after being jumped to. The class
-   is added/removed by JS on a ~1.5s timer; the animation just renders that window,
-   so reduced motion drops the fade but the highlight (and its timed removal) still
-   happens — nothing to skip on the JS side. */
-.home-section--flash {
-  animation: home-section-flash 1.5s ease-out;
-}
-@keyframes home-section-flash {
-  from {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);
-    border-radius: var(--radius);
-  }
-  to {
-    box-shadow: 0 0 0 3px transparent;
-    border-radius: var(--radius);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .home-section--flash {
-    animation: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);
-    border-radius: var(--radius);
-  }
-}
+.home-sub { margin-top: 4px; font-size: 12px; color: var(--text-2); }
 
 /* ── Start box ── */
-/* No width cap: the view fills the window it is given. A cap centred the content and
-   left a band of empty space on a full screen, which is what the three-column
-   breakpoint below exists to avoid in the first place. */
-.home-start {
-  margin: 0 0 26px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-1);
-}
+.home-start { display: flex; flex-direction: column; gap: 8px; padding: 10px 24px 6px; max-width: 948px; }
+.text-input.home-start-input { min-height: 96px; font-size: 13.5px; }
+.home-start-row { display: flex; align-items: center; gap: 8px; }
+.home-start-row .btn-primary { flex-shrink: 0; }
+.home-grow { flex: 1; }
 
-.home-start-input {
-  width: 100%;
-  resize: none;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text-0);
-  font-size: 14px;
-  font-family: inherit;
-  line-height: 1.5;
-}
-.home-start-input::placeholder {
-  color: var(--text-2);
-}
-
-.home-start-row {
-  display: flex;
+/* A select-shaped trigger (§6): 4 px, --bg-1, the value, a chevron 10 px from the edge. */
+.home-select {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 10px;
-}
-
-.home-start-chips {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 8px;
+  height: 32px;
   min-width: 0;
-}
-
-/* Each pill is now a control that opens a menu (see PillPicker in HomeView.tsx) —
-   same rounded chip look as before, plus a chevron and hover/focus affordance. */
-.home-start-chip {
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  color: var(--text-2);
-  background: var(--bg-3);
-}
-
-.home-start-chip--btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  transition: background 0.14s, color 0.14s;
-}
-.home-start-chip--btn:hover,
-.home-start-chip--btn[aria-expanded='true'] {
-  background: var(--bg-hover);
+  padding: 0 10px 0 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
   color: var(--text-0);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s;
 }
-.home-start-chip--btn svg {
-  flex-shrink: 0;
-  opacity: 0.7;
-}
+.home-select:hover,
+.home-select[aria-expanded='true'] { border-color: var(--border-light); }
+.home-select > svg { flex-shrink: 0; margin-left: auto; color: var(--text-2); }
+.home-select.project { flex: 0 1 220px; }
+.home-select.cli { flex: 0 1 170px; }
+.home-select.account { flex: 0 1 240px; }
+.home-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-select-detail { color: var(--text-2); }
 
-.home-start-btn {
-  flex-shrink: 0;
-}
-
-.home-pill-wrap {
-  display: contents;
-}
-
-.home-pill-menu {
-  /* Fixed + portaled to <body>, same scheme as ModelPicker, so a menu opened from
-     a pill inside the scrolling view can't get clipped by that scroll container. */
-  min-width: 200px;
-  background: var(--bg-2);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-  padding: 4px;
-  z-index: 200;
-}
-
-.home-pill-empty {
-  padding: 8px 10px;
-  font-size: 12px;
-  color: var(--text-2);
-}
-
-.home-pill-item {
+/* The list it opens: 4 px --bg-1, flat rows, the one shadow a popover may have (§2). */
+.home-select-menu {
+  position: fixed;
+  z-index: 50;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  padding: 4px;
+  overflow-y: auto;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+.home-select-item {
+  display: flex;
+  align-items: baseline;
   gap: 8px;
   width: 100%;
   padding: 7px 10px;
-  border-radius: var(--radius-sm);
-  text-align: left;
-  font-size: 12.5px;
+  border-radius: var(--radius-surface);
+  font-size: 13px;
   color: var(--text-0);
-  transition: background 0.1s;
-}
-.home-pill-item:hover,
-.home-pill-item:focus-visible {
-  background: var(--bg-hover);
-}
-.home-pill-item.selected {
-  background: var(--accent-dim);
-  color: var(--accent);
-}
-.home-pill-item-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  text-align: left;
   white-space: nowrap;
 }
-.home-pill-item--action {
-  color: var(--accent);
+.home-select-item:hover,
+.home-select-item:focus-visible,
+.home-select-item.selected { background: var(--bg-2); outline: none; }
+.home-select-item .home-select-detail { font-size: 12px; }
+.home-select-footer {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-surface) var(--radius-surface);
+  font-size: 12px;
+  color: var(--text-1);
 }
+.home-select-empty { padding: 7px 10px; font-size: 12px; color: var(--text-2); }
 
-.home-pill-sep {
-  height: 1px;
-  background: var(--border);
-  margin: 4px 2px;
-}
-
-/* ── Column layout ──
-   Three source-order groups: a (Needs you, Running), b (Pick up where you left off),
-   c (Uncommitted work, Recent projects).
-
-   Flex, not a fixed grid template: a column is only rendered when it has sections in
-   it, and fixed tracks kept the space of the ones that were not there — an empty first
-   column left a third of the window blank, which is the ordinary state of this view
-   rather than a rare one. Flex items divide what there is between however many turned
-   up. */
-.home-grid {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 26px;
-}
-.home-col {
-  /* min-width: 0 so a nowrap line inside truncates instead of widening the column. */
-  flex: 1 1 380px;
-  min-width: 0;
-}
-/* Slightly greedier when it is there: approvals and running rows carry the longest
-   lines, and it is the column you read first. */
-.home-col-a { flex-grow: 1.3; }
-
-@media (max-width: 900px) {
-  .home-col {
-    flex-basis: 100%;
-  }
-}
-
-.home-section {
-  margin-bottom: 26px;
-  min-width: 0;
-}
-.home-col > .home-section:last-child {
-  margin-bottom: 0;
-}
-
-.home-section-title {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-2);
-  margin-bottom: 10px;
-}
-
-/* The only tinted block in the view on purpose — colour here is reserved for the
-   one thing that's actually waiting on a person. */
-.home-section--attention .home-section-title {
-  color: var(--warn);
-}
-
-.home-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+/* ── Lists on the left ── */
+.home-body { max-width: 900px; padding: 18px 24px 0; display: flex; flex-direction: column; gap: 18px; }
+.home-body section { display: flex; flex-direction: column; }
+.home-eyebrow { margin-bottom: 4px; }
 
 .home-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-1);
-}
-
-.home-row.clickable {
-  cursor: pointer;
-  transition: border-color 0.14s, background 0.14s;
-}
-.home-row.clickable:hover,
-.home-row.clickable:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-  background: var(--bg-2);
-}
-
-.home-row-main {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  flex: 1;
-}
-
-.home-row-top {
-  display: flex;
-  align-items: baseline;
   gap: 8px;
   min-width: 0;
-}
-
-.home-row-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-0);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.home-row-project {
-  font-size: 11px;
-  color: var(--text-2);
-  flex-shrink: 0;
-}
-
-/* ── Needs you ──
-   A single tinted block (not one card per row) so the amber reads as one alert
-   surface, with individual rows separated by hairlines inside it. */
-.home-attention-block {
-  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--warn) 6%, var(--bg-1));
-  overflow: hidden;
-}
-
-.home-attention-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-}
-.home-attention-row + .home-attention-row {
-  border-top: 1px solid color-mix(in srgb, var(--warn) 25%, var(--border));
-}
-
-.home-attention-icon {
-  flex-shrink: 0;
-  display: flex;
-  color: var(--warn);
-}
-
-.home-attention-detail {
-  font-size: 12px;
-  color: var(--text-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.home-attention-detail.mono {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-}
-
-.home-attention-meta {
-  font-size: 11px;
-  color: var(--text-2);
-  opacity: 0.8;
-}
-
-.home-attention-btn {
-  flex-shrink: 0;
-}
-
-/* ── Running ── */
-.home-running-row {
-  gap: 10px;
-}
-.home-running-row.attention {
-  border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
-}
-.home-running-row.clickable .home-row-name {
+  padding: 8px 10px;
+  margin: 0 -10px;
+  border-radius: var(--radius-surface);
   cursor: pointer;
 }
+.home-row:hover,
+.home-row:focus-visible { background: var(--bg-2); outline: none; }
+.home-recent { flex-direction: column; align-items: stretch; gap: 2px; }
+.home-recent-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.home-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.home-running-kind {
-  flex-shrink: 0;
-  padding: 1px 6px;
-  border-radius: 8px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  background: var(--bg-3);
-  color: var(--text-1);
-}
-
-.home-running-spacer {
-  flex: 1;
-}
-
-.home-running-detail {
-  font-size: 12px;
-  color: var(--text-2);
+.home-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 260px;
+  font-size: 13px;
+  color: var(--text-0);
 }
-
-.home-running-duration {
-  flex-shrink: 0;
-  font-size: 11px;
-  color: var(--text-2);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── Uncommitted work ── */
-.home-repo-row {
-  align-items: center;
-}
-
-.home-repo-loading {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-}
-.home-repo-error {
-  font-size: 11.5px;
-  color: var(--error);
-  margin-top: 2px;
-}
-
-/* ── Recent projects ── */
-.home-project-time {
+.home-right {
   margin-left: auto;
   flex-shrink: 0;
-  font-size: 11px;
-  color: var(--text-2);
-}
-
-/* ── Pick up where you left off ── */
-.home-recent-time {
-  margin-left: auto;
-  flex-shrink: 0;
-  font-size: 11px;
-  color: var(--text-2);
-}
-
-.home-recent-preview {
   font-size: 12px;
-  color: var(--text-1);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.home-branch {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
 }
+.home-muted { font-size: 12px; color: var(--text-2); }
+.home-more { align-self: flex-start; margin-top: 4px; font-size: 12px; }
 
-/* Same states as the chat list's dot, and the same amber, because they flag the same
-   two conditions — a run in flight, and a run parked on an approval. */
-.home-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.home-dot.running {
-  background: var(--accent);
-  animation: home-dot-pulse 1.4s ease-in-out infinite;
-}
-.home-dot.attention { background: var(--warn); }
-@keyframes home-dot-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .home-dot.running { animation: none; }
-}
-
-/* Grouped pill items — the model list spans three providers, so it reads as three
-   short lists rather than one long one. */
-.home-pill-row {
+/* ── Right: the live column ── */
+.home-side {
+  flex: 0 0 460px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
 }
-.home-pill-group {
-  padding: 8px 10px 3px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+.home-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.home-sec .eyebrow { margin-bottom: 4px; }
+.home-needs + .home-sec { padding-top: 12px; }
+
+/* Rows in the column: 6 px tall padding; one that opens something gets the hover. */
+.home-live { padding: 6px 8px; margin: 0 -8px; }
+.home-live.static { cursor: default; }
+.home-live.static:hover { background: transparent; }
+
+.home-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--text-2); }
+.home-dot.ok { background: var(--success); }
+
+/* The one tinted element on the screen. */
+.block.home-needs { margin: 12px 12px 0; gap: 2px; }
+.home-needs-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.home-needs-title { font-size: 12.5px; font-weight: 650; color: var(--warn); }
+.home-needs-row { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; }
+.home-needs-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.home-needs-cmd {
+  font-family: var(--font-mono);
+  font-size: 12px;
   color: var(--text-2);
+  overflow-wrap: anywhere;
 }
-.home-pill-row:first-child .home-pill-group { padding-top: 3px; }
+.home-needs-text { overflow-wrap: anywhere; }
+.home-error { font-size: 12px; color: var(--error); }
