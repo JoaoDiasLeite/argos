@@ -33,6 +33,7 @@ import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, groupOwnsView } from './componen
 import ServerTabs from './components/ServerTabs'
 import ClaudeMdModal from './components/ClaudeMdModal'
 import ApprovalModal from './components/ApprovalModal'
+import PlanReviewSheet from './components/PlanReviewSheet'
 import SecretPrompt from './components/SecretPrompt'
 import { readRecentRunbooks } from './components/ChatConfigBar'
 import PendingRuns, { PendingRun } from './components/PendingRuns'
@@ -2944,6 +2945,9 @@ export default function App() {
   /** The ops chat the workspace has on screen in Chat mode — its approvals render inline
    *  there, so the global modal steps aside for it as it does for the chat view. */
   const [opsChatVisibleId, setOpsChatVisibleId] = useState<string | null>(null)
+  /** The ops terminal the workspace has on screen in Terminal mode — a plan for its run is
+   *  reviewed in the workspace's side column, so the drawer steps aside for it. */
+  const [opsTerminalVisibleId, setOpsTerminalVisibleId] = useState<string | null>(null)
   const openOpsWorkspace = (runbookPath: string) => {
     setOpsWorkspace({ runbookPath })
     setView('ops-workspace')
@@ -3331,6 +3335,15 @@ export default function App() {
   // fire dragleave on every pass over them — hence the counter, same as in Chat and PaneGrid.
   const [welcomeDropOver, setWelcomeDropOver] = useState(false)
   const welcomeDragDepth = useRef(0)
+
+  // An ops plan at the head of the queue is always the review sheet, never the modal or an
+  // inline card: embedded in the Ops workspace when it belongs to the terminal on screen
+  // there, else the drawer.
+  const headApproval = approvalQueue[0]
+  const headIsPlan = headApproval?.ops?.tool === 'plan'
+  const workspacePlan =
+    headIsPlan && view === 'ops-workspace' && headApproval.appSessionId === opsTerminalVisibleId ? headApproval : undefined
+  const stopHeadApproval = headApproval?.ops ? () => respondApprovalStopById(headApproval.approvalId) : undefined
 
   // Everything a chat pane needs from the App, shared by every pane. A plain object,
   // not a useMemo: most of the actions below are plain consts rebuilt on every render,
@@ -3725,6 +3738,10 @@ export default function App() {
                work mode Chat would show its own terminal, which is not the ops SDK path. */
             renderChat={(id) => <ChatPane sessionId={id} api={{ ...paneApi, workMode: 'chat' }} />}
             onChatVisible={setOpsChatVisibleId}
+            onTerminalVisible={setOpsTerminalVisibleId}
+            pendingPlan={workspacePlan}
+            onPlanDecide={respondApproval}
+            onPlanStop={stopHeadApproval}
           />
         </Suspense>
       )}
@@ -3793,7 +3810,15 @@ export default function App() {
       )}
       {/* While a password is being asked, the approval modal waits: its window-level Esc would
           otherwise deny the call behind the prompt. */}
-      {secretQueue.length === 0 && view !== 'rooms' && approvalQueue.length > 0 && !(view === 'chat' && workMode === 'chat' && visibleIds.has(approvalQueue[0].appSessionId)) && !(view === 'ops-workspace' && opsChatVisibleId === approvalQueue[0].appSessionId) && (
+      {secretQueue.length === 0 && headIsPlan && !workspacePlan && (
+        <PlanReviewSheet
+          key={headApproval.approvalId}
+          request={headApproval}
+          onDecide={respondApproval}
+          onStop={stopHeadApproval}
+        />
+      )}
+      {secretQueue.length === 0 && !headIsPlan && view !== 'rooms' && approvalQueue.length > 0 && !(view === 'chat' && workMode === 'chat' && visibleIds.has(approvalQueue[0].appSessionId)) && !(view === 'ops-workspace' && opsChatVisibleId === approvalQueue[0].appSessionId) && (
         <ApprovalModal
           request={approvalQueue[0]}
           onDecide={respondApproval}

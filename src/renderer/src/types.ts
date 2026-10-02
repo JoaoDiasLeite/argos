@@ -1012,8 +1012,11 @@ export interface ApprovalOpsContext {
   /** `user@host:port` for the header; never a secret. */
   hostAddress: string
   tool: 'run' | 'script' | 'read' | 'list' | 'write' | 'plan'
-  /** For tool 'plan': the numbered steps the model proposes for this run. */
-  planSteps?: string[]
+  /** For tool 'plan': the steps the model proposes for this run, each already classified
+   *  by the gate so the review sheet can say what will happen before anything runs. */
+  planSteps?: OpsPlanStep[]
+  /** For tool 'plan': the totals the review sheet leads with. */
+  planSummary?: { runs: number; asks: number; denied: number; mutates: number }
   class: 'read' | 'mutate'
   reason: string
   rule?: string
@@ -1025,6 +1028,21 @@ export interface ApprovalOpsContext {
   queuedBehind: number
   /** The runbook folder's name. */
   runbook: string
+}
+
+export interface OpsPlanStep {
+  /** The step's own words, from the model (and, when a rule matched, the rule's title). */
+  title: string
+  /** Stored host name the step targets, when it names one the runbook knows. */
+  hostName?: string
+  /** The canonical command line(s) or `script <name> args…` the gate would run. */
+  commands: string[]
+  /** What the gate decided at plan time for each command, folded to the worst case. */
+  verdict: 'runs' | 'asks' | 'denied' | 'unknown'
+  class?: 'read' | 'mutate'
+  /** One sentence from the gate: the rule that matched, or why it is refused. */
+  reason?: string
+  sudo?: boolean
 }
 
 /** What `ops:load-runbook` returns: enough for the picker, never a secret. */

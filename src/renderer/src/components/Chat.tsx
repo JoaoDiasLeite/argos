@@ -927,7 +927,8 @@ export default function Chat(
       {/* Rendered outside the composer's display:none wrapper below — a run in a chat
           with the terminal open still needs approving, and it has nowhere else to show
           up (the global modal is deliberately suppressed for the chat on screen). */}
-      {session && approval && mode === 'chat' && (
+      {/* An ops plan is never inline: App shows it as the review sheet. */}
+      {session && approval && mode === 'chat' && approval.ops?.tool !== 'plan' && (
         <div ref={approvalRef} className="chat-approval-inline">
           <ApprovalModal
             request={approval}

@@ -22,20 +22,14 @@ function str(v: unknown): string {
 
 function OpsBody({ ops }: { ops: ApprovalOpsContext }) {
   const { lines } = describeOpsRequest(ops)
-  const isPlan = ops.tool === 'plan'
   return (
     <div className="approval-ops">
       <div className="approval-ops-meta">
         <span>{ops.hostName} · {ops.hostAddress} · runbook {ops.runbook}</span>
-        {!isPlan && <span className={`approval-ops-class ${ops.class}`}>{ops.class}</span>}
+        <span className={`approval-ops-class ${ops.class}`}>{ops.class}</span>
       </div>
       {ops.title && <div className="approval-ops-title">{ops.title}</div>}
-      {isPlan && lines.length > 0 && (
-        <ol className="approval-ops-steps">
-          {lines.map((l, i) => <li key={i}>{l}</li>)}
-        </ol>
-      )}
-      {!isPlan && lines.length > 0 && <pre className="approval-ops-exec">{lines.join('\n')}</pre>}
+      {lines.length > 0 && <pre className="approval-ops-exec">{lines.join('\n')}</pre>}
       <div className="approval-ops-rule">{ops.rule ? ops.rule : 'no rule matched'}</div>
       {ops.reason && <div className="approval-desc">{ops.reason}</div>}
       {ops.queuedBehind > 0 && (
@@ -65,7 +59,6 @@ export default function ApprovalModal({ request, onDecide, sessionName, inline =
     return () => window.removeEventListener('keydown', onKey)
   }, [onDecide, inline])
 
-  const isPlan = ops?.tool === 'plan'
   const filePath = str(input.file_path || input.path)
 
   const renderBody = () => {
@@ -134,7 +127,7 @@ export default function ApprovalModal({ request, onDecide, sessionName, inline =
         <div className="approval-body">{renderBody()}</div>
         <div className="modal-footer approval-footer">
           <button className="btn-secondary" onClick={() => onDecide(false)}>
-            {isPlan ? 'Reject plan' : 'Deny'} {!inline && <span className="kbd">Esc</span>}
+            Deny {!inline && <span className="kbd">Esc</span>}
           </button>
           {ops && onStop && (
             <button className="btn-secondary approval-stop" onClick={onStop}>
@@ -142,7 +135,7 @@ export default function ApprovalModal({ request, onDecide, sessionName, inline =
             </button>
           )}
           <button className="btn-primary" onClick={() => onDecide(true)}>
-            {isPlan ? 'Approve plan' : 'Allow once'} {!inline && <span className="kbd">Ctrl/⌘↵</span>}
+            Allow once {!inline && <span className="kbd">Ctrl/⌘↵</span>}
           </button>
         </div>
       </div>

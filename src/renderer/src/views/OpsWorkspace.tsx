@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { OpsRunbookInfo } from '../types'
+import type { ApprovalRequest, OpsRunbookInfo } from '../types'
 import ChatTerminal from '../components/ChatTerminal'
 import OpsTimeline from '../components/OpsTimeline'
+import PlanReviewSheet from '../components/PlanReviewSheet'
 import type { OpsTerminalProvider, OpsTerminalSessionResult } from '../lib/ops-terminal'
 import './OpsWorkspace.css'
 
@@ -111,9 +112,26 @@ interface Props {
   renderChat: (sessionId: string) => ReactNode
   /** Which chat the workspace has on screen, so App can leave its approvals to it. */
   onChatVisible: (sessionId: string | null) => void
+  /** Which ops terminal the workspace has on screen, so App can route that run's plan
+   *  here instead of covering the terminal with its drawer. */
+  onTerminalVisible?: (terminalId: string | null) => void
+  /** The plan waiting on the visible terminal's run, if any (App owns the queue). */
+  pendingPlan?: ApprovalRequest
+  onPlanDecide?: (allow: boolean) => void
+  onPlanStop?: () => void
 }
 
-export default function OpsWorkspace({ runbookPath, onBack, openChat, renderChat, onChatVisible }: Props) {
+export default function OpsWorkspace({
+  runbookPath,
+  onBack,
+  openChat,
+  renderChat,
+  onChatVisible,
+  onTerminalVisible,
+  pendingPlan,
+  onPlanDecide,
+  onPlanStop
+}: Props) {
   const [info, setInfo] = useState<OpsRunbookInfo | null>(null)
   const [hostDots, setHostDots] = useState<Record<string, HostDot>>({})
   const [mode, setModeState] = useState<Mode>(() => readPref(`ops.mode.${runbookPath}`, ['terminal', 'chat'], 'terminal'))
@@ -241,6 +259,14 @@ export default function OpsWorkspace({ runbookPath, onBack, openChat, renderChat
     return () => onChatVisible(null)
   }, [mode, chatSessionId, onChatVisible])
 
+  // A plan for this terminal's run is reviewed in the side column, beside the terminal.
+  useEffect(() => {
+    if (mode !== 'terminal' || !onTerminalVisible) return
+    onTerminalVisible(terminalId)
+    return () => onTerminalVisible(null)
+  }, [mode, terminalId, onTerminalVisible])
+  const plan = mode === 'terminal' && pendingPlan?.appSessionId === terminalId && onPlanDecide ? pendingPlan : undefined
+
   // ── Render ──
   const name = info?.ok ? info.name : baseName(runbookPath)
   const guarantee: Guarantee =
@@ -361,7 +387,11 @@ export default function OpsWorkspace({ runbookPath, onBack, openChat, renderChat
                 />
               )}
             </div>
-            {timelineOpen && (
+            {plan && onPlanDecide ? (
+              <div className="ops-ws-plan">
+                <PlanReviewSheet key={plan.approvalId} request={plan} onDecide={onPlanDecide} onStop={onPlanStop} embedded />
+              </div>
+            ) : timelineOpen && (
               <OpsTimeline appSessionId={terminalId} runbookPath={runbookPath} onClose={() => setTimelineOpen(false)} />
             )}
           </>

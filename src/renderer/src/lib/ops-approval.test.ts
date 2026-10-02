@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { describeOpsRequest, displayArgv, summarizeOps } from './ops-approval'
-import type { ApprovalOpsContext } from '../types'
+import {
+  describeOpsRequest, displayArgv, summarizeOps, planTotals, planTotalsGroups, planChangesLine,
+  planTarget, planStepLabel
+} from './ops-approval'
+import type { ApprovalOpsContext, OpsPlanStep } from '../types'
 
 const base: ApprovalOpsContext = {
   hostName: 'web1', hostAddress: 'ops@10.0.0.1:22', tool: 'run', class: 'read',
@@ -31,15 +34,52 @@ describe('describeOpsRequest', () => {
   })
 })
 
+const step = (s: Partial<OpsPlanStep>): OpsPlanStep => ({ title: 't', commands: ['true'], verdict: 'runs', ...s })
+
 describe('plan approvals', () => {
-  const plan: ApprovalOpsContext = { ...base, tool: 'plan', hostName: 'restart-app', planSteps: ['check disk', 'restart service'] }
-  it('describes a plan with its steps', () => {
+  const steps: OpsPlanStep[] = [
+    step({ title: 'check disk', hostName: 'web1', commands: ['df -h'], class: 'read' }),
+    step({
+      title: 'restart service', hostName: 'web1', commands: ['sudo systemctl restart app'],
+      verdict: 'asks', class: 'mutate', sudo: true, reason: 'rule: restart'
+    })
+  ]
+  const plan: ApprovalOpsContext = { ...base, tool: 'plan', hostName: 'restart-app', planSteps: steps }
+
+  it('describes a plan with its step titles', () => {
     expect(describeOpsRequest(plan)).toEqual({
       verb: 'approve the plan for restart-app', lines: ['check disk', 'restart service']
     })
   })
   it('summarizes a plan', () => {
     expect(summarizeOps(plan)).toBe('Plan: 2 steps for restart-app')
-    expect(summarizeOps({ ...plan, planSteps: ['one'] })).toBe('Plan: 1 step for restart-app')
+    expect(summarizeOps({ ...plan, planSteps: [steps[0]] })).toBe('Plan: 1 step for restart-app')
+  })
+  it('counts totals from the steps when no summary came', () => {
+    const t = planTotals(plan)
+    expect(t).toEqual({ runs: 1, asks: 1, denied: 0, mutates: 1, unknown: 0, total: 2 })
+    expect(planTotalsGroups(t).map((g) => `${g.n} ${g.text}`)).toEqual(['1 runs on its own', '1 will ask you first'])
+    expect(planChangesLine(t)).toBe('1 changes the host')
+  })
+  it('prefers the gate summary and leaves zero groups out', () => {
+    const t = planTotals({ ...plan, planSummary: { runs: 1, asks: 0, denied: 0, mutates: 0 } })
+    expect(t.unknown).toBe(1)
+    expect(planTotalsGroups(t).map((g) => `${g.n} ${g.text}`)).toEqual(['1 runs on its own'])
+    expect(planChangesLine(t)).toBe('nothing changes')
+    const many = planTotals({ ...plan, planSummary: { runs: 5, asks: 2, denied: 1, mutates: 3 } })
+    expect(planTotalsGroups(many).map((g) => `${g.n} ${g.text}`)).toEqual([
+      '5 run on their own', '2 will ask you first', '1 not allowed'
+    ])
+    expect(planChangesLine(many)).toBe('3 change the host')
+  })
+  it('names the single host, else the runbook', () => {
+    expect(planTarget(plan)).toBe('on web1')
+    expect(planTarget({ ...plan, planSteps: [...steps, step({ hostName: 'db1' })] })).toBe('runbook rb')
+  })
+  it('labels steps', () => {
+    expect(planStepLabel(step({ class: 'read' }))).toBe('read')
+    expect(planStepLabel(step({ commands: ['a', 'b', 'c'] }))).toBe('read · 3')
+    expect(planStepLabel(step({ verdict: 'asks', sudo: true }))).toBe('asks · sudo')
+    expect(planStepLabel(step({ verdict: 'denied' }))).toBe('not allowed')
   })
 })

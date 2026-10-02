@@ -108,6 +108,3 @@
 .approval-ops-queue { font-size: 12px; color: var(--warn); }
 .approval-ops .approval-desc { margin-top: 0; }
 .approval-stop { margin-right: auto; }
-.approval-ops-steps { margin: 0; padding: 10px 12px 10px 32px; background: var(--bg-2); color: var(--text-0); border-radius: var(--radius-sm); border: 1px solid var(--bg-3); font-family: var(--font-mono); font-size: 12px; line-height: 1.6; }
-.approval-ops-steps li { padding-left: 4px; overflow-wrap: anywhere; }
-.approval-ops-steps li + li { margin-top: 4px; }

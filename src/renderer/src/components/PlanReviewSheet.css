@@ -1,0 +1,223 @@
+/* Review sheet for an ops plan. A right-side drawer over the app, or (`.embedded`) a plain
+   column that fills its container, as in the Ops workspace beside the terminal. */
+
+.plan-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: color-mix(in srgb, var(--bg-0) 55%, transparent);
+  /* Covers the frameless window's drag strip; see .modal-backdrop. */
+  -webkit-app-region: no-drag;
+}
+
+.plan-sheet {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-1);
+  color: var(--text-0);
+  outline: none;
+}
+.plan-sheet:not(.embedded) {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(520px, 100vw);
+  border-left: 1px solid var(--border);
+  box-shadow: -24px 0 60px color-mix(in srgb, #000 40%, transparent);
+}
+.plan-sheet.embedded {
+  height: 100%;
+  width: 100%;
+}
+
+/* ── Header ── */
+.plan-sheet-head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px 22px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.plan-sheet.embedded .plan-sheet-head { padding: 14px 16px 12px; }
+.plan-sheet-eyebrow-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.plan-sheet-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.plan-sheet-run { font-size: 12px; color: var(--text-2); font-family: var(--font-mono); }
+.plan-sheet-title-row { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.plan-sheet-count { font-size: 26px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; }
+.plan-sheet.embedded .plan-sheet-count { font-size: 22px; }
+.plan-sheet-target {
+  font-size: 13px;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plan-sheet-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--bg-3);
+}
+.plan-sheet-bar .runs { background: var(--success); }
+.plan-sheet-bar .asks { background: var(--warn); }
+.plan-sheet-bar .denied { background: var(--error); }
+.plan-sheet-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 12px;
+  color: var(--text-1);
+}
+.plan-sheet-n { font-weight: 600; }
+.plan-sheet-n.runs { color: var(--success); }
+.plan-sheet-n.asks { color: var(--warn); }
+.plan-sheet-n.denied { color: var(--error); }
+.plan-sheet-changes { margin-left: auto; color: var(--text-2); }
+.plan-sheet-changes.mutates { color: var(--warn); }
+
+/* ── Steps ── */
+.plan-sheet-steps {
+  list-style: none;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 10px;
+  margin: 0;
+}
+.plan-sheet-empty { padding: 14px 12px; font-size: 13px; color: var(--text-2); }
+.plan-sheet-step {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+}
+.plan-sheet-step.flagged.asks { background: color-mix(in srgb, var(--warn) 7%, transparent); }
+.plan-sheet-step.flagged.denied { background: color-mix(in srgb, var(--error) 7%, transparent); }
+
+.plan-sheet-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: 4px;
+  flex-shrink: 0;
+  width: 10px;
+}
+.plan-sheet-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-2);
+}
+.plan-sheet-step.runs .plan-sheet-dot { background: var(--success); }
+.plan-sheet-step.asks .plan-sheet-dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent);
+}
+.plan-sheet-step.denied .plan-sheet-dot { background: var(--error); }
+.plan-sheet-line {
+  width: 1px;
+  flex: 1;
+  min-height: 20px;
+  background: var(--border);
+  /* Reach through the row's bottom padding to the next dot. */
+  margin-bottom: -14px;
+}
+
+.plan-sheet-step-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.plan-sheet-step-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.plan-sheet-step-title { font-size: 13.5px; color: var(--text-0); overflow-wrap: anywhere; }
+.plan-sheet-label { font-size: 11px; color: var(--text-2); white-space: nowrap; flex-shrink: 0; }
+.plan-sheet-step.asks .plan-sheet-label { color: var(--warn); font-weight: 600; }
+.plan-sheet-step.denied .plan-sheet-label { color: var(--error); font-weight: 600; }
+.plan-sheet-cmd {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plan-sheet-step.flagged .plan-sheet-cmd { color: var(--text-1); }
+.plan-sheet-reason {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plan-sheet-step.asks .plan-sheet-reason { color: var(--warn); }
+.plan-sheet-step.denied .plan-sheet-reason { color: var(--error); }
+
+/* ── Footer ── */
+.plan-sheet-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 22px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-0);
+  flex-shrink: 0;
+}
+.plan-sheet.embedded .plan-sheet-foot { padding: 12px 16px 14px; }
+.plan-sheet-actions { display: flex; gap: 10px; }
+.plan-sheet-reject,
+.plan-sheet-approve {
+  height: 40px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s, border-color 0.14s, filter 0.14s;
+}
+.plan-sheet-reject {
+  flex: 1;
+  border: 1px solid var(--border-light);
+  background: transparent;
+  color: var(--text-1);
+  font-weight: 600;
+}
+.plan-sheet-reject:hover { background: var(--bg-hover); color: var(--text-0); }
+.plan-sheet-approve {
+  flex: 2;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--bg-0);
+  font-weight: 700;
+}
+.plan-sheet-approve:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.plan-sheet-reject:focus-visible,
+.plan-sheet-approve:focus-visible,
+.plan-sheet-stop:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.plan-sheet-hints {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.plan-sheet-stop {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--error);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.plan-sheet-stop:hover { text-decoration: underline; }
