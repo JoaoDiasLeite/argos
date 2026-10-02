@@ -403,7 +403,27 @@ These were already planned; they are listed here so one document holds everythin
   as "unattributed" in `GitModal`, never as someone else's.
 - **Lot 8, semantic search** — stays optional; nothing here depends on it.
 
-### Phase 5 — ops from the terminal, and an Ops view · 3–4 days
+### Phase 5 — ops from the terminal, and an Ops view · done (`18ae07e`, `33ef372`, `a2d677b`)
+
+Landed as planned, with these findings worth keeping:
+- **The relay runs as `ELECTRON_RUN_AS_NODE=1 <argos> out/main/ops-relay.js --ops-mcp`**,
+  not inside Electron's main process: there, `process.stdin` as a stream delivers nothing
+  on Windows (the same trap the notify hook hit) and Electron writes a stray `\r\n` to
+  stdout at startup, which is the MCP channel. Under node mode stdin works, stdout is
+  clean, Chromium never starts. If the RunAsNode fuse is ever disabled, the relay breaks.
+- **A repeat `ops:terminal-session` for a live terminal returns the same token**, because a
+  renderer remount reattaches to the same pty and that pty keeps the token it was born
+  with. A new token only after `run.end`.
+- **Codex starts MCP servers with a cleared environment**, so the token also travels in
+  the config file's `env`, not only in the pty's. Its `config.toml` is a complete overlay
+  (auth copied in and persisted back) with the runbook folder trusted.
+- **Ops terminals are local-shell only**: a WSL distro cannot reach a Windows named pipe.
+  WSL and SSH launches are refused with a message rather than started without the server.
+- **`MCP_TOOL_TIMEOUT`** is set on the Claude pty (30 min): the default is far below a
+  modal wait plus a ten-minute exec. No MCP cancellation is forwarded yet: if the CLI
+  gives up on a call, main still waits on the modal.
+- Not verified: that Antigravity (`agy`) honours `GEMINI_CLI_SYSTEM_SETTINGS_PATH`. The
+  Ops view shows Gemini as "tools only" but nobody has run it.
 
 Phases 0–3 put the gate where Argos sits between the model and the tools: the SDK chat.
 The user's daily tool is the **embedded terminal**, where the CLI runs on its own and
