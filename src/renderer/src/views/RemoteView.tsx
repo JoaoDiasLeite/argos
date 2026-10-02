@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { SshHostPublic, SshHostInput, SshAuthType, SshKeyInfo, WslDistro, SourceInfo } from '../types'
 import Menu, { MoreIcon } from '../components/Menu'
+import { readRecentRunbooks } from '../components/ChatConfigBar'
 import './views.css'
 import './RemoteView.css'
 
 interface Props {
   onConnect: (host: SshHostPublic) => void
+  /** A local Claude chat under a recent runbook that reaches this host (ops profile).
+   *  Offered only once at least one runbook has been picked. */
+  onOpsChat?: (host: SshHostPublic) => void
   onConnectWsl: (distro: string, cwd?: string) => void
   /** Opens the full Remote Session workspace (SFTP browser + terminal + history) for a host.
    *  `newSession` forces another session on a target that already has one; without it the
@@ -56,6 +60,7 @@ function emptyHost(): SshHostInput {
 
 export default function RemoteView({
   onConnect,
+  onOpsChat,
   onConnectWsl,
   onOpenSession,
   onOpenWslSession,
@@ -64,6 +69,8 @@ export default function RemoteView({
   failedSshSessions = []
 }: Props) {
   const [hosts, setHosts] = useState<SshHostPublic[]>([])
+  // Read once per visit: runbooks are picked from a chat's config bar, not from here.
+  const [hasRunbooks] = useState(() => readRecentRunbooks().length > 0)
   const [distros, setDistros] = useState<WslDistro[]>([])
   const [sources, setSources] = useState<SourceInfo[]>([])
   const [hidden, setHidden] = useState<string[]>([])
@@ -525,6 +532,15 @@ export default function RemoteView({
                           >
                             Connect
                           </button>
+                          {onOpsChat && hasRunbooks && (
+                            <button
+                              className="btn-secondary small"
+                              onClick={() => onOpsChat(host)}
+                              title="Local Claude chat whose commands on this host go through a runbook's gate"
+                            >
+                              Ops chat
+                            </button>
+                          )}
                           <Menu
                             triggerClass="rt-more"
                             triggerTitle="More"

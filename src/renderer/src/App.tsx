@@ -32,6 +32,7 @@ import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, groupOwnsView } from './componen
 import ServerTabs from './components/ServerTabs'
 import ClaudeMdModal from './components/ClaudeMdModal'
 import ApprovalModal from './components/ApprovalModal'
+import { readRecentRunbooks } from './components/ChatConfigBar'
 import PendingRuns, { PendingRun } from './components/PendingRuns'
 import FileEditor from './components/FileEditor'
 import { readLocalFile, writeLocalFile } from './lib/local-file-io'
@@ -825,6 +826,16 @@ export default function App() {
     setApprovalQueue((prev) => prev.filter((r) => r.approvalId !== approvalId))
   }
 
+  // Ops calls only: deny this call and stop the whole run (main aborts the turn).
+  const respondApprovalStopById = (approvalId: string) => {
+    const req = approvalQueue.find((r) => r.approvalId === approvalId)
+    if (!req) return
+    window.electronAPI.respondApproval({ approvalId, allow: false, stop: true })
+    addTermFor(req.appSessionId, { kind: 'error', text: `denied ${req.tool} and stopped the run` })
+    approvalSinceRef.current.delete(approvalId)
+    setApprovalQueue((prev) => prev.filter((r) => r.approvalId !== approvalId))
+  }
+
   // Global modal answers the HEAD of the queue — delegates to respondApprovalById.
   const respondApproval = (allow: boolean) => {
     const head = approvalQueue[0]
@@ -865,7 +876,8 @@ export default function App() {
       // acctOf (src/renderer/src/lib/account-scope.ts) — an unbound Codex chat must
       // run on the same account it's filed/scoped under, not the literal 'default'.
       codexAccountId: session.codexAccountId ?? codexDefaultAccountId,
-      geminiAccountId: session.geminiAccountId
+      geminiAccountId: session.geminiAccountId,
+      runbookPath: session.runbookPath
     }),
     [defaultModel, defaultAccountId, codexDefaultAccountId]
   )
@@ -2877,6 +2889,43 @@ export default function App() {
     addTerm({ kind: 'info', text: `remote session on ${host.name}` })
   }
 
+  // "Ops chat" on an SSH host card: a local Claude chat under the most recent runbook
+  // that names this host. None does → the most recent runbook anyway, and the config
+  // bar's hosts line shows the host is not in it.
+  const connectOps = async (host: SshHostPublic) => {
+    const recents = readRecentRunbooks()
+    if (recents.length === 0) return
+    let runbookPath = recents[0]
+    let matched = false
+    for (const dir of recents) {
+      try {
+        const info = await window.electronAPI.opsLoadRunbook(dir)
+        if (info.ok && info.hosts.some((h) => h.id === host.id)) {
+          runbookPath = dir
+          matched = true
+          break
+        }
+      } catch {
+        /* an unreadable runbook just doesn't match */
+      }
+    }
+    // Ops runs on the Claude engine only; keep the default model when it is a Claude
+    // one, else take the first Claude model there is.
+    const model =
+      provOf(models, defaultModel) === 'claude' ? defaultModel : models.find((m) => m.provider === 'claude')?.id ?? defaultModel
+    const s = newSession(undefined, model, defaultAccountId)
+    s.name = `${host.name} (ops)`
+    s.runbookPath = runbookPath
+    setSessions((prev) => [s, ...prev])
+    setActiveId(s.id)
+    setView('chat')
+    addTerm(
+      matched
+        ? { kind: 'info', text: `ops chat for ${host.name} under ${runbookPath}` }
+        : { kind: 'error', text: `no recent runbook names ${host.name}; opened ${runbookPath}` }
+    )
+  }
+
   const connectWsl = (distro: string, cwd?: string) => {
     const s = newSession(cwd, defaultModel, defaultAccountId)
     s.name = `${distro} (WSL)`
@@ -3607,6 +3656,7 @@ export default function App() {
             {view === 'remote' && (
               <RemoteView
                 onConnect={connectRemote}
+                onOpsChat={connectOps}
                 onConnectWsl={connectWsl}
                 onOpenSession={openRemoteSession}
                 onOpenWslSession={openWslSession}
@@ -3675,7 +3725,11 @@ export default function App() {
           chat mode alone. In terminal mode the chat pane is a terminal, so a run Argos
           itself is driving (Planner, Rooms, a routine) has nowhere else to ask. */}
       {view !== 'rooms' && approvalQueue.length > 0 && !(view === 'chat' && workMode === 'chat' && visibleIds.has(approvalQueue[0].appSessionId)) && (
-        <ApprovalModal request={approvalQueue[0]} onDecide={respondApproval} />
+        <ApprovalModal
+          request={approvalQueue[0]}
+          onDecide={respondApproval}
+          onStop={approvalQueue[0]?.ops ? () => respondApprovalStopById(approvalQueue[0].approvalId) : undefined}
+        />
       )}
       {openFilePath && (
         <FileEditor

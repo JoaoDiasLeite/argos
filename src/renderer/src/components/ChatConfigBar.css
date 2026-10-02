@@ -238,6 +238,106 @@ button.config-pill:hover:not(:disabled) {
   color: var(--text-2);
 }
 
+/* ── Ops chat (runbook) ── */
+.config-pill.config-ops-pill {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+.config-pill.config-ops-pill svg {
+  color: var(--accent);
+}
+.config-pill.config-ops-pill.config-ops-pill-bad {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 12%, var(--bg-1));
+  border-color: color-mix(in srgb, var(--error) 50%, var(--border));
+}
+.config-pill.config-ops-pill.config-ops-pill-bad svg {
+  color: var(--error);
+}
+
+/* The runbook's hosts, its strict flag and any warning, after the env pill. Shrinks
+   (with ellipsis) rather than wrapping, like the rest of the row. */
+.config-ops-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+.config-ops-host {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.config-ops-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-2);
+  opacity: 0.6;
+}
+.config-ops-dot.ok {
+  background: var(--success);
+  opacity: 1;
+}
+.config-ops-dot.error {
+  background: var(--error);
+  opacity: 1;
+}
+.config-ops-mode,
+.config-ops-warn {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  background: var(--bg-2);
+  color: var(--text-2);
+}
+.config-ops-mode.strict {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+.config-ops-warn {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, var(--bg-1));
+}
+.config-ops-meta {
+  color: var(--text-2);
+}
+.config-ops-bad {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--error);
+}
+
+/* A runbook that failed to load, inside the env menu. */
+.config-ops-error {
+  margin: 4px 2px 2px;
+  padding: 7px 9px;
+  max-width: 320px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--error) 10%, var(--bg-1));
+  color: var(--error);
+  font-size: 11.5px;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.config-ops-error ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+.config-menu-item:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* In the terminal setup pane this row is not a composer chip row — it has the whole
    pane, so its chips are free to wrap onto a second line and sit centred. */
 .terminal-setup .config-bar {

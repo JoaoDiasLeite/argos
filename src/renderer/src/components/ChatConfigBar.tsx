@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Session, WslDistro, SshHostPublic } from '../types'
+import { Session, WslDistro, SshHostPublic, OpsRunbookInfo, ModelInfo } from '../types'
 import './ChatConfigBar.css'
 
 interface Props {
@@ -13,6 +13,36 @@ const basename = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ||
 
 /** How many chips the row shows inline before the rest collapse behind "+N more". */
 const CHIP_BUDGET = 5
+
+/** Recently picked runbook folders (absolute paths, most recent first). Shared with the
+ *  Remote view's "Ops chat" button and App's host-to-runbook lookup. */
+export const RECENT_RUNBOOKS_KEY = 'ops.recentRunbooks'
+const RECENT_RUNBOOKS_MAX = 8
+
+export function readRecentRunbooks(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_RUNBOOKS_KEY)
+    const list: unknown = raw ? JSON.parse(raw) : []
+    return Array.isArray(list)
+      ? list.filter((p): p is string => typeof p === 'string' && p !== '').slice(0, RECENT_RUNBOOKS_MAX)
+      : []
+  } catch {
+    return []
+  }
+}
+
+function pushRecentRunbook(dir: string): string[] {
+  const next = [dir, ...readRecentRunbooks().filter((p) => p !== dir)].slice(0, RECENT_RUNBOOKS_MAX)
+  try {
+    localStorage.setItem(RECENT_RUNBOOKS_KEY, JSON.stringify(next))
+  } catch {
+    /* storage unavailable: the list just isn't remembered */
+  }
+  return next
+}
+
+type OpsLoadFailure = Extract<OpsRunbookInfo, { ok: false }>
+type HostDot = 'checking' | 'ok' | 'error'
 
 /**
  * The configuration row under the composer: pick the environment (Local / WSL distro /
@@ -28,20 +58,67 @@ export default function ChatConfigBar({ session, onPatch, disabled }: Props) {
   const [pathDraft, setPathDraft] = useState('')
   const [branch, setBranch] = useState<string | null>(null)
   const [isRepo, setIsRepo] = useState(false)
+  const [recentRunbooks, setRecentRunbooks] = useState<string[]>(() => readRecentRunbooks())
+  /** A failed runbook pick, shown inside the open menu; nothing was patched. */
+  const [pickError, setPickError] = useState<OpsLoadFailure | null>(null)
+  const [picking, setPicking] = useState(false)
+  /** The current runbook as main loaded it (fresh on mount and whenever it changes). */
+  const [runbookInfo, setRunbookInfo] = useState<OpsRunbookInfo | null>(null)
+  const [hostDots, setHostDots] = useState<Record<string, HostDot>>({})
+  const [models, setModels] = useState<ModelInfo[]>([])
   const envRef = useRef<HTMLDivElement>(null)
   const pathRef = useRef<HTMLDivElement>(null)
   const overflowRef = useRef<HTMLDivElement>(null)
 
-  const isRemote = !!session.remoteHostId
-  const isWsl = !!session.wslDistro
-  const isLocal = !isRemote && !isWsl
+  const isOps = !!session.runbookPath
+  const isRemote = !isOps && !!session.remoteHostId
+  const isWsl = !isOps && !!session.wslDistro
+  // An ops chat runs locally, but its cwd is the runbook: none of the folder / branch /
+  // worktree / extra-dir controls apply, so "local" here means the plain local env only.
+  const isLocal = !isOps && !isRemote && !isWsl
   const dirs = session.additionalDirs ?? []
 
   // Load environments lazily — only ever mounted on the empty-state screen.
   useEffect(() => {
     window.electronAPI.wslList().then(setDistros).catch(() => {})
     window.electronAPI.sshList().then(setHosts).catch(() => {})
+    window.electronAPI.getModels().then(setModels).catch(() => {})
   }, [])
+
+  // Re-load the chosen runbook on mount and whenever it changes, so a deleted or
+  // now-invalid runbook is visible before the user sends, and the hosts line is current.
+  // Each host the runbook names gets a connection probe for its dot.
+  useEffect(() => {
+    const dir = session.runbookPath
+    setRunbookInfo(null)
+    setHostDots({})
+    if (!dir) return
+    let cancelled = false
+    window.electronAPI
+      .opsLoadRunbook(dir)
+      .then((info) => {
+        if (cancelled) return
+        setRunbookInfo(info)
+        if (!info.ok) return
+        setHostDots(Object.fromEntries(info.hosts.map((h) => [h.id, 'checking' as HostDot])))
+        for (const h of info.hosts) {
+          window.electronAPI
+            .sshTest(h.id)
+            .then((r) => {
+              if (!cancelled) setHostDots((prev) => ({ ...prev, [h.id]: r.ok ? 'ok' : 'error' }))
+            })
+            .catch(() => {
+              if (!cancelled) setHostDots((prev) => ({ ...prev, [h.id]: 'error' }))
+            })
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) setRunbookInfo({ ok: false, error: e instanceof Error ? e.message : String(e) })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [session.runbookPath])
 
   // Read the git branch of the chosen local folder (drives the branch pill + worktree toggle).
   useEffect(() => {
@@ -71,6 +148,9 @@ export default function ChatConfigBar({ session, onPatch, disabled }: Props) {
   // Close the environment menu on outside click / Escape.
   useEffect(() => {
     if (!envOpen) return
+    // Recents can change elsewhere (another chat's bar, the Remote view); refresh per open.
+    setRecentRunbooks(readRecentRunbooks())
+    setPickError(null)
     const onDoc = (e: MouseEvent) => {
       if (!envRef.current?.contains(e.target as Node)) setEnvOpen(false)
     }
@@ -121,6 +201,7 @@ export default function ChatConfigBar({ session, onPatch, disabled }: Props) {
 
   const chooseLocal = () => {
     onPatch({
+      runbookPath: undefined,
       wslDistro: undefined,
       remoteHostId: undefined,
       remoteHostName: undefined,
@@ -131,6 +212,7 @@ export default function ChatConfigBar({ session, onPatch, disabled }: Props) {
   }
   const chooseWsl = (d: WslDistro) => {
     onPatch({
+      runbookPath: undefined,
       wslDistro: d.name,
       remoteHostId: undefined,
       remoteHostName: `WSL · ${d.name}`,
@@ -142,6 +224,7 @@ export default function ChatConfigBar({ session, onPatch, disabled }: Props) {
   }
   const chooseHost = (h: SshHostPublic) => {
     onPatch({
+      runbookPath: undefined,
       remoteHostId: h.id,
       remoteHostName: h.name,
       wslDistro: undefined,
@@ -149,6 +232,40 @@ export default function ChatConfigBar({ session, onPatch, disabled }: Props) {
       useWorktree: false
     })
     setEnvOpen(false)
+  }
+
+  // Load the folder as a runbook first; only a valid one switches the chat to ops.
+  // An invalid one shows its errors in the menu and patches nothing.
+  const applyRunbook = async (dir: string) => {
+    setPicking(true)
+    setPickError(null)
+    try {
+      const info = await window.electronAPI.opsLoadRunbook(dir)
+      if (!info.ok) {
+        setPickError(info)
+        return
+      }
+      onPatch({
+        runbookPath: dir,
+        remoteHostId: undefined,
+        remoteHostName: undefined,
+        wslDistro: undefined,
+        projectPath: undefined,
+        useWorktree: false,
+        useMcp: false,
+        lightMode: false
+      })
+      setRecentRunbooks(pushRecentRunbook(dir))
+      setEnvOpen(false)
+    } catch (e) {
+      setPickError({ ok: false, error: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setPicking(false)
+    }
+  }
+  const chooseRunbookFolder = async () => {
+    const dir = await window.electronAPI.openFolder(session.runbookPath)
+    if (dir) await applyRunbook(dir)
   }
 
   const pickFolder = async () => {
@@ -180,8 +297,22 @@ export default function ChatConfigBar({ session, onPatch, disabled }: Props) {
     onPatch({ additionalDirs: dirs.filter((d) => d !== path) })
   }
 
-  const envLabel = isRemote ? session.remoteHostName || 'Remote' : isWsl ? session.wslDistro : 'Local'
-  const hasEnvOptions = distros.length > 0 || hosts.length > 0
+  const envLabel = isOps
+    ? runbookInfo?.ok
+      ? runbookInfo.name
+      : basename(session.runbookPath!)
+    : isRemote
+      ? session.remoteHostName || 'Remote'
+      : isWsl
+        ? session.wslDistro
+        : 'Local'
+  // The Ops group (choose a runbook folder) is always on offer, so the menu always opens.
+  const hasEnvOptions = true
+  const runbookBad = isOps && runbookInfo !== null && !runbookInfo.ok
+  // The ops profile exists only on the Claude engine (plan §1.9). The model picker lives
+  // in Chat and already filters to the chat's provider, so here we only warn.
+  const selectedProvider = models.find((m) => (session.model ?? '').startsWith(m.id))?.provider ?? 'claude'
+  const opsWrongModel = isOps && selectedProvider !== 'claude'
 
   // The row must stay on one line, so only CHIP_BUDGET chips render inline. Env + folder
   // (+ branch + worktree when they apply) are always worth seeing; the additional-directory
@@ -196,17 +327,25 @@ export default function ChatConfigBar({ session, onPatch, disabled }: Props) {
       {/* Environment */}
       <div className="config-env" ref={envRef}>
         <button
-          className="config-pill"
+          className={`config-pill${isOps ? ' config-ops-pill' : ''}${runbookBad ? ' config-ops-pill-bad' : ''}`}
           onClick={() => hasEnvOptions && setEnvOpen((v) => !v)}
           disabled={disabled}
-          title="Where this chat runs"
+          title={isOps ? `Ops chat under the runbook ${session.runbookPath}` : 'Where this chat runs'}
           aria-haspopup={hasEnvOptions ? 'menu' : undefined}
           aria-expanded={hasEnvOptions ? envOpen : undefined}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <rect x="2" y="3" width="20" height="14" rx="2" />
-            <line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
-          </svg>
+          {isOps ? (
+            /* A clipboard with a check: a runbook, not a machine. */
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="5" y="4" width="14" height="18" rx="2" />
+              <path d="M9 4V2h6v2" /><polyline points="9 13 11 15 15 11" />
+            </svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
+            </svg>
+          )}
           <span>{envLabel}</span>
           {hasEnvOptions && (
             <svg className="config-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -241,9 +380,84 @@ export default function ChatConfigBar({ session, onPatch, disabled }: Props) {
                 {h.name}
               </button>
             ))}
+            <div className="config-menu-label">Ops (runbook)</div>
+            {recentRunbooks.map((p) => (
+              <button
+                key={p}
+                className={`config-menu-item ${session.runbookPath === p ? 'selected' : ''}`}
+                onClick={() => applyRunbook(p)}
+                disabled={picking}
+                title={p}
+                role="menuitem"
+              >
+                {basename(p)}
+              </button>
+            ))}
+            <button className="config-menu-item" onClick={chooseRunbookFolder} disabled={picking} role="menuitem">
+              {picking ? 'Loading runbook…' : 'Choose runbook folder…'}
+            </button>
+            {pickError && (
+              <div className="config-ops-error" role="alert">
+                <div>{pickError.error}</div>
+                {pickError.errors && pickError.errors.length > 0 && (
+                  <ul>
+                    {pickError.errors.map((e, i) => (
+                      <li key={i}>{e}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {/* Ops chat: what the runbook reaches (hosts + their connection dots) and how it
+          treats an unmatched command, or why the runbook can't be used right now. */}
+      {isOps && (
+        <div className="config-ops-line" title={session.runbookPath}>
+          {runbookInfo === null && <span className="config-ops-meta">Loading runbook…</span>}
+          {runbookInfo && !runbookInfo.ok && (
+            <span
+              className="config-ops-bad"
+              role="alert"
+              title={[runbookInfo.error, ...(runbookInfo.errors ?? [])].join('\n')}
+            >
+              Runbook unusable: {runbookInfo.error}
+              {runbookInfo.errors && runbookInfo.errors.length > 0 ? ` (+${runbookInfo.errors.length})` : ''}
+            </span>
+          )}
+          {runbookInfo?.ok && (
+            <>
+              {runbookInfo.hosts.length === 0 && <span className="config-ops-meta">No hosts match</span>}
+              {runbookInfo.hosts.map((h) => (
+                <span
+                  key={h.id}
+                  className="config-ops-host"
+                  title={`${h.host}${h.groups.length ? ` · ${h.groups.join(', ')}` : ''}${
+                    hostDots[h.id] === 'error' ? ' · not reachable' : hostDots[h.id] === 'ok' ? ' · reachable' : ''
+                  }`}
+                >
+                  <span className={`config-ops-dot ${hostDots[h.id] ?? 'checking'}`} aria-hidden="true" />
+                  {h.name}
+                </span>
+              ))}
+              <span
+                className={`config-ops-mode ${runbookInfo.strict ? 'strict' : ''}`}
+                title={runbookInfo.strict ? 'Unmatched commands are denied' : 'Unmatched commands ask first'}
+              >
+                {runbookInfo.strict ? 'strict' : 'ask'}
+              </span>
+              {runbookInfo.warnings.length > 0 && (
+                <span className="config-ops-warn" title={runbookInfo.warnings.join('\n')}>
+                  {runbookInfo.warnings.length} warning{runbookInfo.warnings.length > 1 ? 's' : ''}
+                </span>
+              )}
+            </>
+          )}
+          {opsWrongModel && <span className="config-ops-warn">Ops chats run on Claude only</span>}
+        </div>
+      )}
 
       {/* Folder — local + WSL browse the filesystem with the native picker */}
       {(isLocal || isWsl) && (
