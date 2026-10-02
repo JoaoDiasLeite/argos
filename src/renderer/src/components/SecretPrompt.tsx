@@ -33,7 +33,7 @@ export default function SecretPrompt({ request, onSubmit }: Props) {
         >
           <p className="secret-prompt-text">{request.prompt}</p>
           <input
-            className="secret-prompt-input"
+            className="text-input mono"
             type="password"
             autoFocus
             autoComplete="off"
@@ -42,11 +42,11 @@ export default function SecretPrompt({ request, onSubmit }: Props) {
             onChange={(e) => setValue(e.target.value)}
             aria-label={`sudo password for ${request.hostName}`}
           />
-          <p className="secret-prompt-note">
+          <p className="help">
             Kept in memory only for this run and never written to the audit log.
           </p>
           <div className="secret-prompt-actions">
-            <button type="button" className="btn-secondary" onClick={() => onSubmit(null)}>Decline</button>
+            <button type="button" className="btn-ghost" onClick={() => onSubmit(null)}>Decline</button>
             <button type="submit" className="btn-primary">Use for this run</button>
           </div>
         </form>

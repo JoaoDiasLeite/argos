@@ -10,8 +10,12 @@ export interface ServerTabItem {
   title: string
 }
 
+type SessionStatus = 'connecting' | 'connected' | 'error'
+
 interface Props {
   sessions: ServerTabItem[]
+  /** Each session's connection state, by session id, for the tab's dot. */
+  statuses?: Record<string, SessionStatus>
   activeId: string | null
   onSelect: (id: string) => void
   onClose: (id: string) => void
@@ -39,6 +43,26 @@ function groupSessions(sessions: ServerTabItem[]): TabGroup[] {
   return groups
 }
 
+/** A group's dot: connected if any session is, connecting if any is on its way, failed
+ *  only when every one of them failed. */
+function groupStatus(group: TabGroup, statuses: Record<string, SessionStatus>): SessionStatus | undefined {
+  const all = group.sessions.map((s) => statuses[s.id])
+  if (all.includes('connected')) return 'connected'
+  if (all.includes('connecting')) return 'connecting'
+  if (all.length > 0 && all.every((s) => s === 'error')) return 'error'
+  return undefined
+}
+
+const StatusDot = ({ status }: { status?: SessionStatus }) => (
+  <span className={`server-tab-dot ${status ?? ''}`} aria-hidden="true" />
+)
+
+const CloseIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+)
+
 /**
  * A target with several sessions open: ONE tab carrying the host name and a count, with the
  * individual sessions in a dropdown. The strip therefore never grows as you open more
@@ -47,12 +71,14 @@ function groupSessions(sessions: ServerTabItem[]): TabGroup[] {
  */
 function GroupTab({
   group,
+  status,
   activeId,
   onSelect,
   onClose,
   onAdd
 }: {
   group: TabGroup
+  status?: SessionStatus
   activeId: string | null
   onSelect: (id: string) => void
   onClose: (id: string) => void
@@ -101,20 +127,23 @@ function GroupTab({
   return (
     <>
       <button
+        type="button"
         ref={triggerRef}
-        className={`server-tab server-tab-multi ${hasActive ? 'active' : ''}`}
+        className={`server-tab ${hasActive ? 'active' : ''}`}
         onClick={() => setOpen((v) => !v)}
         title={`${group.sessions.length} sessions on ${group.title}`}
         aria-expanded={open}
+        aria-haspopup="menu"
       >
+        <StatusDot status={status} />
         <span className="server-tab-title">{group.title}</span>
         {/* Position/total while one of this group's sessions is the visible pane, so you can
             tell which of them you're in without opening the dropdown; bare count otherwise. */}
-        <span className="server-tab-count">
+        <em className="server-tab-count">
           {hasActive ? `${activeIndex + 1}/${group.sessions.length}` : group.sessions.length}
-        </span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <polyline points="6 9 12 15 18 9" />
+        </em>
+        <svg className="server-tab-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
       {open && (
@@ -132,11 +161,17 @@ function GroupTab({
                 setOpen(false)
                 onSelect(s.id)
               }}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return
+                setOpen(false)
+                onSelect(s.id)
+              }}
               role="menuitem"
               tabIndex={0}
             >
               <span>Session {i + 1}</span>
               <button
+                type="button"
                 className="server-tab-close"
                 onClick={(e) => {
                   e.stopPropagation()
@@ -147,12 +182,13 @@ function GroupTab({
                 title="Close session"
                 aria-label={`Close ${group.title} session ${i + 1}`}
               >
-                ×
+                <CloseIcon />
               </button>
             </div>
           ))}
           <div className="server-tab-pop-sep" />
           <button
+            type="button"
             className="server-tab-pop-item add"
             onClick={() => {
               setOpen(false)
@@ -174,7 +210,7 @@ function GroupTab({
  * inline on the Servers screens, where it also has to jump into the session view.
  * That difference lives entirely in the `onSelect` the caller passes.
  */
-export default function ServerTabs({ sessions, activeId, onSelect, onClose, onAddToGroup, inline }: Props) {
+export default function ServerTabs({ sessions, statuses = {}, activeId, onSelect, onClose, onAddToGroup, inline }: Props) {
   return (
     <div className={`server-tabs ${inline ? 'inline' : ''}`}>
       {groupSessions(sessions).map((g) =>
@@ -183,9 +219,14 @@ export default function ServerTabs({ sessions, activeId, onSelect, onClose, onAd
             key={g.key}
             className={`server-tab ${g.sessions[0].id === activeId ? 'active' : ''}`}
             onClick={() => onSelect(g.sessions[0].id)}
+            onKeyDown={(e) => e.key === 'Enter' && onSelect(g.sessions[0].id)}
+            role="button"
+            tabIndex={0}
           >
+            <StatusDot status={statuses[g.sessions[0].id]} />
             <span className="server-tab-title">{g.title}</span>
             <button
+              type="button"
               className="server-tab-close"
               onClick={(e) => {
                 e.stopPropagation()
@@ -194,13 +235,14 @@ export default function ServerTabs({ sessions, activeId, onSelect, onClose, onAd
               title="Close session"
               aria-label={`Close ${g.title}`}
             >
-              ×
+              <CloseIcon />
             </button>
           </div>
         ) : (
           <GroupTab
             key={g.key}
             group={g}
+            status={groupStatus(g, statuses)}
             activeId={activeId}
             onSelect={onSelect}
             onClose={onClose}

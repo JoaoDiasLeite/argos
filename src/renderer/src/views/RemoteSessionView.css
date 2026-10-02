@@ -1,28 +1,46 @@
-.remote-session-view {
-  padding: 0;
-}
+/* ── RemoteSessionView.css ───────────────────────────────────────────────────
+   One remote session (wireframe 1C): a one-line header, the files / history pane on
+   the left (440 px) and the terminal on the right. A connection error is the one
+   tinted block, inside the pane it is about. ─────────────────────────────────── */
+
+.remote-session-view { padding: 0; }
 
 .remote-session-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
+  gap: 10px;
+  padding: 12px 18px;
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
   -webkit-app-region: drag;
 }
 .remote-session-header > * { -webkit-app-region: no-drag; }
+.remote-session-header > .remote-session-spacer { flex: 1; -webkit-app-region: drag; }
+
+.remote-session-back {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  color: var(--text-2);
+  background: transparent;
+}
+.remote-session-back:hover { color: var(--text-0); background: var(--bg-hover); }
 
 .remote-session-title {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .remote-session-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--text-2);
   flex-shrink: 0;
@@ -40,37 +58,28 @@
 }
 
 .remote-session-name {
-  font-size: 13.5px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   color: var(--text-0);
+  white-space: nowrap;
 }
 
 .remote-session-target {
-  font-size: 11.5px;
+  font-size: 12px;
   font-family: var(--font-mono);
   color: var(--text-2);
+  white-space: nowrap;
 }
 
 .remote-session-path {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  padding: 5px 10px;
+  flex: 1 1 auto;
+  min-width: 120px;
+  max-width: 520px;
+  height: 30px;
 }
 
 .remote-session-toggle { flex-shrink: 0; }
-
-.remote-session-error {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  font-size: 12px;
-  color: var(--error);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--error) 22%, transparent);
-  flex: 0 0 auto;
-}
 
 .remote-session-body {
   flex: 1;
@@ -79,7 +88,7 @@
 }
 
 .remote-session-left {
-  width: 320px;
+  width: 440px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -94,6 +103,21 @@
   flex-direction: column;
 }
 
+/* ── Connection error (the one tinted block) ── */
+.remote-session-error { margin: 12px 12px 0; flex: 0 0 auto; }
+.remote-session-error-head { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.remote-session-error-title { font-size: 12.5px; font-weight: 650; color: var(--error); white-space: nowrap; }
+.remote-session-error-why {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.remote-session-error-text { font-size: 12.5px; color: var(--text-1); }
+
 /* ── History panel ── */
 .remote-history-panel {
   display: flex;
@@ -101,43 +125,36 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  background: var(--bg-1);
+  padding: 10px 12px 16px;
 }
 
 .remote-history-quickrun {
   display: flex;
-  gap: 6px;
-  padding: 8px;
-  border-bottom: 1px solid var(--border);
+  gap: 8px;
   flex: 0 0 auto;
 }
-.remote-history-quickrun .text-input { flex: 1; font-size: 12px; padding: 5px 8px; }
+.remote-history-quickrun .text-input { flex: 1; height: 28px; }
 
-.remote-history-section-title {
+.remote-history-eyebrow {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-2);
-  padding: 10px 10px 4px;
+  padding: 14px 0 4px;
 }
-.remote-history-loading { font-weight: 400; text-transform: none; letter-spacing: 0; opacity: 0.8; }
+.remote-history-loading { font-weight: 400; text-transform: none; letter-spacing: 0; }
 
 .remote-history-list {
   display: flex;
   flex-direction: column;
-  padding: 0 6px;
+  gap: 2px;
 }
 
 .remote-history-item {
   text-align: left;
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: 5px 8px;
+  border-radius: var(--radius-surface);
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -145,3 +162,5 @@
   background: transparent;
 }
 .remote-history-item:hover { background: var(--bg-hover); color: var(--text-0); }
+
+.remote-history-empty { padding: 6px 8px; font-size: 12px; color: var(--text-2); }

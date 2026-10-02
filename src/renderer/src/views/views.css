@@ -7,9 +7,11 @@
 }
 
 /* ── Grouped-view sub-nav ──
-   Wraps a group's active view + a segmented control so the user can flip
-   between the group's members. The wrapper is a flex column so the view keeps
-   its full-height behaviour (the view sets its own `flex: 1`). */
+   Wraps a group's active view + the shared segmented control so the user can flip
+   between the group's members. The wrapper is a flex column so the view keeps its
+   full-height behaviour (the view sets its own `flex: 1`). The strip stays in App.tsx
+   because each member has its own page header; it is the window's drag region, the
+   control is not. */
 .view-with-subnav {
   flex: 1;
   display: flex;
@@ -23,42 +25,14 @@
 
 .view-subnav {
   flex-shrink: 0;
-  height: 40px;
+  height: 44px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  padding: 0 24px;
   border-bottom: 1px solid var(--border);
-  background: var(--bg-1);
   -webkit-app-region: drag;
 }
-
-.view-subnav-group {
-  display: flex;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  -webkit-app-region: no-drag;
-}
-.view-subnav-btn {
-  height: 26px;
-  padding: 0 14px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-1);
-  background: transparent;
-  transition: background 0.14s, color 0.14s;
-}
-.view-subnav-btn + .view-subnav-btn {
-  border-left: 1px solid var(--border);
-}
-.view-subnav-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-0);
-}
-.view-subnav-btn.active {
-  background: var(--accent-dim);
-  color: var(--accent);
-}
+.view-subnav .seg-control { -webkit-app-region: no-drag; }
 
 /* ── Server sessions layer (App.tsx) ──
    Always-mounted host for open Remote/WSL "Connect" sessions — sized/positioned exactly
@@ -78,15 +52,14 @@
   flex-direction: column;
 }
 
-/* Tab strip — mirrors .view-subnav's visual language (same height/border/background) but
-   left-aligned and scrollable instead of a centered segmented control. */
+/* Tab strip (wireframe 1C): quiet 8 px buttons, the active one on --bg-2. At the top of
+   the session layer it is the window's drag region; the tabs themselves are not. */
 .server-tabs {
   flex-shrink: 0;
-  height: 40px;
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 0 8px;
+  gap: 6px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-1);
   overflow-x: auto;
@@ -100,14 +73,14 @@
 }
 
 .server-tab {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   height: 28px;
-  padding: 0 8px 0 12px;
-  border-radius: var(--radius-sm);
+  padding: 0 6px 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
   font-size: 12px;
-  font-weight: 500;
   color: var(--text-1);
   background: transparent;
   flex-shrink: 0;
@@ -115,14 +88,20 @@
   transition: background 0.14s, color 0.14s;
   -webkit-app-region: no-drag;
 }
-.server-tab:hover {
-  background: var(--bg-hover);
-  color: var(--text-0);
+.server-tab:hover { background: var(--bg-hover); color: var(--text-0); }
+.server-tab.active { background: var(--bg-2); color: var(--text-0); }
+.server-tab:focus-visible { outline: none; border-color: var(--border-light); }
+
+.server-tab-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-2);
+  flex-shrink: 0;
 }
-.server-tab.active {
-  background: var(--accent-dim);
-  color: var(--accent);
-}
+.server-tab-dot.connected { background: var(--success); }
+.server-tab-dot.connecting { background: var(--warn); }
+.server-tab-dot.error { background: var(--error); }
 
 .server-tab-title {
   overflow: hidden;
@@ -132,41 +111,41 @@
 }
 
 /* ── Several sessions on one target ──
-   They collapse into a single tab (see ServerTabs.tsx) carrying the target name and a
-   count, with the sessions themselves in a dropdown. Bracketing sibling tabs inline was
-   the first attempt and it read as clutter — the target name ended up repeated on every
-   tab, and the group's tinted rail competed with the active-tab highlight. */
-.server-tab-multi { gap: 5px; padding-right: 7px; }
-
+   They collapse into a single tab (see ServerTabs.tsx) carrying the target name, a muted
+   count and a chevron, with the sessions themselves in a dropdown. */
 .server-tab-count {
-  flex-shrink: 0;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 5px;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: color-mix(in srgb, currentColor 16%, transparent);
-  font-size: 9.5px;
-  font-weight: 600;
+  font-style: normal;
+  color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
+.server-tab-chev { color: var(--text-2); flex-shrink: 0; }
+
+.server-tab-close {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  color: var(--text-2);
+  background: transparent;
+}
+.server-tab-close:hover { color: var(--text-0); background: var(--bg-3); }
 
 /* Fixed-positioned, because .server-tabs scrolls horizontally and would clip it.
-   ServerTabs measures the trigger and sets left/top. */
+   ServerTabs measures the trigger and sets left/top. The one popover shadow. */
 .server-tab-pop {
   position: fixed;
   z-index: 60;
   min-width: 190px;
   max-height: 340px;
   overflow-y: auto;
-  padding: 5px;
-  border: 1px solid var(--border-light);
-  border-radius: 11px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
   background: var(--bg-1);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
   -webkit-app-region: no-drag;
 }
 
@@ -176,20 +155,23 @@
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  padding: 7px 9px;
-  border-radius: 8px;
+  min-height: 30px;
+  padding: 4px 6px 4px 10px;
+  border-radius: var(--radius-surface);
   font-size: 12.5px;
   color: var(--text-1);
+  text-align: left;
+  background: transparent;
   cursor: pointer;
 }
 .server-tab-pop-item:hover { background: var(--bg-hover); color: var(--text-0); }
-.server-tab-pop-item.active { background: var(--accent-dim); color: var(--accent); }
+.server-tab-pop-item.active { background: var(--bg-2); color: var(--text-0); }
 .server-tab-pop-item.add { color: var(--text-2); }
 .server-tab-pop-item.add:hover { color: var(--text-0); }
 
 .server-tab-pop-sep {
   height: 1px;
-  margin: 4px 2px;
+  margin: 4px 0;
   background: var(--border);
 }
 
@@ -269,11 +251,11 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    Premium surface refresh — shared design language across all tabs.
    (Appended last so it layers over the base rules above.)
-   Tokens: gradient card surface · 14px radius · layered soft shadow ·
+   Tokens: card surface · 4 px radius (SYSTEM-DESIGN.md §1) · layered soft shadow ·
            hover lift · accent-tinted borders.
 
    This block deliberately spans several view-owned card classes
-   (.usage-card, .account-card, .ssh-card,
+   (.usage-card, .account-card,
    .mcp-card, .search-hit) at once — it's a single cross-cutting "elevated
    surface" trait, not a competing redefinition of any one of them (no
    property here overlaps with what each owning view's stylesheet sets).
@@ -284,10 +266,9 @@
 /* Elevated card surfaces */
 .usage-card,
 .account-card,
-.ssh-card,
 .mcp-card,
 .search-hit {
-  border-radius: 14px;
+  border-radius: var(--radius-surface);
   border: 1px solid var(--border);
   background: var(--bg-2);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 6px 18px rgba(0, 0, 0, 0.1);
@@ -297,7 +278,6 @@
 /* Lift on hover for the clickable cards */
 .usage-card:hover,
 .account-card:hover,
-.ssh-card:hover,
 .search-hit:hover {
   transform: translateY(-2px);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2), 0 10px 26px rgba(0, 0, 0, 0.16);

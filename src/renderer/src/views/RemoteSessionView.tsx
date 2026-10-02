@@ -202,21 +202,22 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
   return (
     <div className="view remote-session-view">
       <div className="remote-session-header">
-        <button className="icon-btn" onClick={onBack} title="Back to Remote &amp; WSL" aria-label="Back">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6" />
+        <button type="button" className="remote-session-back" onClick={onBack} title="Back to targets" aria-label="Back to targets">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M15 6l-6 6 6 6" />
           </svg>
         </button>
         <div className="remote-session-title">
-          <span className={`remote-session-dot ${status}`} title={status === 'error' ? statusError || 'Connection error' : status} />
+          <span className={`remote-session-dot ${status}`} title={status === 'error' ? statusError || 'Could not connect' : status} />
           <span className="remote-session-name">{isSsh ? target.host.name : target.distro}</span>
           <span className="remote-session-target">
-            {isSsh ? `${target.host.username}@${target.host.host}` : 'WSL'}
+            {isSsh ? `${target.host.username}@${target.host.host}` : `wsl -d ${target.distro}`}
           </span>
         </div>
         <input
           className="text-input mono remote-session-path"
           value={pathInput}
+          aria-label="Folder"
           onChange={(e) => setPathInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') navigatePath(pathInput)
@@ -226,22 +227,33 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
           spellCheck={false}
         />
         <div className="seg-control remote-session-toggle">
-          <button className={panel === 'files' ? 'on' : ''} onClick={() => setPanel('files')}>Files</button>
-          <button className={panel === 'history' ? 'on' : ''} onClick={openHistoryPanel}>History</button>
+          <button type="button" className={panel === 'files' ? 'on' : ''} onClick={() => setPanel('files')}>Files</button>
+          <button type="button" className={panel === 'history' ? 'on' : ''} onClick={openHistoryPanel}>History</button>
         </div>
+        <span className="remote-session-spacer" />
       </div>
-
-      {status === 'error' && (
-        <div className="remote-session-error">
-          Could not connect: {statusError}
-          <button className="btn-ghost small" onClick={retryConnect}>
-            Retry
-          </button>
-        </div>
-      )}
 
       <div className="remote-session-body">
         <div className="remote-session-left">
+          {/* The connection's failure lives in the pane it is about. The terminal rides the
+              same SSH connection as the file browser (sftp.ts getRemoteClient), so when this
+              fails neither has anything to show. */}
+          {status === 'error' && (
+            <div className="block err remote-session-error" role="alert">
+              <div className="remote-session-error-head">
+                <span className="remote-session-error-title">Could not connect</span>
+                {statusError && <span className="remote-session-error-why">{statusError}</span>}
+              </div>
+              <span className="remote-session-error-text">
+                The terminal uses the same connection, so it has no shell either.
+              </span>
+              <div>
+                <button type="button" className="btn-ghost small" onClick={retryConnect}>
+                  Retry
+                </button>
+              </div>
+            </div>
+          )}
           {panel === 'files' ? (
             isSsh ? (
               <SftpBrowser
@@ -264,24 +276,25 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
               <div className="remote-history-quickrun">
                 <input
                   className="text-input mono"
-                  placeholder="Run a command…"
+                  placeholder="Run a command"
+                  aria-label="Run a command in the terminal"
                   value={quickRun}
                   onChange={(e) => setQuickRun(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && runQuickCommand()}
                 />
-                <button className="btn-primary small" onClick={runQuickCommand} disabled={!quickRun.trim()}>Run</button>
+                <button type="button" className="btn-primary small" onClick={runQuickCommand} disabled={!quickRun.trim()}>Run</button>
               </div>
 
-              <div className="remote-history-section-title">
-                {isSsh ? 'Remote history' : 'WSL history'}
-                {historyLoading && <span className="remote-history-loading">loading…</span>}
+              <div className="eyebrow remote-history-eyebrow">
+                Remote history
+                {historyLoading && <span className="remote-history-loading">loading</span>}
               </div>
               <div className="remote-history-list">
                 {remoteHistory.length === 0 && !historyLoading && (
-                  <div className="view-empty small">No shell history found.</div>
+                  <p className="remote-history-empty">No shell history found.</p>
                 )}
                 {[...remoteHistory].reverse().map((cmd, i) => (
-                  <button key={`${i}-${cmd}`} className="remote-history-item" onClick={() => sendToTerminal(cmd)} title="Send to terminal">
+                  <button type="button" key={`${i}-${cmd}`} className="remote-history-item" onClick={() => sendToTerminal(cmd)} title="Send to terminal">
                     {cmd}
                   </button>
                 ))}
@@ -289,11 +302,11 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
 
               {/* Only what was typed in the quick-run box, kept in this browser's
                   localStorage. It is not a record of what ran on the host. */}
-              <div className="remote-history-section-title">Typed here</div>
+              <div className="eyebrow remote-history-eyebrow">Typed here</div>
               <div className="remote-history-list">
-                {runLog.length === 0 && <div className="view-empty small">Nothing typed yet.</div>}
+                {runLog.length === 0 && <p className="remote-history-empty">Nothing typed yet.</p>}
                 {[...runLog].reverse().map((entry) => (
-                  <button key={entry.ts} className="remote-history-item" onClick={() => sendToTerminal(entry.cmd)} title="Send to terminal">
+                  <button type="button" key={entry.ts} className="remote-history-item" onClick={() => sendToTerminal(entry.cmd)} title="Send to terminal">
                     {entry.cmd}
                   </button>
                 ))}

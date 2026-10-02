@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { RemoteEntry } from '../types'
 import './SftpBrowser.css'
 
@@ -56,24 +56,34 @@ function formatDate(ms: number): string {
   }
 }
 
-const ICONS: Record<RemoteEntry['type'], JSX.Element> = {
-  directory: (
-    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-  ),
-  file: (
-    <>
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-    </>
-  ),
-  symlink: (
-    <>
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <path d="M9 15l6-6M9 9h6v6" />
-    </>
-  ),
-  other: <circle cx="12" cy="12" r="8" />
+// ── Icons (24-unit viewBox, 2 px stroke, currentColor; SYSTEM-DESIGN.md §5). Shared with
+// LocalBrowser, which draws the same toolbar and rows over a WSL share. ─────────────────
+
+function FbSvg({ children, size = 14 }: { children: ReactNode; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children}
+    </svg>
+  )
 }
+
+export const FbIcon = {
+  up: () => <FbSvg><path d="M12 19V5M5 12l7-7 7 7" /></FbSvg>,
+  refresh: () => <FbSvg><path d="M20 12a8 8 0 1 1-3-6.2M20 4v5h-5" /></FbSvg>,
+  newFolder: () => <FbSvg><path d="M3 6h6l2 2h10v11H3zM12 11v5M9.5 13.5h5" /></FbSvg>,
+  newFile: () => <FbSvg><path d="M6 3h8l4 4v14H6zM12 11v6M9 14h6" /></FbSvg>,
+  upload: () => <FbSvg><path d="M4 16v4h16v-4M12 4v12M7 9l5-5 5 5" /></FbSvg>,
+  download: () => <FbSvg><path d="M4 16v4h16v-4M12 4v12M7 11l5 5 5-5" /></FbSvg>,
+  rename: () => <FbSvg><path d="M4 20l4-1 11-11-3-3L5 16z" /></FbSvg>,
+  trash: () => <FbSvg><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></FbSvg>,
+  /** "cd the terminal here". */
+  terminal: () => <FbSvg><path d="M4 17l6-5-6-5M12 19h8" /></FbSvg>,
+  folder: () => <FbSvg><path d="M3 6h6l2 2h10v11H3z" /></FbSvg>,
+  file: () => <FbSvg><path d="M6 3h8l4 4v14H6z" /></FbSvg>
+}
+
+/** A symlink (or anything else) draws as a file, in the same --text-2 as every icon: no colour. */
+const entryIcon = (type: RemoteEntry['type']) => (type === 'directory' ? <FbIcon.folder /> : <FbIcon.file />)
 
 export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdTerminal }: Props) {
   const [entries, setEntries] = useState<RemoteEntry[]>([])
@@ -232,69 +242,61 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
   }
 
   return (
-    <div className="sftp-browser">
-      <div className="sftp-toolbar">
+    <div className="fb">
+      <div className="fb-toolbar">
         <button
-          className={`sftp-toolbar-btn ${parent && dropTarget === parent ? 'drop-target' : ''}`}
+          type="button"
+          className={`btn-ghost small fb-icon-btn ${parent && dropTarget === parent ? 'drop-target' : ''}`}
           onClick={() => parent && onNavigate(parent)}
           onDragOver={(e) => parent && dragOver(e, parent)}
           onDragLeave={() => setDropTarget(null)}
           onDrop={(e) => parent && dropInto(e, parent)}
-          title="Up to parent folder"
+          title="Up to parent"
+          aria-label="Up to parent"
           disabled={!parent}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
-          </svg>
+          <FbIcon.up />
         </button>
-        <button className="sftp-toolbar-btn" onClick={load} title="Refresh" disabled={loading}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-          </svg>
+        <button type="button" className="btn-ghost small fb-icon-btn" onClick={load} title="Refresh" aria-label="Refresh" disabled={loading}>
+          <FbIcon.refresh />
         </button>
         <button
-          className="sftp-toolbar-btn"
+          type="button"
+          className="btn-ghost small fb-icon-btn"
           onClick={() => {
             setCreatingFolder(true)
             setCreatingFile(false)
           }}
           title="New folder"
+          aria-label="New folder"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-            <line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" />
-          </svg>
+          <FbIcon.newFolder />
         </button>
         <button
-          className="sftp-toolbar-btn"
+          type="button"
+          className="btn-ghost small fb-icon-btn"
           onClick={() => {
             setCreatingFile(true)
             setCreatingFolder(false)
           }}
           title="New file"
+          aria-label="New file"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="12" y1="12" x2="12" y2="18" /><line x1="9" y1="15" x2="15" y2="15" />
-          </svg>
+          <FbIcon.newFile />
         </button>
-        <button className="sftp-toolbar-btn" onClick={doUpload} title="Upload files into this folder">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
-          </svg>
+        <button type="button" className="btn-ghost small fb-icon-btn" onClick={doUpload} title="Upload files into this folder" aria-label="Upload">
+          <FbIcon.upload />
         </button>
-        <span className="sftp-toolbar-path" title={cwd}>{cwd}</span>
+        <span className="fb-path" title={cwd}>{cwd}</span>
       </div>
 
       {creatingFolder && (
-        <div className="sftp-inline-form">
+        <div className="fb-form">
           <input
             className="text-input mono"
             autoFocus
             placeholder="new-folder"
+            aria-label="New folder name"
             value={newFolderName}
             onChange={(e) => setNewFolderName(e.target.value)}
             onKeyDown={(e) => {
@@ -302,17 +304,18 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
               if (e.key === 'Escape') setCreatingFolder(false)
             }}
           />
-          <button className="btn-primary small" onClick={doMkdir}>Create</button>
-          <button className="btn-ghost small" onClick={() => setCreatingFolder(false)}>Cancel</button>
+          <button type="button" className="btn-primary small" onClick={doMkdir}>Create</button>
+          <button type="button" className="btn-ghost small" onClick={() => setCreatingFolder(false)}>Cancel</button>
         </div>
       )}
 
       {creatingFile && (
-        <div className="sftp-inline-form">
+        <div className="fb-form">
           <input
             className="text-input mono"
             autoFocus
             placeholder="new-file.txt"
+            aria-label="New file name"
             value={newFileName}
             onChange={(e) => setNewFileName(e.target.value)}
             onKeyDown={(e) => {
@@ -320,29 +323,29 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
               if (e.key === 'Escape') setCreatingFile(false)
             }}
           />
-          <button className="btn-primary small" onClick={doTouch}>Create</button>
-          <button className="btn-ghost small" onClick={() => setCreatingFile(false)}>Cancel</button>
+          <button type="button" className="btn-primary small" onClick={doTouch}>Create</button>
+          <button type="button" className="btn-ghost small" onClick={() => setCreatingFile(false)}>Cancel</button>
         </div>
       )}
 
-      {error && <div className="sftp-error">{error}</div>}
-      {uploading && <div className="sftp-status">Uploading…</div>}
+      {error && <p className="fb-error">{error}</p>}
+      {uploading && <p className="fb-status">Uploading…</p>}
 
       <div
-        className={`sftp-list ${dropTarget === cwd ? 'drop-target' : ''}`}
+        className={`fb-list ${dropTarget === cwd ? 'drop-target' : ''}`}
         onDragOver={(e) => dragOver(e, cwd)}
         onDragLeave={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null)
         }}
         onDrop={(e) => dropInto(e, cwd)}
       >
-        {loading && entries.length === 0 && <div className="view-empty small">Loading…</div>}
-        {!loading && entries.length === 0 && !error && <div className="view-empty small">Empty directory.</div>}
+        {loading && entries.length === 0 && <p className="fb-empty">Loading…</p>}
+        {!loading && entries.length === 0 && !error && <p className="fb-empty">Empty directory.</p>}
         {entries.map((entry) => (
           <div
             key={entry.path}
-            className={`sftp-row ${busyPath === entry.path ? 'busy' : ''} ${
-              dropTarget === entry.path ? 'drop-target' : ''
+            className={`fb-row ${busyPath === entry.path ? 'busy' : ''} ${dropTarget === entry.path ? 'drop-target' : ''} ${
+              confirmDelete?.path === entry.path ? 'confirming' : ''
             }`}
             draggable={renaming?.path !== entry.path}
             onDragStart={(e) => {
@@ -354,8 +357,9 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
           >
             {renaming?.path === entry.path ? (
               <input
-                className="text-input mono sftp-rename-input"
+                className="text-input mono fb-rename"
                 autoFocus
+                aria-label={`Rename ${entry.name}`}
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
                 onKeyDown={(e) => {
@@ -366,69 +370,70 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
               />
             ) : (
               <>
-                <div className="sftp-row-main" onDoubleClick={() => openEntry(entry)} title={entry.path}>
-                  <span className={`sftp-row-icon ${entry.type}`}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      {ICONS[entry.type]}
-                    </svg>
-                  </span>
-                  <span className="sftp-row-name">{entry.name}</span>
-                  {entry.type === 'file' && <span className="sftp-row-size">{formatSize(entry.size)}</span>}
-                  <span className="sftp-row-mtime">{formatDate(entry.mtime)}</span>
+                <div className="fb-row-main" onDoubleClick={() => openEntry(entry)} title={entry.path}>
+                  <span className="fb-row-icon">{entryIcon(entry.type)}</span>
+                  <span className="fb-row-name">{entry.name}</span>
                 </div>
                 {confirmDelete?.path === entry.path ? (
-                  <div className="sftp-row-confirm">
-                    <span>Delete?</span>
-                    <button className="btn-text danger" onClick={() => doDelete(entry)}>Yes</button>
-                    <button className="btn-text" onClick={() => setConfirmDelete(null)}>No</button>
+                  <div className="fb-row-confirm">
+                    <button type="button" className="btn-ghost small" onClick={() => setConfirmDelete(null)} autoFocus>
+                      Keep
+                    </button>
+                    <button type="button" className="btn-primary small danger" onClick={() => doDelete(entry)}>
+                      Delete
+                    </button>
                   </div>
                 ) : (
-                  <div className="sftp-row-actions">
-                    {entry.type === 'directory' && (
+                  <>
+                    <span className="fb-row-meta">
+                      {[entry.type === 'file' ? formatSize(entry.size) : '', formatDate(entry.mtime)].filter(Boolean).join(' · ')}
+                    </span>
+                    <div className="fb-row-actions">
+                      {entry.type === 'directory' && (
+                        <button
+                          type="button"
+                          className="fb-row-btn"
+                          title="cd the terminal here"
+                          aria-label={`cd the terminal to ${entry.name}`}
+                          onClick={() => onCdTerminal(entry.path)}
+                        >
+                          <FbIcon.terminal />
+                        </button>
+                      )}
+                      {entry.type === 'file' && (
+                        <button
+                          type="button"
+                          className="fb-row-btn"
+                          title="Download"
+                          aria-label={`Download ${entry.name}`}
+                          onClick={() => window.electronAPI.sftpDownload(hostId, entry.path)}
+                        >
+                          <FbIcon.download />
+                        </button>
+                      )}
                       <button
-                        className="sftp-row-btn"
-                        title="cd terminal here"
-                        onClick={() => onCdTerminal(entry.path)}
+                        type="button"
+                        className="fb-row-btn"
+                        title="Rename"
+                        aria-label={`Rename ${entry.name}`}
+                        onClick={() => {
+                          setRenaming(entry)
+                          setRenameValue(entry.name)
+                        }}
                       >
-                        cd
+                        <FbIcon.rename />
                       </button>
-                    )}
-                    {entry.type === 'file' && (
                       <button
-                        className="sftp-row-btn"
-                        title="Download"
-                        onClick={() => window.electronAPI.sftpDownload(hostId, entry.path)}
+                        type="button"
+                        className="fb-row-btn danger"
+                        title="Delete"
+                        aria-label={`Delete ${entry.name}`}
+                        onClick={() => setConfirmDelete(entry)}
                       >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-                        </svg>
+                        <FbIcon.trash />
                       </button>
-                    )}
-                    <button
-                      className="sftp-row-btn"
-                      title="Rename"
-                      onClick={() => {
-                        setRenaming(entry)
-                        setRenameValue(entry.name)
-                      }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" />
-                      </svg>
-                    </button>
-                    <button
-                      className="sftp-row-btn danger"
-                      title="Delete"
-                      onClick={() => setConfirmDelete(entry)}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="3 6 5 6 21 6" />
-                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                      </svg>
-                    </button>
-                  </div>
+                    </div>
+                  </>
                 )}
               </>
             )}

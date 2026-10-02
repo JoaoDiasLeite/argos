@@ -2541,11 +2541,14 @@ export default function App() {
       {activeGroup && view !== 'remote-session' && !(view === 'ops-workspace' && opsWorkspace) && (
         <div className="view-with-subnav">
           <div className="view-subnav">
-            <div className="view-subnav-group">
+            <div className="seg-control" role="tablist" aria-label={activeGroup.label}>
               {activeGroup.members.map((m) => (
                 <button
                   key={m}
-                  className={`view-subnav-btn ${view === m ? 'active' : ''}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === m}
+                  className={view === m ? 'on' : ''}
                   onClick={() => setView(m)}
                 >
                   {MEMBER_LABELS[m]}
@@ -2560,6 +2563,7 @@ export default function App() {
             <ServerTabs
               inline
               sessions={serverSessions}
+              statuses={serverSessionStatus}
               /* Always null: this copy of the strip only renders on a Servers screen, and
                  there no tab is "current" — the session is open, but you aren't looking at
                  it. Passing activeServerSessionId made the list read as though you were
@@ -2633,6 +2637,7 @@ export default function App() {
               tab only swaps the visible pane — we're already in the session view. */}
           <ServerTabs
             sessions={serverSessions}
+            statuses={serverSessionStatus}
             activeId={activeServerSessionId}
             onSelect={setActiveServerSessionId}
             onClose={closeServerSession}

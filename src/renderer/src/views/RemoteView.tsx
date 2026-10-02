@@ -1,14 +1,25 @@
-import { useEffect, useMemo, useState } from 'react'
-import { SshHostPublic, SshHostInput, SshAuthType, SshKeyInfo, WslDistro, SourceInfo } from '../types'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import {
+  SshHostPublic,
+  SshHostInput,
+  SshAuthType,
+  SshKeyInfo,
+  WslDistro,
+  SourceInfo,
+  OpsRunbookInfo,
+  OpsRunListItem
+} from '../types'
 import Menu, { MoreIcon } from '../components/Menu'
+import Sheet from '../components/Sheet'
+import OpsReportSheet from '../components/OpsReportSheet'
 import { readRecentRunbooks } from '../lib/recent-runbooks'
 import './views.css'
 import './RemoteView.css'
 
 interface Props {
   onConnect: (host: SshHostPublic) => void
-  /** Opens the Ops workspace of a recent runbook that reaches this host. Offered only
-   *  once at least one runbook has been opened in Servers → Ops. */
+  /** Opens the Ops start screen for this host. Offered only for a host that one of the
+   *  recently opened runbooks (Servers → Ops) knows. */
   onOps?: (host: SshHostPublic) => void
   onConnectWsl: (distro: string, cwd?: string) => void
   /** Opens the full Remote Session workspace (SFTP browser + terminal + history) for a host.
@@ -28,35 +39,161 @@ interface Props {
 }
 
 /** Which screen the view is showing. SSH keys are a sub-screen behind the header's key
- *  button rather than a third section on the list — they're setup, not day-to-day. */
+ *  button rather than a third section on the list: they're setup, not day-to-day. */
 type Screen = 'targets' | 'keys'
 /** The type filter above the list. */
 type Kind = 'all' | 'wsl' | 'ssh'
+/** The target the column describes. Remembered per viewer, so coming back to the screen
+ *  shows the same one. */
+type Selection = { kind: 'wsl'; name: string } | { kind: 'ssh'; id: string }
+
+const SELECTION_KEY = 'remote.selected'
+
+function readSelection(): Selection | null {
+  try {
+    const raw = localStorage.getItem(SELECTION_KEY)
+    const v: unknown = raw ? JSON.parse(raw) : null
+    if (v && typeof v === 'object') {
+      const s = v as Record<string, unknown>
+      if (s.kind === 'wsl' && typeof s.name === 'string') return { kind: 'wsl', name: s.name }
+      if (s.kind === 'ssh' && typeof s.id === 'string') return { kind: 'ssh', id: s.id }
+    }
+  } catch {
+    /* storage unavailable */
+  }
+  return null
+}
+
+function writeSelection(sel: Selection | null): void {
+  try {
+    if (sel) localStorage.setItem(SELECTION_KEY, JSON.stringify(sel))
+    else localStorage.removeItem(SELECTION_KEY)
+  } catch {
+    /* storage unavailable: the selection just isn't remembered */
+  }
+}
 
 /**
  * The live-status dot at the head of every row.
  *
- * `idle` is deliberately NOT an error state — it's "we don't know / it isn't up right now",
+ * `idle` is deliberately NOT an error state: it's "we don't know / it isn't up right now",
  * which for a stopped WSL distro or an untested SSH host is entirely normal. Red is reserved
  * for something that actually failed: a failed Test, or an open session that couldn't connect.
  */
 type DotState = 'idle' | 'checking' | 'ok' | 'error' | 'live'
 
-/**
- * The outcome of a row's Test / Check action. `kind` matters: only a CONNECTION probe may
- * move the status dot. A Claude Code check that fails says nothing about whether the box is
- * reachable — it usually means the CLI isn't installed there — so it prints its message and
- * leaves the dot alone.
- */
-interface ProbeResult {
+/** The outcome of one Test / Check. Only a CONNECTION probe may move the status dot: a
+ *  Claude Code check that fails says nothing about whether the box is reachable. */
+interface Probe {
   ok: boolean
   message: string
-  kind: 'conn' | 'claude'
+  /** When it finished. */
+  at: number
+  /** How long it took, measured here. */
+  ms: number
 }
+interface Probes {
+  conn?: Probe
+  claude?: Probe
+}
+
+const keyOf = (sel: Selection): string => (sel.kind === 'wsl' ? `wsl:${sel.name}` : `ssh:${sel.id}`)
 
 function emptyHost(): SshHostInput {
   return { name: '', host: '', port: 22, username: '', authType: 'password' }
 }
+
+/** `C:\Users\you\.ssh\id_ed25519` → `~/.ssh/id_ed25519`; anything else as written. */
+function shortKeyPath(p: string): string {
+  const m = /[\\/]\.ssh[\\/](.+)$/.exec(p)
+  return m ? `~/.ssh/${m[1].replace(/\\/g, '/')}` : p
+}
+
+function relativeTime(at: number): string {
+  const s = Math.round((Date.now() - at) / 1000)
+  if (s < 45) return 'just now'
+  const m = Math.round(s / 60)
+  if (m < 60) return `${m} min ago`
+  const d = new Date(at)
+  const sameDay = d.toDateString() === new Date().toDateString()
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  return sameDay ? `today ${time}` : `${d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} ${time}`
+}
+
+function clock(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
+function runOutcome(r: OpsRunListItem): string {
+  if (r.aborted) return 'stopped'
+  if (r.ok === true) return 'finished'
+  if (r.ok === false) return 'failed'
+  return r.endedAt ? 'ended' : 'unfinished'
+}
+
+const baseName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p
+
+// ── Icons (24-unit viewBox, 2 px stroke, currentColor; SYSTEM-DESIGN.md §5) ──────────────
+
+function Icon({ children, size = 14 }: { children: ReactNode; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children}
+    </svg>
+  )
+}
+const KeyIcon = () => (
+  <Icon>
+    <circle cx="8" cy="14" r="4" />
+    <path d="M11 11l9-9M16 6l3 3M14 8l2 2" />
+  </Icon>
+)
+const PlusIcon = () => (
+  <Icon>
+    <path d="M12 5v14M5 12h14" />
+  </Icon>
+)
+const SearchIcon = () => (
+  <Icon>
+    <circle cx="11" cy="11" r="7" />
+    <path d="M20 20l-3.5-3.5" />
+  </Icon>
+)
+const XIcon = () => (
+  <Icon>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </Icon>
+)
+const ChevronRight = ({ className }: { className?: string }) => (
+  <svg className={className} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M9 6l6 6-6 6" />
+  </svg>
+)
+const ChevronLeft = () => (
+  <Icon size={16}>
+    <path d="M15 6l-6 6 6 6" />
+  </Icon>
+)
+const PlayIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M7 5l12 7-12 7z" />
+  </svg>
+)
+
+const DOT_TITLE: Record<DotState, string> = {
+  idle: 'Not tested',
+  checking: 'Checking',
+  ok: 'Reachable',
+  error: 'Last test failed',
+  live: 'Session open'
+}
+const Dot = ({ state }: { state: DotState }) => (
+  <span className={`rv-dot ${state}`} title={DOT_TITLE[state]} aria-label={DOT_TITLE[state]} role="img" />
+)
+
+const AUTH_LABEL: Record<SshAuthType, string> = { password: 'Password', key: 'Private key', agent: 'SSH agent' }
+const AUTH_CHIP: Record<SshAuthType, string> = { password: 'password', key: 'key', agent: 'agent' }
 
 export default function RemoteView({
   onConnect,
@@ -69,17 +206,14 @@ export default function RemoteView({
   failedSshSessions = []
 }: Props) {
   const [hosts, setHosts] = useState<SshHostPublic[]>([])
-  // Read once per visit: runbooks are opened in Servers → Ops, not from here.
-  const [hasRunbooks] = useState(() => readRecentRunbooks().length > 0)
   const [distros, setDistros] = useState<WslDistro[]>([])
   const [sources, setSources] = useState<SourceInfo[]>([])
   const [hidden, setHidden] = useState<string[]>([])
   const [wslPaths, setWslPaths] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<SshHostInput | null>(null)
-  const [testing, setTesting] = useState<string | null>(null)
-  const [testResult, setTestResult] = useState<Record<string, ProbeResult>>({})
-  const [wslTest, setWslTest] = useState<Record<string, ProbeResult>>({})
-  const [wslTesting, setWslTesting] = useState<string | null>(null)
+  const editorOpenedAt = useRef(0)
+  const [probes, setProbes] = useState<Record<string, Probes>>({})
+  const [probing, setProbing] = useState<string | null>(null)
   const [keys, setKeys] = useState<SshKeyInfo[]>([])
   const [copied, setCopied] = useState<string | null>(null)
   const [newKeyName, setNewKeyName] = useState('')
@@ -90,8 +224,21 @@ export default function RemoteView({
   const [kind, setKind] = useState<Kind>('all')
   const [query, setQuery] = useState('')
   const [showHidden, setShowHidden] = useState(false)
-  /** Names of WSL distros whose working-dir input is expanded under the row. */
-  const [editingCwd, setEditingCwd] = useState<string[]>([])
+  const [selected, setSelectedState] = useState<Selection | null>(readSelection)
+  const [editingCwd, setEditingCwd] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  // Ops: the recently opened runbooks (Servers → Ops) and the selected host's runs.
+  const [runbooks, setRunbooks] = useState<Extract<OpsRunbookInfo, { ok: true }>[]>([])
+  const [runs, setRuns] = useState<OpsRunListItem[]>([])
+  const [reportFor, setReportFor] = useState<{ runId: string; runbookPath?: string; appSessionId?: string } | null>(null)
+
+  const select = (sel: Selection | null) => {
+    setSelectedState(sel)
+    writeSelection(sel)
+    setEditingCwd(false)
+    setConfirmDelete(false)
+  }
 
   const load = async () => {
     setHosts(await window.electronAPI.sshList())
@@ -101,11 +248,24 @@ export default function RemoteView({
     setKeys(await window.electronAPI.sshKeysList())
   }
 
+  useEffect(() => {
+    load()
+    let cancelled = false
+    Promise.all(
+      readRecentRunbooks().map((dir) => window.electronAPI.opsLoadRunbook(dir).catch((): OpsRunbookInfo => ({ ok: false, error: '' })))
+    ).then((infos) => {
+      if (!cancelled) setRunbooks(infos.filter((i): i is Extract<OpsRunbookInfo, { ok: true }> => i.ok))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const copy = async (text: string, tag: string) => {
     try {
       await navigator.clipboard.writeText(text)
       setCopied(tag)
-      setTimeout(() => setCopied((c) => (c === tag ? null : c)), 1600)
+      setTimeout(() => setCopied((c) => (c === tag ? null : c)), 1500)
     } catch {
       /* clipboard unavailable */
     }
@@ -133,70 +293,77 @@ export default function RemoteView({
     setHidden(await window.electronAPI.wslSetHidden(name, hide))
     setSources(await window.electronAPI.ccSources())
   }
-  useEffect(() => {
-    load()
-  }, [])
 
-  /** Targets we've held a session on during this app run — see the effect below. */
+  /** Targets we've held a session on during this app run; see the effect below. */
   const [wasLiveWsl, setWasLiveWsl] = useState<string[]>([])
   const [wasLiveSsh, setWasLiveSsh] = useState<string[]>([])
 
   // Opening or closing a session invalidates what this screen knows about its targets,
-  // and closing one from the inline tab strip doesn't remount the view (so the mount
-  // load() above never re-runs). Two things happen here:
-  //
-  //  1. Re-list the distros, because `running` was only ever a snapshot — connecting
-  //     boots a stopped distro, and WSL leaves it up after you disconnect.
-  //  2. Remember the target. A host that was serving a live shell a moment ago is
-  //     demonstrably reachable, so it stays green after the session closes instead of
-  //     dropping back to "unknown" — which is the only signal we have for SSH, where
-  //     there's nothing cheap to re-probe.
+  // and closing one from the inline tab strip doesn't remount the view. So: re-list the
+  // distros (`running` was only a snapshot, and connecting boots a stopped distro), and
+  // remember the target: a host that was serving a live shell a moment ago is
+  // demonstrably reachable, so it stays green after the session closes.
   const openKey = `${openWslSessions.join('|')}#${openSshSessions.join('|')}`
   useEffect(() => {
-    if (openWslSessions.length > 0) {
-      setWasLiveWsl((prev) => [...new Set([...prev, ...openWslSessions])])
-    }
-    if (openSshSessions.length > 0) {
-      setWasLiveSsh((prev) => [...new Set([...prev, ...openSshSessions])])
-    }
+    if (openWslSessions.length > 0) setWasLiveWsl((prev) => [...new Set([...prev, ...openWslSessions])])
+    if (openSshSessions.length > 0) setWasLiveSsh((prev) => [...new Set([...prev, ...openSshSessions])])
     window.electronAPI.wslList().then(setDistros)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openKey])
 
-  const probeWsl = async (name: string, kind: 'conn' | 'claude') => {
-    setWslTesting(name)
-    const res = kind === 'conn'
-      ? await window.electronAPI.wslTest(name)
-      : await window.electronAPI.wslTestClaude(name)
-    setWslTest((prev) => ({ ...prev, [name]: { ...res, kind } }))
-    setWslTesting(null)
-    // Either probe succeeding means the distro booted, so its dot should go live without
+  const probe = async (sel: Selection, which: 'conn' | 'claude') => {
+    const key = keyOf(sel)
+    setProbing(key)
+    const started = Date.now()
+    const res =
+      sel.kind === 'wsl'
+        ? which === 'conn'
+          ? await window.electronAPI.wslTest(sel.name)
+          : await window.electronAPI.wslTestClaude(sel.name)
+        : which === 'conn'
+          ? await window.electronAPI.sshTest(sel.id)
+          : await window.electronAPI.sshTestClaude(sel.id)
+    const p: Probe = { ok: res.ok, message: res.message, at: Date.now(), ms: Date.now() - started }
+    setProbes((prev) => ({ ...prev, [key]: { ...prev[key], [which]: p } }))
+    setProbing(null)
+    // Either probe succeeding on a distro means it booted, so its dot goes live without
     // waiting for the next full reload.
-    if (res.ok) setDistros((prev) => prev.map((d) => (d.name === name ? { ...d, running: true } : d)))
+    if (res.ok && sel.kind === 'wsl') {
+      setDistros((prev) => prev.map((d) => (d.name === sel.name ? { ...d, running: true } : d)))
+    }
+  }
+
+  const hostValid = !!editing && !!editing.name.trim() && !!editing.host.trim() && !!editing.username.trim()
+
+  const openEditor = (h: SshHostInput) => {
+    editorOpenedAt.current = Date.now()
+    setEditing(h)
   }
 
   const save = async () => {
-    if (!editing || !editing.name.trim() || !editing.host.trim()) return
+    if (!editing || !hostValid) return
     setHosts(await window.electronAPI.sshSave(editing))
     setEditing(null)
   }
 
-  const remove = async (id: string) => setHosts(await window.electronAPI.sshDelete(id))
-
-  const probeHost = async (id: string, kind: 'conn' | 'claude') => {
-    setTesting(id)
-    const res = kind === 'conn'
-      ? await window.electronAPI.sshTest(id)
-      : await window.electronAPI.sshTestClaude(id)
-    setTestResult((prev) => ({ ...prev, [id]: { ...res, kind } }))
-    setTesting(null)
+  // Enter saves (§6), except on a control that has its own Enter (a button, a select), and
+  // never in the first 400 ms, so the keystroke that opened the sheet cannot also save it.
+  const onFormKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Enter') return
+    const tag = (e.target as HTMLElement).tagName
+    if (tag === 'BUTTON' || tag === 'SELECT' || tag === 'TEXTAREA') return
+    if (Date.now() - editorOpenedAt.current < 400) return
+    e.preventDefault()
+    void save()
   }
 
-  const toggleCwd = (name: string) =>
-    setEditingCwd((prev) => (prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]))
+  const remove = async (id: string) => {
+    setHosts(await window.electronAPI.sshDelete(id))
+    select(null)
+  }
 
   // ── Filtering ──────────────────────────────────────────────────────────────
-  // Hidden distros are excluded from the counts and the filter entirely — they live in
+  // Hidden distros are excluded from the counts and the filter entirely: they live in
   // their own collapsed disclosure at the end of the WSL section.
   const visibleDistros = useMemo(() => distros.filter((d) => !hidden.includes(d.name)), [distros, hidden])
   const hiddenDistros = useMemo(() => distros.filter((d) => hidden.includes(d.name)), [distros, hidden])
@@ -204,267 +371,512 @@ export default function RemoteView({
   const q = query.trim().toLowerCase()
   const matchesDistro = (d: WslDistro) => !q || d.name.toLowerCase().includes(q)
   const matchesHost = (h: SshHostPublic) =>
-    !q ||
-    h.name.toLowerCase().includes(q) ||
-    h.host.toLowerCase().includes(q) ||
-    h.username.toLowerCase().includes(q)
+    !q || h.name.toLowerCase().includes(q) || h.host.toLowerCase().includes(q) || h.username.toLowerCase().includes(q)
 
   const shownDistros = kind === 'ssh' ? [] : visibleDistros.filter(matchesDistro)
   const shownHosts = kind === 'wsl' ? [] : hosts.filter(matchesHost)
   const nothingMatches = shownDistros.length === 0 && shownHosts.length === 0
 
-  // ── Row pieces shared by both target kinds ─────────────────────────────────
-  const dotTitle: Record<DotState, string> = {
-    idle: 'Not running — connecting will start it',
-    checking: 'Testing…',
-    ok: 'Reachable',
-    error: 'Last test failed',
-    live: 'Session open'
-  }
-  /** The chip with its status dot riding the corner, avatar-presence style — a dot in
-   *  its own left-hand column read as a stray speck floating away from the row. */
-  const Avatar = ({ state, kind: k, children }: { state: DotState; kind?: 'wsl'; children: React.ReactNode }) => (
-    <span className="rt-avatar">
-      <span className={`rt-chip ${k ?? ''}`}>{children}</span>
-      <span className={`rt-dot ${state}`} title={dotTitle[state]} aria-label={dotTitle[state]} />
-    </span>
-  )
-
+  // ── Status ─────────────────────────────────────────────────────────────────
   // An open session outranks everything else: you cannot hold a live terminal on a
-  // target that isn't reachable, and unlike `running` (sampled once by `wsl -l -v` at
-  // mount) or a manual Test, it can't go stale. Without this the screen contradicted
-  // itself — three open session tabs above three "not running" dots.
+  // target that isn't reachable, and unlike `running` (sampled once by `wsl -l -v`) or a
+  // manual Test, it can't go stale.
   const wslDotState = (d: WslDistro): DotState => {
     if (openWslSessions.includes(d.name)) return 'live'
-    if (wslTesting === d.name) return 'checking'
-    const probe = wslTest[d.name]
-    if (probe && probe.kind === 'conn' && !probe.ok) return 'error'
-    return d.running || wasLiveWsl.includes(d.name) ? 'ok' : 'idle'
+    if (probing === `wsl:${d.name}`) return 'checking'
+    const conn = probes[`wsl:${d.name}`]?.conn
+    if (conn && !conn.ok) return 'error'
+    return d.running || wasLiveWsl.includes(d.name) || conn?.ok ? 'ok' : 'idle'
   }
   const hostDotState = (h: SshHostPublic): DotState => {
     if (openSshSessions.includes(h.id)) return 'live'
-    if (testing === h.id) return 'checking'
+    if (probing === `ssh:${h.id}`) return 'checking'
     // A session that's open and failing is present-tense evidence, so it outranks both an
     // older Test result and the "was reachable earlier" memory.
     if (failedSshSessions.includes(h.id)) return 'error'
-    const res = testResult[h.id]
-    if (res && res.kind === 'conn') return res.ok ? 'ok' : 'error'
+    const conn = probes[`ssh:${h.id}`]?.conn
+    if (conn) return conn.ok ? 'ok' : 'error'
     return wasLiveSsh.includes(h.id) ? 'ok' : 'idle'
   }
 
+  /** The runbooks among the recent ones that place this host in a group. */
+  const runbooksFor = (hostId: string) =>
+    runbooks.filter((r) => r.hosts.some((h) => h.id === hostId && h.groups.length > 0))
+
+  const selDistro = selected?.kind === 'wsl' ? visibleDistros.find((d) => d.name === selected.name) : undefined
+  const selHost = selected?.kind === 'ssh' ? hosts.find((h) => h.id === selected.id) : undefined
+  const selHostRunbooks = selHost ? runbooksFor(selHost.id) : []
+
+  // Earlier interventions on the selected host, when a runbook reaches it.
+  const runsHostId = selHost && selHostRunbooks.length > 0 ? selHost.id : undefined
+  useEffect(() => {
+    setRuns([])
+    if (!runsHostId) return
+    let cancelled = false
+    window.electronAPI
+      .opsRuns({ hostId: runsHostId, limit: 8 })
+      .then((res) => !cancelled && res.ok && setRuns(res.runs))
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [runsHostId])
+
+  const runbookDirFor = (r: OpsRunListItem): string | undefined =>
+    /[\\/]/.test(r.runbook) ? r.runbook : runbooks.find((i) => i.name === r.runbook)?.path
+
+  // ── Keyboard / pointer on a row ────────────────────────────────────────────
+  const rowProps = (sel: Selection, connect: () => void, label: string) => {
+    const isSel = !!selected && keyOf(selected) === keyOf(sel)
+    return {
+      role: 'option' as const,
+      'aria-selected': isSel,
+      tabIndex: 0,
+      title: `${label} · double-click to connect`,
+      className: `rv-row ${isSel ? 'sel' : ''}`,
+      onClick: () => select(sel),
+      onDoubleClick: connect,
+      onKeyDown: (e: ReactKeyboardEvent) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          select(sel)
+          connect()
+        } else if (e.key === ' ') {
+          e.preventDefault()
+          select(sel)
+        }
+      }
+    }
+  }
+
+  // ── SSH keys screen ────────────────────────────────────────────────────────
   if (screen === 'keys') {
     return (
-      <div className="view">
-        <div className="view-header">
-          <div className="rt-col rt-head">
-            <div className="rt-header-title">
-              <button className="icon-btn" onClick={() => setScreen('targets')} title="Back to Remote & WSL" aria-label="Back to Remote & WSL">
-                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
-                </svg>
-              </button>
-              <div>
-                <h1>SSH keys</h1>
-                <p className="view-sub">
-                  Keys found in <code>~/.ssh</code>. Copy a public key into a server&apos;s{' '}
-                  <code>authorized_keys</code> to enable key auth. Private keys never leave your machine.
-                </p>
-              </div>
-            </div>
+      <div className="view rv">
+        <div className="rv-head">
+          <button type="button" className="rv-back" onClick={() => setScreen('targets')} aria-label="Back to Remote & WSL" title="Back to Remote & WSL">
+            <ChevronLeft />
+          </button>
+          <div className="rv-head-text">
+            <h1>SSH keys</h1>
+            <p className="rv-sub">
+              Keys found in <code>~/.ssh</code>. Copy a public key into a server&apos;s <code>authorized_keys</code> to enable key
+              auth. Private keys never leave your machine.
+            </p>
           </div>
         </div>
 
-        <div className="view-scroll">
-          <div className="rt-col">
-            <div className="rt-list">
-              {keys.map((k) => {
-                const oneLiner = k.publicKey ? `echo '${k.publicKey}' >> ~/.ssh/authorized_keys` : null
-                return (
-                  <div key={k.privatePath} className="rt-row">
-                    <span className="rt-avatar">
-                      <span className="rt-chip key">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <circle cx="7.5" cy="15.5" r="4.5" /><path d="m10.7 12.3 8.3-8.3" /><path d="m17 5 3 3" /><path d="m15 7 2 2" />
-                        </svg>
-                      </span>
-                    </span>
-                    <span className="rt-name">{k.name}</span>
-                    {k.type && <span className="rt-tag">{k.type.replace(/^ssh-/, '')}</span>}
-                    <div className="rt-detail">
-                      <span className="rt-meta">{k.comment || (k.publicKey ? '' : 'no .pub alongside this key')}</span>
-                    </div>
-                    <div className="rt-actions">
-                      {k.publicKey && (
-                        <button className="btn-ghost small" onClick={() => copy(k.publicKey!, `pub:${k.privatePath}`)}>
-                          {copied === `pub:${k.privatePath}` ? '✓ Copied' : 'Copy public key'}
-                        </button>
-                      )}
-                      <Menu
-                        triggerClass="rt-more"
-                        triggerTitle="More"
-                        triggerContent={<MoreIcon />}
-                        items={[
-                          {
-                            label: copied === `cmd:${k.privatePath}` ? '✓ Copied' : 'Copy install command',
-                            disabled: !oneLiner,
-                            onClick: () => oneLiner && copy(oneLiner, `cmd:${k.privatePath}`)
-                          },
-                          { label: 'Copy private key path', onClick: () => copy(k.privatePath, `path:${k.privatePath}`) }
-                        ]}
-                      />
-                    </div>
-                  </div>
-                )
-              })}
-
-              <div className="rt-row rt-row-generate">
-                <span className="rt-avatar">
-                  <span className="rt-chip key">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
+        <div className="rv-scroll">
+          <div className="rv-keys">
+            {keys.map((k) => {
+              const oneLiner = k.publicKey ? `echo '${k.publicKey}' >> ~/.ssh/authorized_keys` : null
+              return (
+                <div key={k.privatePath} className="rv-key">
+                  <span className="rv-key-icon">
+                    <KeyIcon />
                   </span>
-                </span>
-                <span className="rt-name">Generate new key</span>
-                <div className="rt-detail">
-                  <span className="rt-meta">ed25519 key pair in ~/.ssh</span>
+                  <span className="rv-name">{k.name}</span>
+                  {k.type && <span className="chip">{k.type.replace(/^ssh-/, '')}</span>}
+                  <span className="rv-key-comment">{k.comment || (k.publicKey ? '' : 'no .pub alongside this key')}</span>
+                  <span className="rv-key-actions">
+                    {k.publicKey && (
+                      <button type="button" className="btn-ghost small" onClick={() => copy(k.publicKey!, `pub:${k.privatePath}`)}>
+                        {copied === `pub:${k.privatePath}` ? 'Copied' : 'Copy public key'}
+                      </button>
+                    )}
+                    <Menu
+                      triggerClass="btn-ghost small rv-icon-btn"
+                      triggerTitle="More"
+                      triggerContent={<MoreIcon />}
+                      items={[
+                        {
+                          label: copied === `cmd:${k.privatePath}` ? 'Copied' : 'Copy install command',
+                          disabled: !oneLiner,
+                          onClick: () => oneLiner && copy(oneLiner, `cmd:${k.privatePath}`)
+                        },
+                        {
+                          label: copied === `path:${k.privatePath}` ? 'Copied' : 'Copy private key path',
+                          onClick: () => copy(k.privatePath, `path:${k.privatePath}`)
+                        }
+                      ]}
+                    />
+                  </span>
                 </div>
-                <div className="rt-actions always">
-                  <input
-                    className="text-input mono rt-gen-input"
-                    placeholder="id_ed25519_new"
-                    value={newKeyName}
-                    onChange={(e) => setNewKeyName(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && generate()}
-                  />
-                  <button className="btn-primary small" onClick={generate} disabled={!newKeyName.trim() || generating}>
-                    {generating ? 'Generating…' : 'Generate'}
-                  </button>
-                </div>
-              </div>
-              {genError && <div className="rt-note err">{genError}</div>}
+              )
+            })}
+
+            <div className="eyebrow rv-eyebrow">Generate a key</div>
+            <div className="rv-gen">
+              <input
+                className="text-input mono"
+                placeholder="id_ed25519_new"
+                aria-label="New key file name"
+                value={newKeyName}
+                onChange={(e) => setNewKeyName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && generate()}
+              />
+              <button type="button" className="btn-primary small" onClick={generate} disabled={!newKeyName.trim() || generating}>
+                {generating ? 'Generating…' : 'Generate'}
+              </button>
             </div>
+            <p className="help">An ed25519 key pair, written to ~/.ssh.</p>
+            {genError && <p className="rv-error-text">{genError}</p>}
           </div>
         </div>
       </div>
     )
   }
 
-  return (
-    <div className="view">
-      <div className="view-header">
-        <div className="rt-col rt-head">
-          <div>
-            <h1>Remote &amp; WSL</h1>
-            <p className="view-sub">Run Claude Code inside a WSL distro or on a remote SSH host. Each target needs Claude Code installed and logged in there.</p>
+  // ── The column ─────────────────────────────────────────────────────────────
+  const column = (): ReactNode => {
+    if (!selDistro && !selHost) {
+      return <div className="rv-col-empty">Pick a target to see what it can do.</div>
+    }
+    const sel: Selection = selDistro ? { kind: 'wsl', name: selDistro.name } : { kind: 'ssh', id: selHost!.id }
+    const key = keyOf(sel)
+    const p = probes[key] ?? {}
+    const busy = probing === key
+    const dot = selDistro ? wslDotState(selDistro) : hostDotState(selHost!)
+    const name = selDistro ? selDistro.name : selHost!.name
+
+    const state = (() => {
+      if (busy) return 'checking…'
+      if (dot === 'live') return 'session open'
+      if (p.conn) return p.conn.ok ? `reachable · ${(p.conn.ms / 1000).toFixed(1)} s` : 'could not connect'
+      if (selHost && failedSshSessions.includes(selHost.id)) return 'could not connect'
+      if (selDistro?.running) return 'running'
+      if (selHost && wasLiveSsh.includes(selHost.id)) return 'reachable'
+      return 'not tested'
+    })()
+
+    const meta = selDistro
+      ? `wsl -d ${selDistro.name}${selDistro.isDefault ? ' · default' : ''}`
+      : `${selHost!.username}@${selHost!.host}:${selHost!.port} · ${
+          selHost!.authType === 'key'
+            ? `key ${selHost!.privateKeyPath ? shortKeyPath(selHost!.privateKeyPath) : '(default)'}`
+            : AUTH_CHIP[selHost!.authType]
+        }`
+
+    // The one tinted block: the last test or check that failed, or an open session that
+    // could not connect.
+    const failure: { title: string; reason: string; retry: 'conn' | 'claude' } | null =
+      p.conn && !p.conn.ok
+        ? { title: 'Could not connect', reason: p.conn.message, retry: 'conn' }
+        : !p.conn && selHost && failedSshSessions.includes(selHost.id)
+          ? { title: 'Could not connect', reason: 'The open session on this host could not connect.', retry: 'conn' }
+          : p.claude && !p.claude.ok
+            ? { title: 'Claude Code did not answer', reason: p.claude.message, retry: 'claude' }
+            : null
+
+    const lastChecked = Math.max(p.conn?.at ?? 0, p.claude?.at ?? 0)
+    const claudeValue = p.claude ? (
+      p.claude.ok ? (
+        // TODO(port): the logged-in account; the check only returns `claude --version`.
+        <span>{p.claude.message}</span>
+      ) : (
+        <span className="rv-dd-err">check failed</span>
+      )
+    ) : (
+      <span className="rv-dd-muted">not checked</span>
+    )
+
+    const cwd = selDistro ? wslPaths[selDistro.name] ?? '' : ''
+    const acct = selDistro ? accountFor(selDistro.name) : undefined
+
+    const connect = () => (selDistro ? onOpenWslSession(selDistro.name, true) : onOpenSession(selHost!, true))
+    const newTerminal = () => (selDistro ? onConnectWsl(selDistro.name, cwd || undefined) : onConnect(selHost!))
+    const isOpen = selDistro ? openWslSessions.includes(selDistro.name) : openSshSessions.includes(selHost!.id)
+
+    const todayRuns = runs.filter((r) => new Date(r.startedAt).toDateString() === new Date().toDateString())
+    const allReadOnly = selHostRunbooks.every((r) => r.summary.mutates === 0)
+    const allStrict = selHostRunbooks.every((r) => r.strict)
+
+    return (
+      <>
+        <section className="rv-sec">
+          <div className="rv-col-title">
+            <Dot state={dot} />
+            <h2>{name}</h2>
+            <span className="rv-col-state">{state}</span>
           </div>
-          <div className="header-actions">
-            <button className="icon-btn" onClick={() => setScreen('keys')} title="SSH keys" aria-label="SSH keys">
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="7.5" cy="15.5" r="4.5" /><path d="m10.7 12.3 8.3-8.3" /><path d="m17 5 3 3" /><path d="m15 7 2 2" />
-              </svg>
+          <div className="rv-col-meta">{meta}</div>
+          <div className="rv-col-actions">
+            <button type="button" className="btn-primary rv-connect" onClick={connect} title={isOpen ? 'Open another session' : `Connect to ${name}`}>
+              <PlayIcon />
+              Connect
             </button>
-            <button className="btn-primary" onClick={() => setEditing(emptyHost())}>+ Add SSH host</button>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={newTerminal}
+              title={selHost ? "A terminal running the host's own CLI over SSH, outside any runbook" : 'A terminal in this distro'}
+            >
+              New terminal
+            </button>
+            {selHost && onOps && selHostRunbooks.length > 0 && (
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => onOps(selHost)}
+                title="Start an intervention on this host: its commands go through the runbook's gate"
+              >
+                Ops
+              </button>
+            )}
           </div>
+        </section>
+
+        {failure && (
+          <div className="block err rv-fail" role="alert">
+            <span className="rv-fail-title">{failure.title}</span>
+            <span className="rv-fail-reason">{failure.reason}</span>
+            <div>
+              <button type="button" className="btn-ghost small" onClick={() => probe(sel, failure.retry)} disabled={busy}>
+                {busy ? 'Testing…' : 'Test again'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <section className="rv-sec">
+          <div className="eyebrow">Details</div>
+          <dl className="rv-dl">
+            {selHost ? (
+              <>
+                <dt>Authentication</dt>
+                <dd>
+                  {AUTH_LABEL[selHost.authType]}
+                  {selHost.authType === 'key' && selHost.privateKeyPath && (
+                    <span className="rv-dd-mono rv-dd-muted"> {shortKeyPath(selHost.privateKeyPath)}</span>
+                  )}
+                </dd>
+                <dt>Remote path</dt>
+                <dd>{selHost.remotePath ? <span className="rv-dd-mono">{selHost.remotePath}</span> : <span className="rv-dd-muted">home folder</span>}</dd>
+              </>
+            ) : (
+              <>
+                <dt>Working dir</dt>
+                <dd>
+                  {editingCwd ? (
+                    <span className="rv-cwd-edit">
+                      <input
+                        className="text-input mono"
+                        autoFocus
+                        placeholder="/home/you/repo"
+                        aria-label="Working dir"
+                        value={cwd}
+                        onChange={(e) => setWslPaths((prev) => ({ ...prev, [selDistro!.name]: e.target.value }))}
+                        onKeyDown={(e) => e.key === 'Enter' && setEditingCwd(false)}
+                      />
+                      <button type="button" className="btn-ghost small" onClick={() => setEditingCwd(false)}>
+                        Done
+                      </button>
+                    </span>
+                  ) : cwd ? (
+                    <span className="rv-dd-mono">{cwd}</span>
+                  ) : (
+                    <span className="rv-dd-muted">home folder</span>
+                  )}
+                </dd>
+                <dt>Account</dt>
+                <dd>{acct?.email ?? <span className="rv-dd-muted">not logged in</span>}</dd>
+              </>
+            )}
+            <dt>Claude Code</dt>
+            <dd>{claudeValue}</dd>
+            <dt>Checked</dt>
+            <dd>{lastChecked ? relativeTime(lastChecked) : <span className="rv-dd-muted">never</span>}</dd>
+          </dl>
+          <div className="rv-col-actions">
+            <button type="button" className="btn-ghost small" onClick={() => probe(sel, 'conn')} disabled={busy}>
+              {busy ? 'Testing…' : 'Test connection'}
+            </button>
+            <button type="button" className="btn-ghost small" onClick={() => probe(sel, 'claude')} disabled={busy}>
+              Check Claude Code
+            </button>
+            {selHost ? (
+              <button
+                type="button"
+                className="btn-ghost small"
+                onClick={() =>
+                  openEditor({
+                    id: selHost.id,
+                    name: selHost.name,
+                    host: selHost.host,
+                    port: selHost.port,
+                    username: selHost.username,
+                    authType: selHost.authType,
+                    privateKeyPath: selHost.privateKeyPath,
+                    remotePath: selHost.remotePath,
+                    claudePath: selHost.claudePath
+                  })
+                }
+              >
+                Edit host
+              </button>
+            ) : (
+              !editingCwd && (
+                <button type="button" className="btn-ghost small" onClick={() => setEditingCwd(true)}>
+                  Set working dir
+                </button>
+              )
+            )}
+          </div>
+        </section>
+
+        {selHost && selHostRunbooks.length > 0 && (
+          <section className="rv-sec">
+            <div className="eyebrow">Ops</div>
+            <div className="rv-ops-line">
+              <span>
+                {selHostRunbooks.length} runbook{selHostRunbooks.length === 1 ? '' : 's'} appl{selHostRunbooks.length === 1 ? 'ies' : 'y'} to this host
+              </span>
+              <span className="rv-ops-mode">
+                {allReadOnly ? 'read-only' : 'can change the host'}
+                {allStrict ? ' · strict' : ''}
+              </span>
+            </div>
+            {todayRuns.length > 0 && (
+              <>
+                <div className="divider-caption rv-divcap">
+                  Earlier today · {todayRuns.length} intervention{todayRuns.length === 1 ? '' : 's'}
+                </div>
+                {todayRuns.map((r) => (
+                  <div key={r.runId} className="rv-run">
+                    <span className="rv-run-what" title={r.task || undefined}>
+                      {clock(r.startedAt)} · {baseName(r.runbook)} · {runOutcome(r)} · {r.calls} call{r.calls === 1 ? '' : 's'}
+                    </span>
+                    <button
+                      type="button"
+                      className="rv-run-report"
+                      onClick={() => setReportFor({ runId: r.runId, runbookPath: runbookDirFor(r), appSessionId: r.appSessionId })}
+                    >
+                      Report
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+          </section>
+        )}
+
+        <footer className="rv-foot">
+          {selHost ? (
+            confirmDelete ? (
+              <>
+                <span className="help">Delete {selHost.name}? Its audit log stays.</span>
+                <button type="button" className="btn-ghost small" onClick={() => setConfirmDelete(false)} autoFocus>
+                  Keep
+                </button>
+                <button type="button" className="btn-primary small danger" onClick={() => remove(selHost.id)}>
+                  Delete
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="help">Removing a host keeps its audit log.</span>
+                <button type="button" className="btn-text danger" onClick={() => setConfirmDelete(true)}>
+                  Delete host
+                </button>
+              </>
+            )
+          ) : (
+            <>
+              <span className="help">Hidden distros stay out of Usage and Projects.</span>
+              <button
+                type="button"
+                className="btn-text"
+                onClick={() => {
+                  void setDistroHidden(selDistro!.name, true)
+                  select(null)
+                }}
+              >
+                Hide from Usage &amp; Projects
+              </button>
+            </>
+          )}
+        </footer>
+      </>
+    )
+  }
+
+  // ── Targets screen ─────────────────────────────────────────────────────────
+  return (
+    <div className="view rv">
+      <div className="rv-head">
+        <div className="rv-head-text">
+          <h1>Remote &amp; WSL</h1>
+          <p className="rv-sub">
+            Run Claude Code inside a WSL distro or on a remote SSH host. Each target needs Claude Code installed and logged in there.
+          </p>
         </div>
+        <button type="button" className="btn-ghost" onClick={() => setScreen('keys')}>
+          <KeyIcon />
+          SSH keys
+        </button>
+        <button type="button" className="btn-ghost" onClick={() => openEditor(emptyHost())}>
+          <PlusIcon />
+          Add SSH host
+        </button>
       </div>
 
-      <div className="view-scroll">
-        <div className="rt-col">
-          <div className="rt-filter">
-            <div className="rt-search">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" />
-              </svg>
+      <div className="rv-page">
+        <div className="rv-list">
+          <div className="rv-filter">
+            <div className="rv-search">
+              <span className="rv-search-icon">
+                <SearchIcon />
+              </span>
               <input
-                className="rt-search-input"
-                placeholder="Filter targets…"
+                className="text-input"
+                placeholder="Filter targets"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 aria-label="Filter targets"
               />
               {query && (
-                <button className="rt-search-clear" onClick={() => setQuery('')} title="Clear" aria-label="Clear filter">×</button>
+                <button type="button" className="rv-search-clear" onClick={() => setQuery('')} aria-label="Clear filter" title="Clear filter">
+                  <XIcon />
+                </button>
               )}
             </div>
-            <div className="seg-control small">
-              {([
-                ['all', 'All', visibleDistros.length + hosts.length],
-                ['wsl', 'WSL', visibleDistros.length],
-                ['ssh', 'SSH', hosts.length]
-              ] as [Kind, string, number][]).map(([k, label, n]) => (
-                <button key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>
-                  {label} <span className="rt-seg-count">{n}</span>
+            <div className="seg-control">
+              {(
+                [
+                  ['all', 'All', visibleDistros.length + hosts.length],
+                  ['wsl', 'WSL', visibleDistros.length],
+                  ['ssh', 'SSH', hosts.length]
+                ] as [Kind, string, number][]
+              ).map(([k, label, n]) => (
+                <button type="button" key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>
+                  {label} <em>{n}</em>
                 </button>
               ))}
             </div>
           </div>
 
-          {nothingMatches && (
-            <div className="view-empty small">
-              {q ? `Nothing matches “${query}”.` : 'No targets yet.'}
-            </div>
-          )}
+          {nothingMatches && <p className="rv-nothing">{q ? `Nothing matches “${query}”.` : 'No targets yet.'}</p>}
 
           {shownDistros.length > 0 && (
             <>
-              <div className="rt-section">WSL distros</div>
-              <div className="rt-list">
+              <div className="eyebrow rv-eyebrow">WSL distros</div>
+              <div role="listbox" aria-label="WSL distros" className="rv-rows">
                 {shownDistros.map((d) => {
-                  const acct = accountFor(d.name)
-                  const cwd = wslPaths[d.name] ?? ''
-                  const res = wslTest[d.name]
+                  const claude = probes[`wsl:${d.name}`]?.claude
+                  const conn = probes[`wsl:${d.name}`]?.conn
                   return (
-                    <div key={d.name} className="rt-row-wrap">
-                      <div
-                        className="rt-row clickable"
-                        onClick={() => onOpenWslSession(d.name)}
-                        title={openWslSessions.includes(d.name) ? `Go to ${d.name}` : `Connect to ${d.name}`}
-                      >
-                        <Avatar state={wslDotState(d)} kind="wsl">{d.name.charAt(0)}</Avatar>
-                        <span className="rt-name">{d.name}</span>
-                        {d.isDefault && <span className="rt-tag">default</span>}
-                        <div className="rt-detail">
-                          <span className="rt-meta mono">wsl -d {d.name}</span>
-                          {acct?.email && <span className="rt-meta acct">{acct.email}</span>}
-                        </div>
-                        {/* The whole row is a Connect shortcut, so the action cluster must not bubble into it. */}
-                        <div className="rt-actions" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            className="btn-primary small"
-                            onClick={() => onOpenWslSession(d.name, true)}
-                            title={openWslSessions.includes(d.name) ? 'Open another session' : 'Connect'}
-                          >
-                            Connect
-                          </button>
-                          <Menu
-                            triggerClass="rt-more"
-                            triggerTitle="More"
-                            triggerContent={<MoreIcon />}
-                            items={[
-                              { label: 'New terminal here', onClick: () => onConnectWsl(d.name, cwd || undefined) },
-                              { label: cwd ? `Working dir · ${cwd}` : 'Set working dir…', onClick: () => toggleCwd(d.name) },
-                              { label: wslTesting === d.name ? 'Testing…' : 'Test connection', disabled: wslTesting === d.name, onClick: () => probeWsl(d.name, 'conn') },
-                              { label: 'Check Claude Code', disabled: wslTesting === d.name, onClick: () => probeWsl(d.name, 'claude') },
-                              { label: 'Hide from Usage & Projects', danger: true, onClick: () => setDistroHidden(d.name, true) }
-                            ]}
-                          />
-                        </div>
-                      </div>
-                      {editingCwd.includes(d.name) && (
-                        <div className="rt-sub">
-                          <input
-                            className="text-input mono rt-cwd-input"
-                            autoFocus
-                            placeholder="working dir (optional, e.g. /home/you/repo)"
-                            value={cwd}
-                            onChange={(e) => setWslPaths((prev) => ({ ...prev, [d.name]: e.target.value }))}
-                            onKeyDown={(e) => e.key === 'Enter' && toggleCwd(d.name)}
-                          />
-                          <button className="btn-ghost small" onClick={() => toggleCwd(d.name)}>Done</button>
-                        </div>
-                      )}
-                      {res && <div className={`rt-note ${res.ok ? 'ok' : 'err'}`}>{res.message}</div>}
+                    <div key={d.name} {...rowProps({ kind: 'wsl', name: d.name }, () => onOpenWslSession(d.name), d.name)}>
+                      <Dot state={wslDotState(d)} />
+                      <span className="rv-name">{d.name}</span>
+                      {d.isDefault && <span className="chip">default</span>}
+                      <span className="rv-row-right">
+                        {conn && !conn.ok ? (
+                          <span className="rv-row-err">could not connect</span>
+                        ) : (
+                          claude && !claude.ok && <span className="rv-row-note">no Claude Code</span>
+                        )}
+                        <span className="rv-row-meta">wsl -d {d.name}</span>
+                      </span>
                     </div>
                   )
                 })}
@@ -472,106 +884,47 @@ export default function RemoteView({
             </>
           )}
 
-          {/* Hidden distros are noise on the main list — one disclosure line instead of a
-              card each, since the only thing you can do with them is un-hide them. */}
+          {/* Hidden distros are noise on the main list: one disclosure line, since the only
+              thing you can do with them is show them again. */}
           {kind !== 'ssh' && hiddenDistros.length > 0 && (
-            <div className="rt-hidden">
-              <button className="rt-hidden-toggle" onClick={() => setShowHidden((v) => !v)}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={showHidden ? 'open' : ''} aria-hidden="true">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
+            <div className="rv-hidden">
+              <button type="button" className="rv-hidden-toggle" onClick={() => setShowHidden((v) => !v)} aria-expanded={showHidden}>
+                <ChevronRight className={showHidden ? 'open' : ''} />
                 {hiddenDistros.length} hidden {hiddenDistros.length === 1 ? 'distro' : 'distros'}
               </button>
-              {showHidden && (
-                <div className="rt-list">
-                  {hiddenDistros.map((d) => (
-                    <div key={d.name} className="rt-row muted">
-                      <span className="rt-avatar"><span className="rt-chip wsl">{d.name.charAt(0)}</span></span>
-                      <span className="rt-name">{d.name}</span>
-                      <div className="rt-detail">
-                        <span className="rt-meta">Excluded from Usage &amp; Projects</span>
-                      </div>
-                      <div className="rt-actions always">
-                        <button className="btn-ghost small" onClick={() => setDistroHidden(d.name, false)}>Show</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {showHidden &&
+                hiddenDistros.map((d) => (
+                  <div key={d.name} className="rv-row muted">
+                    <span className="rv-name">{d.name}</span>
+                    <span className="rv-row-right">
+                      <span className="rv-row-note">out of Usage &amp; Projects</span>
+                      <button type="button" className="btn-ghost small" onClick={() => setDistroHidden(d.name, false)}>
+                        Show
+                      </button>
+                    </span>
+                  </div>
+                ))}
             </div>
           )}
 
           {shownHosts.length > 0 && (
             <>
-              <div className="rt-section">SSH hosts</div>
-              <div className="rt-list">
-                {shownHosts.map((host) => {
-                  const res = testResult[host.id]
+              <div className="eyebrow rv-eyebrow">SSH hosts</div>
+              <div role="listbox" aria-label="SSH hosts" className="rv-rows">
+                {shownHosts.map((h) => {
+                  const conn = probes[`ssh:${h.id}`]?.conn
+                  const failed = (conn && !conn.ok) || (!conn && failedSshSessions.includes(h.id))
                   return (
-                    <div key={host.id} className="rt-row-wrap">
-                      <div
-                        className="rt-row clickable"
-                        onClick={() => onOpenSession(host)}
-                        title={openSshSessions.includes(host.id) ? `Go to ${host.name}` : `Connect to ${host.name}`}
-                      >
-                        <Avatar state={hostDotState(host)}>{host.name.charAt(0)}</Avatar>
-                        <span className="rt-name">{host.name}</span>
-                        <span className="rt-tag">{host.authType}</span>
-                        <div className="rt-detail">
-                          <span className="rt-meta mono">
-                            {host.username}@{host.host}:{host.port}
-                          </span>
-                          {host.remotePath && <span className="rt-meta mono">{host.remotePath}</span>}
-                        </div>
-                        {/* The whole row is a Connect shortcut, so the action cluster must not bubble into it. */}
-                        <div className="rt-actions" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            className="btn-primary small"
-                            onClick={() => onOpenSession(host, true)}
-                            title={openSshSessions.includes(host.id) ? 'Open another session' : 'Connect'}
-                          >
-                            Connect
-                          </button>
-                          {onOps && hasRunbooks && (
-                            <button
-                              className="btn-secondary small"
-                              onClick={() => onOps(host)}
-                              title="Open the Ops workspace of a runbook that reaches this host: its commands go through the runbook's gate"
-                            >
-                              Ops
-                            </button>
-                          )}
-                          <Menu
-                            triggerClass="rt-more"
-                            triggerTitle="More"
-                            triggerContent={<MoreIcon />}
-                            items={[
-                              /* Says where the terminal runs: the host's own CLI over SSH,
-                                 ungated — the opposite of the Ops workspace. */
-                              { label: 'New terminal on host (runs its CLI)', onClick: () => onConnect(host) },
-                              { label: testing === host.id ? 'Testing…' : 'Test connection', disabled: testing === host.id, onClick: () => probeHost(host.id, 'conn') },
-                              { label: 'Check Claude Code', disabled: testing === host.id, onClick: () => probeHost(host.id, 'claude') },
-                              {
-                                label: 'Edit…',
-                                onClick: () =>
-                                  setEditing({
-                                    id: host.id,
-                                    name: host.name,
-                                    host: host.host,
-                                    port: host.port,
-                                    username: host.username,
-                                    authType: host.authType,
-                                    privateKeyPath: host.privateKeyPath,
-                                    remotePath: host.remotePath,
-                                    claudePath: host.claudePath
-                                  })
-                              },
-                              { label: 'Delete', danger: true, onClick: () => remove(host.id) }
-                            ]}
-                          />
-                        </div>
-                      </div>
-                      {res && <div className={`rt-note ${res.ok ? 'ok' : 'err'}`}>{res.message}</div>}
+                    <div key={h.id} {...rowProps({ kind: 'ssh', id: h.id }, () => onOpenSession(h), h.name)}>
+                      <Dot state={hostDotState(h)} />
+                      <span className="rv-name">{h.name}</span>
+                      <span className="chip">{AUTH_CHIP[h.authType]}</span>
+                      <span className="rv-row-right">
+                        {failed && <span className="rv-row-err">could not connect</span>}
+                        <span className="rv-row-meta">
+                          {h.username}@{h.host}:{h.port}
+                        </span>
+                      </span>
                     </div>
                   )
                 })}
@@ -579,100 +932,154 @@ export default function RemoteView({
             </>
           )}
         </div>
+
+        <aside className="rv-col" aria-label="Selected target">
+          {column()}
+        </aside>
       </div>
 
       {editing && (
-        <div className="modal-backdrop" onClick={() => setEditing(null)}>
-          <div className="modal wide" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{editing.id ? 'Edit host' : 'Add host'}</h3>
-              <button className="icon-btn" onClick={() => setEditing(null)}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
+        <Sheet
+          title={editing.id ? 'Edit host' : 'Add SSH host'}
+          width={520}
+          onClose={() => setEditing(null)}
+          footer={
+            <>
+              <span className="help rv-sheet-help">Enter saves · Esc cancels</span>
+              <button type="button" className="btn-ghost" onClick={() => setEditing(null)}>
+                Cancel
               </button>
+              <button type="button" className="btn-primary" onClick={save} disabled={!hostValid}>
+                Save
+              </button>
+            </>
+          }
+        >
+          <div className="rv-form" onKeyDown={onFormKey}>
+            <div className="form-group">
+              <label>Name</label>
+              <input className="text-input" value={editing.name} placeholder="dev box" onChange={(e) => setEditing({ ...editing, name: e.target.value })} autoFocus />
             </div>
-            <div className="modal-body">
-              <div className="agent-edit-row">
-                <div className="form-group grow">
-                  <label>Name</label>
-                  <input className="text-input" value={editing.name} placeholder="dev box" onChange={(e) => setEditing({ ...editing, name: e.target.value })} autoFocus />
-                </div>
-                <div className="form-group" style={{ width: 90 }}>
-                  <label>Port</label>
-                  <input className="text-input" type="number" value={editing.port} onChange={(e) => setEditing({ ...editing, port: Number(e.target.value) || 22 })} />
-                </div>
+            <div className="rv-form-row">
+              <div className="form-group grow">
+                <label>Host</label>
+                <input
+                  className="text-input mono"
+                  value={editing.host}
+                  placeholder="192.168.1.10 or host.example.com"
+                  onChange={(e) => setEditing({ ...editing, host: e.target.value })}
+                />
               </div>
-              <div className="agent-edit-row">
-                <div className="form-group grow">
-                  <label>Host</label>
-                  <input className="text-input mono" value={editing.host} placeholder="192.168.1.10 or host.example.com" onChange={(e) => setEditing({ ...editing, host: e.target.value })} />
-                </div>
-                <div className="form-group grow">
-                  <label>Username</label>
-                  <input className="text-input mono" value={editing.username} placeholder="ubuntu" onChange={(e) => setEditing({ ...editing, username: e.target.value })} />
-                </div>
+              <div className="form-group rv-port">
+                <label>Port</label>
+                <input
+                  className="text-input mono"
+                  type="number"
+                  value={editing.port}
+                  onChange={(e) => setEditing({ ...editing, port: Number(e.target.value) || 22 })}
+                />
               </div>
+            </div>
+            <div className="form-group">
+              <label>Username</label>
+              <input className="text-input mono" value={editing.username} placeholder="ubuntu" onChange={(e) => setEditing({ ...editing, username: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label>Authentication</label>
+              <div className="seg-control">
+                {(['password', 'key', 'agent'] as SshAuthType[]).map((a) => (
+                  <button type="button" key={a} className={editing.authType === a ? 'on' : ''} onClick={() => setEditing({ ...editing, authType: a })}>
+                    {AUTH_LABEL[a]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {editing.authType === 'password' && (
               <div className="form-group">
-                <label>Authentication</label>
-                <div className="seg-control">
-                  {(['password', 'key', 'agent'] as SshAuthType[]).map((a) => (
-                    <button key={a} className={editing.authType === a ? 'on' : ''} onClick={() => setEditing({ ...editing, authType: a })}>
-                      {a === 'password' ? 'Password' : a === 'key' ? 'Private key' : 'SSH agent'}
-                    </button>
-                  ))}
-                </div>
+                <label>Password</label>
+                <input
+                  className="text-input"
+                  type="password"
+                  placeholder={editing.id ? 'unchanged' : ''}
+                  onChange={(e) => setEditing({ ...editing, password: e.target.value })}
+                />
               </div>
-              {editing.authType === 'password' && (
+            )}
+            {editing.authType === 'key' && (
+              <>
+                {keys.length > 0 && (
+                  <div className="form-group">
+                    <label>Discovered key</label>
+                    <select
+                      className="text-input"
+                      value={keys.some((k) => k.privatePath === editing.privateKeyPath) ? editing.privateKeyPath : ''}
+                      onChange={(e) => setEditing({ ...editing, privateKeyPath: e.target.value })}
+                    >
+                      <option value="">Default (agent / ssh config) or custom path below</option>
+                      {keys.map((k) => (
+                        <option key={k.privatePath} value={k.privatePath}>
+                          {keyLabel(k)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="form-group">
-                  <label>Password</label>
-                  <input className="text-input" type="password" placeholder={editing.id ? '•••• (unchanged)' : ''} onChange={(e) => setEditing({ ...editing, password: e.target.value })} />
+                  <label>Private key path</label>
+                  <input
+                    className="text-input mono"
+                    value={editing.privateKeyPath ?? ''}
+                    placeholder="C:\Users\you\.ssh\id_ed25519"
+                    onChange={(e) => setEditing({ ...editing, privateKeyPath: e.target.value })}
+                  />
                 </div>
-              )}
-              {editing.authType === 'key' && (
-                <>
-                  {keys.length > 0 && (
-                    <div className="form-group">
-                      <label>Discovered key</label>
-                      <select
-                        className="text-input"
-                        value={keys.some((k) => k.privatePath === editing.privateKeyPath) ? editing.privateKeyPath : ''}
-                        onChange={(e) => setEditing({ ...editing, privateKeyPath: e.target.value })}
-                      >
-                        <option value="">Default (agent / ssh config) or custom path below</option>
-                        {keys.map((k) => (
-                          <option key={k.privatePath} value={k.privatePath}>{keyLabel(k)}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                  <div className="form-group">
-                    <label>Private key path</label>
-                    <input className="text-input mono" value={editing.privateKeyPath ?? ''} placeholder="C:\Users\you\.ssh\id_ed25519" onChange={(e) => setEditing({ ...editing, privateKeyPath: e.target.value })} />
-                  </div>
-                  <div className="form-group">
-                    <label>Passphrase (if any)</label>
-                    <input className="text-input" type="password" placeholder={editing.id ? '•••• (unchanged)' : ''} onChange={(e) => setEditing({ ...editing, passphrase: e.target.value })} />
-                  </div>
-                </>
-              )}
-              <div className="agent-edit-row">
-                <div className="form-group grow">
-                  <label>Remote project path</label>
-                  <input className="text-input mono" value={editing.remotePath ?? ''} placeholder="/home/you/myrepo" onChange={(e) => setEditing({ ...editing, remotePath: e.target.value })} />
+                <div className="form-group">
+                  <label>
+                    Passphrase<span className="optional">optional</span>
+                  </label>
+                  <input
+                    className="text-input"
+                    type="password"
+                    placeholder={editing.id ? 'unchanged' : ''}
+                    onChange={(e) => setEditing({ ...editing, passphrase: e.target.value })}
+                  />
                 </div>
-                <div className="form-group grow">
-                  <label>claude path (optional)</label>
-                  <input className="text-input mono" value={editing.claudePath ?? ''} placeholder="claude" onChange={(e) => setEditing({ ...editing, claudePath: e.target.value })} />
-                </div>
-              </div>
+              </>
+            )}
+            <div className="form-group">
+              <label>
+                Remote project path<span className="optional">optional</span>
+              </label>
+              <input
+                className="text-input mono"
+                value={editing.remotePath ?? ''}
+                placeholder="/home/you/myrepo"
+                onChange={(e) => setEditing({ ...editing, remotePath: e.target.value })}
+              />
             </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setEditing(null)}>Cancel</button>
-              <button className="btn-primary" onClick={save} disabled={!editing.name.trim() || !editing.host.trim() || !editing.username.trim()}>Save</button>
+            <div className="form-group">
+              <label>
+                Claude path<span className="optional">optional</span>
+              </label>
+              <input
+                className="text-input mono"
+                value={editing.claudePath ?? ''}
+                placeholder="claude"
+                onChange={(e) => setEditing({ ...editing, claudePath: e.target.value })}
+              />
+              <p className="help">Leave empty to run the claude found on the host&apos;s PATH.</p>
             </div>
           </div>
-        </div>
+        </Sheet>
+      )}
+
+      {reportFor && (
+        <OpsReportSheet
+          runId={reportFor.runId}
+          appSessionId={reportFor.appSessionId}
+          runbookPath={reportFor.runbookPath}
+          onClose={() => setReportFor(null)}
+        />
       )}
     </div>
   )

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { FileNode } from '../types'
-import './LocalBrowser.css'
+import { FbIcon } from './SftpBrowser'
+import './SftpBrowser.css'
 
 interface Props {
   /** Directory being browsed, as a real Windows path (a WSL distro's UNC share,
@@ -15,16 +16,6 @@ interface Props {
 function winJoin(dir: string, name: string): string {
   return dir.endsWith('\\') ? `${dir}${name}` : `${dir}\\${name}`
 }
-
-const DIR_ICON = (
-  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-)
-const FILE_ICON = (
-  <>
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-    <polyline points="14 2 14 8 20 8" />
-  </>
-)
 
 /** Local/WSL-share file browser used by the WSL "Connect" session view — mirrors
  *  SftpBrowser's toolbar/actions (refresh, new folder, open→edit, rename, delete) over
@@ -134,50 +125,45 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
   }
 
   return (
-    <div className="local-browser">
-      <div className="local-toolbar">
-        <button className="local-toolbar-btn" onClick={load} title="Refresh" disabled={loading}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-          </svg>
+    <div className="fb">
+      <div className="fb-toolbar">
+        <button type="button" className="btn-ghost small fb-icon-btn" onClick={load} title="Refresh" aria-label="Refresh" disabled={loading}>
+          <FbIcon.refresh />
         </button>
         <button
-          className="local-toolbar-btn"
+          type="button"
+          className="btn-ghost small fb-icon-btn"
           onClick={() => {
             setCreatingFolder(true)
             setCreatingFile(false)
           }}
           title="New folder"
+          aria-label="New folder"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-            <line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" />
-          </svg>
+          <FbIcon.newFolder />
         </button>
         <button
-          className="local-toolbar-btn"
+          type="button"
+          className="btn-ghost small fb-icon-btn"
           onClick={() => {
             setCreatingFile(true)
             setCreatingFolder(false)
           }}
           title="New file"
+          aria-label="New file"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="12" y1="12" x2="12" y2="18" /><line x1="9" y1="15" x2="15" y2="15" />
-          </svg>
+          <FbIcon.newFile />
         </button>
-        <span className="local-toolbar-path" title={dir}>{dir}</span>
+        <span className="fb-path" title={dir}>{dir}</span>
       </div>
 
       {creatingFolder && (
-        <div className="local-inline-form">
+        <div className="fb-form">
           <input
             className="text-input mono"
             autoFocus
             placeholder="new-folder"
+            aria-label="New folder name"
             value={newFolderName}
             onChange={(e) => setNewFolderName(e.target.value)}
             onKeyDown={(e) => {
@@ -185,17 +171,18 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
               if (e.key === 'Escape') setCreatingFolder(false)
             }}
           />
-          <button className="btn-primary small" onClick={doMkdir}>Create</button>
-          <button className="btn-ghost small" onClick={() => setCreatingFolder(false)}>Cancel</button>
+          <button type="button" className="btn-primary small" onClick={doMkdir}>Create</button>
+          <button type="button" className="btn-ghost small" onClick={() => setCreatingFolder(false)}>Cancel</button>
         </div>
       )}
 
       {creatingFile && (
-        <div className="local-inline-form">
+        <div className="fb-form">
           <input
             className="text-input mono"
             autoFocus
             placeholder="new-file.txt"
+            aria-label="New file name"
             value={newFileName}
             onChange={(e) => setNewFileName(e.target.value)}
             onKeyDown={(e) => {
@@ -203,22 +190,23 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
               if (e.key === 'Escape') setCreatingFile(false)
             }}
           />
-          <button className="btn-primary small" onClick={doTouch}>Create</button>
-          <button className="btn-ghost small" onClick={() => setCreatingFile(false)}>Cancel</button>
+          <button type="button" className="btn-primary small" onClick={doTouch}>Create</button>
+          <button type="button" className="btn-ghost small" onClick={() => setCreatingFile(false)}>Cancel</button>
         </div>
       )}
 
-      {error && <div className="local-error">{error}</div>}
+      {error && <p className="fb-error">{error}</p>}
 
-      <div className="local-list">
-        {loading && entries.length === 0 && <div className="view-empty small">Loading…</div>}
-        {!loading && entries.length === 0 && !error && <div className="view-empty small">Empty directory.</div>}
+      <div className="fb-list">
+        {loading && entries.length === 0 && <p className="fb-empty">Loading…</p>}
+        {!loading && entries.length === 0 && !error && <p className="fb-empty">Empty directory.</p>}
         {entries.map((entry) => (
-          <div key={entry.path} className={`local-row ${busyPath === entry.path ? 'busy' : ''}`}>
+          <div key={entry.path} className={`fb-row ${busyPath === entry.path ? 'busy' : ''}`}>
             {renaming?.path === entry.path ? (
               <input
-                className="text-input mono local-rename-input"
+                className="text-input mono fb-rename"
                 autoFocus
+                aria-label={`Rename ${entry.name}`}
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
                 onKeyDown={(e) => {
@@ -229,53 +217,52 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
               />
             ) : (
               <>
-                <div className="local-row-main" onDoubleClick={() => openEntry(entry)} title={entry.path}>
-                  <span className={`local-row-icon ${entry.type}`}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      {entry.type === 'directory' ? DIR_ICON : FILE_ICON}
-                    </svg>
-                  </span>
-                  <span className="local-row-name">{entry.name}</span>
+                <div className="fb-row-main" onDoubleClick={() => openEntry(entry)} title={entry.path}>
+                  <span className="fb-row-icon">{entry.type === 'directory' ? <FbIcon.folder /> : <FbIcon.file />}</span>
+                  <span className="fb-row-name">{entry.name}</span>
                 </div>
                 {confirmDelete?.path === entry.path ? (
-                  <div className="local-row-confirm">
-                    <span>Delete?</span>
-                    <button className="btn-text danger" onClick={() => doDelete(entry)}>Yes</button>
-                    <button className="btn-text" onClick={() => setConfirmDelete(null)}>No</button>
+                  <div className="fb-row-confirm">
+                    <button type="button" className="btn-ghost small" onClick={() => setConfirmDelete(null)} autoFocus>
+                      Keep
+                    </button>
+                    <button type="button" className="btn-primary small danger" onClick={() => doDelete(entry)}>
+                      Delete
+                    </button>
                   </div>
                 ) : (
-                  <div className="local-row-actions">
+                  <div className="fb-row-actions">
                     {entry.type === 'directory' && (
                       <button
-                        className="local-row-btn"
-                        title="cd terminal here"
+                        type="button"
+                        className="fb-row-btn"
+                        title="cd the terminal here"
+                        aria-label={`cd the terminal to ${entry.name}`}
                         onClick={() => onCdTerminal(entry.path)}
                       >
-                        cd
+                        <FbIcon.terminal />
                       </button>
                     )}
                     <button
-                      className="local-row-btn"
+                      type="button"
+                      className="fb-row-btn"
                       title="Rename"
+                      aria-label={`Rename ${entry.name}`}
                       onClick={() => {
                         setRenaming(entry)
                         setRenameValue(entry.name)
                       }}
                     >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" />
-                      </svg>
+                      <FbIcon.rename />
                     </button>
                     <button
-                      className="local-row-btn danger"
+                      type="button"
+                      className="fb-row-btn danger"
                       title="Delete"
+                      aria-label={`Delete ${entry.name}`}
                       onClick={() => setConfirmDelete(entry)}
                     >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="3 6 5 6 21 6" />
-                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                      </svg>
+                      <FbIcon.trash />
                     </button>
                   </div>
                 )}
