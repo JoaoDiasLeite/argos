@@ -7,9 +7,26 @@ import { buildSubprocessEnv } from './auth'
 import { accountConfigDir, resolveClaudeBin } from './accounts'
 import { providerAccountEnv } from './provider-accounts'
 import { resolveCodex } from './providers/cli-resolve'
+import { prepareCodexHomeFromToml } from './providers/codex'
 import { getSshTerminalCommand } from './ssh'
 import { BusyTracker, isMouseClick, isTerminalReport } from './terminal-busy-pure'
 import { isApprovalNotification, OscScanner } from './terminal-osc-pure'
+import {
+  claudeChain,
+  claudeOpsFlags,
+  isOpsLaunch,
+  opsLaunchRefusal,
+  parseWslUnc,
+  quoteArgs,
+  quoteCmd,
+  quotePwsh,
+  quoteUnix,
+  withOpsEnvPrefix,
+  type OpsTerminalLaunch,
+  type ShellKind
+} from './terminal-ops-pure'
+
+export type { OpsTerminalLaunch } from './terminal-ops-pure'
 
 /**
  * Embedded real terminal (PTY) support, so the user can run the actual interactive
@@ -19,8 +36,6 @@ import { isApprovalNotification, OscScanner } from './terminal-osc-pure'
  * charset before touching either map. Nothing in here ever throws across the IPC
  * boundary — every function is defensive and returns a failure shape instead.
  */
-
-type ShellKind = 'pwsh' | 'powershell' | 'cmd' | 'unix' | 'wsl' | 'ssh'
 
 const terminals = new Map<string, pty.IPty>()
 const shellKinds = new Map<string, ShellKind>()
@@ -38,6 +53,23 @@ const launched = new Set<string>()
 // The renderer's xterm instance dies on unmount, so this is what a reattaching terminal
 // replays to repaint its scrollback — the pty itself keeps running throughout.
 const outputBuffers = new Map<string, string>()
+
+// The ops launch each ops terminal was created with (OPS_AGENT_PLAN.md §9, batch 5b), so
+// startCliInTerminal can apply it to a CLI it types in later, and the Codex CODEX_HOME
+// overlay built for it, removed when the pty goes. Both are dropped by forgetOps.
+const opsLaunches = new Map<string, OpsTerminalLaunch>()
+const opsCleanups = new Map<string, () => void>()
+
+function forgetOps(id: string): void {
+  opsLaunches.delete(id)
+  const cleanup = opsCleanups.get(id)
+  opsCleanups.delete(id)
+  try {
+    cleanup?.()
+  } catch {
+    // best-effort
+  }
+}
 
 // What each live pty was created with, so a re-create can tell "reattach to this" from
 // "the chat's environment changed, respawn it" — see createTerminal.
@@ -179,7 +211,10 @@ function configSignature(opts: CreateTerminalOptions): string {
     opts.accountId ?? '',
     opts.wslDistro ?? '',
     opts.remoteHostId ?? '',
-    opts.provider ?? 'claude'
+    opts.provider ?? 'claude',
+    // Whether this is an ops terminal, and for which config — but not the token: a
+    // reattach that minted a fresh token must reuse the live pty, not end its run.
+    opts.ops?.mcpConfigPath ?? ''
   ])
 }
 
@@ -218,6 +253,9 @@ export interface CreateTerminalOptions {
   /** The id this chat has reserved for a conversation that does not exist yet. Launching
    *  claude should CREATE under it (--session-id), not try to resume it. */
   pinSessionId?: string
+  /** Launch the CLI as an ops client: the gate's env on the pty, and the CLI pointed at
+   *  the ops MCP server only. Local shells only in this version — see opsLaunchRefusal. */
+  ops?: OpsTerminalLaunch
   cols: number
   rows: number
 }
@@ -281,15 +319,9 @@ function pickShell(): { shell: string; kind: ShellKind } {
   return { shell: process.env.SHELL || 'bash', kind: 'unix' }
 }
 
-// Recognise a WSL share path — \\wsl.localhost\<distro>\rest or \\wsl$\<distro>\rest — so a
-// local chat pointed at a WSL folder still opens a terminal inside that distro (a local
-// shell can't cd into a UNC path, and the session lives in WSL, not Windows).
-function parseWslUnc(p?: string): { distro: string; linuxPath: string } | null {
-  if (!p) return null
-  const m = p.match(/^\\\\wsl(?:\.localhost|\$)\\([^\\]+)\\?(.*)$/i)
-  if (!m) return null
-  return { distro: m[1], linuxPath: '/' + m[2].replace(/\\/g, '/') }
-}
+// parseWslUnc (terminal-ops-pure.ts) recognises a WSL share path, so a local chat pointed
+// at a WSL folder still opens a terminal inside that distro (a local shell can't cd into a
+// UNC path, and the session lives in WSL, not Windows).
 
 export function createTerminal(
   id: string,
@@ -307,6 +339,14 @@ export function createTerminal(
   error?: string
 } {
   if (!isSafeId(id)) return { ok: false, error: `Invalid terminal id: ${String(id)}` }
+  // An ops chat must never fall back to an ungated CLI: a malformed launch, or one in a
+  // shell the relay cannot reach Argos from, is refused outright.
+  if (opts.ops !== undefined && !isOpsLaunch(opts.ops)) {
+    return { ok: false, error: 'Invalid ops launch for this terminal.' }
+  }
+  const opsRefusal = opsLaunchRefusal(opts, process.platform)
+  if (opsRefusal) return { ok: false, error: opsRefusal }
+  const ops = opts.ops
 
   const pendingKill = pendingKills.get(id)
   if (pendingKill) {
@@ -416,6 +456,35 @@ export function createTerminal(
         Object.assign(env, providerAccountEnv(provider, opts.accountId))
       }
 
+      if (ops) {
+        // The relay the CLI spawns inherits this env, and finds Argos through it.
+        Object.assign(env, ops.env)
+        if (provider === 'codex') {
+          // Codex reads MCP servers only from CODEX_HOME/config.toml, so the ops config
+          // goes into an overlay home beside a copy of the account's login — the same
+          // mechanism as the headless engine's MCP path. No overlay, no ops server: refuse
+          // rather than start a codex that has its shell and not the gate.
+          let toml: string
+          try {
+            toml = fs.readFileSync(ops.mcpConfigPath, 'utf8')
+          } catch {
+            return { ok: false, error: `Cannot read the ops config at ${ops.mcpConfigPath}.` }
+          }
+          const overlay = prepareCodexHomeFromToml(toml, env.CODEX_HOME || undefined, { persistAuth: true })
+          if (!overlay.codexHome) {
+            return { ok: false, error: 'Could not prepare the Codex home for this ops terminal.' }
+          }
+          env.CODEX_HOME = overlay.codexHome
+          opsCleanups.set(id, overlay.cleanup)
+        } else if (provider === 'gemini') {
+          // The system-settings layer the headless Gemini engine registers its MCP servers
+          // through (prepareGeminiSystemSettings). The terminal runs Antigravity (`agy`),
+          // which shares the Gemini CLI's settings stack; that it honours this override
+          // is not verified yet.
+          env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = ops.mcpConfigPath
+        }
+      }
+
       // Local shell → run the provider CLI directly as the pty's own process, via the
       // shell's non-interactive mode, instead of spawning an interactive shell and typing
       // the launch command into it afterwards. Non-interactive mode prints no banner (no
@@ -425,7 +494,7 @@ export function createTerminal(
       // which one the caller sent is the only thing that says which way round to try.
       const resumeId = safeResumeId(opts.resumeSessionId) || ''
       const pinId = resumeId ? '' : safeResumeId(opts.pinSessionId) || ''
-      const cliCmd = buildCliInvocation(kind, provider, resumeId || pinId, id, !resumeId && !!pinId)
+      const cliCmd = buildCliInvocation(kind, provider, resumeId || pinId, id, !resumeId && !!pinId, ops)
       if (cliCmd) {
         if (kind === 'pwsh' || kind === 'powershell') {
           shellArgs = ['-NoLogo', '-NoProfile', '-Command', cliCmd]
@@ -493,6 +562,7 @@ export function createTerminal(
       osc.forget(id)
       forgetWaiting(id)
       onExit(id, e.exitCode)
+      forgetOps(id)
       terminals.delete(id)
       shellKinds.delete(id)
       sshMeta.delete(id)
@@ -508,6 +578,7 @@ export function createTerminal(
 
     terminals.set(id, p)
     shellKinds.set(id, kind)
+    if (ops) opsLaunches.set(id, ops)
     configs.set(id, sig)
     terminalInfo.set(id, {
       id,
@@ -521,6 +592,9 @@ export function createTerminal(
 
     return { ok: true, shell: kind, cliLaunched }
   } catch (err) {
+    // The spawn failed after the Codex overlay (if any) was made, and no exit will come
+    // to remove it — do it here.
+    forgetOps(id)
     const msg = err instanceof Error ? err.message.trim() : String(err)
     const reason = msg.replace(/:$/, '') || 'the shell could not be spawned'
     return { ok: false, error: attempted ? `${reason} (${attempted})` : reason }
@@ -583,7 +657,10 @@ export function killTerminal(id: string): { ok: boolean } {
   outputBuffers.delete(id)
   configs.delete(id)
   const p = terminals.get(id)
-  if (!p) return { ok: false }
+  if (!p) {
+    forgetOps(id)
+    return { ok: false }
+  }
   try {
     p.kill()
   } catch {
@@ -598,6 +675,7 @@ export function killTerminal(id: string): { ok: boolean } {
   shellKinds.delete(id)
   sshMeta.delete(id)
   terminalInfo.delete(id)
+  forgetOps(id)
   return { ok: true }
 }
 
@@ -621,21 +699,7 @@ function safeResumeId(v: unknown): string | null {
   return typeof v === 'string' && /^[A-Za-z0-9-]{1,128}$/.test(v) ? v : null
 }
 
-// Quote a single token for inclusion in a PowerShell command line: wrap in single
-// quotes, doubling any embedded single quote (PowerShell's own escaping rule).
-function quotePwsh(token: string): string {
-  return `'${token.replace(/'/g, "''")}'`
-}
-
-// Quote a single token for inclusion in a cmd.exe command line.
-function quoteCmd(token: string): string {
-  return `"${token}"`
-}
-
-// Quote a single token for inclusion in a POSIX shell command line.
-function quoteUnix(token: string): string {
-  return `'${token.replace(/'/g, `'\\''`)}'`
-}
+// quotePwsh / quoteCmd / quoteUnix live in terminal-ops-pure.ts, beside their tests.
 
 // Build the command line to run the provider CLI directly as the pty's own process (local
 // shell kinds only — pwsh/powershell/cmd/unix). Unlike claudeLaunchCommand below, there's no
@@ -648,7 +712,8 @@ function buildCliInvocation(
   provider: 'claude' | 'codex' | 'gemini',
   sessionId: string,
   id: string,
-  createFirst = false
+  createFirst = false,
+  ops?: OpsTerminalLaunch
 ): string | null {
   if (kind !== 'pwsh' && kind !== 'powershell' && kind !== 'cmd' && kind !== 'unix') return null
 
@@ -664,22 +729,11 @@ function buildCliInvocation(
     // the next one runs, so a brand-new chat led with --resume greeted the user with a red
     // “No conversation found with session ID: …” every single time. Leading with the step
     // expected to succeed keeps the fallback for what it is — a fallback.
-    const [first, second] = createFirst
-      ? ['--session-id', '--resume']
-      : ['--resume', '--session-id']
-    if (kind === 'pwsh' || kind === 'powershell') {
-      return sessionId
-        ? `& $env:CLAUDE_BIN ${first} ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN ${second} ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN } }`
-        : `& $env:CLAUDE_BIN`
-    }
-    if (kind === 'cmd') {
-      return sessionId
-        ? `"%CLAUDE_BIN%" ${first} ${sessionId} || "%CLAUDE_BIN%" ${second} ${sessionId} || "%CLAUDE_BIN%"`
-        : `"%CLAUDE_BIN%"`
-    }
-    return sessionId
-      ? `"$CLAUDE_BIN" ${first} ${sessionId} || "$CLAUDE_BIN" ${second} ${sessionId} || "$CLAUDE_BIN"`
-      : `"$CLAUDE_BIN"`
+    //
+    // An ops launch adds its flags to every step of the chain (claudeChain), so no
+    // fallback can start a Claude that has its own shell and not the ops server.
+    const extra = ops ? quoteArgs(kind, claudeOpsFlags(ops.mcpConfigPath)) : ''
+    return claudeChain(kind, sessionId, createFirst, extra)
   }
 
   if (provider === 'gemini') {
@@ -718,43 +772,41 @@ function claudeLaunchCommand(
   kind: ShellKind,
   id: string,
   sessionId: string,
-  createFirst = false
+  createFirst = false,
+  ops?: OpsTerminalLaunch
 ): string {
   // Same ordering question as buildCliInvocation, for the same reason: whichever step
-  // goes first prints its refusal into the terminal when it is the wrong one.
-  const [first, second] = createFirst
-    ? ['--session-id', '--resume']
-    : ['--resume', '--session-id']
+  // goes first prints its refusal into the terminal when it is the wrong one. The chain
+  // itself is claudeChain's, with the ops flags (if any) on every step.
+  const extra = ops ? quoteArgs(kind, claudeOpsFlags(ops.mcpConfigPath)) : ''
   if (kind === 'pwsh' || kind === 'powershell') {
-    return sessionId
-      ? `Clear-Host; & $env:CLAUDE_BIN ${first} ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN ${second} ${sessionId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN } }\r`
-      : `Clear-Host; & $env:CLAUDE_BIN\r`
+    return `Clear-Host; ${claudeChain(kind, sessionId, createFirst, extra)}\r`
   }
   if (kind === 'cmd') {
-    return sessionId
-      ? `cls & "%CLAUDE_BIN%" ${first} ${sessionId} || "%CLAUDE_BIN%" ${second} ${sessionId} || "%CLAUDE_BIN%"\r`
-      : `cls & "%CLAUDE_BIN%"\r`
+    return `cls & ${claudeChain(kind, sessionId, createFirst, extra)}\r`
   }
+  // wsl and ssh: the pty's env stays on this side of the hop, so the ops env travels as
+  // assignments in front of every step. Unreachable in this version — createTerminal
+  // refuses ops there, because a WSL distro cannot open a Windows named pipe and the relay
+  // never runs on a server — but kept so lifting that refusal cannot drop the token.
   if (kind === 'wsl') {
-    return sessionId
-      ? `clear; claude ${first} ${sessionId} || claude ${second} ${sessionId} || claude\n`
-      : `clear; claude\n`
+    const bin = ops ? withOpsEnvPrefix('claude', ops.env) : 'claude'
+    return `clear; ${claudeChain(kind, sessionId, createFirst, extra, bin)}\n`
   }
   if (kind === 'ssh') {
     // Remote box has no CLAUDE_BIN — use the host's configured claude path (or bare
     // `claude` on its PATH), from the working directory the host was set up for.
     const meta = sshMeta.get(id)
-    const bin = meta?.claudePath || 'claude'
+    const base = meta?.claudePath || 'claude'
+    const bin = ops ? withOpsEnvPrefix(base, ops.env) : base
     const cd = meta?.remotePath ? `cd ${quoteUnix(meta.remotePath)} && ` : ''
-    if (!sessionId) return `clear; ${cd}${bin}\n`
+    const chain = claudeChain(kind, sessionId, createFirst, extra, bin)
+    if (!sessionId) return `clear; ${cd}${chain}\n`
     // Wrap the whole chain in parens so it runs as a single unit after the one-time cd,
     // rather than re-prefixing cd onto each fallback.
-    const chain = `${bin} ${first} ${sessionId} || ${bin} ${second} ${sessionId} || ${bin}`
     return cd ? `clear; ${cd}( ${chain} )\n` : `clear; ${chain}\n`
   }
-  return sessionId
-    ? `clear; "$CLAUDE_BIN" ${first} ${sessionId} || "$CLAUDE_BIN" ${second} ${sessionId} || "$CLAUDE_BIN"\n`
-    : `clear; "$CLAUDE_BIN"\n`
+  return `clear; ${claudeChain(kind, sessionId, createFirst, extra)}\n`
 }
 
 export function startCliInTerminal(
@@ -768,6 +820,12 @@ export function startCliInTerminal(
   const kind = shellKinds.get(id)
   if (!p || !kind) return { ok: false }
   if (launched.has(id)) return { ok: true }
+  const ops = opsLaunches.get(id)
+  // Codex and Gemini find their ops server through the pty's env (the CODEX_HOME overlay,
+  // the system settings path), which does not cross a wsl/ssh hop. Unreachable today —
+  // createTerminal refuses ops off a local shell, and launches local CLIs itself — but a
+  // CLI typed in over a hop without its ops config would be an ungated one, so refuse.
+  if (ops && provider !== 'claude' && (kind === 'wsl' || kind === 'ssh')) return { ok: false }
   launched.add(id)
   // The CLI's start-up paint (and the echo of the command below) belongs to the launch,
   // not to a turn — the wsl/ssh counterpart of the noteLaunch in createTerminal, and the
@@ -781,7 +839,7 @@ export function startCliInTerminal(
       // itself (see claudeLaunchCommand) — no need to watch the pty's output from here.
       const resumeId = safeResumeId(resumeSessionId) || ''
       const pinId = resumeId ? '' : safeResumeId(pinSessionId) || ''
-      p.write(claudeLaunchCommand(kind, id, resumeId || pinId, !resumeId && !!pinId))
+      p.write(claudeLaunchCommand(kind, id, resumeId || pinId, !resumeId && !!pinId, ops))
       return { ok: true }
     }
 
@@ -847,5 +905,6 @@ export function killAllTerminals(): void {
     terminals.delete(id)
     shellKinds.delete(id)
     sshMeta.delete(id)
+    forgetOps(id)
   }
 }

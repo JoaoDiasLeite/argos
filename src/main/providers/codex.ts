@@ -88,13 +88,36 @@ function prepareCodexHome(
 
   const toml = toCodexMcpToml(mcpServers)
   if (!toml.trim()) return noop
+  return prepareCodexHomeFromToml(toml, sourceCodexHome)
+}
 
+/**
+ * The second half of prepareCodexHome, for a caller that already holds the complete
+ * config.toml (the ops terminal, whose config main writes for it): an isolated temp
+ * CODEX_HOME with the source home's auth.json copied in and `toml` as its config.
+ *
+ * `persistAuth` copies auth.json back to the source home on cleanup when the CLI
+ * changed it. An interactive codex can run for hours and refresh its login meanwhile,
+ * and a refresh rotates the refresh token: dropping the overlay's copy would leave the
+ * real home holding a token the server no longer accepts.
+ */
+export function prepareCodexHomeFromToml(
+  toml: string,
+  sourceCodexHome: string | undefined,
+  opts: { persistAuth?: boolean } = {}
+): {
+  codexHome?: string
+  cleanup: () => void
+} {
+  const noop = { cleanup: () => {} }
+  const authSrc = path.join(sourceCodexHome ?? path.join(os.homedir(), '.codex'), 'auth.json')
+  let authBefore: string | null = null
   let tempHome: string
   try {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'))
-    const authSrc = path.join(sourceCodexHome ?? path.join(os.homedir(), '.codex'), 'auth.json')
     if (fs.existsSync(authSrc)) {
       fs.copyFileSync(authSrc, path.join(tempHome, 'auth.json'))
+      if (opts.persistAuth) authBefore = fs.readFileSync(authSrc, 'utf8')
     }
     fs.writeFileSync(path.join(tempHome, 'config.toml'), toml)
   } catch {
@@ -105,6 +128,17 @@ function prepareCodexHome(
   return {
     codexHome: tempHome,
     cleanup: () => {
+      if (opts.persistAuth) {
+        try {
+          const overlayAuth = path.join(tempHome, 'auth.json')
+          if (fs.existsSync(overlayAuth)) {
+            const after = fs.readFileSync(overlayAuth, 'utf8')
+            if (after !== authBefore) fs.writeFileSync(authSrc, after)
+          }
+        } catch {
+          // best-effort: the worst case is a re-login, never a broken run
+        }
+      }
       try {
         fs.rmSync(tempHome, { recursive: true, force: true })
       } catch {
