@@ -2525,6 +2525,9 @@ export default function App() {
             ui={ui}
             onSetUi={updateUi}
             onManageAccounts={() => setAccountsOpen(true)}
+            accounts={accounts}
+            defaultAccountId={defaultAccountId}
+            codexAccounts={codexAccounts}
             onBack={() => setView(preSettingsView.current)}
           />
         </Suspense>

@@ -1,97 +1,45 @@
-.perms-modal {
-  width: 560px;
-  max-width: calc(100vw - 40px);
-  max-height: calc(100vh - 60px);
-  display: flex;
-  flex-direction: column;
-}
+/* ── Permissions sheet ──
+   Three groups, each a dot + word + meaning, entries as flat rows, one input row
+   under each. The dot colour means what it means in Ops: ran, refused, asks. */
 
 .perms-body {
-  overflow-y: auto;
-  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 18px 22px 22px;
 }
-
-.perms-intro {
-  margin-bottom: 4px;
-}
-
-.perms-intro code {
+.perms-body .help code,
+.hooks-body .help code,
+.notifyhook-body .help code {
   font-family: var(--font-mono);
-  font-size: 11px;
-  background: var(--bg-3);
-  padding: 1px 5px;
-  border-radius: 4px;
+  font-size: 11.5px;
   color: var(--text-1);
 }
 
-.perms-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  background: var(--bg-1);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-}
+.perms-group { display: flex; flex-direction: column; gap: 4px; }
 
-.perms-section-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
+.perms-head { display: flex; align-items: center; gap: 8px; }
+.perms-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.perms-dot.ok { background: var(--success); }
+.perms-dot.err { background: var(--error); }
+.perms-dot.warn { background: var(--warn); }
+.perms-word { font-size: 13px; font-weight: 650; color: var(--text-0); }
+.perms-meaning { font-size: 12px; color: var(--text-2); }
 
-.perms-badge {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 2px 8px;
-  border-radius: 10px;
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-
-.perms-badge-allow {
-  background: rgba(76, 175, 110, 0.15);
-  color: var(--success);
-}
-
-.perms-badge-deny {
-  background: rgba(220, 80, 80, 0.15);
-  color: var(--error);
-}
-
-.perms-badge-ask {
-  background: rgba(204, 120, 92, 0.15);
-  color: var(--accent);
-}
-
-.perms-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 24px;
-}
-
-.perms-empty {
-  font-size: 12px;
-  color: var(--text-2);
-  font-style: italic;
-}
+.perms-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.perms-empty { padding: 5px 0 5px 18px; }
 
 .perms-entry {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  gap: 8px;
+  padding: 5px 0 5px 18px;
+  border-radius: var(--radius-surface);
 }
-
+.perms-entry:hover { background: var(--bg-2); }
 .perms-entry-text {
   flex: 1;
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-1);
@@ -100,48 +48,22 @@
   white-space: nowrap;
 }
 
+/* Icon-only remove control; also the one on a hook's row. */
 .perms-remove {
   flex-shrink: 0;
-  font-size: 16px;
-  line-height: 1;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
   color: var(--text-2);
   cursor: pointer;
-  padding: 0 2px;
-  border-radius: 4px;
 }
-.perms-remove:hover { color: var(--error); background: rgba(220, 80, 80, 0.1); }
+.perms-remove:hover { color: var(--error); background: var(--bg-3); }
+.perms-remove:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.perms-add-row {
-  display: flex;
-  gap: 8px;
-}
+.perms-add-row { display: flex; gap: 8px; padding-left: 18px; margin-top: 4px; }
+.perms-add-row .text-input { flex: 1; height: 30px; }
 
-.perms-input {
-  flex: 1;
-  background: var(--bg-2);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  color: var(--text-0);
-  outline: none;
-}
-.perms-input:focus { border-color: var(--accent); }
-.perms-input::placeholder { color: var(--text-2); font-family: var(--font-sans); }
-
-.perms-saved {
-  font-size: 12px;
-  color: var(--success);
-  margin-right: auto;
-}
-
-.perms-error {
-  font-size: 12px;
-  color: var(--error);
-  background: rgba(220, 80, 80, 0.08);
-  border: 1px solid rgba(220, 80, 80, 0.25);
-  border-radius: var(--radius-sm);
-  padding: 8px 12px;
-  line-height: 1.5;
-}
+.perms-saved { margin-right: auto; }

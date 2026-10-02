@@ -1,78 +1,31 @@
-.hooks-modal {
-  width: 600px;
-  max-width: calc(100vw - 40px);
-  max-height: calc(100vh - 60px);
-  display: flex;
-  flex-direction: column;
-}
+/* ── Hooks sheet ──
+   Groups per event under an eyebrow, entries as flat rows (matcher chip, mono command,
+   remove control), the add form as ordinary form groups. Buttons and the remove
+   control come from shared.css and PermissionsModal.css. */
 
 .hooks-body {
-  overflow-y: auto;
-  flex: 1;
-}
-
-.hooks-intro {
-  margin-bottom: 4px;
-}
-
-.hooks-intro code {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  background: var(--bg-3);
-  padding: 1px 5px;
-  border-radius: 4px;
-  color: var(--text-1);
-}
-
-.hooks-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 18px;
+  padding: 18px 22px 22px;
 }
 
-.hooks-group {
-  background: var(--bg-1);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.hooks-group-label {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--accent);
-  padding: 7px 12px 6px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(204, 120, 92, 0.06);
-}
+.hooks-group { display: flex; flex-direction: column; gap: 2px; }
+.hooks-group .eyebrow { margin-bottom: 4px; }
 
 .hooks-entry {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 12px;
-  border-bottom: 1px solid var(--border);
+  padding: 5px 0;
+  border-radius: var(--radius-surface);
 }
-.hooks-entry:last-child { border-bottom: none; }
-
-.hooks-entry-meta {
-  flex-shrink: 0;
-}
-
-.hooks-matcher {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  background: var(--bg-3);
-  color: var(--text-2);
-  padding: 1px 6px;
-  border-radius: 8px;
-  border: 1px solid var(--border-light);
-}
+.hooks-entry:hover { background: var(--bg-2); }
+.hooks-entry .chip.mono { font-family: var(--font-mono); font-weight: 400; flex-shrink: 0; }
 
 .hooks-command {
   flex: 1;
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-1);
@@ -81,92 +34,20 @@
   white-space: nowrap;
 }
 
-.hooks-empty {
-  font-size: 13px;
-  color: var(--text-2);
-  font-style: italic;
-  text-align: center;
-  padding: 8px 0;
-}
-
 .hooks-form {
-  background: var(--bg-1);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
 }
+.hooks-form-actions { display: flex; justify-content: flex-end; }
 
-.hooks-form-title {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-2);
-}
-
-.hooks-form-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.hooks-form-label {
-  font-size: 12.5px;
-  color: var(--text-1);
-  width: 90px;
-  flex-shrink: 0;
-}
-
-.hooks-optional {
-  font-size: 10px;
-  color: var(--text-2);
-  font-weight: 400;
-}
-
-.hooks-select {
-  flex: 1;
-  background: var(--bg-2);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
-  font-size: 13px;
-  color: var(--text-0);
-  outline: none;
-  cursor: pointer;
-}
-.hooks-select:focus { border-color: var(--accent); }
-
-.hooks-input {
-  flex: 1;
-  background: var(--bg-2);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  color: var(--text-0);
-  outline: none;
-}
-.hooks-input:focus { border-color: var(--accent); }
-.hooks-input::placeholder { color: var(--text-2); font-family: var(--font-sans); }
-
-.hooks-form-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.hooks-json-toggle {
-  display: flex;
-  justify-content: flex-end;
-}
-
+.hooks-json-toggle { display: flex; justify-content: flex-start; }
 .hooks-json {
-  background: var(--bg-1);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  margin: 0;
+  background: var(--bg-2);
+  border-radius: var(--radius-surface);
   padding: 12px;
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -174,14 +55,5 @@
   overflow-x: auto;
   white-space: pre;
   line-height: 1.55;
-}
-
-.hooks-error {
-  font-size: 12px;
-  color: var(--error);
-  background: rgba(220, 80, 80, 0.08);
-  border: 1px solid rgba(220, 80, 80, 0.25);
-  border-radius: var(--radius-sm);
-  padding: 8px 12px;
-  line-height: 1.5;
+  user-select: text;
 }

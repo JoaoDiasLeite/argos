@@ -1,14 +1,9 @@
 /* ═══════════════════════════════════════════════════════════════════════
    SettingsView.css — the Settings screen: nav column + scrolling pane.
 
-   Most of this file arrived from SettingsModal.css when Settings stopped
-   being a dialog. What came across is what only Settings uses: the code chip
-   and the row/card scaffolding, rewritten around a single column. What did NOT come across went to styles/shared.css
-   instead, because a second component already depended on it —
-   `.field-hint` (ten users), `.auth-option*` (OnboardingModal) and
-   `.btn-secondary.small` (NotifyHookModal). The rest of the modal's CSS
-   (the palette grid, the segmented appearance fields, the shortcut select)
-   is gone: the screen does not have those shapes any more.
+   A tab is a sequence of rows (`.srow`), not cards: a label and a one-line help on the
+   left, the control on the right, a --border between rows, an eyebrow over a group.
+   Appearance (AppearanceSettings.css) uses the same rows.
    ═══════════════════════════════════════════════════════════════════════ */
 
 .settings-screen {
@@ -21,11 +16,11 @@
 
 /* ── Nav column ── */
 .settings-nav {
-  width: 208px;
+  width: 220px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   padding: 12px 10px;
   background: var(--bg-1);
   border-right: 1px solid var(--border);
@@ -43,9 +38,9 @@
 .settings-back {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   padding: 6px 10px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-surface);
   color: var(--text-2);
   font-size: 12px;
   cursor: pointer;
@@ -54,43 +49,30 @@
 .settings-back:hover { background: var(--bg-hover); color: var(--text-0); }
 
 .settings-nav-title {
-  padding: 10px 10px 8px;
-  font-size: 17px;
-  font-weight: 600;
+  padding: 8px 10px 14px;
+  font-size: 18px;
+  font-weight: 650;
   color: var(--text-0);
 }
 
-.settings-nav-items {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
+.settings-nav-items { display: flex; flex-direction: column; gap: 2px; }
 
 .settings-nav-item {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-surface);
   color: var(--text-1);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  transition: background 0.14s, color 0.14s;
 }
-.settings-nav-item svg { flex-shrink: 0; color: var(--text-2); }
+.settings-nav-item svg { flex-shrink: 0; }
 .settings-nav-item:hover { background: var(--bg-hover); color: var(--text-0); }
-.settings-nav-item.active {
-  background: var(--accent-dim);
-  color: var(--accent);
-  font-weight: 500;
-}
-.settings-nav-item.active svg { color: var(--accent); }
+.settings-nav-item.active { background: var(--bg-2); color: var(--text-0); font-weight: 600; }
 
-/* ── Content pane ──
-   One column, capped and centred: the alternative (full-bleed rows) puts a 13px label
-   and its control a screenwidth apart on a maximized window, which is the "form dump"
-   this screen exists not to be. */
+/* ── Content pane ── */
 .settings-pane {
   flex: 1;
   min-width: 0;
@@ -100,92 +82,88 @@
 .settings-pane > * { -webkit-app-region: no-drag; }
 
 .settings-column {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 26px 32px 60px;
+  max-width: 760px;
+  padding: 28px 48px 60px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
 }
 
 .settings-title {
+  margin-bottom: 10px;
   font-size: 22px;
-  font-weight: 600;
-  color: var(--text-0);
+  font-weight: 650;
   letter-spacing: -0.01em;
-}
-
-/* Section heading inside a card or an appearance group. */
-.settings-h {
-  font-size: 13.5px;
-  font-weight: 600;
   color: var(--text-0);
 }
 
-/* ── Cards and rows ── */
-.settings-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 16px 18px;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-}
+/* One line of orientation under a title, where the tab covers less than its name suggests. */
+.settings-lead { margin: -4px 0 6px; max-width: 62ch; }
 
-/* Consecutive rows in one card are separated by a rule rather than a gap, so a card of
-   toggles reads as one group instead of four floating lines. */
-.settings-row {
+.settings-eyebrow { margin-top: 18px; }
+
+/* ── Rows ──
+   Every row's control ends at the same right edge. */
+.srow {
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 10px 0;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
 }
-.settings-row + .settings-row {
-  border-top: 1px solid var(--border);
-}
-.settings-card > .settings-row:first-child { padding-top: 2px; }
-.settings-card > .settings-row:last-child { padding-bottom: 2px; }
+.srow:last-child { border-bottom: none; }
 
-.settings-row-text {
+.srow-text {
   display: flex;
   flex-direction: column;
   gap: 2px;
   flex: 1;
   min-width: 0;
 }
-.settings-row-label { font-size: 13px; color: var(--text-0); }
-.settings-row-hint { font-size: 11.5px; color: var(--text-2); line-height: 1.45; }
+.srow-label { font-size: 13px; color: var(--text-0); }
 
-/* Every row's control ends at the same right edge. */
-.settings-row > .toggle-switch,
-.settings-row > .seg-control,
-.settings-row > .settings-select,
-.settings-row > .settings-actions,
-.settings-row > button {
-  flex-shrink: 0;
-  margin-left: auto;
-}
+.srow > .toggle-switch,
+.srow > .seg-control,
+.srow > .btn-ghost,
+.srow > .btn-primary,
+.srow > .text-input,
+.srow > .model-picker { flex-shrink: 0; }
 
-.settings-select { width: 190px; font-size: 12.5px; padding: 7px 10px; }
-
-.settings-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
+.settings-select { width: 220px; }
+.settings-date { width: 160px; }
 
 .settings-error { color: var(--error); }
 
-.settings-code {
+/* A path is something that identifies, so it is mono, and selectable. */
+.settings-path {
   font-family: var(--font-mono);
-  font-size: 11px;
-  background: var(--bg-3);
-  padding: 1px 5px;
-  border-radius: 4px;
+  font-size: 12px;
   color: var(--text-1);
+  word-break: break-all;
+  user-select: text;
 }
+
+/* The sentence under "Verify a day": green when the chain is intact, red when it is
+   broken, muted when there was nothing to check. */
+.settings-result { margin-top: 4px; user-select: text; }
+.settings-result.ok { color: var(--success); }
+.settings-result.err { color: var(--error); }
+
+/* The background-model picker is a select in this screen: a 4 px surface, the value, a
+   chevron at the right. Its menu keeps ModelPicker's own look. */
+.srow .model-picker { width: 260px; }
+.srow .model-picker-btn {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px 0 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  font-size: 13px;
+  font-weight: 400;
+}
+.srow .model-picker-btn:hover { background: var(--bg-1); border-color: var(--border-light); }
+.srow .model-picker-btn svg { margin-left: auto; color: var(--text-2); }
+.srow .model-picker-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Narrow window ──
    The nav gives up its column and becomes a scrolling strip along the top. Nothing
@@ -212,37 +190,10 @@
 }
 
 @media (max-width: 620px) {
-  .settings-row { flex-direction: column; align-items: stretch; gap: 8px; }
-  .settings-row > .toggle-switch,
-  .settings-row > .seg-control,
-  .settings-row > .settings-select,
-  .settings-row > .settings-actions,
-  .settings-row > button {
-    margin-left: 0;
-    align-self: flex-start;
-  }
-  .settings-select { width: 100%; }
+  .srow { flex-direction: column; align-items: stretch; gap: 8px; }
+  .srow > .toggle-switch,
+  .srow > .seg-control,
+  .srow > .btn-ghost,
+  .srow > .btn-primary { align-self: flex-start; }
+  .settings-select, .settings-date, .srow .model-picker { width: 100%; }
 }
-
-/* One line of orientation under a section title, where the section covers less than
-   its name suggests (Connection is Anthropic-only; the other CLIs sign in elsewhere). */
-.settings-lead {
-  margin: -8px 0 18px;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--text-2);
-  max-width: 62ch;
-}
-
-
-/* ── Ops audit ── */
-.settings-ops-path {
-  display: block;
-  margin: 4px 0;
-  word-break: break-all;
-  user-select: text;
-}
-.settings-ops-verify { align-items: center; }
-.settings-ops-date { width: 160px; font-size: 12.5px; padding: 7px 10px; }
-.settings-ops-result { margin-top: 10px; user-select: text; }
-.settings-ops-broken { color: var(--warn); }

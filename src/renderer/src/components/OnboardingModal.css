@@ -8,7 +8,7 @@
 
 .ob-welcome { align-items: center; text-align: center; gap: 16px; padding: 40px 32px 32px; }
 .ob-logo {
-  width: 84px; height: 84px; border-radius: 22px;
+  width: 84px; height: 84px; border-radius: var(--radius-surface);
   display: flex; align-items: center; justify-content: center;
   background: var(--accent-dim);
 }
@@ -18,9 +18,9 @@
 
 .ob-detect {
   display: flex; align-items: center; gap: 8px;
-  padding: 9px 12px; border-radius: var(--radius-sm); font-size: 13px;
+  padding: 9px 12px; border-radius: var(--radius-surface); font-size: 13px;
 }
-.ob-detect.ok { background: rgba(76,175,110,0.12); color: var(--success); }
+.ob-detect.ok { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); }
 .ob-detect.warn { background: var(--accent-dim); color: var(--accent); }
 
 .ob-key { display: flex; gap: 8px; }

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NotifyHookInfo } from '../types'
-import { useModalA11y } from '../hooks/useModalA11y'
+import Sheet from './Sheet'
 import './NotifyHookModal.css'
 
 interface Props {
@@ -24,8 +24,6 @@ export default function NotifyHookModal({ onClose }: Props) {
   const [showWsl, setShowWsl] = useState(false)
   const [installing, setInstalling] = useState(false)
   const [installError, setInstallError] = useState<string | null>(null)
-  const dialogRef = useRef<HTMLDivElement>(null)
-  useModalA11y(dialogRef, onClose)
 
   useEffect(() => {
     window.electronAPI.notifyHookInfo().then(setInfo)
@@ -57,110 +55,93 @@ export default function NotifyHookModal({ onClose }: Props) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="modal notifyhook-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="notifyhook-modal-title"
-        tabIndex={-1}
-        ref={dialogRef}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h3 id="notifyhook-modal-title">Session notifications</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+    <Sheet
+      title="Session notifications"
+      width={520}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn-ghost" onClick={onClose}>
+            Done
           </button>
-        </div>
+          <span className="help">Esc closes</span>
+        </>
+      }
+    >
+      <div className="notifyhook-body">
+        <p className="help notifyhook-intro">
+          Claude Code fires a <code>Notification</code> hook whenever a session needs you, waiting on a
+          permission or idle after a question. Wired to Argos, every session on this machine notifies as{' '}
+          <strong>[project] conversation</strong>, whether it started here, in a console or in an editor.
+          Clicking the notification opens that conversation.
+        </p>
 
-        <div className="modal-body notifyhook-body">
-          <p className="field-hint notifyhook-intro">
-            Claude Code fires a <code>Notification</code> hook whenever a session needs you —
-            waiting on a permission, or idle after a question. Wired to Argos, every session on
-            this machine notifies as <strong>[project] conversation</strong>, whether it started
-            here, in a console, or in an editor. Clicking the notification opens that
-            conversation.
-          </p>
+        {info && (
+          <>
+            <div className="notifyhook-status">
+              <i className={`notifyhook-dot ${info.installed ? 'ok' : ''}`} />
+              <span className="notifyhook-status-text">
+                {info.installed ? 'The hook is wired up in your settings.' : 'Not wired up yet.'}
+              </span>
+              <button type="button" className="btn-ghost small" onClick={install} disabled={installing}>
+                {info.installed
+                  ? installing
+                    ? 'Re-wiring'
+                    : 'Re-wire'
+                  : installing
+                    ? 'Enabling'
+                    : 'Enable notifications'}
+              </button>
+            </div>
 
-          {info && (
-            <>
-              <div className={`notifyhook-status ${info.installed ? 'on' : ''}`}>
-                <span>
-                  {info.installed
-                    ? 'The hook is wired up in your settings.'
-                    : 'Not wired up yet.'}
-                </span>
-                {info.installed ? (
-                  <button className="btn-text" onClick={install} disabled={installing}>
-                    {installing ? 'Re-wiring…' : 'Re-wire'}
-                  </button>
-                ) : (
-                  <button className="btn-primary small" onClick={install} disabled={installing}>
-                    {installing ? 'Enabling…' : 'Enable notifications'}
-                  </button>
-                )}
+            {installError && (
+              <div className="block err" role="alert">
+                {installError}. You can still paste the block below by hand.
               </div>
+            )}
 
-              {installError && (
-                <div className="notifyhook-error" role="alert">
-                  {installError} — you can still paste the block below by hand.
-                </div>
-              )}
+            <div className="notifyhook-step">
+              <div className="notifyhook-step-head">
+                <span className="notifyhook-step-title">
+                  Or add to <code>{info.settingsPath}</code> yourself
+                </span>
+                <button type="button" className="btn-ghost small" onClick={() => copy('block', info.block)}>
+                  {copied === 'block' ? 'Copied' : 'Copy block'}
+                </button>
+              </div>
+              <pre className="notifyhook-block">{info.block}</pre>
+              <p className="help">
+                Merge it into the <code>hooks</code> object you already have.
+              </p>
+            </div>
 
+            {info.wslCommand && (
               <div className="notifyhook-step">
                 <div className="notifyhook-step-head">
-                  <span className="notifyhook-step-title">
-                    Or add to <code>{info.settingsPath}</code> yourself
-                  </span>
-                  <button className="btn-secondary small" onClick={() => copy('block', info.block)}>
-                    {copied === 'block' ? 'Copied' : 'Copy block'}
+                  <button type="button" className="btn-text" onClick={() => setShowWsl((v) => !v)}>
+                    {showWsl ? 'Hide the WSL variant' : 'Show the WSL variant'}
                   </button>
-                </div>
-                <pre className="notifyhook-block">{info.block}</pre>
-                <p className="field-hint">
-                  Merge it into the <code>hooks</code> object you already have.
-                </p>
-              </div>
-
-              {info.wslCommand && (
-                <div className="notifyhook-step">
-                  <div className="notifyhook-step-head">
-                    <button className="btn-text" onClick={() => setShowWsl((v) => !v)}>
-                      {showWsl ? 'Hide' : 'Show'} the WSL variant
-                    </button>
-                    {showWsl && (
-                      <button
-                        className="btn-secondary small"
-                        onClick={() => copy('wsl', info.wslBlock ?? '')}
-                      >
-                        {copied === 'wsl' ? 'Copied' : 'Copy block'}
-                      </button>
-                    )}
-                  </div>
                   {showWsl && (
-                    <>
-                      <pre className="notifyhook-block">{info.wslBlock}</pre>
-                      <p className="field-hint">
-                        A session running inside a distro has its own{' '}
-                        <code>~/.claude/settings.json</code> and reaches this executable through{' '}
-                        <code>/mnt</code>. Its transcript is not readable from the Windows side,
-                        so those notifications name the project rather than the conversation.
-                      </p>
-                    </>
+                    <button type="button" className="btn-ghost small" onClick={() => copy('wsl', info.wslBlock ?? '')}>
+                      {copied === 'wsl' ? 'Copied' : 'Copy block'}
+                    </button>
                   )}
                 </div>
-              )}
-            </>
-          )}
-        </div>
-
-        <div className="modal-footer">
-          <button className="btn-primary" onClick={onClose}>Done</button>
-        </div>
+                {showWsl && (
+                  <>
+                    <pre className="notifyhook-block">{info.wslBlock}</pre>
+                    <p className="help">
+                      A session running inside a distro has its own <code>~/.claude/settings.json</code> and
+                      reaches this executable through <code>/mnt</code>. Its transcript is not readable from
+                      the Windows side, so those notifications name the project rather than the conversation.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+          </>
+        )}
       </div>
-    </div>
+    </Sheet>
   )
 }

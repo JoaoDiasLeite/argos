@@ -29,23 +29,6 @@
   color: var(--text-0);
 }
 
-.cl-tag {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 2px 7px;
-  border-radius: 999px;
-}
-.cl-tag-new {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--accent);
-}
-.cl-tag-latest {
-  background: color-mix(in srgb, var(--success) 16%, transparent);
-  color: var(--success);
-}
-
 .cl-date {
   margin-left: auto;
   font-size: 11px;

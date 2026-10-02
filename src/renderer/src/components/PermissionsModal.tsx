@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ClaudePermissions } from '../types'
-import { useModalA11y } from '../hooks/useModalA11y'
+import Sheet from './Sheet'
 import './PermissionsModal.css'
 
 interface Props {
@@ -9,10 +9,12 @@ interface Props {
 
 type ListKey = keyof ClaudePermissions
 
-const LISTS: { key: ListKey; label: string; hint: string }[] = [
-  { key: 'allow', label: 'Allow', hint: 'Tools always approved without prompting (e.g. Bash(npm test)).' },
-  { key: 'deny', label: 'Deny', hint: 'Tools always blocked.' },
-  { key: 'ask', label: 'Ask', hint: 'Tools that always prompt for approval.' }
+// The dot colour is the rule's meaning, as everywhere else: ran (success), refused
+// (error), asks (warn).
+const LISTS: { key: ListKey; label: string; meaning: string; example: string; dot: string }[] = [
+  { key: 'allow', label: 'Allow', meaning: 'runs without asking', example: 'e.g. Bash(git *)', dot: 'ok' },
+  { key: 'deny', label: 'Deny', meaning: 'refused, with the rule named', example: 'e.g. Bash(rm *)', dot: 'err' },
+  { key: 'ask', label: 'Ask', meaning: 'will ask you first', example: 'e.g. Edit(src/**)', dot: 'warn' }
 ]
 
 export default function PermissionsModal({ onClose }: Props) {
@@ -20,8 +22,6 @@ export default function PermissionsModal({ onClose }: Props) {
   const [inputs, setInputs] = useState<Record<ListKey, string>>({ allow: '', deny: '', ask: '' })
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const dialogRef = useRef<HTMLDivElement>(null)
-  useModalA11y(dialogRef, onClose)
 
   useEffect(() => {
     window.electronAPI.getClaudePermissions().then(setPerms)
@@ -52,89 +52,71 @@ export default function PermissionsModal({ onClose }: Props) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="modal perms-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="perms-modal-title"
-        tabIndex={-1}
-        ref={dialogRef}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h3 id="perms-modal-title">Permissions</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+    <Sheet
+      title="Permissions"
+      width={520}
+      onClose={onClose}
+      footer={
+        <>
+          <span className="help perms-saved">{saved ? 'Saved' : ''}</span>
+          <button type="button" className="btn-ghost" onClick={onClose}>
+            Done
           </button>
-        </div>
+          <span className="help">Esc closes</span>
+        </>
+      }
+    >
+      <div className="perms-body">
+        <p className="help">
+          Rules Claude Code applies before asking you. Saved to <code>~/.claude/settings.json</code> as you
+          edit.
+        </p>
 
-        <div className="modal-body perms-body">
-          <p className="field-hint perms-intro">
-            These entries are written to <code>~/.claude/settings.json</code> and control which tools
-            Claude Code may use without asking.
-          </p>
+        {saveError && (
+          <div className="block err perms-error" role="alert">
+            {saveError}
+          </div>
+        )}
 
-          {saveError && (
-            <div className="perms-error" role="alert">
-              {saveError}
+        {LISTS.map(({ key, label, meaning, example, dot }) => (
+          <div key={key} className="perms-group">
+            <div className="perms-head">
+              <i className={`perms-dot ${dot}`} />
+              <span className="perms-word">{label}</span>
+              <span className="perms-meaning">{meaning}</span>
             </div>
-          )}
 
-          {LISTS.map(({ key, label, hint }) => (
-            <div key={key} className="perms-section">
-              <div className="perms-section-header">
-                <span className={`perms-badge perms-badge-${key}`}>{label}</span>
-                <span className="field-hint">{hint}</span>
-              </div>
+            <ul className="perms-list">
+              {perms[key].length === 0 && <li className="help perms-empty">No entries</li>}
+              {perms[key].map((entry) => (
+                <li key={entry} className="perms-entry">
+                  <code className="perms-entry-text">{entry}</code>
+                  <button type="button" className="perms-remove" onClick={() => remove(key, entry)} aria-label={`Remove ${entry}`}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6L6 18" />
+                    </svg>
+                  </button>
+                </li>
+              ))}
+            </ul>
 
-              <ul className="perms-list">
-                {perms[key].length === 0 && (
-                  <li className="perms-empty">No entries</li>
-                )}
-                {perms[key].map((entry) => (
-                  <li key={entry} className="perms-entry">
-                    <code className="perms-entry-text">{entry}</code>
-                    <button
-                      className="perms-remove"
-                      onClick={() => remove(key, entry)}
-                      aria-label={`Remove ${entry}`}
-                    >
-                      ×
-                    </button>
-                  </li>
-                ))}
-              </ul>
-
-              <div className="perms-add-row">
-                <input
-                  className="perms-input"
-                  value={inputs[key]}
-                  onChange={(e) => setInputs((prev) => ({ ...prev, [key]: e.target.value }))}
-                  onKeyDown={(e) => e.key === 'Enter' && add(key)}
-                  placeholder={`e.g. Bash(npm *)`}
-                  spellCheck={false}
-                  aria-label={`Add ${label} entry`}
-                />
-                <button
-                  className="btn-primary small"
-                  onClick={() => add(key)}
-                  disabled={!inputs[key].trim()}
-                >
-                  Add
-                </button>
-              </div>
+            <div className="perms-add-row">
+              <input
+                className="text-input mono"
+                value={inputs[key]}
+                onChange={(e) => setInputs((prev) => ({ ...prev, [key]: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && add(key)}
+                placeholder={example}
+                spellCheck={false}
+                aria-label={`Add ${label} entry`}
+              />
+              <button type="button" className="btn-ghost small" onClick={() => add(key)} disabled={!inputs[key].trim()}>
+                Add
+              </button>
             </div>
-          ))}
-        </div>
-
-        <div className="modal-footer">
-          {saved && <span className="perms-saved">✓ Saved</span>}
-          <button className="btn-primary" onClick={onClose}>Done</button>
-        </div>
+          </div>
+        ))}
       </div>
-    </div>
+    </Sheet>
   )
 }

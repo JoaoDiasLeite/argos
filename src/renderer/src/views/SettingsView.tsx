@@ -4,15 +4,24 @@
 // two independently themed sides, three fonts and two sizes do not fit in a 420px dialog
 // that also has to hold auth, system integration and the updater. So it owns the content
 // area now — its own nav column where the chat Sidebar would be, with the icon rail left
-// where it is — and Permissions / Hooks / Session notifications stay sub-modals opened
-// from within it, exactly as before.
+// where it is. Permissions / Hooks / Session notifications open as sheets from within it.
 //
 // Everything here reads a prop and writes through a callback, with two deliberate
 // exceptions kept from the modal: `system` and `updater` are fetched here rather than
 // threaded through App.tsx, because App has never held them and nothing else needs them.
 
 import { useEffect, useRef, useState } from 'react'
-import { ModelInfo, SystemPrefs, UiPrefs, UiPrefsPatch, UpdaterState } from '../types'
+import {
+  CCAccountStatus,
+  ClaudeHooks,
+  ClaudePermissions,
+  ModelInfo,
+  ProviderAccountStatus,
+  SystemPrefs,
+  UiPrefs,
+  UiPrefsPatch,
+  UpdaterState
+} from '../types'
 import ModelPicker from '../components/ModelPicker'
 import PermissionsModal from '../components/PermissionsModal'
 import HooksModal from '../components/HooksModal'
@@ -30,6 +39,10 @@ interface Props {
   ui: UiPrefs | null
   onSetUi: (patch: UiPrefsPatch) => void
   onManageAccounts: () => void
+  /** For the Accounts row's current value; App.tsx already holds them. */
+  accounts?: CCAccountStatus[]
+  defaultAccountId?: string
+  codexAccounts?: ProviderAccountStatus[]
   /** Back to whatever view this screen displaced — App.tsx remembers which. */
   onBack: () => void
 }
@@ -117,6 +130,9 @@ export default function SettingsView({
   ui,
   onSetUi,
   onManageAccounts,
+  accounts,
+  defaultAccountId,
+  codexAccounts,
   onBack
 }: Props) {
   const [section, setSection] = useState<SectionId>('appearance')
@@ -255,13 +271,13 @@ export default function SettingsView({
       case 'disabled':
         return 'Updates are managed manually in dev builds.'
       case 'checking':
-        return 'Checking…'
+        return 'Checking for updates.'
       case 'available':
-        return `Downloading v${updater.version ?? ''}…`
+        return `Downloading v${updater.version ?? ''}.`
       case 'not-available':
         return 'Up to date.'
       case 'downloaded':
-        return `Update v${updater.version ?? ''} downloaded — restarts to apply.`
+        return `Update v${updater.version ?? ''} downloaded. Restart to apply.`
       case 'error':
         return updater.error || 'Update check failed.'
       default:
@@ -269,16 +285,58 @@ export default function SettingsView({
     }
   }
 
-  const toggleRow = (
-    label: string,
-    hint: string,
-    checked: boolean,
-    onChange: (next: boolean) => void
-  ) => (
-    <div className="settings-row">
-      <div className="settings-row-text">
-        <span className="settings-row-label">{label}</span>
-        <span className="settings-row-hint">{hint}</span>
+  // ── Claude Code rows: the current value, read from the same files the sheets edit ──
+  const [permCounts, setPermCounts] = useState<ClaudePermissions | null>(null)
+  const [hooks, setHooks] = useState<ClaudeHooks | null>(null)
+  const [notifyInstalled, setNotifyInstalled] = useState<boolean | null>(null)
+
+  const loadClaudeCode = () => {
+    window.electronAPI.getClaudePermissions().then(setPermCounts).catch(() => {})
+    window.electronAPI.getClaudeHooks().then(setHooks).catch(() => {})
+    window.electronAPI
+      .notifyHookInfo()
+      .then((i) => setNotifyInstalled(i.installed))
+      .catch(() => {})
+  }
+  useEffect(loadClaudeCode, [])
+
+  // The sheets write as you edit, so the rows are re-read when one closes.
+  const closeSheet = (close: () => void) => () => {
+    close()
+    loadClaudeCode()
+  }
+
+  const permissionsValue = permCounts
+    ? `${permCounts.allow.length} allow · ${permCounts.deny.length} deny · ${permCounts.ask.length} ask`
+    : undefined
+  const hooksValue = (() => {
+    if (!hooks) return undefined
+    const events = Object.keys(hooks).filter((k) => hooks[k]?.length > 0)
+    if (events.length === 0) return 'No hooks'
+    const n = events.reduce((sum, k) => sum + hooks[k].reduce((s, e) => s + (e.hooks?.length ?? 0), 0), 0)
+    return `${n} ${n === 1 ? 'hook' : 'hooks'} on ${events.length} ${events.length === 1 ? 'event' : 'events'}`
+  })()
+  const notifyValue =
+    notifyInstalled === null
+      ? undefined
+      : notifyInstalled
+        ? 'Wired up · toast when a chat needs you'
+        : 'Not wired up'
+
+  // ── Accounts row ──
+  const accountsValue = (() => {
+    if (!accounts) return undefined
+    const n = accounts.length + (codexAccounts?.length ?? 0)
+    const def = accounts.find((a) => a.id === defaultAccountId)?.name
+    return `${n} ${n === 1 ? 'account' : 'accounts'}${def ? ` · default: ${def}` : ''}`
+  })()
+
+  // ── Row builders ──
+  const toggleRow = (label: string, hint: string, checked: boolean, onChange: (next: boolean) => void) => (
+    <div className="srow">
+      <div className="srow-text">
+        <span className="srow-label">{label}</span>
+        <span className="help">{hint}</span>
       </div>
       <label className="toggle-switch">
         <input
@@ -295,13 +353,27 @@ export default function SettingsView({
     </div>
   )
 
+  const editRow = (label: string, value: string | undefined, onClick: () => void, action = 'Edit') => (
+    <div className="srow">
+      <div className="srow-text">
+        <span className="srow-label">{label}</span>
+        {value && <span className="help">{value}</span>}
+      </div>
+      <button type="button" className="btn-ghost" onClick={onClick} aria-label={`${action} ${label.toLowerCase()}`}>
+        {action}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+      </button>
+    </div>
+  )
+
   return (
     <div className="settings-screen">
       <nav className="settings-nav" aria-label="Settings sections">
-        <button className="settings-back" onClick={onBack}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <line x1="19" y1="12" x2="5" y2="12" />
-            <polyline points="12 19 5 12 12 5" />
+        <button type="button" className="settings-back" onClick={onBack}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M15 6l-6 6 6 6" />
           </svg>
           Back to app
         </button>
@@ -311,12 +383,13 @@ export default function SettingsView({
         <div className="settings-nav-items">
           {SECTIONS.map((s) => (
             <button
+              type="button"
               key={s.id}
               className={`settings-nav-item ${section === s.id ? 'active' : ''}`}
               onClick={() => setSection(s.id)}
               aria-current={section === s.id}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 {s.icon}
               </svg>
               {s.label}
@@ -330,11 +403,7 @@ export default function SettingsView({
           {section === 'appearance' && (
             <>
               <h1 className="settings-title">Appearance</h1>
-              {ui ? (
-                <AppearanceSettings ui={ui} onSetUi={onSetUi} />
-              ) : (
-                <p className="field-hint">Loading preferences…</p>
-              )}
+              {ui ? <AppearanceSettings ui={ui} onSetUi={onSetUi} /> : <p className="help">Loading preferences</p>}
             </>
           )}
 
@@ -342,130 +411,81 @@ export default function SettingsView({
             <>
               <h1 className="settings-title">General</h1>
 
-              <section className="settings-card">
-                <div className="settings-row">
-                  <div className="settings-row-text">
-                    <span className="settings-row-label">
-                      Model for background tasks (standup, sprint backfill, planner assist)
-                    </span>
-                    <span className="settings-row-hint">
-                      What Argos runs headless work on. A terminal picks its own model with the
-                      CLI&rsquo;s /model.
-                    </span>
-                  </div>
-                  <ModelPicker models={models} value={defaultModel} onChange={onSetDefaultModel} />
+              <div className="srow">
+                <div className="srow-text">
+                  <span className="srow-label">Model for background tasks</span>
+                  <span className="help">Runs headless work: standup, sprint backfill and planner assist.</span>
                 </div>
+                <ModelPicker models={models} value={defaultModel} onChange={onSetDefaultModel} />
+              </div>
 
-                {ui && (
-                  <>
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <span className="settings-row-label">Density</span>
-                        <span className="settings-row-hint">
-                          How much breathing room lists and rows get.
-                        </span>
-                      </div>
-                      <div className="seg-control">
-                        <button
-                          className={ui.density === 'comfortable' ? 'on' : ''}
-                          onClick={() => onSetUi({ density: 'comfortable' })}
-                        >
-                          Comfortable
-                        </button>
-                        <button
-                          className={ui.density === 'compact' ? 'on' : ''}
-                          onClick={() => onSetUi({ density: 'compact' })}
-                        >
-                          Compact
-                        </button>
-                      </div>
+              {ui && (
+                <>
+                  <div className="srow">
+                    <div className="srow-text">
+                      <span className="srow-label">Density</span>
+                      <span className="help">How much breathing room lists and rows get.</span>
                     </div>
-
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <span className="settings-row-label">Show the weekly planner</span>
-                        <span className="settings-row-hint">
-                          Adds Week beside Sprint in the Planner. Off, the Planner opens on the
-                          sprint board.
-                        </span>
-                      </div>
-                      <div className="seg-control">
-                        <button
-                          className={!ui.showWeekPlanner ? 'on' : ''}
-                          onClick={() => onSetUi({ showWeekPlanner: false })}
-                        >
-                          Off
-                        </button>
-                        <button
-                          className={ui.showWeekPlanner ? 'on' : ''}
-                          onClick={() => onSetUi({ showWeekPlanner: true })}
-                        >
-                          On
-                        </button>
-                      </div>
+                    <div className="seg-control" role="group" aria-label="Density">
+                      <button type="button" className={ui.density === 'comfortable' ? 'on' : ''} onClick={() => onSetUi({ density: 'comfortable' })}>
+                        Comfortable
+                      </button>
+                      <button type="button" className={ui.density === 'compact' ? 'on' : ''} onClick={() => onSetUi({ density: 'compact' })}>
+                        Compact
+                      </button>
                     </div>
-                  </>
-                )}
+                  </div>
 
-                {archivedChats > 0 && (
-                  <div className="settings-row">
-                    <div className="settings-row-text">
-                      <span className="settings-row-label">Chats from before 2.0</span>
-                      <span className="settings-row-hint">
-                        {archivedChats === 1 ? '1 chat' : `${archivedChats} chats`} saved as Markdown when Argos
-                        became terminal-only.
+                  <div className="srow">
+                    <div className="srow-text">
+                      <span className="srow-label">Weekly planner</span>
+                      <span className="help">Shows the Week mode next to Sprint.</span>
+                    </div>
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={ui.showWeekPlanner}
+                        onChange={(e) => onSetUi({ showWeekPlanner: e.target.checked })}
+                        aria-label="Weekly planner"
+                      />
+                      <span className="toggle-track">
+                        <span className="toggle-thumb" />
                       </span>
-                    </div>
-                    <button className="btn-ghost small" onClick={() => void window.electronAPI.openChatExport()}>
-                      Open folder
-                    </button>
+                    </label>
                   </div>
-                )}
-              </section>
+                </>
+              )}
 
-              <section className="settings-card">
-                <h3 className="settings-h">Claude Code settings</h3>
-                <p className="field-hint">
-                  Edit allow / deny / ask lists and lifecycle hooks in{' '}
-                  <code className="settings-code">~/.claude/settings.json</code>.
-                </p>
-                <div className="settings-actions">
-                  <button className="btn-secondary small" onClick={() => setShowPerms(true)}>
-                    Permissions…
-                  </button>
-                  <button className="btn-secondary small" onClick={() => setShowHooks(true)}>
-                    Hooks…
-                  </button>
-                  <button className="btn-secondary small" onClick={() => setShowNotifyHook(true)}>
-                    Session notifications…
+              {archivedChats > 0 && (
+                <div className="srow">
+                  <div className="srow-text">
+                    <span className="srow-label">Chats from before 2.0</span>
+                    <span className="help">
+                      {archivedChats === 1 ? '1 chat' : `${archivedChats} chats`} saved as Markdown when Argos became
+                      terminal-only.
+                    </span>
+                  </div>
+                  <button type="button" className="btn-ghost" onClick={() => void window.electronAPI.openChatExport()}>
+                    Open folder
                   </button>
                 </div>
-              </section>
+              )}
+
+              <div className="eyebrow settings-eyebrow">Claude Code</div>
+              {editRow('Permissions', permissionsValue, () => setShowPerms(true))}
+              {editRow('Hooks', hooksValue, () => setShowHooks(true))}
+              {editRow('Session notifications', notifyValue, () => setShowNotifyHook(true))}
             </>
           )}
 
           {section === 'connection' && (
             <>
               <h1 className="settings-title">Connection</h1>
-              <p className="settings-lead">
-                Which logins this app runs chats under. Claude, Codex and Antigravity each sign
-                in through their own CLI — add them under Accounts.
+              <p className="help settings-lead">
+                Which logins this app runs chats under. Claude, Codex and Antigravity each sign in through their own
+                CLI; add them under Accounts.
               </p>
-
-              <section className="settings-card">
-                <div className="settings-row">
-                  <div className="settings-row-text">
-                    <span className="settings-row-label">Accounts</span>
-                    <span className="settings-row-hint">
-                      Add Claude, Codex and Antigravity logins, and switch which one a chat runs
-                      under.
-                    </span>
-                  </div>
-                  <button className="btn-primary small" onClick={onManageAccounts}>
-                    Manage accounts…
-                  </button>
-                </div>
-              </section>
+              {editRow('Accounts', accountsValue, onManageAccounts, 'Manage')}
             </>
           )}
 
@@ -474,68 +494,61 @@ export default function SettingsView({
               <h1 className="settings-title">System</h1>
               {system ? (
                 <>
-                  <section className="settings-card">
-                    {toggleRow(
-                      isWindows ? 'Start with Windows' : 'Start at login',
-                      'Launch Argos when you sign in.',
-                      system.openAtLogin,
-                      (openAtLogin) => updateSystem({ openAtLogin })
+                  {toggleRow(
+                    isWindows ? 'Start with Windows' : 'Start at login',
+                    'Launch Argos when you sign in.',
+                    system.openAtLogin,
+                    (openAtLogin) => updateSystem({ openAtLogin })
+                  )}
+                  {toggleRow(
+                    'Start minimized to tray',
+                    'Come up in the notification area instead of a window.',
+                    system.startMinimized,
+                    (startMinimized) => updateSystem({ startMinimized })
+                  )}
+                  {toggleRow(
+                    'Close button hides to tray',
+                    'Keeps running chats alive instead of quitting.',
+                    system.closeToTray,
+                    (closeToTray) => updateSystem({ closeToTray })
+                  )}
+                  {isWindows &&
+                    toggleRow(
+                      'Show ‘Open with Argos’ in the Explorer folder menu',
+                      'Adds an entry to the right-click menu for folders.',
+                      system.explorerContextMenu,
+                      (explorerContextMenu) => updateSystem({ explorerContextMenu })
                     )}
-                    {toggleRow(
-                      'Start minimized to tray',
-                      'Come up in the notification area instead of a window.',
-                      system.startMinimized,
-                      (startMinimized) => updateSystem({ startMinimized })
-                    )}
-                    {toggleRow(
-                      'Close button hides to tray',
-                      'Keeps running chats alive instead of quitting.',
-                      system.closeToTray,
-                      (closeToTray) => updateSystem({ closeToTray })
-                    )}
-                    {isWindows &&
-                      toggleRow(
-                        'Show ‘Open with Argos’ in the Explorer folder menu',
-                        'Adds an entry to the right-click menu for folders.',
-                        system.explorerContextMenu,
-                        (explorerContextMenu) => updateSystem({ explorerContextMenu })
-                      )}
-                  </section>
 
-                  <section className="settings-card">
-                    <div className="settings-row">
-                      <div className="settings-row-text">
-                        <span className="settings-row-label">Quick launcher shortcut</span>
-                        <span className="settings-row-hint">
-                          Opens the launcher from anywhere, even when Argos is hidden.
+                  <div className="srow">
+                    <div className="srow-text">
+                      <span className="srow-label">Quick launcher shortcut</span>
+                      <span className="help">Opens the launcher from anywhere, even when Argos is hidden.</span>
+                      {registeredShortcut ? (
+                        <span className="help">Registered: {registeredShortcut}</span>
+                      ) : (
+                        <span className="help settings-error">
+                          Could not register a quick-launcher shortcut. It may be in use by another app.
                         </span>
-                      </div>
-                      <select
-                        className="text-input settings-select"
-                        value={system.overlayShortcut}
-                        disabled={systemBusy}
-                        onChange={(e) => updateSystem({ overlayShortcut: e.target.value })}
-                        aria-label="Quick launcher shortcut"
-                      >
-                        <option value="">Auto (Alt+Space)</option>
-                        <option value="Alt+Space">Alt+Space</option>
-                        <option value="Ctrl+Shift+Space">Ctrl+Shift+Space</option>
-                        <option value="Ctrl+Alt+Space">Ctrl+Alt+Space</option>
-                        <option value="Ctrl+Alt+K">Ctrl+Alt+K</option>
-                      </select>
+                      )}
                     </div>
-                    {registeredShortcut ? (
-                      <p className="field-hint">Registered: {registeredShortcut}</p>
-                    ) : (
-                      <p className="field-hint settings-error">
-                        Could not register a quick-launcher shortcut — it may be in use by
-                        another app.
-                      </p>
-                    )}
-                  </section>
+                    <select
+                      className="text-input settings-select"
+                      value={system.overlayShortcut}
+                      disabled={systemBusy}
+                      onChange={(e) => updateSystem({ overlayShortcut: e.target.value })}
+                      aria-label="Quick launcher shortcut"
+                    >
+                      <option value="">Auto (Alt+Space)</option>
+                      <option value="Alt+Space">Alt+Space</option>
+                      <option value="Ctrl+Shift+Space">Ctrl+Shift+Space</option>
+                      <option value="Ctrl+Alt+Space">Ctrl+Alt+Space</option>
+                      <option value="Ctrl+Alt+K">Ctrl+Alt+K</option>
+                    </select>
+                  </div>
                 </>
               ) : (
-                <p className="field-hint">Loading system preferences…</p>
+                <p className="help">Loading system preferences</p>
               )}
             </>
           )}
@@ -543,70 +556,60 @@ export default function SettingsView({
           {section === 'ops' && (
             <>
               <h1 className="settings-title">Ops audit</h1>
-              <p className="settings-lead">
+              <p className="help settings-lead">
                 The audit log is append-only, written by Argos only, and never deleted by it.
               </p>
 
-              <section className="settings-card">
-                {ledger ? (
-                  <div className="settings-row">
-                    <div className="settings-row-text">
-                      <span className="settings-row-label">Audit log folder</span>
-                      <code className="settings-code settings-ops-path">{ledger.dir}</code>
-                      <span className="settings-row-hint">
-                        {ledger.files} day {ledger.files === 1 ? 'file' : 'files'} ·{' '}
-                        {humanBytes(ledger.bytes)}
-                      </span>
-                    </div>
-                    <button className="btn-secondary small" onClick={copyLedgerDir}>
-                      {dirCopied ? 'Copied' : 'Copy path'}
-                    </button>
+              {ledger ? (
+                <div className="srow">
+                  <div className="srow-text">
+                    <span className="srow-label">Audit log folder</span>
+                    <code className="settings-path">{ledger.dir}</code>
+                    <span className="help">
+                      {ledger.files} day {ledger.files === 1 ? 'file' : 'files'} · {humanBytes(ledger.bytes)}
+                    </span>
                   </div>
-                ) : (
-                  <p className="field-hint">Loading…</p>
-                )}
-              </section>
-
-              <section className="settings-card">
-                <h3 className="settings-h">Verify a day</h3>
-                <div className="settings-actions settings-ops-verify">
-                  <input
-                    type="date"
-                    className="text-input settings-ops-date"
-                    value={verifyDate}
-                    onChange={(e) => {
-                      setVerifyDate(e.target.value)
-                      setVerifyResult(null)
-                    }}
-                    aria-label="Audit log day (UTC)"
-                  />
-                  <button
-                    className="btn-secondary small"
-                    onClick={verifyLedger}
-                    disabled={verifying || !verifyDate}
-                  >
-                    {verifying
-                      ? 'Verifying…'
-                      : verifyDate === utcToday()
-                        ? 'Verify today’s audit log'
-                        : 'Verify this day'}
+                  <button type="button" className="btn-ghost small" onClick={copyLedgerDir}>
+                    {dirCopied ? 'Copied' : 'Copy path'}
                   </button>
                 </div>
-                {verifyResult && (
-                  <p
-                    className={`field-hint settings-ops-result ${verifyResult.ok ? '' : 'settings-ops-broken'}`}
-                    role="status"
-                  >
-                    {verifyResult.ok
-                      ? verifyResult.lines === 0
-                        ? 'No entries for that day'
-                        : `Chain intact · ${verifyResult.lines} lines`
-                      : verifyResult.brokenAt !== undefined
-                        ? `Chain broken at line ${verifyResult.brokenAt}: ${verifyResult.reason}`
-                        : `Chain broken: ${verifyResult.reason}`}
-                  </p>
-                )}
-              </section>
+              ) : (
+                <p className="help">Loading</p>
+              )}
+
+              <div className="srow settings-verify">
+                <div className="srow-text">
+                  <span className="srow-label">Verify a day</span>
+                  <span className="help">Checks that the day&rsquo;s hash chain is unbroken (UTC).</span>
+                  {verifyResult && (
+                    <span
+                      className={`help settings-result ${verifyResult.ok ? (verifyResult.lines === 0 ? '' : 'ok') : 'err'}`}
+                      role="status"
+                    >
+                      {verifyResult.ok
+                        ? verifyResult.lines === 0
+                          ? 'No entries'
+                          : `Chain intact · ${verifyResult.lines} lines`
+                        : verifyResult.brokenAt !== undefined
+                          ? `Chain broken at line ${verifyResult.brokenAt}: ${verifyResult.reason}`
+                          : `Chain broken: ${verifyResult.reason}`}
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="date"
+                  className="text-input settings-date"
+                  value={verifyDate}
+                  onChange={(e) => {
+                    setVerifyDate(e.target.value)
+                    setVerifyResult(null)
+                  }}
+                  aria-label="Audit log day (UTC)"
+                />
+                <button type="button" className="btn-ghost" onClick={verifyLedger} disabled={verifying || !verifyDate}>
+                  {verifying ? 'Verifying' : 'Verify'}
+                </button>
+              </div>
             </>
           )}
 
@@ -614,44 +617,38 @@ export default function SettingsView({
             <>
               <h1 className="settings-title">About</h1>
               {updater ? (
-                <section className="settings-card">
-                  <div className="settings-row">
-                    <div className="settings-row-text">
-                      <span className="settings-row-label">Argos v{updater.currentVersion}</span>
-                      <span className={`settings-row-hint ${updater.state === 'error' ? 'settings-error' : ''}`}>
-                        {updaterStatusText()}
-                      </span>
-                    </div>
-                    <div className="settings-actions">
-                      <button
-                        className="btn-secondary small"
-                        onClick={checkForUpdates}
-                        disabled={checking || updater.state === 'disabled' || updater.state === 'checking'}
-                      >
-                        Check for updates
-                      </button>
-                      {updater.state === 'downloaded' && (
-                        <button
-                          className="btn-primary small"
-                          onClick={() => window.electronAPI.updaterInstall()}
-                        >
-                          Restart &amp; update
-                        </button>
-                      )}
-                    </div>
+                <div className="srow">
+                  <div className="srow-text">
+                    <span className="srow-label">Argos v{updater.currentVersion}</span>
+                    <span className={`help ${updater.state === 'error' ? 'settings-error' : ''}`}>
+                      {updaterStatusText()}
+                    </span>
                   </div>
-                </section>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={checkForUpdates}
+                    disabled={checking || updater.state === 'disabled' || updater.state === 'checking'}
+                  >
+                    Check for updates
+                  </button>
+                  {updater.state === 'downloaded' && (
+                    <button type="button" className="btn-primary" onClick={() => window.electronAPI.updaterInstall()}>
+                      Restart &amp; update
+                    </button>
+                  )}
+                </div>
               ) : (
-                <p className="field-hint">Loading…</p>
+                <p className="help">Loading</p>
               )}
             </>
           )}
         </div>
       </div>
 
-      {showPerms && <PermissionsModal onClose={() => setShowPerms(false)} />}
-      {showHooks && <HooksModal onClose={() => setShowHooks(false)} />}
-      {showNotifyHook && <NotifyHookModal onClose={() => setShowNotifyHook(false)} />}
+      {showPerms && <PermissionsModal onClose={closeSheet(() => setShowPerms(false))} />}
+      {showHooks && <HooksModal onClose={closeSheet(() => setShowHooks(false))} />}
+      {showNotifyHook && <NotifyHookModal onClose={closeSheet(() => setShowNotifyHook(false))} />}
     </div>
   )
 }

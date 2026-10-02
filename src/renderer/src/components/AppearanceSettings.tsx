@@ -7,7 +7,7 @@
 // `theme`/`palette` fields and it broadcasts to all four windows. A local copy here
 // would be right until the OS flipped light/dark, or until another window wrote.
 //
-// Second: the previews are painted from computed values, not from CSS. The palette
+// Second: the preview is painted from computed values, not from CSS. The palette
 // blocks in global.css are written as `:root[data-palette='x']` — scoped to the
 // document root — so putting data-theme/data-palette on a nested <div> inherits
 // nothing, and a preview built that way silently shows the ACTIVE theme's colours for
@@ -17,18 +17,7 @@
 import { ReactNode, useEffect, useRef, useState } from 'react'
 import { ThemeSettings, ThemeSettingsPatch, UiPrefs, UiPrefsPatch } from '../types'
 import { DEFAULT_PALETTE, PALETTES } from '../lib/palettes'
-import {
-  Rgb,
-  accentRamp,
-  darken,
-  lighten,
-  mix,
-  parseHex,
-  readableOn,
-  surfaceRamp,
-  textRamp,
-  toHex
-} from '../lib/color'
+import { Rgb, accentRamp, parseHex, readableOn, surfaceRamp, textRamp } from '../lib/color'
 import { availableFonts } from '../lib/fonts'
 import './AppearanceSettings.css'
 
@@ -96,10 +85,6 @@ interface Props {
 
 // ─── Preview painting ────────────────────────────────────────────────────────
 
-/** The tints for the two diff lines in the code sample. */
-const DIFF_ADD: Rgb = { r: 74, g: 172, b: 112 }
-const DIFF_DEL: Rgb = { r: 214, g: 88, b: 88 }
-
 /** Every colour one preview needs. Computed, never inherited — see the header. */
 interface PreviewPaint {
   bg0: string
@@ -111,10 +96,6 @@ interface PreviewPaint {
   text2: string
   accent: string
   onAccent: string
-  addBg: string
-  addText: string
-  delBg: string
-  delText: string
 }
 
 const FALLBACK_BG: Rgb = { r: 20, g: 19, b: 18 }
@@ -154,10 +135,6 @@ function paintFor(theme: Side, side: ThemeSettings | undefined): PreviewPaint {
   const accentBase = (side?.accent ? parseHex(side.accent) : null) ?? parseHex(swatchAccent) ?? bgBase
   const accent = accentRamp(accentBase, theme)
 
-  const surface = parseHex(ramp['--bg-1']) ?? bgBase
-  const tint = (colour: Rgb): string => toHex(mix(surface, colour, theme === 'dark' ? 0.22 : 0.16))
-  const ink = (colour: Rgb): string => toHex(theme === 'dark' ? lighten(colour, 0.3) : darken(colour, 0.2))
-
   return {
     bg0: ramp['--bg-0'],
     bg1: ramp['--bg-1'],
@@ -167,64 +144,36 @@ function paintFor(theme: Side, side: ThemeSettings | undefined): PreviewPaint {
     text1: text['--text-1'],
     text2: text['--text-2'],
     accent: accent['--accent'],
-    onAccent: readableOn(accentBase),
-    addBg: tint(DIFF_ADD),
-    addText: ink(DIFF_ADD),
-    delBg: tint(DIFF_DEL),
-    delText: ink(DIFF_DEL)
+    onAccent: readableOn(accentBase)
   }
 }
 
 /**
- * The app, in miniature. Deliberately shows the things a theme is judged on: chrome, a
- * line of primary text, a muted second line, something accent-filled, and a diff with
- * one line added and one removed.
+ * The app, in miniature: a rail, a line of primary text, a muted second line, something
+ * accent-filled and a label chip. One of these, for the theme being edited.
  */
 function ThemePreview({ paint }: { paint: PreviewPaint }) {
   return (
     <div className="tp" style={{ background: paint.bg0, borderColor: paint.border }} aria-hidden="true">
-      <div className="tp-chrome" style={{ background: paint.bg2, borderColor: paint.border }}>
-        <span className="tp-dot" style={{ background: paint.text2 }} />
-        <span className="tp-dot" style={{ background: paint.text2 }} />
-        <span className="tp-dot" style={{ background: paint.accent }} />
+      <div className="tp-rail" style={{ background: paint.bg1, borderColor: paint.border }}>
+        <span className="tp-rail-item" style={{ background: paint.accent }} />
+        <span className="tp-rail-item" style={{ background: paint.text2 }} />
+        <span className="tp-rail-item" style={{ background: paint.text2 }} />
       </div>
-      <div className="tp-body">
-        <div className="tp-rail" style={{ background: paint.bg1, borderColor: paint.border }}>
-          <span className="tp-rail-item" style={{ background: paint.accent }} />
-          <span className="tp-rail-item" style={{ background: paint.text2 }} />
-          <span className="tp-rail-item" style={{ background: paint.text2 }} />
+      <div className="tp-main">
+        <div className="tp-text" style={{ color: paint.text0 }}>
+          The quick brown fox
         </div>
-        <div className="tp-main">
-          <div className="tp-text" style={{ color: paint.text0 }}>
-            The quick brown fox
-          </div>
-          <div className="tp-muted" style={{ color: paint.text1 }}>
-            Secondary text, one step back
-          </div>
-          <div className="tp-actions">
-            <span className="tp-btn" style={{ background: paint.accent, color: paint.onAccent }}>
-              Run
-            </span>
-            <span className="tp-chip" style={{ background: paint.bg2, color: paint.text2, borderColor: paint.border }}>
-              opus
-            </span>
-          </div>
-          <div className="tp-code" style={{ background: paint.bg1, borderColor: paint.border }}>
-            {/* Braces and backticks go through as expressions, not JSX text: written
-                inline they either close the element or silently double the `$`. */}
-            <div className="tp-code-line" style={{ color: paint.text2 }}>
-              {'function greet(name) {'}
-            </div>
-            <div className="tp-code-line" style={{ background: paint.delBg, color: paint.delText }}>
-              {"- return 'hi ' + name"}
-            </div>
-            <div className="tp-code-line" style={{ background: paint.addBg, color: paint.addText }}>
-              {'+ return `hello ${name}`'}
-            </div>
-            <div className="tp-code-line" style={{ color: paint.text2 }}>
-              {'}'}
-            </div>
-          </div>
+        <div className="tp-muted" style={{ color: paint.text1 }}>
+          Secondary text, one step back
+        </div>
+        <div className="tp-actions">
+          <span className="tp-btn" style={{ background: paint.accent, color: paint.onAccent }}>
+            Run
+          </span>
+          <span className="tp-chip" style={{ background: paint.bg2, color: paint.text2, borderColor: paint.border }}>
+            opus
+          </span>
         </div>
       </div>
     </div>
@@ -233,31 +182,69 @@ function ThemePreview({ paint }: { paint: PreviewPaint }) {
 
 // ─── Small building blocks ───────────────────────────────────────────────────
 
-function Row({
-  label,
-  hint,
-  children
-}: {
-  label: string
-  hint?: string
-  children: ReactNode
-}) {
+function Row({ label, hint, children }: { label: string; hint?: string; children?: ReactNode }) {
   return (
-    <div className="ap-row">
-      <div className="ap-row-text">
-        <span className="ap-row-label">{label}</span>
-        {hint && <span className="ap-row-hint">{hint}</span>}
+    <div className="srow">
+      <div className="srow-text">
+        <span className="srow-label">{label}</span>
+        {hint && <span className="help">{hint}</span>}
       </div>
-      <div className="ap-row-control">{children}</div>
+      {children}
     </div>
   )
 }
 
+/** A quiet button that stays in its place at 45 % when there is nothing to reset. */
+function ResetButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+  return (
+    <button type="button" className="btn-ghost small ap-reset" onClick={onClick} disabled={disabled}>
+      Reset
+    </button>
+  )
+}
+
 /**
- * A colour that reads "Default" until the user picks one.
+ * A range input with a filled part.
+ *
+ * The native track cannot be filled without a gradient, so the track and the fill are
+ * two plain elements under a transparent input that supplies the thumb and the keyboard.
+ */
+function Slider({
+  min,
+  max,
+  value,
+  onChange,
+  label
+}: {
+  min: number
+  max: number
+  value: number
+  onChange: (next: number) => void
+  label: string
+}) {
+  const p = (Math.min(max, Math.max(min, value)) - min) / (max - min)
+  return (
+    <span className="ap-slider" style={{ ['--p' as string]: p }}>
+      <span className="ap-slider-track" />
+      <span className="ap-slider-fill" />
+      <input
+        className="ap-range"
+        type="range"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        aria-label={label}
+      />
+    </span>
+  )
+}
+
+/**
+ * A colour that reads "default" until the user picks one.
  *
  * `''` is what clears it — mergeSide in ui-prefs-pure.ts treats an empty string and
- * undefined alike as "delete the override" — so Default is a real state of the model,
+ * undefined alike as "delete the override" — so default is a real state of the model,
  * not a sentinel this component invented.
  */
 function ColorRow({
@@ -277,17 +264,10 @@ function ColorRow({
   return (
     <Row label={label} hint={hint}>
       <label className="ap-color">
-        <input
-          type="color"
-          value={value || fallback}
-          onChange={(e) => onChange(e.target.value)}
-          aria-label={label}
-        />
-        <span className="ap-color-value">{custom ? value : 'Default'}</span>
+        <input type="color" value={value || fallback} onChange={(e) => onChange(e.target.value)} aria-label={label} />
+        <span className="ap-color-value">{custom ? value : 'default'}</span>
       </label>
-      <button className="btn-text" onClick={() => onChange('')} disabled={!custom}>
-        Reset
-      </button>
+      <ResetButton disabled={!custom} onClick={() => onChange('')} />
     </Row>
   )
 }
@@ -296,18 +276,10 @@ function ColorRow({
  * The preset picker.
  *
  * Custom rather than a `<select>` for one reason: each row carries the palette's three
- * colours, and a native option list cannot draw them. Everything else about it is the
- * boring version — a button, a list, close on outside click or Escape.
+ * colours, and a native option list cannot draw them. It is shaped like the select it
+ * stands in for: a 4 px surface with the value and a chevron at the right.
  */
-function PalettePicker({
-  side,
-  value,
-  onChange
-}: {
-  side: Side
-  value: string
-  onChange: (id: string) => void
-}) {
+function PalettePicker({ side, value, onChange }: { side: Side; value: string; onChange: (id: string) => void }) {
   const [open, setOpen] = useState(false)
   const wrap = useRef<HTMLDivElement>(null)
 
@@ -335,6 +307,7 @@ function PalettePicker({
   return (
     <div className="ap-preset" ref={wrap}>
       <button
+        type="button"
         className="ap-preset-btn"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
@@ -342,14 +315,15 @@ function PalettePicker({
       >
         <Chip colours={chipOf(current)} />
         <span className="ap-preset-name">{current.name}</span>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-          <polyline points="6 9 12 15 18 9" />
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
       {open && (
         <div className="ap-preset-menu" role="listbox">
           {PALETTES.map((palette) => (
             <button
+              type="button"
               key={palette.id}
               className={`ap-preset-item ${palette.id === value ? 'on' : ''}`}
               role="option"
@@ -381,37 +355,22 @@ function Chip({ colours }: { colours: readonly [string, string, string] }) {
 
 // ─── The panel ───────────────────────────────────────────────────────────────
 
-const MODES: { id: 'system' | 'light' | 'dark'; label: string; hint: string }[] = [
-  { id: 'system', label: 'System', hint: 'Follow Windows' },
-  { id: 'light', label: 'Light', hint: 'Always light' },
-  { id: 'dark', label: 'Dark', hint: 'Always dark' }
+const MODES: { id: 'system' | 'light' | 'dark'; label: string }[] = [
+  { id: 'system', label: 'System' },
+  { id: 'light', label: 'Light' },
+  { id: 'dark', label: 'Dark' }
 ]
-
-/** The mock inside a mode card, painted in what that choice would actually look like. */
-function ModeMock({ paint }: { paint: PreviewPaint }) {
-  return (
-    <div className="ap-mock" style={{ background: paint.bg0, borderColor: paint.border }}>
-      <div className="ap-mock-rail" style={{ background: paint.bg1, borderColor: paint.border }} />
-      <div className="ap-mock-main">
-        <span style={{ background: paint.text1 }} />
-        <span style={{ background: paint.text2, width: '70%' }} />
-        <span className="ap-mock-accent" style={{ background: paint.accent }} />
-      </div>
-    </div>
-  )
-}
 
 export default function AppearanceSettings({ ui, onSetUi }: Props) {
   const uiFonts = availableFonts('ui')
   const monoFonts = availableFonts('mono')
 
-  const lightPaint = paintFor('light', ui.light)
-  const darkPaint = paintFor('dark', ui.dark)
-  const paintOf = (side: Side): PreviewPaint => (side === 'light' ? lightPaint : darkPaint)
+  // Which side the rows below edit. It only chooses what is shown and written to; the
+  // data is still `ui.light` / `ui.dark`, patched through main like everything else.
+  // Starts on the theme that is showing now, since that is the one being looked at.
+  const [editing, setEditing] = useState<Side>(ui.theme === 'light' ? 'light' : 'dark')
 
-  const uiSlider = useSlider(ui.uiFontSize ?? UI_FONT_SIZE.default, (uiFontSize) =>
-    onSetUi({ uiFontSize })
-  )
+  const uiSlider = useSlider(ui.uiFontSize ?? UI_FONT_SIZE.default, (uiFontSize) => onSetUi({ uiFontSize }))
   const codeSlider = useSlider(ui.codeFontSize ?? CODE_FONT_SIZE.default, (codeFontSize) =>
     onSetUi({ codeFontSize })
   )
@@ -419,236 +378,148 @@ export default function AppearanceSettings({ ui, onSetUi }: Props) {
   const patchSide = (side: Side, patch: ThemeSettingsPatch): void =>
     onSetUi(side === 'light' ? { light: patch } : { dark: patch })
 
-  // One per side, declared here rather than inside themeBlock: that function runs once
-  // per side, and a hook called from it would be a hook called in a loop.
+  // One per side, both always called: a hook cannot sit behind the choice of side, and a
+  // drag in progress on one side must survive flipping the control to the other.
   const contrastSliders: Record<Side, ReturnType<typeof useSlider>> = {
     light: useSlider(ui.light?.contrast ?? 50, (contrast) => patchSide('light', { contrast })),
     dark: useSlider(ui.dark?.contrast ?? 50, (contrast) => patchSide('dark', { contrast }))
   }
 
-  const themeBlock = (side: Side) => {
-    const settings = side === 'light' ? ui.light : ui.dark
-    const paint = paintOf(side)
-    const contrast = contrastSliders[side]
-    return (
-      <section className="ap-block" key={side}>
-        <header className="ap-block-head">
-          <h4>{side === 'light' ? 'Light theme' : 'Dark theme'}</h4>
-          <p className="field-hint">
-            {side === 'light'
-              ? 'Used whenever the app is showing light — including when Mode follows the system.'
-              : 'Used whenever the app is showing dark — including when Mode follows the system.'}
-          </p>
-        </header>
-
-        <ThemePreview paint={paint} />
-
-        <div className="ap-rows">
-          <Row label="Preset" hint="A starting point; the rows below override it.">
-            <PalettePicker
-              side={side}
-              value={settings?.palette || DEFAULT_PALETTE}
-              onChange={(palette) => patchSide(side, { palette })}
-            />
-          </Row>
-
-          <ColorRow
-            label="Accent"
-            hint="Buttons, links, the active rail entry."
-            value={settings?.accent}
-            fallback={paint.accent}
-            onChange={(accent) => patchSide(side, { accent })}
-          />
-          <ColorRow
-            label="Background"
-            hint="The deepest surface; every other surface is derived from it."
-            value={settings?.background}
-            fallback={paint.bg0}
-            onChange={(background) => patchSide(side, { background })}
-          />
-          <ColorRow
-            label="Foreground"
-            hint="Primary text; the two muted steps are derived from it."
-            value={settings?.foreground}
-            fallback={paint.text0}
-            onChange={(foreground) => patchSide(side, { foreground })}
-          />
-
-          <Row label="Contrast" hint="50 is the preset's own separation between surfaces.">
-            <input
-              className="ap-range"
-              type="range"
-              min={0}
-              max={100}
-              value={contrast.shown}
-              onChange={(e) => contrast.onChange(Number(e.target.value))}
-              aria-label={`${side} contrast`}
-            />
-            <span className="ap-number">{contrast.shown}</span>
-            <button
-              className="btn-text"
-              onClick={() => {
-                contrast.clear()
-                patchSide(side, { contrast: null })
-              }}
-              disabled={settings?.contrast === undefined}
-            >
-              Reset
-            </button>
-          </Row>
-
-          <Row label="Translucent sidebar" hint="Blurs whatever is behind the chat list.">
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={!!settings?.translucentSidebar}
-                onChange={(e) => patchSide(side, { translucentSidebar: e.target.checked })}
-              />
-              <span className="toggle-track">
-                <span className="toggle-thumb" />
-              </span>
-            </label>
-          </Row>
-        </div>
-      </section>
-    )
-  }
+  const side = editing
+  const settings = side === 'light' ? ui.light : ui.dark
+  const paint = paintFor(side, settings)
+  const contrast = contrastSliders[side]
+  const mode = ui.mode ?? ui.theme
 
   return (
     <div className="ap">
-      <section className="ap-group">
-        <h3 className="settings-h">Mode</h3>
-        <p className="field-hint">Which of the two themes below is showing.</p>
-        <div className="ap-modes">
-          {MODES.map(({ id, label, hint }) => (
-            <button
-              key={id}
-              className={`ap-mode ${(ui.mode ?? ui.theme) === id ? 'on' : ''}`}
-              onClick={() => onSetUi({ mode: id })}
-              aria-pressed={(ui.mode ?? ui.theme) === id}
-            >
-              {/* System shows both, because that is literally what it means: whichever
-                  one the OS is asking for at the time. */}
-              {id === 'system' ? (
-                <div className="ap-mock-pair">
-                  <ModeMock paint={lightPaint} />
-                  <ModeMock paint={darkPaint} />
-                </div>
-              ) : (
-                <ModeMock paint={paintOf(id)} />
-              )}
-              <span className="ap-mode-label">{label}</span>
-              <span className="ap-mode-hint">{hint}</span>
+      <Row label="Mode" hint="Which theme the app shows.">
+        <div className="seg-control" role="group" aria-label="Mode">
+          {MODES.map(({ id, label }) => (
+            <button type="button" key={id} className={mode === id ? 'on' : ''} onClick={() => onSetUi({ mode: id })} aria-pressed={mode === id}>
+              {label}
             </button>
           ))}
         </div>
-      </section>
+      </Row>
 
-      {themeBlock('light')}
-      {themeBlock('dark')}
-
-      <section className="ap-group">
-        <h3 className="settings-h">Fonts</h3>
-        <p className="field-hint">
-          Only families this machine can actually render are offered — a picker that let you
-          choose a missing font would show it as chosen and render something else.
-        </p>
-        <div className="ap-rows">
-          <Row label="UI font" hint="Menus, buttons, lists — the chrome.">
-            <select
-              className="text-input ap-select"
-              value={ui.fonts?.ui || 'system'}
-              onChange={(e) => onSetUi({ fonts: { ui: e.target.value } })}
-            >
-              {uiFonts.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
-          </Row>
-          <Row label="Content font" hint="Chat messages and rendered markdown — the reading face.">
-            <select
-              className="text-input ap-select"
-              value={ui.fonts?.content || 'inherit'}
-              onChange={(e) => onSetUi({ fonts: { content: e.target.value } })}
-            >
-              <option value="inherit">Same as UI font</option>
-              {uiFonts.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
-          </Row>
-          <Row label="Code font" hint="Code blocks, diffs, the terminal.">
-            <select
-              className="text-input ap-select"
-              value={ui.fonts?.code || 'system-mono'}
-              onChange={(e) => onSetUi({ fonts: { code: e.target.value } })}
-            >
-              {monoFonts.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
-          </Row>
-        </div>
-      </section>
-
-      <section className="ap-group">
-        <h3 className="settings-h">Sizes</h3>
-        <div className="ap-rows">
-          <Row
-            label="UI font size"
-            hint="Scales the whole interface, not just text — expect the window to resize its contents as you drag."
-          >
-            <input
-              className="ap-range"
-              type="range"
-              min={UI_FONT_SIZE.min}
-              max={UI_FONT_SIZE.max}
-              value={uiSlider.shown}
-              onChange={(e) => uiSlider.onChange(Number(e.target.value))}
-              aria-label="UI font size"
-            />
-            <span className="ap-number">{uiSlider.shown}px</span>
-            <button
-              className="btn-text"
-              onClick={() => {
-                uiSlider.clear()
-                onSetUi({ uiFontSize: UI_FONT_SIZE.default })
-              }}
-              disabled={uiSlider.shown === UI_FONT_SIZE.default}
-            >
-              Reset
+      <Row label="Theme being edited" hint="Each theme keeps its own preset, colours and contrast.">
+        <div className="seg-control" role="group" aria-label="Theme being edited">
+          {(['light', 'dark'] as Side[]).map((s) => (
+            <button type="button" key={s} className={editing === s ? 'on' : ''} onClick={() => setEditing(s)} aria-pressed={editing === s}>
+              {s === 'light' ? 'Light' : 'Dark'}
             </button>
-          </Row>
-          <Row label="Code font size" hint="Code blocks, diffs and tool output only.">
-            <input
-              className="ap-range"
-              type="range"
-              min={CODE_FONT_SIZE.min}
-              max={CODE_FONT_SIZE.max}
-              value={codeSlider.shown}
-              onChange={(e) => codeSlider.onChange(Number(e.target.value))}
-              aria-label="Code font size"
-            />
-            <span className="ap-number">{codeSlider.shown}px</span>
-            <button
-              className="btn-text"
-              onClick={() => {
-                codeSlider.clear()
-                onSetUi({ codeFontSize: CODE_FONT_SIZE.default })
-              }}
-              disabled={codeSlider.shown === CODE_FONT_SIZE.default}
-            >
-              Reset
-            </button>
-          </Row>
+          ))}
         </div>
-      </section>
+      </Row>
+
+      <ThemePreview paint={paint} />
+
+      <Row label="Preset" hint="A starting point; the rows below override it.">
+        <PalettePicker side={side} value={settings?.palette || DEFAULT_PALETTE} onChange={(palette) => patchSide(side, { palette })} />
+      </Row>
+
+      <ColorRow
+        label="Accent"
+        hint="Buttons, links, the active rail entry."
+        value={settings?.accent}
+        fallback={paint.accent}
+        onChange={(accent) => patchSide(side, { accent })}
+      />
+      <ColorRow
+        label="Background"
+        hint="The deepest surface; every other surface is derived from it."
+        value={settings?.background}
+        fallback={paint.bg0}
+        onChange={(background) => patchSide(side, { background })}
+      />
+      <ColorRow
+        label="Foreground"
+        hint="Primary text; the two muted steps are derived from it."
+        value={settings?.foreground}
+        fallback={paint.text0}
+        onChange={(foreground) => patchSide(side, { foreground })}
+      />
+
+      <Row label="Contrast" hint="50 is the preset's own separation between surfaces.">
+        <Slider min={0} max={100} value={contrast.shown} onChange={contrast.onChange} label={`${side} contrast`} />
+        <span className="ap-number">{contrast.shown}</span>
+        <ResetButton
+          disabled={settings?.contrast === undefined}
+          onClick={() => {
+            contrast.clear()
+            patchSide(side, { contrast: null })
+          }}
+        />
+      </Row>
+
+      <Row label="Translucent sidebar" hint="Blurs whatever is behind the chat list.">
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={!!settings?.translucentSidebar}
+            onChange={(e) => patchSide(side, { translucentSidebar: e.target.checked })}
+            aria-label="Translucent sidebar"
+          />
+          <span className="toggle-track">
+            <span className="toggle-thumb" />
+          </span>
+        </label>
+      </Row>
+
+      <div className="eyebrow ap-eyebrow">Fonts</div>
+      <Row label="UI font" hint="Menus, buttons, lists: the chrome.">
+        <select className="text-input ap-select" value={ui.fonts?.ui || 'system'} onChange={(e) => onSetUi({ fonts: { ui: e.target.value } })}>
+          {uiFonts.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name}
+            </option>
+          ))}
+        </select>
+      </Row>
+      <Row label="Content font" hint="Chat messages and rendered markdown: the reading face.">
+        <select className="text-input ap-select" value={ui.fonts?.content || 'inherit'} onChange={(e) => onSetUi({ fonts: { content: e.target.value } })}>
+          <option value="inherit">Same as UI font</option>
+          {uiFonts.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name}
+            </option>
+          ))}
+        </select>
+      </Row>
+      <Row label="Code font" hint="Code blocks, diffs, the terminal.">
+        <select className="text-input ap-select mono" value={ui.fonts?.code || 'system-mono'} onChange={(e) => onSetUi({ fonts: { code: e.target.value } })}>
+          {monoFonts.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name}
+            </option>
+          ))}
+        </select>
+      </Row>
+
+      <div className="eyebrow ap-eyebrow">Sizes</div>
+      <Row label="UI font size" hint="Scales the whole interface, not just text. Expect the window to resize its contents as you drag.">
+        <Slider min={UI_FONT_SIZE.min} max={UI_FONT_SIZE.max} value={uiSlider.shown} onChange={uiSlider.onChange} label="UI font size" />
+        <span className="ap-number">{uiSlider.shown}px</span>
+        <ResetButton
+          disabled={uiSlider.shown === UI_FONT_SIZE.default}
+          onClick={() => {
+            uiSlider.clear()
+            onSetUi({ uiFontSize: UI_FONT_SIZE.default })
+          }}
+        />
+      </Row>
+      <Row label="Code font size" hint="Code blocks, diffs and tool output only.">
+        <Slider min={CODE_FONT_SIZE.min} max={CODE_FONT_SIZE.max} value={codeSlider.shown} onChange={codeSlider.onChange} label="Code font size" />
+        <span className="ap-number">{codeSlider.shown}px</span>
+        <ResetButton
+          disabled={codeSlider.shown === CODE_FONT_SIZE.default}
+          onClick={() => {
+            codeSlider.clear()
+            onSetUi({ codeFontSize: CODE_FONT_SIZE.default })
+          }}
+        />
+      </Row>
     </div>
   )
 }

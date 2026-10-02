@@ -914,7 +914,7 @@ export default function ChangelogModal({ onClose }: Props) {
               <div className="cl-entry-header">
                 <span className="cl-version">v{entry.version}</span>
                 {entry.tag && (
-                  <span className={`cl-tag cl-tag-${entry.tag}`}>
+                  <span className={`chip ${entry.tag === 'new' ? 'warn' : 'ok'}`}>
                     {entry.tag === 'new' ? 'Unreleased' : 'Latest'}
                   </span>
                 )}

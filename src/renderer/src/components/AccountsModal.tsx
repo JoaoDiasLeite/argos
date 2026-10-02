@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AgentProvider, CCAccountStatus, ProviderAccountStatus } from '../types'
-import { useModalA11y } from '../hooks/useModalA11y'
+import Sheet from './Sheet'
 import './AccountsModal.css'
 
 interface Props {
@@ -29,6 +29,21 @@ const emptyProviderState: ProviderUiState = {
   loginCmd: null
 }
 
+/** What one account row needs beyond the account itself. */
+interface RowOps {
+  defaultId: string
+  meta: string
+  editing: boolean
+  editName: string
+  onEditName: (v: string) => void
+  onSaveRename: () => void
+  onCancelRename: () => void
+  onStartRename: () => void
+  onLogin: () => void
+  onMakeDefault: () => void
+  onRemove: () => void
+}
+
 export default function AccountsModal({ onClose, onChanged }: Props) {
   const [accounts, setAccounts] = useState<CCAccountStatus[]>([])
   const [defaultId, setDefaultId] = useState('default')
@@ -41,8 +56,6 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
     codex: emptyProviderState,
     gemini: emptyProviderState
   })
-  const dialogRef = useRef<HTMLDivElement>(null)
-  useModalA11y(dialogRef, onClose)
 
   const refresh = async () => {
     const list = await window.electronAPI.accountsList()
@@ -161,279 +174,219 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
     setBusy(false)
   }
 
+  // One row per account, whichever provider it belongs to: a dot for logged in or not,
+  // the name, a "Default" chip and a muted line, with the actions on the right.
+  const accountRow = (a: Pick<CCAccountStatus, 'id' | 'name' | 'isDefault' | 'loggedIn'>, o: RowOps) => (
+    <div className="acct-row" key={a.id}>
+      <i className={`acct-dot ${a.loggedIn ? 'ok' : ''}`} />
+      <div className="acct-body">
+        {o.editing ? (
+          <input
+            className="text-input acct-rename"
+            value={o.editName}
+            autoFocus
+            onChange={(e) => o.onEditName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') o.onSaveRename()
+              if (e.key === 'Escape') o.onCancelRename()
+            }}
+            onBlur={o.onSaveRename}
+            aria-label="Account name"
+          />
+        ) : (
+          <div className="acct-name">
+            {a.name}
+            {a.id === o.defaultId && <span className="chip">Default</span>}
+          </div>
+        )}
+        <div className="acct-meta">{o.meta}</div>
+      </div>
+      <div className="acct-actions">
+        {(!a.loggedIn || !a.isDefault) && (
+          <button type="button" className="btn-ghost small" onClick={o.onLogin} disabled={busy}>
+            {a.loggedIn ? 'Re-login' : 'Log in'}
+          </button>
+        )}
+        {a.id !== o.defaultId && (
+          <button type="button" className="btn-ghost small" onClick={o.onMakeDefault} disabled={busy}>
+            Set default
+          </button>
+        )}
+        <button type="button" className="btn-ghost small" onClick={o.onStartRename} disabled={busy}>
+          Rename
+        </button>
+        {!a.isDefault && (
+          <button type="button" className="btn-text danger" onClick={o.onRemove} disabled={busy}>
+            Remove
+          </button>
+        )}
+      </div>
+    </div>
+  )
+
+  const loginBlock = (command: string, onRefresh: () => void, onDismiss: () => void) => (
+    <div className="block warn acct-login">
+      <div className="acct-login-title">Finish logging in</div>
+      <p className="help">
+        A terminal should have opened. Complete the login in your browser, then refresh. If no terminal opened,
+        run this command yourself:
+      </p>
+      <code className="acct-cmd">{command}</code>
+      <div className="acct-login-actions">
+        <button type="button" className="btn-ghost small" onClick={onRefresh} disabled={busy}>
+          Refresh status
+        </button>
+        <button type="button" className="btn-ghost small" onClick={onDismiss}>
+          Dismiss
+        </button>
+      </div>
+    </div>
+  )
+
+  const addRow = (placeholder: string, value: string, onChange: (v: string) => void, onAdd: () => void) => (
+    <div className="acct-add">
+      <input
+        className="text-input"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && onAdd()}
+        spellCheck={false}
+        aria-label={placeholder}
+      />
+      <button type="button" className="btn-ghost small" onClick={onAdd} disabled={!value.trim() || busy}>
+        Add &amp; log in
+      </button>
+    </div>
+  )
+
   const renderProviderSection = (p: AgentProvider) => {
     const ui = providerUi[p]
     return (
-      <div key={p}>
-        <h4 className="accounts-section-title">{PROVIDER_LABEL[p]} accounts</h4>
-        <p className="field-hint">
-          Each account is a separate {PROVIDER_LABEL[p]} login. Switch the active account from
-          the sidebar account picker when a {PROVIDER_LABEL[p]} model is selected.
+      <section className="acct-section" key={p}>
+        <div className="eyebrow">{PROVIDER_LABEL[p]}</div>
+        <p className="help">
+          Each account is a separate {PROVIDER_LABEL[p]} login. Switch the active account from the sidebar
+          account picker when a {PROVIDER_LABEL[p]} model is selected.
         </p>
 
-        <div className="account-rows">
-          {ui.accounts.map((a) => (
-            <div className="account-row" key={a.id}>
-              <span className={`account-dot ${a.loggedIn ? 'ok' : 'warn'}`} />
-              <div className="account-row-body">
-                {ui.editingId === a.id ? (
-                  <input
-                    className="account-rename-input"
-                    value={ui.editName}
-                    autoFocus
-                    onChange={(e) => updateProvider(p, { editName: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') saveRenameProvider(p)
-                      if (e.key === 'Escape') updateProvider(p, { editingId: null })
-                    }}
-                    onBlur={() => saveRenameProvider(p)}
-                  />
-                ) : (
-                  <div className="account-row-name">
-                    {a.name}
-                    {a.id === ui.defaultId && <span className="status-pill">Default</span>}
-                    {!a.loggedIn && <span className="status-pill warn">Not logged in</span>}
-                  </div>
-                )}
-                <div className="account-row-meta">
-                  {a.loggedIn
-                    ? [a.email, a.plan].filter(Boolean).join(' · ') || 'Logged in'
-                    : a.isDefault
-                      ? `Uses this machine’s ${PROVIDER_LABEL[p]} CLI login`
-                      : 'Run the login to authenticate this account'}
-                </div>
-              </div>
-
-              <div className="account-row-actions">
-                {!a.loggedIn || !a.isDefault ? (
-                  <button className="btn-text" onClick={() => loginProviderAccount(p, a.id)} disabled={busy}>
-                    {a.loggedIn ? 'Re-login' : 'Log in'}
-                  </button>
-                ) : null}
-                {a.id !== ui.defaultId && (
-                  <button className="btn-text" onClick={() => makeDefaultProvider(p, a.id)} disabled={busy}>
-                    Set default
-                  </button>
-                )}
-                <button className="btn-text" onClick={() => startRenameProvider(p, a)} disabled={busy}>
-                  Rename
-                </button>
-                {!a.isDefault && (
-                  <button className="btn-text danger" onClick={() => removeProviderAccount(p, a.id)} disabled={busy}>
-                    Remove
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+        <div className="acct-rows">
+          {ui.accounts.map((a) =>
+            accountRow(a, {
+              defaultId: ui.defaultId,
+              meta: a.loggedIn
+                ? [a.email, a.plan].filter(Boolean).join(' · ') || 'Logged in'
+                : a.isDefault
+                  ? `Uses this machine’s ${PROVIDER_LABEL[p]} CLI login`
+                  : 'Run the login to authenticate this account',
+              editing: ui.editingId === a.id,
+              editName: ui.editName,
+              onEditName: (v) => updateProvider(p, { editName: v }),
+              onSaveRename: () => saveRenameProvider(p),
+              onCancelRename: () => updateProvider(p, { editingId: null }),
+              onStartRename: () => startRenameProvider(p, a),
+              onLogin: () => loginProviderAccount(p, a.id),
+              onMakeDefault: () => makeDefaultProvider(p, a.id),
+              onRemove: () => removeProviderAccount(p, a.id)
+            })
+          )}
         </div>
 
-        {ui.loginCmd && (
-          <div className="login-hint">
-            <div className="login-hint-title">Finish logging in</div>
-            <p className="field-hint">
-              A terminal should have opened — complete the login in your browser, then click
-              Refresh. If no terminal opened, run this command yourself:
-            </p>
-            <code className="login-cmd">{ui.loginCmd.command}</code>
-            <div className="login-hint-actions">
-              <button className="btn-primary small" onClick={() => refreshProvider(p)} disabled={busy}>
-                Refresh status
-              </button>
-              <button className="btn-text" onClick={() => updateProvider(p, { loginCmd: null })}>
-                Dismiss
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="add-account">
-          <input
-            className="add-account-input"
-            placeholder={`New ${PROVIDER_LABEL[p]} account name (e.g. Work, Personal)`}
-            value={ui.newName}
-            onChange={(e) => updateProvider(p, { newName: e.target.value })}
-            onKeyDown={(e) => e.key === 'Enter' && addProviderAccount(p)}
-            spellCheck={false}
-          />
-          <button
-            className="btn-primary small"
-            onClick={() => addProviderAccount(p)}
-            disabled={!ui.newName.trim() || busy}
-          >
-            Add &amp; log in
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  const renderAntigravitySection = () => {
-    return (
-      <div>
-        <h4 className="accounts-section-title">Antigravity</h4>
-        <p className="field-hint">
-          Gemini models run through Antigravity (Google's agentic CLI, launched with{' '}
-          <code>agy</code>). It uses a single machine-wide login stored in your OS keyring, so
-          there's just one account.
-        </p>
-
-        <div className="account-rows">
-          <div className="account-row">
-            <span className="account-dot ok" />
-            <div className="account-row-body">
-              <div className="account-row-name">Antigravity</div>
-              <div className="account-row-meta">
-                Machine-wide login via <code>agy</code> — stored in your OS keyring
-              </div>
-            </div>
-
-            <div className="account-row-actions">
-              <button
-                className="btn-text"
-                onClick={() => loginProviderAccount('gemini', 'default')}
-                disabled={busy}
-              >
-                Log in / re-auth
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <p className="field-hint">
-          "Log in / re-auth" opens Antigravity (<code>agy</code>) in a terminal — complete the
-          Google sign-in there.
-        </p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="modal accounts-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="accounts-modal-title"
-        tabIndex={-1}
-        ref={dialogRef}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h3 id="accounts-modal-title">Accounts</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="modal-body">
-          <h4 className="accounts-section-title">Claude accounts</h4>
-          <p className="field-hint">
-            Each account is a separate Claude Code login. Switch the active account from the
-            account picker in the sidebar; new chats use the selected account.
-          </p>
-
-          <div className="account-rows">
-            {accounts.map((a) => (
-              <div className="account-row" key={a.id}>
-                <span className={`account-dot ${a.loggedIn ? 'ok' : 'warn'}`} />
-                <div className="account-row-body">
-                  {editingId === a.id ? (
-                    <input
-                      className="account-rename-input"
-                      value={editName}
-                      autoFocus
-                      onChange={(e) => setEditName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') saveRename()
-                        if (e.key === 'Escape') setEditingId(null)
-                      }}
-                      onBlur={saveRename}
-                    />
-                  ) : (
-                    <div className="account-row-name">
-                      {a.name}
-                      {a.id === defaultId && <span className="status-pill">Default</span>}
-                      {!a.loggedIn && <span className="status-pill warn">Not logged in</span>}
-                    </div>
-                  )}
-                  <div className="account-row-meta">
-                    {a.loggedIn
-                      ? [a.email, a.org, a.plan].filter(Boolean).join(' · ') || 'Logged in'
-                      : a.isDefault
-                        ? 'Uses this machine’s Claude Code login'
-                        : 'Run the login to authenticate this account'}
-                  </div>
-                </div>
-
-                <div className="account-row-actions">
-                  {!a.loggedIn || !a.isDefault ? (
-                    <button className="btn-text" onClick={() => login(a.id)} disabled={busy}>
-                      {a.loggedIn ? 'Re-login' : 'Log in'}
-                    </button>
-                  ) : null}
-                  {a.id !== defaultId && (
-                    <button className="btn-text" onClick={() => makeDefault(a.id)} disabled={busy}>
-                      Set default
-                    </button>
-                  )}
-                  <button className="btn-text" onClick={() => startRename(a)} disabled={busy}>
-                    Rename
-                  </button>
-                  {!a.isDefault && (
-                    <button className="btn-text danger" onClick={() => remove(a.id)} disabled={busy}>
-                      Remove
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {loginCmd && (
-            <div className="login-hint">
-              <div className="login-hint-title">Finish logging in</div>
-              <p className="field-hint">
-                A terminal should have opened — complete the login in your browser, then click
-                Refresh. If no terminal opened, run this command yourself:
-              </p>
-              <code className="login-cmd">{loginCmd.command}</code>
-              <div className="login-hint-actions">
-                <button className="btn-primary small" onClick={refresh} disabled={busy}>
-                  Refresh status
-                </button>
-                <button className="btn-text" onClick={() => setLoginCmd(null)}>
-                  Dismiss
-                </button>
-              </div>
-            </div>
+        {ui.loginCmd &&
+          loginBlock(
+            ui.loginCmd.command,
+            () => refreshProvider(p),
+            () => updateProvider(p, { loginCmd: null })
           )}
 
-          <div className="add-account">
-            <input
-              className="add-account-input"
-              placeholder="New account name (e.g. Work, Personal)"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && addAccount()}
-              spellCheck={false}
-            />
-            <button className="btn-primary small" onClick={addAccount} disabled={!newName.trim() || busy}>
-              Add &amp; log in
+        {addRow(
+          `New ${PROVIDER_LABEL[p]} account name (e.g. Work, Personal)`,
+          ui.newName,
+          (v) => updateProvider(p, { newName: v }),
+          () => addProviderAccount(p)
+        )}
+      </section>
+    )
+  }
+
+  const renderAntigravitySection = () => (
+    <section className="acct-section">
+      <div className="eyebrow">Antigravity</div>
+      <p className="help">
+        Gemini models run through Antigravity, Google&rsquo;s agentic CLI, launched with <code>agy</code>. It uses a
+        single machine-wide login stored in your OS keyring, so there is just one account.
+      </p>
+
+      <div className="acct-rows">
+        <div className="acct-row">
+          <i className="acct-dot ok" />
+          <div className="acct-body">
+            <div className="acct-name">Antigravity</div>
+            <div className="acct-meta">Machine-wide login via agy, stored in your OS keyring</div>
+          </div>
+          <div className="acct-actions">
+            <button type="button" className="btn-ghost small" onClick={() => loginProviderAccount('gemini', 'default')} disabled={busy}>
+              Log in
             </button>
           </div>
-
-          {renderProviderSection('codex')}
-          {renderAntigravitySection()}
-        </div>
-
-        <div className="modal-footer">
-          <button className="btn-primary" onClick={onClose}>Done</button>
         </div>
       </div>
-    </div>
+      <p className="help">Log in opens Antigravity in a terminal. Complete the Google sign-in there.</p>
+    </section>
+  )
+
+  return (
+    <Sheet
+      title="Accounts"
+      width={560}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn-ghost" onClick={onClose}>
+            Done
+          </button>
+          <span className="help">Esc closes</span>
+        </>
+      }
+    >
+      <div className="acct-page">
+        <section className="acct-section">
+          <div className="eyebrow">Claude</div>
+          <p className="help">
+            Each account is a separate Claude Code login. Switch the active account from the account picker in
+            the sidebar; new chats use the selected account.
+          </p>
+
+          <div className="acct-rows">
+            {accounts.map((a) =>
+              accountRow(a, {
+                defaultId,
+                meta: a.loggedIn
+                  ? [a.email, a.org, a.plan].filter(Boolean).join(' · ') || 'Logged in'
+                  : a.isDefault
+                    ? 'Uses this machine’s Claude Code login'
+                    : 'Run the login to authenticate this account',
+                editing: editingId === a.id,
+                editName,
+                onEditName: setEditName,
+                onSaveRename: saveRename,
+                onCancelRename: () => setEditingId(null),
+                onStartRename: () => startRename(a),
+                onLogin: () => login(a.id),
+                onMakeDefault: () => makeDefault(a.id),
+                onRemove: () => remove(a.id)
+              })
+            )}
+          </div>
+
+          {loginCmd && loginBlock(loginCmd.command, refresh, () => setLoginCmd(null))}
+
+          {addRow('New account name (e.g. Work, Personal)', newName, setNewName, addAccount)}
+        </section>
+
+        {renderProviderSection('codex')}
+        {renderAntigravitySection()}
+      </div>
+    </Sheet>
   )
 }

@@ -1,130 +1,74 @@
-.accounts-modal { max-width: 640px; width: 92%; }
+/* ── Accounts sheet ──
+   One eyebrow per provider; an account is a flat row (dot, name, chip, muted meta) with
+   its actions on the right. The one tinted block is "Finish logging in", because it is
+   the one thing here that needs the operator. Prefixed `acct-`: `.account-dot` belongs
+   to the sidebar's account picker. */
 
-.account-rows {
+.acct-page {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 6px 0;
+  gap: 26px;
+  padding: 18px 22px 22px;
 }
+.acct-section { display: flex; flex-direction: column; gap: 8px; }
+.acct-section .help code { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-1); }
 
-/* Tighten the modal's stacked spacing — titles, hints and row groups were too airy. */
-.accounts-modal .field-hint { margin: 3px 0 0; }
+.acct-rows { display: flex; flex-direction: column; }
 
-.account-row {
+.acct-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
-  padding: 9px 12px;
-  background: var(--bg-2);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
 }
+.acct-row:last-child { border-bottom: none; }
 
-.account-row .account-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-top: 5px;
-  flex-shrink: 0;
-}
-.account-row .account-dot.ok { background: var(--success); }
-.account-row .account-dot.warn { background: var(--warn); }
+.acct-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--text-2); }
+.acct-dot.ok { background: var(--success); }
 
-.account-row-body { flex: 1; min-width: 0; }
-
-.account-row-name {
+.acct-body { flex: 1; min-width: 0; }
+.acct-name {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-0);
 }
-
-.account-row-meta {
-  margin-top: 3px;
-  font-size: 11.5px;
+.acct-meta {
+  margin-top: 2px;
+  font-size: 12px;
   color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.acct-rename { height: 30px; }
 
-.account-row-actions {
+.acct-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex-shrink: 0;
   flex-wrap: wrap;
   justify-content: flex-end;
-  max-width: 220px;
+  max-width: 260px;
 }
 
-.account-rename-input {
-  width: 100%;
-  padding: 5px 8px;
-  background: var(--bg-1);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-sm);
-  color: var(--text-0);
-  font-size: 13px;
-}
-
-.login-hint {
-  margin: 12px 0;
-  padding: 12px;
-  background: var(--accent-dim);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-}
-.login-hint-title { font-size: 13px; font-weight: 600; color: var(--text-0); margin-bottom: 4px; }
-
-.login-cmd {
+.acct-login-title { font-size: 13px; font-weight: 650; color: var(--text-0); }
+.acct-cmd {
   display: block;
-  margin: 8px 0;
   padding: 8px 10px;
   background: var(--bg-1);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-surface);
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--text-0);
   word-break: break-all;
   user-select: all;
 }
+.acct-login-actions { display: flex; align-items: center; gap: 8px; }
 
-.login-hint-actions { display: flex; align-items: center; gap: 8px; }
-
-/* No own divider — the "New account" input is clearly part of its section, and the
-   next section title already draws a separator. Avoids two stacked dividers + a gap. */
-.add-account {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-.add-account-input {
-  flex: 1;
-  padding: 8px 10px;
-  background: var(--bg-2);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  color: var(--text-0);
-  font-size: 13px;
-}
-.add-account-input:focus { border-color: var(--accent); outline: none; }
-
-.accounts-section-title {
-  margin: 10px 0 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--border-light);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-0);
-}
-/* The first section title ("Claude accounts") leads the modal body — drop the
-   separator border/spacing so it doesn't render a stray divider + gap at the top. */
-.accounts-modal .modal-body > .accounts-section-title:first-child {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: none;
-}
+.acct-add { display: flex; gap: 8px; margin-top: 4px; }
+.acct-add .text-input { flex: 1; height: 30px; }

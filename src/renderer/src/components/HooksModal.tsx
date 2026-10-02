@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ClaudeHooks, ClaudeHookEntry, HOOK_EVENTS, HookEvent } from '../types'
-import { useModalA11y } from '../hooks/useModalA11y'
+import Sheet from './Sheet'
 import './HooksModal.css'
 
 interface Props {
@@ -21,8 +21,6 @@ export default function HooksModal({ onClose }: Props) {
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [showJson, setShowJson] = useState(false)
-  const dialogRef = useRef<HTMLDivElement>(null)
-  useModalA11y(dialogRef, onClose)
 
   useEffect(() => {
     window.electronAPI.getClaudeHooks().then(setHooks)
@@ -76,136 +74,126 @@ export default function HooksModal({ onClose }: Props) {
   const hasAny = Object.keys(hooks).some((k) => hooks[k]?.length > 0)
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="modal hooks-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="hooks-modal-title"
-        tabIndex={-1}
-        ref={dialogRef}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h3 id="hooks-modal-title">Hooks</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+    <Sheet
+      title="Hooks"
+      width={520}
+      onClose={onClose}
+      footer={
+        <>
+          <span className="help perms-saved">{saved ? 'Saved' : ''}</span>
+          <button type="button" className="btn-ghost" onClick={onClose}>
+            Done
           </button>
-        </div>
+          <span className="help">Esc closes</span>
+        </>
+      }
+    >
+      <div className="hooks-body">
+        <p className="help">
+          Shell commands Claude Code runs on lifecycle events. Saved to <code>~/.claude/settings.json</code> as you
+          edit.
+        </p>
 
-        <div className="modal-body hooks-body">
-          <p className="field-hint hooks-intro">
-            Shell commands Claude Code runs automatically on lifecycle events. Written to{' '}
-            <code>~/.claude/settings.json</code>.
-          </p>
+        {saveError && (
+          <div className="block err" role="alert">
+            {saveError}
+          </div>
+        )}
 
-          {saveError && (
-            <div className="hooks-error" role="alert">
-              {saveError}
-            </div>
-          )}
-
-          {/* Configured hooks list */}
-          {hasAny ? (
-            <div className="hooks-list">
-              {allEventKeys.map((event) => (
-                <div key={event} className="hooks-group">
-                  <div className="hooks-group-label">{event}</div>
-                  {(hooks[event] ?? []).map((entry, idx) => (
-                    <div key={idx} className="hooks-entry">
-                      <div className="hooks-entry-meta">
-                        {entry.matcher && (
-                          <span className="hooks-matcher" title="Matcher (tool glob)">
-                            {entry.matcher}
-                          </span>
-                        )}
-                      </div>
-                      <code className="hooks-command">{entry.hooks[0]?.command ?? ''}</code>
-                      <button
-                        className="perms-remove"
-                        onClick={() => removeHook(event, idx)}
-                        aria-label={`Remove hook ${idx} from ${event}`}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
+        {hasAny ? (
+          allEventKeys.map((event) => (
+            <div key={event} className="hooks-group">
+              <div className="eyebrow">{event}</div>
+              {(hooks[event] ?? []).map((entry, idx) => (
+                <div key={idx} className="hooks-entry">
+                  {entry.matcher && (
+                    <span className="chip mono" title="Matcher (tool glob)">
+                      {entry.matcher}
+                    </span>
+                  )}
+                  <code className="hooks-command">{entry.hooks[0]?.command ?? ''}</code>
+                  <button
+                    type="button"
+                    className="perms-remove"
+                    onClick={() => removeHook(event, idx)}
+                    aria-label={`Remove hook ${idx} from ${event}`}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6L6 18" />
+                    </svg>
+                  </button>
                 </div>
               ))}
             </div>
-          ) : (
-            <p className="hooks-empty">No hooks configured.</p>
-          )}
+          ))
+        ) : (
+          <p className="help">No hooks configured.</p>
+        )}
 
-          {/* Add hook form */}
-          <div className="hooks-form">
-            <div className="hooks-form-title">Add hook</div>
+        <div
+          className="hooks-form"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') void addHook()
+          }}
+        >
+          <div className="eyebrow">Add hook</div>
 
-            <div className="hooks-form-row">
-              <label className="hooks-form-label">Event</label>
-              <select
-                className="hooks-select"
-                value={form.event}
-                onChange={(e) => setForm((f) => ({ ...f, event: e.target.value as HookEvent }))}
-              >
-                {HOOK_EVENTS.map((ev) => (
-                  <option key={ev} value={ev}>{ev}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="hooks-form-row">
-              <label className="hooks-form-label">Matcher <span className="hooks-optional">(optional)</span></label>
-              <input
-                className="hooks-input"
-                value={form.matcher}
-                onChange={(e) => setForm((f) => ({ ...f, matcher: e.target.value }))}
-                placeholder="Tool name glob, e.g. Bash"
-                spellCheck={false}
-              />
-            </div>
-
-            <div className="hooks-form-row">
-              <label className="hooks-form-label">Command</label>
-              <input
-                className="hooks-input"
-                value={form.command}
-                onChange={(e) => setForm((f) => ({ ...f, command: e.target.value }))}
-                onKeyDown={(e) => e.key === 'Enter' && addHook()}
-                placeholder="Shell command to run"
-                spellCheck={false}
-              />
-            </div>
-
-            <div className="hooks-form-actions">
-              <button
-                className="btn-primary small"
-                onClick={addHook}
-                disabled={!form.command.trim()}
-              >
-                Add hook
-              </button>
-            </div>
+          <div className="form-group">
+            <label htmlFor="hook-event">Event</label>
+            <select
+              id="hook-event"
+              className="text-input"
+              value={form.event}
+              onChange={(e) => setForm((f) => ({ ...f, event: e.target.value as HookEvent }))}
+            >
+              {HOOK_EVENTS.map((ev) => (
+                <option key={ev} value={ev}>
+                  {ev}
+                </option>
+              ))}
+            </select>
           </div>
 
-          {/* JSON preview */}
-          <div className="hooks-json-toggle">
-            <button className="btn-text" onClick={() => setShowJson((v) => !v)}>
-              {showJson ? 'Hide JSON' : 'Show resulting JSON'}
+          <div className="form-group">
+            <label htmlFor="hook-matcher">
+              Matcher<span className="optional">optional</span>
+            </label>
+            <input
+              id="hook-matcher"
+              className="text-input mono"
+              value={form.matcher}
+              onChange={(e) => setForm((f) => ({ ...f, matcher: e.target.value }))}
+              placeholder="Tool name glob, e.g. Bash"
+              spellCheck={false}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="hook-command">Command</label>
+            <input
+              id="hook-command"
+              className="text-input mono"
+              value={form.command}
+              onChange={(e) => setForm((f) => ({ ...f, command: e.target.value }))}
+              placeholder="Shell command to run"
+              spellCheck={false}
+            />
+          </div>
+
+          <div className="hooks-form-actions">
+            <button type="button" className="btn-ghost" onClick={addHook} disabled={!form.command.trim()}>
+              Add hook
             </button>
           </div>
-          {showJson && (
-            <pre className="hooks-json">{JSON.stringify(hooks, null, 2)}</pre>
-          )}
         </div>
 
-        <div className="modal-footer">
-          {saved && <span className="perms-saved">✓ Saved</span>}
-          <button className="btn-primary" onClick={onClose}>Done</button>
+        <div className="hooks-json-toggle">
+          <button type="button" className="btn-text" onClick={() => setShowJson((v) => !v)}>
+            {showJson ? 'Hide JSON' : 'Show JSON'}
+          </button>
         </div>
+        {showJson && <pre className="hooks-json">{JSON.stringify(hooks, null, 2)}</pre>}
       </div>
-    </div>
+    </Sheet>
   )
 }
