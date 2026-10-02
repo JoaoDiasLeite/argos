@@ -1,0 +1,951 @@
+<title>Argos Port Wireframes</title>
+<style>
+/* Layout: one scrolling review page; each wireframe is a fixed 1400x860 frame scaled to fit the reader's width.
+   Tokens are copied from src/renderer/src/styles/global.css (Warm Rust, dark first) so the frames show the real palette. */
+:root{
+  --bg-0:#141312;--bg-1:#1c1b19;--bg-2:#252320;--bg-3:#302d29;--border:#302c28;--border-light:#48423a;
+  --text-0:#efece8;--text-1:#b3ada4;--text-2:#7c766e;--accent:#df7a52;--success:#5cb37e;--warn:#d9a83c;--error:#e36460;
+  --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;--font-mono:Menlo,Monaco,Consolas,"Courier New",monospace;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --bg-0:#f7f5f1;--bg-1:#f1eee7;--bg-2:#eae6de;--bg-3:#e2ddd3;--border:#e0dad0;--border-light:#cec7ba;
+  --text-0:#2a2622;--text-1:#5d574f;--text-2:#8a847a;--accent:#bd5d44;--success:#3a9c63;--warn:#a8720f;--error:#cf3b3b;color-scheme:light}}
+:root[data-theme="light"]{
+  --bg-0:#f7f5f1;--bg-1:#f1eee7;--bg-2:#eae6de;--bg-3:#e2ddd3;--border:#e0dad0;--border-light:#cec7ba;
+  --text-0:#2a2622;--text-1:#5d574f;--text-2:#8a847a;--accent:#bd5d44;--success:#3a9c63;--warn:#a8720f;--error:#cf3b3b;color-scheme:light}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg-0);color:var(--text-0);font-family:var(--font-sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1480px;margin:0 auto;padding-block:32px 64px;padding-inline:16px}
+h1{font-size:26px;font-weight:650;letter-spacing:-.01em;margin:0 0 6px}
+h2{font-size:20px;font-weight:650;letter-spacing:-.01em;margin:48px 0 4px;padding-top:24px;border-top:1px solid var(--border);text-wrap:balance}
+h3{font-size:15px;font-weight:650;margin:28px 0 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+p{max-width:72ch;color:var(--text-1);margin:0 0 10px}
+.lead{color:var(--text-2);font-size:13px}
+.rec{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--bg-0);background:var(--accent);padding:2px 7px;border-radius:3px}
+.alt{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-2);border:1px solid var(--border-light);padding:1px 7px;border-radius:3px}
+.note{font-size:12.5px;color:var(--text-2);max-width:80ch;margin:8px 0 0}
+.note b{color:var(--text-1);font-weight:600}
+.toolbar{display:flex;gap:8px;align-items:center;margin:16px 0 0;flex-wrap:wrap}
+.toolbar button{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--border-light);background:transparent;color:var(--text-1);font:inherit;font-size:12.5px;cursor:pointer}
+.toolbar button[aria-pressed="true"]{background:var(--bg-2);color:var(--text-0)}
+.toolbar button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.toc{display:flex;flex-wrap:wrap;gap:6px 14px;margin:14px 0 0;font-size:13px}
+.toc a{color:var(--text-1);text-decoration:none;border-bottom:1px solid var(--border-light)}
+.toc a:hover{color:var(--text-0)}
+
+/* frame scaler */
+.fw{width:100%;overflow:hidden;border:1px solid var(--border);border-radius:4px;background:var(--bg-0)}
+.fw.real{overflow-x:auto}
+.fs{transform-origin:0 0;width:1400px}
+
+/* ───────── wireframe primitives (the design system itself) ───────── */
+.frame{position:relative;width:1400px;height:860px;background:var(--bg-0);color:var(--text-0);display:flex;overflow:hidden;font-size:13px;line-height:1.5}
+.frame *{min-width:0}
+.rail{width:68px;flex:none;background:var(--bg-1);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:2px}
+.rail i{display:flex;flex-direction:column;align-items:center;gap:3px;width:52px;padding:8px 0;border-radius:8px;font-size:10px;color:var(--text-2);font-style:normal}
+.rail i.on{background:var(--bg-2);color:var(--accent)}
+.rail .sp{flex:1}
+.i{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.i.lg{width:16px;height:16px}
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.page{flex:1;display:flex;min-height:0}
+.content{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+.column{width:460px;flex:none;border-left:1px solid var(--border);background:var(--bg-1);display:flex;flex-direction:column;min-height:0}
+.colsec{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+.colsec:last-child{border-bottom:0}
+.head{display:flex;align-items:center;gap:12px;padding:18px 24px 14px;border-bottom:1px solid var(--border)}
+.head .grow,.grow{flex:1}
+.body{padding:16px 24px;display:flex;flex-direction:column;gap:6px;overflow:hidden}
+.t1{font-size:22px;font-weight:650;letter-spacing:-.01em;line-height:1.2}
+.t2{font-size:15px;font-weight:650;letter-spacing:-.01em}
+.t3{font-size:13px;font-weight:650}
+.sub{font-size:12px;color:var(--text-2)}
+.muted{color:var(--text-2)}.t1c{color:var(--text-1)}
+.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-2);font-weight:600;padding:10px 0 4px}
+.btn{height:32px;padding:0 12px;border-radius:8px;border:1px solid var(--border-light);background:transparent;color:var(--text-1);font-size:12.5px;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;flex:none}
+.btn.p{background:var(--accent);border-color:var(--accent);color:var(--bg-0);font-weight:650}
+.btn.d{color:var(--error);border-color:color-mix(in srgb,var(--error) 45%,transparent)}
+.btn.dt{color:var(--error);border-color:transparent}
+.btn.sm{height:28px;padding:0 10px;font-size:12px}
+.btn.ic{width:32px;padding:0}
+.btn.ic.sm{width:28px}
+.btn.off{opacity:.45}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;padding:2px;gap:2px;flex:none;background:var(--bg-0)}
+.seg span{padding:4px 10px;border-radius:6px;font-size:12px;color:var(--text-2);white-space:nowrap;display:inline-flex;gap:6px;align-items:center}
+.seg span.on{background:var(--bg-2);color:var(--text-0);font-weight:600}
+.seg span em{font-style:normal;color:var(--text-2);font-weight:400}
+.seg.tall span{padding:7px 14px}
+.input,.select{height:34px;border-radius:4px;background:var(--bg-1);border:1px solid var(--border);padding:0 12px;display:flex;align-items:center;gap:8px;color:var(--text-2);font-size:13px}
+.input.v,.select.v{color:var(--text-0)}
+.input.focus,.select.focus{border-color:var(--border-light)}
+.select{justify-content:space-between}
+.select .i{margin-right:-2px;color:var(--text-2)}
+.select .det{color:var(--text-2);font-size:12px}
+.textarea{min-height:76px;border-radius:4px;background:var(--bg-1);border:1px solid var(--border);padding:10px 12px;color:var(--text-2)}
+.field{display:flex;flex-direction:column;gap:6px}
+.label{font-size:12px;font-weight:600;color:var(--text-1)}
+.label .opt{font-weight:400;color:var(--text-2);margin-left:6px}
+.help{font-size:11.5px;color:var(--text-2)}
+.row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:4px;color:var(--text-1)}
+.row.sel{background:var(--bg-2);color:var(--text-0)}
+.row.hov{background:var(--bg-3)}
+.row .n{color:var(--text-0);font-weight:500}
+.row .r{margin-left:auto;display:flex;align-items:center;gap:10px;flex:none}
+.row.line{border-radius:0;border-bottom:1px solid var(--border);padding:10px 0}
+.row.line:last-child{border-bottom:0}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--text-2);flex:none}
+.dot.ok{background:var(--success)}.dot.w{background:var(--warn)}.dot.e{background:var(--error)}.dot.a{background:var(--accent)}
+.dot.sm{width:7px;height:7px}
+.mono{font-family:var(--font-mono);font-size:12.5px}
+.mono.s{font-size:12px}
+.chip{font-size:11px;padding:1px 6px;border-radius:3px;background:var(--bg-2);color:var(--text-1);border:1px solid var(--border);white-space:nowrap;line-height:1.5}
+.chip.m{font-family:var(--font-mono);font-size:10.5px}
+.chip.w{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,transparent);background:color-mix(in srgb,var(--warn) 6%,var(--bg-2))}
+.chip.e{color:var(--error);border-color:color-mix(in srgb,var(--error) 35%,transparent);background:color-mix(in srgb,var(--error) 6%,var(--bg-2))}
+.chip.ok{color:var(--success);border-color:color-mix(in srgb,var(--success) 35%,transparent);background:color-mix(in srgb,var(--success) 6%,var(--bg-2))}
+.block{background:var(--bg-2);border-radius:4px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.block.warn{border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);background:color-mix(in srgb,var(--warn) 6%,var(--bg-2))}
+.block.err{border:1px solid color-mix(in srgb,var(--error) 45%,transparent);background:color-mix(in srgb,var(--error) 6%,var(--bg-2))}
+.block.flat{background:var(--bg-1);border:1px solid var(--border)}
+.wt{font-size:12.5px;font-weight:650;color:var(--warn)}
+.et{font-size:12.5px;font-weight:650;color:var(--error)}
+.num{font-size:20px;font-weight:650;line-height:1.1;font-variant-numeric:tabular-nums}
+.cap{font-size:11.5px;color:var(--text-2)}
+.stat{display:flex;flex-direction:column;gap:3px;min-width:120px}
+.stats{display:flex;gap:36px;padding:14px 24px;border-bottom:1px solid var(--border)}
+.divcap{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text-2);padding:12px 0 6px}
+.divcap::before,.divcap::after{content:"";flex:1;height:1px;background:var(--border)}
+.bar{height:4px;border-radius:2px;background:var(--bg-2);overflow:hidden;display:flex;width:100%}
+.bar.on1{background:var(--bg-3)}
+.bar b{display:block;height:100%}
+.bar .s{background:var(--success)}.bar .w{background:var(--warn)}.bar .e{background:var(--error)}.bar .a{background:var(--accent)}
+.code{font-family:var(--font-mono);font-size:12.5px;background:var(--bg-0);border:1px solid var(--border);border-radius:4px;padding:6px 10px;color:var(--text-0)}
+.term{flex:1;padding:16px 18px;font-family:var(--font-mono);font-size:12.5px;line-height:1.7;color:var(--text-2);display:flex;flex-direction:column;gap:8px}
+.term .u{color:var(--text-1)}
+.kv{display:grid;grid-template-columns:140px 1fr;gap:6px 14px;font-size:12.5px}
+.kv dt{color:var(--text-2);margin:0}.kv dd{margin:0;color:var(--text-0)}
+.cols{display:flex;gap:16px;padding:16px 24px;flex:1;min-height:0}
+.col3{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}
+.sheet{position:absolute;right:0;top:0;bottom:0;width:520px;background:var(--bg-1);border-left:1px solid var(--border);box-shadow:-16px 0 40px rgba(0,0,0,.28);display:flex;flex-direction:column}
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.22)}
+.sheet .sh{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--border)}
+.sheet .sb{padding:16px 18px;display:flex;flex-direction:column;gap:14px;overflow:hidden;flex:1}
+.sheet .sf{padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
+.tile{flex:1;border-radius:8px;border:1px solid var(--border);background:var(--bg-1);padding:12px;display:flex;flex-direction:column;gap:8px}
+.tile.on{border-color:var(--border-light);background:var(--bg-2)}
+.mock{height:54px;border-radius:4px;border:1px solid var(--border);background:var(--bg-0);display:flex}
+.mock i{display:block;width:14px;background:var(--bg-2);border-right:1px solid var(--border)}
+.mock.light{background:#f7f5f1;border-color:#e0dad0}.mock.light i{background:#eae6de;border-color:#e0dad0}
+.swatch{width:22px;height:22px;border-radius:4px;border:1px solid var(--border-light)}
+.toggle{width:34px;height:20px;border-radius:8px;border:1px solid var(--border-light);position:relative;background:var(--bg-2)}
+.toggle::after{content:"";position:absolute;top:3px;left:3px;width:12px;height:12px;border-radius:50%;background:var(--text-2)}
+.toggle.on{background:var(--accent);border-color:var(--accent)}.toggle.on::after{left:17px;background:var(--bg-0)}
+.slider{flex:1;height:4px;border-radius:2px;background:var(--bg-3);position:relative;max-width:220px}
+.slider::before{content:"";position:absolute;left:0;top:0;width:50%;height:100%;background:var(--accent);border-radius:2px}
+.slider::after{content:"";position:absolute;left:calc(50% - 6px);top:-4px;width:12px;height:12px;border-radius:50%;background:var(--text-0)}
+.srow{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border)}
+.srow:last-child{border-bottom:0}
+.srow .sl{flex:1;display:flex;flex-direction:column;gap:2px}
+.srow .sl .label{font-size:13px;color:var(--text-0)}
+.snav{width:220px;flex:none;border-right:1px solid var(--border);padding:14px 12px;display:flex;flex-direction:column;gap:2px}
+.plist{width:250px;flex:none;border-right:1px solid var(--border);padding:12px;display:flex;flex-direction:column;gap:4px}
+.sidebar{width:260px;flex:none;background:var(--bg-1);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:10px}
+.table{width:100%;border-collapse:collapse;font-size:12.5px}
+.table th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-2);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--border)}
+.table td{padding:7px 8px;border-bottom:1px solid var(--border);color:var(--text-1);font-variant-numeric:tabular-nums}
+.table td.n{color:var(--text-0)}.table td.r,.table th.r{text-align:right}
+.quote{border-left:2px solid var(--border-light);padding:4px 10px;color:var(--text-1);font-size:12.5px;line-height:1.5}
+.hcard{display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:4px}
+.plan{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px}
+.plan th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-2);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--border)}
+.plan td{padding:10px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--text-1)}
+.plan td:first-child{color:var(--text-0);font-weight:650;white-space:nowrap}
+.plan code{font-family:var(--font-mono);font-size:12px;color:var(--text-0)}
+.plan .m{white-space:nowrap}
+.legend{display:flex;flex-wrap:wrap;gap:10px 22px;margin:14px 0 0;font-size:12.5px;color:var(--text-1)}
+.legend span{display:inline-flex;align-items:center;gap:8px}
+@media (max-width:720px){.plan{display:block;overflow-x:auto}.stats{gap:20px}}
+@media (prefers-reduced-motion: no-preference){.fs{transition:transform .15s}}
+</style>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="chevr" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="chevl" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol>
+  <symbol id="key" viewBox="0 0 24 24"><circle cx="8" cy="14" r="4"/><path d="M11 11l9-9M16 6l3 3M14 8l2 2"/></symbol>
+  <symbol id="home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v10H3z"/></symbol>
+  <symbol id="chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+  <symbol id="folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol>
+  <symbol id="cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+  <symbol id="bars" viewBox="0 0 24 24"><path d="M5 20V10M12 20V4M19 20v-7"/></symbol>
+  <symbol id="srv" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/></symbol>
+  <symbol id="gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></symbol>
+  <symbol id="pen" viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/></symbol>
+  <symbol id="refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-3-6.2M20 4v5h-5"/></symbol>
+  <symbol id="tag" viewBox="0 0 24 24"><path d="M3 3h8l10 10-8 8L3 11z"/><circle cx="8" cy="8" r="1"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></symbol>
+  <symbol id="up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+  <symbol id="file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/></symbol>
+  <symbol id="panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M9 4v16"/></symbol>
+  <symbol id="term" viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8"/></symbol>
+</svg>
+
+<div class="wrap">
+<h1>Argos Port Wireframes</h1>
+<p>Os ecrãs que faltam trazer ao <code>SYSTEM-DESIGN.md</code>, desenhados com as regras do documento: cantos de 8 px só no que se carrega, 4 px em superfícies, cor só onde há estado, uma acção primária por ecrã, a coluna direita para o que precisa de ti. Onde há uma decisão estrutural há duas variantes; onde não há, um só frame. Tudo usa os tokens reais do <code>global.css</code>, por isso o tema desta página (claro ou escuro) mostra as duas paletas.</p>
+<div class="toolbar">
+  <button type="button" id="fit" aria-pressed="true">Ajustar à largura</button>
+  <button type="button" id="real" aria-pressed="false">Tamanho real (1400 px)</button>
+  <button type="button" id="theme">Alternar tema</button>
+</div>
+<nav class="toc" aria-label="Secções">
+  <a href="#servers">1 Servers</a><a href="#session">1c Sessão remota</a><a href="#settings">2 Settings</a><a href="#projects">3 Projects</a><a href="#sprint">4 Sprint</a><a href="#home">5 Home</a><a href="#sidebar">6 Sidebar e setup</a><a href="#usage">7 Usage</a><a href="#plan">8 Plano</a>
+</nav>
+<div class="legend">
+  <span><i class="dot ok"></i> correu, ligado, intacto</span>
+  <span><i class="dot w"></i> espera por ti, sudo, aviso</span>
+  <span><i class="dot e"></i> falhou, recusado, destrutivo</span>
+  <span><i class="dot"></i> em fila, desconhecido</span>
+  <span><i class="chip">chip 3 px</i> só rotula</span>
+  <span><i class="btn sm" style="height:22px">botão 8 px</i> carrega-se</span>
+</div>
+
+<!-- ═══════════════════════ 1 SERVERS ═══════════════════════ -->
+<h2 id="servers">1 · Servers — Remote &amp; WSL</h2>
+<p>Hoje: duas secções em caixa, acções escondidas num menu "More", email a azul, modal para editar. A sub-navegação Remote &amp; WSL / Ops / MCP passa para um segmentado junto ao título, em vez de uma faixa própria.</p>
+
+<h3>1A · Lista plana com acções na linha <span class="alt">Não escolhido</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i class="on"><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="main">
+    <div class="head">
+      <span class="t1">Servers</span>
+      <span class="seg"><span class="on">Remote &amp; WSL</span><span>Ops</span><span>MCP</span></span>
+      <span class="grow"></span>
+      <span class="btn"><svg class="i"><use href="#key"/></svg>SSH keys</span>
+      <span class="btn p"><svg class="i"><use href="#plus"/></svg>Add SSH host</span>
+    </div>
+    <div class="body" style="padding-top:14px">
+      <div style="display:flex;gap:10px;align-items:center">
+        <span class="input" style="flex:1"><svg class="i"><use href="#search"/></svg>Filter targets</span>
+        <span class="seg"><span class="on">All <em>5</em></span><span>WSL <em>3</em></span><span>SSH <em>2</em></span></span>
+      </div>
+      <div class="eyebrow">WSL distros</div>
+      <div class="row"><i class="dot ok"></i><span class="n">Ubuntu</span><span class="chip">default</span><span class="r"><span class="mono s muted">wsl -d Ubuntu</span><span class="muted" style="font-size:12px">joao.leite@wiremaze.com</span><span class="btn sm">Connect</span><span class="btn sm ic"><svg class="i"><use href="#more"/></svg></span></span></div>
+      <div class="row"><i class="dot ok"></i><span class="n">Ubuntu-DevOps</span><span class="r"><span class="mono s muted">wsl -d Ubuntu-DevOps</span><span class="muted" style="font-size:12px">joao.leite@wiremaze.com</span><span class="btn sm">Connect</span><span class="btn sm ic"><svg class="i"><use href="#more"/></svg></span></span></div>
+      <div class="row"><i class="dot"></i><span class="n">docker-desktop</span><span class="r"><span class="mono s muted">wsl -d docker-desktop</span><span class="muted" style="font-size:12px">no Claude Code</span><span class="btn sm">Connect</span><span class="btn sm ic"><svg class="i"><use href="#more"/></svg></span></span></div>
+      <div class="row" style="padding-left:8px;color:var(--text-2);font-size:12px"><svg class="i"><use href="#chevr"/></svg>1 hidden distro</div>
+      <div class="eyebrow" style="margin-top:8px">SSH hosts</div>
+      <div class="row"><i class="dot ok"></i><span class="n">Rocky-9-Testes</span><span class="chip">key</span><span class="r"><span class="mono s muted">jdl@10.20.0.15:22</span><span class="btn sm">Connect</span><span class="btn sm">Ops</span><span class="btn sm ic"><svg class="i"><use href="#more"/></svg></span></span></div>
+      <div class="row"><i class="dot e"></i><span class="n">wm-portal-staging</span><span class="chip">password</span><span class="r"><span style="font-size:12px;color:var(--error)">Permission denied (publickey)</span><span class="mono s muted">deploy@portal-stg:22</span><span class="btn sm">Connect</span><span class="btn sm ic"><svg class="i"><use href="#more"/></svg></span></span></div>
+      <div class="help" style="padding:6px 10px">Click a row to connect. Everything else is in the row menu.</div>
+    </div>
+  </div>
+</div></div></div>
+<p class="note"><b>O que muda:</b> caixas removidas, linhas de 4 px, email em <code>--text-2</code>, chip de autenticação a 3 px, erro só na linha que falhou. <b>O que fica igual:</b> o menu "More" e o modal Add/Edit host, que continuam a esconder metade das acções.</p>
+
+<h3>1B · Lista à esquerda, coluna do alvo à direita <span class="rec">Escolhido</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i class="on"><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="main">
+    <div class="head">
+      <span class="t1">Servers</span>
+      <span class="seg"><span class="on">Remote &amp; WSL</span><span>Ops</span><span>MCP</span></span>
+      <span class="grow"></span>
+      <span class="btn"><svg class="i"><use href="#key"/></svg>SSH keys</span>
+      <span class="btn p"><svg class="i"><use href="#plus"/></svg>Add SSH host</span>
+    </div>
+    <div class="page">
+      <div class="content">
+        <div class="body" style="padding-top:14px">
+          <div style="display:flex;gap:10px;align-items:center">
+            <span class="input" style="flex:1"><svg class="i"><use href="#search"/></svg>Filter targets</span>
+            <span class="seg"><span class="on">All <em>5</em></span><span>WSL <em>3</em></span><span>SSH <em>2</em></span></span>
+          </div>
+          <div class="eyebrow">WSL distros</div>
+          <div class="row"><i class="dot ok"></i><span class="n">Ubuntu</span><span class="chip">default</span><span class="r"><span class="mono s muted">wsl -d Ubuntu</span></span></div>
+          <div class="row"><i class="dot ok"></i><span class="n">Ubuntu-DevOps</span><span class="r"><span class="mono s muted">wsl -d Ubuntu-DevOps</span></span></div>
+          <div class="row"><i class="dot"></i><span class="n">docker-desktop</span><span class="r"><span class="muted" style="font-size:12px">no Claude Code</span><span class="mono s muted">wsl -d docker-desktop</span></span></div>
+          <div class="row" style="padding-left:8px;color:var(--text-2);font-size:12px"><svg class="i"><use href="#chevr"/></svg>1 hidden distro</div>
+          <div class="eyebrow" style="margin-top:8px">SSH hosts</div>
+          <div class="row sel"><i class="dot ok"></i><span class="n">Rocky-9-Testes</span><span class="chip">key</span><span class="r"><span class="mono s muted">jdl@10.20.0.15:22</span><svg class="i muted"><use href="#chevr"/></svg></span></div>
+          <div class="row"><i class="dot e"></i><span class="n">wm-portal-staging</span><span class="chip">password</span><span class="r"><span style="font-size:12px;color:var(--error)">could not connect</span><span class="mono s muted">deploy@portal-stg:22</span></span></div>
+        </div>
+      </div>
+      <div class="column">
+        <div class="colsec">
+          <div style="display:flex;align-items:center;gap:8px"><i class="dot ok"></i><span class="t2">Rocky-9-Testes</span><span class="grow"></span><span class="sub">reachable · 0.4 s</span></div>
+          <div class="mono s muted">jdl@10.20.0.15:22 · key ~/.ssh/id_ed25519</div>
+          <div style="display:flex;gap:8px;margin-top:4px"><span class="btn p" style="flex:1"><svg class="i"><use href="#play"/></svg>Connect</span><span class="btn">New terminal</span><span class="btn">Ops</span></div>
+        </div>
+        <div class="colsec" style="padding-top:12px">
+          <div class="eyebrow" style="padding-top:0">Details</div>
+          <dl class="kv">
+            <dt>Authentication</dt><dd>Private key <span class="mono s muted">id_ed25519</span></dd>
+            <dt>Remote path</dt><dd class="mono s">/home/jdl/dev/wm-project</dd>
+            <dt>Claude Code</dt><dd>2.1.4 · logged in as joao.leite@wiremaze.com</dd>
+            <dt>Checked</dt><dd>today 17:20</dd>
+          </dl>
+          <div style="display:flex;gap:8px;margin-top:4px"><span class="btn sm">Test connection</span><span class="btn sm">Check Claude Code</span><span class="btn sm">Edit host</span></div>
+        </div>
+        <div class="colsec">
+          <div class="eyebrow" style="padding-top:0">Ops</div>
+          <div class="row line" style="padding:6px 0"><span class="t1c">3 runbooks apply to this host</span><span class="r"><span class="muted" style="font-size:12px">read-only · strict</span></span></div>
+          <div class="divcap">Earlier today · 2 interventions</div>
+          <div class="row" style="padding:6px 0"><span style="font-size:12px">17:21 · diagnose-rails-host · finished · 9 calls</span><span class="r"><a href="#r" style="color:var(--text-1);font-size:12px">Report</a></span></div>
+          <div class="row" style="padding:6px 0"><span style="font-size:12px">12:27 · diagnose-rails-host · stopped · 2 calls</span><span class="r"><a href="#r" style="color:var(--text-1);font-size:12px">Report</a></span></div>
+        </div>
+        <div class="colsec" style="margin-top:auto;border-top:1px solid var(--border);border-bottom:0;flex-direction:row;align-items:center">
+          <span class="help">Removing a host keeps its audit log.</span><span class="grow"></span><span class="btn dt sm">Delete host</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div></div>
+<p class="note"><b>O que muda:</b> o menu "More" desaparece: tudo o que ele escondia (testar, verificar Claude Code, pasta de trabalho, editar, apagar, Ops) está visível na coluna do alvo seleccionado. O host que falhou mostraria no topo da coluna um bloco <i class="chip e">tinted</i> com a razão e "Test again". Add/Edit host abre como <b>sheet</b>, não modal. Para WSL a coluna mostra working dir e "Hide from Usage &amp; Projects". <b>Custo:</b> mais do que 1A (RemoteView 679 TSX reorganiza-se), mas reutiliza o padrão da OpsWorkspace.</p>
+
+<h3 id="session">1C · Sessão remota <span class="rec">Escolhido</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i class="on"><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="main">
+    <div style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg-1)">
+      <span class="btn sm" style="gap:8px;background:var(--bg-2);border-color:transparent;color:var(--text-0)"><i class="dot ok sm"></i>Rocky-9-Testes<svg class="i muted"><use href="#x"/></svg></span>
+      <span class="btn sm" style="gap:8px;border-color:transparent"><i class="dot sm"></i>Ubuntu-DevOps <em style="font-style:normal" class="muted">2</em><svg class="i muted"><use href="#chev"/></svg></span>
+      <span class="btn sm ic" style="border-color:transparent"><svg class="i"><use href="#plus"/></svg></span>
+    </div>
+    <div class="head" style="padding:12px 18px">
+      <svg class="i muted"><use href="#chevl"/></svg>
+      <i class="dot ok sm"></i><span class="t3" style="font-size:15px">Rocky-9-Testes</span><span class="mono s muted">jdl@10.20.0.15</span>
+      <span class="input v mono focus" style="flex:1;max-width:520px;height:30px">/home/jdl/dev/wm-project</span>
+      <span class="seg"><span class="on">Files</span><span>History</span></span>
+      <span class="grow"></span>
+      <span class="btn sm">Restart</span>
+    </div>
+    <div class="page">
+      <div style="width:440px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column">
+        <div class="block err" style="margin:12px 12px 0"><div style="display:flex;align-items:center;justify-content:space-between"><span class="et">Could not connect</span><span class="sub">timed out · 10 s</span></div><div style="font-size:12.5px" class="t1c">The SFTP channel did not open. The terminal still has a shell.</div><div style="display:flex;gap:8px"><span class="btn sm">Retry</span></div></div>
+        <div style="display:flex;gap:4px;align-items:center;padding:10px 12px 4px">
+          <span class="btn sm ic"><svg class="i"><use href="#up"/></svg></span><span class="btn sm ic"><svg class="i"><use href="#refresh"/></svg></span><span class="btn sm ic"><svg class="i"><use href="#folder"/></svg></span><span class="btn sm ic"><svg class="i"><use href="#file"/></svg></span>
+          <span class="mono s muted" style="margin-left:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">/home/jdl/dev/wm-project</span>
+        </div>
+        <div style="padding:4px 12px;display:flex;flex-direction:column;gap:2px">
+          <div class="row" style="padding:6px 8px"><svg class="i muted"><use href="#folder"/></svg><span class="n mono s">app</span><span class="r muted" style="font-size:11.5px">2 Oct 17:02</span></div>
+          <div class="row" style="padding:6px 8px"><svg class="i muted"><use href="#folder"/></svg><span class="n mono s">config</span><span class="r muted" style="font-size:11.5px">1 Oct 09:40</span></div>
+          <div class="row sel" style="padding:6px 8px"><svg class="i muted"><use href="#file"/></svg><span class="n mono s">Gemfile.lock</span><span class="r muted" style="font-size:11.5px">38 KB · 28 Sep</span></div>
+          <div class="row" style="padding:6px 8px"><svg class="i muted"><use href="#file"/></svg><span class="n mono s">.env.production</span><span class="r muted" style="font-size:11.5px">1 KB · 12 Sep</span></div>
+          <div class="row" style="padding:6px 8px"><svg class="i muted"><use href="#file"/></svg><span class="n mono s">config.ru</span><span class="r muted" style="font-size:11.5px">0.2 KB · 3 Jun</span></div>
+        </div>
+      </div>
+      <div class="term">
+        <div class="u">[jdl@rocky9 wm-project]$ systemctl status nginx</div>
+        <div>● nginx.service - The nginx HTTP and reverse proxy server<br>&nbsp;&nbsp;&nbsp;Active: active (running) since Mon 2026-09-29 08:12:40 WEST; 3 days ago</div>
+        <div class="u">[jdl@rocky9 wm-project]$ <span style="display:inline-block;width:7px;height:14px;background:var(--text-1);vertical-align:-2px"></span></div>
+      </div>
+    </div>
+  </div>
+</div></div></div>
+<p class="note"><b>O que muda:</b> os separadores de sessão passam a botões de 8 px (o activo em <code>--bg-2</code>), o caminho é um input mono de 4 px, o erro é o único bloco tingido e explica o que ainda funciona. Em vez de uma faixa vermelha de ponta a ponta, o erro vive no painel a que diz respeito. SftpBrowser mantém a estrutura; só radii, ícones e a confirmação "Delete? Yes / No" (passa a "Delete" em <code>--error</code> + "Keep").</p>
+
+<!-- ═══════════════════════ 2 SETTINGS ═══════════════════════ -->
+<h2 id="settings">2 · Settings</h2>
+<p>Hoje: cartões dentro de cartões (o cartão "Light theme" contém a pré-visualização, que contém um mock), três tiles de modo com mocks, botões que abrem modais. O lado esquerdo já é uma lista; fica.</p>
+
+<h3>2A · Tiles de modo mantidos, secções planas <span class="alt">Não escolhido</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i class="on"><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="page">
+    <div class="snav">
+      <div class="row" style="color:var(--text-2);font-size:12px;padding:6px 10px"><svg class="i"><use href="#chevl"/></svg>Back to app</div>
+      <div class="t1" style="padding:8px 10px 14px;font-size:18px">Settings</div>
+      <div class="row sel">Appearance</div><div class="row">General</div><div class="row">Connection</div><div class="row">System</div><div class="row">Ops audit</div><div class="row">About</div>
+    </div>
+    <div class="content" style="padding:28px 48px;max-width:860px">
+      <div class="t1" style="margin-bottom:18px">Appearance</div>
+      <div class="eyebrow" style="padding-top:0">Mode</div>
+      <div style="display:flex;gap:10px;margin:6px 0 22px">
+        <div class="tile"><div class="mock"><i></i></div><div><div class="t3">System</div><div class="help">Follows Windows</div></div></div>
+        <div class="tile"><div class="mock light"><i></i></div><div><div class="t3">Light</div><div class="help">Always light</div></div></div>
+        <div class="tile on"><div class="mock"><i></i></div><div><div class="t3">Dark</div><div class="help">Always dark</div></div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px"><span class="eyebrow" style="padding:0">Dark theme</span><span class="grow"></span><span class="seg"><span>Light</span><span class="on">Dark</span></span></div>
+      <div class="help" style="margin:4px 0 10px">Used whenever the app is showing dark, including when Mode follows the system.</div>
+      <div class="block flat" style="height:120px;padding:0;flex-direction:row;overflow:hidden"><div style="width:90px;background:var(--bg-1);border-right:1px solid var(--border)"></div><div style="padding:12px 14px;display:flex;flex-direction:column;gap:6px"><span class="t3">The quick brown fox</span><span class="help">Secondary text, one step back</span><div style="display:flex;gap:6px"><span class="btn p sm" style="height:24px">Run</span><span class="chip m">opus</span></div></div></div>
+      <div class="srow"><div class="sl"><span class="label">Preset</span><span class="help">A starting point; the rows below override it.</span></div><span class="select v" style="width:220px"><span>Warm Rust</span><svg class="i"><use href="#chev"/></svg></span></div>
+      <div class="srow"><div class="sl"><span class="label">Accent</span><span class="help">Buttons, links, the active rail entry.</span></div><span class="swatch" style="background:var(--accent)"></span><span class="mono s muted">default</span><span class="btn sm off">Reset</span></div>
+      <div class="srow"><div class="sl"><span class="label">Background</span><span class="help">The deepest surface; every other surface is derived from it.</span></div><span class="swatch" style="background:var(--bg-0)"></span><span class="mono s muted">default</span><span class="btn sm off">Reset</span></div>
+      <div class="srow"><div class="sl"><span class="label">Contrast</span><span class="help">50 is the preset's own separation between surfaces.</span></div><span class="slider"></span><span class="mono s">50</span><span class="btn sm off">Reset</span></div>
+      <div class="srow"><div class="sl"><span class="label">Translucent sidebar</span><span class="help">Blurs whatever is behind the chat list.</span></div><span class="toggle"></span></div>
+    </div>
+  </div>
+</div></div></div>
+
+<h3>2B · Modo como segmentado, uma só pré-visualização <span class="rec">Escolhido</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i class="on"><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="page">
+    <div class="snav">
+      <div class="row" style="color:var(--text-2);font-size:12px;padding:6px 10px"><svg class="i"><use href="#chevl"/></svg>Back to app</div>
+      <div class="t1" style="padding:8px 10px 14px;font-size:18px">Settings</div>
+      <div class="row sel">Appearance</div><div class="row">General</div><div class="row">Connection</div><div class="row">System</div><div class="row">Ops audit</div><div class="row">About</div>
+    </div>
+    <div class="content" style="padding:28px 48px;max-width:860px">
+      <div class="t1" style="margin-bottom:10px">Appearance</div>
+      <div class="srow"><div class="sl"><span class="label">Mode</span><span class="help">Which theme the app shows.</span></div><span class="seg tall"><span>System</span><span>Light</span><span class="on">Dark</span></span></div>
+      <div class="srow" style="border-bottom:0"><div class="sl"><span class="label">Theme being edited</span><span class="help">Each theme keeps its own preset, colours and contrast.</span></div><span class="seg tall"><span>Light</span><span class="on">Dark</span></span></div>
+      <div class="block flat" style="height:120px;padding:0;flex-direction:row;overflow:hidden;margin-bottom:4px"><div style="width:90px;background:var(--bg-1);border-right:1px solid var(--border)"></div><div style="padding:12px 14px;display:flex;flex-direction:column;gap:6px"><span class="t3">The quick brown fox</span><span class="help">Secondary text, one step back</span><div style="display:flex;gap:6px"><span class="btn p sm" style="height:24px">Run</span><span class="chip m">opus</span></div></div></div>
+      <div class="srow"><div class="sl"><span class="label">Preset</span><span class="help">A starting point; the rows below override it.</span></div><span class="select v" style="width:220px"><span>Warm Rust</span><svg class="i"><use href="#chev"/></svg></span></div>
+      <div class="srow"><div class="sl"><span class="label">Accent</span><span class="help">Buttons, links, the active rail entry.</span></div><span class="swatch" style="background:var(--accent)"></span><span class="mono s muted">default</span><span class="btn sm off">Reset</span></div>
+      <div class="srow"><div class="sl"><span class="label">Background</span><span class="help">The deepest surface; every other surface is derived from it.</span></div><span class="swatch" style="background:var(--bg-0)"></span><span class="mono s muted">default</span><span class="btn sm off">Reset</span></div>
+      <div class="srow"><div class="sl"><span class="label">Foreground</span><span class="help">Primary text; the two muted steps are derived from it.</span></div><span class="swatch" style="background:var(--text-0)"></span><span class="mono s muted">default</span><span class="btn sm off">Reset</span></div>
+      <div class="srow"><div class="sl"><span class="label">Contrast</span><span class="help">50 is the preset's own separation between surfaces.</span></div><span class="slider"></span><span class="mono s">50</span><span class="btn sm off">Reset</span></div>
+      <div class="srow"><div class="sl"><span class="label">Translucent sidebar</span><span class="help">Blurs whatever is behind the chat list.</span></div><span class="toggle"></span></div>
+      <div class="eyebrow" style="margin-top:18px">Fonts</div>
+      <div class="srow"><div class="sl"><span class="label">UI font</span></div><span class="select v" style="width:220px"><span>Segoe UI</span><svg class="i"><use href="#chev"/></svg></span></div>
+      <div class="srow"><div class="sl"><span class="label">Code font</span></div><span class="select v" style="width:220px"><span class="mono s">Cascadia Mono</span><svg class="i"><use href="#chev"/></svg></span></div>
+    </div>
+  </div>
+</div></div></div>
+<p class="note"><b>O que muda:</b> os três tiles com mocks desaparecem; o modo é um segmentado como qualquer outra escolha, e há uma só pré-visualização, do tema que estás a editar. Menos 150 linhas de CSS de mocks. Em ambas as variantes: zero cartões, linhas separadas por <code>--border</code>, "Reset" é um botão quieto que fica a 45 % quando não há nada a repor.</p>
+
+<h3>2C · General, com "Permissions" aberto como sheet <span class="rec">Escolhido</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i class="on"><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="page">
+    <div class="snav">
+      <div class="row" style="color:var(--text-2);font-size:12px;padding:6px 10px"><svg class="i"><use href="#chevl"/></svg>Back to app</div>
+      <div class="t1" style="padding:8px 10px 14px;font-size:18px">Settings</div>
+      <div class="row">Appearance</div><div class="row sel">General</div><div class="row">Connection</div><div class="row">System</div><div class="row">Ops audit</div><div class="row">About</div>
+    </div>
+    <div class="content" style="padding:28px 48px;max-width:860px">
+      <div class="t1" style="margin-bottom:10px">General</div>
+      <div class="srow"><div class="sl"><span class="label">Model for background tasks</span><span class="help">Titles, summaries and the planner's drafts.</span></div><span class="select v" style="width:260px"><span>Sonnet 5.5 <span class="det">· 200k · $3 / $15</span></span><svg class="i"><use href="#chev"/></svg></span></div>
+      <div class="srow"><div class="sl"><span class="label">Density</span></div><span class="seg tall"><span class="on">Comfortable</span><span>Compact</span></span></div>
+      <div class="srow"><div class="sl"><span class="label">Weekly planner</span><span class="help">Shows the Week mode next to Sprint.</span></div><span class="toggle"></span></div>
+      <div class="eyebrow" style="margin-top:18px">Claude Code</div>
+      <div class="srow"><div class="sl"><span class="label">Permissions</span><span class="help">12 allow · 3 deny · 2 ask</span></div><span class="btn">Edit<svg class="i"><use href="#chevr"/></svg></span></div>
+      <div class="srow"><div class="sl"><span class="label">Hooks</span><span class="help">4 hooks on 2 events</span></div><span class="btn">Edit<svg class="i"><use href="#chevr"/></svg></span></div>
+      <div class="srow"><div class="sl"><span class="label">Session notifications</span><span class="help">Wired up · toast when a chat needs you</span></div><span class="btn">Edit<svg class="i"><use href="#chevr"/></svg></span></div>
+    </div>
+  </div>
+  <div class="scrim"></div>
+  <div class="sheet">
+    <div class="sh"><span class="t2">Permissions</span><span class="grow"></span><span class="btn sm ic"><svg class="i"><use href="#x"/></svg></span></div>
+    <div class="sb">
+      <div class="help">Rules Claude Code applies before asking you. Saved to <span class="mono s">~/.claude/settings.json</span> as you edit.</div>
+      <div><div style="display:flex;align-items:center;gap:8px"><i class="dot ok"></i><span class="t3">Allow</span><span class="sub">runs without asking</span></div>
+        <div class="row" style="padding:5px 0 5px 18px"><span class="mono s">Bash(npm *)</span><span class="r"><svg class="i muted"><use href="#x"/></svg></span></div>
+        <div class="row" style="padding:5px 0 5px 18px"><span class="mono s">Read(**)</span><span class="r"><svg class="i muted"><use href="#x"/></svg></span></div>
+        <div style="display:flex;gap:8px;padding-left:18px;margin-top:4px"><span class="input mono" style="flex:1;height:30px">e.g. Bash(git *)</span><span class="btn sm">Add</span></div></div>
+      <div><div style="display:flex;align-items:center;gap:8px"><i class="dot e"></i><span class="t3">Deny</span><span class="sub">refused, with the rule named</span></div>
+        <div class="row" style="padding:5px 0 5px 18px"><span class="mono s">Bash(rm -rf *)</span><span class="r"><svg class="i muted"><use href="#x"/></svg></span></div>
+        <div style="display:flex;gap:8px;padding-left:18px;margin-top:4px"><span class="input mono" style="flex:1;height:30px">e.g. Bash(rm *)</span><span class="btn sm">Add</span></div></div>
+      <div><div style="display:flex;align-items:center;gap:8px"><i class="dot w"></i><span class="t3">Ask</span><span class="sub">will ask you first</span></div>
+        <div class="row" style="padding:5px 0 5px 18px"><span class="mono s">Bash(git push *)</span><span class="r"><svg class="i muted"><use href="#x"/></svg></span></div>
+        <div style="display:flex;gap:8px;padding-left:18px;margin-top:4px"><span class="input mono" style="flex:1;height:30px">e.g. Edit(src/**)</span><span class="btn sm">Add</span></div></div>
+    </div>
+    <div class="sf"><span class="help">Saved</span><span class="grow"></span><span class="btn">Done</span><span class="help" style="margin-left:4px">Esc closes</span></div>
+  </div>
+</div></div></div>
+<p class="note"><b>O que muda:</b> Permissions, Hooks, Session notifications e Accounts deixam de ser modais e passam a sheets à direita (fecham no ×, nunca no scrim). A linha em Settings diz o estado actual ("12 allow · 3 deny") em vez de só "Permissions…". Os badges coloridos das secções viram ponto + palavra, e a cor significa o mesmo que em Ops.</p>
+
+<!-- ═══════════════════════ 3 PROJECTS ═══════════════════════ -->
+<h2 id="projects">3 · Projects</h2>
+<p>Hoje: três painéis (lista, sessões, peek que desliza). A estrutura já é a certa; a diferença está em como o peek existe e em quanta caixa há à volta de cada linha.</p>
+
+<h3>3A · Coluna de detalhe fixa à direita <span class="rec">Escolhido</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i class="on"><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="main">
+    <div class="head">
+      <div><div class="t1">Projects</div><div class="sub">Claude Code sessions from this machine and connected WSL distros.</div></div>
+      <span class="grow"></span>
+      <span class="input" style="width:320px"><svg class="i"><use href="#search"/></svg>Search all sessions</span>
+      <span class="btn"><svg class="i"><use href="#tag"/></svg>Labels</span>
+      <span class="btn ic"><svg class="i"><use href="#refresh"/></svg></span>
+    </div>
+    <div class="page">
+      <div class="plist">
+        <span class="select v" style="height:30px"><span>All accounts</span><svg class="i"><use href="#chev"/></svg></span>
+        <span class="input" style="height:30px">Filter projects</span>
+        <div class="eyebrow">Pinned</div>
+        <div class="row sel" style="flex-direction:column;align-items:flex-start;gap:0"><span class="n">argos</span><span class="cap">51 · just now</span></div>
+        <div class="eyebrow">Recent</div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:0"><span class="n">runbooks</span><span class="cap">4 · 11 min ago</span></div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="display:flex;gap:6px;align-items:center"><span class="n">wm-project</span><span class="chip">Ubuntu-DevOps</span></span><span class="cap">134 · 22 min ago</span></div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="display:flex;gap:6px;align-items:center"><span class="n">infra-automation</span><span class="chip">Ubuntu</span></span><span class="cap">14 · 55 min ago</span></div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:0"><span class="n">Brainstorms</span><span class="cap">1 · yesterday</span></div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:0"><span class="n">codexrun</span><span class="cap">3 · 3 days ago</span></div>
+        <div class="row" style="color:var(--text-2);font-size:12px">Show 12 more</div>
+      </div>
+      <div class="content">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid var(--border)">
+          <span class="t3">51 sessions</span>
+          <span class="seg"><span class="on">Active</span><span>Archived <em>3</em></span></span>
+          <span class="input" style="width:220px;height:30px"><svg class="i"><use href="#search"/></svg>Search in argos</span>
+          <span class="grow"></span>
+          <span class="select v" style="height:30px;width:150px"><span>Newest first</span><svg class="i"><use href="#chev"/></svg></span>
+        </div>
+        <div class="body" style="padding:6px 20px">
+          <div class="divcap">Today · 2</div>
+          <div class="row sel"><span class="n">System design.md port planning</span><span class="r"><span class="chip m">fable-5-1</span><span class="muted" style="font-size:12px;width:70px;text-align:right">37 msgs</span><span class="muted" style="font-size:12px;width:80px;text-align:right">just now</span></span></div>
+          <div class="row"><span class="n">Plano Claude servidor remoto seguro</span><span class="chip">infra</span><span class="r"><span class="chip m">fable-5-1</span><span class="muted" style="font-size:12px;width:70px;text-align:right">1163 msgs</span><span class="muted" style="font-size:12px;width:80px;text-align:right">2 min ago</span></span></div>
+          <div class="divcap">Last 30 days · 14</div>
+          <div class="row"><span class="n">Próximos passos para o app</span><span class="r"><span class="chip m">opus-5</span><span class="muted" style="font-size:12px;width:70px;text-align:right">57 msgs</span><span class="muted" style="font-size:12px;width:80px;text-align:right">11 days ago</span></span></div>
+          <div class="row"><span class="n">Versão 1.10.1 com correção</span><span class="chip">release</span><span class="r"><span class="chip m">opus-5</span><span class="muted" style="font-size:12px;width:70px;text-align:right">113 msgs</span><span class="muted" style="font-size:12px;width:80px;text-align:right">15 days ago</span></span></div>
+          <div class="row"><span class="n">Copiar texto do terminal</span><span class="r"><span class="chip m">opus-5</span><span class="muted" style="font-size:12px;width:70px;text-align:right">659 msgs</span><span class="muted" style="font-size:12px;width:80px;text-align:right">16 days ago</span></span></div>
+          <div class="row"><span class="n">Settings cleanup</span><span class="r"><span class="chip m">opus-5</span><span class="muted" style="font-size:12px;width:70px;text-align:right">387 msgs</span><span class="muted" style="font-size:12px;width:80px;text-align:right">16 days ago</span></span></div>
+          <div class="row"><span class="n">Running chats</span><span class="r"><span class="chip m">opus-5</span><span class="muted" style="font-size:12px;width:70px;text-align:right">112 msgs</span><span class="muted" style="font-size:12px;width:80px;text-align:right">16 days ago</span></span></div>
+          <div class="row"><span class="n">Fechar sprints</span><span class="r"><span class="chip m">opus-5</span><span class="muted" style="font-size:12px;width:70px;text-align:right">709 msgs</span><span class="muted" style="font-size:12px;width:80px;text-align:right">17 days ago</span></span></div>
+          <div class="row"><span class="n">Análisis de wireframe</span><span class="r"><span class="chip m">opus-5</span><span class="muted" style="font-size:12px;width:70px;text-align:right">1199 msgs</span><span class="muted" style="font-size:12px;width:80px;text-align:right">17 days ago</span></span></div>
+          <div class="divcap">Older · 35</div>
+        </div>
+      </div>
+      <div class="column">
+        <div class="colsec">
+          <div class="t2">System design.md port planning</div>
+          <div class="sub">fable-5-1 · 37 msgs · $0.00 · today 18:02 · <span class="mono s">C:\Users\JoãoLeite\…\argos</span></div>
+          <div style="display:flex;gap:6px;align-items:center;margin-top:2px"><span class="chip">design</span><span class="chip">argos</span><span class="btn sm" style="height:22px;font-size:11px;padding:0 8px">+ tag</span></div>
+        </div>
+        <div class="colsec">
+          <div class="eyebrow" style="padding-top:0">Started with</div>
+          <div class="quote">go for the system design.md and give me some planning to port for the rest of the app, exclusively plan with fable and wireframe and implement with opus or sonnet sub-agents…</div>
+          <div class="eyebrow">Left off at</div>
+          <div class="quote">Tenho tudo o que preciso: o design doc, três inventários dos ecrãs e screenshots da app actual. Vou agora desenhar os wireframes…</div>
+        </div>
+        <div class="colsec" style="margin-top:auto;border-top:1px solid var(--border);border-bottom:0;flex-direction:row;align-items:center">
+          <span class="btn p" style="flex:1"><svg class="i"><use href="#play"/></svg>Resume</span><span class="btn">Rename</span><span class="btn">Move</span><span class="btn">Archive</span><span class="btn dt">Delete</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div></div>
+<p class="note"><b>O que muda:</b> o peek deixa de deslizar por cima: é a coluna direita, com o rodapé numa só linha. Abre ao seleccionar uma sessão e <b>fecha ao clicar fora dela</b> (na lista, no vazio ou com Esc); a lista volta a ocupar a largura toda. Linhas planas, chip de modelo mono a 3 px, cabeçalhos de data como legenda centrada com contagem. A lista de projectos perde o cartão com borda laranja; a selecção é <code>--bg-2</code>. Rename / Move / Delete são formulários inline na coluna, como hoje. Os badges WSL azuis passam a chips neutros.</p>
+
+<h3>3B · Peek como sheet sobre a lista <span class="alt">Não escolhido · só o rodapé foi aproveitado</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i class="on"><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="main">
+    <div class="head">
+      <div><div class="t1">Projects</div><div class="sub">Claude Code sessions from this machine and connected WSL distros.</div></div>
+      <span class="grow"></span>
+      <span class="input" style="width:320px"><svg class="i"><use href="#search"/></svg>Search all sessions</span>
+      <span class="btn"><svg class="i"><use href="#tag"/></svg>Labels</span>
+      <span class="btn ic"><svg class="i"><use href="#refresh"/></svg></span>
+    </div>
+    <div class="page">
+      <div class="plist">
+        <span class="select v" style="height:30px"><span>All accounts</span><svg class="i"><use href="#chev"/></svg></span>
+        <span class="input" style="height:30px">Filter projects</span>
+        <div class="eyebrow">Pinned</div>
+        <div class="row sel" style="flex-direction:column;align-items:flex-start;gap:0"><span class="n">argos</span><span class="cap">51 · just now</span></div>
+        <div class="eyebrow">Recent</div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:0"><span class="n">runbooks</span><span class="cap">4 · 11 min ago</span></div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="display:flex;gap:6px;align-items:center"><span class="n">wm-project</span><span class="chip">Ubuntu-DevOps</span></span><span class="cap">134 · 22 min ago</span></div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:0"><span class="n">Brainstorms</span><span class="cap">1 · yesterday</span></div>
+      </div>
+      <div class="content">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid var(--border)">
+          <span class="t3">51 sessions</span>
+          <span class="seg"><span class="on">Active</span><span>Archived <em>3</em></span></span>
+          <span class="input" style="width:220px;height:30px"><svg class="i"><use href="#search"/></svg>Search in argos</span>
+          <span class="grow"></span>
+          <span class="select v" style="height:30px;width:150px"><span>Newest first</span><svg class="i"><use href="#chev"/></svg></span>
+        </div>
+        <div class="body" style="padding:6px 20px">
+          <div class="divcap">Today · 2</div>
+          <div class="row sel"><span class="n">System design.md port planning</span><span class="r"><span class="chip m">fable-5-1</span><span class="muted" style="font-size:12px">37 msgs</span><span class="muted" style="font-size:12px">just now</span></span></div>
+          <div class="row"><span class="n">Plano Claude servidor remoto seguro</span><span class="r"><span class="chip m">fable-5-1</span><span class="muted" style="font-size:12px">1163 msgs</span><span class="muted" style="font-size:12px">2 min ago</span></span></div>
+          <div class="divcap">Last 30 days · 14</div>
+          <div class="row"><span class="n">Próximos passos para o app</span><span class="r"><span class="chip m">opus-5</span><span class="muted" style="font-size:12px">57 msgs</span><span class="muted" style="font-size:12px">11 days ago</span></span></div>
+          <div class="row"><span class="n">Versão 1.10.1 com correção</span><span class="r"><span class="chip m">opus-5</span><span class="muted" style="font-size:12px">113 msgs</span><span class="muted" style="font-size:12px">15 days ago</span></span></div>
+          <div class="row"><span class="n">Copiar texto do terminal</span><span class="r"><span class="chip m">opus-5</span><span class="muted" style="font-size:12px">659 msgs</span><span class="muted" style="font-size:12px">16 days ago</span></span></div>
+          <div class="row"><span class="n">Settings cleanup</span><span class="r"><span class="chip m">opus-5</span><span class="muted" style="font-size:12px">387 msgs</span><span class="muted" style="font-size:12px">16 days ago</span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="scrim"></div>
+  <div class="sheet">
+    <div class="sh"><span class="t2">System design.md port planning</span><span class="grow"></span><span class="btn sm ic"><svg class="i"><use href="#x"/></svg></span></div>
+    <div class="sb">
+      <div class="sub">fable-5-1 · 37 msgs · $0.00 · today 18:02</div>
+      <div><div class="eyebrow" style="padding-top:0">Started with</div><div class="quote">go for the system design.md and give me some planning to port for the rest of the app…</div></div>
+      <div><div class="eyebrow" style="padding-top:0">Left off at</div><div class="quote">Tenho tudo o que preciso: o design doc, três inventários…</div></div>
+    </div>
+    <div class="sf"><span class="btn p" style="flex:1"><svg class="i"><use href="#play"/></svg>Resume</span><span class="btn">Rename</span><span class="btn">Move</span><span class="btn dt">Delete</span></div>
+  </div>
+</div></div></div>
+<p class="note"><b>Prós:</b> a lista de sessões usa a largura toda. <b>Contras:</b> cada clique numa linha tapa a lista; para comparar duas sessões abres e fechas. A OpsWorkspace usa sheet para documentos (relatório), não para "o item seleccionado"; 3A mantém essa distinção.</p>
+
+<!-- ═══════════════════════ 4 SPRINT ═══════════════════════ -->
+<h2 id="sprint">4 · Planner — Sprint</h2>
+<p>Hoje: cabeçalho com toggle Week/Sprint, faixa de três cartões de estatísticas, separadores Board / Standup / Burndown, cartões com aresta colorida por prioridade. A cor de prioridade viola a regra 3 (cor só para estado), por isso sai em ambas as variantes; a prioridade fica como chip.</p>
+
+<h3>4A · Separadores mantidos, tudo plano <span class="alt">Não escolhido</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i class="on"><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="main">
+    <div class="head">
+      <div><div style="display:flex;align-items:center;gap:10px"><span class="t1">Sprint 14 · Portal municipal</span><span class="select v" style="height:30px"><span><i class="dot ok sm" style="display:inline-block;margin-right:6px"></i>Sprint 14</span><svg class="i"><use href="#chev"/></svg></span></div><div class="sub">29 Sep – 12 Oct · 21 / 34 pts · 12 items · 10 days left</div></div>
+      <span class="grow"></span>
+      <span class="seg"><span>Week</span><span class="on">Sprint</span></span>
+      <span class="btn ic"><svg class="i"><use href="#more"/></svg></span>
+      <span class="btn p"><svg class="i"><use href="#plus"/></svg>Add item</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><span class="num">34</span><span class="cap">points planned</span></div>
+      <div class="stat"><span class="num" style="color:var(--success)">21</span><span class="cap">points done</span></div>
+      <div class="stat"><span class="num">13</span><span class="cap">remaining · 1.3 pts a day to finish</span></div>
+      <div class="stat" style="flex:1"><span class="bar on1" style="margin-top:9px"><b class="s" style="width:62%"></b></span><span class="cap">Goal: SAML login on the staging portal, TLS renewed on both databases</span></div>
+    </div>
+    <div style="padding:12px 24px 0"><span class="seg"><span class="on">Board</span><span>Standup</span><span>Burndown</span></span></div>
+    <div class="cols">
+      <div class="col3">
+        <div style="display:flex;align-items:baseline;gap:8px;padding:0 4px 6px"><span class="t3">To do</span><span class="sub">5 · 13 p</span></div>
+        <div class="block" style="gap:4px"><div style="display:flex;gap:8px;align-items:center"><span class="n" style="flex:1;color:var(--text-0)">Renew PostgreSQL TLS cert on db-02</span><span class="mono s muted">5 p</span></div><div style="display:flex;gap:6px"><span class="chip m">#142</span><span class="chip">high</span></div></div>
+        <div class="block" style="gap:4px"><div style="display:flex;gap:8px;align-items:center"><span class="n" style="flex:1;color:var(--text-0)">Audit log export for the client</span><span class="mono s muted">3 p</span></div><div style="display:flex;gap:6px"><span class="chip m">#139</span></div></div>
+        <div class="block" style="gap:4px"><div style="display:flex;gap:8px;align-items:center"><span class="n" style="flex:1;color:var(--text-0)">Rails 7.2 upgrade dry run</span><span class="mono s muted">3 p</span></div><div style="display:flex;gap:6px"><span class="chip m">!88</span><span class="chip">low</span></div></div>
+        <div class="row" style="color:var(--text-2);font-size:12px;padding:6px 10px"><svg class="i"><use href="#plus"/></svg>Add item</div>
+      </div>
+      <div class="col3">
+        <div style="display:flex;align-items:baseline;gap:8px;padding:0 4px 6px"><span class="t3">In progress</span><span class="sub">3 · 8 p</span></div>
+        <div class="block warn" style="gap:4px"><div style="display:flex;gap:8px;align-items:center"><span class="n" style="flex:1;color:var(--text-0)">SAML metadata exchange with the IdP</span><span class="mono s muted">5 p</span></div><div style="display:flex;gap:6px;align-items:center"><span class="chip m">#131</span><span class="wt" style="font-size:11.5px">blocked · waiting on the client's IdP team since Tue</span></div></div>
+        <div class="block" style="gap:4px"><div style="display:flex;gap:8px;align-items:center"><span class="n" style="flex:1;color:var(--text-0)">Nginx rate limits on the public API</span><span class="mono s muted">3 p</span></div><div style="display:flex;gap:6px"><span class="chip m">#137</span></div></div>
+        <div class="row" style="color:var(--text-2);font-size:12px;padding:6px 10px"><svg class="i"><use href="#plus"/></svg>Add item</div>
+      </div>
+      <div class="col3">
+        <div style="display:flex;align-items:baseline;gap:8px;padding:0 4px 6px"><span class="t3">Done</span><span class="sub">4 · 13 p</span></div>
+        <div class="row" style="padding:8px 10px"><svg class="i" style="color:var(--success)"><use href="#check"/></svg><span style="flex:1;color:var(--text-1)">Rocky 9 patching, test host</span><span class="mono s muted">3 p</span></div>
+        <div class="row" style="padding:8px 10px"><svg class="i" style="color:var(--success)"><use href="#check"/></svg><span style="flex:1;color:var(--text-1)">Backup restore drill</span><span class="mono s muted">5 p</span></div>
+        <div class="row" style="padding:8px 10px"><svg class="i" style="color:var(--success)"><use href="#check"/></svg><span style="flex:1;color:var(--text-1)">Ops runbook: diagnose-rails-host</span><span class="mono s muted">3 p</span></div>
+        <div class="row" style="padding:8px 10px"><svg class="i" style="color:var(--success)"><use href="#check"/></svg><span style="flex:1;color:var(--text-1)">Changelog 2.0.0</span><span class="mono s muted">2 p</span></div>
+      </div>
+    </div>
+  </div>
+</div></div></div>
+
+<h3>4B · Board à esquerda, coluna "Today" à direita <span class="rec">Escolhido</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i class="on"><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="main">
+    <div class="head">
+      <div><div style="display:flex;align-items:center;gap:10px"><span class="t1">Sprint 14 · Portal municipal</span><span class="select v" style="height:30px"><span><i class="dot ok sm" style="display:inline-block;margin-right:6px"></i>Sprint 14</span><svg class="i"><use href="#chev"/></svg></span></div><div class="sub">29 Sep – 12 Oct · 21 / 34 pts · 12 items · 10 days left</div></div>
+      <span class="grow"></span>
+      <span class="seg"><span>Week</span><span class="on">Sprint</span></span>
+      <span class="btn ic"><svg class="i"><use href="#more"/></svg></span>
+      <span class="btn p"><svg class="i"><use href="#plus"/></svg>Add item</span>
+    </div>
+    <div class="page">
+      <div class="content">
+        <div class="cols" style="padding-top:14px">
+          <div class="col3">
+            <div style="display:flex;align-items:baseline;gap:8px;padding:0 4px 6px"><span class="t3">To do</span><span class="sub">5 · 13 p</span></div>
+            <div class="block" style="gap:4px"><div style="display:flex;gap:8px;align-items:center"><span class="n" style="flex:1;color:var(--text-0)">Renew PostgreSQL TLS cert on db-02</span><span class="mono s muted">5 p</span></div><div style="display:flex;gap:6px"><span class="chip m">#142</span><span class="chip">high</span></div></div>
+            <div class="block" style="gap:4px"><div style="display:flex;gap:8px;align-items:center"><span class="n" style="flex:1;color:var(--text-0)">Audit log export for the client</span><span class="mono s muted">3 p</span></div><div style="display:flex;gap:6px"><span class="chip m">#139</span></div></div>
+            <div class="block" style="gap:4px"><div style="display:flex;gap:8px;align-items:center"><span class="n" style="flex:1;color:var(--text-0)">Rails 7.2 upgrade dry run</span><span class="mono s muted">3 p</span></div><div style="display:flex;gap:6px"><span class="chip m">!88</span><span class="chip">low</span></div></div>
+            <div class="row" style="color:var(--text-2);font-size:12px;padding:6px 10px"><svg class="i"><use href="#plus"/></svg>Add item</div>
+          </div>
+          <div class="col3">
+            <div style="display:flex;align-items:baseline;gap:8px;padding:0 4px 6px"><span class="t3">In progress</span><span class="sub">3 · 8 p</span></div>
+            <div class="block warn" style="gap:4px"><div style="display:flex;gap:8px;align-items:center"><span class="n" style="flex:1;color:var(--text-0)">SAML metadata exchange with the IdP</span><span class="mono s muted">5 p</span></div><div style="display:flex;gap:6px;align-items:center"><span class="chip m">#131</span><span class="wt" style="font-size:11.5px">blocked since Tue</span></div></div>
+            <div class="block" style="gap:4px"><div style="display:flex;gap:8px;align-items:center"><span class="n" style="flex:1;color:var(--text-0)">Nginx rate limits on the public API</span><span class="mono s muted">3 p</span></div><div style="display:flex;gap:6px"><span class="chip m">#137</span></div></div>
+            <div class="row" style="color:var(--text-2);font-size:12px;padding:6px 10px"><svg class="i"><use href="#plus"/></svg>Add item</div>
+          </div>
+          <div class="col3">
+            <div style="display:flex;align-items:baseline;gap:8px;padding:0 4px 6px"><span class="t3">Done</span><span class="sub">4 · 13 p</span></div>
+            <div class="row" style="padding:8px 10px"><svg class="i" style="color:var(--success)"><use href="#check"/></svg><span style="flex:1;color:var(--text-1)">Rocky 9 patching, test host</span><span class="mono s muted">3 p</span></div>
+            <div class="row" style="padding:8px 10px"><svg class="i" style="color:var(--success)"><use href="#check"/></svg><span style="flex:1;color:var(--text-1)">Backup restore drill</span><span class="mono s muted">5 p</span></div>
+            <div class="row" style="padding:8px 10px"><svg class="i" style="color:var(--success)"><use href="#check"/></svg><span style="flex:1;color:var(--text-1)">Ops runbook: diagnose-rails-host</span><span class="mono s muted">3 p</span></div>
+            <div class="row" style="padding:8px 10px"><svg class="i" style="color:var(--success)"><use href="#check"/></svg><span style="flex:1;color:var(--text-1)">Changelog 2.0.0</span><span class="mono s muted">2 p</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="column">
+        <div class="colsec">
+          <div style="display:flex;align-items:baseline;justify-content:space-between"><span class="t3">21 of 34 points</span><span class="sub">10 days left</span></div>
+          <div class="bar on1"><b class="s" style="width:62%"></b></div>
+          <svg viewBox="0 0 420 90" style="width:100%;height:90px;margin-top:4px" aria-label="Burndown">
+            <line x1="0" y1="80" x2="420" y2="80" stroke="var(--border)"/>
+            <line x1="0" y1="8" x2="420" y2="80" stroke="var(--text-2)" stroke-dasharray="3 4"/>
+            <polyline points="0,8 42,8 84,22 126,22 168,34 210,34 252,46 294,46 336,52" fill="none" stroke="var(--accent)" stroke-width="2"/>
+            <circle cx="336" cy="52" r="3" fill="var(--accent)"/>
+            <text x="0" y="90" font-size="9" fill="var(--text-2)">29 Sep</text><text x="396" y="90" font-size="9" fill="var(--text-2)">12 Oct</text>
+          </svg>
+          <div class="cap">Ideal dashed · actual in accent · 13 points above the line</div>
+        </div>
+        <div class="block warn" style="margin:12px 12px 0">
+          <div style="display:flex;align-items:center;justify-content:space-between"><span class="wt">Blocked</span><span class="sub">since Tue</span></div>
+          <div>SAML metadata exchange with the IdP</div>
+          <div class="help">Waiting on the client's IdP team. Mention it in today's standup or move it out of the sprint.</div>
+          <div style="display:flex;gap:8px"><span class="btn sm">Move to next sprint</span><span class="btn sm">Unblock</span></div>
+        </div>
+        <div class="colsec" style="padding-top:12px">
+          <div style="display:flex;align-items:center;gap:8px"><span class="t3">Standup · Thu 2 Oct</span><span class="grow"></span><span class="btn sm">Generate</span></div>
+          <div class="kv" style="grid-template-columns:76px 1fr">
+            <dt>Yesterday</dt><dd class="t1c">Finished the backup restore drill; runbook written.</dd>
+            <dt>Today</dt><dd class="t1c">Rate limits on the public API, then db-02 cert.</dd>
+            <dt>Blockers</dt><dd class="t1c">IdP metadata still missing.</dd>
+          </div>
+          <div class="divcap">Earlier · 6 standups</div>
+          <div class="row" style="padding:5px 0;font-size:12px"><i class="dot sm"></i><span>Wed 1 Oct</span><span class="r muted">no blockers</span></div>
+          <div class="row" style="padding:5px 0;font-size:12px"><i class="dot w sm"></i><span>Tue 30 Sep</span><span class="r muted">1 blocker</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div></div>
+<p class="note"><b>4A</b> é um restyle: mesmo TSX, CSS reescrito (SprintBoard.css tem 943 linhas, 21 radii literais). <b>4B</b> tira os separadores: o burndown e o standup de hoje ficam sempre à vista, e um item bloqueado é a única coisa tingida no ecrã, com as duas saídas possíveis ao lado. Custa reorganizar o SprintBoard (2113 TSX), mas é o único sítio onde o Planner passa a "dizer o que precisa de ti". O Week mode (PlannerView, atrás de um toggle) recebe só radii e cores, sem redesenho, em qualquer das variantes.</p>
+
+<!-- ═══════════════════════ 5 HOME ═══════════════════════ -->
+<h2 id="home">5 · Home</h2>
+<p>Hoje: cabeçalho com chips contadores, caixa de arranque, grelha de três colunas com cinco secções. É o ecrã que mais ganha com a regra "o que precisa de ti no topo da coluna, único bloco realçado".</p>
+
+<h3>5A · Grelha mantida, caixas removidas <span class="alt">Não escolhido</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i class="on"><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="main">
+    <div class="head" style="border-bottom:0;padding-bottom:4px"><div><div class="t1">Thursday, 2 October</div><div class="sub"><span style="color:var(--warn)">2 need you</span> · 3 running · 2 with changes</div></div></div>
+    <div style="padding:10px 24px 6px;display:flex;flex-direction:column;gap:8px;max-width:900px">
+      <div class="textarea">What are we doing?</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="select v" style="height:30px;width:200px"><span>argos</span><svg class="i"><use href="#chev"/></svg></span>
+        <span class="select v" style="height:30px;width:160px"><span>Claude Code</span><svg class="i"><use href="#chev"/></svg></span>
+        <span class="select v" style="height:30px;width:220px"><span>Default <span class="det">· 76 %</span></span><svg class="i"><use href="#chev"/></svg></span>
+        <span class="grow"></span>
+        <span class="btn p" style="height:30px"><svg class="i"><use href="#play"/></svg>Start</span>
+      </div>
+      <div class="help">Ctrl+Enter starts in a new terminal.</div>
+    </div>
+    <div class="cols" style="gap:28px;padding-top:12px">
+      <div class="col3">
+        <div class="eyebrow" style="padding-top:0">Needs you · 2</div>
+        <div class="block warn" style="gap:4px"><div style="display:flex;justify-content:space-between"><span class="wt">Approval waiting</span><span class="sub">4 min</span></div><div>Plano Claude servidor remoto seguro</div><div class="mono s muted">Bash(sudo systemctl restart nginx)</div><div style="display:flex;gap:8px"><span class="btn sm">Open</span></div></div>
+        <div class="block warn" style="gap:4px"><div style="display:flex;justify-content:space-between"><span class="wt">Question</span><span class="sub">11 min</span></div><div>infra-automation · Ubuntu</div><div class="help">"Which VPN profile should the script assume?"</div><div style="display:flex;gap:8px"><span class="btn sm">Answer</span></div></div>
+        <div class="eyebrow">Running · 3</div>
+        <div class="row" style="padding:6px 10px"><i class="dot ok"></i><span class="n">wm-project</span><span class="r muted" style="font-size:12px">Claude Code · 18 min</span></div>
+        <div class="row" style="padding:6px 10px"><i class="dot ok"></i><span class="n">runbooks</span><span class="r muted" style="font-size:12px">Codex · 3 min</span></div>
+        <div class="row" style="padding:6px 10px"><i class="dot ok"></i><span class="n">diagnose-rails-host</span><span class="r muted" style="font-size:12px">Ops · Rocky-9-Testes · 41 min</span></div>
+      </div>
+      <div class="col3">
+        <div class="eyebrow" style="padding-top:0">Pick up where you left off</div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:2px;padding:8px 10px"><span style="display:flex;gap:8px;width:100%"><span class="n">Copiar texto do terminal</span><span class="r muted" style="font-size:12px">argos · 16 d</span></span><span class="help">ConPTY eats the bracketed paste; instrument before theorising…</span></div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:2px;padding:8px 10px"><span style="display:flex;gap:8px;width:100%"><span class="n">Fechar sprints</span><span class="r muted" style="font-size:12px">argos · 17 d</span></span><span class="help">Carry-over choices when completing a sprint…</span></div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:2px;padding:8px 10px"><span style="display:flex;gap:8px;width:100%"><span class="n">Settings cleanup</span><span class="r muted" style="font-size:12px">argos · 16 d</span></span><span class="help">Remove rather than hide; one app, not two editions.</span></div>
+      </div>
+      <div class="col3">
+        <div class="eyebrow" style="padding-top:0">Uncommitted work · 2</div>
+        <div class="row" style="padding:6px 10px"><span class="n">argos</span><span class="mono s muted">main</span><span class="r"><span class="btn sm">3 files</span></span></div>
+        <div class="row" style="padding:6px 10px"><span class="n">runbooks</span><span class="mono s muted">main</span><span class="r"><span class="btn sm">1 file</span></span></div>
+        <div class="eyebrow">Recent projects</div>
+        <div class="row" style="padding:6px 10px"><span class="n">wm-project</span><span class="mono s muted">develop</span><span class="r muted" style="font-size:12px">22 min</span></div>
+        <div class="row" style="padding:6px 10px"><span class="n">infra-automation</span><span class="mono s muted">main</span><span class="r muted" style="font-size:12px">55 min</span></div>
+        <div class="row" style="padding:6px 10px"><span class="n">Brainstorms</span><span class="muted" style="font-size:12px">no git</span><span class="r muted" style="font-size:12px">yesterday</span></div>
+      </div>
+    </div>
+  </div>
+</div></div></div>
+
+<h3>5B · Arranque e histórico à esquerda, o que está vivo à direita <span class="rec">Escolhido</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i class="on"><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="page">
+    <div class="content">
+      <div class="head" style="border-bottom:0;padding-bottom:4px"><div><div class="t1">Thursday, 2 October</div><div class="sub">Default account at 76 % of the 5-hour window · resets 19:40</div></div></div>
+      <div style="padding:10px 24px 6px;display:flex;flex-direction:column;gap:8px">
+        <div class="textarea focus" style="min-height:96px;border-color:var(--border-light)">What are we doing?</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="select v" style="height:32px;width:220px"><span>argos</span><svg class="i"><use href="#chev"/></svg></span>
+          <span class="select v" style="height:32px;width:170px"><span>Claude Code</span><svg class="i"><use href="#chev"/></svg></span>
+          <span class="select v" style="height:32px;width:240px"><span>Default <span class="det">· joao.leite@wiremaze.com</span></span><svg class="i"><use href="#chev"/></svg></span>
+          <span class="grow"></span>
+          <span class="btn p"><svg class="i"><use href="#play"/></svg>Start</span>
+        </div>
+        <div class="help">Ctrl+Enter starts in a new terminal · the folder is the project's root</div>
+      </div>
+      <div class="body" style="padding-top:18px;max-width:900px">
+        <div class="eyebrow" style="padding-top:0">Pick up where you left off</div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="display:flex;gap:8px;width:100%"><span class="n">Copiar texto do terminal</span><span class="r muted" style="font-size:12px">argos · 16 days ago</span></span><span class="help">ConPTY eats the bracketed paste; instrument before theorising…</span></div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="display:flex;gap:8px;width:100%"><span class="n">Fechar sprints</span><span class="r muted" style="font-size:12px">argos · 17 days ago</span></span><span class="help">Carry-over choices when completing a sprint…</span></div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:2px"><span style="display:flex;gap:8px;width:100%"><span class="n">Plano VPN para o novo colega</span><span class="r muted" style="font-size:12px">infra-automation · 3 days ago</span></span><span class="help">Profile per site, split tunnel only for the 10.20 range.</span></div>
+        <div class="eyebrow">Recent projects</div>
+        <div class="row"><span class="n">wm-project</span><span class="chip">Ubuntu-DevOps</span><span class="mono s muted">develop</span><span class="r muted" style="font-size:12px">22 min ago</span></div>
+        <div class="row"><span class="n">infra-automation</span><span class="chip">Ubuntu</span><span class="mono s muted">main</span><span class="r muted" style="font-size:12px">55 min ago</span></div>
+        <div class="row"><span class="n">runbooks</span><span class="mono s muted">main</span><span class="r muted" style="font-size:12px">11 min ago</span></div>
+        <div class="row"><span class="n">Brainstorms</span><span class="muted" style="font-size:12px">no git</span><span class="r muted" style="font-size:12px">yesterday</span></div>
+      </div>
+    </div>
+    <div class="column">
+      <div class="block warn" style="margin:12px 12px 0">
+        <div style="display:flex;align-items:center;justify-content:space-between"><span class="wt">Needs you · 2</span><span class="sub">oldest 11 min</span></div>
+        <div class="row" style="padding:6px 0;align-items:flex-start"><div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="color:var(--text-0)">Plano Claude servidor remoto seguro</span><span class="mono s muted">Bash(sudo systemctl restart nginx)</span></div><span class="btn sm">Open</span></div>
+        <div class="row" style="padding:6px 0;align-items:flex-start"><div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="color:var(--text-0)">infra-automation</span><span class="help">"Which VPN profile should the script assume?"</span></div><span class="btn sm">Answer</span></div>
+      </div>
+      <div class="colsec" style="padding-top:12px">
+        <div class="eyebrow" style="padding-top:0">Running · 3</div>
+        <div class="row" style="padding:6px 0"><i class="dot ok"></i><span class="n">wm-project</span><span class="r muted" style="font-size:12px">Claude Code · 18 min</span></div>
+        <div class="row" style="padding:6px 0"><i class="dot ok"></i><span class="n">runbooks</span><span class="r muted" style="font-size:12px">Codex · 3 min</span></div>
+        <div class="row" style="padding:6px 0"><i class="dot ok"></i><span class="n">diagnose-rails-host</span><span class="r muted" style="font-size:12px">Ops · Rocky-9-Testes · 41 min</span></div>
+      </div>
+      <div class="colsec">
+        <div class="eyebrow" style="padding-top:0">Uncommitted work · 2</div>
+        <div class="row" style="padding:6px 0"><span class="n">argos</span><span class="mono s muted">main</span><span class="r"><span class="btn sm">3 files</span></span></div>
+        <div class="row" style="padding:6px 0"><span class="n">runbooks</span><span class="mono s muted">main</span><span class="r"><span class="btn sm">1 file</span></span></div>
+      </div>
+      <div class="colsec">
+        <div class="divcap" style="padding-top:0">Earlier today · 5 finished</div>
+        <div class="row" style="padding:5px 0;font-size:12px"><i class="dot sm"></i><span>17:21 · diagnose-rails-host · 9 calls</span><span class="r"><a href="#r" style="color:var(--text-1)">Report</a></span></div>
+        <div class="row" style="padding:5px 0;font-size:12px"><i class="dot sm"></i><span>16:02 · Settings cleanup · exit 0</span></div>
+        <div class="row" style="padding:5px 0;font-size:12px"><i class="dot e sm"></i><span>14:40 · codexrun · exit 1</span></div>
+      </div>
+    </div>
+  </div>
+</div></div></div>
+<p class="note"><b>O que muda em 5B:</b> a Home passa a ter a mesma anatomia que a OpsWorkspace: à esquerda o que começas e retomas, à direita o que está vivo, com o único bloco tingido no topo. Os chips contadores do cabeçalho desaparecem porque a coluna já conta. A linha do subtítulo dá uso ao espaço: a conta activa e quando o limite repõe. <b>5A</b> é só o restyle da grelha, mais barato (HomeView.css 477 linhas).</p>
+
+<!-- ═══════════════════════ 6 SIDEBAR ═══════════════════════ -->
+<h2 id="sidebar">6 · Sidebar e painel de arranque</h2>
+<p>A sidebar já está perto; sobram o caret de texto nos grupos (▸/▾), o badge de percentagem em pílula, amarelo literal e raios de 999 px. O painel de arranque de um terminal novo é o único sítio onde um chat começa sem saber onde corre; passa a formulário com labels e um só botão primário.</p>
+
+<h3>6 · Sidebar + "Start a terminal" <span class="rec">Escolhido · sem escolha de CLI</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i class="on"><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="sidebar">
+    <div style="display:flex;align-items:center;gap:6px;padding:4px 2px 10px">
+      <span class="btn sm" style="flex:1;justify-content:flex-start;gap:8px;border-color:transparent;padding:0 8px"><i class="dot ok sm"></i><span class="n" style="color:var(--text-0)">Default</span><span class="chip w" style="margin-left:auto">76 %</span><svg class="i muted"><use href="#chev"/></svg></span>
+      <span class="btn sm ic" style="border-color:transparent"><svg class="i"><use href="#panel"/></svg></span>
+    </div>
+    <span class="seg" style="display:flex"><span class="on" style="flex:1;justify-content:center">Chats</span><span style="flex:1;justify-content:center">Files</span></span>
+    <span class="btn" style="margin:10px 0 8px;justify-content:flex-start"><svg class="i"><use href="#plus"/></svg>New terminal</span>
+    <span class="input" style="height:30px;margin-bottom:8px"><svg class="i"><use href="#search"/></svg>Search chats</span>
+    <div class="row" style="padding:6px 6px 4px;color:var(--text-2);font-size:12px;gap:6px"><svg class="i"><use href="#chev"/></svg><span style="font-weight:600;color:var(--text-1)">argos</span><span class="r"><svg class="i"><use href="#pen"/></svg><svg class="i"><use href="#plus"/></svg></span></div>
+    <div class="row sel" style="padding:7px 10px"><i class="dot ok"></i><span class="n">demo chat</span></div>
+    <div class="row" style="padding:7px 10px"><i class="dot"></i><span class="n" style="font-weight:400">staging deploy</span><span class="r"><span class="chip m">codex</span></span></div>
+    <div class="row" style="padding:7px 10px"><i class="dot w"></i><span class="n">migration rollback</span><span class="r"><i class="dot a sm"></i></span></div>
+    <div class="row" style="padding:7px 10px"><i class="dot"></i><span class="n" style="font-weight:400">flaky test hunt</span></div>
+    <div class="row" style="padding:4px 10px;color:var(--text-2);font-size:12px">Show 3 more</div>
+    <div class="row" style="padding:10px 6px 4px;color:var(--text-2);font-size:12px;gap:6px"><svg class="i"><use href="#chevr"/></svg><span style="font-weight:600;color:var(--text-1)">wm-project</span><span class="chip">Ubuntu-DevOps</span><span class="r muted">4</span></div>
+    <span class="grow"></span>
+    <span class="btn" style="justify-content:center"><svg class="i"><use href="#search"/></svg>Explore all chats</span>
+  </div>
+  <div class="main" style="align-items:center;justify-content:center">
+    <div style="width:560px;display:flex;flex-direction:column;gap:16px">
+      <div><div class="t1">Start a terminal</div><div class="sub">Claude Code, as the <b style="font-weight:600;color:var(--text-1)">Default</b> account chosen above. Pick where it runs.</div></div>
+      <div class="field"><span class="label">Where it runs</span><span class="select v focus" style="height:38px"><span>Ubuntu-DevOps <span class="det">· WSL</span></span><svg class="i"><use href="#chev"/></svg></span><span class="help">Local, a WSL distro or an SSH host. The CLI must be installed there.</span></div>
+      <div class="field"><span class="label">Folder<span class="opt">optional</span></span><span class="select v mono" style="height:38px"><span>/home/jdl/dev/wm-project</span><svg class="i"><use href="#chev"/></svg></span><span class="help" style="display:flex;gap:8px;align-items:center">On <span class="mono s">develop</span> · 2 files changed</span></div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:6px"><span class="btn p" style="height:38px;padding:0 18px"><svg class="i"><use href="#play"/></svg>Start terminal</span><span class="help">Enter starts · Esc goes back to the list</span></div>
+    </div>
+  </div>
+</div></div></div>
+<p class="note"><b>O que muda:</b> chevron SVG nos grupos; o badge da conta é um chip de 3 px em <code>--warn</code> a partir de 70 % e <code>--error</code> a partir de 90 % (tokens, não <code>#e2b341</code>); o segmentado Chats / Files é o mesmo controlo de todo o lado; "New terminal" é um botão quieto. No painel de arranque não há escolha de CLI: a conta escolhida no topo da sidebar (Claude, Codex ou Antigravity) já a determina, e o subtítulo diz qual. As pílulas da ChatConfigBar viram <b>selects</b> com label por cima e "optional" em vez de asterisco; a mesma ChatConfigBar continua a existir na barra do terminal (compacta), com os mesmos radii.</p>
+
+<!-- ═══════════════════════ 7 USAGE ═══════════════════════ -->
+<h2 id="usage">7 · Usage</h2>
+<p>Hoje: 589 linhas de CSS, gradientes dourados, 20 raios literais, tiles com ícone, cartões por conta, gráfico com tooltip e modal de detalhe. O que importa ao operador é o limite do plano (quando repõe, quanto falta); o resto é histórico.</p>
+
+<h3>7A · Página única, tudo plano <span class="alt">Não escolhido</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i class="on"><svg class="i lg"><use href="#bars"/></svg>Usage</i><i><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="main">
+    <div class="head"><div><div class="t1">Usage</div><div class="sub">Local and connected WSL distros · updated 2 min ago</div></div><span class="grow"></span><span class="seg"><span class="on">All accounts</span><span>Default</span><span>wm</span></span><span class="btn ic"><svg class="i"><use href="#refresh"/></svg></span></div>
+    <div class="body" style="padding-top:12px;max-width:1100px">
+      <div class="eyebrow" style="padding-top:0">Plan usage · Max 5x</div>
+      <div class="row line"><span style="width:200px">Session · 5 hours</span><span class="bar on1" style="flex:1"><b class="w" style="width:76%"></b></span><span class="muted" style="font-size:12px;width:200px;text-align:right">76 % · resets 19:40</span></div>
+      <div class="row line"><span style="width:200px">Week · all models</span><span class="bar on1" style="flex:1"><b class="s" style="width:41%"></b></span><span class="muted" style="font-size:12px;width:200px;text-align:right">41 % · resets Mon 09:00</span></div>
+      <div class="row line"><span style="width:200px">Week · Opus</span><span class="bar on1" style="flex:1"><b class="s" style="width:18%"></b></span><span class="muted" style="font-size:12px;width:200px;text-align:right">18 % · resets Mon 09:00</span></div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:16px"><span class="seg"><span>2 days</span><span class="on">Week</span><span>Month</span><span>Year</span><span>All</span></span><span class="chip ok">Local</span><span class="chip ok">Ubuntu-DevOps</span><span class="chip">Ubuntu</span><span class="grow"></span><span class="help">local estimates · not billed</span></div>
+      <div style="display:flex;gap:36px;padding:14px 0"><div class="stat"><span class="num">$38.20</span><span class="cap">estimated cost</span></div><div class="stat"><span class="num">2.1 M</span><span class="cap">input tokens</span></div><div class="stat"><span class="num">412 k</span><span class="cap">output tokens</span></div><div class="stat"><span class="num">9.8 M</span><span class="cap">cache tokens</span></div></div>
+      <svg viewBox="0 0 1000 120" style="width:100%;height:120px" aria-label="Cost by day"><line x1="0" y1="110" x2="1000" y2="110" stroke="var(--border)"/><rect x="20" y="60" width="110" height="50" fill="var(--accent)"/><rect x="160" y="30" width="110" height="80" fill="var(--accent)"/><rect x="300" y="78" width="110" height="32" fill="var(--accent)"/><rect x="440" y="48" width="110" height="62" fill="var(--accent)"/><rect x="580" y="92" width="110" height="18" fill="var(--accent)"/><rect x="720" y="100" width="110" height="10" fill="var(--accent)"/><rect x="860" y="20" width="110" height="90" fill="var(--accent)"/><text x="20" y="119" font-size="9" fill="var(--text-2)">Fri</text><text x="860" y="119" font-size="9" fill="var(--text-2)">Thu</text></svg>
+      <div style="display:flex;gap:28px;margin-top:6px"><table class="table" style="flex:1"><tr><th>Model</th><th class="r">In</th><th class="r">Out</th><th class="r">Cost</th></tr><tr><td class="n mono s">fable-5-1</td><td class="r">1.3 M</td><td class="r">260 k</td><td class="r">$24.10</td></tr><tr><td class="n mono s">opus-5</td><td class="r">0.6 M</td><td class="r">120 k</td><td class="r">$12.90</td></tr></table><table class="table" style="flex:1"><tr><th>Project</th><th class="r">Tokens</th><th class="r">Cost</th></tr><tr><td class="n">argos</td><td class="r">8.2 M</td><td class="r">$29.40</td></tr><tr><td class="n">wm-project</td><td class="r">2.9 M</td><td class="r">$6.10</td></tr></table></div>
+    </div>
+  </div>
+</div></div></div>
+
+<h3>7B · Histórico à esquerda, limites do plano à direita <span class="rec">Escolhido</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i class="on"><svg class="i lg"><use href="#bars"/></svg>Usage</i><i><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="page">
+    <div class="content">
+      <div class="head"><div><div class="t1">Usage</div><div class="sub">Local and connected WSL distros · updated 2 min ago · local estimates, not billed</div></div><span class="grow"></span><span class="btn ic"><svg class="i"><use href="#refresh"/></svg></span></div>
+      <div class="body" style="padding-top:14px">
+        <div style="display:flex;gap:10px;align-items:center"><span class="seg"><span>2 days</span><span class="on">Week</span><span>Month</span><span>Year</span><span>All</span></span><span class="grow"></span><span class="chip ok">Local</span><span class="chip ok">Ubuntu-DevOps</span><span class="chip">Ubuntu</span></div>
+        <div style="display:flex;gap:36px;padding:16px 0 6px"><div class="stat"><span class="num">$38.20</span><span class="cap">estimated cost this week</span></div><div class="stat"><span class="num">2.1 M</span><span class="cap">input tokens</span></div><div class="stat"><span class="num">412 k</span><span class="cap">output tokens</span></div><div class="stat"><span class="num">9.8 M</span><span class="cap">cache tokens · 82 % of input</span></div></div>
+        <svg viewBox="0 0 900 130" style="width:100%;height:130px" aria-label="Cost by day"><line x1="0" y1="110" x2="900" y2="110" stroke="var(--border)"/><text x="0" y="12" font-size="9" fill="var(--text-2)">$9</text><text x="0" y="108" font-size="9" fill="var(--text-2)">$0</text><rect x="40" y="60" width="100" height="50" fill="var(--accent)" opacity=".55"/><rect x="160" y="30" width="100" height="80" fill="var(--accent)" opacity=".55"/><rect x="280" y="78" width="100" height="32" fill="var(--accent)" opacity=".55"/><rect x="400" y="48" width="100" height="62" fill="var(--accent)" opacity=".55"/><rect x="520" y="92" width="100" height="18" fill="var(--accent)" opacity=".55"/><rect x="640" y="100" width="100" height="10" fill="var(--accent)" opacity=".55"/><rect x="760" y="20" width="100" height="90" fill="var(--accent)"/><text x="40" y="124" font-size="9" fill="var(--text-2)">Fri 26</text><text x="760" y="124" font-size="9" fill="var(--text-2)">Thu 2 · $8.60</text></svg>
+        <div class="help">Click a day to see its models and projects below.</div>
+        <div style="display:flex;gap:28px;margin-top:10px"><table class="table" style="flex:1"><tr><th>Model</th><th class="r">In</th><th class="r">Out</th><th class="r">Cost</th></tr><tr><td class="n mono s">fable-5-1</td><td class="r">1.3 M</td><td class="r">260 k</td><td class="r">$24.10</td></tr><tr><td class="n mono s">opus-5</td><td class="r">0.6 M</td><td class="r">120 k</td><td class="r">$12.90</td></tr><tr><td class="n mono s">sonnet-5-5</td><td class="r">0.2 M</td><td class="r">32 k</td><td class="r">$1.20</td></tr></table><table class="table" style="flex:1"><tr><th>Project</th><th class="r">Tokens</th><th class="r">Cost</th></tr><tr><td class="n">argos</td><td class="r">8.2 M</td><td class="r">$29.40</td></tr><tr><td class="n">wm-project <span class="chip">Ubuntu-DevOps</span></td><td class="r">2.9 M</td><td class="r">$6.10</td></tr><tr><td class="n">runbooks</td><td class="r">1.1 M</td><td class="r">$2.70</td></tr></table></div>
+      </div>
+    </div>
+    <div class="column">
+      <div class="colsec" style="flex-direction:row;align-items:center"><span class="t3">Plan usage</span><span class="grow"></span><span class="seg"><span>All</span><span class="on">Default</span><span>wm</span></span></div>
+      <div class="block warn" style="margin:12px 12px 0">
+        <div style="display:flex;align-items:center;justify-content:space-between"><span class="wt">Session window at 76 %</span><span class="sub">resets 19:40</span></div>
+        <div class="bar on1"><b class="w" style="width:76%"></b></div>
+        <div class="help">About 1 h 20 of the usual pace left. Codex and Antigravity are unaffected.</div>
+      </div>
+      <div class="colsec" style="padding-top:12px">
+        <div class="row" style="padding:6px 0;flex-direction:column;align-items:stretch;gap:6px"><span style="display:flex;justify-content:space-between"><span class="t1c">Week · all models</span><span class="sub">41 % · resets Mon 09:00</span></span><span class="bar on1"><b class="s" style="width:41%"></b></span></div>
+        <div class="row" style="padding:6px 0;flex-direction:column;align-items:stretch;gap:6px"><span style="display:flex;justify-content:space-between"><span class="t1c">Week · Opus</span><span class="sub">18 % · resets Mon 09:00</span></span><span class="bar on1"><b class="s" style="width:18%"></b></span></div>
+        <div class="help">Live from Anthropic · Max 5x · joao.leite@wiremaze.com</div>
+      </div>
+      <div class="colsec">
+        <div style="display:flex;align-items:center"><span class="eyebrow" style="padding:0">Budgets</span><span class="grow"></span><span class="btn sm">Edit</span></div>
+        <div class="row" style="padding:6px 0"><span class="t1c">Last hour</span><span class="r"><span class="mono s">$1.80</span><span class="muted" style="font-size:12px">of $5</span></span></div>
+        <div class="row" style="padding:6px 0"><span class="t1c">Last 5 hours</span><span class="r"><span class="mono s">$8.60</span><span class="muted" style="font-size:12px">of $15</span></span></div>
+        <div class="row" style="padding:6px 0"><span class="t1c">Last 7 days</span><span class="r"><span class="mono s">$38.20</span><span class="muted" style="font-size:12px">no budget</span></span></div>
+      </div>
+      <div class="colsec">
+        <div class="divcap" style="padding-top:0">Other accounts · 1</div>
+        <div class="row" style="padding:5px 0;font-size:12px"><i class="dot ok sm"></i><span>wm · Pro</span><span class="r muted">12 % session · $4.10 this week</span></div>
+      </div>
+    </div>
+  </div>
+</div></div></div>
+<p class="note"><b>7B:</b> a coluna direita é o que te pode parar (o limite do plano), com o limite mais perto do tecto como único bloco tingido; o histórico, o gráfico e as tabelas ficam à esquerda. O modal de detalhe de um dia desaparece: clicar numa barra filtra as tabelas por baixo. O segmentado da coluna tem <b>All</b>: com All, cada conta é um bloco com as suas barras e o que precisa de atenção sobe ao topo; com uma conta, a vista acima. Os cartões "By account" fundem-se na dobra "Other accounts". <b>7A</b> mantém o fluxo actual, com as mesmas remoções (gradientes, tiles com ícone, modal). Em ambas, as barras do gráfico são <code>--accent</code> com o dia seleccionado a cheio, e as barras de limite seguem a regra de cor: verde até 70 %, <code>--warn</code> até 90 %, <code>--error</code> acima.</p>
+
+<!-- ═══════════════════════ 8 PLAN ═══════════════════════ -->
+<h2 id="plan">8 · Plano de lotes</h2>
+<p>Ordem do §9 do design doc, com um lote de fundações antes. Eu (Fable) escrevo o brief de cada lote a partir do frame escolhido, um sub-agente implementa numa worktree, eu reviso o diff, corro <code>npm run typecheck</code> e o <code>visual-check</code> nos dois temas, e faço o commit. Sub-agentes nunca fazem commit. Um lote de cada vez; o seguinte só arranca com o anterior em <code>main</code>.</p>
+<table class="plan">
+  <tr><th>Lote</th><th>Superfície</th><th>O que entra</th><th>Modelo</th><th>Commit</th></tr>
+  <tr><td>0</td><td>Fundações</td><td>Classes partilhadas em <code>global.css</code> (<code>.btn</code>, <code>.btn-primary</code>, <code>.btn-quiet</code>, <code>.seg</code>, <code>.field</code>/<code>.select</code>, <code>.sheet</code>, <code>.eyebrow</code>, <code>.divider-caption</code>, <code>.chip</code>) extraídas do que a OpsWorkspace já faz; <code>Sheet</code> genérico a partir do <code>PlanReviewSheet</code>; substituir <code>#e2b341</code>, <code>#3fb950</code>, <code>#d29922</code>, <code>#4fc3f7</code> pelos tokens em toda a app; retirar <code>--radius-lg</code> dos usos novos. Sem mudanças visuais fora das cores.</td><td class="m">Opus</td><td><code>refactor(ui): shared controls and tokens for the system design</code></td></tr>
+  <tr><td>1</td><td>Servers</td><td>RemoteView segundo 1A ou 1B; sub-nav Remote &amp; WSL / Ops / MCP como segmentado no cabeçalho; Add/Edit host como sheet; SSH keys com os mesmos radii. ServerTabs, RemoteSessionView e SftpBrowser segundo 1C.</td><td class="m">Opus (1B) · Sonnet (1A)</td><td><code>feat(servers): bring the servers group to the system design</code></td></tr>
+  <tr><td>2</td><td>Settings</td><td>SettingsView + AppearanceSettings segundo 2A ou 2B; Permissions, Hooks, Session notifications e Accounts como sheets (2C); badges coloridos para ponto + palavra; Shortcuts e Changelog só radii.</td><td class="m">Sonnet</td><td><code>feat(settings): settings as flat sections, editors as sheets</code></td></tr>
+  <tr><td>3</td><td>Projects</td><td>ProjectsView segundo 3A ou 3B; SessionPeek, LabelManager, ProjectActions, SessionTags; PendingRuns com cores por token.</td><td class="m">Opus</td><td><code>feat(projects): flat lists and a fixed detail column</code></td></tr>
+  <tr><td>4</td><td>Planner Sprint</td><td>SprintBoard segundo 4A ou 4B; prioridade como chip, sem aresta colorida; modais Sprint / Item / Complete como sheets; PlannerView (Week) só radii e tokens.</td><td class="m">Opus (4B) · Sonnet (4A)</td><td><code>feat(sprints): the board without cards, blockers as the one tinted block</code></td></tr>
+  <tr><td>5</td><td>Home</td><td>HomeView segundo 5A ou 5B; pickers como selects; chips contadores removidos.</td><td class="m">Opus (5B) · Sonnet (5A)</td><td><code>feat(home): what is live on the right, what you start on the left</code></td></tr>
+  <tr><td>6</td><td>Sidebar e setup</td><td>Sidebar, NavRail, TitleBar, Chat setup pane, ChatConfigBar, ModelPicker, AccountPicker, CommandPalette, Menu segundo 6.</td><td class="m">Sonnet</td><td><code>feat(sidebar): chevrons, chips and the start form</code></td></tr>
+  <tr><td>7</td><td>Usage</td><td>UsageView segundo 7A ou 7B; sem gradientes, tiles com ícone nem modal de detalhe; emoji e ⊞ removidos.</td><td class="m">Opus (7B) · Sonnet (7A)</td><td><code>feat(usage): plan limits in the column, history on the page</code></td></tr>
+  <tr><td>8</td><td>Limpeza</td><td>McpView, FileEditor, LocalBrowser, DiffView, OnboardingModal, ApprovalModal, TerminalContextMenu: radii, tokens e chevrons, sem redesenho. Apagar regras substituídas; <code>docs/SYSTEM-DESIGN.md</code> §9 marcado como feito.</td><td class="m">Sonnet</td><td><code>chore(ui): finish the sweep to the system design</code></td></tr>
+</table>
+<p class="note" style="margin-top:14px"><b>Decidido em 2026-10-02:</b> 1B + 1C · 2B + 2C · 3A com o rodapé numa linha e a coluna a fechar ao clicar fora · 4B · 5B · 6 sem escolha de CLI · 7B com "All". Esta página está guardada em <code>docs/wireframes/port-2026-10.html</code>; o plano em <code>docs/PORT_PLAN.md</code>.</p>
+</div>
+
+<script>
+(function(){
+  var fit=true;
+  var fitBtn=document.getElementById('fit'),realBtn=document.getElementById('real'),themeBtn=document.getElementById('theme');
+  function layout(){
+    document.querySelectorAll('.fw').forEach(function(w){
+      var s=w.querySelector('.fs');
+      if(fit){var z=Math.min(1,w.clientWidth/1400);s.style.transform='scale('+z+')';w.style.height=Math.round(860*z)+'px';w.classList.remove('real');}
+      else{s.style.transform='none';w.style.height='862px';w.classList.add('real');}
+    });
+    fitBtn.setAttribute('aria-pressed',fit);realBtn.setAttribute('aria-pressed',!fit);
+  }
+  fitBtn.addEventListener('click',function(){fit=true;layout();});
+  realBtn.addEventListener('click',function(){fit=false;layout();});
+  themeBtn.addEventListener('click',function(){
+    var r=document.documentElement,cur=r.getAttribute('data-theme');
+    var dark=cur?cur==='dark':!window.matchMedia('(prefers-color-scheme: light)').matches;
+    r.setAttribute('data-theme',dark?'light':'dark');
+  });
+  window.addEventListener('resize',layout);
+  layout();
+})();
+</script>
