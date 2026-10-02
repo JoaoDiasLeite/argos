@@ -82,7 +82,10 @@
 .settings-pane > * { -webkit-app-region: no-drag; }
 
 .settings-column {
-  max-width: 760px;
+  /* A reading column, centred: at 1900 px the rows stuck to the left left half the pane empty. */
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
   padding: 28px 48px 60px;
   display: flex;
   flex-direction: column;
