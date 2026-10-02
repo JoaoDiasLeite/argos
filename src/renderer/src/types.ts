@@ -1632,6 +1632,8 @@ declare global {
        * its ops calls are refused from then on. `ok: false` = no open ops run on that terminal.
        */
       opsStop: (terminalId: string) => Promise<{ ok: boolean }>
+      /** Write a long prompt to userData/prompts/<sessionId>.md so a terminal can be told to read it. */
+      promptFileWrite: (sessionId: string, text: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>
       sftpDisconnect: (hostId: string) => Promise<{ ok: boolean }>
 
       // WSL

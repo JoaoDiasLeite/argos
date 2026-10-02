@@ -364,6 +364,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('ops:terminal-session', terminalId, runbookPath, provider),
   // Stop a terminal's ops run (plan H4): run.end aborted, in-flight exec and prompts ended.
   opsStop: (terminalId: string) => ipcRenderer.invoke('ops:stop', terminalId),
+  promptFileWrite: (sessionId: string, text: string) => ipcRenderer.invoke('prompts:write', sessionId, text),
   sftpDisconnect: (hostId: string) => ipcRenderer.invoke('sftp:disconnect', hostId),
 
   // WSL

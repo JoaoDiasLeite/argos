@@ -1106,6 +1106,27 @@ ipcMain.handle('ops:stop', async (_, terminalId: string): Promise<{ ok: boolean 
   return { ok: true }
 })
 
+// A terminal can only be typed into one line at a time (raw "\n" is not bracketed paste
+// on ConPTY), so a long prompt — the standup's board and history — is written to a file
+// under userData/prompts and the terminal is told to read it. One file per session,
+// overwritten on each use; nothing else reads the folder.
+ipcMain.handle(
+  'prompts:write',
+  async (_, sessionId: string, text: string): Promise<{ ok: true; path: string } | { ok: false; error: string }> => {
+    if (typeof sessionId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) return { ok: false, error: 'Invalid session id.' }
+    if (typeof text !== 'string' || text.length > 512 * 1024) return { ok: false, error: 'Prompt text is missing or too long.' }
+    try {
+      const dir = path.join(app.getPath('userData'), 'prompts')
+      await fs.promises.mkdir(dir, { recursive: true })
+      const file = path.join(dir, `${sessionId}.md`)
+      await fs.promises.writeFile(file, text, 'utf8')
+      return { ok: true, path: file }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  }
+)
+
 ipcMain.handle('ops:terminal-session', async (_, terminalId: string, runbookPath: string, provider: OpsCli) => {
   if (typeof terminalId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(terminalId)) return { ok: false, error: 'Invalid terminal id.' }
   if (typeof runbookPath !== 'string' || runbookPath.trim() === '') return { ok: false, error: 'No runbook folder given.' }
