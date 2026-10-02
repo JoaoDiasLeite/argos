@@ -205,8 +205,9 @@
   font-size: 11.5px;
   line-height: 1.5;
   color: var(--text-1);
-  white-space: pre;
-  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
   max-height: 260px;
   flex-shrink: 0;
 }
