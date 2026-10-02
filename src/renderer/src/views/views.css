@@ -254,32 +254,17 @@
    Tokens: card surface · 4 px radius (SYSTEM-DESIGN.md §1) · layered soft shadow ·
            hover lift · accent-tinted borders.
 
-   This block deliberately spans several view-owned card classes
-   (.usage-card, .account-card,
-   .mcp-card) at once — it's a single cross-cutting "elevated
-   surface" trait, not a competing redefinition of any one of them (no
-   property here overlaps with what each owning view's stylesheet sets).
-   Kept here on purpose so the trait stays defined exactly once instead of
-   being copy-pasted into five files.
+   The elevated card surface below is McpView's (`.mcp-card`); it goes when the sweep
+   brings that view to the system design.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Elevated card surfaces */
-.usage-card,
-.account-card,
 .mcp-card {
   border-radius: var(--radius-surface);
   border: 1px solid var(--border);
   background: var(--bg-2);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 6px 18px rgba(0, 0, 0, 0.1);
   transition: transform 0.14s, box-shadow 0.14s, border-color 0.14s;
-}
-
-/* Lift on hover for the clickable cards */
-.usage-card:hover,
-.account-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2), 0 10px 26px rgba(0, 0, 0, 0.16);
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }
 
 /* Header gets a faint depth cue under the divider */

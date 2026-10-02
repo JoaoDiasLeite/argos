@@ -1,147 +1,341 @@
-import { useEffect, useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { UsageReport, UsageEntry, SourceInfo, UsageLimits, AccountPlanUsage, PlanUsageReport } from '../types'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { UsageReport, UsageEntry, SourceInfo, UsageLimits, AccountPlanUsage, PlanUsageReport, PlanWindow } from '../types'
+import { shortModel } from '../lib/model-id'
 import './views.css'
 import './UsageView.css'
 
+// ── Formatting ──────────────────────────────────────────────────────────────
+
+/** "2.1 M", "412 k", "8.4 k", "310". */
 function fmtNum(n: number): string {
-  if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B'
-  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M'
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K'
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)} B`
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)} M`
+  if (n >= 1e4) return `${Math.round(n / 1e3)} k`
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)} k`
   return String(Math.round(n))
 }
 
+const fmtUsd = (n: number): string => `$${n.toFixed(2)}`
+
+/** "$9" / "$0.42" for the chart's y label. */
+const fmtAxis = (n: number): string => (n >= 10 ? `$${Math.round(n)}` : `$${n.toFixed(2)}`)
+
 type RangeKey = '2d' | 'week' | 'month' | 'year' | 'all'
-const RANGES: { key: RangeKey; label: string; days: number | null }[] = [
-  { key: '2d', label: 'Last 2 days', days: 2 },
-  { key: 'week', label: 'Last week', days: 7 },
-  { key: 'month', label: 'Last month', days: 30 },
-  { key: 'year', label: 'Last year', days: 365 },
-  { key: 'all', label: 'All time', days: null }
+const RANGES: { key: RangeKey; label: string; days: number | null; caption: string }[] = [
+  { key: '2d', label: '2 days', days: 2, caption: 'estimated cost these 2 days' },
+  { key: 'week', label: 'Week', days: 7, caption: 'estimated cost this week' },
+  { key: 'month', label: 'Month', days: 30, caption: 'estimated cost this month' },
+  { key: 'year', label: 'Year', days: 365, caption: 'estimated cost this year' },
+  { key: 'all', label: 'All', days: null, caption: 'estimated cost, all time' }
 ]
 
-// "resets in 3h 12m" / "resets Mon 14:00" for plan-window reset timestamps.
-function fmtReset(iso?: string): string {
+/** "resets 19:40" today, "resets Mon 09:00" on another day. */
+function resetLabel(iso?: string): string {
   if (!iso) return ''
-  const t = new Date(iso).getTime()
-  if (!isFinite(t)) return ''
-  const mins = Math.round((t - Date.now()) / 60000)
-  if (mins <= 0) return 'resets soon'
-  if (mins < 60) return `resets in ${mins}m`
-  if (mins < 48 * 60) return `resets in ${Math.floor(mins / 60)}h ${mins % 60}m`
-  const d = new Date(t)
-  return `resets ${d.toLocaleDateString([], { weekday: 'short' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const hm = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  const sameDay = d.toDateString() === new Date().toDateString()
+  return sameDay ? `resets ${hm}` : `resets ${d.toLocaleDateString('en-GB', { weekday: 'short' })} ${hm}`
 }
 
-function PlanRow({ label, utilization, resetsAt }: { label: string; utilization: number; resetsAt?: string }) {
-  const level = utilization >= 90 ? 'danger' : utilization >= 70 ? 'warn' : 'ok'
+function relTime(ts: number): string {
+  const m = Math.floor((Date.now() - ts) / 60000)
+  if (m < 1) return 'just now'
+  if (m < 60) return `${m} min ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h} h ago`
+  return new Date(ts).toLocaleString()
+}
+
+const pad2 = (n: number): string => String(n).padStart(2, '0')
+const ymd = (dt: Date): string => `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`
+const dayDate = (d: string): Date => new Date(`${d}T00:00:00`)
+/** "Thu 2" */
+const shortDay = (d: string): string => {
+  const dt = dayDate(d)
+  return `${dt.toLocaleDateString('en-GB', { weekday: 'short' })} ${dt.getDate()}`
+}
+/** "Thu 2 Oct" */
+const longDay = (d: string): string => `${shortDay(d)} ${dayDate(d).toLocaleDateString('en-GB', { month: 'short' })}`
+/** "29 Sep" */
+const dayMonth = (d: string): string => dayDate(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+
+// ── Plan windows ────────────────────────────────────────────────────────────
+
+/** The row label: "Session · 5 hours", "Week · all models", "Week · Opus". */
+function windowLabel(w: PlanWindow): string {
+  return w.key === 'five_hour' ? 'Session · 5 hours' : w.label
+}
+/** The name in the tinted block's title: "Session window at 76 %". */
+function windowTitle(w: PlanWindow): string {
+  return w.key === 'five_hour' ? 'Session window' : w.label
+}
+/** Window length, for the pace estimate. */
+function windowMs(key: string): number | null {
+  if (key === 'five_hour') return 5 * 3600_000
+  if (key.startsWith('seven_day')) return 7 * 86400_000
+  return null
+}
+
+type Level = 'ok' | 'warn' | 'err'
+const levelOf = (pct: number): Level => (pct >= 90 ? 'err' : pct >= 70 ? 'warn' : 'ok')
+
+/** "Max 5x" from `max` + `default_claude_max_5x`. */
+function planName(a: AccountPlanUsage): string {
+  if (!a.subscriptionType) return ''
+  const base = a.subscriptionType.charAt(0).toUpperCase() + a.subscriptionType.slice(1)
+  const mult = a.rateLimitTier?.match(/(\d+x)\b/)?.[1]
+  return mult ? `${base} ${mult}` : base
+}
+
+const worstOf = (a: AccountPlanUsage): number =>
+  a.windows.reduce((m, w) => Math.max(m, w.utilization), -1)
+
+/**
+ * At the rate the window has filled so far, how long until it is full. Uses only the
+ * utilization and the reset time, both of which the endpoint returns, so no extra data:
+ * elapsed = length − time to reset, rate = used ÷ elapsed. Null when the window is too
+ * young to say anything (under 10 minutes) or its length is unknown.
+ */
+function paceLine(w: PlanWindow): string | null {
+  const len = windowMs(w.key)
+  if (!len || !w.resetsAt) return null
+  const toReset = new Date(w.resetsAt).getTime() - Date.now()
+  if (!isFinite(toReset) || toReset <= 0) return null
+  const elapsed = len - toReset
+  if (elapsed < 10 * 60_000 || w.utilization <= 0) return null
+  const toFull = ((100 - w.utilization) / w.utilization) * elapsed
+  if (toFull >= toReset) return 'At this pace it lasts until the reset.'
+  const mins = Math.max(1, Math.round(toFull / 60_000))
+  const span = mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} h${mins % 60 ? ` ${pad2(mins % 60)}` : ''}`
+  return `About ${span} of the usual pace left.`
+}
+
+function statusHint(a: AccountPlanUsage): { text: string; err?: boolean } | null {
+  switch (a.status) {
+    case 'ok':
+      return a.windows.length === 0
+        ? { text: 'The usage endpoint reported no limit windows for this login (API keys and some plans have none).' }
+        : null
+    case 'unauthorized':
+      return { text: 'No valid Claude Code token for this login. It refreshes the next time Claude runs here or in the CLI; then Refresh.' }
+    case 'no-credentials':
+      return { text: 'No Claude Code login found for this account.' }
+    case 'rate-limited':
+      return {
+        text: a.stale
+          ? 'Anthropic is rate-limiting the usage endpoint; showing the last numbers fetched.'
+          : 'Anthropic is rate-limiting the usage endpoint; it retries in a couple of minutes.'
+      }
+    case 'error':
+      return {
+        text: `Could not reach the usage endpoint (${a.error ?? 'unknown error'})${a.stale ? '; showing the last numbers fetched.' : '.'}`,
+        err: true
+      }
+  }
+  return null
+}
+
+function Bar({ pct, level }: { pct: number; level: Level }) {
   return (
-    <div className="limit-row">
-      <div className="limit-head">
-        <span className="limit-label">{label}</span>
-        <span className="limit-figs">
-          {resetsAt && <span className="limit-cap">{fmtReset(resetsAt)}</span>}
-          <span className={`limit-pct ${level}`}>{utilization.toFixed(0)}% used</span>
+    <div className="us-bar">
+      <span className={level} style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
+    </div>
+  )
+}
+
+function LimitRow({ w }: { w: PlanWindow }) {
+  const reset = resetLabel(w.resetsAt)
+  return (
+    <div className="us-limit">
+      <div className="us-limit-head">
+        <span className="us-limit-label">{windowLabel(w)}</span>
+        <span className="us-muted">
+          {w.utilization.toFixed(0)} %{reset ? ` · ${reset}` : ''}
         </span>
       </div>
-      <div className="limit-track">
-        <div className={`limit-fill ${level}`} style={{ width: `${Math.min(100, utilization)}%` }} />
-      </div>
+      <Bar pct={w.utilization} level={levelOf(w.utilization)} />
     </div>
   )
 }
 
-// One account's plan windows + status hints. The header row (name/email/plan pill)
-// only appears when several accounts are listed.
-function AccountPlanSection({ acc, showHeader }: { acc: AccountPlanUsage; showHeader: boolean }) {
+/** One account's limit rows and status hint, minus the window already in the tinted block. */
+function AccountLimits({ acc, skip }: { acc: AccountPlanUsage; skip?: PlanWindow }) {
+  const hint = statusHint(acc)
   return (
-    <div className="plan-account">
-      {showHeader && (
-        <div className="plan-account-head">
-          <span className="plan-account-name">{acc.accountName}</span>
-          {acc.email && <span className="plan-account-email">{acc.email}</span>}
-          {acc.subscriptionType && (
-            <span className="plan-pill">
-              {acc.subscriptionType}
-              {acc.rateLimitTier ? ` · ${acc.rateLimitTier}` : ''}
-            </span>
-          )}
-          {acc.envs && acc.envs.length > 0 && (
-            <span className="plan-account-envs" title="Environments this account is logged into">
-              {acc.envs.join(' · ')}
-            </span>
-          )}
-        </div>
-      )}
-      {acc.windows.length > 0 && (
-        <div className="limits-grid">
-          {acc.windows.map((w) => (
-            <PlanRow key={w.key} label={w.label} utilization={w.utilization} resetsAt={w.resetsAt} />
-          ))}
-        </div>
-      )}
-      {acc.status === 'ok' && acc.windows.length === 0 && (
-        <p className="field-hint">The usage endpoint responded but reported no rate-limit windows (API keys and some plans don't expose them).</p>
-      )}
-      {acc.status === 'unauthorized' && (
-        <p className="field-hint">
-          No valid Claude Code token for this login — tokens refresh automatically the next
-          time a Claude run executes (a chat here or the CLI). Then hit Refresh.
-        </p>
-      )}
-      {acc.status === 'no-credentials' && (
-        <p className="field-hint">No Claude Code login found for this account.</p>
-      )}
-      {acc.status === 'rate-limited' && (
-        <p className="field-hint">
-          Anthropic is rate-limiting the usage endpoint right now
-          {acc.stale ? ' — showing the last fetched numbers.' : ' — it retries automatically in a couple of minutes.'}
-        </p>
-      )}
-      {acc.status === 'error' && (
-        <p className="field-hint">
-          Couldn't reach the usage endpoint ({acc.error ?? 'unknown error'})
-          {acc.stale ? ' — showing the last fetched numbers.' : '.'}
-        </p>
-      )}
-    </div>
+    <>
+      {acc.windows
+        .filter((w) => w !== skip)
+        .map((w) => (
+          <LimitRow key={w.key} w={w} />
+        ))}
+      {hint && <p className={`help${hint.err ? ' us-err' : ''}`}>{hint.text}</p>}
+    </>
   )
 }
 
-function WindowRow({
-  label,
-  costUsd,
-  tokens,
-  cap
+function RefreshIcon({ spinning }: { spinning: boolean }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={spinning ? 'spin' : ''} aria-hidden="true">
+      <polyline points="23 4 23 10 17 10" />
+      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+    </svg>
+  )
+}
+
+function ChartIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 3v18h18" />
+      <path d="M8 17v-5M13 17V8M18 17v-9" />
+    </svg>
+  )
+}
+
+// ── Chart ───────────────────────────────────────────────────────────────────
+
+type Bucket = { key: string; label: string; cost: number; from: string; to: string }
+
+/**
+ * Cost per day (per week past 92 days) as plain SVG bars, drawn in pixels against the
+ * measured width so the 9 px labels stay 9 px. The highlighted bar (the selected one, or
+ * the latest) is solid and its label carries its total.
+ */
+function CostChart({
+  buckets,
+  max,
+  tickEvery,
+  weekly,
+  selected,
+  onSelect
 }: {
-  label: string
-  costUsd: number
-  tokens: number
-  cap: number
+  buckets: Bucket[]
+  max: number
+  tickEvery: number
+  weekly: boolean
+  selected: string | null
+  onSelect: (key: string) => void
 }) {
-  const hasCap = cap > 0
-  const pct = hasCap ? Math.min(100, (costUsd / cap) * 100) : 0
-  const level = pct >= 90 ? 'danger' : pct >= 70 ? 'warn' : 'ok'
+  const ref = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(0)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    setWidth(el.clientWidth)
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const H = 130
+  const base = 110
+  const top = 16
+  const left = 40
+  const n = buckets.length
+  const slot = n > 0 && width > left ? (width - left) / n : 0
+  const barW = Math.max(1, Math.min(slot * 0.8, slot - 1, 72))
+  const hi = selected ?? buckets[n - 1]?.key
+  const hiIdx = buckets.findIndex((b) => b.key === hi)
+  const cx = (i: number) => left + slot * i + slot / 2
+  const hiX = hiIdx >= 0 ? cx(hiIdx) : 0
+  const hiAnchor = hiX > width - 70 ? 'end' : hiX < left + 50 ? 'start' : 'middle'
+  const labelOf = (b: Bucket) => (weekly ? dayMonth(b.from) : shortDay(b.from))
+
   return (
-    <div className="limit-row">
-      <div className="limit-head">
-        <span className="limit-label">{label}</span>
-        <span className="limit-figs">
-          {fmtNum(tokens)} tok · <span className="limit-cap">~${costUsd.toFixed(2)}</span>
-          {hasCap && (
-            <span className={`limit-pct ${level}`}>
-              {pct.toFixed(0)}% of ${cap.toFixed(0)}
-            </span>
+    <div className="us-chart" ref={ref}>
+      {width > 0 && (
+        <svg width={width} height={H} role="img" aria-label="Cost by day">
+          <line className="us-chart-base" x1={left} y1={base} x2={width} y2={base} />
+          <text className="us-chart-label" x={0} y={top + 3}>{fmtAxis(max)}</text>
+          <text className="us-chart-label" x={0} y={base}>$0</text>
+          {buckets.map((b, i) => {
+            const h = (b.cost / max) * (base - top)
+            const x = left + slot * i + (slot - barW) / 2
+            const tip = `${weekly ? `Week of ${dayMonth(b.from)}` : longDay(b.from)} · ${fmtUsd(b.cost)}`
+            const pick = () => onSelect(b.key)
+            return (
+              <g
+                key={b.key}
+                className="us-chart-col"
+                role="button"
+                tabIndex={0}
+                aria-label={tip}
+                aria-pressed={selected === b.key}
+                onClick={pick}
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), pick())}
+              >
+                <title>{tip}</title>
+                <rect className="us-chart-hit" x={left + slot * i} y={top} width={slot} height={base - top} />
+                {b.cost > 0 && (
+                  <rect className={`us-chart-bar${b.key === hi ? ' on' : ''}`} x={x} y={base - h} width={barW} height={Math.max(h, 1)} />
+                )}
+              </g>
+            )
+          })}
+          {buckets.map((b, i) =>
+            i % tickEvery === 0 && i !== hiIdx && Math.abs(cx(i) - hiX) > 80 ? (
+              <text key={b.key} className="us-chart-label" x={cx(i)} y={H - 3} textAnchor="middle">
+                {labelOf(b)}
+              </text>
+            ) : null
           )}
-        </span>
-      </div>
-      {hasCap && (
-        <div className="limit-track">
-          <div className={`limit-fill ${level}`} style={{ width: `${pct}%` }} />
-        </div>
+          {hiIdx >= 0 && (
+            <text className="us-chart-label hi" x={hiAnchor === 'end' ? width : hiAnchor === 'start' ? left : hiX} y={H - 3} textAnchor={hiAnchor}>
+              {labelOf(buckets[hiIdx])} · {fmtUsd(buckets[hiIdx].cost)}
+            </text>
+          )}
+        </svg>
       )}
     </div>
   )
+}
+
+// ── View ────────────────────────────────────────────────────────────────────
+
+type Agg = {
+  cost: number
+  inTok: number
+  outTok: number
+  cacheTok: number
+  byModel: { model: string; costUsd: number; inputTokens: number; outputTokens: number }[]
+  byProject: { project: string; costUsd: number; tokens: number; distros: string[] }[]
+}
+
+function aggregate(entries: UsageEntry[], srcMeta: Map<string, SourceInfo>): Agg {
+  let cost = 0
+  let inTok = 0
+  let outTok = 0
+  let cacheTok = 0
+  const byModel = new Map<string, { costUsd: number; inputTokens: number; outputTokens: number }>()
+  const byProject = new Map<string, { costUsd: number; tokens: number; distros: Set<string> }>()
+  for (const e of entries) {
+    cost += e.costUsd
+    inTok += e.inputTokens
+    outTok += e.outputTokens
+    cacheTok += e.cacheTokens
+    const m = byModel.get(e.model) ?? { costUsd: 0, inputTokens: 0, outputTokens: 0 }
+    m.costUsd += e.costUsd
+    m.inputTokens += e.inputTokens
+    m.outputTokens += e.outputTokens
+    byModel.set(e.model, m)
+    const p = byProject.get(e.project) ?? { costUsd: 0, tokens: 0, distros: new Set<string>() }
+    p.costUsd += e.costUsd
+    p.tokens += e.inputTokens + e.outputTokens
+    const src = srcMeta.get(e.source)
+    if (src?.kind === 'wsl') p.distros.add(src.distro ?? src.label)
+    byProject.set(e.project, p)
+  }
+  return {
+    cost,
+    inTok,
+    outTok,
+    cacheTok,
+    byModel: [...byModel.entries()].map(([model, v]) => ({ model, ...v })).sort((a, b) => b.costUsd - a.costUsd),
+    byProject: [...byProject.entries()]
+      .map(([project, v]) => ({ project, costUsd: v.costUsd, tokens: v.tokens, distros: [...v.distros] }))
+      .sort((a, b) => b.costUsd - a.costUsd)
+  }
 }
 
 export default function UsageView() {
@@ -153,19 +347,10 @@ export default function UsageView() {
   const [activeSources, setActiveSources] = useState<Set<string>>(new Set())
   const [limits, setLimits] = useState<UsageLimits>({ hourUsd: 10, sessionUsd: 25, weekUsd: 150 })
   const [editingLimits, setEditingLimits] = useState(false)
-  const [detailKey, setDetailKey] = useState<string | null>(null)
+  const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [planReport, setPlanReport] = useState<PlanUsageReport | null>(null)
-  // 'all' or an account-chip key: filters the plan section AND the local stats below.
+  // 'all' or an accountKey: scopes the column AND the history on the page.
   const [accountFilter, setAccountFilter] = useState<string>('all')
-  // Local estimates are secondary now that real plan numbers exist — collapsed by default.
-  const [showLocal, setShowLocal] = useState<boolean>(
-    () => localStorage.getItem('usage-local-open') === '1'
-  )
-  const toggleLocal = () =>
-    setShowLocal((v) => {
-      localStorage.setItem('usage-local-open', v ? '0' : '1')
-      return !v
-    })
 
   const apply = (rep: UsageReport, srcs: SourceInfo[], lim: UsageLimits) => {
     setReport(rep)
@@ -207,19 +392,14 @@ export default function UsageView() {
     return () => {
       cancelled = true
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Live-update from the main-process watcher (every ~10 min and after IPC fetches).
   useEffect(() => window.electronAPI.onPlanUsage(setPlanReport), [])
 
-  const relTime = (ts: number) => {
-    const m = Math.floor((Date.now() - ts) / 60000)
-    if (m < 1) return 'just now'
-    if (m < 60) return `${m} min ago`
-    const h = Math.floor(m / 60)
-    if (h < 24) return `${h}h ago`
-    return new Date(ts).toLocaleString()
-  }
+  // A different range draws different bars; a day picked in the old one means nothing.
+  useEffect(() => setSelectedDay(null), [range, accountFilter])
 
   const toggleSource = (id: string) => {
     setActiveSources((prev) => {
@@ -235,148 +415,78 @@ export default function UsageView() {
     await window.electronAPI.setLimits(next)
   }
 
-  // Account chips shown at the top: one per ACCOUNT (identity) — the backend already
-  // groups environments (local + WSL) sharing a login. Source accounts without plan
-  // data (e.g. a distro login the poller can't read) get a fallback chip by email.
-  const accountChips = useMemo(() => {
-    const chips: { key: string; label: string; email?: string; envs?: string[] }[] = []
-    for (const a of planReport?.accounts ?? []) {
-      if (a.status === 'no-credentials' && a.windows.length === 0) continue
-      chips.push({ key: a.accountKey, label: a.accountName, email: a.email, envs: a.envs })
-    }
-    for (const s of sources) {
-      const email = s.account?.email
-      if (!email || chips.some((c) => c.email === email)) continue
-      chips.push({ key: `email:${email}`, label: email.split('@')[0], email })
-    }
-    return chips
-  }, [planReport, sources])
+  // Accounts in the column: every login the poller knows, except ones with no login.
+  const accounts = useMemo(
+    () =>
+      (planReport?.accounts ?? [])
+        .filter((a) => !(a.status === 'no-credentials' && a.windows.length === 0))
+        .sort((a, b) => (a.accountKey === planReport?.primary ? -1 : b.accountKey === planReport?.primary ? 1 : 0)),
+    [planReport]
+  )
+  // An account that went away (logged out) drops the filter back to All.
+  useEffect(() => {
+    if (accountFilter !== 'all' && !accounts.some((a) => a.accountKey === accountFilter)) setAccountFilter('all')
+  }, [accounts, accountFilter])
 
-  // Which usage sources belong to the selected account: email match first. The env-name
-  // fallback only applies to sources WITHOUT their own identity — otherwise an account
-  // whose managed login lives locally would wrongly swallow another account's Local
-  // source (e.g. Personal grabbing Work's ~/.claude projects).
-  const sourcesForAccount = (key: string): Set<string> => {
-    const chip = accountChips.find((c) => c.key === key)
+  // Which usage sources belong to an account: email match first. The env-name fallback
+  // only applies to sources WITHOUT their own identity — otherwise an account whose
+  // managed login lives locally would wrongly swallow another account's Local source.
+  const sourcesFor = (acc: AccountPlanUsage | undefined): Set<string> => {
     const ids = new Set<string>()
     for (const s of sources) {
-      if (chip?.email && s.account?.email === chip.email) ids.add(s.id)
-      else if (!s.account?.email && chip?.envs?.includes(s.kind === 'wsl' ? s.label : 'Local'))
-        ids.add(s.id)
+      if (acc?.email && s.account?.email === acc.email) ids.add(s.id)
+      else if (!s.account?.email && acc?.envs?.includes(s.kind === 'wsl' ? s.label : 'Local')) ids.add(s.id)
     }
     return ids
   }
 
-  // The source set the stats below actually use: manual chip toggles in "All accounts"
-  // mode; with an account selected, its sources intersected with the toggles (so the
-  // chips remain individually toggleable within the account).
-  const effectiveSources =
-    accountFilter === 'all'
-      ? activeSources
-      : new Set([...sourcesForAccount(accountFilter)].filter((id) => activeSources.has(id)))
+  const selectedAcc = accountFilter === 'all' ? undefined : accounts.find((a) => a.accountKey === accountFilter)
+  const accountSources = selectedAcc ? sourcesFor(selectedAcc) : null
+  // The sources the history uses: the chip toggles, within the selected account.
+  const effectiveSources = accountSources
+    ? new Set([...accountSources].filter((id) => activeSources.has(id)))
+    : activeSources
+  const shownSources = accountSources ? sources.filter((s) => accountSources.has(s.id)) : sources
+  const srcMeta = useMemo(() => new Map(sources.map((s) => [s.id, s])), [sources])
 
-  // Does a plan entry belong to the selected account chip?
-  const planMatchesFilter = (a: { accountKey: string; email?: string }): boolean => {
-    if (accountFilter === 'all') return true
-    if (a.accountKey === accountFilter) return true
-    const chip = accountChips.find((c) => c.key === accountFilter)
-    return !!chip?.email && a.email === chip.email
-  }
-
-  // Filter entries by range + active sources, then aggregate.
   const view = useMemo(() => {
     if (!report) return null
     const days = RANGES.find((r) => r.key === range)?.days ?? null
-    const cutoff = days ? new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10) : null
+    const cutoff = days ? ymd(new Date(Date.now() - (days - 1) * 86400_000)) : null
     const entries = report.entries.filter(
-      (e: UsageEntry) =>
-        effectiveSources.has(e.source) && e.day !== 'unknown' && (!cutoff || e.day >= cutoff)
+      (e) => effectiveSources.has(e.source) && e.day !== 'unknown' && (!cutoff || e.day >= cutoff)
     )
-
-    // source id -> account email/label, for grouping by account.
-    const srcMeta = new Map(sources.map((s) => [s.id, s]))
-    const accountKey = (sourceId: string) => srcMeta.get(sourceId)?.account?.email || `(${srcMeta.get(sourceId)?.label ?? sourceId})`
-
-    let cost = 0
-    let inTok = 0
-    let outTok = 0
-    let cacheTok = 0
     const byDay = new Map<string, number>()
-    const byModel = new Map<string, { costUsd: number; inputTokens: number; outputTokens: number }>()
-    const byProject = new Map<string, { costUsd: number; tokens: number }>()
-    const byAccount = new Map<string, { email: string; plan?: string; costUsd: number; tokens: number; sources: Set<string> }>()
-    for (const e of entries) {
-      cost += e.costUsd
-      inTok += e.inputTokens
-      outTok += e.outputTokens
-      cacheTok += e.cacheTokens
-      const ak = accountKey(e.source)
-      const acc = byAccount.get(ak) ?? { email: ak, plan: srcMeta.get(e.source)?.account?.plan, costUsd: 0, tokens: 0, sources: new Set<string>() }
-      acc.costUsd += e.costUsd
-      acc.tokens += e.inputTokens + e.outputTokens
-      acc.sources.add(srcMeta.get(e.source)?.label ?? e.source)
-      byAccount.set(ak, acc)
-      byDay.set(e.day, (byDay.get(e.day) ?? 0) + e.costUsd)
-      const m = byModel.get(e.model) ?? { costUsd: 0, inputTokens: 0, outputTokens: 0 }
-      m.costUsd += e.costUsd
-      m.inputTokens += e.inputTokens
-      m.outputTokens += e.outputTokens
-      byModel.set(e.model, m)
-      const p = byProject.get(e.project) ?? { costUsd: 0, tokens: 0 }
-      p.costUsd += e.costUsd
-      p.tokens += e.inputTokens + e.outputTokens
-      byProject.set(e.project, p)
-    }
-    return {
-      cost,
-      inTok,
-      outTok,
-      cacheTok,
-      entries,
-      byDay: [...byDay.entries()].map(([day, c]) => ({ day, costUsd: c })).sort((a, b) => a.day.localeCompare(b.day)),
-      byModel: [...byModel.entries()].map(([model, v]) => ({ model, ...v })).sort((a, b) => b.costUsd - a.costUsd),
-      byProject: [...byProject.entries()].map(([project, v]) => ({ project, ...v })).sort((a, b) => b.costUsd - a.costUsd),
-      byAccount: [...byAccount.values()]
-        .map((a) => ({ ...a, sources: [...a.sources] }))
-        .sort((a, b) => b.costUsd - a.costUsd)
-    }
+    for (const e of entries) byDay.set(e.day, (byDay.get(e.day) ?? 0) + e.costUsd)
+    return { entries, byDay, total: aggregate(entries, srcMeta) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [report, range, activeSources, sources, accountFilter, accountChips])
+  }, [report, range, activeSources, srcMeta, accountFilter, accounts])
 
-  // Build a CONTINUOUS timeline (fills empty days with $0) over the selected range,
-  // so gaps in activity read correctly. Long ranges bucket by week to keep it legible.
+  // A CONTINUOUS timeline (empty days at $0) over the range, clamped to the first active
+  // day; past 92 days it buckets by week to stay legible.
   const chart = useMemo(() => {
     if (!view) return null
-    const map = new Map(view.byDay.map((d) => [d.day, d.costUsd]))
-    const pad = (n: number) => String(n).padStart(2, '0')
-    const ymd = (dt: Date) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const days = RANGES.find((r) => r.key === range)?.days ?? null
-    const firstDay = view.byDay[0]?.day // earliest day with activity (byDay is sorted asc)
+    const firstDay = [...view.byDay.keys()].sort()[0]
     let start: Date
     if (days) {
       start = new Date(today)
       start.setDate(start.getDate() - (days - 1))
     } else {
-      start = firstDay ? new Date(`${firstDay}T00:00:00`) : new Date(today)
+      start = firstDay ? dayDate(firstDay) : new Date(today)
     }
-    // Don't render empty time before any activity exists — clamp the window to the first
-    // active day (so e.g. "Last year" with only 51 days of history shows 51 days, not 53
-    // mostly-empty weeks).
-    if (firstDay) {
-      const first = new Date(`${firstDay}T00:00:00`)
-      if (first > start) start = first
-    }
+    if (firstDay && dayDate(firstDay) > start) start = dayDate(firstDay)
     if (start > today) start = new Date(today)
     const spanDays = Math.round((today.getTime() - start.getTime()) / 86_400_000) + 1
     const weekly = spanDays > 92
-    const buckets: { key: string; label: string; cost: number; from: string; to: string }[] = []
+    const buckets: Bucket[] = []
     if (!weekly) {
       const cur = new Date(start)
       for (let i = 0; i < spanDays; i++) {
         const k = ymd(cur)
-        buckets.push({ key: k, label: `${pad(cur.getMonth() + 1)}/${pad(cur.getDate())}`, cost: map.get(k) ?? 0, from: k, to: k })
+        buckets.push({ key: k, label: k, cost: view.byDay.get(k) ?? 0, from: k, to: k })
         cur.setDate(cur.getDate() + 1)
       }
     } else {
@@ -385,504 +495,344 @@ export default function UsageView() {
       while (cur <= today) {
         let sum = 0
         for (let i = 0; i < 7; i++) {
-          const dd = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + i)
-          sum += map.get(ymd(dd)) ?? 0
+          sum += view.byDay.get(ymd(new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + i))) ?? 0
         }
         const end = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 6)
-        buckets.push({ key: ymd(cur), label: `${pad(cur.getMonth() + 1)}/${pad(cur.getDate())}`, cost: sum, from: ymd(cur), to: ymd(end) })
+        buckets.push({ key: ymd(cur), label: ymd(cur), cost: sum, from: ymd(cur), to: ymd(end) })
         cur.setDate(cur.getDate() + 7)
       }
     }
     const max = Math.max(...buckets.map((b) => b.cost), 0.0001)
-    const tickEvery = Math.max(1, Math.ceil(buckets.length / 12))
+    const tickEvery = Math.max(1, Math.ceil(buckets.length / 8))
     return { buckets, max, weekly, tickEvery }
   }, [view, range])
 
-  // Per-bucket breakdown for the detail modal: re-aggregate the filtered entries for the
-  // clicked day (or week) into totals, by-model and by-project.
-  const detail = useMemo(() => {
-    if (!detailKey || !view || !chart) return null
-    const bucket = chart.buckets.find((b) => b.key === detailKey)
-    if (!bucket) return null
-    const es = view.entries.filter((e) => e.day >= bucket.from && e.day <= bucket.to)
-    let cost = 0,
-      inTok = 0,
-      outTok = 0,
-      cacheTok = 0
-    const byModel = new Map<string, { costUsd: number; inputTokens: number; outputTokens: number }>()
-    const byProject = new Map<string, { costUsd: number; tokens: number }>()
-    for (const e of es) {
-      cost += e.costUsd
-      inTok += e.inputTokens
-      outTok += e.outputTokens
-      cacheTok += e.cacheTokens
-      const m = byModel.get(e.model) ?? { costUsd: 0, inputTokens: 0, outputTokens: 0 }
-      m.costUsd += e.costUsd
-      m.inputTokens += e.inputTokens
-      m.outputTokens += e.outputTokens
-      byModel.set(e.model, m)
-      const p = byProject.get(e.project) ?? { costUsd: 0, tokens: 0 }
-      p.costUsd += e.costUsd
-      p.tokens += e.inputTokens + e.outputTokens
-      byProject.set(e.project, p)
-    }
-    const fmtDay = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-    const title = bucket.from === bucket.to ? fmtDay(bucket.from) : `${fmtDay(bucket.from)} – ${fmtDay(bucket.to)}`
-    return {
-      title,
-      weekly: bucket.from !== bucket.to,
-      cost,
-      inTok,
-      outTok,
-      cacheTok,
-      byModel: [...byModel.entries()].map(([model, v]) => ({ model, ...v })).sort((a, b) => b.costUsd - a.costUsd),
-      byProject: [...byProject.entries()].map(([project, v]) => ({ project, ...v })).sort((a, b) => b.costUsd - a.costUsd)
-    }
-  }, [detailKey, view, chart])
+  const selBucket = chart?.buckets.find((b) => b.key === selectedDay) ?? null
+  // The tables follow the selected bar; the numbers row stays on the whole range.
+  const tables = useMemo(() => {
+    if (!view) return null
+    if (!selBucket) return view.total
+    return aggregate(
+      view.entries.filter((e) => e.day >= selBucket.from && e.day <= selBucket.to),
+      srcMeta
+    )
+  }, [view, selBucket, srcMeta])
 
-  // Esc closes the day-detail modal.
-  useEffect(() => {
-    if (!detailKey) return
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setDetailKey(null)
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [detailKey])
+  // Per-account cost over the last 7 days, for the "Other accounts" rows.
+  const weekCostFor = (acc: AccountPlanUsage): number | null => {
+    if (!report) return null
+    const ids = sourcesFor(acc)
+    if (ids.size === 0) return null
+    const cutoff = ymd(new Date(Date.now() - 6 * 86400_000))
+    return report.entries.reduce((s, e) => (ids.has(e.source) && e.day >= cutoff ? s + e.costUsd : s), 0)
+  }
 
-  if (loading) return (
-    <div className="view">
-      <div className="view-loading">
-        <div className="view-spinner" />
-        <span className="view-loading-text">Crunching usage across local + WSL…</span>
+  if (loading)
+    return (
+      <div className="view">
+        <div className="us-state">
+          <div className="view-spinner" />
+          <p className="help">Reading usage from local and WSL…</p>
+        </div>
       </div>
-    </div>
-  )
-  if (!report || !view) return (
-    <div className="view">
-      <div className="view-empty">
-        <span className="view-empty-icon">📊</span>
-        <span className="view-empty-msg">No usage data found. Use Claude Code to start tracking token usage.</span>
+    )
+  if (!report || !view || !chart || !tables)
+    return (
+      <div className="view">
+        <div className="us-state">
+          <span className="us-muted"><ChartIcon /></span>
+          <p className="help">No usage data found. Start a chat and come back.</p>
+        </div>
       </div>
-    </div>
-  )
+    )
 
+  const rangeInfo = RANGES.find((r) => r.key === range)!
+  const t = view.total
+  const cacheShare = t.inTok + t.cacheTok > 0 ? Math.round((t.cacheTok / (t.inTok + t.cacheTok)) * 100) : 0
+
+  // ── Column: which accounts, and the one limit closest to its ceiling ──
+  const inScope = selectedAcc ? [selectedAcc] : accounts
+  const closest = inScope
+    .flatMap((acc) => acc.windows.map((w) => ({ acc, w })))
+    .reduce<{ acc: AccountPlanUsage; w: PlanWindow } | null>(
+      (best, c) => (!best || c.w.utilization > best.w.utilization ? c : best),
+      null
+    )
+  // Below 70 % nothing needs the operator, so nothing is tinted.
+  const tinted = closest && closest.w.utilization >= 70 ? closest : null
+  // With All, whatever needs attention sorts to the top: the tinted account, then by worst window.
+  const blocks = [...inScope].sort((a, b) =>
+    tinted?.acc === a ? -1 : tinted?.acc === b ? 1 : worstOf(b) - worstOf(a)
+  )
+  const others = selectedAcc ? accounts.filter((a) => a !== selectedAcc) : []
   const win = report.windows
 
   return (
     <div className="view">
-      <div className="view-header">
-        <div>
-          <h1>Usage</h1>
-          <p className="view-sub">
-            Combined across local and connected WSL distros ·{' '}
-            {refreshing ? 'refreshing…' : `updated ${relTime(report.generatedAt)}`}
-          </p>
-        </div>
-        <button className="btn-ghost" onClick={refresh} disabled={refreshing}>
-          <svg
-            width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            className={refreshing ? 'spin' : ''}
-          >
-            <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-          </svg>
-          {refreshing ? 'Refreshing' : 'Refresh'}
-        </button>
-      </div>
-
-      <div className="view-scroll">
-        {/* Account switcher: filters the plan section and every stat below. */}
-        {accountChips.length > 1 && (
-          <div className="account-tabs">
-            <button
-              className={`range-tab ${accountFilter === 'all' ? 'active' : ''}`}
-              onClick={() => setAccountFilter('all')}
-            >
-              All accounts
-            </button>
-            {accountChips.map((c) => (
-              <button
-                key={c.key}
-                className={`range-tab ${accountFilter === c.key ? 'active' : ''}`}
-                onClick={() => setAccountFilter(c.key)}
-                title={c.email}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Real plan usage — live from Anthropic via each login's OAuth token. One
-            subsection per account, primary first; header rows only with 2+ accounts. */}
-        {planReport && (() => {
-          const visible = planReport.accounts
-            .filter((a) => !(a.status === 'no-credentials' && a.windows.length === 0))
-            .filter(planMatchesFilter)
-            .sort((a, b) =>
-              a.accountKey === planReport.primary ? -1 : b.accountKey === planReport.primary ? 1 : 0
-            )
-          if (visible.length === 0) return null
-          const single = visible.length === 1 ? visible[0] : null
-          const anyLive = visible.some((a) => a.status === 'ok' && a.windows.length > 0)
-          return (
-            <div className="usage-section">
-              <h2>
-                Plan usage
-                {single && (
-                  <span className="plan-head-meta">
-                    {single.envs && single.envs.length > 0 && (
-                      <span className="plan-account-envs" title="Environments this account is logged into">
-                        {single.envs.join(' · ')}
-                      </span>
-                    )}
-                    {single.subscriptionType && (
-                      <span className="plan-pill">
-                        {single.subscriptionType}
-                        {single.rateLimitTier ? ` · ${single.rateLimitTier}` : ''}
-                      </span>
-                    )}
-                  </span>
-                )}
-              </h2>
-              <div className="plan-accounts">
-                {visible.map((a) => (
-                  <AccountPlanSection key={a.accountKey} acc={a} showHeader={!single} />
-                ))}
-              </div>
-              {anyLive && (
-                <p className="field-hint">
-                  <strong>Live from Anthropic</strong> — the same numbers as Claude → Settings → Usage
-                  (fetched via the Claude Code login; unofficial endpoint, cached 5 min).
-                </p>
-              )}
+      <div className="us-page">
+        {/* ── Left: history ── */}
+        <div className="us-main">
+          <div className="us-head">
+            <div className="us-head-text">
+              <h1>Usage</h1>
+              <p className="us-sub">
+                Local and connected WSL distros · {refreshing ? 'refreshing…' : `updated ${relTime(report.generatedAt)}`} · local estimates, not billed
+              </p>
             </div>
-          )
-        })()}
-
-        {/* Recent activity (local estimates) — secondary to the real plan numbers,
-            so it ships collapsed and expands on demand. */}
-        <div className="usage-section">
-          <h2>
-            <button
-              className="collapse-toggle"
-              onClick={toggleLocal}
-              aria-expanded={showLocal}
-            >
-              <svg
-                width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                className={`collapse-chevron ${showLocal ? 'open' : ''}`} aria-hidden="true"
-              >
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-              Recent activity
-              <span className="collapse-sub">local estimates</span>
+            <button className="btn-ghost us-icon-btn" onClick={refresh} disabled={refreshing} aria-label="Refresh" title="Refresh">
+              <RefreshIcon spinning={refreshing} />
             </button>
-            {showLocal && (
-              <button className="btn-text limit-edit" onClick={() => setEditingLimits((v) => !v)}>
-                {editingLimits ? 'Done' : 'Set budgets'}
-              </button>
-            )}
-          </h2>
-          {showLocal && (
-          <>
-          {editingLimits && (
-            <div className="limit-edit-row">
-              {(['hourUsd', 'sessionUsd', 'weekUsd'] as const).map((k) => (
-                <label key={k} className="limit-edit-field">
-                  <span>{k === 'hourUsd' ? 'Hour budget $' : k === 'sessionUsd' ? 'Session (5h) $' : 'Week budget $'}</span>
-                  <input
-                    className="text-input"
-                    type="number"
-                    placeholder="0 = off"
-                    value={limits[k] || ''}
-                    onChange={(e) => saveLimits({ ...limits, [k]: Number(e.target.value) || 0 })}
-                  />
-                </label>
-              ))}
-            </div>
-          )}
-          <div className="limits-grid">
-            <WindowRow label="Last hour" costUsd={win.hour.costUsd} tokens={win.hour.tokens} cap={limits.hourUsd} />
-            <WindowRow label="Last 5 hours (session window)" costUsd={win.session.costUsd} tokens={win.session.tokens} cap={limits.sessionUsd} />
-            <WindowRow label="Last 7 days" costUsd={win.week.costUsd} tokens={win.week.tokens} cap={limits.weekUsd} />
           </div>
-          <p className="field-hint">
-            These are <strong>local estimates</strong> of your own activity (tokens; cost at public
-            API rates — not your subscription bill). The Plan usage section above has your real
-            plan limits and reset times. Set a personal budget above to show a progress bar
-            against it.
-          </p>
-          </>
-          )}
-        </div>
 
-        {/* Controls */}
-        <div className="usage-controls">
-          <div className="range-tabs">
-            {RANGES.map((r) => (
-              <button key={r.key} className={`range-tab ${range === r.key ? 'active' : ''}`} onClick={() => setRange(r.key)}>
-                {r.label}
-              </button>
-            ))}
-          </div>
-          {/* Environment chips: always visible, scoped to the selected account (all
-              sources in "All accounts" mode), individually toggleable either way. */}
-          {(() => {
-            const shown =
-              accountFilter === 'all'
-                ? sources
-                : sources.filter((s) => sourcesForAccount(accountFilter).has(s.id))
-            if (shown.length === 0 || (accountFilter === 'all' && shown.length < 2)) return null
-            return (
-              <div className="source-chips">
-                {shown.map((s) => (
-                  <button
-                    key={s.id}
-                    className={`source-chip ${activeSources.has(s.id) ? 'on' : ''} ${s.kind}`}
-                    onClick={() => toggleSource(s.id)}
-                    title={s.account?.email ? `${s.account.email}${s.account.plan ? ` · ${s.account.plan}` : ''}` : undefined}
-                  >
-                    <span className="source-chip-name">{s.kind === 'wsl' ? `⊞ ${s.label}` : s.label}</span>
-                    {s.account?.email && <span className="source-chip-acct">{s.account.email}</span>}
+          <div className="us-body">
+            <div className="us-range-row">
+              <div className="seg-control">
+                {RANGES.map((r) => (
+                  <button key={r.key} className={range === r.key ? 'on' : ''} onClick={() => setRange(r.key)}>
+                    {r.label}
                   </button>
                 ))}
               </div>
+              <span className="us-grow" />
+              {shownSources.length > 1 &&
+                shownSources.map((s) => (
+                  <button
+                    key={s.id}
+                    className={`chip us-src${activeSources.has(s.id) ? ' on' : ''}`}
+                    onClick={() => toggleSource(s.id)}
+                    aria-pressed={activeSources.has(s.id)}
+                    title={s.account?.email}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+            </div>
+
+            <div className="us-stats">
+              <div className="us-stat">
+                <span className="us-num">{fmtUsd(t.cost)}</span>
+                <span className="us-cap">{rangeInfo.caption}</span>
+              </div>
+              <div className="us-stat">
+                <span className="us-num">{fmtNum(t.inTok)}</span>
+                <span className="us-cap">input tokens</span>
+              </div>
+              <div className="us-stat">
+                <span className="us-num">{fmtNum(t.outTok)}</span>
+                <span className="us-cap">output tokens</span>
+              </div>
+              <div className="us-stat">
+                <span className="us-num">{fmtNum(t.cacheTok)}</span>
+                <span className="us-cap">cache tokens · {cacheShare} % of input</span>
+              </div>
+            </div>
+
+            <CostChart
+              buckets={chart.buckets}
+              max={chart.max}
+              tickEvery={chart.tickEvery}
+              weekly={chart.weekly}
+              selected={selBucket?.key ?? null}
+              onSelect={(k) => setSelectedDay((cur) => (cur === k ? null : k))}
+            />
+            <p className="help">
+              {selBucket
+                ? `Showing ${chart.weekly ? `the week of ${dayMonth(selBucket.from)}` : longDay(selBucket.from)} · click the bar again for the whole range.`
+                : `Click a ${chart.weekly ? 'week' : 'day'} to see its models and projects below.`}
+            </p>
+
+            {tables.byModel.length === 0 ? (
+              <p className="help us-tables-empty">No activity in this range.</p>
+            ) : (
+              <div className="us-tables">
+                <table className="us-table">
+                  <thead>
+                    <tr><th>Model</th><th className="r">In</th><th className="r">Out</th><th className="r">Cost</th></tr>
+                  </thead>
+                  <tbody>
+                    {tables.byModel.map((m) => (
+                      <tr key={m.model}>
+                        <td className="us-mono" title={m.model}>{shortModel(m.model)}</td>
+                        <td className="r">{fmtNum(m.inputTokens)}</td>
+                        <td className="r">{fmtNum(m.outputTokens)}</td>
+                        <td className="r">{fmtUsd(m.costUsd)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <table className="us-table">
+                  <thead>
+                    <tr><th>Project</th><th className="r">Tokens</th><th className="r">Cost</th></tr>
+                  </thead>
+                  <tbody>
+                    {tables.byProject.map((p) => (
+                      <tr key={p.project}>
+                        <td>
+                          <span className="us-project">
+                            <span className="us-project-name">{p.project}</span>
+                            {p.distros.map((d) => (
+                              <span key={d} className="chip">{d}</span>
+                            ))}
+                          </span>
+                        </td>
+                        <td className="r">{fmtNum(p.tokens)}</td>
+                        <td className="r">{fmtUsd(p.costUsd)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Right: what can stop you ── */}
+        <aside className="us-side">
+          <div className="us-sec us-side-head">
+            <span className="us-t3">Plan usage</span>
+            <span className="us-grow" />
+            {accounts.length > 1 && (
+              <div className="seg-control">
+                <button className={accountFilter === 'all' ? 'on' : ''} onClick={() => setAccountFilter('all')}>
+                  All
+                </button>
+                {accounts.map((a) => (
+                  <button
+                    key={a.accountKey}
+                    className={accountFilter === a.accountKey ? 'on' : ''}
+                    onClick={() => setAccountFilter(a.accountKey)}
+                    title={a.email}
+                  >
+                    {a.accountName}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {tinted && (() => {
+            const level = levelOf(tinted.w.utilization)
+            const reset = resetLabel(tinted.w.resetsAt)
+            const pace = paceLine(tinted.w)
+            const who = [tinted.acc.accountName, planName(tinted.acc)].filter(Boolean).join(' · ')
+            return (
+              <div className={`block ${level} us-tint`}>
+                <div className="us-tint-head">
+                  <span className={`us-tint-title ${level}`}>
+                    {windowTitle(tinted.w)} at {tinted.w.utilization.toFixed(0)} %
+                  </span>
+                  {reset && <span className="us-muted">{reset}</span>}
+                </div>
+                <Bar pct={tinted.w.utilization} level={level} />
+                <p className="help">
+                  {pace && !selectedAcc && accounts.length > 1 ? `${tinted.acc.accountName} · ${pace}` : pace ?? who}
+                </p>
+              </div>
             )
           })()}
-        </div>
 
-        {(() => {
-          const emails = new Set(
-            sources.filter((s) => effectiveSources.has(s.id) && s.account?.email).map((s) => s.account!.email!)
-          )
-          return emails.size > 1 ? (
-            <div className="acct-warn">
-              Combining {emails.size} different accounts: {[...emails].join(', ')}. Pick an account above to view one at a time.
-            </div>
-          ) : null
-        })()}
-
-        {/* Cards */}
-        <div className="usage-cards">
-          <div className="usage-card usage-card--cost">
-            <div className="usage-card-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-              </svg>
-            </div>
-            <div className="usage-card-value">${view.cost.toFixed(2)}</div>
-            <div className="usage-card-label">Est. cost</div>
-          </div>
-          <div className="usage-card usage-card--in">
-            <div className="usage-card-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/>
-              </svg>
-            </div>
-            <div className="usage-card-value">{fmtNum(view.inTok)}</div>
-            <div className="usage-card-label">Input tokens</div>
-          </div>
-          <div className="usage-card usage-card--out">
-            <div className="usage-card-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="16 7 12 3 8 7"/><line x1="12" y1="3" x2="12" y2="12"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/>
-              </svg>
-            </div>
-            <div className="usage-card-value">{fmtNum(view.outTok)}</div>
-            <div className="usage-card-label">Output tokens</div>
-          </div>
-          <div className="usage-card usage-card--cache">
-            <div className="usage-card-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-              </svg>
-            </div>
-            <div className="usage-card-value">{fmtNum(view.cacheTok)}</div>
-            <div className="usage-card-label">Cache tokens</div>
-          </div>
-        </div>
-
-        {/* By account */}
-        {view.byAccount.length > 1 && (
-          <div className="usage-section">
-            <h2>By account</h2>
-            <div className="account-cards">
-              {view.byAccount.map((a) => (
-                <div className="account-card" key={a.email}>
-                  <div className="account-card-top">
-                    <span className="account-email">{a.email}</span>
-                    {a.plan && <span className="account-plan">{a.plan}</span>}
+          <div className="us-sec">
+            {accounts.length === 0 ? (
+              <p className="help">No Claude Code login found. Sign in with Claude Code and Refresh.</p>
+            ) : selectedAcc || accounts.length === 1 ? (
+              (() => {
+                const a = selectedAcc ?? accounts[0]
+                const live = a.status === 'ok' && a.windows.length > 0
+                return (
+                  <>
+                    <AccountLimits acc={a} skip={tinted?.acc === a ? tinted.w : undefined} />
+                    {live && (
+                      <p className="help">
+                        {['Live from Anthropic', planName(a), a.email].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                  </>
+                )
+              })()
+            ) : (
+              blocks.map((a) => (
+                <div key={a.accountKey} className="us-acct">
+                  <div className="us-acct-head">
+                    <span className="eyebrow">{a.accountName}</span>
+                    {planName(a) && <span className="chip">{planName(a)}</span>}
                   </div>
-                  <div className="account-figs">
-                    <span className="account-cost">${a.costUsd.toFixed(2)}</span>
-                    <span className="account-tok">{fmtNum(a.tokens)} tok</span>
-                  </div>
-                  <div className="account-sources">{a.sources.join(' · ')}</div>
+                  <AccountLimits acc={a} skip={tinted?.acc === a ? tinted.w : undefined} />
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Chart */}
-        <div className="usage-section">
-          <h2>
-            Cost by {chart?.weekly ? 'week' : 'day'}{' '}
-            {chart && chart.buckets.length > 0 && (
-              <span className="usage-section-sub">
-                ({chart.buckets.length} {chart.weekly ? 'weeks' : 'days'})
-              </span>
+              ))
             )}
-          </h2>
-          {!chart || chart.buckets.length === 0 ? (
-            <div className="view-empty small">No activity in this range.</div>
-          ) : (
-            <div className="usage-chart">
-              <div className="usage-chart-yaxis">
-                <span>${chart.max >= 100 ? Math.round(chart.max) : chart.max.toFixed(2)}</span>
-                <span>$0</span>
-              </div>
-              <div className="usage-chart-main">
-                <div className="usage-chart-plot">
-                  {chart.buckets.map((b) => (
-                    <div
-                      className={`usage-bar-col ${b.cost > 0 ? 'clickable' : 'empty'}`}
-                      key={b.key}
-                      title={`${b.key}${chart.weekly ? ' · week' : ''} · $${b.cost.toFixed(2)}${b.cost > 0 ? ' · click for details' : ''}`}
-                      onClick={b.cost > 0 ? () => setDetailKey(b.key) : undefined}
-                      role={b.cost > 0 ? 'button' : undefined}
-                      tabIndex={b.cost > 0 ? 0 : undefined}
-                      onKeyDown={b.cost > 0 ? (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setDetailKey(b.key)) : undefined}
-                    >
-                      <div className="usage-bar" style={{ height: `${(b.cost / chart.max) * 100}%` }} />
-                    </div>
-                  ))}
-                </div>
-                <div className="usage-chart-labels">
-                  {chart.buckets.map((b, i) => (
-                    <div className="usage-bar-label" key={b.key}>
-                      {i % chart.tickEvery === 0 ? b.label : ''}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Tables */}
-        <div className="usage-tables">
-          <div className="usage-section">
-            <h2>By model</h2>
-            <table className="usage-table">
-              <thead><tr><th>Model</th><th>In</th><th>Out</th><th>Cost</th></tr></thead>
-              <tbody>
-                {view.byModel.map((m) => (
-                  <tr key={m.model}>
-                    <td className="mono">{m.model}</td>
-                    <td>{fmtNum(m.inputTokens)}</td>
-                    <td>{fmtNum(m.outputTokens)}</td>
-                    <td>${m.costUsd.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
-          <div className="usage-section">
-            <h2>By project</h2>
-            <table className="usage-table">
-              <thead><tr><th>Project</th><th>Tokens</th><th>Cost</th></tr></thead>
-              <tbody>
-                {view.byProject.map((p) => (
-                  <tr key={p.project}>
-                    <td>{p.project}</td>
-                    <td>{fmtNum(p.tokens)}</td>
-                    <td>${p.costUsd.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
 
-      {detail && createPortal(
-        <div className="usage-modal-overlay" onClick={() => setDetailKey(null)}>
-          <div className="usage-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="usage-modal-head">
-              <div>
-                <div className="usage-modal-title">{detail.title}</div>
-                <div className="usage-modal-sub">{detail.weekly ? 'Week total' : 'Day total'} · local estimate at public API rates</div>
-              </div>
-              <button className="usage-modal-close" onClick={() => setDetailKey(null)} aria-label="Close">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
+          <div className="us-sec">
+            <div className="us-sec-head">
+              <span className="eyebrow">Budgets</span>
+              <span className="us-grow" />
+              <button className="btn-ghost small" onClick={() => setEditingLimits((v) => !v)}>
+                {editingLimits ? 'Done' : 'Edit'}
               </button>
             </div>
-            <div className="usage-modal-body">
-              <div className="usage-cards">
-                <div className="usage-card usage-card--cost">
-                  <div className="usage-card-value">${detail.cost.toFixed(2)}</div>
-                  <div className="usage-card-label">Est. cost</div>
-                </div>
-                <div className="usage-card usage-card--in">
-                  <div className="usage-card-value">{fmtNum(detail.inTok)}</div>
-                  <div className="usage-card-label">Input</div>
-                </div>
-                <div className="usage-card usage-card--out">
-                  <div className="usage-card-value">{fmtNum(detail.outTok)}</div>
-                  <div className="usage-card-label">Output</div>
-                </div>
-                <div className="usage-card usage-card--cache">
-                  <div className="usage-card-value">{fmtNum(detail.cacheTok)}</div>
-                  <div className="usage-card-label">Cache</div>
-                </div>
+            {editingLimits && (
+              <div className="us-budget-edit">
+                {(['hourUsd', 'sessionUsd', 'weekUsd'] as const).map((k) => (
+                  <label key={k} className="us-budget-field">
+                    <span>{k === 'hourUsd' ? 'Hour $' : k === 'sessionUsd' ? 'Session (5 h) $' : 'Week $'}</span>
+                    <input
+                      className="text-input"
+                      type="number"
+                      min={0}
+                      placeholder="0 = off"
+                      value={limits[k] || ''}
+                      onChange={(e) => saveLimits({ ...limits, [k]: Number(e.target.value) || 0 })}
+                    />
+                  </label>
+                ))}
               </div>
-
-              {detail.byModel.length === 0 ? (
-                <div className="view-empty small">No activity recorded for this {detail.weekly ? 'week' : 'day'}.</div>
-              ) : (
-                <>
-                  <div className="usage-section">
-                    <h2>By model</h2>
-                    <table className="usage-table">
-                      <thead><tr><th>Model</th><th>In</th><th>Out</th><th>Cost</th></tr></thead>
-                      <tbody>
-                        {detail.byModel.map((m) => (
-                          <tr key={m.model}>
-                            <td className="mono">{m.model}</td>
-                            <td>{fmtNum(m.inputTokens)}</td>
-                            <td>{fmtNum(m.outputTokens)}</td>
-                            <td>${m.costUsd.toFixed(2)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+            )}
+            {(
+              [
+                ['Last hour', win.hour.costUsd, limits.hourUsd],
+                ['Last 5 hours', win.session.costUsd, limits.sessionUsd],
+                ['Last 7 days', win.week.costUsd, limits.weekUsd]
+              ] as const
+            ).map(([label, cost, cap]) => {
+              const pct = cap > 0 ? (cost / cap) * 100 : 0
+              return (
+                <div key={label} className="us-limit">
+                  <div className="us-limit-head">
+                    <span className="us-limit-label">{label}</span>
+                    <span className="us-budget-figs">
+                      <span className="us-mono">{fmtUsd(cost)}</span>
+                      <span className="us-muted">{cap > 0 ? `of $${cap}` : 'no budget'}</span>
+                    </span>
                   </div>
-                  <div className="usage-section">
-                    <h2>By project</h2>
-                    <table className="usage-table">
-                      <thead><tr><th>Project</th><th>Tokens</th><th>Cost</th></tr></thead>
-                      <tbody>
-                        {detail.byProject.map((p) => (
-                          <tr key={p.project}>
-                            <td>{p.project}</td>
-                            <td>{fmtNum(p.tokens)}</td>
-                            <td>${p.costUsd.toFixed(2)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-            </div>
+                  {cap > 0 && <Bar pct={pct} level={levelOf(pct)} />}
+                </div>
+              )
+            })}
           </div>
-        </div>,
-        document.body
-      )}
+
+          {others.length > 0 && (
+            <div className="us-sec">
+              <div className="divider-caption">Other accounts · {others.length}</div>
+              {others.map((a) => {
+                const worst = worstOf(a)
+                const session = a.windows.find((w) => w.key === 'five_hour')
+                const week = weekCostFor(a)
+                const right = [
+                  session ? `${session.utilization.toFixed(0)} % session` : null,
+                  week !== null ? `${fmtUsd(week)} this week` : null
+                ].filter(Boolean).join(' · ')
+                return (
+                  <button key={a.accountKey} className="us-other" onClick={() => setAccountFilter(a.accountKey)} title={a.email}>
+                    <span className={`us-dot${worst >= 0 ? ` ${levelOf(worst)}` : ''}`} />
+                    <span className="us-other-name">{[a.accountName, planName(a)].filter(Boolean).join(' · ')}</span>
+                    {right && <span className="us-muted us-other-right">{right}</span>}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </aside>
+      </div>
     </div>
   )
 }

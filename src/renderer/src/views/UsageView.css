@@ -1,587 +1,187 @@
-/* ═══════════════════════════════════════════════════════════════════════
-   UsageView.css — base layout + premium visual layer for the Usage tab.
-   The base rules below used to live in views.css (duplicated here as an
-   "override" layer); they've been consolidated into this file since these
-   classes are only ever used by UsageView, so this file is now the single
-   owner. The polish rules further down still layer on top of them.
-   ═══════════════════════════════════════════════════════════════════════ */
+/* ── UsageView.css ───────────────────────────────────────────────────────────
+   Usage (wireframe 7B): history on the left (range, sources, four numbers, the cost
+   chart, by-model and by-project tables that follow the selected bar); on the right a
+   460 px column with the plan limits, the one closest to its ceiling as the only tinted
+   block, budgets, and the other accounts folded. Classes are prefixed `us-`. ──────── */
 
-.usage-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 28px; }
-.usage-card { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
-.usage-card-value { font-size: 24px; font-weight: 700; color: var(--text-0); }
-.usage-card-label { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+.us-page { flex: 1; min-height: 0; display: flex; }
+.us-grow { flex: 1; }
+.us-muted { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.us-mono { font-family: var(--font-mono); font-size: 12px; }
+.us-err { color: var(--error); }
 
-.usage-section { margin-bottom: 28px; }
-.usage-section h2 { font-size: 14px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
-.usage-section-sub { font-weight: 400; color: var(--text-2); font-size: 12px; }
-
-.usage-chart {
-  display: flex; align-items: flex-end; gap: 4px; height: 160px;
-  background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 12px; overflow-x: auto;
-}
-.usage-bar-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; flex: 1; min-width: 18px; height: 100%; }
-.usage-bar { width: 70%; min-height: 2px; background: var(--accent); border-radius: 2px 2px 0 0; transition: opacity 0.15s; }
-.usage-bar-col:hover .usage-bar { opacity: 0.8; }
-.usage-bar-label { font-size: 9px; color: var(--text-2); margin-top: 4px; transform: rotate(-45deg); white-space: nowrap; }
-
-.account-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
-.account-card { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
-.account-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-.account-email { font-size: 13px; font-weight: 600; color: var(--text-0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.account-plan { font-size: 10px; font-weight: 600; text-transform: uppercase; padding: 2px 7px; border-radius: 8px; background: var(--accent-dim); color: var(--accent); flex-shrink: 0; }
-.account-figs { display: flex; align-items: baseline; gap: 10px; }
-.account-cost { font-size: 22px; font-weight: 700; color: var(--text-0); }
-.account-tok { font-size: 12px; color: var(--text-2); font-family: var(--font-mono); }
-.account-sources { font-size: 11px; color: var(--text-2); margin-top: 6px; }
-.limit-edit { font-size: 11.5px; }
-
-.limits-grid { display: flex; flex-direction: column; gap: 14px; }
-.limit-row { display: flex; flex-direction: column; gap: 5px; }
-.limit-head { display: flex; align-items: baseline; justify-content: space-between; }
-.limit-label { font-size: 13px; color: var(--text-0); }
-.limit-figs { font-size: 12.5px; color: var(--text-0); font-family: var(--font-mono); }
-.limit-cap { color: var(--text-2); }
-.limit-pct { margin-left: 8px; font-weight: 700; }
-.limit-pct.ok { color: var(--success); }
-.limit-pct.warn { color: var(--warn); }
-.limit-pct.danger { color: var(--error); }
-.limit-track { height: 8px; background: var(--bg-3); border-radius: 5px; overflow: hidden; }
-.limit-fill { height: 100%; border-radius: 5px; transition: width 0.3s; }
-.limit-fill.ok { background: var(--success); }
-.limit-fill.warn { background: var(--warn); }
-.limit-fill.danger { background: var(--error); }
-
-/* Account switcher at the top of the Usage view — same segmented look as .range-tabs. */
-.account-tabs {
-  display: flex;
-  gap: 2px;
-  flex-wrap: wrap;
-  width: fit-content;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 2px;
-  margin-bottom: 4px;
-}
-
-/* Collapsible section header (Recent activity / local estimates). */
-.collapse-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: inherit;
-  font-size: inherit;
-  font-weight: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-}
-.collapse-toggle:hover { color: var(--text-0); }
-.collapse-chevron { transition: transform 0.15s; flex-shrink: 0; }
-.collapse-chevron.open { transform: rotate(90deg); }
-.collapse-sub {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-2);
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-/* Per-account subsections inside "Plan usage" (headers only shown with 2+ accounts). */
-.plan-accounts {
+/* Loading and empty: centred, one helper line. */
+.us-state {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-}
-.plan-account-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.plan-account-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-0);
-}
-.plan-account-email {
-  font-size: 11.5px;
-  color: var(--text-2);
-  font-family: var(--font-mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.plan-account-head .plan-pill { margin-left: 0; }
-.plan-account-envs {
-  font-size: 11px;
-  color: var(--text-2);
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-/* Env list + plan pill on the section heading (single-account mode). The heading is
-   uppercase — undo that for the env/pill meta so it matches the per-account rows. */
-.plan-head-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-.plan-head-meta .plan-account-envs {
-  margin-left: 0;
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: 500;
-}
-.plan-head-meta .plan-pill { margin-left: 0; }
-
-/* Plan badge next to the "Plan usage" heading (subscription type · rate-limit tier). */
-.plan-pill {
-  margin-left: 10px;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--accent-dim);
-  color: var(--accent);
-  text-transform: capitalize;
-  vertical-align: middle;
-}
-
-.limit-edit-row { display: flex; gap: 14px; }
-.limit-edit-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-1); }
-.limit-edit-field .text-input { width: 130px; }
-
-.usage-controls {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 18px;
-}
-.range-tabs { display: flex; gap: 2px; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px; }
-.range-tab { padding: 5px 12px; font-size: 12.5px; color: var(--text-1); border-radius: 3px; }
-.range-tab:hover { color: var(--text-0); }
-
-.source-chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.source-chip {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 5px 11px;
-  font-size: 12px;
-  border-radius: 12px;
-  background: var(--bg-2);
-  border: 1px solid var(--border-light);
-  color: var(--text-2);
-  line-height: 1.3;
-}
-.source-chip.on { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
-.source-chip.wsl.on { background: var(--bg-2); border-color: var(--border-light); color: var(--text-0); }
-.source-chip-name { font-weight: 600; }
-.source-chip-acct { font-size: 10px; opacity: 0.75; font-family: var(--font-mono); }
-
-.acct-warn {
-  margin-bottom: 16px;
-  padding: 8px 12px;
-  background: color-mix(in srgb, var(--warn) 6%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
-  border-radius: var(--radius-sm);
-  color: var(--warn);
-  font-size: 12px;
-}
-
-.usage-tables { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.usage-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.usage-table th { text-align: left; color: var(--text-2); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; }
-.usage-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); color: var(--text-1); }
-.usage-table td.mono { font-family: var(--font-mono); color: var(--text-0); }
-.usage-disclaimer { font-size: 11.5px; color: var(--text-2); margin-top: 8px; line-height: 1.5; }
-
-/* ═══════════════════════════════════════════════════════════════════════
-   Premium polish layer — layered AFTER the base rules above so
-   equal-specificity rules win here.
-   ═══════════════════════════════════════════════════════════════════════ */
-
-/* ── Summary cards ─────────────────────────────────────────────────── */
-
-/* Inner layout: icon chip sits above value + label */
-.usage-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 18px 18px 16px;
-}
-
-/* Icon chip */
-.usage-card-icon {
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
-  display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  transition: transform 0.14s;
+  gap: 12px;
+  padding: 48px 24px;
 }
 
-.usage-card:hover .usage-card-icon {
-  transform: scale(1.07);
+/* ── Left: history ── */
+.us-main { flex: 1; min-width: 0; overflow-y: auto; padding-bottom: 28px; }
+
+.us-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 18px 24px 4px;
+  -webkit-app-region: drag;
 }
-
-/* Per-card tint variants */
-.usage-card--cost .usage-card-icon {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--accent);
-}
-
-.usage-card--in .usage-card-icon {
-  background: color-mix(in srgb, var(--success) 18%, transparent);
-  color: var(--success);
-}
-
-.usage-card--out .usage-card-icon {
-  background: color-mix(in srgb, var(--thinking) 18%, transparent);
-  color: var(--thinking);
-}
-
-.usage-card--cache .usage-card-icon {
-  background: color-mix(in srgb, var(--accent-hover) 18%, transparent);
-  color: var(--accent-hover);
-}
-
-/* Slight accent-tinted left border per card */
-.usage-card--cost  { border-left: 3px solid color-mix(in srgb, var(--accent) 55%, transparent); }
-.usage-card--in    { border-left: 3px solid color-mix(in srgb, var(--success) 55%, transparent); }
-.usage-card--out   { border-left: 3px solid color-mix(in srgb, var(--thinking) 55%, transparent); }
-.usage-card--cache { border-left: 3px solid color-mix(in srgb, var(--accent-hover) 55%, transparent); }
-
-/* Value + label spacing */
-.usage-card-value {
-  font-size: 26px;
-  font-weight: 700;
+.us-head button { -webkit-app-region: no-drag; }
+.us-head-text { flex: 1; min-width: 0; }
+.us-head h1 {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
   color: var(--text-0);
-  letter-spacing: -0.5px;
-  line-height: 1;
 }
+.us-sub { margin-top: 4px; font-size: 12px; color: var(--text-2); }
+.us-icon-btn { width: 36px; padding: 0; flex-shrink: 0; }
 
-.usage-card-label {
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--text-2);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-top: 0;
-}
+.us-body { padding: 14px 24px 0; display: flex; flex-direction: column; }
 
-/* ── Cost-by-day chart ──────────────────────────────────────────────── */
+.us-range-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.us-range-row .seg-control { margin-right: 4px; }
 
-.usage-chart {
-  /* Elevated panel feel */
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.18);
-  padding: 16px 14px 10px;
-  height: 180px;
-}
-
-/* Gradient-filled bars with rounded tops */
-.usage-bar {
-  background: linear-gradient(180deg, var(--accent-hover), var(--accent));
-  border-radius: 3px 3px 0 0;
-  transition: filter 0.14s, transform 0.14s;
-  width: 75%;
-}
-
-.usage-bar-col:hover .usage-bar {
-  filter: brightness(1.18);
-  transform: scaleY(1.02);
-  transform-origin: bottom;
-  opacity: 1; /* cancel views.css opacity change */
-}
-
-/* ── Limit bars (recent-activity windows) ───────────────────────────── */
-
-.limit-track {
-  height: 7px;
-  background: var(--bg-3);
-  border-radius: 99px;
-  overflow: hidden;
-}
-
-.limit-fill {
-  height: 100%;
-  border-radius: 99px;
-  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.limit-fill.ok {
-  background: linear-gradient(90deg,
-    color-mix(in srgb, var(--success) 70%, transparent),
-    var(--success)
-  );
-}
-
-.limit-fill.warn {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--warn) 70%, transparent), var(--warn));
-}
-
-.limit-fill.danger {
-  background: linear-gradient(90deg,
-    color-mix(in srgb, var(--error) 70%, transparent),
-    var(--error)
-  );
-}
-
-/* ── Account cards ─────────────────────────────────────────────────── */
-
-.account-card {
-  padding: 16px 18px;
-}
-
-/* Plan badge — refined pill */
-.account-plan {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+/* A source is not a state: no colour, only on (--bg-3) or off. */
+.chip.us-src {
+  /* A source chip toggles, so it is rounded like anything you press (§1). */
+  border-radius: var(--radius);
   padding: 3px 9px;
-  border-radius: 99px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-}
-
-/* ── Usage tables ──────────────────────────────────────────────────── */
-
-.usage-table th {
-  background: var(--bg-2);
+  cursor: pointer;
+  cursor: pointer;
+  background: transparent;
   color: var(--text-2);
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
 }
+.chip.us-src:hover { color: var(--text-1); }
+.chip.us-src.on { background: var(--bg-3); color: var(--text-0); }
 
-.usage-table th:first-child { border-radius: 8px 0 0 0; }
-.usage-table th:last-child  { border-radius: 0 8px 0 0; }
-
-.usage-table td {
-  padding: 8px 10px;
-  transition: background 0.1s;
-}
-
-.usage-table tr:hover td {
-  background: var(--bg-hover);
-}
-
-.usage-table tr:last-child td {
-  border-bottom: none;
-}
-
-/* Wrap each table in a rounded surface */
-.usage-section .usage-table {
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
-}
-
-/* ── Section headings ──────────────────────────────────────────────── */
-
-.usage-section h2 {
-  font-size: 13px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-1);
-  margin-bottom: 14px;
-}
-
-/* ── Range tabs ────────────────────────────────────────────────────── */
-
-.range-tab {
-  transition: background 0.14s, color 0.14s;
-}
-
-.range-tab.active {
-  color: var(--bg-0);
-  font-weight: 600;
-  background: var(--accent);
-}
-
-/* ── Cost chart: continuous timeline w/ y-axis + gridlines ──────────────── */
-.usage-chart {
-  display: flex;
-  align-items: stretch; /* override base align-items:flex-end, which collapsed the plot */
-  gap: 10px;
-  height: 210px;
-  padding: 16px 16px 12px;
-  overflow: visible;
-}
-
-/* Left value axis — $0 padded up so it lines up with the bar baseline */
-.usage-chart-yaxis {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: flex-end;
-  padding-bottom: 24px; /* = label row height (18) + its margin-top (6) */
-  min-width: 40px;
-  font-size: 10px;
-  color: var(--text-2);
+/* The four numbers that matter (§4): 20 px 650 over an 11.5 px caption. */
+.us-stats { display: flex; flex-wrap: wrap; gap: 14px 36px; padding: 16px 0 6px; }
+.us-stat { display: flex; flex-direction: column; gap: 2px; }
+.us-num {
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.2;
+  color: var(--text-0);
   font-variant-numeric: tabular-nums;
 }
+.us-cap { font-size: 11.5px; color: var(--text-2); }
 
-.usage-chart-main {
-  flex: 1;
+/* ── Chart ── */
+.us-chart { width: 100%; height: 130px; margin-top: 4px; }
+.us-chart svg { display: block; overflow: visible; }
+.us-chart-base { stroke: var(--border); stroke-width: 1; }
+.us-chart-label { fill: var(--text-2); font-size: 9px; font-family: var(--font-sans); }
+.us-chart-label.hi { fill: var(--text-1); }
+.us-chart-col { cursor: pointer; outline: none; }
+.us-chart-hit { fill: transparent; }
+.us-chart-col:hover .us-chart-hit,
+.us-chart-col:focus-visible .us-chart-hit { fill: var(--bg-2); }
+.us-chart-bar { fill: var(--accent); opacity: 0.55; }
+.us-chart-bar.on { opacity: 1; }
+
+/* ── Tables ── */
+.us-tables { display: flex; gap: 28px; margin-top: 10px; align-items: flex-start; }
+.us-tables-empty { margin-top: 10px; }
+.us-table { flex: 1; min-width: 0; border-collapse: collapse; font-size: 12.5px; }
+.us-table th {
+  padding: 6px 8px 6px 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-2);
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.us-table td {
+  padding: 7px 8px 7px 0;
+  vertical-align: baseline;
+  color: var(--text-0);
+  border-bottom: 1px solid var(--border);
+}
+.us-table th:last-child,
+.us-table td:last-child { padding-right: 0; }
+.us-table .r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.us-project { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.us-project-name { overflow-wrap: anywhere; }
+
+/* ── Right: the plan column ── */
+.us-side {
+  flex: 0 0 460px;
   min-width: 0;
   display: flex;
   flex-direction: column;
-}
-
-/* Plot area: bars sit on the baseline; faint horizontal gridlines behind */
-.usage-chart-plot {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  align-items: stretch;
-  gap: 3px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  border-bottom: 1px solid var(--border-light);
-  background-image: linear-gradient(
-    to top,
-    color-mix(in srgb, var(--border) 60%, transparent) 1px,
-    transparent 1px
-  );
-  background-size: 100% 25%;
-}
-
-/* Each column stretches to the plot's full height; the bar is absolutely placed at
-   the baseline so its % height resolves reliably (flex % heights don't). */
-.usage-bar-col {
-  position: relative;
-  /* Override the views.css base (display:flex; height:100%) — that height:100% on a
-     flexed parent collapses to 0. Stretch to the plot height instead so the absolutely
-     positioned bar has a real containing-block height to resolve its % against. */
-  display: block;
-  height: auto;
-  align-self: stretch;
-  flex: 1 0 5px;
-  min-width: 3px;
-}
-.usage-bar {
-  position: absolute;
-  left: 11%;
-  right: 11%;
-  width: auto; /* override base width:75% so left/right define the span */
-  bottom: 0;
-  min-height: 0;
-  background: linear-gradient(180deg, var(--accent-hover), var(--accent));
-  border-radius: 3px 3px 0 0;
-  transition: filter 0.14s;
-  transform: none; /* cancel the views.css hover scale on this layout */
-}
-.usage-bar-col.empty .usage-bar {
-  background: color-mix(in srgb, var(--bg-3) 80%, transparent);
-}
-.usage-bar-col:hover .usage-bar {
-  filter: brightness(1.2);
-  transform: none;
-  opacity: 1;
-}
-
-/* Label row — aligned 1:1 with the bar columns, horizontal text */
-.usage-chart-labels {
-  display: flex;
-  gap: 3px;
-  height: 18px;
-  margin-top: 6px;
-}
-.usage-bar-label {
-  flex: 1 0 5px;
-  min-width: 3px;
-  font-size: 9.5px;
-  line-height: 18px;
-  color: var(--text-2);
-  text-align: center;
-  white-space: nowrap;
-  transform: none;
-  overflow: visible;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── Clickable bars + day-detail modal ── */
-.usage-bar-col.clickable { cursor: pointer; }
-.usage-bar-col.clickable:hover .usage-bar { filter: brightness(1.25); }
-.usage-bar-col.clickable:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-.usage-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  animation: usage-modal-fade 0.15s ease;
-}
-@keyframes usage-modal-fade { from { opacity: 0; } }
-
-.usage-modal {
-  width: 560px;
-  max-width: 100%;
-  max-height: 86vh;
-  display: flex;
-  flex-direction: column;
   background: var(--bg-1);
-  border: 1px solid var(--border-light);
-  border-radius: 16px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
-  overflow: hidden;
-  animation: usage-modal-pop 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-@keyframes usage-modal-pop { from { transform: translateY(10px) scale(0.98); opacity: 0.6; } }
-
-.usage-modal-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 18px 20px;
-  border-bottom: 1px solid var(--border);
-}
-.usage-modal-title { font-size: 16px; font-weight: 600; color: var(--text-0); }
-.usage-modal-sub { font-size: 12px; color: var(--text-2); margin-top: 3px; }
-.usage-modal-close {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--bg-2);
-  color: var(--text-1);
-  cursor: pointer;
-  transition: background 0.14s, color 0.14s;
-}
-.usage-modal-close:hover { background: var(--bg-hover); color: var(--text-0); }
-
-.usage-modal-body {
-  padding: 18px 20px 22px;
+  border-left: 1px solid var(--border);
   overflow-y: auto;
 }
-.usage-modal-body .usage-cards { margin-bottom: 18px; }
-.usage-modal-body .usage-section { margin-bottom: 18px; }
-.usage-modal-body .usage-section:last-child { margin-bottom: 0; }
+.us-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.us-side-head { flex-direction: row; align-items: center; gap: 8px; }
+.us-t3 { font-size: 13px; font-weight: 650; color: var(--text-0); }
+.us-sec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.us-tint + .us-sec { padding-top: 12px; }
+
+/* The one tinted element on the screen. */
+.block.us-tint { margin: 12px 12px 0; gap: 6px; }
+.us-tint-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.us-tint-title { font-size: 12.5px; font-weight: 650; }
+.us-tint-title.warn { color: var(--warn); }
+.us-tint-title.err { color: var(--error); }
+
+/* A limit or budget: label and figures on one line, a 4 px bar under it. */
+.us-limit { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; }
+.us-limit-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.us-limit-label { font-size: 13px; color: var(--text-1); }
+.us-budget-figs { display: inline-flex; align-items: baseline; gap: 8px; }
+
+.us-bar { height: 4px; border-radius: 2px; background: var(--bg-3); overflow: hidden; }
+.us-bar span { display: block; height: 100%; border-radius: 2px; background: var(--success); }
+.us-bar span.warn { background: var(--warn); }
+.us-bar span.err { background: var(--error); }
+
+/* With All: one sub-block per account. */
+.us-acct { display: flex; flex-direction: column; gap: 2px; }
+.us-acct + .us-acct { margin-top: 12px; }
+.us-acct-head { display: flex; align-items: center; gap: 8px; }
+
+.us-budget-edit { display: flex; flex-wrap: wrap; gap: 10px; padding: 4px 0 8px; }
+.us-budget-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-1); }
+.us-budget-field .text-input { width: 90px; }
+
+/* Other accounts, folded to one line each. */
+.us-sec .divider-caption { margin-bottom: 4px; }
+.us-other {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 5px 8px;
+  border-radius: var(--radius-surface);
+  font-size: 12px;
+  color: var(--text-0);
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+.us-other:hover,
+.us-other:focus-visible { background: var(--bg-2); outline: none; }
+.us-other-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.us-other-right { margin-left: auto; }
+.us-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--text-2); }
+.us-dot.ok { background: var(--success); }
+.us-dot.warn { background: var(--warn); }
+.us-dot.err { background: var(--error); }
