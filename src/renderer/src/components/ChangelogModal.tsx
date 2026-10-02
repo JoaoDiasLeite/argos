@@ -25,7 +25,9 @@ const CHANGELOG: Entry[] = [
           'Argos is terminal-only. The chat composer and transcript are gone: every chat is the CLI (Claude Code, Codex or Gemini) in an embedded terminal, started from the sidebar, the quick launcher, Home, Planner tasks, the standup and the remote and WSL hosts. The CLI prompts for its own tools, so Argos no longer asks a second time.',
           'Chats from before 2.0 are kept. The original file is saved untouched, the transcript is exported to Markdown, and the chat reopens at the setup pane with a link to both; a Claude chat offers “Resume in terminal”. Settings → General says how many were saved.',
           'The setup pane chooses the CLI, which replaces the model picker. The model is the CLI’s own /model. The default model in Settings is now named for what it still does: background tasks.',
-          'Planner opens on the Sprint board. The weekly planner is still there, behind Settings → General → “Show the weekly planner”, off by default.'
+          'Planner opens on the Sprint board. The weekly planner is still there, behind Settings → General → “Show the weekly planner”, off by default.',
+          'Ops is organised as interventions. Servers → Ops opens on one screen: the server (one host, locked for the whole run, or any server the runbook allows, where the first use of each host asks you once), the runbook, what you are going to do, and optionally the ticket and the client. The screen says in plain words what the runbook allows before anything starts and lists earlier interventions on that server. The task becomes Claude Code’s first message and the client report’s subject.',
+          'The workspace is the terminal and one activity column: a compact run header with Report and Stop, whatever is waiting for you as the only highlighted block with Allow and Deny right there (a plan, where you can skip individual steps; a command; a host), one line per call with its result, and earlier runs folded to a line each. Ops approvals no longer open a modal. The run report is a sheet that reads like a document.'
         ]
       },
       {

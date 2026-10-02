@@ -93,7 +93,16 @@ message, the run's record and the client report's Assunto.
 
 Multiple simultaneous interventions in the UI; ticket-system integration; a client list.
 
-## 6. Batches
+## 6. Batches · all landed 2026-10-02
+
+A `3643b12` (+ step skipping `ad31876`), B `8ee7a73` (+ optional task `880abb7`), C
+`64f46e8`. What differed from the text below: the task is optional (the CLI is told to
+read RUNBOOK.md and wait); the operator can **skip individual plan steps** when approving,
+and the gate refuses a skipped step's command if the model runs it anyway; a locked scope
+checks and records only its host; in an open scope the host prompt comes after the gate,
+so a call that would be refused never asks about a host; the workspace shows the oldest
+ops approval for its own terminal; "Earlier today" folds only today's runs, older ones stay
+in the start screen's history; the toast window is 420×160.
 
 - **A (main, Opus):** §3 entirely; keep the renderer compiling by leaving the old IPC names
   available until C lands? No: A changes `ops:terminal-session`'s signature, so A also

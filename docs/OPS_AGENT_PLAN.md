@@ -405,6 +405,14 @@ These were already planned; they are listed here so one document holds everythin
   as "unattributed" in `GitModal`, never as someone else's.
 - **Lot 8, semantic search** — stays optional; nothing here depends on it.
 
+### Phase 6 — interventions · done, see `docs/INTERVENTIONS_PLAN.md`
+
+The Ops view and workspace of Phase 5 were replaced on 2026-10-02 by the intervention
+flow: one start screen (server, runbook, task), a scope per run (one host, or any the
+runbook allows with a per-host approval), one activity column with inline approvals and
+per-step skipping, a report sheet. §8 of this plan is superseded by that document;
+`docs/SYSTEM-DESIGN.md` holds the design rules the new surfaces follow.
+
 ### Phase 5 — ops from the terminal, and an Ops view · done (`18ae07e`, `33ef372`, `a2d677b`)
 
 > **Note · 2026-10-02:** the SDK chat front end was removed in 2.0.0 (`83305f5`), so ops is terminal-only and "the SDK chat becomes one more client" no longer applies. `ops-run.ts` and the in-process MCP server are gone; the gate lives in `ops-session.ts` behind the relay/bridge.
