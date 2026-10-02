@@ -12,6 +12,8 @@
 
 .nav-logo {
   margin-bottom: 16px;
+  display: flex;
+  color: var(--accent);
   -webkit-app-region: no-drag;
 }
 

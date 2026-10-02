@@ -1,4 +1,5 @@
 import { modLabel } from '../lib/shortcuts'
+import ArgosMark from './ArgosMark'
 import './NavRail.css'
 
 /**
@@ -150,10 +151,7 @@ export default function NavRail({
   return (
     <div className="nav-rail">
       <div className="nav-logo">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="10" stroke="var(--accent)" strokeWidth="1.5" />
-          <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
+        <ArgosMark size={24} bold title="Argos" />
       </div>
 
       <div className="nav-items">

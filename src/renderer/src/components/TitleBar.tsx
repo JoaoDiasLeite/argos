@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import ArgosMark from './ArgosMark'
 import { UpdaterState } from '../types'
 import './TitleBar.css'
 
@@ -61,10 +62,7 @@ export default function TitleBar({ maximized }: Props) {
     <div className="titlebar" onDoubleClick={toggleMaximize}>
       <div className="titlebar-brand">
         <span className="titlebar-logo">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle cx="12" cy="12" r="10" stroke="var(--accent)" strokeWidth="1.5" />
-            <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
+          <ArgosMark size={16} bold />
         </span>
         <span className="titlebar-title">Argos</span>
         {isDev && (

@@ -18,6 +18,7 @@
 .titlebar-logo {
   display: flex;
   align-items: center;
+  color: var(--accent);
 }
 .titlebar-title {
   font-size: 12px;

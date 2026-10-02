@@ -1,6 +1,6 @@
 {
   "extends": "@electron-toolkit/tsconfig/tsconfig.web.json",
-  "include": ["src/renderer/src/**/*"],
+  "include": ["src/renderer/src/**/*", "src/renderer/src/**/*.json"],
   "compilerOptions": {
     "composite": true,
     // See tsconfig.node.json — keeps tsc's emit out of src/.

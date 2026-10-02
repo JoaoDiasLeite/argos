@@ -1,59 +1,115 @@
-// Generates build/icon.png (512×512) with no external deps — draws the app mark
-// (terracotta rounded square + white ring + plus) and encodes a PNG via zlib.
+// Generates build/icon.png (512×512) with no external deps: the dog mark from
+// src/renderer/src/brand/argos-mark.json (the same path the title bar and the rail
+// draw) in the accent on a dark rounded square, rasterised here with an even-odd
+// scanline fill and 4×4 supersampling, then encoded as a PNG via zlib.
 import zlib from 'node:zlib'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
+const mark = JSON.parse(fs.readFileSync(path.join(ROOT, 'src/renderer/src/brand/argos-mark.json'), 'utf8'))
+
 const S = 512
-const px = Buffer.alloc(S * S * 4) // RGBA, transparent
+const SS = 4 // supersampling per axis
+const BG = [0x1c, 0x1b, 0x19] // --bg-1
+const ACCENT = [0xdf, 0x7a, 0x52] // --accent (Warm Rust)
 
-const ACCENT = [204, 120, 92] // #cc785c
-const WHITE = [255, 255, 255]
+// ── Path → polygons (flatten cubics) ──
+const [vx, vy, vw] = mark.viewBox.split(/\s+/).map(Number)
+const inset = 0.12 // the mark occupies 76 % of the tile
+const scale = (S * (1 - 2 * inset)) / vw
+const tx = (x) => (x - vx) * scale + S * inset
+const ty = (y) => (y - vy) * scale + S * inset
 
-const set = (x, y, [r, g, b], a = 255) => {
-  if (x < 0 || y < 0 || x >= S || y >= S) return
-  const i = (y * S + x) * 4
-  px[i] = r
-  px[i + 1] = g
-  px[i + 2] = b
-  px[i + 3] = a
+const tokens = mark.d.match(/[MLCZ]|-?\d*\.?\d+/g)
+const polys = []
+let poly = null
+let cur = [0, 0]
+let i = 0
+let last = 'M'
+const num = () => Number(tokens[i++])
+while (i < tokens.length) {
+  // potrace repeats a command implicitly: a number where a command is expected means "same again".
+  let t = tokens[i++]
+  if (/^[MLCZ]$/.test(t)) last = t
+  else {
+    i--
+    t = last === 'M' ? 'L' : last
+  }
+  if (t === 'M') {
+    cur = [num(), num()]
+    poly = [[tx(cur[0]), ty(cur[1])]]
+    polys.push(poly)
+  } else if (t === 'L') {
+    cur = [num(), num()]
+    poly.push([tx(cur[0]), ty(cur[1])])
+  } else if (t === 'C') {
+    const [x1, y1, x2, y2, x3, y3] = [num(), num(), num(), num(), num(), num()]
+    const [x0, y0] = cur
+    const n = 24
+    for (let k = 1; k <= n; k++) {
+      const u = k / n
+      const a = (1 - u) ** 3
+      const b = 3 * (1 - u) ** 2 * u
+      const c = 3 * (1 - u) * u * u
+      const d = u ** 3
+      poly.push([tx(a * x0 + b * x1 + c * x2 + d * x3), ty(a * y0 + b * y1 + c * y2 + d * y3)])
+    }
+    cur = [x3, y3]
+  } else if (t === 'Z') {
+    // closed implicitly by the fill
+  } else {
+    throw new Error(`unexpected token ${t}`)
+  }
 }
 
-// Rounded-square background.
+// Even-odd point test against every polygon (holes are their own subpaths).
+const inside = (x, y) => {
+  let c = false
+  for (const p of polys) {
+    for (let a = 0, b = p.length - 1; a < p.length; b = a++) {
+      const [xa, ya] = p[a]
+      const [xb, yb] = p[b]
+      if (ya > y !== yb > y && x < ((xb - xa) * (y - ya)) / (yb - ya) + xa) c = !c
+    }
+  }
+  return c
+}
+
+// ── Rounded-square background ──
 const margin = 20
 const rad = 104
 const lo = margin
 const hi = S - 1 - margin
 const inRounded = (x, y) => {
   if (x < lo || x > hi || y < lo || y > hi) return false
-  const cxl = lo + rad
-  const cxr = hi - rad
-  const cyt = lo + rad
-  const cyb = hi - rad
-  const nx = x < cxl ? cxl : x > cxr ? cxr : x
-  const ny = y < cyt ? cyt : y > cyb ? cyb : y
-  const dx = x - nx
-  const dy = y - ny
-  return dx * dx + dy * dy <= rad * rad
+  const nx = Math.min(Math.max(x, lo + rad), hi - rad)
+  const ny = Math.min(Math.max(y, lo + rad), hi - rad)
+  return (x - nx) ** 2 + (y - ny) ** 2 <= rad * rad
 }
 
-const cx = 256
-const cy = 256
-const ringR = 150
-const ringHalf = 9 // half thickness
-const barHalf = 9 // half width of plus bars
-const armEnd = 84 // plus arm reaches to ±172 from center
-
+// ── Raster ──
+const px = Buffer.alloc(S * S * 4)
 for (let y = 0; y < S; y++) {
   for (let x = 0; x < S; x++) {
-    if (!inRounded(x, y)) continue
-    set(x, y, ACCENT)
-    const d = Math.hypot(x - cx, y - cy)
-    const onRing = Math.abs(d - ringR) <= ringHalf
-    const onVert = Math.abs(x - cx) <= barHalf && Math.abs(y - cy) <= ringR - armEnd + 78
-    const onHorz = Math.abs(y - cy) <= barHalf && Math.abs(x - cx) <= ringR - armEnd + 78
-    if (onRing || onVert || onHorz) set(x, y, WHITE)
+    let bgHits = 0
+    let markHits = 0
+    for (let sy = 0; sy < SS; sy++) {
+      for (let sx = 0; sx < SS; sx++) {
+        const fx = x + (sx + 0.5) / SS
+        const fy = y + (sy + 0.5) / SS
+        if (!inRounded(fx, fy)) continue
+        bgHits++
+        if (inside(fx, fy)) markHits++
+      }
+    }
+    if (!bgHits) continue
+    const cover = bgHits / (SS * SS)
+    const m = markHits / bgHits
+    const o = (y * S + x) * 4
+    for (let c = 0; c < 3; c++) px[o + c] = Math.round(BG[c] * (1 - m) + ACCENT[c] * m)
+    px[o + 3] = Math.round(255 * cover)
   }
 }
 
@@ -69,7 +125,7 @@ const crcTable = (() => {
 })()
 const crc32 = (buf) => {
   let c = 0xffffffff
-  for (let i = 0; i < buf.length; i++) c = crcTable[(c ^ buf[i]) & 0xff] ^ (c >>> 8)
+  for (let k = 0; k < buf.length; k++) c = crcTable[(c ^ buf[k]) & 0xff] ^ (c >>> 8)
   return (c ^ 0xffffffff) >>> 0
 }
 const chunk = (type, data) => {
@@ -80,15 +136,14 @@ const chunk = (type, data) => {
   crc.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0)
   return Buffer.concat([len, typeBuf, data, crc])
 }
-
 const ihdr = Buffer.alloc(13)
 ihdr.writeUInt32BE(S, 0)
 ihdr.writeUInt32BE(S, 4)
-ihdr[8] = 8 // bit depth
-ihdr[9] = 6 // color type RGBA
+ihdr[8] = 8
+ihdr[9] = 6
 const raw = Buffer.alloc(S * (S * 4 + 1))
 for (let y = 0; y < S; y++) {
-  raw[y * (S * 4 + 1)] = 0 // filter: none
+  raw[y * (S * 4 + 1)] = 0
   px.copy(raw, y * (S * 4 + 1) + 1, y * S * 4, (y + 1) * S * 4)
 }
 const png = Buffer.concat([
@@ -97,8 +152,6 @@ const png = Buffer.concat([
   chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
   chunk('IEND', Buffer.alloc(0))
 ])
-
-const outDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'build')
-fs.mkdirSync(outDir, { recursive: true })
-fs.writeFileSync(path.join(outDir, 'icon.png'), png)
+fs.mkdirSync(path.join(ROOT, 'build'), { recursive: true })
+fs.writeFileSync(path.join(ROOT, 'build/icon.png'), png)
 console.log('wrote build/icon.png', png.length, 'bytes')
