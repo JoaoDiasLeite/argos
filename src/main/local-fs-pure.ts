@@ -25,9 +25,12 @@ export function isRootPath(p: unknown): boolean {
  * Map a WSL distro's POSIX path to its Windows-side UNC path — the path LocalBrowser's fs
  * calls actually operate on. Mirrors wsl.ts's uncToWslPath in reverse.
  */
-export function posixToWslUnc(distro: string, posixPath: string): string {
+export function posixToWslUnc(distro: string, posixPath: string, shareRoot?: string): string {
   const clean = posixPath.startsWith('/') ? posixPath : `/${posixPath}`
-  return `\\\\wsl.localhost\\${distro}${clean.replace(/\//g, '\\')}`
+  // Callers that can afford a probe pass wsl.ts's wslShareRoot(distro), which falls back
+  // to `\\wsl$` when `\\wsl.localhost` does not answer for a distro.
+  const root = shareRoot ?? `\\\\wsl.localhost\\${distro}`
+  return `${root}${clean.replace(/\//g, '\\')}`
 }
 
 /**

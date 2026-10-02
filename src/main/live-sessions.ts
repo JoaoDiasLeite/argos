@@ -3,6 +3,7 @@ import * as os from 'os'
 import * as path from 'path'
 import { getSources } from './claude-data'
 import { readJsonFile } from './json-file'
+import { wslShareRoot } from './wsl'
 import {
   isSameDomain,
   linuxMachineId,
@@ -113,7 +114,7 @@ function readEntries(dir: string): unknown[] {
  * months, each one is checked against the PID space it actually names.
  */
 async function liveWslEntries(distro: string, entries: RegistryEntry[]): Promise<RegistryEntry[]> {
-  const root = `\\\\wsl.localhost\\${distro}`
+  const root = wslShareRoot(distro)
 
   let machineId: string | null = null
   try {

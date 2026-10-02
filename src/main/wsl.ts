@@ -119,6 +119,29 @@ export interface WslCredentialsPath {
  * OAuth token with plain fs, the same way getWslClaudeRoots reads its projects.
  * Distros without a credentials file are skipped silently.
  */
+/**
+ * The Windows-side root of a distro's filesystem. `\\wsl.localhost\<distro>` is the
+ * modern name, but it can stop answering for one distro while `\\wsl$\<distro>` still
+ * does — seen on 2026-10-02 with Ubuntu-DevOps, where `Test-Path \\wsl.localhost\...`
+ * was false and `\\wsl$\...` true, and Projects silently showed 7 of 134 transcripts.
+ * Probed once a minute per distro so a flap is picked up without a restart.
+ */
+const shareRootCache = new Map<string, { root: string; at: number }>()
+export function wslShareRoot(distro: string): string {
+  const cached = shareRootCache.get(distro)
+  if (cached && Date.now() - cached.at < 60_000) return cached.root
+  const modern = `\\\\wsl.localhost\\${distro}`
+  const legacy = `\\\\wsl$\\${distro}`
+  let root = modern
+  try {
+    if (!fs.existsSync(modern) && fs.existsSync(legacy)) root = legacy
+  } catch {
+    // keep the modern name; a probe error says nothing about which works
+  }
+  shareRootCache.set(distro, { root, at: Date.now() })
+  return root
+}
+
 export async function getWslCredentialsPaths(): Promise<WslCredentialsPath[]> {
   if (!isWindows) return []
   const distros = await listDistros()
@@ -128,7 +151,7 @@ export async function getWslCredentialsPaths(): Promise<WslCredentialsPath[]> {
     if (SKIP_DISTROS.has(d.name) || hidden.has(d.name)) continue
     const home = await wslHome(d.name)
     if (!home) continue
-    const unc = `\\\\wsl.localhost\\${d.name}${home.replace(/\//g, '\\')}`
+    const unc = `${wslShareRoot(d.name)}${home.replace(/\//g, '\\')}`
     const credentialsPath = `${unc}\\.claude\\.credentials.json`
     try {
       if (fs.existsSync(credentialsPath)) out.push({ distro: d.name, credentialsPath })
@@ -152,7 +175,7 @@ export async function getWslClaudeRoots(): Promise<WslClaudeRoot[]> {
     if (SKIP_DISTROS.has(d.name) || hidden.has(d.name)) continue
     const home = await wslHome(d.name)
     if (!home) continue
-    const unc = `\\\\wsl.localhost\\${d.name}${home.replace(/\//g, '\\')}`
+    const unc = `${wslShareRoot(d.name)}${home.replace(/\//g, '\\')}`
     const projectsDir = `${unc}\\.claude\\projects`
     try {
       if (fs.existsSync(projectsDir)) {

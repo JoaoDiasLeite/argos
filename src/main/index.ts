@@ -106,7 +106,7 @@ import {
   remoteShellKill,
   remoteShellKillAll
 } from './remote-shell'
-import { listDistros, testDistro, testDistroClaude, runWslOneShot, uncToWslPath, wslHistory, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths } from './wsl'
+import { listDistros, testDistro, testDistroClaude, runWslOneShot, uncToWslPath, wslHistory, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths, wslShareRoot } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
 import { createLedger, type OpsLedger } from './ops-audit'
 import { createExecutor, createSshBackend, type OpsExecutor } from './ops-exec'
@@ -2284,7 +2284,7 @@ ipcMain.handle(
         // so the distro never interpolated — and `\t` as a tab. The write failed
         // every time, and the failure looked exactly like "no image on the clipboard".
         const posix = `/tmp/${name}`
-        await fs.promises.writeFile(posixToWslUnc(wslDistro, posix), image.toPNG())
+        await fs.promises.writeFile(posixToWslUnc(wslDistro, posix, wslShareRoot(wslDistro)), image.toPNG())
         return { ok: true as const, path: posix }
       }
       const full = path.join(os.tmpdir(), name)

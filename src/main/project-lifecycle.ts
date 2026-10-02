@@ -3,6 +3,7 @@ import * as path from 'path'
 import { encodePath, projectRealPath, resolveSource, safeProjectDir } from './claude-data'
 import { readJsonFile, writeJsonFileAtomic } from './json-file'
 import { isRootPath, posixToWslUnc } from './local-fs-pure'
+import { wslShareRoot } from './wsl'
 import { ProjectOpResult, removeEmptyProjectDir, renameDir } from './project-files'
 import { isInside, verifyTarget } from './project-move-pure'
 import { rekeyProjectPrefs } from './project-prefs'
@@ -149,7 +150,7 @@ export async function moveProjectFolder(
   // 3. The real folder, in both forms.
   const isWsl = src.kind === 'wsl' && !!src.distro
   const fromStored = await projectRealPath(src, encodedDir)
-  const fromFs = isWsl ? posixToWslUnc(src.distro as string, fromStored) : fromStored
+  const fromFs = isWsl ? posixToWslUnc(src.distro as string, fromStored, wslShareRoot(src.distro as string)) : fromStored
   const rawTo = typeof toPath === 'string' ? toPath.trim() : ''
   if (rawTo.length === 0) return { ok: false, error: 'invalid-target' }
   // A WSL target must be given as a POSIX path. Without this check a relative one
@@ -158,7 +159,7 @@ export async function moveProjectFolder(
   if (isWsl && !rawTo.startsWith('/')) return { ok: false, error: 'invalid-target' }
   const toStored = isWsl ? path.posix.normalize(rawTo).replace(/\/+$/, '') || '/' : rawTo
   if (isWsl && isRootPath(toStored)) return { ok: false, error: 'invalid-target' }
-  const toFs = isWsl ? posixToWslUnc(src.distro as string, toStored) : rawTo
+  const toFs = isWsl ? posixToWslUnc(src.distro as string, toStored, wslShareRoot(src.distro as string)) : rawTo
 
   // 4. The source folder exists and is a folder.
   if (!statOrNull(fromFs)?.isDirectory()) return { ok: false, error: 'not-found' }
