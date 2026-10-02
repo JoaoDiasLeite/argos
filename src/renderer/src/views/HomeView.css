@@ -7,7 +7,10 @@
 .home-page { flex: 1; min-height: 0; display: flex; }
 
 /* ── Left: content ── */
-.home-main { flex: 1; min-width: 0; overflow-y: auto; padding-bottom: 28px; }
+.home-main { flex: 1; min-width: 0; overflow-y: auto; padding-bottom: 28px; container-type: inline-size; }
+/* The left side reads as one centred column, 1100 px at most, so a wide window gets
+   gutters on both sides instead of content stuck to the left and a dead right half. */
+.home-head, .home-start, .home-body { width: 100%; max-width: 1100px; margin-inline: auto; }
 
 .home-head {
   padding: 18px 24px 4px;
@@ -23,7 +26,7 @@
 .home-sub { margin-top: 4px; font-size: 12px; color: var(--text-2); }
 
 /* ── Start box ── */
-.home-start { display: flex; flex-direction: column; gap: 8px; padding: 10px 24px 6px; max-width: 948px; }
+.home-start { display: flex; flex-direction: column; gap: 8px; padding: 10px 24px 6px; }
 .text-input.home-start-input { min-height: 96px; font-size: 13.5px; }
 .home-start-row { display: flex; align-items: center; gap: 8px; }
 .home-start-row .btn-primary { flex-shrink: 0; }
@@ -94,7 +97,10 @@
 .home-select-empty { padding: 7px 10px; font-size: 12px; color: var(--text-2); }
 
 /* ── Lists on the left ── */
-.home-body { max-width: 900px; padding: 18px 24px 0; display: flex; flex-direction: column; gap: 18px; }
+.home-body { padding: 18px 24px 0; display: grid; grid-template-columns: 1fr; gap: 18px 36px; align-items: start; }
+/* Side by side once the left side is wide enough for two lists; the sessions get more room
+   than the projects because their rows carry a second line. */
+@container (min-width: 820px) { .home-body { grid-template-columns: 3fr 2fr; } }
 .home-body section { display: flex; flex-direction: column; }
 .home-eyebrow { margin-bottom: 4px; }
 
