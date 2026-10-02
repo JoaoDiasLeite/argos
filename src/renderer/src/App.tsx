@@ -17,7 +17,6 @@ import {
   PlannerTask,
   UsageLimits,
   PlanUsageReport,
-  ScheduledRun,
   CcSessionTarget,
   LiveSession
 } from './types'
@@ -60,7 +59,6 @@ import type {
   HomeProject,
   HomePlan,
   HomeSpend,
-  HomeRoutine,
   HomeRecent,
   HomeStart,
   HomeStartChoice,
@@ -74,7 +72,6 @@ import {
   ProjectKeyContext
 } from './lib/project-key'
 import { projectDisplayName, projectDisplayNames, RepoName } from './lib/project-name'
-import { cadenceSummary } from './lib/cadence'
 import { chatTerminalId, sessionIdFromTerminalId } from './lib/terminal-id'
 import { usePanes } from './hooks/usePanes'
 import { SESSION_DRAG_TYPE, type DropPlan } from './lib/pane-drop'
@@ -97,7 +94,6 @@ const RemoteView = lazy(() => import('./views/RemoteView'))
 const RemoteSessionView = lazy(() => import('./views/RemoteSessionView'))
 const OpsView = lazy(() => import('./views/OpsView'))
 const OpsWorkspace = lazy(() => import('./views/OpsWorkspace'))
-const ScheduledView = lazy(() => import('./views/ScheduledView'))
 const SettingsView = lazy(() => import('./views/SettingsView'))
 const HomeView = lazy(() => import('./views/HomeView'))
 
@@ -189,8 +185,6 @@ function newSession(projectPath?: string, model?: string, accountId?: string): S
 
 // Labels for the segmented sub-nav shown above a group's active view.
 const MEMBER_LABELS: Record<string, string> = {
-  planner: 'Planner',
-  scheduled: 'Routines',
   mcp: 'MCP',
   remote: 'Remote & WSL',
   ops: 'Ops'
@@ -2301,26 +2295,6 @@ export default function App() {
   // git status) — Home is reachable from anywhere, so nothing here should poll when
   // nobody is looking at it.
 
-  // Fed by schedulerList() only while Home is visible (see the effect below) — kept as
-  // state rather than a memo because it comes from a fetch, not from state Argos already
-  // holds.
-  const [homeScheduledRuns, setHomeScheduledRuns] = useState<ScheduledRun[]>([])
-  useEffect(() => {
-    if (view !== 'home') return
-    let cancelled = false
-    window.electronAPI
-      .schedulerList()
-      .then((runs) => {
-        if (!cancelled) setHomeScheduledRuns(runs)
-      })
-      .catch(() => {
-        if (!cancelled) setHomeScheduledRuns([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [view])
-
   // Drive-letter → distro map, for resolving a session's projectPath to the same
   // projectKey the Sidebar groups by (see keyCtx there) — fetched once, not gated on
   // `view`, since it's cheap and the Sidebar is mounted the whole time anyway.
@@ -2412,7 +2386,7 @@ export default function App() {
     }
   }, [view, homeRepoEntries])
 
-  // The one name resolver Home uses everywhere a session's or routine's project shows
+  // The one name resolver Home uses everywhere a session's project shows
   // up outside the repo list itself — same precedence as the Sidebar (rename > repo name
   // > basename), so a folder renamed to "argos" reads as "argos" throughout the app.
   const resolveHomeProjectName = useCallback(
@@ -2448,38 +2422,8 @@ export default function App() {
         actionLabel: 'Review'
       }
     })
-    const failedRoutines: HomeAttention[] = homeScheduledRuns
-      .filter((run) => run.lastResult && !run.lastResult.ok)
-      .map((run) => {
-        const summary = run.lastResult!.summary
-        const detail = summary.length > 90 ? `${summary.slice(0, 90)}…` : summary
-        return {
-          id: `routine:${run.id}`,
-          kind: 'routine',
-          title: `${run.name} failed`,
-          detail,
-          context: run.projectPath ? `routine · ${resolveHomeProjectName(run.projectPath)}` : 'routine',
-          since: run.lastResult!.at,
-          actionLabel: 'Open'
-        }
-      })
-    return [...approvals, ...failedRoutines]
-  }, [approvalQueue, sessions, homeScheduledRuns, resolveHomeProjectName])
-
-  const homeRoutines = useMemo<HomeRoutine[]>(
-    () =>
-      homeScheduledRuns
-        .filter((run) => run.enabled && run.nextRunAt !== undefined)
-        .sort((a, b) => (a.nextRunAt as number) - (b.nextRunAt as number))
-        .slice(0, 3)
-        .map((run) => ({
-          id: run.id,
-          name: run.name,
-          nextRunAt: run.nextRunAt,
-          cadence: cadenceSummary(run.cadence)
-        })),
-    [homeScheduledRuns]
-  )
+    return approvals
+  }, [approvalQueue, sessions, resolveHomeProjectName])
 
   const homeRunning = useMemo<HomeRunning[]>(() => {
     // displayRunningIds, not runningIds: a chat driven from the embedded terminal never
@@ -2759,14 +2703,8 @@ export default function App() {
     [startOverlayPrompt]
   )
 
-  // Review an approval, or jump to the routine that failed — the two kinds of row Home's
-  // attention list can hold (see homeAttention above; the `routine:` prefix is what
-  // that id was namespaced with, to keep it out of the approvalId space).
+  // Review an approval — the one kind of row Home's attention list holds.
   const onHomeAct = (id: string) => {
-    if (id.startsWith('routine:')) {
-      setView('scheduled')
-      return
-    }
     const req = approvalQueue.find((r) => r.approvalId === id)
     if (req) {
       setActiveId(req.appSessionId)
@@ -3015,28 +2953,6 @@ export default function App() {
     [ready, defaultModel, defaultAccountId, startRun, addTerm, addTermFor, buildAgentPayload]
   )
 
-  // Sprint standup → "Schedule" one-click creates a daily standup routine (read-only,
-  // starts disabled) and jumps to Routines so the user can review and enable it.
-  const createStandupRoutine = useCallback(
-    async (name: string, prompt: string, projectPath?: string) => {
-      const run: ScheduledRun = {
-        id: generateId(),
-        name,
-        prompt,
-        model: defaultModel,
-        projectPath,
-        accountId: defaultAccountId,
-        cadence: { kind: 'daily', time: '09:00' },
-        enabled: false,
-        createdAt: Date.now(),
-        toolAccess: 'read-only'
-      }
-      await window.electronAPI.schedulerUpsert(run)
-      setView('scheduled')
-    },
-    [defaultModel, defaultAccountId]
-  )
-
   const handleSetDefaultModel = async (modelId: string) => {
     setDefaultModel(modelId)
     await window.electronAPI.setDefaultModel(modelId)
@@ -3148,7 +3064,6 @@ export default function App() {
       { v: 'chat', label: 'Chat' },
       { v: 'projects', label: 'Projects' },
       { v: 'planner', label: 'Planner' },
-      { v: 'scheduled', label: 'Routines' },
       { v: 'usage', label: 'Usage' },
       { v: 'mcp', label: 'MCP' },
       { v: 'remote', label: 'Remote & WSL' },
@@ -3496,7 +3411,6 @@ export default function App() {
             recentProjects={homeRecentProjects}
             plans={homePlans}
             spend={homeSpend}
-            routines={homeRoutines}
             recent={homeRecent}
             start={homeStart}
             startOptions={homeStartOptions}
@@ -3512,7 +3426,6 @@ export default function App() {
               setView('projects')
             }}
             onOpenUsage={() => setView('usage')}
-            onOpenScheduled={() => setView('scheduled')}
           />
         </Suspense>
       )}
@@ -3598,15 +3511,6 @@ export default function App() {
                 geminiDefaultAccountId={geminiDefaultAccountId}
                 onRunTask={runPlannerTask}
                 onStandupChat={startStandupChat}
-                onScheduleStandup={createStandupRoutine}
-              />
-            )}
-            {view === 'scheduled' && (
-              <ScheduledView
-                models={models}
-                defaultModel={defaultModel}
-                accounts={accounts}
-                defaultAccountId={defaultAccountId}
               />
             )}
             {view === 'mcp' && <McpView />}
@@ -3700,7 +3604,7 @@ export default function App() {
       )}
       {/* Suppressed only where Chat renders the same request inline — which it does in
           chat mode alone. In terminal mode the chat pane is a terminal, so a run Argos
-          itself is driving (Planner, a routine) has nowhere else to ask. */}
+          itself is driving (Planner) has nowhere else to ask. */}
       {secretQueue.length > 0 && (
         <SecretPrompt
           key={secretQueue[0].requestId}

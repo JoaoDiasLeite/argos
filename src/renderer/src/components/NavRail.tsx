@@ -16,7 +16,6 @@ export const ALL_VIEWS = [
   'chat',
   'projects',
   'planner',
-  'scheduled',
   'usage',
   'mcp',
   'remote',
@@ -71,13 +70,6 @@ const ICONS: Record<string, JSX.Element> = {
       <path d="M8 14h.01M12 14h4M8 18h4" />
     </>
   ),
-  scheduled: (
-    <>
-      <circle cx="12" cy="12" r="9" />
-      <polyline points="12 7 12 12 15.5 12" />
-      <path d="M5.5 5.5A7 7 0 0 1 19 12" strokeDasharray="3 2" />
-    </>
-  ),
   usage: (
     <>
       <line x1="18" y1="20" x2="18" y2="10" />
@@ -126,7 +118,6 @@ export function groupOwnsView(group: ViewGroup, view: View): boolean {
 }
 
 export const VIEW_GROUPS: ViewGroup[] = [
-  { key: 'planner', label: 'Planner', members: ['planner', 'scheduled'] },
   { key: 'servers', label: 'Servers', members: ['remote', 'ops', 'mcp'], extras: ['remote-session', 'ops-workspace'] }
 ]
 
@@ -140,9 +131,9 @@ const RAIL: RailEntry[] = [
   { kind: 'single', view: 'home', label: 'Home' },
   { kind: 'single', view: 'chat', label: 'Chat' },
   { kind: 'single', view: 'projects', label: 'Projects' },
-  { kind: 'group', group: VIEW_GROUPS[0] },
+  { kind: 'single', view: 'planner', label: 'Planner' },
   { kind: 'single', view: 'usage', label: 'Usage' },
-  { kind: 'group', group: VIEW_GROUPS[1] }
+  { kind: 'group', group: VIEW_GROUPS[0] }
 ]
 
 export default function NavRail({

@@ -41,8 +41,6 @@ interface SprintBoardProps {
   geminiDefaultAccountId: string
   /** Open a light chat seeded with the standup context (talk through the day). */
   onStandupChat?: (context: string, opener: string, name: string) => void
-  /** Create a daily standup routine and jump to Routines. */
-  onScheduleStandup?: (name: string, prompt: string, projectPath?: string) => void
 }
 
 // Which provider a model id belongs to, given the app's model catalog — used to seed the
@@ -142,8 +140,7 @@ export default function SprintBoard({
   geminiAccounts,
   codexDefaultAccountId,
   geminiDefaultAccountId,
-  onStandupChat,
-  onScheduleStandup
+  onStandupChat
 }: SprintBoardProps) {
   const [sprints, setSprints] = useState<Sprint[]>([])
   const [activeId, setActiveId] = useState<string>('')
@@ -479,14 +476,6 @@ export default function SprintBoard({
     )
   }
 
-  // One-click create a daily standup routine for this sprint, then jump to Routines.
-  const scheduleStandup = () => {
-    if (!active) return
-    const prompt =
-      'Write my daily standup for today. Review my git commits from the last day in this project and summarise them, then produce three short sections — Yesterday (what got done), Today (what I plan to work on, inferred from recent/in-progress work), and Blockers (anything evident, otherwise say none). Be concise and concrete.'
-    onScheduleStandup?.(`Daily standup — ${active.name}`, prompt, active.projectPath)
-  }
-
   // ─── Metrics ──────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
     const items = active?.items ?? []
@@ -722,7 +711,6 @@ export default function SprintBoard({
             genError={genError}
             hasProject={!!active.projectPath}
             onDiscuss={onStandupChat ? discussStandup : undefined}
-            onSchedule={onScheduleStandup ? scheduleStandup : undefined}
             runAccountItems={runAccountItems}
             runProvider={runProvider}
             runAccountId={runAccountId}
@@ -1385,7 +1373,6 @@ function StandupSection(props: {
   genError: string | null
   hasProject: boolean
   onDiscuss?: () => void
-  onSchedule?: () => void
   // Cross-provider "Run with" selector governing Generate (and the backfill modal).
   runAccountItems: AccountPickerItem[]
   runProvider: ProviderId
@@ -1436,19 +1423,14 @@ function StandupSection(props: {
             >
               <Spark /> {props.genBusy ? 'Generating…' : 'Generate'}
             </button>
-            {(props.onDiscuss || props.onSchedule) && (
+            {props.onDiscuss && (
               <Menu
                 triggerClass="assist-btn primary sb-split-caret"
                 triggerTitle="More standup actions"
                 triggerContent={<CaretDownIcon />}
                 align="right"
                 items={[
-                  ...(props.onDiscuss
-                    ? [{ label: 'Discuss in chat', icon: <ChatIcon />, onClick: props.onDiscuss }]
-                    : []),
-                  ...(props.onSchedule
-                    ? [{ label: 'Schedule daily routine', icon: <ClockIcon />, onClick: props.onSchedule }]
-                    : [])
+                  { label: 'Discuss in chat', icon: <ChatIcon />, onClick: props.onDiscuss }
                 ]}
               />
             )}
@@ -2100,15 +2082,6 @@ function ChatIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-    </svg>
-  )
-}
-
-function ClockIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <polyline points="12 7 12 12 15 14" />
     </svg>
   )
 }

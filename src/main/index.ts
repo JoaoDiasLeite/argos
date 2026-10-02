@@ -175,15 +175,6 @@ import {
   loginProviderAccount,
   AgentProvider
 } from './provider-accounts'
-import {
-  listScheduledRuns,
-  upsertScheduledRun,
-  deleteScheduledRun,
-  setScheduledRunEnabled,
-  runScheduledRunNow,
-  startScheduler,
-  ScheduledRun
-} from './scheduler'
 import { listCodexThreads } from './codex-threads'
 import {
   pickThreadsForChats,
@@ -252,7 +243,7 @@ let hasTray = false
 let trayHintShown = false
 
 // This process was started by Claude Code's Notification hook, not by a user. It
-// runs a few lines and exits — no windows, no tray, no scheduler — so every startup
+// runs a few lines and exits — no windows, no tray — so every startup
 // path below is guarded on it. See notify-hook.ts.
 const notifyMode = notifyHookMode(process.argv)
 
@@ -509,7 +500,7 @@ function createWindow(): void {
   mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximized', true))
   mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximized', false))
 
-  // Close hides to the tray so scheduled routines and in-flight runs keep going.
+  // Close hides to the tray so in-flight runs keep going.
   // A real exit happens via the tray's Quit item or an OS-initiated quit.
   mainWindow.on('close', (e) => {
     if (isQuitting) return
@@ -557,7 +548,7 @@ app.whenReady().then(async () => {
   // The ops relay runs on its own from the top of this file; nothing here is for it.
   if (opsMcpMode) return
   // The hook roles end here. Nothing below this block runs in them: they must not
-  // migrate userData, repair the CLI, start the scheduler, or open a window.
+  // migrate userData, repair the CLI, or open a window.
   if (notifyMode) {
     // Matches build.appId — on Windows a toast is routed by it, so a hook process
     // that skipped this would post a notification the OS attributes to nothing.
@@ -614,7 +605,6 @@ app.whenReady().then(async () => {
   // live discovery) and publishes it to config.ts, so pricing for a model we
   // only learn about at runtime is in place before the first turn is costed.
   buildModelsCatalog().catch(() => {})
-  startScheduler()
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
   // Before any window exists, so the default menu's clipboard accelerators never get a chance
   // to bind (see installApplicationMenu for why that matters to the terminals).
@@ -2069,16 +2059,6 @@ ipcMain.handle('mcp:upsert', (_, name: string, cfg: Record<string, unknown>) =>
   upsertGlobalMcpServer(name, cfg)
 )
 ipcMain.handle('mcp:remove', (_, name: string) => removeGlobalMcpServer(name))
-
-// ─── Scheduler / Routines ─────────────────────────────────────────────────────
-
-ipcMain.handle('scheduler:list', () => listScheduledRuns())
-ipcMain.handle('scheduler:upsert', (_, run: ScheduledRun) => upsertScheduledRun(run))
-ipcMain.handle('scheduler:delete', (_, id: string) => deleteScheduledRun(id))
-ipcMain.handle('scheduler:set-enabled', (_, id: string, enabled: boolean) =>
-  setScheduledRunEnabled(id, enabled)
-)
-ipcMain.handle('scheduler:run-now', (_, id: string) => runScheduledRunNow(id))
 
 // ─── Terminal (embedded PTY) ────────────────────────────────────────────────
 

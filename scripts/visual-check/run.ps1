@@ -5,7 +5,7 @@
 
 .PARAMETER View
   Optional view to deep-link to after startup (chat, projects,
-  planner, scheduled, usage, mcp, remote). Defaults to whatever the app opens on.
+  planner, usage, mcp, remote). Defaults to whatever the app opens on.
 
 .PARAMETER OutFile
   Where to save the PNG. Defaults to visual-check.png next to this script.

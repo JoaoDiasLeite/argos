@@ -443,14 +443,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Commands & skills
   commandsList: (projectPath?: string) => ipcRenderer.invoke('commands:list', projectPath),
 
-  // Scheduler / Routines
-  schedulerList: () => ipcRenderer.invoke('scheduler:list'),
-  schedulerUpsert: (run: unknown) => ipcRenderer.invoke('scheduler:upsert', run),
-  schedulerDelete: (id: string) => ipcRenderer.invoke('scheduler:delete', id),
-  schedulerSetEnabled: (id: string, enabled: boolean) =>
-    ipcRenderer.invoke('scheduler:set-enabled', id, enabled),
-  schedulerRunNow: (id: string) => ipcRenderer.invoke('scheduler:run-now', id),
-
   // Terminal (embedded PTY)
   terminalCreate: (id: string, opts: unknown) => ipcRenderer.invoke('terminal:create', id, opts),
   terminalWrite: (id: string, data: string) => ipcRenderer.send('terminal:write', id, data),

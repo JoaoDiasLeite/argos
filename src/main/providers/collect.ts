@@ -2,7 +2,7 @@ import type { EngineMessage } from './types'
 
 /**
  * Drains an engine stream for the common "headless" shape every one-shot reasoning
- * call and scheduled routine needs: accumulated assistant text, plus the final
+ * call needs: accumulated assistant text, plus the final
  * cost/error outcome. Tool activity (tool-use/tool-result) isn't surfaced here —
  * callers that need to render it (interactive chat) consume the stream directly.
  */

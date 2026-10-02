@@ -10,7 +10,7 @@ const NOT_FOUND_MESSAGE = 'Codex CLI not found. Install with: npm install -g @op
 /**
  * Codex's real per-tool-approval hook — used only when `req.canUseTool` is set
  * (interactive chat in 'ask' mode). Everything else (headless reasoning,
- * routines, mcp-ask, and interactive chat in auto-approve mode) uses the
+ * mcp-ask, and interactive chat in auto-approve mode) uses the
  * simpler `codex exec --json` path in `codex.ts`, which has no approval
  * callback at all.
  *
@@ -131,7 +131,7 @@ export async function* runCodexAppServer(
   })
 
   // Approval callbacks — the actual point of this whole module. No
-  // MUTATING_TOOLS-style allowlist gate on this side: trust that codex only
+  // mutating-tools allowlist gate on this side: trust that codex only
   // ever raises these for genuinely risky operations in the first place.
   rpc.onRequest('execCommandApproval', async (params) => {
     const p = params as { command?: string[]; cwd?: string }

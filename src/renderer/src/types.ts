@@ -270,38 +270,6 @@ export interface AppConfig {
   claudeSettings: Record<string, unknown>
 }
 
-// ─── Scheduled Runs ─────────────────────────────────────────────────────────
-
-export type ScheduledCadence =
-  | { kind: 'interval'; everyMinutes: number }
-  | { kind: 'daily'; time: string /* "HH:MM" */ }
-  | { kind: 'weekly'; day: number /* 0=Sun..6=Sat */; time: string }
-
-export interface ScheduledRun {
-  id: string
-  name: string
-  prompt: string
-  model?: string
-  projectPath?: string
-  accountId?: string
-  cadence: ScheduledCadence
-  enabled: boolean
-  createdAt: number
-  lastRunAt?: number
-  lastResult?: { ok: boolean; summary: string; costUsd: number; at: number }
-  nextRunAt?: number
-  missedRunPolicy?: 'skip' | 'run-once'
-  /**
-   * Explicit tool-access level for this routine.
-   * 'read-only' → mutating tools (Bash, Write, Edit, etc.) are removed from context via disallowedTools.
-   * 'full'      → no tool restriction.
-   * Undefined (legacy) → treated as 'full'.
-   */
-  toolAccess?: 'read-only' | 'full'
-  /** @deprecated Use toolAccess. Kept to read legacy saved data. */
-  allowedTools?: string[]
-}
-
 export interface SourceAccount {
   email?: string
   org?: string
@@ -1816,13 +1784,6 @@ declare global {
 
       // Commands & skills
       commandsList: (projectPath?: string) => Promise<SlashCommand[]>
-
-      // Scheduler / Routines
-      schedulerList: () => Promise<ScheduledRun[]>
-      schedulerUpsert: (run: ScheduledRun) => Promise<ScheduledRun>
-      schedulerDelete: (id: string) => Promise<ScheduledRun[]>
-      schedulerSetEnabled: (id: string, enabled: boolean) => Promise<ScheduledRun[]>
-      schedulerRunNow: (id: string) => Promise<{ ok: boolean; summary: string; costUsd: number } | null>
 
       // Terminal (embedded PTY)
       terminalCreate: (id: string, opts: TerminalCreateOptions) => Promise<TerminalCreateResult>

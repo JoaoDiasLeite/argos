@@ -226,7 +226,7 @@ export function decodeNotifyPayload(encoded: string): NotifyPayload | null {
  *
  * Returns null for a normal launch. A hook flag with an unusable payload returns
  * `abort` rather than null: falling through would boot the entire application —
- * windows, tray, scheduler — because one notification arrived malformed.
+ * windows, tray — because one notification arrived malformed.
  */
 export function notifyHookMode(argv: string[]): NotifyMode | null {
   const showIdx = argv.indexOf(NOTIFY_SHOW_FLAG)

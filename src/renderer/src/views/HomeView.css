@@ -245,29 +245,6 @@
   margin-bottom: 10px;
 }
 
-.home-section-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-.home-section-title-row .home-section-title {
-  margin-bottom: 0;
-}
-
-.home-section-action {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--text-2);
-  transition: color 0.14s;
-}
-.home-section-action:hover {
-  color: var(--accent);
-}
-
 /* The only tinted block in the view on purpose — colour here is reserved for the
    one thing that's actually waiting on a person. */
 .home-section--attention .home-section-title {
@@ -507,12 +484,6 @@
   display: block;
   width: 100%;
   height: 26px;
-}
-
-/* ── Next up ── */
-.home-routine-sub {
-  font-size: 11.5px;
-  color: var(--text-2);
 }
 
 /* ── Uncommitted work ── */

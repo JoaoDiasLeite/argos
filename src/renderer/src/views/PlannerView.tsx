@@ -21,8 +21,6 @@ interface PlannerProps {
   onRunTask?: (task: PlannerTask) => void
   /** Open a light chat seeded with the given context (used by the sprint standup). */
   onStandupChat?: (context: string, opener: string, name: string) => void
-  /** Create a daily standup routine and jump to Routines. */
-  onScheduleStandup?: (name: string, prompt: string, projectPath?: string) => void
   streaming?: boolean
 }
 
@@ -98,7 +96,6 @@ export default function PlannerView({
   geminiDefaultAccountId,
   onRunTask,
   onStandupChat,
-  onScheduleStandup,
   streaming
 }: PlannerProps) {
   // Week planner vs. sprint board — persisted so the Planner reopens where you left it.
@@ -380,7 +377,6 @@ export default function PlannerView({
         codexDefaultAccountId={codexDefaultAccountId}
         geminiDefaultAccountId={geminiDefaultAccountId}
         onStandupChat={onStandupChat}
-        onScheduleStandup={onScheduleStandup}
       />
     )
   }

@@ -24,13 +24,12 @@ import {
  *  1. `store.json` → `favoriteProjects`   — keyed `<sourceId>:<encodedDir>`
  *  2. `store.json` → `archivedProjects`   — same key shape
  *  3. `<userData>/sessions/*.json`  → `projectPath`
- *  4. `<userData>/scheduler/*.json` → `projectPath`
- *  5. `<userData>/sprints/*.json`   → `projectPath`
- *  6. the source's `.claude.json` → the `projects` object, keyed by real path —
+ *  4. `<userData>/sprints/*.json`   → `projectPath`
+ *  5. the source's `.claude.json` → the `projects` object, keyed by real path —
  *     handled by the caller in project-lifecycle.ts, because it needs the source's
  *     own config path. Listed here so the inventory is complete rather than
- *     accidentally five items long.
- *  7. `store.json` → `project-names{}` — the sidebar's custom project display names,
+ *     accidentally four items long.
+ *  6. `store.json` → `project-names{}` — the sidebar's custom project display names,
  *     keyed by the renderer's `projectKey()` (case-folded, `/`-normalised path)
  *     rather than the real path, so matching on a move has to be case-insensitive too.
  *
@@ -38,10 +37,10 @@ import {
  * the thin writing half, which is what makes having no test for it acceptable.
  */
 
-/** The three userData directories whose records carry a `projectPath`. */
+/** The userData directories whose records carry a `projectPath`. */
 function pathRecordDirs(): string[] {
   const userData = app.getPath('userData')
-  return [path.join(userData, 'sessions'), path.join(userData, 'scheduler'), path.join(userData, 'sprints')]
+  return [path.join(userData, 'sessions'), path.join(userData, 'sprints')]
 }
 
 /**

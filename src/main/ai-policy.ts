@@ -16,7 +16,7 @@ import { getConfig, providerFor, ProviderId } from './config'
  *      utility calls must not pay for it).
  *
  * Strict by default: profiles grant the minimum. Callers opt into more via the
- * explicit `routine-full` / `interactive-*` profiles.
+ * explicit `interactive-*` profiles.
  */
 
 export type AiProfile =
@@ -26,10 +26,6 @@ export type AiProfile =
   | 'interactive-light'
   /** One-shot utility reasoning (summarize, standup, planner assist, suggestions). */
   | 'headless-reasoning'
-  /** Scheduled routine, read-only intent: mutating tools removed from context. */
-  | 'routine-readonly'
-  /** Scheduled routine, full intent: the explicit opt-in to unrestricted tools. */
-  | 'routine-full'
   /** Ask a question over configured MCP servers + read-only file tools. */
   | 'mcp-ask'
   /**
@@ -92,17 +88,6 @@ const CLAUDE_CODE_PROMPT = {
   excludeDynamicSections: true
 } as const
 
-/** Tools that mutate the filesystem or run commands. Stripped for read-only work. */
-export const MUTATING_TOOLS = [
-  'Bash',
-  'Write',
-  'Edit',
-  'MultiEdit',
-  'NotebookEdit',
-  'KillShell',
-  'KillBash'
-]
-
 const READ_ONLY_TOOLS = ['Read', 'Grep', 'Glob']
 
 /** Per-provider ceiling for utility reasoning — capable, but well below the
@@ -114,10 +99,9 @@ const CHEAP_CEILING: Record<ProviderId, string> = {
 }
 
 // Turn caps. Reasoning calls use no tools, so they cannot exceed one assistant
-// turn — the cap is belt-and-suspenders. Routines and MCP asks loop over tools,
+// turn — the cap is belt-and-suspenders. MCP asks loop over tools,
 // so the cap is the real backstop against runaway spend (alongside the timeout).
 const REASONING_MAX_TURNS = 2
-const ROUTINE_MAX_TURNS = 40
 const MCP_ASK_MAX_TURNS = 15
 /** An ops run is a plan plus one call per step; 60 covers the longest runbook (the
  * PostgreSQL upgrade) with room for the reads between its mutate steps. */
@@ -207,21 +191,6 @@ export function resolvePolicy(input: ResolvePolicyInput): ResolvedPolicy {
         settingSources: [],
         allowedTools: [],
         maxTurns: REASONING_MAX_TURNS
-      }
-
-    case 'routine-readonly':
-      return {
-        model: requestedOrDefault(requestedModel, fallback),
-        settingSources: ['project'],
-        disallowedTools: MUTATING_TOOLS,
-        maxTurns: ROUTINE_MAX_TURNS
-      }
-
-    case 'routine-full':
-      return {
-        model: requestedOrDefault(requestedModel, fallback),
-        settingSources: ['project'],
-        maxTurns: ROUTINE_MAX_TURNS
       }
 
     case 'mcp-ask':

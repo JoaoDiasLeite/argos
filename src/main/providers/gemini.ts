@@ -30,14 +30,14 @@ const NOT_FOUND_MESSAGE = 'Gemini CLI not found. Install with: npm install -g @g
 /**
  * Gemini's approval-mode is coarse (no per-tool-name gate like Claude's
  * allowedTools/disallowedTools):
- *   - routine-full and interactive chat (neither allowedTools nor
+ *   - interactive chat (neither allowedTools nor
  *     disallowedTools set) need full execution → 'yolo'.
  *   - mcp-ask (allowedTools set to the MCP-scoped list, AND servers configured)
  *     needs its MCP tools to actually run → 'yolo'. mcp-ask's Claude-side
  *     restriction to "MCP + read-only tools only" isn't mirrored here, since
  *     gemini has no "auto-approve only these servers" mode — known approximation.
- *   - headless-reasoning (allowedTools === []) and routine-readonly
- *     (disallowedTools set, regardless of whether MCP servers exist — read-only
+ *   - headless-reasoning (allowedTools === []) and a disallowedTools request
+ *     (regardless of whether MCP servers exist — read-only
  *     intent must not be overridden just because MCP happens to be configured
  *     for the project) both map to 'plan' (read-only, no tool execution).
  */

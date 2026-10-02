@@ -233,8 +233,8 @@ export function forgetProjectPrefs(sourceId: string, encodedDir: string, realPat
     setProjectNames(Object.fromEntries(Object.entries(projectNames).filter(([k]) => k !== goneNameKey)))
   }
   // Deliberately NOT cleared: the `projectPath` on the records under
-  // `<userData>/sessions`, `scheduler` and `sprints`. Those point at *work*, not at
-  // filing — deleting an empty project must not delete a scheduled run or a sprint
+  // `<userData>/sessions` and `sprints`. Those point at *work*, not at
+  // filing — deleting an empty project must not delete a chat or a sprint
   // that happened to name the same folder. The move re-keys them, because the work
   // is still there and its folder simply moved; the delete leaves them alone,
   // because the work outlives the project row.

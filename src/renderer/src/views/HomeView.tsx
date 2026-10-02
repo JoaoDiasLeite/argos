@@ -6,7 +6,7 @@ import './HomeView.css'
 
 export interface HomeAttention {
   id: string
-  kind: 'approval' | 'routine'
+  kind: 'approval'
   title: string
   detail: string
   mono?: boolean
@@ -56,13 +56,6 @@ export interface HomeSpend {
   days: { day: string; costUsd: number }[]
 }
 
-export interface HomeRoutine {
-  id: string
-  name: string
-  nextRunAt?: number
-  cadence: string
-}
-
 export interface HomeRecent {
   id: string
   name: string
@@ -101,7 +94,6 @@ interface Props {
   recentProjects: HomeProject[]
   plans: HomePlan[]
   spend: HomeSpend | null
-  routines: HomeRoutine[]
   recent: HomeRecent[]
   start: HomeStart
   startOptions: HomeStartOptions
@@ -111,7 +103,6 @@ interface Props {
   onOpenSession: (id: string) => void
   onOpenRepo: (key: string) => void
   onOpenUsage: () => void
-  onOpenScheduled: () => void
 }
 
 /** Own copy on purpose — ProjectsView has its own, and this isn't shared across files
@@ -167,26 +158,6 @@ function waitingFor(since?: number): string {
   return `waiting ${Math.floor(s / 60)}m`
 }
 
-/** "in 2h" / "tomorrow 03:00" / "overdue" for a routine's next run. */
-function nextRun(ts?: number): string {
-  if (!ts) return ''
-  const diff = ts - Date.now()
-  if (diff <= 0) return 'overdue'
-  const mins = Math.round(diff / 60000)
-  if (mins < 60) return `in ${mins}m`
-  const hours = Math.floor(diff / 3600000)
-  if (hours < 24) return `in ${hours}h`
-  const d = new Date(ts)
-  const tomorrow = new Date()
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const sameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-  if (sameDay(d, tomorrow)) {
-    return `tomorrow ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-  }
-  return `${d.toLocaleDateString([], { weekday: 'short' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-}
-
 function formatDollars(v: number): string {
   return `$${v.toFixed(2)}`
 }
@@ -209,29 +180,10 @@ function DocIcon() {
   )
 }
 
-function AlertIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-      <line x1="12" y1="9" x2="12" y2="13" />
-      <line x1="12" y1="17" x2="12.01" y2="17" />
-    </svg>
-  )
-}
-
 function FolderIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-    </svg>
-  )
-}
-
-function ScheduleIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="12 6 12 12 16 14" />
     </svg>
   )
 }
@@ -289,9 +241,8 @@ function SpendChart({ days }: { days: HomeSpend['days'] }) {
   )
 }
 
-function AttentionIcon({ kind, mono }: { kind: HomeAttention['kind']; mono?: boolean }) {
+function AttentionIcon({ mono }: { mono?: boolean }) {
   if (mono) return <TerminalIcon />
-  if (kind === 'routine') return <AlertIcon />
   return <DocIcon />
 }
 
@@ -494,7 +445,6 @@ export default function HomeView({
   recentProjects,
   plans,
   spend,
-  routines,
   recent,
   start,
   startOptions,
@@ -503,8 +453,7 @@ export default function HomeView({
   onPickFolder,
   onOpenSession,
   onOpenRepo,
-  onOpenUsage,
-  onOpenScheduled
+  onOpenUsage
 }: Props) {
   const [prompt, setPrompt] = useState('')
 
@@ -612,7 +561,7 @@ export default function HomeView({
   const hasAttentionCol = attention.length > 0 || running.length > 0
   const hasRecentCol = recent.length > 0
   const hasSideCol =
-    plans.length > 0 || spend !== null || routines.length > 0 || repos.length > 0 || recentProjects.length > 0
+    plans.length > 0 || spend !== null || repos.length > 0 || recentProjects.length > 0
 
   const nothing =
     attention.length === 0 &&
@@ -621,7 +570,6 @@ export default function HomeView({
     recentProjects.length === 0 &&
     plans.length === 0 &&
     spend === null &&
-    routines.length === 0 &&
     recent.length === 0
 
   // `repos` is already filtered to just what's dirty or errored (no more "clean" rows
@@ -796,7 +744,7 @@ export default function HomeView({
                     {attention.map((a) => (
                       <div key={a.id} className="home-attention-row">
                         <span className="home-attention-icon" aria-hidden="true">
-                          <AttentionIcon kind={a.kind} mono={a.mono} />
+                          <AttentionIcon mono={a.mono} />
                         </span>
                         <div className="home-row-main">
                           <span className="home-row-name">{a.title}</span>
@@ -936,32 +884,6 @@ export default function HomeView({
                       </>
                     )}
                   </button>
-                </section>
-              )}
-
-              {routines.length > 0 && (
-                <section className="home-section" aria-label="Next up">
-                  <div className="home-section-title-row">
-                    <h2 className="home-section-title">Next up</h2>
-                    <button className="home-section-action" onClick={onOpenScheduled}>
-                      <ScheduleIcon />
-                      Scheduled
-                    </button>
-                  </div>
-                  <div className="home-list">
-                    {routines.map((r) => (
-                      <div key={r.id} className="home-row home-routine-row">
-                        <div className="home-row-main">
-                          <span className="home-row-name">{r.name}</span>
-                          <span className="home-routine-sub">
-                            {nextRun(r.nextRunAt)}
-                            {nextRun(r.nextRunAt) ? ' · ' : ''}
-                            {r.cadence}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
                 </section>
               )}
 

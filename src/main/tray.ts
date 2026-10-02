@@ -1,7 +1,7 @@
 import { Tray, Menu, nativeImage } from 'electron'
 import { join } from 'path'
 
-// System tray: keeps the app (and its scheduler) alive when the window is closed,
+// System tray: keeps the app alive when the window is closed,
 // and gives quick access to the main window, a new chat, and the quick launcher.
 
 let tray: Tray | null = null

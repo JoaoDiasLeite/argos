@@ -350,7 +350,7 @@ describe('notifyHookMode', () => {
     })
   })
 
-  // Falling through would boot the whole application — windows, tray, scheduler —
+  // Falling through would boot the whole application — windows, tray —
   // because one notification arrived malformed.
   it('aborts rather than falling through when the payload is unusable', () => {
     expect(notifyHookMode(['C:\\Argos.exe', '--notify-hook-show', 'garbage'])).toEqual({

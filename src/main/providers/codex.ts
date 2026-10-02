@@ -30,8 +30,8 @@ const NOT_FOUND_MESSAGE = 'Codex CLI not found. Install with: npm install -g @op
  * Sandbox level from the request's tool intent. Codex has no per-tool-name gate
  * like Claude's allowedTools/disallowedTools — this is an approximation:
  *   - allowedTools === [] (headless-reasoning) or set (mcp-ask, MCP-scoped)  → read-only
- *   - disallowedTools set (routine-readonly)                                 → read-only
- *   - neither set (routine-full, interactive chat)                          → workspace-write
+ *   - disallowedTools set                                                    → read-only
+ *   - neither set (interactive chat)                                        → workspace-write
  */
 function sandboxFor(req: EngineRequest): 'read-only' | 'workspace-write' {
   if (req.disallowedTools && req.disallowedTools.length > 0) return 'read-only'
