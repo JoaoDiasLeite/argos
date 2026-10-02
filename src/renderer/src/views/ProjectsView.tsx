@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useLingering } from '../hooks/useLingering'
 import {
   CcSessionTarget,
   CCProject,
@@ -25,6 +26,7 @@ import { shortModel } from '../lib/model-id'
 import { groupByAge, sortSessions, SORT_LABELS, SortMode } from '../lib/session-groups'
 import './views.css'
 import './ProjectsView.css'
+import Select from '../components/Select'
 
 interface Props {
   onResume: (session: CCSessionMeta) => void
@@ -443,6 +445,8 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   const [repoNames, setRepoNames] = useState<Record<string, RepoName>>({})
   const fetchedRepoKeys = useRef<Set<string>>(new Set())
   const [peeked, setPeeked] = useState<CCSessionMeta | null>(null)
+  // The column slides shut: it keeps the last session for the closing frames.
+  const { shown: peekShown, open: peekOpen } = useLingering(peeked)
   const [showArchived, setShowArchived] = useState(false)
   // Active/Archived for the *project* column — orthogonal to `showArchived` above,
   // which scopes the sessions inside whichever project is selected.
@@ -1205,8 +1209,8 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
             <div className="pv-list" onScroll={() => setProjectMenu(null)}>
               {/* Only earns its place once there is a choice to make. */}
               {accountOptions.length > 1 && (
-                <select
-                  className="text-input pv-field"
+                <Select
+                  className="pv-field"
                   aria-label="Filter projects by account"
                   value={effectiveAccountFilter}
                   onChange={(e) => setAccountFilter(e.target.value)}
@@ -1217,7 +1221,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                       {o.sub ? `${o.label} · ${o.sub}` : o.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               )}
               <input
                 className="text-input pv-field"
@@ -1413,8 +1417,8 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                     />
                   </div>
                   <span className="pv-spacer" />
-                  <select
-                    className="text-input pv-sort"
+                  <Select
+                    className="pv-sort"
                     aria-label="Sort sessions"
                     value={sort}
                     onChange={(e) => changeSort(e.target.value as SortMode)}
@@ -1424,7 +1428,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                         {SORT_LABELS[m]}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 {localVocab.length > 0 && sessions.length > 0 && (
                   <div className="pv-tagbar">
@@ -1533,13 +1537,14 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
             )}
           </div>
 
-          {peeked && (
+          <div className={`slide-col ${peekOpen ? 'open' : ''}`}>
+          {peekShown && (
             <SessionPeek
-              session={peeked}
+              session={peekShown}
               colorFor={colorFor}
               vocabulary={localVocab}
-              onResume={() => onResume(peeked)}
-              resumable={canResume(peeked)}
+              onResume={() => onResume(peekShown)}
+              resumable={canResume(peekShown)}
               projects={projects}
               onClose={() => setPeeked(null)}
               onChanged={() => {
@@ -1547,12 +1552,13 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                 refreshSessions()
               }}
               onTagsSaved={(tags) => {
-                setSessions((cur) => cur.map((x) => (x.sessionId === peeked.sessionId ? { ...x, tags } : x)))
-                setPeeked({ ...peeked, tags })
+                setSessions((cur) => cur.map((x) => (x.sessionId === peekShown.sessionId ? { ...x, tags } : x)))
+                setPeeked({ ...peekShown, tags })
                 reloadLabels()
               }}
             />
           )}
+          </div>
         </div>
       )}
 

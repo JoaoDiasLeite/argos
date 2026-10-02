@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useLingering } from '../hooks/useLingering'
 import {
   SshHostPublic,
   SshHostInput,
@@ -15,6 +16,7 @@ import OpsReportSheet from '../components/OpsReportSheet'
 import { readRecentRunbooks } from '../lib/recent-runbooks'
 import './views.css'
 import './RemoteView.css'
+import Select from '../components/Select'
 
 interface Props {
   onConnect: (host: SshHostPublic) => void
@@ -47,31 +49,6 @@ type Kind = 'all' | 'wsl' | 'ssh'
  *  shows the same one. */
 type Selection = { kind: 'wsl'; name: string } | { kind: 'ssh'; id: string }
 
-const SELECTION_KEY = 'remote.selected'
-
-function readSelection(): Selection | null {
-  try {
-    const raw = localStorage.getItem(SELECTION_KEY)
-    const v: unknown = raw ? JSON.parse(raw) : null
-    if (v && typeof v === 'object') {
-      const s = v as Record<string, unknown>
-      if (s.kind === 'wsl' && typeof s.name === 'string') return { kind: 'wsl', name: s.name }
-      if (s.kind === 'ssh' && typeof s.id === 'string') return { kind: 'ssh', id: s.id }
-    }
-  } catch {
-    /* storage unavailable */
-  }
-  return null
-}
-
-function writeSelection(sel: Selection | null): void {
-  try {
-    if (sel) localStorage.setItem(SELECTION_KEY, JSON.stringify(sel))
-    else localStorage.removeItem(SELECTION_KEY)
-  } catch {
-    /* storage unavailable: the selection just isn't remembered */
-  }
-}
 
 /**
  * The live-status dot at the head of every row.
@@ -224,7 +201,8 @@ export default function RemoteView({
   const [kind, setKind] = useState<Kind>('all')
   const [query, setQuery] = useState('')
   const [showHidden, setShowHidden] = useState(false)
-  const [selected, setSelectedState] = useState<Selection | null>(readSelection)
+  const [selected, setSelectedState] = useState<Selection | null>(null)
+  const colRef = useRef<HTMLElement>(null)
   const [editingCwd, setEditingCwd] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -235,10 +213,37 @@ export default function RemoteView({
 
   const select = (sel: Selection | null) => {
     setSelectedState(sel)
-    writeSelection(sel)
     setEditingCwd(false)
     setConfirmDelete(false)
   }
+
+  // The column is mounted only while a target is selected (as the Projects column): a
+  // mousedown anywhere outside it that is not a target row closes it, and so does Esc when
+  // focus is not in a field. Sheets (Add/Edit host, the report) keep it: a click in them
+  // is not a click outside the column.
+  useEffect(() => {
+    if (!selected || editing || reportFor) return
+    const onDown = (e: MouseEvent) => {
+      if (e.button !== 0) return
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      if (colRef.current?.contains(target) || target.closest('[data-rv-row]')) return
+      select(null)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const el = e.target as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return
+      select(null)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, editing, reportFor])
 
   const load = async () => {
     setHosts(await window.electronAPI.sshList())
@@ -403,8 +408,10 @@ export default function RemoteView({
   const runbooksFor = (hostId: string) =>
     runbooks.filter((r) => r.hosts.some((h) => h.id === hostId && h.groups.length > 0))
 
-  const selDistro = selected?.kind === 'wsl' ? visibleDistros.find((d) => d.name === selected.name) : undefined
-  const selHost = selected?.kind === 'ssh' ? hosts.find((h) => h.id === selected.id) : undefined
+  // The column slides shut: it keeps showing the last target for the closing frames.
+  const { shown: shownSel, open: colOpen } = useLingering(selected)
+  const selDistro = shownSel?.kind === 'wsl' ? visibleDistros.find((d) => d.name === shownSel.name) : undefined
+  const selHost = shownSel?.kind === 'ssh' ? hosts.find((h) => h.id === shownSel.id) : undefined
   const selHostRunbooks = selHost ? runbooksFor(selHost.id) : []
 
   // Earlier interventions on the selected host, when a runbook reaches it.
@@ -433,6 +440,7 @@ export default function RemoteView({
       'aria-selected': isSel,
       tabIndex: 0,
       title: `${label} · double-click to connect`,
+      'data-rv-row': true,
       className: `rv-row ${isSel ? 'sel' : ''}`,
       onClick: () => select(sel),
       onDoubleClick: connect,
@@ -934,9 +942,13 @@ export default function RemoteView({
           )}
         </div>
 
-        <aside className="rv-col" aria-label="Selected target">
-          {column()}
-        </aside>
+        <div className={`slide-col ${colOpen ? 'open' : ''}`}>
+          {(selDistro || selHost) && (
+            <aside className="rv-col" aria-label="Selected target" ref={colRef}>
+              {column()}
+            </aside>
+          )}
+        </div>
       </div>
 
       {editing && (
@@ -1011,8 +1023,7 @@ export default function RemoteView({
                 {keys.length > 0 && (
                   <div className="form-group">
                     <label>Discovered key</label>
-                    <select
-                      className="text-input"
+                    <Select
                       value={keys.some((k) => k.privatePath === editing.privateKeyPath) ? editing.privateKeyPath : ''}
                       onChange={(e) => setEditing({ ...editing, privateKeyPath: e.target.value })}
                     >
@@ -1022,7 +1033,7 @@ export default function RemoteView({
                           {keyLabel(k)}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </div>
                 )}
                 <div className="form-group">

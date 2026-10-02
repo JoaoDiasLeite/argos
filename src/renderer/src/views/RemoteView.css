@@ -275,7 +275,7 @@
 .rv-run-report:hover { color: var(--text-0); }
 
 .rv-foot {
-  margin-top: auto;
+  /* Directly under the content, not pinned to the bottom. */
   display: flex;
   align-items: center;
   gap: 8px;

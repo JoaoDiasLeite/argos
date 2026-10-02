@@ -96,7 +96,7 @@
 
 /* ── Footer: one row, or the inline form that replaces it ── */
 .sp-foot {
-  margin-top: auto;
+  /* Directly under the content: a footer pinned to the bottom left a column of nothing. */
   display: flex;
   align-items: center;
   gap: 8px;
