@@ -135,7 +135,7 @@ button.config-pill:hover:not(:disabled) {
   border: none;
   border-radius: 6px;
   background: var(--accent);
-  color: #fff;
+  color: var(--bg-0);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;

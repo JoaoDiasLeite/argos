@@ -156,16 +156,6 @@
   padding-top: 2px;
 }
 
-/* Scoped, not a second bare .btn-primary — the destructive variant of the house
-   button, per the shared.css convention. */
-.label-manager .btn-primary.danger {
-  background: var(--error);
-}
-
-.label-manager .btn-primary.danger:hover {
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--error) 45%, transparent);
-}
-
 .label-note {
   font-size: 12px;
   color: var(--text-2);

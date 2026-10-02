@@ -1,0 +1,79 @@
+/* ── Sheet.css ───────────────────────────────────────────────────────────────
+   A right-hand sheet over the content (SYSTEM-DESIGN.md §2). Surfaces 4 px, things
+   you press 8 px; the one shadow outside a popover. Classes are prefixed `sheet-`. ── */
+
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: color-mix(in srgb, var(--bg-0) 55%, transparent);
+  /* Covers the frameless window's drag strip; see .modal-backdrop. */
+  -webkit-app-region: no-drag;
+}
+
+.sheet {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  color: var(--text-0);
+  border-left: 1px solid var(--border);
+  border-radius: var(--radius-surface) 0 0 var(--radius-surface);
+  box-shadow: -16px 0 40px rgba(0, 0, 0, 0.28);
+  outline: none;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sheet-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-close {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.sheet-close:hover { color: var(--text-0); background: var(--bg-hover); }
+.sheet-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sheet-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}

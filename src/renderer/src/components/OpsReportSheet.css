@@ -1,40 +1,7 @@
 /* ── OpsReportSheet.css ──────────────────────────────────────────────────────
-   The run report as a document sheet from the right (board E2). Surfaces 4 px,
-   things you click 8 px. Classes are prefixed `ops-rs-`. ───────────────────── */
-
-.ops-rs-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  background: color-mix(in srgb, var(--bg-0) 55%, transparent);
-  /* Covers the frameless window's drag strip; see .modal-backdrop. */
-  -webkit-app-region: no-drag;
-}
-
-.ops-rs {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(720px, 100vw);
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-1);
-  color: var(--text-0);
-  border-left: 1px solid var(--border);
-  box-shadow: -24px 0 60px color-mix(in srgb, #000 40%, transparent);
-  outline: none;
-}
-
-.ops-rs-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 22px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.ops-rs-spacer { flex: 1; }
+   The run report as a document inside a <Sheet> (board E2); the sheet owns the
+   scrim and shell. Surfaces 4 px, things you click 8 px. Classes are prefixed
+   `ops-rs-`. ─────────────────────────────────────────────────────────────────── */
 
 .ops-rs-eyebrow {
   margin: 0;
@@ -83,22 +50,7 @@
 .ops-rs-btn.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--bg-0); }
 .ops-rs-btn:disabled { opacity: 0.5; cursor: default; }
 
-.ops-rs-close {
-  width: 30px;
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-2);
-  cursor: pointer;
-}
-.ops-rs-close:hover { color: var(--text-0); background: var(--bg-hover); }
-
 .ops-rs-notices {
-  padding: 10px 22px 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -115,11 +67,6 @@
   line-height: 1.5;
 }
 
-.ops-rs-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
 .ops-rs-body {
   min-height: 100%;
   max-width: 640px;
@@ -228,7 +175,6 @@
 .ops-rs-error { color: var(--error); overflow-wrap: anywhere; }
 
 .ops-rs-btn:focus-visible,
-.ops-rs-close:focus-visible,
 .ops-rs-link:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

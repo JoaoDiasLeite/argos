@@ -271,7 +271,7 @@
 }
 
 .file-editor-confirm .danger:hover {
-  color: #fff;
+  color: var(--bg-0);
   background: var(--error);
 }
 

@@ -130,7 +130,7 @@
   border-radius: 999px;
 }
 .plan-badge.ok { color: var(--success); background: color-mix(in srgb, var(--success) 14%, transparent); }
-.plan-badge.warn { color: #e2b341; background: color-mix(in srgb, #e2b341 16%, transparent); }
+.plan-badge.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
 .plan-badge.danger { color: var(--error); background: color-mix(in srgb, var(--error) 14%, transparent); }
 
 /* ── Sidebar tabs ─────────────────────────────────────────── */
@@ -458,7 +458,7 @@
   background: var(--accent);
   animation: session-dot-pulse 1.4s ease-in-out infinite;
 }
-.session-dot.attention { background: #e2b341; }
+.session-dot.attention { background: var(--warn); }
 
 @keyframes session-dot-pulse {
   0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
@@ -564,7 +564,7 @@
 }
 .session-row.running { --session-trace-color: var(--accent); }
 /* Waiting on you outranks merely working, and says so in the same amber as its dot. */
-.session-row.attention { --session-trace-color: #e2b341; }
+.session-row.attention { --session-trace-color: var(--warn); }
 
 /* The row you are looking at does not need to shout: the trace exists to catch your
    eye from across the list, and the chat that is already on screen is the one place

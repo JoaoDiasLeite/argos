@@ -122,7 +122,7 @@
   color: var(--text-2);
 }
 .sftp-row-icon.directory { color: var(--text-0); }
-.sftp-row-icon.symlink { color: #4fc3f7; }
+.sftp-row-icon.symlink { color: var(--text-1); }
 
 .sftp-row-name {
   flex: 1;

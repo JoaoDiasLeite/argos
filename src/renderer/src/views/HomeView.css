@@ -451,7 +451,7 @@
   background: var(--accent);
   animation: home-dot-pulse 1.4s ease-in-out infinite;
 }
-.home-dot.attention { background: #e2b341; }
+.home-dot.attention { background: var(--warn); }
 @keyframes home-dot-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }

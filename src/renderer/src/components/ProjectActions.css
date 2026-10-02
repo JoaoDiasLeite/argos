@@ -99,10 +99,6 @@
   justify-content: flex-end;
   gap: 6px;
 }
-.proj-actions-confirm-actions .btn-primary.danger {
-  background: var(--error);
-}
-
 .proj-actions-error {
   font-size: 11px;
   color: var(--error);

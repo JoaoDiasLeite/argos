@@ -43,7 +43,7 @@
 }
 .cl-tag-latest {
   background: color-mix(in srgb, var(--success) 16%, transparent);
-  color: var(--success, #3fb950);
+  color: var(--success);
 }
 
 .cl-date {

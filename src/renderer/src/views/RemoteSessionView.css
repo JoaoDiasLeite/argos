@@ -28,7 +28,7 @@
   flex-shrink: 0;
 }
 .remote-session-dot.connecting {
-  background: #e0a458;
+  background: var(--warn);
   animation: remote-session-pulse 1.2s ease-in-out infinite;
 }
 .remote-session-dot.connected { background: var(--success); }

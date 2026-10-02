@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useModalA11y } from '../hooks/useModalA11y'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useOpsEvents } from '../hooks/useOpsEvents'
 import { displayArgv } from '../lib/ops-approval'
 import { foldOpsEvents, rowLabel, rowTone, runCounts, touchedHosts, type OpsRow, type OpsRun } from '../lib/ops-timeline'
 import Markdown from './Markdown'
+import Sheet from './Sheet'
 import './OpsReportSheet.css'
 
 interface Props {
@@ -77,9 +77,6 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
   const [saved, setSaved] = useState<{ ok: true; path: string } | { ok: false; error: string } | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [verified, setVerified] = useState<Verified>(null)
-
-  const sheetRef = useRef<HTMLDivElement>(null)
-  useModalA11y(sheetRef, onClose)
 
   const { events } = useOpsEvents(appSessionId)
   const run = useMemo(() => foldOpsEvents(events).find((r) => r.runId === runId), [events, runId])
@@ -159,47 +156,33 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
     <Markdown content={markdown} />
   )
 
-  return (
-    <div className="ops-rs-scrim" onClick={onClose}>
-      <div
-        className="ops-rs"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Run report"
-        tabIndex={-1}
-        ref={sheetRef}
-        onClick={(e) => e.stopPropagation()}
+  const headerExtra = (
+    <>
+      <div className="ops-rs-toggle" role="group" aria-label="Report kind">
+        {(['internal', 'client'] as const).map((k) => (
+          <button key={k} type="button" className={kind === k ? 'active' : ''} aria-pressed={kind === k} onClick={() => setKind(k)}>
+            {k === 'internal' ? 'Internal' : 'Client'}
+          </button>
+        ))}
+      </div>
+      <button type="button" className="ops-rs-btn" onClick={copy} disabled={loading || !markdown}>
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+      <button
+        type="button"
+        className="ops-rs-btn primary"
+        onClick={save}
+        disabled={!runbookPath || loading || !markdown || saving}
+        title={runbookPath ? `Writes a new file under ${runbookPath}/reports` : 'The runbook folder of this run is not known'}
       >
-        <div className="ops-rs-head">
-          <span className="ops-rs-eyebrow">Run report</span>
-          <span className="ops-rs-spacer" />
-          <div className="ops-rs-toggle" role="group" aria-label="Report kind">
-            {(['internal', 'client'] as const).map((k) => (
-              <button key={k} type="button" className={kind === k ? 'active' : ''} aria-pressed={kind === k} onClick={() => setKind(k)}>
-                {k === 'internal' ? 'Internal' : 'Client'}
-              </button>
-            ))}
-          </div>
-          <button type="button" className="ops-rs-btn" onClick={copy} disabled={loading || !markdown}>
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-          <button
-            type="button"
-            className="ops-rs-btn primary"
-            onClick={save}
-            disabled={!runbookPath || loading || !markdown || saving}
-            title={runbookPath ? `Writes a new file under ${runbookPath}/reports` : 'The runbook folder of this run is not known'}
-          >
-            {saving ? 'Saving…' : 'Save beside runbook'}
-          </button>
-          <button type="button" className="ops-rs-close" onClick={onClose} aria-label="Close">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
+        {saving ? 'Saving…' : 'Save beside runbook'}
+      </button>
+    </>
+  )
 
+  return (
+    <Sheet title="Run report" width={720} onClose={onClose} headerExtra={headerExtra}>
+      <div className="ops-rs-body">
         {(saved || warnings.length > 0) && (
           <div className="ops-rs-notices">
             {saved && (
@@ -217,55 +200,51 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
           </div>
         )}
 
-        <div className="ops-rs-scroll">
-          <div className="ops-rs-body">
-            {run && (
-              <div className="ops-rs-titles">
-                <h2 className="ops-rs-title">{run.runbook || 'Run'}</h2>
-                <div className="ops-rs-context">
-                  {[
-                    hostLine(run),
-                    `${day(run.startedAt)}, ${clock(run.startedAt)}${run.endedAt ? ` to ${clock(run.endedAt)}` : ''}`,
-                    'Claude Code',
-                    runOutcome(run)
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </div>
-                {(run.task || run.ticket || run.client) && (
-                  <div className="ops-rs-task">{[run.task, run.ticket, run.client].filter(Boolean).join(' · ')}</div>
-                )}
-              </div>
-            )}
-
-            {kind === 'client' || !run ? (
-              <div className="ops-rs-md">{rendered}</div>
-            ) : (
-              <InternalBody run={run} showAll={showAll} onToggleAll={() => setShowAll((v) => !v)} rendered={rendered} />
-            )}
-
-            {run && (
-              <div className="ops-rs-foot">
-                Audit log <code>{ledgerDay}.jsonl</code> · run <code>{run.runId.slice(0, 8)}</code>
-                {run.policySha256 && (
-                  <>
-                    {' '}
-                    · policy <code>{run.policySha256.slice(0, 8)}</code>
-                  </>
-                )}
-                {verified?.ok && ' · chain verified'}
-                {verified && !verified.ok && (
-                  <span className="ops-rs-broken" title={verified.reason}>
-                    {' '}
-                    · chain broken{verified.brokenAt != null ? ` at line ${verified.brokenAt}` : ''}
-                  </span>
-                )}
-              </div>
+        {run && (
+          <div className="ops-rs-titles">
+            <h2 className="ops-rs-title">{run.runbook || 'Run'}</h2>
+            <div className="ops-rs-context">
+              {[
+                hostLine(run),
+                `${day(run.startedAt)}, ${clock(run.startedAt)}${run.endedAt ? ` to ${clock(run.endedAt)}` : ''}`,
+                'Claude Code',
+                runOutcome(run)
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </div>
+            {(run.task || run.ticket || run.client) && (
+              <div className="ops-rs-task">{[run.task, run.ticket, run.client].filter(Boolean).join(' · ')}</div>
             )}
           </div>
-        </div>
+        )}
+
+        {kind === 'client' || !run ? (
+          <div className="ops-rs-md">{rendered}</div>
+        ) : (
+          <InternalBody run={run} showAll={showAll} onToggleAll={() => setShowAll((v) => !v)} rendered={rendered} />
+        )}
+
+        {run && (
+          <div className="ops-rs-foot">
+            Audit log <code>{ledgerDay}.jsonl</code> · run <code>{run.runId.slice(0, 8)}</code>
+            {run.policySha256 && (
+              <>
+                {' '}
+                · policy <code>{run.policySha256.slice(0, 8)}</code>
+              </>
+            )}
+            {verified?.ok && ' · chain verified'}
+            {verified && !verified.ok && (
+              <span className="ops-rs-broken" title={verified.reason}>
+                {' '}
+                · chain broken{verified.brokenAt != null ? ` at line ${verified.brokenAt}` : ''}
+              </span>
+            )}
+          </div>
+        )}
       </div>
-    </div>
+    </Sheet>
   )
 }
 

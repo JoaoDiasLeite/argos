@@ -105,10 +105,10 @@
 }
 .rt-search-clear:hover { background: var(--bg-hover); color: var(--text-0); }
 
-/* Shorter segmented control so it lines up with the 30px search field. */
+/* Segments sized so the framed control (2 px padding, 1 px border) matches the 34 px search field. */
 .rt-filter .seg-control.small button {
   padding: 0 13px;
-  height: 32px;
+  height: 28px;
   font-size: 12.5px;
 }
 
@@ -242,14 +242,14 @@
   color: var(--accent);
 }
 .rt-chip.wsl {
-  background: rgba(79, 195, 247, 0.13);
-  border-color: rgba(79, 195, 247, 0.25);
-  color: #4fc3f7;
+  background: var(--bg-2);
+  border-color: var(--border);
+  color: var(--text-1);
 }
 .rt-chip.key {
-  background: rgba(240, 180, 90, 0.13);
-  border-color: rgba(240, 180, 90, 0.28);
-  color: #e0a458;
+  background: color-mix(in srgb, var(--warn) 6%, var(--bg-2));
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+  color: var(--warn);
 }
 
 .rt-name {
@@ -296,7 +296,7 @@
   min-width: 0;
 }
 .rt-meta.mono { font-family: var(--font-mono); }
-.rt-meta.acct { color: #4fc3f7; opacity: 0.85; flex-shrink: 0; }
+.rt-meta.acct { color: var(--text-1); flex-shrink: 0; }
 
 /* Actions collapse to zero width at rest — not just transparent — so a resting row's
    detail text runs all the way to the right edge, then slides left to make room as the

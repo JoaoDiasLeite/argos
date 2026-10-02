@@ -32,8 +32,8 @@
   border-radius: 50%;
   flex-shrink: 0;
 }
-.account-dot.ok { background: var(--ok, #3fb950); }
-.account-dot.warn { background: var(--warn, #d29922); }
+.account-dot.ok { background: var(--success); }
+.account-dot.warn { background: var(--warn); }
 
 .account-picker-menu {
   position: absolute;
