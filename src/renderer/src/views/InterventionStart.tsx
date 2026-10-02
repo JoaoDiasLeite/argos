@@ -272,7 +272,6 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
   const runbookChosen = useRef(false)
 
   const [task, setTask] = useState('')
-  const [taskTouched, setTaskTouched] = useState(false)
   const [ticket, setTicket] = useState('')
   const [client, setClient] = useState(readLastClient)
 
@@ -374,11 +373,9 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
     return `This runbook does not know ${name}; add it to a group in policy.json.`
   }, [okInfo, scope, selectedHost])
 
-  const taskEmpty = task.trim() === ''
   const missing = [
     !scope && 'a server',
-    !runbookPath && 'a runbook',
-    taskEmpty && 'the task'
+    !runbookPath && 'a runbook'
   ].filter((m): m is string => !!m)
   const blocked = !!hostProblem || (!!loaded && !loaded.ok) || info === 'loading'
   const canStart = missing.length === 0 && !blocked
@@ -393,7 +390,6 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
 
   const start = () => {
     if (!canStart || !scope || !runbookPath) {
-      setTaskTouched(true)
       return
     }
     const c = client.trim()
@@ -597,15 +593,14 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
 
             <div className="ivs-field">
               <label className="ivs-label" htmlFor={taskId}>
-                Task
+                Task <span className="ivs-optional">optional</span>
               </label>
               <textarea
                 id={taskId}
-                className={`ivs-control ivs-textarea${taskTouched && taskEmpty ? ' invalid' : ''}`}
+                className="ivs-control ivs-textarea"
                 value={task}
                 placeholder="What is wrong, or what needs checking, in your own words."
                 onChange={(e) => setTask(e.target.value)}
-                onBlur={() => setTaskTouched(true)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                     e.preventDefault()
@@ -613,9 +608,6 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
                   }
                 }}
               />
-              {taskTouched && taskEmpty && (
-                <span className="ivs-error">Describe the task; it becomes Claude Code&apos;s first message.</span>
-              )}
             </div>
 
             <div className="ivs-pair">
