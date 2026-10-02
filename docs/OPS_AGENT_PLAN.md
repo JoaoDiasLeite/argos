@@ -403,6 +403,64 @@ These were already planned; they are listed here so one document holds everythin
   as "unattributed" in `GitModal`, never as someone else's.
 - **Lot 8, semantic search** — stays optional; nothing here depends on it.
 
+### Phase 5 — ops from the terminal, and an Ops view · 3–4 days
+
+Phases 0–3 put the gate where Argos sits between the model and the tools: the SDK chat.
+The user's daily tool is the **embedded terminal**, where the CLI runs on its own and
+Argos only sees the screen. This phase moves the gate to a place both can reach.
+
+**Decisions**
+- **The ops MCP server becomes a separate stdio process, and a thin one.** `argos
+  --ops-mcp` (guarded before the single-instance lock, like `--notify-hook`) speaks MCP
+  over stdio to the CLI and relays every tool call over a local socket to the running
+  Argos. It holds no policy, no ledger and no SSH: if the relay is tampered with, main
+  re-gates. Main does what it does today — classify, log, ask, execute, log.
+- **The socket is per machine user and per token.** A named pipe on Windows
+  (`\\.\pipe\argos-ops-<token>`), a socket under `XDG_RUNTIME_DIR` (fallback `userData`)
+  elsewhere. Argos issues a fresh token per ops terminal, passes it in the CLI's
+  environment as `ARGOS_OPS_TOKEN` with the endpoint in `ARGOS_OPS_PIPE`, and maps it to
+  that terminal's ops session. An unknown token is dropped without a reply.
+- **A terminal ops session is one run per CLI launch.** `run.start` when the CLI is
+  launched, `run.end` when the pty exits or the terminal is closed, plan-first inside it.
+- **Any CLI.** A stdio MCP server is universal, so Codex and Gemini get the same tools and
+  the same ledger. What they do **not** get is the removal of their own local shell: only
+  Claude Code takes `--disallowedTools`, so on the other two the runbook is a rule the
+  ledger can show being broken, not one Argos can enforce. The Ops view says which
+  guarantee is in force for the chosen CLI.
+- **The SDK chat becomes one more client.** It keeps the in-process server (no socket
+  needed) but shares `ops-session.ts`, so there is one code path for gate, ledger and
+  approvals whatever the front end.
+- **Ops gets its own place under Servers.** An "Ops" member beside Remote & WSL: the
+  recent runbooks, and per runbook a workspace with the hosts strip (connection dots,
+  strict flag, which guarantee applies), a Terminal / Chat toggle, the timeline, Report,
+  and the day's ledger status. The chat's environment-menu picker stays as a shortcut.
+
+**Batches**
+- **5a — main:** `ops-session.ts` (the per-front-end context, factored out of
+  `ops-run.ts`), `ops-bridge.ts` (socket server, token registry, request/response framing:
+  newline-delimited JSON `{ id, tool, args }` → `{ id, result | error }`), the `--ops-mcp`
+  relay in `ops-relay.ts` using `@modelcontextprotocol/sdk`'s `StdioServerTransport`
+  (added to dependencies; it is already installed as the Agent SDK's dependency), and IPC
+  `ops:terminal-session(terminalId, runbookPath)` → `{ ok, env: { ARGOS_OPS_PIPE,
+  ARGOS_OPS_TOKEN }, mcpConfigPath }` that writes the CLI-specific MCP config under
+  `userData/ops-mcp/<terminalId>/`. Tests drive the bridge over a real pipe with a fake
+  backend.
+- **5b — terminal:** `createTerminal` / `startCliInTerminal` accept `ops?: { env,
+  mcpConfigPath, provider }` and launch Claude Code with `--mcp-config <path>
+  --strict-mcp-config --allowedTools "mcp__ops__*" --disallowedTools Bash,Edit,Write,
+  MultiEdit,NotebookEdit,WebFetch,WebSearch,Agent,Task`; Codex through a `CODEX_HOME`
+  overlay with `[mcp_servers.ops]` (the mechanism `prepareCodexHome` already has); Gemini
+  through its system settings overlay. The ops env is set on the pty, so the relay the
+  CLI spawns inherits the token. On pty exit the terminal reports it so main can log
+  `run.end`.
+- **5c — renderer:** the Ops member in the Servers group, `OpsView` (runbook list) and
+  `OpsWorkspace` (hosts strip, mode toggle, `ChatTerminal` with the ops launch or `Chat`
+  with the SDK path, `OpsTimeline`, Report, ledger line). Reuses every component Phase 3
+  built; the chat picker is untouched.
+
+**Not in this phase:** running the relay on the server (never), enforcing local-tool
+removal on Codex/Gemini (not possible from outside the CLI), and the review-gate backlog.
+
 ## 10. Verification
 
 - `npm run typecheck` and `npm test` on every staged tree.
