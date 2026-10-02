@@ -1,0 +1,102 @@
+/* Same slot and shrink rules as .workspace-review: the panel gives way before the
+   transcript does, and closing it is the answer in a very narrow window. */
+.ops-tl {
+  flex: 0 1 340px;
+  min-width: 260px;
+  border-left: 1px solid var(--border);
+  background: var(--bg-1);
+  padding: 16px;
+  overflow: auto;
+  color: var(--text-0);
+  font-size: 13px;
+}
+
+.ops-tl-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ops-tl-empty { color: var(--text-1); font-size: 12px; line-height: 1.6; margin: 8px 0 12px; }
+
+.ops-tl-run { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.ops-tl-run:first-of-type { border-top: none; padding-top: 0; }
+
+.ops-tl-run-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.ops-tl-run-title { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; overflow-wrap: anywhere; }
+.ops-tl-run-state { color: var(--text-1); font-size: 11.5px; flex-shrink: 0; }
+.ops-tl-run-state.bad { color: var(--error); }
+.ops-tl-run-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--text-2); font-size: 11.5px; overflow-wrap: anywhere; }
+.ops-tl-report { align-self: flex-start; margin-top: 4px; }
+
+.ops-tl-calls { list-style: none; margin: 0; padding: 0; }
+
+.ops-tl-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: var(--bg-2);
+}
+.ops-tl-row.bad {
+  border-color: color-mix(in srgb, var(--error) 45%, var(--border));
+  background: color-mix(in srgb, var(--error) 10%, var(--bg-2));
+}
+
+.ops-tl-row-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.ops-tl-host { font-weight: 600; font-size: 12px; overflow-wrap: anywhere; min-width: 0; }
+.ops-tl-pills { display: flex; gap: 4px; flex-shrink: 0; }
+
+.ops-tl-pill {
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border-light);
+  color: var(--text-1);
+}
+.ops-tl-pill.class-mutate { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+.ops-tl-pill.decision-allow { color: var(--success); border-color: color-mix(in srgb, var(--success) 50%, transparent); }
+.ops-tl-pill.decision-ask { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.ops-tl-pill.decision-deny { color: var(--error); border-color: color-mix(in srgb, var(--error) 50%, transparent); }
+
+.ops-tl-what {
+  display: block;
+  margin: 6px 0 4px;
+  font: 12px/1.5 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-0);
+}
+
+.ops-tl-status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 11.5px; color: var(--text-1); }
+.ops-tl-state.state-done { color: var(--success); }
+.ops-tl-state.state-running, .ops-tl-state.state-asked, .ops-tl-state.state-queued { color: var(--accent); }
+.ops-tl-row.bad .ops-tl-state { color: var(--error); }
+.ops-tl-dur { color: var(--text-2); }
+
+.ops-tl-expand {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-1);
+  text-decoration: underline;
+}
+.ops-tl-expand:hover { color: var(--text-0); }
+
+.ops-tl-reason { margin: 4px 0 0; font-size: 11.5px; color: var(--text-1); overflow-wrap: anywhere; }
+
+.ops-tl-output { margin-top: 6px; }
+.ops-tl-stream { display: block; font-size: 10.5px; color: var(--text-2); margin-top: 4px; }
+.ops-tl-output pre {
+  font: 11.5px/1.5 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow: auto;
+  background: var(--bg-0);
+  padding: 8px;
+  margin: 2px 0 0;
+  border-radius: var(--radius-sm);
+}

@@ -386,6 +386,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   opsLoadRunbook: (dir: string) => ipcRenderer.invoke('ops:load-runbook', dir),
   opsReport: (runId: string, kind: 'internal' | 'client', runbookPath?: string) =>
     ipcRenderer.invoke('ops:report', runId, kind, runbookPath),
+  opsSaveReport: (runId: string, kind: 'internal' | 'client', runbookPath: string) =>
+    ipcRenderer.invoke('ops:save-report', runId, kind, runbookPath),
   opsVerify: (date: string) => ipcRenderer.invoke('ops:verify', date),
   opsLedgerInfo: () => ipcRenderer.invoke('ops:ledger-info'),
   onOpsEvent: (cb: (data: unknown) => void) => {

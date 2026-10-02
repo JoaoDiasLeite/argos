@@ -125,6 +125,13 @@
   color: var(--text-0);
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }
+/* Ops chats: the text toggle for the ops timeline panel, sized like the icon buttons. */
+.header-icon-btn.chat-ops-toggle {
+  width: auto;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 600;
+}
 /* Active state while the embedded terminal (ChatTerminal) is open. */
 .header-icon-btn.term-active {
   color: var(--accent);

@@ -944,6 +944,34 @@ ipcMain.handle('ops:report', async (_, runId: string, kind: 'internal' | 'client
   return r.ok ? { ...r, warnings: [...extraWarnings, ...r.warnings] } : r
 })
 
+// Saves a rendered report as `<runbook>/reports/<YYYY-MM-DD>-<runId>[-cliente].md`. This is
+// the ONE place Argos writes under a runbook folder (docs/OPS_AGENT_PLAN.md §8), and it
+// only ever creates a new file: `wx` refuses an existing one rather than editing it.
+ipcMain.handle('ops:save-report', async (_, runId: string, kind: 'internal' | 'client', runbookPath: string) => {
+  if (typeof runId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(runId)) return { ok: false, error: 'Invalid run id.' }
+  if (kind !== 'internal' && kind !== 'client') return { ok: false, error: `Unknown report kind: ${String(kind)}` }
+  if (typeof runbookPath !== 'string' || runbookPath === '') return { ok: false, error: 'No runbook folder given.' }
+  const rb = await loadRunbook(runbookPath)
+  if (!rb.ok) return { ok: false, error: `The runbook could not be loaded, so nothing was saved: ${rb.error}` }
+  const ledger = getOpsLedger()
+  const r = await ledger.report(runId, kind, { hostGroups: rb.runbook.policy.hosts, hosts: opsHostRefs() })
+  if (!r.ok) return r
+  // Date the file by the run's start, so a report saved days later still sorts by the run.
+  const lines = await ledger.readRun(runId)
+  const startAt = lines.ok ? lines.lines.find((l) => l.event.kind === 'run.start')?.at : undefined
+  const date = (startAt && /^\d{4}-\d{2}-\d{2}/.test(startAt) ? startAt : new Date().toISOString()).slice(0, 10)
+  const dir = path.join(runbookPath, 'reports')
+  const file = path.join(dir, `${date}-${runId}${kind === 'client' ? '-cliente' : ''}.md`)
+  try {
+    await fs.promises.mkdir(dir, { recursive: true })
+    await fs.promises.writeFile(file, r.markdown, { encoding: 'utf-8', flag: 'wx' })
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === 'EEXIST') return { ok: false, error: `A report already exists at ${file}; it was not overwritten.` }
+    return { ok: false, error: `Could not save the report: ${e instanceof Error ? e.message : String(e)}` }
+  }
+  return { ok: true, path: file }
+})
+
 ipcMain.handle('ops:verify', (_, date: string) => getOpsLedger().verify(date))
 ipcMain.handle('ops:ledger-info', () => getOpsLedger().info())
 

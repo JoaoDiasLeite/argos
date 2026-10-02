@@ -19,6 +19,10 @@ const ChatTerminal = lazy(() => import('./ChatTerminal'))
 // — same lazy-loading rationale as ChatTerminal above.
 const WorkspaceReview = lazy(() => import('./WorkspaceReview'))
 
+// The ops timeline only exists for chats with a runbook (`session.runbookPath`), so a
+// normal chat never loads it.
+const OpsTimeline = lazy(() => import('./OpsTimeline'))
+
 // ── Text-file attachment limits & heuristics ─────────────────────────────────
 const MAX_FILE_ATTACHMENTS = 5
 const MAX_FILE_BYTES = 200 * 1024
@@ -226,6 +230,24 @@ export default function Chat(
   titleInHeader = false
 }: Props) {
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  // Ops chats only: whether the timeline panel shows. Open by default (keyed by chat, so
+  // every ops chat starts open) so the first call is visible without a click. It shares
+  // the side-panel slot with Review: opening one closes the other.
+  const [opsClosed, setOpsClosed] = useState<Record<string, boolean>>({})
+  const isOpsChat = !!session?.runbookPath
+  const opsOpen = isOpsChat && !!session && !opsClosed[session.id] && !reviewOpen
+  useEffect(() => {
+    if (reviewOpen && session?.runbookPath) setOpsClosed((m) => ({ ...m, [session.id]: true }))
+  }, [reviewOpen, session?.id, session?.runbookPath])
+  const toggleOps = () => {
+    if (!session) return
+    if (opsOpen) {
+      setOpsClosed((m) => ({ ...m, [session.id]: true }))
+      return
+    }
+    if (reviewOpen) onToggleReview()
+    setOpsClosed((m) => ({ ...m, [session.id]: false }))
+  }
   const [markdownCopied, setMarkdownCopied] = useState(false)
   const [markdownSaved, setMarkdownSaved] = useState(false)
   // Long-session banners the user has waved away, keyed by session id. In-memory only:
@@ -724,6 +746,16 @@ export default function Chat(
           renders its own close control to get you back to the chat. */}
       {!termOpen && !needsTerminalSetup && (
         <div className={`chat-float-actions ${exportMenuOpen ? 'open' : ''}`}>
+          {isOpsChat && (
+            <button
+              className={`header-icon-btn chat-ops-toggle${opsOpen ? ' term-active' : ''}`}
+              onClick={toggleOps}
+              title={opsOpen ? 'Hide the ops timeline' : 'Show the ops timeline'}
+              aria-pressed={opsOpen}
+            >
+              Ops
+            </button>
+          )}
           <div className="header-menu-wrap" style={{ position: 'relative' }}>
             <button
               className="header-icon-btn"
@@ -1160,6 +1192,16 @@ export default function Chat(
             streaming={streaming}
             onGit={onOpenGit}
             onCheckpoints={onOpenCheckpoints}
+          />
+        </Suspense>
+      )}
+      {session && opsOpen && (
+        <Suspense fallback={null}>
+          <OpsTimeline
+            key={session.id}
+            appSessionId={session.id}
+            runbookPath={session.runbookPath}
+            onClose={toggleOps}
           />
         </Suspense>
       )}

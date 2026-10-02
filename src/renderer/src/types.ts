@@ -1870,6 +1870,12 @@ declare global {
         kind: 'internal' | 'client',
         runbookPath?: string
       ) => Promise<{ ok: true; markdown: string; warnings: string[] } | { ok: false; error: string }>
+      /** Writes the report as a new file under `<runbookPath>/reports/`; never overwrites. */
+      opsSaveReport: (
+        runId: string,
+        kind: 'internal' | 'client',
+        runbookPath: string
+      ) => Promise<{ ok: true; path: string } | { ok: false; error: string }>
       opsVerify: (
         date: string
       ) => Promise<{ ok: true; lines: number } | { ok: false; brokenAt?: number; reason: string }>
