@@ -57,7 +57,7 @@ From `SYSTEM-DESIGN.md`, restated as acceptance checks the reviewer runs on each
 9. Delete the style a rule replaces. A batch that leaves the old selector in place beside a
    new one is sent back.
 10. Both themes checked with the visual-check skill (`-View <name> -SkipBuild -Wide`,
-    `VISUAL_CHECK_CONFIG_PATCH='{"theme":"light"}'` for the second), screenshots looked at
+    `VISUAL_CHECK_CONFIG_PATCH` set to the whole `ui` object of the seed with `"theme":"light"`, since the patch merges one level deep, for the second), screenshots looked at
     by the reviewer, not only by the implementer.
 
 ## 4. Batches
