@@ -7,8 +7,7 @@
 .ap-eyebrow { margin-top: 18px; }
 
 /* ── Controls ── */
-.ap-select { width: 220px; flex-shrink: 0; font-size: 13px; }
-.ap-select.mono { font-family: var(--font-mono); font-size: 12.5px; }
+.ap-select { width: 220px; flex-shrink: 0; }
 
 .ap-number {
   min-width: 38px;

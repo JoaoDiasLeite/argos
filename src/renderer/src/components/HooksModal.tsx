@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ClaudeHooks, ClaudeHookEntry, HOOK_EVENTS, HookEvent } from '../types'
 import Sheet from './Sheet'
 import './HooksModal.css'
+import Select from './Select'
 
 interface Props {
   onClose: () => void
@@ -140,9 +141,8 @@ export default function HooksModal({ onClose }: Props) {
 
           <div className="form-group">
             <label htmlFor="hook-event">Event</label>
-            <select
+            <Select
               id="hook-event"
-              className="text-input"
               value={form.event}
               onChange={(e) => setForm((f) => ({ ...f, event: e.target.value as HookEvent }))}
             >
@@ -151,7 +151,7 @@ export default function HooksModal({ onClose }: Props) {
                   {ev}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           <div className="form-group">

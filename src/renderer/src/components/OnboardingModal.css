@@ -20,8 +20,8 @@
   display: flex; align-items: center; gap: 8px;
   padding: 9px 12px; border-radius: var(--radius-surface); font-size: 13px;
 }
-.ob-detect.ok { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); }
-.ob-detect.warn { background: var(--accent-dim); color: var(--accent); }
+.ob-detect.ok { background: color-mix(in srgb, var(--success) 6%, transparent); color: var(--success); }
+.ob-detect.warn { background: color-mix(in srgb, var(--warn) 6%, transparent); color: var(--warn); }
 
 .ob-key { display: flex; gap: 8px; }
 .ob-key .text-input { flex: 1; }

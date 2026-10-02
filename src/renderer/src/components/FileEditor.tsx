@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 // `lib/common` carries the ~35 languages we can realistically map an extension to and is a
 // fraction of the full bundle. Anything unmapped falls back to plaintext (see detectLanguage).
 import hljs from 'highlight.js/lib/common'
+import Sheet from './Sheet'
 import './FileEditor.css'
 
 interface ReadResult {
@@ -525,244 +526,247 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
 
   const matchLabel = query ? (matches.length ? `${matchIndex + 1} of ${matches.length}` : 'No results') : ''
 
+  const footer = confirmDiscard ? (
+    <div className="file-editor-foot" role="alertdialog" aria-label="Unsaved changes" onKeyDown={onKeyDown}>
+      <span className="help file-editor-foot-note">Discard your unsaved changes to this file?</span>
+      <button className="btn-ghost" onClick={() => setConfirmDiscard(false)} autoFocus>
+        Keep editing
+      </button>
+      <button className="btn-primary danger" onClick={onClose}>
+        Discard
+      </button>
+    </div>
+  ) : (
+    <div className="file-editor-foot" onKeyDown={onKeyDown}>
+      <span className="help file-editor-foot-note">
+        {editable ? 'Ctrl+S saves · Esc closes' : 'Esc closes'}
+        {editable && !highlightEnabled && (
+          <span title="Syntax highlighting is off above 200k characters"> · no highlighting (large file)</span>
+        )}
+      </span>
+      {editable && (
+        <button
+          className="btn-ghost small"
+          onClick={() => setWrap((v) => !v)}
+          aria-pressed={wrap}
+          title={wrap ? 'Word wrap on (line numbers hidden)' : 'Word wrap off'}
+        >
+          Wrap
+        </button>
+      )}
+      <button className="btn-ghost" onClick={requestClose}>Close</button>
+      {editable && (
+        <button className="btn-primary" onClick={save} disabled={!dirty || saving} title="Save (Ctrl+S)">
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      )}
+    </div>
+  )
+
   return (
-    <div className="modal-backdrop" onClick={requestClose}>
-      <div
-        className="modal wide file-editor-modal"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={onKeyDown}
-      >
-        <div className="modal-header">
-          <h3 className="mono file-editor-title" title={filePath}>
-            {filePath}
-            {dirty && <span className="file-editor-dirty">•</span>}
-          </h3>
-          <button className="icon-btn" onClick={requestClose} aria-label="Close" title="Close (Esc)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-        <div className="modal-body file-editor-body">
-          {loading && <div className="view-empty small">Loading…</div>}
-          {!loading && error && <div className="ssh-test err">{error}</div>}
-          {!loading && !error && tooLarge && (
-            <div className="file-editor-notice">
-              <p>This file is too large to edit in-app.</p>
-              {onDownload && (
-                <button className="btn-ghost small" onClick={onDownload}>
-                  Download instead
-                </button>
-              )}
-            </div>
-          )}
-          {!loading && !error && binary && (
-            <div className="file-editor-notice">
-              <p>This looks like a binary file — it can&apos;t be shown as text.</p>
-              {onDownload && (
-                <button className="btn-ghost small" onClick={onDownload}>
-                  Download instead
-                </button>
-              )}
-            </div>
-          )}
-          {editable && (
-            <>
-              {/* In normal flow, above the code — a floating bar would cover the first line. */}
-              {findOpen && (
-                <div className="file-editor-find" role="search" aria-label="Find and replace">
-                  <div className="file-editor-find-row">
-                    <input
-                      ref={findInputRef}
-                      className="text-input file-editor-find-input"
-                      placeholder="Find"
-                      aria-label="Find"
-                      value={query}
-                      spellCheck={false}
-                      onChange={(e) => {
-                        setQuery(e.target.value)
-                        setMatchIndex(0)
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          step(e.shiftKey ? -1 : 1)
-                        }
-                      }}
-                    />
-                    <span className="file-editor-find-count">{matchLabel}</span>
-                    <button
-                      className={`file-editor-chip${caseSensitive ? ' on' : ''}`}
-                      onClick={() => setCaseSensitive((v) => !v)}
-                      aria-pressed={caseSensitive}
-                      aria-label="Match case"
-                      title="Match case"
-                    >
-                      Aa
-                    </button>
-                    <button
-                      className="file-editor-chip"
-                      onClick={() => step(-1)}
-                      disabled={matches.length === 0}
-                      aria-label="Previous match"
-                      title="Previous match (Shift+Enter)"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      className="file-editor-chip"
-                      onClick={() => step(1)}
-                      disabled={matches.length === 0}
-                      aria-label="Next match"
-                      title="Next match (Enter)"
-                    >
-                      ↓
-                    </button>
-                    <button
-                      className={`file-editor-chip${replaceShown ? ' on' : ''}`}
-                      onClick={() => setReplaceShown((v) => !v)}
-                      aria-pressed={replaceShown}
-                      aria-label="Toggle replace"
-                      title="Toggle replace (Ctrl+H)"
-                    >
-                      ⇄
-                    </button>
-                    <button
-                      className="file-editor-chip"
-                      onClick={closeFind}
-                      aria-label="Close find"
-                      title="Close find (Esc)"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  {replaceShown && (
-                    <div className="file-editor-find-row">
-                      <input
-                        className="text-input file-editor-find-input"
-                        placeholder="Replace with"
-                        aria-label="Replace with"
-                        value={replacement}
-                        spellCheck={false}
-                        onChange={(e) => setReplacement(e.target.value)}
-                      />
-                      <button
-                        className="btn-ghost small"
-                        onClick={replaceCurrent}
-                        disabled={matches.length === 0}
-                        aria-label="Replace current match"
-                        title="Replace current match"
-                      >
-                        Replace
-                      </button>
-                      <button
-                        className="btn-ghost small"
-                        onClick={replaceAll}
-                        disabled={matches.length === 0}
-                        aria-label="Replace all matches"
-                        title="Replace all matches"
-                      >
-                        All
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="file-editor-code">
-                {gutterShown && (
-                  <div className="file-editor-gutter" aria-hidden="true">
-                    {/* The gutter itself never scrolls: the visible slice is translated to
-                        `firstLine * lineHeight - scrollTop`, which is exactly where the
-                        matching row sits inside the textarea's scrolled content. */}
-                    <div
-                      className="file-editor-gutter-inner"
-                      style={{ transform: `translateY(${gutterLines.first * lineH - view.top}px)` }}
-                    >
-                      {gutterLines.numbers.map((n) => (
-                        <div
-                          key={n}
-                          className={n === caret.line ? 'gl current' : 'gl'}
-                          style={{ height: lineH }}
-                        >
-                          {n}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <div className="file-editor-layers">
-                  {highlightEnabled && (
-                    <pre
-                      ref={hlRef}
-                      className={`file-editor-hl ${wrap ? 'wrap' : 'nowrap'}`}
-                      aria-hidden="true"
-                    >
-                      <code dangerouslySetInnerHTML={{ __html: highlightHtml }} />
-                    </pre>
-                  )}
-                  <textarea
-                    ref={taRef}
-                    className={`mono file-editor-textarea ${wrap ? 'wrap' : 'nowrap'}${highlightEnabled ? ' hl-on' : ''}`}
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    onScroll={handleScroll}
-                    onSelect={syncCaret}
-                    onClick={syncCaret}
-                    onKeyUp={syncCaret}
-                    wrap={wrap ? 'soft' : 'off'}
-                    spellCheck={false}
-                    aria-label={`Contents of ${filePath}`}
-                    autoFocus
-                  />
-                </div>
-              </div>
-
-              <div className="file-editor-status">
-                <span>
-                  Ln {caret.line}, Col {caret.col}
-                </span>
-                {caret.selLen > 0 && <span>{caret.selLen} selected</span>}
-                <span className="file-editor-status-spacer" />
-                {!highlightEnabled && <span title="Syntax highlighting is off above 200k characters">no highlighting (large file)</span>}
-                <button
-                  className={`file-editor-chip${wrap ? ' on' : ''}`}
-                  onClick={() => setWrap((v) => !v)}
-                  aria-pressed={wrap}
-                  aria-label="Toggle word wrap"
-                  title={wrap ? 'Word wrap on (line numbers hidden)' : 'Word wrap off'}
-                >
-                  Wrap
-                </button>
-                <span>{language}</span>
-                <span>{formatBytes(size)}</span>
-                <span className={dirty ? 'file-editor-modified' : undefined}>
-                  {dirty ? 'Modified' : 'Saved'}
-                </span>
-              </div>
-            </>
-          )}
-        </div>
-        {confirmDiscard && (
-          <div className="file-editor-confirm" role="alertdialog" aria-label="Unsaved changes">
-            <span>Discard unsaved changes?</span>
-            <button className="btn-ghost small" onClick={() => setConfirmDiscard(false)} autoFocus>
-              Cancel
-            </button>
-            <button className="btn-ghost small danger" onClick={onClose}>
-              Discard
-            </button>
+    <Sheet
+      title={
+        <span className="mono file-editor-title" title={filePath}>
+          <span className="file-editor-path">{filePath}</span>
+          {dirty && <span className="file-editor-dirty" role="img" aria-label="Unsaved changes" />}
+        </span>
+      }
+      ariaLabel={`Edit ${filePath}`}
+      width={720}
+      onClose={requestClose}
+      footer={footer}
+    >
+      <div className="file-editor-body" onKeyDown={onKeyDown}>
+        {loading && <div className="view-empty small">Loading…</div>}
+        {!loading && error && <div className="ssh-test err">{error}</div>}
+        {!loading && !error && tooLarge && (
+          <div className="file-editor-notice">
+            <p>This file is too large to edit in-app.</p>
+            {onDownload && (
+              <button className="btn-ghost small" onClick={onDownload}>
+                Download instead
+              </button>
+            )}
           </div>
         )}
-        <div className="modal-footer">
-          <button className="btn-secondary" onClick={requestClose}>Close</button>
-          {editable && (
-            <button className="btn-primary" onClick={save} disabled={!dirty || saving} title="Save (Ctrl+S)">
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-          )}
-        </div>
+        {!loading && !error && binary && (
+          <div className="file-editor-notice">
+            <p>This looks like a binary file, it can&apos;t be shown as text.</p>
+            {onDownload && (
+              <button className="btn-ghost small" onClick={onDownload}>
+                Download instead
+              </button>
+            )}
+          </div>
+        )}
+        {editable && (
+          <>
+            {/* In normal flow, above the code, so a floating bar would not cover the first line. */}
+            {findOpen && (
+              <div className="file-editor-find" role="search" aria-label="Find and replace">
+                <div className="file-editor-find-row">
+                  <input
+                    ref={findInputRef}
+                    className="text-input file-editor-find-input"
+                    placeholder="Find"
+                    aria-label="Find"
+                    value={query}
+                    spellCheck={false}
+                    onChange={(e) => {
+                      setQuery(e.target.value)
+                      setMatchIndex(0)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        step(e.shiftKey ? -1 : 1)
+                      }
+                    }}
+                  />
+                  <span className="file-editor-find-count">{matchLabel}</span>
+                  <button
+                    className="btn-ghost small"
+                    onClick={() => setCaseSensitive((v) => !v)}
+                    aria-pressed={caseSensitive}
+                    aria-label="Match case"
+                    title="Match case"
+                  >
+                    Aa
+                  </button>
+                  <button
+                    className="icon-btn"
+                    onClick={() => step(-1)}
+                    disabled={matches.length === 0}
+                    aria-label="Previous match"
+                    title="Previous match (Shift+Enter)"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M6 15l6-6 6 6" />
+                    </svg>
+                  </button>
+                  <button
+                    className="icon-btn"
+                    onClick={() => step(1)}
+                    disabled={matches.length === 0}
+                    aria-label="Next match"
+                    title="Next match (Enter)"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </button>
+                  <button
+                    className="icon-btn"
+                    onClick={() => setReplaceShown((v) => !v)}
+                    aria-pressed={replaceShown}
+                    aria-label="Toggle replace"
+                    title="Toggle replace (Ctrl+H)"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M17 3l4 4-4 4M21 7H8M7 21l-4-4 4-4M3 17h13" />
+                    </svg>
+                  </button>
+                  <button className="icon-btn" onClick={closeFind} aria-label="Close find" title="Close find (Esc)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6L6 18" />
+                    </svg>
+                  </button>
+                </div>
+                {replaceShown && (
+                  <div className="file-editor-find-row">
+                    <input
+                      className="text-input file-editor-find-input"
+                      placeholder="Replace with"
+                      aria-label="Replace with"
+                      value={replacement}
+                      spellCheck={false}
+                      onChange={(e) => setReplacement(e.target.value)}
+                    />
+                    <button
+                      className="btn-ghost small"
+                      onClick={replaceCurrent}
+                      disabled={matches.length === 0}
+                      aria-label="Replace current match"
+                      title="Replace current match"
+                    >
+                      Replace
+                    </button>
+                    <button
+                      className="btn-ghost small"
+                      onClick={replaceAll}
+                      disabled={matches.length === 0}
+                      aria-label="Replace all matches"
+                      title="Replace all matches"
+                    >
+                      All
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="file-editor-code">
+              {gutterShown && (
+                <div className="file-editor-gutter" aria-hidden="true">
+                  {/* The gutter itself never scrolls: the visible slice is translated to
+                      `firstLine * lineHeight - scrollTop`, which is exactly where the
+                      matching row sits inside the textarea's scrolled content. */}
+                  <div
+                    className="file-editor-gutter-inner"
+                    style={{ transform: `translateY(${gutterLines.first * lineH - view.top}px)` }}
+                  >
+                    {gutterLines.numbers.map((n) => (
+                      <div
+                        key={n}
+                        className={n === caret.line ? 'gl current' : 'gl'}
+                        style={{ height: lineH }}
+                      >
+                        {n}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="file-editor-layers">
+                {highlightEnabled && (
+                  <pre
+                    ref={hlRef}
+                    className={`file-editor-hl ${wrap ? 'wrap' : 'nowrap'}`}
+                    aria-hidden="true"
+                  >
+                    <code dangerouslySetInnerHTML={{ __html: highlightHtml }} />
+                  </pre>
+                )}
+                <textarea
+                  ref={taRef}
+                  className={`mono file-editor-textarea ${wrap ? 'wrap' : 'nowrap'}${highlightEnabled ? ' hl-on' : ''}`}
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  onScroll={handleScroll}
+                  onSelect={syncCaret}
+                  onClick={syncCaret}
+                  onKeyUp={syncCaret}
+                  wrap={wrap ? 'soft' : 'off'}
+                  spellCheck={false}
+                  aria-label={`Contents of ${filePath}`}
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div className="file-editor-status">
+              <span>
+                Ln {caret.line}, Col {caret.col}
+              </span>
+              {caret.selLen > 0 && <span>{caret.selLen} selected</span>}
+              <span className="file-editor-status-spacer" />
+              <span>{language}</span>
+              <span>{formatBytes(size)}</span>
+              {dirty && <span className="file-editor-modified">Modified</span>}
+            </div>
+          </>
+        )}
       </div>
-    </div>
+    </Sheet>
   )
 }

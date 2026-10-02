@@ -28,7 +28,7 @@ interface MenuProps {
 /**
  * A small click-outside dropdown menu — a trigger button plus a popover list of
  * actions. Used for header overflow menus, split-button carets and pickers across
- * views. Native <select> popups don't render in this frameless/transparent window,
+ * views. Native select popups don't render in this frameless/transparent window,
  * so this is the app's standard menu primitive.
  */
 export default function Menu({ triggerClass, triggerContent, triggerTitle, ariaLabel, items, align = 'right' }: MenuProps) {

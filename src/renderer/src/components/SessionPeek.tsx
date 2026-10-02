@@ -3,6 +3,7 @@ import { CCProject, CCSessionMeta, LifecycleResult, SessionPeek as Peek } from '
 import { TagChips, TagEditor } from './SessionTags'
 import { shortModel } from '../lib/model-id'
 import './SessionPeek.css'
+import Select from './Select'
 
 interface Props {
   session: CCSessionMeta
@@ -325,8 +326,7 @@ export default function SessionPeek({
         </div>
       ) : prompt === 'move' ? (
         <div className="sp-foot sp-form">
-          <select
-            className="text-input"
+          <Select
             aria-label="Move to project"
             autoFocus
             value={draft}
@@ -346,7 +346,7 @@ export default function SessionPeek({
                 {p.kind === 'wsl' ? ` (${p.distro})` : ''}
               </option>
             ))}
-          </select>
+          </Select>
           <p className="help">
             {codex
               ? 'Codex files a conversation by the folder recorded in it, so moving rewrites that folder: resuming this one starts in the new project.'

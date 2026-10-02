@@ -20,6 +20,7 @@ import { DEFAULT_PALETTE, PALETTES } from '../lib/palettes'
 import { Rgb, accentRamp, parseHex, readableOn, surfaceRamp, textRamp } from '../lib/color'
 import { availableFonts } from '../lib/fonts'
 import './AppearanceSettings.css'
+import Select from './Select'
 
 /**
  * The clamps, mirrored.
@@ -275,7 +276,7 @@ function ColorRow({
 /**
  * The preset picker.
  *
- * Custom rather than a `<select>` for one reason: each row carries the palette's three
+ * Custom rather than a native select for one reason: each row carries the palette's three
  * colours, and a native option list cannot draw them. It is shaped like the select it
  * stands in for: a 4 px surface with the value and a chevron at the right.
  */
@@ -469,32 +470,32 @@ export default function AppearanceSettings({ ui, onSetUi }: Props) {
 
       <div className="eyebrow ap-eyebrow">Fonts</div>
       <Row label="UI font" hint="Menus, buttons, lists: the chrome.">
-        <select className="text-input ap-select" value={ui.fonts?.ui || 'system'} onChange={(e) => onSetUi({ fonts: { ui: e.target.value } })}>
+        <Select className="ap-select" value={ui.fonts?.ui || 'system'} onChange={(e) => onSetUi({ fonts: { ui: e.target.value } })}>
           {uiFonts.map((f) => (
             <option key={f.id} value={f.id}>
               {f.name}
             </option>
           ))}
-        </select>
+        </Select>
       </Row>
       <Row label="Content font" hint="Chat messages and rendered markdown: the reading face.">
-        <select className="text-input ap-select" value={ui.fonts?.content || 'inherit'} onChange={(e) => onSetUi({ fonts: { content: e.target.value } })}>
+        <Select className="ap-select" value={ui.fonts?.content || 'inherit'} onChange={(e) => onSetUi({ fonts: { content: e.target.value } })}>
           <option value="inherit">Same as UI font</option>
           {uiFonts.map((f) => (
             <option key={f.id} value={f.id}>
               {f.name}
             </option>
           ))}
-        </select>
+        </Select>
       </Row>
       <Row label="Code font" hint="Code blocks, diffs, the terminal.">
-        <select className="text-input ap-select mono" value={ui.fonts?.code || 'system-mono'} onChange={(e) => onSetUi({ fonts: { code: e.target.value } })}>
+        <Select className="ap-select mono" value={ui.fonts?.code || 'system-mono'} onChange={(e) => onSetUi({ fonts: { code: e.target.value } })}>
           {monoFonts.map((f) => (
             <option key={f.id} value={f.id}>
               {f.name}
             </option>
           ))}
-        </select>
+        </Select>
       </Row>
 
       <div className="eyebrow ap-eyebrow">Sizes</div>

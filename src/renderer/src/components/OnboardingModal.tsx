@@ -84,7 +84,7 @@ export default function OnboardingModal({ onFinish }: Props) {
             >
               <div className="auth-option-radio"><span className={auth?.mode === 'claude-code' ? 'on' : ''} /></div>
               <div className="auth-option-body">
-                <div className="auth-option-title">Use my Claude Code account {detected && <span className="status-pill ok">Detected</span>}</div>
+                <div className="auth-option-title">Use my Claude Code account {detected && <span className="chip ok">Detected</span>}</div>
                 <div className="auth-option-desc">
                   Terminals and background tasks reuse the CLI login — no API key needed.{' '}
                   {!detected && 'Run `claude` once and log in, then click Re-check.'}
@@ -99,7 +99,7 @@ export default function OnboardingModal({ onFinish }: Props) {
             >
               <div className="auth-option-radio"><span className={auth?.mode === 'api-key' ? 'on' : ''} /></div>
               <div className="auth-option-body">
-                <div className="auth-option-title">Use an API key {auth?.hasApiKey && <span className="status-pill ok">Saved</span>}</div>
+                <div className="auth-option-title">Use an API key {auth?.hasApiKey && <span className="chip ok">Saved</span>}</div>
                 <div className="auth-option-desc">Stored encrypted in your OS keychain. Terminals and background tasks (standup, planner assist) use it.</div>
               </div>
             </button>
@@ -107,21 +107,21 @@ export default function OnboardingModal({ onFinish }: Props) {
             {auth?.mode === 'api-key' && (
               <div className="ob-key">
                 <input
-                  className="text-input"
+                  className="text-input mono"
                   type="password"
                   placeholder="sk-ant-…"
                   value={key}
                   onChange={(e) => setKey(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && saveKey()}
                 />
-                <button className="btn-primary small" onClick={saveKey} disabled={!key.trim() || busy}>Save</button>
+                <button className="btn-ghost" onClick={saveKey} disabled={!key.trim() || busy}>Save</button>
               </div>
             )}
 
             <div className="ob-actions">
-              <button className="btn-text" onClick={refresh}>Re-check</button>
+              <button className="btn-ghost" onClick={refresh}>Re-check</button>
               <div className="ob-spacer" />
-              <button className="btn-secondary" onClick={onFinish}>Skip</button>
+              <button className="btn-ghost" onClick={onFinish}>Skip</button>
               <button className="btn-primary" onClick={onFinish} disabled={!ready}>
                 {ready ? 'Start using Argos' : 'Connect to continue'}
               </button>

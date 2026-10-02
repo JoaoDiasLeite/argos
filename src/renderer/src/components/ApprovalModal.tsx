@@ -44,10 +44,14 @@ export default function ApprovalModal({ request, onDecide, onStop }: Props) {
   // to avoid a double call. Focus trap + focus-restore still apply.
   useModalA11y(dialogRef, () => onDecide(false), { escapeToClose: false })
 
-  // Keyboard: Enter = allow, Esc = deny.
+  // Keyboard: Ctrl/Cmd+Enter = allow, Esc = deny. Enter is ignored for the first 400 ms
+  // after the request appears, so a keystroke meant for the terminal cannot approve it.
+  const shownAt = useRef(Date.now())
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onDecide(true)
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        if (Date.now() - shownAt.current >= 400) onDecide(true)
+      }
       else if (e.key === 'Escape') onDecide(false)
     }
     window.addEventListener('keydown', onKey)
@@ -120,17 +124,14 @@ export default function ApprovalModal({ request, onDecide, onStop }: Props) {
         {!ops && filePath && <div className="approval-path">{filePath}</div>}
         <div className="approval-body">{renderBody()}</div>
         <div className="modal-footer approval-footer">
-          <button className="btn-secondary" onClick={() => onDecide(false)}>
-            Deny <span className="kbd">Esc</span>
-          </button>
+          <span className="help approval-keys">Ctrl+Enter allows · Esc denies</span>
           {ops && onStop && (
-            <button className="btn-secondary approval-stop" onClick={onStop}>
+            <button className="btn-text danger" onClick={onStop}>
               Deny and stop the run
             </button>
           )}
-          <button className="btn-primary" onClick={() => onDecide(true)}>
-            Allow once <span className="kbd">Ctrl/⌘↵</span>
-          </button>
+          <button className="btn-ghost" onClick={() => onDecide(false)}>Deny</button>
+          <button className="btn-primary" onClick={() => onDecide(true)}>Allow once</button>
         </div>
       </div>
     </div>

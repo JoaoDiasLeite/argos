@@ -61,9 +61,9 @@ function TreeNode({ node, depth, onOpenFile, selectedPath }: TreeNodeProps) {
         </span>
         <span className={`file-name ${getFileClass(ext, isDir)}`}>{node.name}</span>
         {isDir && (
-          <span className="chevron" style={{ transform: open ? 'rotate(90deg)' : '' }}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <polyline points="9 18 15 12 9 6" />
+          <span className="chevron" style={{ transform: open ? '' : 'rotate(-90deg)' }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M6 9l6 6 6-6" />
             </svg>
           </span>
         )}

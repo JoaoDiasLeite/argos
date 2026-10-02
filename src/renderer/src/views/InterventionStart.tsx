@@ -115,7 +115,7 @@ type DropItem =
 
 /**
  * A field-shaped trigger over a listbox, so options can carry a status dot or a chip that
- * a native <select> cannot draw. Arrow keys move, Enter picks, Escape or a click outside
+ * a native select cannot draw. Arrow keys move, Enter picks, Escape or a click outside
  * closes.
  */
 function IvsDropdown({

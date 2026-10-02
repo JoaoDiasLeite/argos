@@ -105,6 +105,8 @@
   font-weight: 500;
 }
 .btn-secondary:hover:not(:disabled), .btn-ghost:hover:not(:disabled) { background: var(--bg-2); color: var(--text-0); }
+/* A toggle: pressed is the quiet button on --bg-2 with full text. */
+.btn-ghost[aria-pressed='true'] { background: var(--bg-2); color: var(--text-0); }
 .btn-primary:disabled, .btn-secondary:disabled, .btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-primary.small, .btn-secondary.small, .btn-ghost.small { min-height: 28px; padding: 0 10px; font-size: 12px; }
 /* Destructive confirm: never a red fill (§6) — the quiet shape with --error text and
@@ -143,6 +145,14 @@
 .text-input.mono { font-family: var(--font-mono); font-size: 12.5px; }
 textarea.text-input, .text-input.textarea { height: auto; padding: 9px 12px; resize: vertical; line-height: 1.5; }
 select.text-input { cursor: pointer; }
+
+/* ── Select: `components/Select.tsx` wraps a native select and paints the chevron (§5, §6).
+   A size class goes on the wrapper; `--select-h` sets the height, `.mono` the font. */
+.select { --select-h: 36px; display: inline-flex; position: relative; width: 100%; min-width: 0; }
+.select select.text-input { appearance: none; height: var(--select-h); padding-right: 32px; text-overflow: ellipsis; }
+.select.mono select.text-input { font-family: var(--font-mono); font-size: 12.5px; }
+.select-chevron { position: absolute; right: 10px; top: 0; bottom: 0; margin: auto 0; color: var(--text-2); pointer-events: none; }
+.select:has(select:disabled) .select-chevron { opacity: 0.5; }
 
 /* ── Form groups ── */
 .form-group {
@@ -248,7 +258,7 @@ select.text-input { cursor: pointer; }
 .toggle-track {
   width: 34px;
   height: 20px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--bg-3);
   border: 1px solid var(--border-light);
   display: inline-flex;
@@ -287,7 +297,7 @@ select.text-input { cursor: pointer; }
   text-transform: uppercase;
   letter-spacing: 0.02em;
   padding: 2px 7px;
-  border-radius: 10px;
+  border-radius: 3px;
   background: var(--bg-3);
   color: var(--text-1);
 }
@@ -342,7 +352,7 @@ select.text-input { cursor: pointer; }
   align-items: center;
   gap: 6px;
   padding: 5px 12px;
-  border-radius: 6px;
+  border-radius: calc(var(--radius) - 2px);
   font-size: 12px;
   color: var(--text-2);
   background: transparent;
@@ -399,3 +409,20 @@ select.text-input { cursor: pointer; }
 
 /* ── Help: the one-sentence helper line under a control (§8). ── */
 .help { font-size: 11.5px; color: var(--text-2); line-height: 1.5; }
+
+/* ── Sliding column ──
+   Wraps a detail column that exists only while something is selected (Projects, Servers).
+   The wrapper animates its width; the column inside keeps its own 460 px so its content
+   does not reflow while it slides. Pair with useLingering so the content stays for the
+   closing frames. */
+.slide-col {
+  flex: 0 0 0px;
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  transition: flex-basis 160ms ease, width 160ms ease;
+}
+.slide-col.open { flex-basis: 460px; width: 460px; }
+.slide-col > * { flex: 0 0 460px; width: 460px; }
+@media (prefers-reduced-motion: reduce) { .slide-col { transition: none; } }

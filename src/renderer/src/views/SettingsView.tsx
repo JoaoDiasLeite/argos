@@ -29,6 +29,7 @@ import NotifyHookModal from '../components/NotifyHookModal'
 import AppearanceSettings from '../components/AppearanceSettings'
 import './views.css'
 import './SettingsView.css'
+import Select from '../components/Select'
 
 type SectionId = 'appearance' | 'general' | 'connection' | 'system' | 'ops' | 'about'
 
@@ -532,8 +533,8 @@ export default function SettingsView({
                         </span>
                       )}
                     </div>
-                    <select
-                      className="text-input settings-select"
+                    <Select
+                      className="settings-select"
                       value={system.overlayShortcut}
                       disabled={systemBusy}
                       onChange={(e) => updateSystem({ overlayShortcut: e.target.value })}
@@ -544,7 +545,7 @@ export default function SettingsView({
                       <option value="Ctrl+Shift+Space">Ctrl+Shift+Space</option>
                       <option value="Ctrl+Alt+Space">Ctrl+Alt+Space</option>
                       <option value="Ctrl+Alt+K">Ctrl+Alt+K</option>
-                    </select>
+                    </Select>
                   </div>
                 </>
               ) : (

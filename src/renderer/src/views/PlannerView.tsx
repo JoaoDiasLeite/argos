@@ -975,7 +975,7 @@ function AssistDrawer(props: {
   const isDraftLike = props.mode === 'draft' || props.mode === 'import'
   return (
     <Sheet title={titles[props.mode]} width={560} onClose={props.onClose}>
-        {/* Per-run account + model — custom pickers (native <select> popups don't render in
+        {/* Per-run account + model — custom pickers (native select popups don't render in
             this frameless/transparent window). Kept outside the scrollable body so the
             dropdown menus aren't clipped. */}
         <div className="assist-runwith">
@@ -1218,7 +1218,7 @@ function AssistDrawer(props: {
   )
 }
 
-// ─── Task editor sheet (segmented and pill selectors: native <select> popups don't render here) ──
+// ─── Task editor sheet (segmented and pill selectors: native select popups don't render here) ──
 function TaskModal(props: {
   task: PlannerTask
   priorities: WeeklyPriority[]

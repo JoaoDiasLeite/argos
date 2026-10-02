@@ -1,35 +1,29 @@
-.file-editor-modal {
-  width: min(900px, 92vw);
-  height: min(680px, 86vh);
-  display: flex;
-  flex-direction: column;
-}
-
+/* The editor is a sheet (components/Sheet.tsx); its title is the path, in mono. */
 .file-editor-title {
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: normal;
 }
+.file-editor-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
+/* Unsaved: a 6 px --warn dot after the path. */
 .file-editor-dirty {
-  color: var(--accent);
-  font-size: 16px;
-  line-height: 1;
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
 }
 
 .file-editor-body {
-  flex: 1;
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 0;
-  /* .modal-body ships a 20px gap and its own scrolling — neither belongs here: the find bar,
-     the code surface and the status bar must sit flush, and only the textarea scrolls. */
-  gap: 0;
   overflow: hidden;
 }
 
@@ -180,60 +174,33 @@
   gap: 6px;
 }
 
-.file-editor-find-input {
+.file-editor-find .text-input.file-editor-find-input {
   flex: 1;
   min-width: 0;
-  padding: 4px 8px;
-  font-size: 12px;
+  height: 30px;
+  font-size: 12.5px;
 }
 
 .file-editor-find-count {
   flex: 0 0 auto;
   min-width: 68px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-2);
   text-align: right;
 }
 
-/* ── Small square toggles shared by the find bar and the status bar ───────────── */
-.file-editor-chip {
-  flex: 0 0 auto;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 6px;
-  font-size: 11px;
-  line-height: 1;
-  color: var(--text-1);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
+/* The pressed state of the find bar's icon toggles (replace) matches `.btn-ghost[aria-pressed]`. */
+.file-editor-find .icon-btn[aria-pressed='true'] { background: var(--bg-2); color: var(--text-0); }
+.file-editor-find .icon-btn:disabled { opacity: 0.4; cursor: default; }
 
-.file-editor-chip:hover:not(:disabled) {
-  color: var(--text-0);
-  background: var(--bg-hover);
-}
-
-.file-editor-chip.on {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-}
-
-.file-editor-chip:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-/* ── Status bar ── a readout, deliberately quiet ──────────────────────────────── */
+/* ── Status bar: a readout, deliberately quiet ────────────────────────────────── */
 .file-editor-status {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 5px 10px;
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--text-2);
   background: var(--bg-1);
   border-top: 1px solid var(--border);
@@ -244,46 +211,18 @@
 }
 
 .file-editor-modified {
-  color: var(--accent);
+  color: var(--warn);
 }
 
-/* ── Unsaved-changes guard ───────────────────────────────────────────────────── */
-.file-editor-confirm {
-  flex: 0 0 auto;
+/* ── Footer: helper line left, buttons right ──────────────────────────────────── */
+.file-editor-foot {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  font-size: 12.5px;
-  color: var(--text-0);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  border-top: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  animation: file-editor-confirm-in 0.14s ease-out;
-}
-
-.file-editor-confirm span {
+  gap: 8px;
   flex: 1;
+  min-width: 0;
 }
-
-.file-editor-confirm .danger {
-  color: var(--error);
-  border-color: color-mix(in srgb, var(--error) 45%, transparent);
-}
-
-.file-editor-confirm .danger:hover {
-  color: var(--bg-0);
-  background: var(--error);
-}
-
-@keyframes file-editor-confirm-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .file-editor-confirm { animation: none; }
-  .file-editor-chip { transition: none; }
-}
+.file-editor-foot-note { margin-right: auto; }
 
 .file-editor-notice {
   flex: 1;

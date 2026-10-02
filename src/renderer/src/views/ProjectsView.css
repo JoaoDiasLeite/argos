@@ -126,7 +126,7 @@
   flex-direction: column;
   gap: 2px;
 }
-.pv-field { height: 32px; margin-bottom: 6px; flex-shrink: 0; }
+.pv-field { --select-h: 32px; height: 32px; margin-bottom: 6px; flex-shrink: 0; }
 .pv-scope { margin-bottom: 6px; flex-shrink: 0; }
 .pv-section { display: flex; flex-direction: column; gap: 2px; }
 .pv-eyebrow { padding: 10px 8px 4px; }
@@ -263,7 +263,7 @@
   font-variant-numeric: tabular-nums;
 }
 .pv-spacer { flex: 1; }
-.pv-sort { width: 150px; height: 32px; flex-shrink: 0; }
+.pv-sort { --select-h: 32px; width: 150px; height: 32px; flex-shrink: 0; }
 
 .pv-tagbar {
   display: flex;

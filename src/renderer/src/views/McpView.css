@@ -1,150 +1,27 @@
-/* ── McpView.css — base layout + premium polish layer ────────────────────
-   The base rules below used to live in views.css (duplicated here as an
-   "override" layer); they've been consolidated into this file since these
-   classes are only ever used by McpView, so this file is now the single
-   owner. The polish rules further down still layer on top of them. The
-   badge rules are scoped under .mcp-card-head so they only affect MCP's
-   own badges (a bare `.badge` selector here would leak onto every badge
-   in the app — see shared.css for the generic badge primitive). ──────── */
+/* McpView — a list of flat --bg-2 blocks (SYSTEM-DESIGN.md §2); labels are `.chip`. */
 
-.mcp-list { display: flex; flex-direction: column; gap: 10px; }
-.mcp-card { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-.mcp-card-head { display: flex; align-items: center; gap: 9px; padding: 12px 14px; cursor: pointer; }
-.mcp-card-head:hover { background: var(--bg-hover); }
+.mcp-list { display: flex; flex-direction: column; gap: 8px; }
+.mcp-card { background: var(--bg-2); border-radius: var(--radius-surface); overflow: hidden; }
+.mcp-card-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; }
+.mcp-card-head:hover { background: var(--bg-3); }
 .mcp-status { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .mcp-status.ok { background: var(--success); }
-.mcp-status.warn { background: var(--accent); }
-.mcp-card-name { font-size: 14px; font-weight: 600; }
+.mcp-status.warn { background: var(--warn); }
+.mcp-card-name { font-size: 13.5px; font-weight: 650; }
 .mcp-card-spacer { flex: 1; }
-.mcp-card-summary { padding: 0 14px 12px 31px; font-size: 12px; color: var(--text-1); }
-.mcp-card-summary code { font-size: 11.5px; }
-.mcp-card-project { font-size: 11px; color: var(--text-2); margin-top: 4px; font-family: var(--font-mono); }
-.mcp-card-config { margin: 0 14px 14px; max-height: 280px; }
-
-/* Status dots glow softly (kept alongside the base .mcp-status above). */
-.mcp-status.ok { box-shadow: 0 0 7px color-mix(in srgb, var(--success) 70%, transparent); }
-.mcp-status.warn { box-shadow: 0 0 7px color-mix(in srgb, var(--accent) 70%, transparent); }
-
-/* ═══════════════════════════════════════════════════════════════════════
-   Premium polish layer — layered AFTER the base rules above so
-   equal-specificity rules win here.
-   ═══════════════════════════════════════════════════════════════════════ */
-
-/* Card head: tighter breathing room, clear hover affordance */
-.mcp-card-head {
-  padding: 13px 16px;
-  gap: 10px;
-  transition: background 0.14s;
-}
-.mcp-card-head:hover {
-  background: color-mix(in srgb, var(--bg-hover) 80%, var(--accent) 4%);
-}
-
-/* Status dot: slightly larger, stays glowing (views.css sets the glow) */
-.mcp-status {
-  width: 9px;
-  height: 9px;
-  flex-shrink: 0;
-}
-
-/* Card name: subtle accent tint on hover parent */
-.mcp-card-head:hover .mcp-card-name {
-  color: var(--text-0);
-}
-
-/* Badge refinements — crisp tinted pills with a thin tinted border.
-   Scoped under .mcp-card-head so these only affect MCP's own badges. */
-.mcp-card-head .badge {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 2px 8px;
-  border-radius: 20px;
-  border: 1px solid transparent;
-}
-
-.mcp-card-head .badge.stdio {
-  background: var(--bg-2);
-  color: var(--text-1);
-  border-color: var(--border);
-}
-
-.mcp-card-head .badge.http,
-.mcp-card-head .badge.sse {
-  background: color-mix(in srgb, var(--thinking) 14%, transparent);
-  color: var(--thinking);
-  border-color: color-mix(in srgb, var(--thinking) 28%, transparent);
-}
-
-.mcp-card-head .badge.scope {
-  background: color-mix(in srgb, var(--bg-3) 80%, transparent);
-  color: var(--text-2);
-  border-color: var(--border-light);
-}
-
-.mcp-card-head .badge.warn {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
-}
-
-/* Source pill: 'local' vs a WSL distro */
-.mcp-card-head .badge.src {
-  background: color-mix(in srgb, var(--success) 13%, transparent);
-  color: var(--success);
-  border-color: color-mix(in srgb, var(--success) 28%, transparent);
-}
-.mcp-card-head .badge.src.wsl {
-  background: var(--bg-2);
-  color: var(--text-1);
-  border-color: var(--border);
-}
-
-/* Chevron: dedicated wrapper so the icon sits flush right */
-.mcp-chevron {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  flex-shrink: 0;
-  transition: background 0.14s;
-}
-.mcp-card-head:hover .mcp-chevron {
-  background: color-mix(in srgb, var(--bg-3) 70%, transparent);
-}
-
-/* Summary row: indented to align with the name text */
-.mcp-card-summary {
-  padding: 0 16px 13px 35px;
-  border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
-  padding-top: 9px;
-  font-size: 12px;
-  color: var(--text-1);
-  background: color-mix(in srgb, var(--bg-0) 30%, transparent);
-}
-
-/* Config code block: inset panel feel */
+.mcp-card-summary { padding: 0 14px 12px 32px; font-size: 12px; color: var(--text-1); }
+.mcp-card-summary code { font-size: 12px; font-family: var(--font-mono); }
+.mcp-card-project { font-size: 11.5px; color: var(--text-2); margin-top: 4px; font-family: var(--font-mono); }
 .mcp-card-config {
   margin: 0 14px 14px;
   padding: 12px 14px;
   max-height: 280px;
   overflow-y: auto;
-  background: color-mix(in srgb, var(--bg-0) 70%, transparent);
-  border: 1px solid var(--border-light);
-  border-radius: 10px;
-  font-size: 11.5px;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  font-size: 12px;
   font-family: var(--font-mono);
   color: var(--text-1);
   line-height: 1.6;
-}
-
-/* Card-level: subtle left accent border on hover to tie it together */
-.mcp-card {
-  transition: border-color 0.14s, box-shadow 0.14s;
-  border-left: 3px solid transparent;
-}
-.mcp-card:hover {
-  border-left-color: color-mix(in srgb, var(--accent) 55%, transparent);
 }

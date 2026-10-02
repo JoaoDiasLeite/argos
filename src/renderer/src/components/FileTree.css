@@ -11,7 +11,7 @@
   gap: 5px;
   padding: 3px 8px 3px 8px;
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: var(--radius-surface);
   margin: 0 4px;
   transition: background 0.1s;
   user-select: none;
@@ -45,6 +45,8 @@
 }
 
 .color-dir { color: var(--text-0); }
+/* Per-extension file colours: they identify a file type, they do not signal state, so the
+   literals stay (SYSTEM-DESIGN.md §3 reserves token colours for state). */
 .color-ts { color: #4fc3f7; }
 .color-js { color: #fff176; }
 .color-py { color: #a5d6a7; }

@@ -7,8 +7,8 @@
   z-index: 60;
   min-width: 168px;
   background: var(--bg-1);
-  border: 1px solid var(--border-light);
-  border-radius: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
   padding: 5px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
   display: flex;

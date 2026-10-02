@@ -1,45 +1,3 @@
-/* ── Compact bar: CLI segment, environment and folder pills, branch chip ── */
-.config-bar {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-/* A pill that acts: an 8 px quiet button, 26 px tall. The branch beside it is a .chip,
-   because it only labels. */
-.config-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 9px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-1);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  cursor: pointer;
-  white-space: nowrap;
-  max-width: 180px;
-  overflow: hidden;
-  transition: background 0.12s, color 0.12s;
-}
-.config-pill > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.config-pill svg { color: var(--text-2); flex-shrink: 0; }
-.config-pill:hover:not(:disabled) { background: var(--bg-2); color: var(--text-0); }
-.config-pill:disabled { opacity: 0.5; cursor: default; }
-
-.config-branch { gap: 5px; max-width: 160px; }
-.config-branch > span { overflow: hidden; text-overflow: ellipsis; }
-.config-branch svg { flex-shrink: 0; color: var(--text-2); }
-
 .config-caret { color: var(--text-2); flex-shrink: 0; }
 
 /* ── Setup pane: a select-shaped trigger (§6), 38 px ── */
@@ -98,13 +56,6 @@
   border-radius: var(--radius-surface);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
-/* In the compact bar the menu opens upward. */
-.config-menu.up {
-  top: auto;
-  bottom: calc(100% + 4px);
-  min-width: 180px;
-}
-
 .config-menu-item {
   display: flex;
   align-items: center;
@@ -124,12 +75,3 @@
 .config-menu-label { padding: 8px 10px 4px; }
 .config-menu-label:first-child { padding-top: 4px; }
 
-/* Remote working-directory editor in the compact bar */
-.config-path {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 260px;
-  padding: 10px;
-}
-.config-path-save { align-self: flex-end; }

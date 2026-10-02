@@ -1,7 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Session, WslDistro, SshHostPublic } from '../types'
-import { sessionProvider } from '../lib/account-scope'
-import { CLI_PROVIDERS } from '../lib/cli-providers'
 import './ChatConfigBar.css'
 
 interface Props {
@@ -10,7 +8,6 @@ interface Props {
   onPatch: (patch: Partial<Session>) => void
 }
 
-const basename = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p
 
 const svgProps = {
   fill: 'none',
@@ -25,17 +22,6 @@ const svgProps = {
 const Chevron = ({ size = 12, right = false }: { size?: number; right?: boolean }) => (
   <svg className="config-caret" width={size} height={size} viewBox="0 0 24 24" {...svgProps}>
     <path d={right ? 'M9 6l6 6-6 6' : 'M6 9l6 6 6-6'} />
-  </svg>
-)
-const FolderIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" {...svgProps}>
-    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-  </svg>
-)
-const BranchIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" {...svgProps}>
-    <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="9" r="3" />
-    <path d="M18 12a9 9 0 0 1-9 9M6 9v6" />
   </svg>
 )
 
@@ -169,9 +155,9 @@ function useChatConfig(session: Session, onPatch: Props['onPatch']) {
 type Config = ReturnType<typeof useChatConfig>
 
 /** The Local / WSL / Remote (SSH) list: a flat 4 px popover with an eyebrow per group. */
-function EnvMenu({ cfg, session, up }: { cfg: Config; session: Session; up?: boolean }) {
+function EnvMenu({ cfg, session }: { cfg: Config; session: Session }) {
   return (
-    <div className={`config-menu ${up ? 'up' : ''}`} role="menu">
+    <div className="config-menu" role="menu">
       <div className="eyebrow config-menu-label">Local</div>
       <button className={`config-menu-item ${cfg.isLocal ? 'selected' : ''}`} onClick={cfg.chooseLocal} role="menuitem">
         Local
@@ -287,102 +273,3 @@ export function ChatConfigFields({ session, onPatch }: Props) {
   )
 }
 
-/**
- * The compact form: the segmented CLI, the environment pill, the folder pill and the branch.
- * For a terminal bar, where the pills act and the branch only labels.
- */
-export default function ChatConfigBar({ session, onPatch }: Props) {
-  const cfg = useChatConfig(session, onPatch)
-  const provider = sessionProvider(session)
-
-  return (
-    <div className="config-bar">
-      {/* Which CLI starts. The model inside it is the CLI's own business (/model). */}
-      <div className="seg-control" role="group" aria-label="CLI">
-        {CLI_PROVIDERS.map((p) => (
-          <button
-            key={p.id}
-            className={provider === p.id ? 'on' : ''}
-            aria-pressed={provider === p.id}
-            onClick={() => {
-              if (provider === p.id) return
-              onPatch({ provider: p.id })
-            }}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Environment */}
-      <div className="config-env" ref={cfg.envRef}>
-        <button
-          className="config-pill"
-          onClick={() => cfg.setEnvOpen((v) => !v)}
-          title="Where this terminal runs"
-          aria-haspopup="menu"
-          aria-expanded={cfg.envOpen}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" {...svgProps}>
-            <rect x="2" y="3" width="20" height="14" rx="2" />
-            <line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
-          </svg>
-          <span>{cfg.envLabel}</span>
-          <Chevron size={10} />
-        </button>
-        {cfg.envOpen && <EnvMenu cfg={cfg} session={session} up />}
-      </div>
-
-      {/* Folder: local and WSL browse the filesystem with the native picker */}
-      {!cfg.isRemote && (
-        <button className="config-pill" onClick={() => void cfg.pickFolder()} title={session.projectPath || 'Choose a project folder'}>
-          <FolderIcon />
-          <span>{session.projectPath ? basename(session.projectPath) : 'Add folder'}</span>
-        </button>
-      )}
-
-      {/* Folder: remote (typed in; there's no browsable local filesystem over SSH) */}
-      {cfg.isRemote && (
-        <div className="config-env" ref={cfg.pathRef}>
-          <button
-            className="config-pill"
-            onClick={() => (cfg.pathOpen ? cfg.setPathOpen(false) : cfg.openPathEditor())}
-            title={session.projectPath || 'Set the working directory on the remote host'}
-            aria-haspopup="dialog"
-            aria-expanded={cfg.pathOpen}
-          >
-            <FolderIcon />
-            <span>{session.projectPath ? basename(session.projectPath) : 'Add folder'}</span>
-          </button>
-          {cfg.pathOpen && (
-            <div className="config-menu up config-path" role="dialog" aria-label="Remote working directory">
-              <input
-                className="text-input mono"
-                type="text"
-                value={cfg.pathDraft}
-                autoFocus
-                spellCheck={false}
-                placeholder="/home/user/project"
-                onChange={(e) => cfg.setPathDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') cfg.commitPath()
-                }}
-              />
-              <button className="btn-ghost small config-path-save" onClick={cfg.commitPath}>
-                Set folder
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Git branch: a label, not a control */}
-      {cfg.isLocal && cfg.git && (
-        <span className="chip config-branch" title={`On branch ${cfg.git.branch}`}>
-          <BranchIcon />
-          <span>{cfg.git.branch}</span>
-        </span>
-      )}
-    </div>
-  )
-}

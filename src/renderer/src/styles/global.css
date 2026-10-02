@@ -41,8 +41,8 @@
   --radius: 8px;
   /* Surfaces: panels, inputs, rows, code blocks, tiles (ops design rule). */
   --radius-surface: 4px;
+  /* Equals --radius-surface; new code uses --radius-surface. */
   --radius-sm: 4px;
-  --radius-lg: 12px;
   --sidebar-width: 260px;
   --terminal-height: 220px;
 }
