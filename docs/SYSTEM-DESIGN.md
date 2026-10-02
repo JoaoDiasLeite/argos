@@ -109,8 +109,19 @@ today · 2 runs"). Spacing scale: 4, 6, 8, 10, 12, 14, 16, 18, 22, 28, 36, 48, 6
 
 ## 9. Bringing the rest of the app here
 
-Order of work, one surface per commit, each checked in both themes with the visual-check
-skill: the Servers group (Remote & WSL list, remote session), Settings, Projects, Planner
-Sprint, Home, the sidebar and setup pane, Usage. For each: radii per §1, tints per §2,
-chevrons per §5, controls per §6, words per §8. Delete a style when the rule replaces it;
-do not add overrides beside it.
+Done on 2026-10-02, in the batches of `docs/PORT_PLAN.md` (`f1edc18` to `732fec0`): shared
+controls and a `Sheet` first, then Servers, Settings, Projects, Sprint, Home, the sidebar and
+setup pane, Usage, and a sweep over everything else. Each batch was checked in both themes
+with the visual-check skill. What the wireframes show and the renderer cannot yet feed is
+listed under "Open" in `docs/NEXT_FIXES.md`.
+
+Two rules were added along the way and belong here:
+
+- **A detail column that exists only while something is selected** (Projects, Servers)
+  closes on a click outside it or Esc, slides its width open and shut over 160 ms while
+  keeping its last content (`useLingering`, `.slide-col`), and respects
+  `prefers-reduced-motion`. A column that is always live (Home, Sprint, Usage) does not
+  slide, and when a section of it is empty it says so in one `.help` line rather than
+  disappearing.
+- **A footer sits under the content**, never pinned to the bottom of a column with nothing
+  above it.

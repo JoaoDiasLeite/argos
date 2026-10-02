@@ -1,5 +1,11 @@
 # Porting the rest of Argos to the system design
 
+> **Done 2026-10-02.** All nine batches are on `main` (`f1edc18` … `732fec0`). After seeing
+> the result the owner asked for three more things, also landed: the Servers column appears
+> only on selection and both dismissing columns slide (`e3454d7`), the Home column carries
+> the plan window and its empty states (`9ba3ad8`), Settings is a centred reading column
+> (`732fec0`). What still needs the main process is in `NEXT_FIXES.md`.
+
 _Planned with Fable on 2026-10-02 from `SYSTEM-DESIGN.md` §9 and the inventories of every
 screen; implemented by Opus and Sonnet subagents in the batches of §4, one commit each,
 each compiling on its own. The wireframes the owner chose are in

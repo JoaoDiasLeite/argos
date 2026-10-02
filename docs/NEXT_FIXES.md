@@ -13,13 +13,6 @@ Add new follow-ups above the line as they come up.
 - **Claude Code check returns only the version.** The target column (Servers, batch 1)
   wants "2.1.4 · logged in as <account>"; the check only runs `claude --version`. Add the
   logged-in account to the check result. (`// TODO(port)` in `RemoteView.tsx`.)
-- **views.css "premium" card block** (line ~269 on) still has shadows and a `translateY` hover
-  lift on usage, account, MCP and search cards. Batch 8 deletes it once Usage (7) and MCP are
-  done.
-- **Native `<select>` draws the browser chevron.** `select.text-input` (Fonts in Appearance,
-  sort in Projects, the launcher shortcut) shows the OS arrow instead of the design's SVG
-  chevron. Wrap it in a `.select` span that paints the SVG at the right and hides the native
-  arrow (`appearance: none`). Batch 8.
 - **Home has no ops runs, no finished-today list and no previews.** Wireframe 5B shows an
   ops intervention as a running row (accent dot), "Earlier today · N finished" folded, and a
   preview line under each resumable session. The renderer gets none of these today
@@ -29,6 +22,11 @@ Add new follow-ups above the line as they come up.
 ---
 
 ## Done
+
+- **views.css "premium" card block** (shadows, hover lift on usage, account, MCP and search
+  cards) deleted across the Projects, Usage and sweep batches. (`594adc1`)
+- **Native `<select>` showed the browser arrow.** `components/Select.tsx` wraps every select
+  and paints the design's SVG chevron. (`594adc1`)
 
 - **Terminal bar used undefined tokens** (`--bg-elev`, `--bg`, `--text`, `--text-dim`), text
   `−`/`+` buttons and an accent-filled Reconnect overlay. Fixed in the sidebar batch of the
