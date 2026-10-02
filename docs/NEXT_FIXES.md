@@ -8,7 +8,19 @@ Add new follow-ups above the line as they come up.
 
 ## Open
 
-_(none)_
+### From the port to the system design (docs/PORT_PLAN.md)
+
+- **Claude Code check returns only the version.** The target column (Servers, batch 1)
+  wants "2.1.4 · logged in as <account>"; the check only runs `claude --version`. Add the
+  logged-in account to the check result. (`// TODO(port)` in `RemoteView.tsx`.)
+- **Terminal bar uses undefined tokens** (`--bg-elev`, `--bg`, `--text`, `--text-dim` in
+  `ChatTerminal.css`), an accent hover border, text `−` / `+` for the font-size buttons and an
+  accent-filled Reconnect overlay. Batch 6 (setup pane / ChatConfigBar) or 8.
+- **views.css "premium" card block** (line ~269 on) still has shadows and a `translateY` hover
+  lift on usage, account, MCP and search cards. Batch 8 deletes it once Usage (7) and MCP are
+  done.
+- **`Menu` trigger has a `title` but no `aria-label`** on icon-only triggers (SSH keys "More").
+  Give `Menu` an `ariaLabel` prop. Batch 6 or 8.
 
 ---
 
