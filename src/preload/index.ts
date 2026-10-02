@@ -395,6 +395,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('ops:event', fn)
     return () => ipcRenderer.removeListener('ops:event', fn)
   },
+  opsSessionEvents: (appSessionId: string) => ipcRenderer.invoke('ops:session-events', appSessionId),
+  // The masked sudo-password prompt of an ops run (plan §4). null = declined.
+  onOpsSecretRequest: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('ops:secret-request', fn)
+    return () => ipcRenderer.removeListener('ops:secret-request', fn)
+  },
+  respondOpsSecret: (payload: { requestId: string; value: string | null }) =>
+    ipcRenderer.invoke('ops:secret-response', payload),
   sftpDisconnect: (hostId: string) => ipcRenderer.invoke('sftp:disconnect', hostId),
 
   // WSL

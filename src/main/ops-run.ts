@@ -16,9 +16,14 @@ import {
   localToolVerdict,
   makeCallBook,
   mcpInputToOpsInput,
+  OPS_PLAN_TOOL,
   OPS_PREAMBLE,
   opsHostsFor,
   opsToolFromSdkName,
+  PLAN_FIRST_REASON,
+  PLAN_REJECTED_MESSAGE,
+  planApprovalContext,
+  planStepsFrom,
   toApprovalContext,
   type ApprovalOpsContext,
   type CallBook
@@ -28,7 +33,7 @@ import type { LoadedRunbook, LoadRunbookResult } from './ops-runbook-pure'
 import type { OpsExecutor } from './ops-exec-pure'
 import type { OpsLedger } from './ops-audit'
 import type { OpsAuditEvent, OpsAuditLine } from './ops-types'
-import type { CanUseTool } from './providers/types'
+import type { CanUseTool, CanUseToolResult } from './providers/types'
 
 export type { ApprovalOpsContext } from './ops-run-pure'
 
@@ -46,6 +51,9 @@ export type OpsAskFn = (req: {
   ops: ApprovalOpsContext
 }) => Promise<{ allow: boolean; stop?: boolean }>
 
+/** Ask the operator for a secret (the sudo password of a host). null = declined or stopped. */
+export type OpsAskSecretFn = (req: { hostId: string; hostName: string; prompt: string }) => Promise<string | null>
+
 export interface OpsRunContext {
   runId: string
   appSessionId: string
@@ -55,11 +63,20 @@ export interface OpsRunContext {
   hosts: ReturnType<typeof opsHostsFor>
   abort: AbortController
   /**
-   * Per-host sudo passwords for this run, in memory only. Unused until the UI batch adds
-   * the masked prompt (plan §4, "Session-level sudo"); today a sudo that wants a
-   * password returns its stderr to the model with an instruction to stop.
+   * Per-host sudo passwords for this run, in memory only (plan §4, "Session-level
+   * sudo"): asked once per host through `askSecret`, used on stdin with `sudo -S`, and
+   * cleared by finishOpsRun. Never logged.
    */
   sudoPasswords: Map<string, string>
+  /** The masked prompt for a sudo password. Absent → a sudo that wants one tells the model to stop. */
+  askSecret?: OpsAskSecretFn
+  /**
+   * Set once the operator approves a `propose_plan` (plan §1.7). Until then every other
+   * ops call is refused; a rejected later plan clears it again.
+   */
+  planApproved: boolean
+  /** The last approved plan's steps, one per line. */
+  planText?: string
   /** canUseTool parks each decided call's id here; the tool handler takes it. */
   calls: CallBook
   readScript: ReadScriptFn
@@ -81,6 +98,8 @@ export interface PrepareOpsRunOptions {
   readScript: ReadScriptFn
   /** The approval pipeline for `ask` decisions. Absent → every ask is a deny. */
   ask?: OpsAskFn
+  /** The masked prompt for a host's sudo password. Absent → never asked. */
+  askSecret?: OpsAskSecretFn
   /** `user@host:port` for the modal header. Default: the host's address. */
   hostAddress?: (hostId: string) => string
   /** Every ledger line written for this run, for the live `ops:event` timeline. */
@@ -168,6 +187,8 @@ export async function prepareOpsRun(opts: PrepareOpsRunOptions): Promise<Prepare
       hosts: opsHostsFor(runbook),
       abort: opts.abort,
       sudoPasswords: new Map(),
+      ...(opts.askSecret ? { askSecret: opts.askSecret } : {}),
+      planApproved: false,
       calls: makeCallBook(runId),
       readScript: opts.readScript,
       log,
@@ -197,6 +218,8 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: PrepareOpsRunOptions): CanU
 
   return async (toolName, input) => {
     try {
+      if (toolName === OPS_PLAN_TOOL) return await decidePlan(ctx, opts, toolName, input)
+
       const tool = opsToolFromSdkName(toolName)
       if (!tool) {
         const v = localToolVerdict(toolName, input, ctx.runbook.ref.path)
@@ -225,6 +248,27 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: PrepareOpsRunOptions): CanU
 
       const entry = ctx.hosts.byId.get(parsed.hostId)
       const gate = classify(parsed, ctx.runbook.policy, entry?.host ?? null, entry?.groups ?? [])
+
+      if (!ctx.planApproved) {
+        // Plan first (§1.7): nothing reaches a host before the operator has seen the
+        // whole plan. Logged like any deny, with what the gate would have run.
+        await ctx.log({
+          kind: 'call.decided',
+          runId,
+          callId: ctx.calls.fresh(),
+          tool,
+          hostId: parsed.hostId,
+          host: entry?.host.name ?? parsed.hostId,
+          rawInput: input,
+          ...(gate.argv ? { argv: gate.argv } : {}),
+          ...(gate.path ? { path: gate.path } : {}),
+          class: gate.class,
+          decision: 'deny',
+          reason: PLAN_FIRST_REASON
+        })
+        return deny(`Refused: ${PLAN_FIRST_REASON}.`)
+      }
+
       const key = callKey(parsed)
       const callId = ctx.calls.open(key)
 
@@ -289,6 +333,44 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: PrepareOpsRunOptions): CanU
   }
 }
 
+/**
+ * `mcp__ops__propose_plan` (plan §1.7): the whole plan goes to the operator through the
+ * same approval pipeline as an `ask`. Approved → `plan.approved` and the other ops tools
+ * open; rejected → `plan.rejected`, and they stay (or become) closed until a plan is
+ * approved. A second proposal goes through the same path.
+ */
+async function decidePlan(
+  ctx: OpsRunContext,
+  opts: PrepareOpsRunOptions,
+  toolName: string,
+  input: Record<string, unknown>
+): Promise<CanUseToolResult> {
+  const deny = (msg: string) => ({ behavior: 'deny' as const, message: msg })
+  const steps = planStepsFrom(input)
+  if (!Array.isArray(steps)) return deny(`Refused: ${steps.error}.`)
+
+  let answer: { allow: boolean; stop?: boolean } = { allow: false }
+  if (opts.ask && !ctx.abort.signal.aborted) {
+    answer = await opts.ask({ tool: toolName, input, ops: planApprovalContext(steps, ctx.runbook.ref.name) })
+  }
+  if (answer.allow && !ctx.abort.signal.aborted) {
+    const logged = await ctx.log({ kind: 'plan.approved', runId: ctx.runId, by: 'user' })
+    if (!logged.ok) return deny('Refused: the ops ledger is unavailable, so the plan cannot be approved.')
+    ctx.planApproved = true
+    ctx.planText = steps.join('\n')
+    return { behavior: 'allow' as const, updatedInput: input }
+  }
+  // A rejected revision does not leave the earlier plan standing: the operator has just
+  // said no to where the run was going.
+  ctx.planApproved = false
+  await ctx.log({ kind: 'plan.rejected', runId: ctx.runId, by: 'user' })
+  if (answer.stop) {
+    ctx.abort.abort()
+    return deny('Denied by the operator, who stopped the run.')
+  }
+  return deny(PLAN_REJECTED_MESSAGE)
+}
+
 /** Log `run.end` once. Safe to call from both the result and the error path. */
 export async function finishOpsRun(
   ctx: OpsRunContext,
@@ -300,6 +382,8 @@ export async function finishOpsRun(
     error?: string
   }
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  // The run's sudo passwords live no longer than the run.
+  ctx.sudoPasswords.clear()
   if (ctx.ended) return { ok: true }
   ctx.ended = true
   return ctx.log({

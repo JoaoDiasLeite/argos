@@ -1,5 +1,5 @@
 /**
- * The in-process `ops` MCP server (docs/OPS_AGENT_PLAN.md §1.2): mcp__ops__run, script,
+ * The in-process `ops` MCP server (docs/OPS_AGENT_PLAN.md §1.2): mcp__ops__propose_plan, run, script,
  * read, list and write, the model's only reach to a server. The gate's decision was
  * already taken and logged in canUseTool (ops-run.ts); each handler here runs the same
  * deterministic classify again and refuses a deny, so a call that somehow skipped
@@ -23,16 +23,20 @@ import {
   listResultText,
   mcpInputToOpsInput,
   callKey,
+  PLAN_APPROVED_TEXT,
+  PLAN_FIRST_REASON,
   readResultText,
   refusedFinishedEvent,
+  SUDO_DECLINED_NOTE,
   SUDO_PASSWORD_NOTE,
   sudoNeedsPassword,
   toolResultText,
+  withSudoStdin,
   writeResultText
 } from './ops-run-pure'
 import { failedExec, type ExecResult } from './ops-exec-pure'
 import type { OpsRunContext } from './ops-run'
-import type { OpsGateResult, OpsToolInput, OpsToolName } from './ops-types'
+import type { OpsAuditEvent, OpsGateResult, OpsToolInput, OpsToolName } from './ops-types'
 
 /** The MCP tool result shape, kept local so this file needs no @modelcontextprotocol import. */
 export interface OpsToolResult {
@@ -41,7 +45,10 @@ export interface OpsToolResult {
   [key: string]: unknown
 }
 
-export type OpsToolHandlers = Record<OpsToolName, (args: Record<string, unknown>) => Promise<OpsToolResult>>
+type OpsHandler = (args: Record<string, unknown>) => Promise<OpsToolResult>
+
+/** The five gated tools, plus propose_plan, which canUseTool alone decides. */
+export type OpsToolHandlers = Record<OpsToolName, OpsHandler> & { propose_plan: OpsHandler }
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 const text = (t: string, isError = false): OpsToolResult => ({ content: [{ type: 'text', text: t }], isError })
@@ -102,18 +109,115 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
         await ctx.log(refusedFinishedEvent(runId, callId, `refused at execution: ${gate.reason}`))
         return text(`Refused: ${gate.reason}.`, true)
       }
+      if (!ctx.planApproved) {
+        // Decided under a plan the operator has since rejected.
+        await ctx.log(refusedFinishedEvent(runId, callId, `refused at execution: ${PLAN_FIRST_REASON}`))
+        return text(`Refused: ${PLAN_FIRST_REASON}.`, true)
+      }
       if (ctx.abort.signal.aborted) {
         await ctx.log(refusedFinishedEvent(runId, callId, 'the run was stopped'))
         return text('Refused: the run was stopped.', true)
       }
 
-      return await ctx.executor.run(input.hostId, () => execute(input, gate, callId))
+      return await ctx.executor.run(input.hostId, () => execute(input, gate, callId, args, entry.host.name))
     } catch (e) {
       return text(`The ops tool failed: ${message(e)}`, true)
     }
   }
 
-  async function execute(input: OpsToolInput, gate: OpsGateResult, callId: string): Promise<OpsToolResult> {
+  /**
+   * A `run` under sudo (plan §4). With the host's password already given in this run,
+   * the first attempt reads it on stdin. Without it, a plain attempt runs first; when
+   * sudo answers that it needs a password, the operator is asked once for the host, the
+   * answer is kept for the run, and the command runs once more with it, logged as its
+   * own call `<callId>-retry` under a copy of the decision.
+   */
+  async function runSudo(
+    input: Extract<OpsToolInput, { tool: 'run' }>,
+    gate: OpsGateResult,
+    argv: string[],
+    callId: string,
+    rawInput: Record<string, unknown>,
+    hostName: string,
+    opts: { timeoutMs: number; maxOutputBytes: number; signal: AbortSignal }
+  ): Promise<OpsToolResult> {
+    const backend = ctx.executor.backend
+    const known = ctx.sudoPasswords.get(input.hostId)
+    if (known !== undefined) {
+      const r = await backend.exec(input.hostId, withSudoStdin(argv), { ...opts, stdin: `${known}\n` })
+      await ctx.log(finishedEventFrom(r, runId, callId))
+      // Refused again: the kept password is wrong (or was changed), so the next sudo asks anew.
+      if (sudoNeedsPassword(argv, r)) ctx.sudoPasswords.delete(input.hostId)
+      return text(toolResultText(r), execIsError(r))
+    }
+
+    const first = await backend.exec(input.hostId, argv, opts)
+    await ctx.log(finishedEventFrom(first, runId, callId))
+    if (!sudoNeedsPassword(argv, first)) return text(toolResultText(first), execIsError(first))
+    if (!ctx.askSecret) return text(`${toolResultText(first)}\n${SUDO_PASSWORD_NOTE}`, true)
+
+    const password = ctx.abort.signal.aborted
+      ? null
+      : await ctx.askSecret({
+          hostId: input.hostId,
+          hostName,
+          prompt: `sudo on ${hostName} needs a password for: ${argv.join(' ')}. It is kept in memory for this run only and never written to the ledger.`
+        })
+    if (password === null || ctx.abort.signal.aborted) {
+      return text(`${toolResultText(first)}\n${SUDO_DECLINED_NOTE}`, true)
+    }
+    ctx.sudoPasswords.set(input.hostId, password)
+    await ctx.log({ kind: 'sudo.password-supplied', runId, hostId: input.hostId })
+
+    const retryId = `${callId}-retry`
+    const decided = await ctx.log({
+      ...decidedEvent(input, gate, callId, rawInput, hostName),
+      callId: retryId,
+      reason: 'retry with sudo password'
+    })
+    const started = decided.ok ? await ctx.log({ kind: 'call.started', runId, callId: retryId }) : decided
+    if (!started.ok) return text(`${toolResultText(first)}\nThe ops ledger is unavailable, so the retry with the password did not run.`, true)
+    const retry = await backend.exec(input.hostId, withSudoStdin(argv), { ...opts, stdin: `${password}\n` })
+    await ctx.log(finishedEventFrom(retry, runId, retryId))
+    if (sudoNeedsPassword(argv, retry)) ctx.sudoPasswords.delete(input.hostId)
+    return text(toolResultText(retry), execIsError(retry))
+  }
+
+  /** The `call.decided` canUseTool logged for this call, rebuilt from the same gate result. */
+  function decidedEvent(
+    input: OpsToolInput,
+    gate: OpsGateResult,
+    callId: string,
+    rawInput: Record<string, unknown>,
+    hostName: string
+  ): Extract<OpsAuditEvent, { kind: 'call.decided' }> {
+    return {
+      kind: 'call.decided',
+      runId,
+      callId,
+      tool: input.tool,
+      hostId: input.hostId,
+      host: hostName,
+      rawInput,
+      ...(gate.argv ? { argv: gate.argv } : {}),
+      ...(gate.path ? { path: gate.path } : {}),
+      class: gate.class,
+      decision: gate.decision,
+      reason: gate.reason,
+      ...(gate.rule !== undefined ? { rule: gate.rule } : {}),
+      ...(gate.title !== undefined ? { title: gate.title } : {}),
+      ...(gate.scriptSha256 !== undefined ? { scriptSha256: gate.scriptSha256 } : {}),
+      ...(gate.denylist !== undefined ? { denylist: gate.denylist } : {})
+    }
+  }
+
+  async function execute(
+    input: OpsToolInput,
+    gate: OpsGateResult,
+    callId: string,
+    rawInput: Record<string, unknown>,
+    hostName: string
+  ): Promise<OpsToolResult> {
     try {
       // A call whose start cannot be recorded does not start.
       const started = await ctx.log({ kind: 'call.started', runId, callId })
@@ -134,6 +238,9 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
             await ctx.log(refusedFinishedEvent(runId, callId, 'the gate produced no argv'))
             return text('Refused: the gate produced no command to run.', true)
           }
+          if (input.tool === 'run' && gate.argv[0] === 'sudo') {
+            return await runSudo(input, gate, gate.argv, callId, rawInput, hostName, opts)
+          }
           let result: ExecResult
           if (input.tool === 'run') {
             result = await backend.exec(input.hostId, gate.argv, opts)
@@ -153,8 +260,8 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
             result = await backend.runScript(input.hostId, input.name, script.content, input.args, opts)
           }
           await ctx.log(finishedEventFrom(result, runId, callId))
-          // sudo password prompting lands with the UI batch (plan §4); until then the model
-          // gets the stderr and a plain instruction to stop.
+          // A script that runs sudo inside gets no password: the model gets the stderr and
+          // a plain instruction to stop.
           const note = sudoNeedsPassword(gate.argv, result) ? `\n${SUDO_PASSWORD_NOTE}` : ''
           return text(toolResultText(result) + note, execIsError(result))
         }
@@ -223,7 +330,10 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
     script: (a) => handle('script', a),
     read: (a) => handle('read', a),
     list: (a) => handle('list', a),
-    write: (a) => handle('write', a)
+    write: (a) => handle('write', a),
+    // canUseTool asked the operator and logged plan.approved before this can run.
+    propose_plan: async () =>
+      ctx.planApproved ? text(PLAN_APPROVED_TEXT) : text(`Refused: ${PLAN_FIRST_REASON}.`, true)
   }
 }
 
@@ -278,6 +388,12 @@ export async function createOpsMcpServer(ctx: OpsRunContext, handlers = createOp
     instructions: `Remote operations for runbook ${ctx.runbook.ref.name}. ${RULES}\n${hosts}`,
     alwaysLoad: true,
     tools: [
+      tool(
+        'propose_plan',
+        'Call this once, before any other ops tool: list the steps you intend to run, one per entry, naming the host and the command or script. Nothing runs until the operator approves the plan.',
+        { steps: z.array(z.string().min(1)).min(1).max(40) },
+        async (args) => as(await handlers.propose_plan(args))
+      ),
       tool(
         'run',
         `Run one command on a runbook host over SSH and return its exit code, stdout and stderr. ${RULES}\n${hosts}`,

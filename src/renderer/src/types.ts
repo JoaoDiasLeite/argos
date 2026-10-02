@@ -1011,7 +1011,9 @@ export interface ApprovalOpsContext {
   hostName: string
   /** `user@host:port` for the header; never a secret. */
   hostAddress: string
-  tool: 'run' | 'script' | 'read' | 'list' | 'write'
+  tool: 'run' | 'script' | 'read' | 'list' | 'write' | 'plan'
+  /** For tool 'plan': the numbered steps the model proposes for this run. */
+  planSteps?: string[]
   class: 'read' | 'mutate'
   reason: string
   rule?: string
@@ -1881,6 +1883,16 @@ declare global {
       ) => Promise<{ ok: true; lines: number } | { ok: false; brokenAt?: number; reason: string }>
       opsLedgerInfo: () => Promise<{ dir: string; files: number; bytes: number }>
       onOpsEvent: (cb: (data: OpsLiveEvent) => void) => () => void
+      /** Every ledger line of this chat's ops runs, in order, shaped like the live `ops:event`. */
+      opsSessionEvents: (
+        appSessionId: string
+      ) => Promise<{ ok: true; events: OpsLiveEvent[] } | { ok: false; error: string }>
+      /** An ops run needs a host's sudo password (masked prompt; never stored beyond the run). */
+      onOpsSecretRequest: (
+        cb: (data: { appSessionId: string; requestId: string; hostId: string; hostName: string; prompt: string }) => void
+      ) => () => void
+      /** Answer a secret request; `value: null` declines. */
+      respondOpsSecret: (payload: { requestId: string; value: string | null }) => Promise<{ ok: true }>
       sftpDisconnect: (hostId: string) => Promise<{ ok: boolean }>
 
       // WSL

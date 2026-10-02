@@ -975,6 +975,15 @@ ipcMain.handle('ops:save-report', async (_, runId: string, kind: 'internal' | 'c
 ipcMain.handle('ops:verify', (_, date: string) => getOpsLedger().verify(date))
 ipcMain.handle('ops:ledger-info', () => getOpsLedger().info())
 
+// A reopened ops chat's timeline: every ledger line of its runs, shaped like the live
+// `ops:event` so the renderer folds both the same way.
+ipcMain.handle('ops:session-events', async (_, appSessionId: string) => {
+  if (typeof appSessionId !== 'string' || appSessionId === '') return { ok: false, error: 'No session id given.' }
+  const r = await getOpsLedger().readSession(appSessionId)
+  if (!r.ok) return r
+  return { ok: true, events: r.lines.map((line) => ({ appSessionId, runId: line.event.runId, line })) }
+})
+
 // ─── Agent run ─────────────────────────────────────────────────────────────
 
 interface SendPayload {
@@ -1132,6 +1141,40 @@ ipcMain.handle(
   }
 )
 
+// Pending secret prompts of ops runs (the sudo password of a host, plan §4), keyed by a
+// request id. Main window only: a password never goes to the toast. The value lives in
+// the run's memory and is never logged.
+const pendingSecrets = new Map<string, (value: string | null) => void>()
+let secretSeq = 0
+
+function requestOpsSecret(
+  appSessionId: string,
+  req: { hostId: string; hostName: string; prompt: string },
+  signal: AbortSignal
+): Promise<string | null> {
+  if (signal.aborted) return Promise.resolve(null)
+  secretSeq += 1
+  const requestId = `secret_${secretSeq}_${Date.now().toString(36)}`
+  return new Promise((resolve) => {
+    const finish = (value: string | null) => {
+      signal.removeEventListener('abort', onAbort)
+      pendingSecrets.delete(requestId)
+      resolve(value)
+    }
+    const onAbort = () => finish(null)
+    pendingSecrets.set(requestId, finish)
+    signal.addEventListener('abort', onAbort, { once: true })
+    send('ops:secret-request', { appSessionId, requestId, hostId: req.hostId, hostName: req.hostName, prompt: req.prompt })
+    flagAttention('approval')
+  })
+}
+
+ipcMain.handle('ops:secret-response', (_, payload: { requestId: string; value: string | null }) => {
+  const resolver = payload && typeof payload.requestId === 'string' ? pendingSecrets.get(payload.requestId) : undefined
+  if (resolver) resolver(typeof payload.value === 'string' ? payload.value : null)
+  return { ok: true }
+})
+
 /**
  * Forward a headless backend's event to the renderer, noting who wrote what on the way
  * past.
@@ -1288,6 +1331,7 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
         const d = await requestToolApproval(appSessionId, tool, input, abort.signal, context)
         return { allow: d.allow, ...(d.stop ? { stop: true } : {}) }
       },
+      askSecret: (req) => requestOpsSecret(appSessionId, req, abort.signal),
       onEvent: (line) => send('ops:event', { appSessionId, runId: line.event.runId, line })
     })
     if (!prepared.ok) {

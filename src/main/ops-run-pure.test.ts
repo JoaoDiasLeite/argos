@@ -24,7 +24,10 @@ import {
   sudoNeedsPassword,
   toApprovalContext,
   toolResultText,
-  writeResultText
+  withSudoStdin,
+  writeResultText,
+  planApprovalContext,
+  planStepsFrom
 } from './ops-run-pure'
 
 const exec = (over: Partial<ExecResult> = {}): ExecResult => ({
@@ -338,5 +341,62 @@ describe('sudoNeedsPassword', () => {
     expect(sudoNeedsPassword(['sudo', 'nginx', '-t'], exec({ exitCode: 1, stderr: 'syntax error' }))).toBe(false)
     expect(sudoNeedsPassword(['sudo', 'nginx', '-t'], exec())).toBe(false)
     expect(sudoNeedsPassword(undefined, r)).toBe(false)
+  })
+})
+
+describe('withSudoStdin', () => {
+  it('reads the password from stdin with an empty prompt', () => {
+    expect(withSudoStdin(['sudo', 'systemctl', 'reload', 'nginx'])).toEqual(['sudo', '-S', '-p', '', 'systemctl', 'reload', 'nginx'])
+  })
+
+  it('removes -n, which forbids the prompt, and keeps -u, -g and -H', () => {
+    expect(withSudoStdin(['sudo', '-n', 'systemctl', 'reload', 'nginx'])).toEqual(['sudo', '-S', '-p', '', 'systemctl', 'reload', 'nginx'])
+    expect(withSudoStdin(['sudo', '-n', '-u', 'postgres', 'psql', '-c', 'select 1'])).toEqual([
+      'sudo', '-S', '-p', '', '-u', 'postgres', 'psql', '-c', 'select 1'
+    ])
+    expect(withSudoStdin(['sudo', '-nu', 'postgres', 'psql'])).toEqual(['sudo', '-S', '-p', '', '-u', 'postgres', 'psql'])
+    expect(withSudoStdin(['sudo', '-nHupostgres', 'psql'])).toEqual(['sudo', '-S', '-p', '', '-H', '-u', 'postgres', 'psql'])
+    expect(withSudoStdin(['sudo', '-g', 'adm', '-H', 'ls'])).toEqual(['sudo', '-S', '-p', '', '-g', 'adm', '-H', 'ls'])
+    expect(withSudoStdin(['sudo', '--non-interactive', '--user=app', '--set-home', 'id'])).toEqual([
+      'sudo', '-S', '-p', '', '--user=app', '--set-home', 'id'
+    ])
+    expect(withSudoStdin(['sudo', '--user', 'app', 'id'])).toEqual(['sudo', '-S', '-p', '', '--user', 'app', 'id'])
+  })
+
+  it('replaces the model\'s own -S and -p, and leaves the command\'s flags alone', () => {
+    expect(withSudoStdin(['sudo', '-S', '-p', 'pw:', 'nginx', '-t'])).toEqual(['sudo', '-S', '-p', '', 'nginx', '-t'])
+    expect(withSudoStdin(['sudo', '--prompt=x', '--stdin', 'nginx', '-n'])).toEqual(['sudo', '-S', '-p', '', 'nginx', '-n'])
+    expect(withSudoStdin(['sudo', '-n', '--', '-weird'])).toEqual(['sudo', '-S', '-p', '', '-weird'])
+  })
+
+  it('leaves a non-sudo argv unchanged', () => {
+    expect(withSudoStdin(['systemctl', 'status', 'nginx'])).toEqual(['systemctl', 'status', 'nginx'])
+  })
+})
+
+describe('plan', () => {
+  it('planStepsFrom checks the steps like the schema does', () => {
+    expect(planStepsFrom({ steps: ['a', 'b'] })).toEqual(['a', 'b'])
+    expect(planStepsFrom({ steps: [] })).toEqual({ error: 'steps must list at least one step' })
+    expect(planStepsFrom({ steps: [''] })).toEqual({ error: 'every step must be a non-empty string' })
+    expect(planStepsFrom({ steps: 'a' })).toEqual({ error: 'steps must be an array of strings' })
+    expect(planStepsFrom({ steps: Array.from({ length: 41 }, () => 'x') })).toMatchObject({ error: expect.stringContaining('40') })
+  })
+
+  it('planApprovalContext names the runbook in place of a host', () => {
+    expect(planApprovalContext(['a'], 'rb')).toEqual({
+      hostName: 'rb',
+      hostAddress: '',
+      tool: 'plan',
+      planSteps: ['a'],
+      class: 'mutate',
+      reason: 'plan approval',
+      queuedBehind: 0,
+      runbook: 'rb'
+    })
+  })
+
+  it('the preamble tells the model to plan first', () => {
+    expect(OPS_PREAMBLE).toContain('mcp__ops__propose_plan')
   })
 })

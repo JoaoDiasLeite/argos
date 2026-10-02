@@ -178,6 +178,41 @@ describe('ops ledger on disk', () => {
     expect(await ledger.report('missing', 'internal')).toMatchObject({ ok: false })
   })
 
+  it('readSession returns every run of one chat, across days, in file order', async () => {
+    const ledger = createLedger(dir)
+    const START2: OpsAuditEvent = { ...START, runId: 'run-3' } as OpsAuditEvent
+    const OTHER_START: OpsAuditEvent = { ...START, runId: 'run-2', appSessionId: 's2' } as OpsAuditEvent
+    await ledger.append(START, new Date('2026-03-05T23:59:58.000Z'))
+    await ledger.append(OTHER_START, new Date('2026-03-05T23:59:59.000Z'))
+    await ledger.append(OTHER, new Date('2026-03-05T23:59:59.500Z'))
+    await ledger.append(DECIDED, new Date('2026-03-06T00:00:01.000Z'))
+    await ledger.append(END, new Date('2026-03-06T00:00:02.000Z'))
+    await ledger.append(START2, new Date('2026-03-07T09:00:00.000Z'))
+    await ledger.append({ kind: 'plan.approved', runId: 'run-3', by: 'user' }, new Date('2026-03-07T09:00:01.000Z'))
+
+    const r = await ledger.readSession('s1')
+    expect(r.ok && r.lines.map((l) => `${l.event.runId}:${l.event.kind}`)).toEqual([
+      'run-1:run.start',
+      'run-1:call.decided',
+      'run-1:run.end',
+      'run-3:run.start',
+      'run-3:plan.approved'
+    ])
+    const other = await ledger.readSession('s2')
+    expect(other.ok && other.lines.map((l) => `${l.event.runId}:${l.event.kind}`)).toEqual(['run-2:run.start', 'run-2:plan.approved'])
+    expect(await ledger.readSession('nobody')).toEqual({ ok: true, lines: [] })
+    expect(await createLedger(path.join(dir, 'not-yet')).readSession('s1')).toEqual({ ok: true, lines: [] })
+  })
+
+  it('readSession looks through the newest 30 day files only', async () => {
+    const ledger = createLedger(dir)
+    await ledger.append(START, new Date('2026-01-01T10:00:00.000Z'))
+    for (let d = 0; d < 30; d++) {
+      await ledger.append(OTHER, new Date(Date.parse('2026-02-01T10:00:00.000Z') + d * 86_400_000))
+    }
+    expect(await ledger.readSession('s1')).toEqual({ ok: true, lines: [] })
+  })
+
   it('reports an empty folder that does not exist yet', async () => {
     const missing = path.join(dir, 'not-yet')
     expect(await createLedger(missing).info()).toEqual({ dir: missing, files: 0, bytes: 0 })

@@ -19,6 +19,8 @@ import type { OpsAuditEvent, OpsGateResult, OpsHostRef, OpsToolInput, OpsToolNam
 export const OPS_PREAMBLE = [
   'You are operating servers for the operator through an Argos ops run.',
   '',
+  '- Plan first. Before any other mcp__ops__* call, call mcp__ops__propose_plan once with the full list of steps you intend to run, one per entry, naming the host and the command or script. Nothing runs until the operator approves the plan.',
+  '- Do not run a step that was not in the approved plan. If the work needs a step the plan did not list, call mcp__ops__propose_plan again with the revised full list and wait for its approval.',
   '- You operate servers through the mcp__ops__* tools only. You have no local shell, and the local machine is out of reach.',
   '- Follow RUNBOOK.md literally. If a step is not covered by it, say so and stop. Do not improvise an equivalent command.',
   '- Before any mutate call, state what it changes and how it is reverted.',
@@ -56,7 +58,9 @@ export function opsHostsFor(runbook: LoadedRunbook): OpsHosts {
 export interface ApprovalOpsContext {
   hostName: string
   hostAddress: string
-  tool: OpsToolName
+  tool: OpsToolName | 'plan'
+  /** For tool 'plan': the steps the model proposes for this run. */
+  planSteps?: string[]
   class: 'read' | 'mutate'
   reason: string
   rule?: string
@@ -88,6 +92,44 @@ export function toApprovalContext(
     ...(gate.path !== undefined ? { path: gate.path } : {}),
     ...(gate.scriptSha256 !== undefined ? { scriptSha256: gate.scriptSha256 } : {}),
     queuedBehind,
+    runbook: runbookName
+  }
+}
+
+// ─── Plan (plan §1.7) ─────────────────────────────────────────────────────────────
+
+/** The SDK name of the plan tool. Not an OpsToolName: the gate never sees it. */
+export const OPS_PLAN_TOOL = 'mcp__ops__propose_plan'
+export const OPS_PLAN_MAX_STEPS = 40
+
+/** Why every other ops call is refused until a plan is approved. */
+export const PLAN_FIRST_REASON = 'propose a plan first (mcp__ops__propose_plan)'
+export const PLAN_REJECTED_MESSAGE = 'Plan rejected by the operator. Revise it or stop.'
+export const PLAN_APPROVED_TEXT = 'Plan approved. Proceed step by step.'
+
+/**
+ * The steps of a propose_plan call, checked the way its zod schema checks them:
+ * canUseTool sees the model's raw JSON before the schema does.
+ */
+export function planStepsFrom(input: Record<string, unknown>): string[] | { error: string } {
+  const steps = input && typeof input === 'object' ? input.steps : undefined
+  if (!Array.isArray(steps)) return { error: 'steps must be an array of strings' }
+  if (steps.length === 0) return { error: 'steps must list at least one step' }
+  if (steps.length > OPS_PLAN_MAX_STEPS) return { error: `steps may list at most ${OPS_PLAN_MAX_STEPS} entries` }
+  if (!steps.every((x) => typeof x === 'string' && x.length > 0)) return { error: 'every step must be a non-empty string' }
+  return [...(steps as string[])]
+}
+
+/** The modal's context for a plan: no host, the runbook's name in its place. */
+export function planApprovalContext(steps: string[], runbookName: string): ApprovalOpsContext {
+  return {
+    hostName: runbookName,
+    hostAddress: '',
+    tool: 'plan',
+    planSteps: [...steps],
+    class: 'mutate',
+    reason: 'plan approval',
+    queuedBehind: 0,
     runbook: runbookName
   }
 }
@@ -325,9 +367,9 @@ export function writeResultText(r: OpsWriteResult, p: string): { text: string; i
 }
 
 /**
- * sudo on these boxes usually wants a password, and the runbook's literal sudo rules
- * cannot supply one yet. Recognised so the model is told plainly to stop rather than to
- * retry; the prompt itself lands with the UI batch (plan §4, "Session-level sudo").
+ * sudo on these boxes usually wants a password. Recognised so the run handler can ask
+ * the operator for it once per host (plan §4, "Session-level sudo"), or, with no way to
+ * ask, tell the model plainly to stop rather than to retry.
  */
 export function sudoNeedsPassword(argv: string[] | undefined, result: ExecResult): boolean {
   return !!argv && argv[0] === 'sudo' && result.exitCode === 1 && /password/i.test(result.stderr)
@@ -335,3 +377,75 @@ export function sudoNeedsPassword(argv: string[] | undefined, result: ExecResult
 
 export const SUDO_PASSWORD_NOTE =
   '[sudo asked for a password. Argos cannot supply sudo passwords yet. Stop and tell the operator; do not retry.]'
+
+export const SUDO_DECLINED_NOTE = 'Operator declined to supply the sudo password.'
+
+// The gate's sudo flag lists (ops-gate-pure.ts), split by what the stdin form keeps.
+const SUDO_BARE_KEEP = new Set(['H'])
+const SUDO_BARE_DROP = new Set(['n', 'S'])
+const SUDO_VALUED = new Set(['u', 'g', 'p'])
+const SUDO_LONG_BARE_KEEP = new Set(['--set-home'])
+const SUDO_LONG_BARE_DROP = new Set(['--non-interactive', '--stdin'])
+const SUDO_LONG_VALUED = new Set(['--user', '--group', '--prompt'])
+
+/**
+ * argv rewritten to read the password from stdin: `sudo -S -p '' <kept flags> <command>`.
+ * `-n` goes (it forbids the prompt this needs), and so do the model's own `-S` and
+ * `-p`, which the leading pair replaces. `-u user`, `-g group` and `-H` stay, one flag
+ * per word, so `-nu root` becomes `-u root`. The first word that is not a flag the gate
+ * accepts starts the command, which is kept verbatim. argv[0] must be `sudo`; anything
+ * else comes back unchanged.
+ */
+export function withSudoStdin(argv: string[]): string[] {
+  if (argv[0] !== 'sudo') return [...argv]
+  const kept: string[] = []
+  let i = 1
+  scan: while (i < argv.length) {
+    const w = argv[i]
+    if (w === '--') {
+      i++
+      break
+    }
+    if (!w.startsWith('-') || w === '-') break
+    if (w.startsWith('--')) {
+      const eq = w.indexOf('=')
+      const name = eq === -1 ? w : w.slice(0, eq)
+      if (eq === -1 && SUDO_LONG_BARE_DROP.has(name)) {
+        i++
+      } else if (eq === -1 && SUDO_LONG_BARE_KEEP.has(name)) {
+        kept.push(w)
+        i++
+      } else if (SUDO_LONG_VALUED.has(name)) {
+        const words = eq !== -1 ? [w] : argv.slice(i, i + 2)
+        if (name !== '--prompt') kept.push(...words)
+        i += words.length
+      } else break
+      continue
+    }
+    // A short cluster: bare letters, optionally ending in one valued letter.
+    const flags: string[] = []
+    let consumedNext = false
+    for (let j = 1; j < w.length; j++) {
+      const f = w[j]
+      if (SUDO_BARE_DROP.has(f)) continue
+      if (SUDO_BARE_KEEP.has(f)) {
+        flags.push(`-${f}`)
+        continue
+      }
+      if (SUDO_VALUED.has(f)) {
+        let value: string | undefined
+        if (j + 1 < w.length) value = w.slice(j + 1)
+        else if (i + 1 < argv.length) {
+          value = argv[i + 1]
+          consumedNext = true
+        }
+        if (value !== undefined && f !== 'p') flags.push(`-${f}`, value)
+        break
+      }
+      break scan
+    }
+    kept.push(...flags)
+    i += consumedNext ? 2 : 1
+  }
+  return ['sudo', '-S', '-p', '', ...kept, ...argv.slice(i)]
+}

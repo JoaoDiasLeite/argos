@@ -7,8 +7,8 @@ import { sha256Hex } from './ops-audit-pure'
 import { createFakeBackend, type FakeBackend, type FakeScript } from './ops-backend-fake'
 import { createExecutor } from './ops-exec-pure'
 import { assembleRunbook, scriptPinError, type LoadedRunbook, type LoadRunbookResult } from './ops-runbook-pure'
-import { finishOpsRun, prepareOpsRun, type OpsAskFn, type PrepareOpsRunResult } from './ops-run'
-import { OPS_PREAMBLE } from './ops-run-pure'
+import { finishOpsRun, prepareOpsRun, type OpsAskFn, type OpsAskSecretFn, type PrepareOpsRunResult } from './ops-run'
+import { OPS_PREAMBLE, PLAN_REJECTED_MESSAGE } from './ops-run-pure'
 import type { OpsAuditLine, OpsHostRef } from './ops-types'
 
 const HOSTS: OpsHostRef[] = [
@@ -74,9 +74,15 @@ afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true })
 })
 
+/**
+ * A prepared run. Most tests are about one call, so the plan counts as approved unless
+ * `plan: false` (set directly: no plan.approved line, so their ledger assertions stay
+ * about the call).
+ */
 async function start(
   script: FakeScript = {},
-  ask?: OpsAskFn
+  ask?: OpsAskFn,
+  extra: { plan?: boolean; askSecret?: OpsAskSecretFn } = {}
 ): Promise<{ fake: FakeBackend; run: Extract<PrepareOpsRunResult, { ok: true }>; abort: AbortController; live: OpsAuditLine[] }> {
   const fake = createFakeBackend(script)
   const abort = new AbortController()
@@ -94,9 +100,11 @@ async function start(
     onEvent: (line) => live.push(line),
     buildServer: async () => ({ stub: true }),
     runId: 'run-1',
-    ...(ask ? { ask } : {})
+    ...(ask ? { ask } : {}),
+    ...(extra.askSecret ? { askSecret: extra.askSecret } : {})
   })
   if (!r.ok) throw new Error(r.error)
+  if (extra.plan !== false) r.ctx.planApproved = true
   return { fake, run: r, abort, live }
 }
 
@@ -347,5 +355,164 @@ describe('prepareOpsRun', () => {
     expect(res.isError).toBe(true)
     expect(res.content[0].text).toContain('sudo: a password is required')
     expect(res.content[0].text).toContain('Argos cannot supply sudo passwords yet')
+  })
+})
+
+describe('plan first', () => {
+  const PLAN = { steps: ['web-01: systemctl status nginx', 'web-01: sudo systemctl reload nginx'] }
+  const STATUS = { hostId: 'h1', cmd: 'systemctl status nginx' }
+
+  it('an ops call before any plan is denied and never reaches the backend; local reads stay open', async () => {
+    const { fake, run } = await start({}, async () => ({ allow: true }), { plan: false })
+    const v = await run.canUseTool('mcp__ops__run', STATUS)
+    expect(v).toEqual({ behavior: 'deny', message: 'Refused: propose a plan first (mcp__ops__propose_plan).' })
+    // Even called straight, the handler has no decision to run on.
+    expect((await run.tools.run(STATUS)).isError).toBe(true)
+    expect(hostCalls(fake)).toEqual([])
+    expect((await run.canUseTool('Read', { file_path: path.join(rbDir, 'RUNBOOK.md') })).behavior).toBe('allow')
+    const r = (await ledger.readRun('run-1')) as { ok: true; lines: OpsAuditLine[] }
+    expect(r.lines[1].event).toMatchObject({
+      kind: 'call.decided',
+      decision: 'deny',
+      reason: 'propose a plan first (mcp__ops__propose_plan)',
+      argv: ['systemctl', 'status', 'nginx']
+    })
+  })
+
+  it('an approved plan is asked with its steps, logged, and opens the ops tools', async () => {
+    const asked: Parameters<OpsAskFn>[0][] = []
+    const { fake, run } = await start(
+      {},
+      async (req) => {
+        asked.push(req)
+        return { allow: true }
+      },
+      { plan: false }
+    )
+    expect(await run.canUseTool('mcp__ops__propose_plan', PLAN)).toEqual({ behavior: 'allow', updatedInput: PLAN })
+    expect(asked[0]).toEqual({
+      tool: 'mcp__ops__propose_plan',
+      input: PLAN,
+      ops: {
+        hostName: 'nginx-config-reload',
+        hostAddress: '',
+        tool: 'plan',
+        planSteps: PLAN.steps,
+        class: 'mutate',
+        reason: 'plan approval',
+        queuedBehind: 0,
+        runbook: 'nginx-config-reload'
+      }
+    })
+    expect(run.ctx.planText).toBe(PLAN.steps.join('\n'))
+    expect((await run.tools.propose_plan(PLAN)).content[0].text).toBe('Plan approved. Proceed step by step.')
+
+    expect((await run.canUseTool('mcp__ops__run', STATUS)).behavior).toBe('allow')
+    expect((await run.tools.run(STATUS)).isError).toBe(false)
+    expect(hostCalls(fake).map((c) => c.kind)).toEqual(['exec'])
+
+    // A revised plan goes through the same approval and logs a second plan.approved.
+    expect((await run.canUseTool('mcp__ops__propose_plan', { steps: ['web-01: nginx -t'] })).behavior).toBe('allow')
+    expect(await kinds()).toEqual(['run.start', 'plan.approved', 'call.decided', 'call.started', 'call.finished', 'plan.approved'])
+  })
+
+  it('a rejected plan logs plan.rejected and the ops tools stay closed', async () => {
+    const { fake, run } = await start({}, async () => ({ allow: false }), { plan: false })
+    expect(await run.canUseTool('mcp__ops__propose_plan', PLAN)).toEqual({ behavior: 'deny', message: PLAN_REJECTED_MESSAGE })
+    expect((await run.canUseTool('mcp__ops__run', STATUS)).behavior).toBe('deny')
+    expect(hostCalls(fake)).toEqual([])
+    expect(await kinds()).toEqual(['run.start', 'plan.rejected', 'call.decided'])
+  })
+
+  it('a malformed plan is refused without asking; stop on a plan aborts the run', async () => {
+    let calls = 0
+    const { run, abort } = await start(
+      {},
+      async () => {
+        calls++
+        return { allow: false, stop: true }
+      },
+      { plan: false }
+    )
+    expect((await run.canUseTool('mcp__ops__propose_plan', { steps: [] })).behavior).toBe('deny')
+    expect((await run.canUseTool('mcp__ops__propose_plan', { steps: [''] })).behavior).toBe('deny')
+    expect(calls).toBe(0)
+    expect((await run.canUseTool('mcp__ops__propose_plan', PLAN)).behavior).toBe('deny')
+    expect(abort.signal.aborted).toBe(true)
+    expect(await kinds()).toEqual(['run.start', 'plan.rejected'])
+  })
+})
+
+describe('sudo password per run', () => {
+  const RELOAD = { hostId: 'h1', cmd: 'sudo systemctl reload nginx' }
+  // sudo -S reads the password: the fake succeeds only for the stdin form.
+  const sudoScript: FakeScript = {
+    exec: (argv) => (argv[1] === '-S' ? { stdout: 'reloaded' } : { exitCode: 1, stderr: 'sudo: a password is required' })
+  }
+
+  it('asks once, logs that a password was supplied (never the value), and retries with it on stdin', async () => {
+    const asked: unknown[] = []
+    const { fake, run } = await start(sudoScript, async () => ({ allow: true }), {
+      askSecret: async (req) => {
+        asked.push(req)
+        return 'hunter2'
+      }
+    })
+    await run.canUseTool('mcp__ops__run', RELOAD)
+    const res = await run.tools.run(RELOAD)
+    expect(res.isError).toBe(false)
+    expect(res.content[0].text).toContain('reloaded')
+    expect(asked).toEqual([{ hostId: 'h1', hostName: 'web-01', prompt: expect.stringContaining('sudo on web-01') }])
+    expect(hostCalls(fake).map((c) => c.args)).toEqual([
+      { argv: ['sudo', 'systemctl', 'reload', 'nginx'], stdin: undefined, timeoutMs: 60_000 },
+      { argv: ['sudo', '-S', '-p', '', 'systemctl', 'reload', 'nginx'], stdin: 'hunter2\n', timeoutMs: 60_000 }
+    ])
+
+    const r = (await ledger.readRun('run-1')) as { ok: true; lines: OpsAuditLine[] }
+    expect(r.lines.map((l) => `${l.event.kind}:${(l.event as { callId?: string }).callId ?? ''}`)).toEqual([
+      'run.start:',
+      'call.decided:run-1-1',
+      'call.asked:run-1-1',
+      'call.answered:run-1-1',
+      'call.started:run-1-1',
+      'call.finished:run-1-1',
+      'sudo.password-supplied:',
+      'call.decided:run-1-1-retry',
+      'call.started:run-1-1-retry',
+      'call.finished:run-1-1-retry'
+    ])
+    expect(r.lines[7].event).toMatchObject({
+      kind: 'call.decided',
+      decision: 'ask',
+      rule: '^sudo systemctl reload nginx$',
+      reason: 'retry with sudo password'
+    })
+    expect(r.lines[9].event).toMatchObject({ exitCode: 0 })
+    const raw = fs.readdirSync(ledgerDir).map((f) => fs.readFileSync(path.join(ledgerDir, f), 'utf-8')).join('')
+    expect(raw).not.toContain('hunter2')
+
+    // A later sudo on the same host uses the kept password at once: no prompt, no -n.
+    await run.canUseTool('mcp__ops__run', RELOAD)
+    expect((await run.tools.run(RELOAD)).isError).toBe(false)
+    expect(asked).toHaveLength(1)
+    expect(hostCalls(fake).at(-1)?.args).toEqual({
+      argv: ['sudo', '-S', '-p', '', 'systemctl', 'reload', 'nginx'],
+      stdin: 'hunter2\n',
+      timeoutMs: 60_000
+    })
+
+    await finishOpsRun(run.ctx, { ok: true, costUsd: 0 })
+    expect(run.ctx.sudoPasswords.size).toBe(0)
+  })
+
+  it('a declined prompt returns the failure with a note and does not retry', async () => {
+    const { fake, run } = await start(sudoScript, async () => ({ allow: true }), { askSecret: async () => null })
+    await run.canUseTool('mcp__ops__run', RELOAD)
+    const res = await run.tools.run(RELOAD)
+    expect(res.isError).toBe(true)
+    expect(res.content[0].text).toContain('sudo: a password is required')
+    expect(res.content[0].text).toContain('Operator declined to supply the sudo password.')
+    expect(hostCalls(fake)).toHaveLength(1)
+    expect(await kinds()).not.toContain('sudo.password-supplied')
   })
 })

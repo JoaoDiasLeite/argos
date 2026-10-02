@@ -22,6 +22,11 @@ export interface OpsLedger {
    * run, every file is searched, so an old run's report still renders.
    */
   readRun(runId: string, around?: Date): Promise<{ ok: true; lines: OpsAuditLine[] } | { ok: false; error: string }>
+  /**
+   * Every line of every run of one chat (`run.start.appSessionId`), in file order, for a
+   * reopened chat's timeline. Scans the newest SESSION_SCAN_FILES day files only.
+   */
+  readSession(appSessionId: string): Promise<{ ok: true; lines: OpsAuditLine[] } | { ok: false; error: string }>
   report(
     runId: string,
     kind: 'internal' | 'client',
@@ -34,6 +39,8 @@ export interface OpsLedger {
 const DAY_FILE = /^\d{4}-\d{2}-\d{2}\.jsonl$/
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 const TAIL_CHUNK = 64 * 1024
+/** How many day files readSession looks through, newest first. */
+export const SESSION_SCAN_FILES = 30
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 const dayOf = (at: Date): string => at.toISOString().slice(0, 10)
@@ -163,6 +170,30 @@ export function createLedger(dir: string): OpsLedger {
     },
 
     readRun,
+
+    readSession(appSessionId) {
+      return enqueue(async () => {
+        try {
+          // Newest first, so the cap keeps the recent days; a run that crossed midnight
+          // has its start in an older file than its end, so every scanned file is kept
+          // until the run ids are known.
+          const files = (await dayFiles()).reverse().slice(0, SESSION_SCAN_FILES).reverse()
+          const days: OpsAuditLine[][] = []
+          const runIds = new Set<string>()
+          for (const f of files) {
+            const day = await readDay(f.slice(0, 10))
+            days.push(day)
+            for (const l of day) {
+              if (l.event.kind === 'run.start' && l.event.appSessionId === appSessionId) runIds.add(l.event.runId)
+            }
+          }
+          const lines = runIds.size === 0 ? [] : days.flat().filter((l) => runIds.has(l.event.runId))
+          return { ok: true as const, lines }
+        } catch (e) {
+          return { ok: false as const, error: `Could not read the ops ledger: ${message(e)}` }
+        }
+      })
+    },
 
     async report(runId, kind, opts) {
       const r = await readRun(runId)
