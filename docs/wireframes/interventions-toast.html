@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Approval toast, when the window is hidden, squarer</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#b3ada4}a:hover{color:#efece8}
+</style>
+</helmet>
+<div style="width: 420px; height: 160px; box-sizing: border-box; background: #1c1b19; color: #efece8; border: 1px solid #302c28; border-radius: 4px; box-shadow: 0 18px 50px rgba(0,0,0,0.5); padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+  <div style="display: flex; align-items: center; gap: 10px">
+    <span style="width: 8px; height: 8px; border-radius: 50%; background: #d9a83c; box-shadow: 0 0 0 3px rgba(217,168,60,0.2)"></span>
+    <span style="font-size: 12px; color: #7c766e">Argos · diagnose-rails-host on Rocky-9-Testes</span>
+  </div>
+  <div style="font-size: 14px; line-height: 1.4">Allow <span style="font-family: ui-monospace, Consolas, monospace; background: #141312; border: 1px solid #302c28; border-radius: 4px; padding: 1px 6px">sudo nginx -t</span>?</div>
+  <div style="display: flex; gap: 8px; margin-top: 2px">
+    <button type="button" style="height: 32px; padding: 0 16px; border-radius: 8px; border: 1px solid #df7a52; background: #df7a52; color: #141312; font-size: 12.5px; font-weight: 650; cursor: pointer">Allow</button>
+    <button type="button" style="height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid #48423a; background: transparent; color: #b3ada4; font-size: 12.5px; cursor: pointer">Deny</button>
+    <span style="flex: 1"></span>
+    <a href="#open" style="font-size: 12.5px; text-decoration: none; align-self: center">Open Argos</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":420,"height":160}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>New intervention, squarer variant</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#b3ada4}a:hover{color:#efece8}
+</style>
+</helmet>
+<div style="width: 1400px; height: 860px; box-sizing: border-box; background: #141312; color: #efece8; display: flex; flex-direction: column; overflow: hidden">
+
+  <div style="display: flex; justify-content: center; padding: 10px 0; border-bottom: 1px solid #302c28">
+    <div style="display: inline-flex; border: 1px solid #302c28; border-radius: 8px; overflow: hidden; font-size: 12.5px">
+      <span style="padding: 6px 14px; color: #b3ada4">Remote &amp; WSL</span>
+      <span style="padding: 6px 14px; background: #252320; color: #efece8">Ops</span>
+      <span style="padding: 6px 14px; color: #b3ada4">MCP</span>
+    </div>
+  </div>
+
+  <div style="flex: 1; display: grid; grid-template-columns: minmax(0, 620px) minmax(0, 1fr); gap: 48px; padding: 36px 64px; min-height: 0">
+
+    <div style="display: flex; flex-direction: column; gap: 22px">
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <div style="font-size: 22px; font-weight: 650; letter-spacing: -0.01em">New intervention</div>
+        <div style="font-size: 13px; color: #b3ada4">One server, one runbook, one task. Nothing runs until you approve the plan.</div>
+      </div>
+
+      <label style="display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 12px; color: #b3ada4; font-weight: 600">Server</span>
+        <div style="display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 10px 0 12px; border-radius: 4px; background: #1c1b19; border: 1px solid #48423a">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #5cb37e"></span>
+          <span style="font-size: 13.5px">Rocky-9-Testes</span>
+          <span style="font-size: 12px; color: #7c766e">wiremaze@127.0.0.1:27</span>
+          <span style="flex: 1"></span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+        </div>
+        <span style="font-size: 11.5px; color: #7c766e">Locked to this server for the whole intervention. Pick "Any server this runbook allows" to let the model ask for a host; you confirm each one the first time.</span>
+      </label>
+
+      <label style="display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 12px; color: #b3ada4; font-weight: 600">Runbook</span>
+        <div style="display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 10px 0 12px; border-radius: 4px; background: #1c1b19; border: 1px solid #302c28">
+          <span style="font-size: 13.5px">diagnose-rails-host</span>
+          <span style="padding: 1px 7px; border-radius: 3px; background: #252320; border: 1px solid #302c28; font-size: 11px; color: #b3ada4">read-only</span>
+          <span style="flex: 1"></span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+        </div>
+      </label>
+
+      <label style="display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 12px; color: #b3ada4; font-weight: 600">Task</span>
+        <div style="min-height: 96px; padding: 10px 12px; border-radius: 4px; background: #1c1b19; border: 1px solid #302c28; font-size: 13.5px; line-height: 1.5; color: #efece8">Puma a reiniciar de hora a hora desde ontem. Confirmar se é o OpenSSL ligado ao Ruby e se há pressão de memória.</div>
+      </label>
+
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+        <label style="display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 12px; color: #b3ada4; font-weight: 600">Ticket <span style="color: #7c766e; font-weight: 400">optional</span></span>
+          <div style="height: 34px; padding: 0 12px; display: flex; align-items: center; border-radius: 4px; background: #1c1b19; border: 1px solid #302c28; font-size: 13px">#48213</div>
+        </label>
+        <label style="display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 12px; color: #b3ada4; font-weight: 600">Client <span style="color: #7c766e; font-weight: 400">optional</span></span>
+          <div style="height: 34px; padding: 0 12px; display: flex; align-items: center; border-radius: 4px; background: #1c1b19; border: 1px solid #302c28; font-size: 13px">CM Teste</div>
+        </label>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 12px; margin-top: 6px">
+        <button type="button" style="height: 38px; padding: 0 20px; border-radius: 8px; border: 1px solid #df7a52; background: #df7a52; color: #141312; font-size: 13.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 8px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"></path></svg>
+          Start intervention
+        </button>
+        <span style="font-size: 12px; color: #7c766e">Opens the terminal with Claude Code. The task is its first message.</span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 18px; padding-top: 44px">
+      <div style="padding: 18px 20px; border-radius: 4px; background: #1c1b19; border: 1px solid #302c28; display: flex; flex-direction: column; gap: 14px">
+        <div style="font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #7c766e; font-weight: 600">What this runbook allows</div>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+          <div><div style="font-size: 20px; font-weight: 650; color: #5cb37e">33</div><div style="font-size: 11.5px; color: #7c766e">commands run on their own</div></div>
+          <div><div style="font-size: 20px; font-weight: 650; color: #d9a83c">7</div><div style="font-size: 11.5px; color: #7c766e">ask you first (sudo)</div></div>
+          <div><div style="font-size: 20px; font-weight: 650">0</div><div style="font-size: 11.5px; color: #7c766e">change the server</div></div>
+        </div>
+        <div style="font-size: 12.5px; color: #b3ada4; line-height: 1.55">Guidelines in <span style="font-family: ui-monospace, Consolas, monospace">RUNBOOK.md</span>: seven diagnostic steps, stop on the first failed check, never fix. No scripts. Reads allowed under <span style="font-family: ui-monospace, Consolas, monospace">/etc/nginx</span>, <span style="font-family: ui-monospace, Consolas, monospace">/var/log/nginx</span> and the app's <span style="font-family: ui-monospace, Consolas, monospace">shared/log</span>.</div>
+        <div style="display: flex; gap: 8px">
+          <button type="button" style="height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid #48423a; background: transparent; color: #b3ada4; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>RUNBOOK.md</button>
+          <button type="button" style="height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid #48423a; background: transparent; color: #b3ada4; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>policy.json</button>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #7c766e; font-weight: 600">Earlier on Rocky-9-Testes</div>
+        <div style="display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px 14px; font-size: 12.5px; align-items: center">
+          <span style="color: #7c766e">Today 13:01</span><span>Diagnóstico completo após reinício</span><span style="color: #5cb37e">finished</span><button type="button" style="height: 26px; padding: 0 10px; border-radius: 8px; border: 1px solid #48423a; background: transparent; color: #b3ada4; font-size: 12px; cursor: pointer">Report</button>
+          <span style="color: #7c766e">Today 12:27</span><span>Teste do runbook</span><span style="color: #e36460">stopped</span><button type="button" style="height: 26px; padding: 0 10px; border-radius: 8px; border: 1px solid #48423a; background: transparent; color: #b3ada4; font-size: 12px; cursor: pointer">Report</button>
+          <span style="color: #7c766e">Yesterday</span><span>Verificação do TLS no PostgreSQL</span><span style="color: #5cb37e">finished</span><button type="button" style="height: 26px; padding: 0 10px; border-radius: 8px; border: 1px solid #48423a; background: transparent; color: #b3ada4; font-size: 12px; cursor: pointer">Report</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1400,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

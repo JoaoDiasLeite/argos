@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ops workspace v2, activity column, squarer</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#b3ada4}a:hover{color:#efece8}
+</style>
+</helmet>
+<div style="width: 1400px; height: 860px; box-sizing: border-box; background: #141312; color: #efece8; display: flex; flex-direction: column; overflow: hidden">
+
+  <div style="display: flex; align-items: center; gap: 14px; padding: 12px 18px; border-bottom: 1px solid #302c28">
+    <a href="#back" style="text-decoration: none; color: #7c766e; font-size: 16px; line-height: 1">&#8249;</a>
+    <span style="font-size: 15px; font-weight: 650">diagnose-rails-host</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #b3ada4"><span style="width: 7px; height: 7px; border-radius: 50%; background: #5cb37e"></span>Rocky-9-Testes</span>
+    <span style="font-size: 12px; color: #7c766e">read-only runbook · strict</span>
+    <span style="flex: 1"></span>
+    <span style="font-size: 12px; color: #7c766e">Claude Code · gated</span>
+    <button type="button" style="height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid #48423a; background: transparent; color: #b3ada4; font-size: 12.5px; cursor: pointer">Restart</button>
+  </div>
+
+  <div style="flex: 1; display: flex; min-height: 0">
+    <div style="flex: 1; padding: 16px 18px; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; line-height: 1.7; color: #7c766e; border-right: 1px solid #302c28">
+      <div style="color: #b3ada4">&gt; faz o diagnóstico completo do servidor</div>
+      <div style="margin-top: 10px">Plano aprovado. A executar o passo 1 de 7.</div>
+      <div style="margin-top: 10px; color: #b3ada4">systemctl status puma</div>
+      <div>Unit puma.service could not be found.</div>
+      <div style="margin-top: 10px">Não há unidade puma. Vou verificar os processos PM2.</div>
+    </div>
+
+    <div style="width: 440px; display: flex; flex-direction: column; background: #1c1b19">
+
+      <div style="padding: 14px 16px 10px 16px; border-bottom: 1px solid #302c28; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; align-items: baseline; justify-content: space-between">
+          <span style="font-size: 13px; font-weight: 650">Running since 17:21</span>
+          <span style="font-size: 12px; color: #7c766e">3 of 7 steps</span>
+        </div>
+        <div style="display: flex; height: 4px; border-radius: 2px; overflow: hidden; background: #252320"><span style="width: 43%; background: #5cb37e"></span></div>
+        <div style="display: flex; gap: 8px">
+          <button type="button" style="height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #48423a; background: transparent; color: #b3ada4; font-size: 12px; cursor: pointer">Report</button>
+          <button type="button" style="height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(227,100,96,0.5); background: transparent; color: #e36460; font-size: 12px; cursor: pointer">Stop</button>
+        </div>
+      </div>
+
+      <div style="margin: 12px 12px 0 12px; padding: 12px 14px; border-radius: 4px; background: #252320; border: 1px solid rgba(217,168,60,0.45); display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; align-items: center; justify-content: space-between">
+          <span style="font-size: 12.5px; font-weight: 650; color: #d9a83c">Waiting for you</span>
+          <span style="font-size: 11px; color: #7c766e">sudo</span>
+        </div>
+        <div style="font-size: 13px">Validação da configuração do nginx</div>
+        <div style="font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; color: #efece8; background: #141312; border: 1px solid #302c28; border-radius: 4px; padding: 6px 10px">sudo nginx -t</div>
+        <div style="display: flex; gap: 8px; margin-top: 2px">
+          <button type="button" style="flex: 1; height: 32px; border-radius: 8px; border: 1px solid #df7a52; background: #df7a52; color: #141312; font-size: 12.5px; font-weight: 650; cursor: pointer">Allow</button>
+          <button type="button" style="height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid #48423a; background: transparent; color: #b3ada4; font-size: 12.5px; cursor: pointer">Deny</button>
+        </div>
+      </div>
+
+      <div style="flex: 1; overflow: hidden; padding: 10px 12px 12px 12px; display: flex; flex-direction: column; gap: 2px">
+        <div style="display: grid; grid-template-columns: 16px 1fr auto; gap: 10px; align-items: center; padding: 8px 6px; border-radius: 4px">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #5cb37e; justify-self: center"></span>
+          <span style="font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #b3ada4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">cat /etc/os-release</span>
+          <span style="font-size: 11px; color: #7c766e">0.4 s</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 16px 1fr auto; gap: 10px; align-items: center; padding: 8px 6px; border-radius: 4px">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #5cb37e; justify-self: center"></span>
+          <span style="font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #b3ada4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">systemctl status nginx</span>
+          <span style="font-size: 11px; color: #7c766e">1.8 s</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 16px 1fr auto; gap: 10px; align-items: center; padding: 8px 6px; border-radius: 4px">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #d9a83c; justify-self: center"></span>
+          <span style="font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #b3ada4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">systemctl status puma</span>
+          <span style="font-size: 11px; color: #d9a83c">exit 4</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 16px 1fr auto; gap: 10px; align-items: center; padding: 8px 6px; border-radius: 4px">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #e36460; justify-self: center"></span>
+          <span style="font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #7c766e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: line-through">pgrep -af puma</span>
+          <span style="font-size: 11px; color: #e36460">not in runbook</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 16px 1fr auto; gap: 10px; align-items: center; padding: 8px 6px; border-radius: 4px; background: #252320">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #5cb37e; justify-self: center"></span>
+          <span style="font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #efece8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">ps -eo pid,user,rss,etime,cmd --sort=-rss</span>
+          <span style="font-size: 11px; color: #7c766e">1.6 s</span>
+        </div>
+        <div style="margin: 0 6px 6px 32px; padding: 8px 10px; border-radius: 4px; background: #141312; border: 1px solid #302c28; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; line-height: 1.5; color: #b3ada4; white-space: pre">    PID USER       RSS     ELAPSED CMD
+   1842 jdl     412340  3-04:12:09 node /home/jdl/dev/wm-project/hypernova.js
+   1133 postgres 98120  3-04:13:01 /usr/pgsql-17/bin/postgres</div>
+
+        <div style="display: flex; align-items: center; gap: 10px; padding: 14px 6px 6px 6px; font-size: 11px; color: #7c766e">
+          <span style="flex: 1; height: 1px; background: #302c28"></span>
+          <span>Earlier today · 2 runs</span>
+          <span style="flex: 1; height: 1px; background: #302c28"></span>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 8px 6px; font-size: 12px; color: #b3ada4">
+          <span>13:01 · finished · 9 calls</span>
+          <span style="color: #7c766e">$0.00</span>
+          <a href="#r1" style="text-decoration: none; font-size: 12px">Report</a>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 8px 6px; font-size: 12px; color: #b3ada4">
+          <span>12:27 · stopped · 2 calls</span>
+          <span style="color: #7c766e">$0.00</span>
+          <a href="#r2" style="text-decoration: none; font-size: 12px">Report</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1400,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
