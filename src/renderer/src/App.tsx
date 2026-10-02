@@ -23,7 +23,8 @@ import ServerTabs from './components/ServerTabs'
 import ApprovalModal from './components/ApprovalModal'
 import PlanReviewSheet from './components/PlanReviewSheet'
 import SecretPrompt from './components/SecretPrompt'
-import { readRecentRunbooks } from './components/ChatConfigBar'
+import { readRecentRunbooks } from './lib/recent-runbooks'
+import { modelForProvider } from './lib/cli-providers'
 import PendingRuns, { PendingRun } from './components/PendingRuns'
 import FileEditor from './components/FileEditor'
 import { readLocalFile, writeLocalFile } from './lib/local-file-io'
@@ -37,7 +38,7 @@ import ChangelogModal from './components/ChangelogModal'
 import ShortcutsModal from './components/ShortcutsModal'
 import { modLabel } from './lib/shortcuts'
 import { UiPrefs, UiPrefsPatch } from './types'
-import { provOf, acctOf, originOf, nextChatAfterClose, isUnstarted, AccountDefaults } from './lib/account-scope'
+import { provOf, acctOf, originOf, nextChatAfterClose, isUnstarted, hasHistory, AccountDefaults } from './lib/account-scope'
 import type {
   HomeAttention,
   HomeRunning,
@@ -480,7 +481,7 @@ export default function App() {
   useEffect(() => {
     const timer = setInterval(() => {
       for (const session of sessionsRef.current) {
-        if (!session.messages.length && !session.hasTerminalActivity) continue
+        if (!hasHistory(session)) continue
         if (savedSessionsRef.current.get(session.id) === session) continue
         savedSessionsRef.current.set(session.id, session)
         window.electronAPI.saveSession(session).then((result) => {
@@ -541,42 +542,80 @@ export default function App() {
     if (head) respondApprovalById(head.approvalId, allow)
   }
 
-  // Launch a new terminal chat from the quick-launcher overlay (global shortcut), the tray,
-  // Home's start box or the planner. The chat is created with its folder, model and account
-  // decided here — they are what the CLI launches under — and the prompt is handed to the
-  // terminal to type once the CLI is up. `ready` is not consulted: signing in is the CLI's
-  // business. The overlay's old `quick` flag is ignored.
-  // TODO(B3b): becomes `startTerminal({ prompt, projectPath, provider, accountId, name })`.
-  const startOverlayPrompt = useCallback(
-    (payload: {
-      prompt: string
-      quick?: boolean
-      // Home's start box passes an explicit choice (project/model/account) that overrides
-      // what would otherwise be inferred from the active session — the tray and quick
-      // launcher never pass these, so they keep deducing from the active session as before.
+  /**
+   * Open a new terminal chat, with an optional prompt for the CLI to be handed once it is
+   * up. The one way every entry point outside the sidebar starts a terminal: Home's start
+   * box, the quick launcher and tray, the planner, the standup's Discuss, and the Remote
+   * view's SSH and WSL rows.
+   *
+   * Nothing is inherited here: a caller that wants the active chat's folder or account
+   * passes it. A chat that already knows where it runs (folder, host or distro) starts its
+   * CLI as soon as it is shown; one that does not stops at the setup pane, with the prompt
+   * waiting for Start. `ready` is not consulted: signing in is the CLI's business.
+   */
+  const startTerminal = useCallback(
+    (opts: {
+      prompt?: string
       projectPath?: string
-      modelId?: string
+      provider?: ProviderId
+      /** An account of `provider`'s own store. */
       accountId?: string
-      /** The chat's name; the prompt's first 40 characters when absent. */
+      wslDistro?: string
+      remoteHostId?: string
+      remoteHostName?: string
+      /** The chat's name; the prompt's first 40 characters, else "New chat". */
       name?: string
-    }) => {
-      const prompt = payload.prompt.trim()
-      if (!prompt) return
-      const base = sessionsRef.current.find((s) => s.id === activeIdRef.current)
-      const s = newSession(
-        payload.projectPath ?? base?.projectPath,
-        payload.modelId ?? defaultModel,
-        payload.accountId ?? base?.accountId ?? defaultAccountId
-      )
-      s.name = (payload.name ?? prompt).slice(0, 40)
+      /** A session id chosen ahead (the standup writes a prompt file named after it). */
+      id?: string
+    }): string => {
+      const prompt = opts.prompt?.trim() || undefined
+      const provider = opts.provider ?? provOf(models, defaultModel)
+      // TODO(B4): `provider` on the session instead of a model that implies it.
+      const s = newSession(opts.projectPath, modelForProvider(models, provider, defaultModel))
+      if (opts.id) s.id = opts.id
+      const name = opts.name ?? prompt
+      if (name) s.name = name.slice(0, 40)
+      if (opts.accountId) {
+        if (provider === 'codex') s.codexAccountId = opts.accountId
+        else if (provider === 'gemini') s.geminiAccountId = opts.accountId
+        else s.accountId = opts.accountId
+      }
+      if (opts.wslDistro) {
+        s.wslDistro = opts.wslDistro
+        s.remoteHostName = `WSL · ${opts.wslDistro}`
+      }
+      if (opts.remoteHostId) {
+        s.remoteHostId = opts.remoteHostId
+        s.remoteHostName = opts.remoteHostName
+      }
       setSessions((prev) => [s, ...prev])
       setActiveId(s.id)
       setView('chat')
-      setTerminalPrompts((prev) => ({ ...prev, [s.id]: prompt }))
+      if (prompt) setTerminalPrompts((prev) => ({ ...prev, [s.id]: prompt }))
       window.electronAPI.saveSession(s)
+      return s.id
     },
-    [defaultModel, defaultAccountId]
+    [models, defaultModel]
   )
+
+  // The quick launcher and the tray: a terminal where the active chat runs, on its CLI and
+  // account. The overlay's old `quick` flag is ignored.
+  const startOverlayPrompt = (payload: { prompt: string }) => {
+    const prompt = payload.prompt.trim()
+    if (!prompt) return
+    const base = sessionsRef.current.find((s) => s.id === activeIdRef.current)
+    const provider = provOf(models, base?.model || defaultModel)
+    startTerminal({
+      prompt,
+      projectPath: base?.projectPath,
+      wslDistro: base?.wslDistro,
+      remoteHostId: base?.remoteHostId,
+      remoteHostName: base?.remoteHostId ? base.remoteHostName : undefined,
+      provider,
+      accountId:
+        provider === 'codex' ? base?.codexAccountId : provider === 'gemini' ? base?.geminiAccountId : base?.accountId
+    })
+  }
   const startOverlayPromptRef = useRef(startOverlayPrompt)
   startOverlayPromptRef.current = startOverlayPrompt
 
@@ -1827,39 +1866,26 @@ export default function App() {
 
   const homeRecent = useMemo<HomeRecent[]>(
     () =>
-      // TODO(B3b): terminal chats, with `preview` from the session; the messages read
-      // here only exist on pre-2.0 chats until the migration archives them.
+      // Terminal chats, newest first. No preview yet: the transcript is the CLI's.
+      // TODO(B4): `session.preview` once the migration and the sync write one.
       sessions
-        .filter((s) => s.messages.length > 0 || s.hasTerminalActivity)
+        .filter((s) => s.hasTerminalActivity)
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .slice(0, 3)
-        .map((s) => {
-          const last = s.messages[s.messages.length - 1]
-          // The transcript is markdown; a one-line preview that keeps the fences and
-          // hashes reads as noise, so the marks come out before the truncation.
-          const flat = (last?.content ?? '')
-            .replace(/```[\s\S]*?```/g, ' ')
-            .replace(/[#*`>]/g, '')
-            .replace(/\s+/g, ' ')
-            .trim()
-          const preview = flat.length > 120 ? `${flat.slice(0, 120)}…` : flat
-          return {
-            id: s.id,
-            name: s.name,
-            projectName: s.projectPath ? resolveHomeProjectName(s.projectPath, s.wslDistro) : undefined,
-            updatedAt: s.updatedAt,
-            preview
-          }
-        }),
+        .map((s) => ({
+          id: s.id,
+          name: s.name,
+          projectName: s.projectPath ? resolveHomeProjectName(s.projectPath, s.wslDistro) : undefined,
+          updatedAt: s.updatedAt,
+          preview: ''
+        })),
     [sessions, resolveHomeProjectName]
   )
 
   const homeStart = useMemo<HomeStart>(() => {
-    // The chips describe where the prompt will actually land, so they read the same
-    // source startOverlayPrompt does: the ACTIVE session, which is what it seeds the new
-    // chat from — folder and account both — before falling back to the defaults. Reading
-    // the most recently updated session instead would label the box with a project the
-    // chat is not going to open in.
+    // The chips start from the ACTIVE session — its folder and account — before falling
+    // back to the defaults, the same seed the quick launcher uses. Reading the most
+    // recently updated session instead would label the box with a project nobody is in.
     const base = sessions.find((s) => s.id === activeId)
     const acctId = base?.accountId ?? defaultAccountId
     const accountName =
@@ -1868,20 +1894,16 @@ export default function App() {
         : defaultProvider === 'gemini'
           ? geminiAccounts.find((a) => a.id === geminiDefaultAccountId)?.name
           : accounts.find((a) => a.id === acctId)?.name
-    const modelId = defaultModel
     return {
       projectPath: base?.projectPath,
       projectName: base?.projectPath ? resolveHomeProjectName(base.projectPath, base.wslDistro) : undefined,
-      modelId,
-      modelLabel: models.find((m) => m.id === modelId)?.label,
+      provider: defaultProvider,
       accountId: acctId,
       accountName
     }
   }, [
     sessions,
     activeId,
-    models,
-    defaultModel,
     defaultProvider,
     codexAccounts,
     codexDefaultAccountId,
@@ -1908,20 +1930,17 @@ export default function App() {
       seen.add(key)
       projects.push({ path: s.projectPath, name: resolveHomeProjectName(s.projectPath, s.wslDistro) })
     }
-    // Every provider, not just the default one: the start box is where a run is chosen,
-    // and a chat started here goes through the same engine lookup as any other, so
-    // limiting it to Claude was a restriction with nothing behind it. The pill keeps
-    // model and account on the same provider — see HomeView's `pickModel`.
+    // Every provider's accounts: the start box picks the CLI, and the pill keeps CLI and
+    // account together — see HomeView's `pickProvider`.
     return {
       projects,
-      models: models.map((m) => ({ id: m.id, label: m.label, provider: m.provider })),
       accounts: [
         ...accounts.map((a) => ({ id: a.id, name: a.name, provider: 'claude' as const })),
         ...codexAccounts.filter((a) => a.loggedIn).map((a) => ({ id: a.id, name: a.name, provider: 'codex' as const })),
         ...geminiAccounts.filter((a) => a.loggedIn).map((a) => ({ id: a.id, name: a.name, provider: 'gemini' as const }))
       ]
     }
-  }, [sessions, homeKeyCtx, resolveHomeProjectName, models, accounts, codexAccounts, geminiAccounts])
+  }, [sessions, homeKeyCtx, resolveHomeProjectName, accounts, codexAccounts, geminiAccounts])
 
   const onHomePickFolder = useCallback(async () => {
     return window.electronAPI.openFolder()
@@ -1929,14 +1948,14 @@ export default function App() {
 
   const onHomeStart = useCallback(
     (prompt: string, choice: HomeStartChoice) => {
-      startOverlayPrompt({
+      startTerminal({
         prompt,
         projectPath: choice.projectPath,
-        modelId: choice.modelId,
+        provider: choice.provider,
         accountId: choice.accountId
       })
     },
-    [startOverlayPrompt]
+    [startTerminal]
   )
 
   // Review an approval — the one kind of row Home's attention list holds.
@@ -2036,21 +2055,19 @@ export default function App() {
   }
 
 
-  // "New chat on host": a terminal chat whose CLI runs on that host over SSH.
-  // TODO(B3b): `startTerminal({ remoteHostId })`.
+  // "New terminal on host": a terminal chat whose CLI runs on that host over SSH.
   const connectRemote = (host: SshHostPublic) => {
-    const s = newSession(host.remotePath, defaultModel, defaultAccountId)
-    s.name = `${host.name} (remote)`
-    s.remoteHostId = host.id
-    s.remoteHostName = host.name
-    setSessions((prev) => [s, ...prev])
-    setActiveId(s.id)
-    setView('chat')
+    startTerminal({
+      name: `${host.name} (remote)`,
+      projectPath: host.remotePath ?? undefined,
+      remoteHostId: host.id,
+      remoteHostName: host.name
+    })
   }
 
-  // "Ops chat" on an SSH host card: the Ops workspace for the most recent runbook that
-  // names this host. None does → the most recent runbook anyway. The ops chat it used to
-  // open ran on the SDK; ops now lives in the workspace's gated terminal only (H1).
+  // "Ops" on an SSH host card: the Ops workspace for the most recent runbook that names
+  // this host. None does → the most recent runbook anyway. Ops lives in the workspace's
+  // gated terminal only (H1).
   const connectOps = async (host: SshHostPublic) => {
     const recents = readRecentRunbooks()
     if (recents.length === 0) return
@@ -2072,41 +2089,16 @@ export default function App() {
   // Servers → Ops. The workspace is an extra of the Servers group, like a Remote/WSL
   // session; which runbook it shows lives here so the view itself stays a plain string.
   const [opsWorkspace, setOpsWorkspace] = useState<{ runbookPath: string } | null>(null)
-  /** The ops terminal the workspace has on screen in Terminal mode — a plan for its run is
-   *  reviewed in the workspace's side column, so the drawer steps aside for it. */
+  /** The ops terminal the workspace has on screen — a plan for its run is reviewed in the
+   *  workspace's side column, so the drawer steps aside for it. */
   const [opsTerminalVisibleId, setOpsTerminalVisibleId] = useState<string | null>(null)
   const openOpsWorkspace = (runbookPath: string) => {
     setOpsWorkspace({ runbookPath })
     setView('ops-workspace')
   }
-  // The workspace's Chat mode: this runbook's ops chat (Claude model, runbookPath set), or
-  // the newest existing one for the same runbook. Nothing renders it any more (see
-  // renderChat below). TODO(B3b): goes with OpsWorkspace's chat mode.
-  const openOpsChat = (runbookPath: string, name: string): string => {
-    const existing = sessions.find((s) => s.runbookPath === runbookPath)
-    if (existing) {
-      setActiveId(existing.id)
-      return existing.id
-    }
-    const model =
-      provOf(models, defaultModel) === 'claude' ? defaultModel : models.find((m) => m.provider === 'claude')?.id ?? defaultModel
-    const s = newSession(undefined, model, defaultAccountId)
-    s.name = `${name} (ops)`
-    s.runbookPath = runbookPath
-    setSessions((prev) => [s, ...prev])
-    setActiveId(s.id)
-    return s.id
-  }
-
-  // TODO(B3b): `startTerminal({ wslDistro })`.
+  // "New terminal here" on a WSL row.
   const connectWsl = (distro: string, cwd?: string) => {
-    const s = newSession(cwd, defaultModel, defaultAccountId)
-    s.name = `${distro} (WSL)`
-    s.wslDistro = distro
-    s.remoteHostName = `WSL · ${distro}`
-    setSessions((prev) => [s, ...prev])
-    setActiveId(s.id)
-    setView('chat')
+    startTerminal({ name: `${distro} (WSL)`, projectPath: cwd, wslDistro: distro })
   }
 
   // A planner task opens a terminal in the active chat's folder with the task typed in.
@@ -2121,25 +2113,41 @@ export default function App() {
       parts.push(`Scheduled for: ${dayNames[task.day]}.`)
     }
     parts.push('Please start working on it.')
-    startOverlayPrompt({
+    const provider = provOf(models, activeSession?.model || defaultModel)
+    startTerminal({
       prompt: parts.join(' '),
       name: task.title,
       projectPath: activeSession?.projectPath,
-      modelId: activeSession?.model || defaultModel,
-      accountId: activeSession?.accountId ?? defaultAccountId
+      wslDistro: activeSession?.wslDistro,
+      provider,
+      accountId:
+        provider === 'codex'
+          ? activeSession?.codexAccountId
+          : provider === 'gemini'
+            ? activeSession?.geminiAccountId
+            : activeSession?.accountId
     })
   }
 
-  // Sprint standup → "Discuss" opens a terminal with the day's standup + board and the
-  // opener typed in, flattened onto one line (see runPlannerTask for why).
-  // TODO(B3b): write `context` to userData/prompts/<sessionId>.md (main IPC) and type
-  // "Read <path>, then: <opener>" instead; open with no folder rather than the active one.
+  // Sprint standup → "Discuss" opens a local terminal with no folder (it stops at the setup
+  // pane). The day's standup and board are many lines, and a raw newline typed into the pty
+  // is Enter, so they go into a prompt file (userData/prompts/<sessionId>.md) and the CLI
+  // is given one line that points at it.
   const startStandupChat = useCallback(
-    (context: string, opener: string, name: string) => {
-      const flat = context.replace(/\s*\n\s*/g, ' ').trim()
-      startOverlayPrompt({ prompt: `${opener} Context: ${flat}`, name })
+    async (context: string, opener: string, name: string) => {
+      const id = generateId()
+      // No file, no lost context: the same text flattened onto the one line instead.
+      const inline = `${opener} Context: ${context.replace(/\s*\n\s*/g, ' ').trim()}`
+      let prompt = inline
+      try {
+        const res = await window.electronAPI.promptFileWrite(id, context)
+        if (res.ok) prompt = `Read ${res.path} (today's standup and board), then: ${opener}`
+      } catch {
+        prompt = inline
+      }
+      startTerminal({ id, prompt, name })
     },
-    [startOverlayPrompt]
+    [startTerminal]
   )
 
   const handleSetDefaultModel = async (modelId: string) => {
@@ -2605,7 +2613,7 @@ export default function App() {
             {view === 'remote' && (
               <RemoteView
                 onConnect={connectRemote}
-                onOpsChat={connectOps}
+                onOps={connectOps}
                 onConnectWsl={connectWsl}
                 onOpenSession={openRemoteSession}
                 onOpenWslSession={openWslSession}
@@ -2624,16 +2632,6 @@ export default function App() {
             key={opsWorkspace.runbookPath}
             runbookPath={opsWorkspace.runbookPath}
             onBack={() => setView('ops')}
-            openChat={openOpsChat}
-            /* The ops chat ran on the SDK composer, which is gone. Rendering the chat pane
-               here would now start an ungated CLI with no runbook, so the mode only points
-               back at the terminal. TODO(B3b): OpsWorkspace loses its chat mode. */
-            renderChat={() => (
-              <div className="ops-ws-state">
-                The ops chat has been retired. Switch to Terminal to run this runbook.
-              </div>
-            )}
-            onChatVisible={() => {}}
             onTerminalVisible={setOpsTerminalVisibleId}
             pendingPlan={workspacePlan}
             onPlanDecide={respondApproval}

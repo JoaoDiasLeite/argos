@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { ProviderId } from '../types'
+import { CLI_PROVIDERS } from '../lib/cli-providers'
 import './views.css'
 import './HomeView.css'
 
@@ -54,23 +55,21 @@ export interface HomeRecent {
 export interface HomeStart {
   projectPath?: string
   projectName?: string
-  modelId?: string
-  modelLabel?: string
+  /** Which CLI the terminal starts. */
+  provider?: ProviderId
   accountId?: string
   accountName?: string
 }
 
 export interface HomeStartChoice {
   projectPath?: string
-  modelId?: string
+  provider?: ProviderId
   accountId?: string
 }
 
 export interface HomeStartOptions {
   projects: { path: string; name: string }[]
-  /** Every model the catalog knows, across providers — grouped in the pill. */
-  models: { id: string; label: string; provider: ProviderId }[]
-  /** Every logged-in account, across providers. Filtered to the chosen model's. */
+  /** Every logged-in account, across providers. Filtered to the chosen CLI's. */
   accounts: { id: string; name: string; provider: ProviderId }[]
 }
 
@@ -175,14 +174,6 @@ function CheckIcon() {
 function AttentionIcon({ mono }: { mono?: boolean }) {
   if (mono) return <TerminalIcon />
   return <DocIcon />
-}
-
-/** Providers in the order the pill lists them, with the names users know them by. */
-const PROVIDER_ORDER: ProviderId[] = ['claude', 'codex', 'gemini']
-const PROVIDER_LABELS: Record<ProviderId, string> = {
-  claude: 'Claude',
-  codex: 'Codex',
-  gemini: 'Antigravity'
 }
 
 interface PillItem {
@@ -392,18 +383,18 @@ export default function HomeView({
   // effect below only overwrites fields still marked untouched.
   const [choice, setChoice] = useState<HomeStartChoice>({
     projectPath: start.projectPath,
-    modelId: start.modelId,
+    provider: start.provider,
     accountId: start.accountId
   })
-  const touchedRef = useRef({ projectPath: false, modelId: false, accountId: false })
+  const touchedRef = useRef({ projectPath: false, provider: false, accountId: false })
 
   useEffect(() => {
     setChoice((prev) => ({
       projectPath: touchedRef.current.projectPath ? prev.projectPath : start.projectPath,
-      modelId: touchedRef.current.modelId ? prev.modelId : start.modelId,
+      provider: touchedRef.current.provider ? prev.provider : start.provider,
       accountId: touchedRef.current.accountId ? prev.accountId : start.accountId
     }))
-  }, [start.projectPath, start.modelId, start.accountId])
+  }, [start.projectPath, start.provider, start.accountId])
 
   function pick(key: keyof HomeStartChoice, value: string) {
     touchedRef.current[key] = true
@@ -434,18 +425,11 @@ export default function HomeView({
     return out
   }, [startOptions.projects, extraProjects])
 
-  const modelItems = useMemo<PillItem[]>(
-    () =>
-      [...startOptions.models]
-        .sort((a, b) => PROVIDER_ORDER.indexOf(a.provider) - PROVIDER_ORDER.indexOf(b.provider))
-        .map((m) => ({ key: m.id, label: m.label, group: PROVIDER_LABELS[m.provider] })),
-    [startOptions.models]
-  )
+  const cliItems: PillItem[] = CLI_PROVIDERS.map((p) => ({ key: p.id, label: p.label }))
 
-  // An account only means anything next to a model from the same provider — a Codex
-  // login cannot run Opus. The pill therefore shows the chosen model's provider only.
-  const chosenProvider: ProviderId =
-    startOptions.models.find((m) => m.id === choice.modelId)?.provider ?? 'claude'
+  // An account only means anything next to its own CLI — a Codex login cannot run Claude
+  // Code. The pill therefore shows the chosen CLI's accounts only.
+  const chosenProvider: ProviderId = choice.provider ?? 'claude'
   const accountItems = useMemo<PillItem[]>(
     () =>
       startOptions.accounts
@@ -454,11 +438,10 @@ export default function HomeView({
     [startOptions.accounts, chosenProvider]
   )
 
-  // Switching to another provider's model invalidates the selected account, so the
-  // account moves with it rather than silently staying on a login that cannot run.
-  const pickModel = (modelId: string) => {
-    pick('modelId', modelId)
-    const provider = startOptions.models.find((m) => m.id === modelId)?.provider ?? 'claude'
+  // Switching to another CLI invalidates the selected account, so the account moves with
+  // it rather than silently staying on a login that cannot run.
+  const pickProvider = (provider: ProviderId) => {
+    pick('provider', provider)
     if (provider === chosenProvider) return
     const first = startOptions.accounts.find((a) => a.provider === provider)
     if (first) pick('accountId', first.id)
@@ -466,15 +449,7 @@ export default function HomeView({
 
   const projectLabel =
     projectItems.find((p) => p.key === choice.projectPath)?.label ?? start.projectName ?? 'Project'
-  // Falling back to the bare word "Model" says nothing — the pill is there to name what
-  // the prompt will run on. The id is uglier than a label and still tells you which one,
-  // and only shows while the model catalogue has not loaded yet.
-  const modelLabel =
-    modelItems.find((m) => m.key === choice.modelId)?.label ??
-    start.modelLabel ??
-    choice.modelId ??
-    start.modelId ??
-    'Model'
+  const cliLabel = cliItems.find((p) => p.key === chosenProvider)?.label ?? 'CLI'
   const accountLabel =
     accountItems.find((a) => a.key === choice.accountId)?.label ??
     start.accountName ??
@@ -616,15 +591,13 @@ export default function HomeView({
                   footerLabel="New project…"
                   onFooter={handleNewProject}
                 />
-                {startOptions.models.length > 0 && (
-                  <PillPicker
-                    buttonLabel={modelLabel}
-                    ariaLabel="Model"
-                    items={modelItems}
-                    selectedKey={choice.modelId}
-                    onSelect={(key) => pickModel(key)}
-                  />
-                )}
+                <PillPicker
+                  buttonLabel={cliLabel}
+                  ariaLabel="CLI"
+                  items={cliItems}
+                  selectedKey={chosenProvider}
+                  onSelect={(key) => pickProvider(key as ProviderId)}
+                />
                 {startOptions.accounts.length > 0 && (
                   <PillPicker
                     buttonLabel={accountLabel}

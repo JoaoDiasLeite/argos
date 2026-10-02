@@ -1,22 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { OpsRunbookInfo } from '../types'
-import { readRecentRunbooks, RECENT_RUNBOOKS_KEY } from '../components/ChatConfigBar'
+import { readRecentRunbooks, RECENT_RUNBOOKS_KEY, RECENT_RUNBOOKS_MAX } from '../lib/recent-runbooks'
 import './OpsView.css'
 
 /**
  * Servers → Ops: the runbooks Argos has seen, and the day's ledger.
  *
- * The list is the same recents the chat's runbook picker keeps (`ops.recentRunbooks`), so a
- * runbook picked in either place shows up in both. Each entry is re-read on mount rather
+ * The list is the recents in `ops.recentRunbooks` (lib/recent-runbooks.ts), which the
+ * Remote view's Ops button also reads. Each entry is re-read on mount rather
  * than cached: a runbook is a folder someone edits, and a stale host count or a policy that
  * stopped validating is exactly what this screen exists to show.
  */
 
-const RECENT_MAX = 8
-
-/** Same rule as the chat picker's (ChatConfigBar): most recent first, de-duplicated, capped. */
+/** Most recent first, de-duplicated, capped. */
 function pushRecentRunbook(dir: string): string[] {
-  const next = [dir, ...readRecentRunbooks().filter((p) => p !== dir)].slice(0, RECENT_MAX)
+  const next = [dir, ...readRecentRunbooks().filter((p) => p !== dir)].slice(0, RECENT_RUNBOOKS_MAX)
   try {
     localStorage.setItem(RECENT_RUNBOOKS_KEY, JSON.stringify(next))
   } catch {

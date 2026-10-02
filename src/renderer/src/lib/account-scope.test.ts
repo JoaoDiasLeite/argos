@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { acctOf, idFor, isUnstarted, nextChatAfterClose, originOf, provOf, visibleSessions, AccountDefaults } from './account-scope'
+import { acctOf, hasHistory, idFor, isUnstarted, nextChatAfterClose, originOf, provOf, visibleSessions, AccountDefaults } from './account-scope'
 import { ModelInfo, Session } from '../types'
 
 // Minimal model catalog — only the fields provOf reads (id, provider).
@@ -9,11 +9,13 @@ const models: ModelInfo[] = [
   { id: 'gemini-2-5-pro', label: 'Gemini 2.5 Pro', inputPrice: 0, outputPrice: 0, context: '', provider: 'gemini' }
 ]
 
-// Minimal Session fixture — only the fields the helpers read.
+// Minimal Session fixture — only the fields the helpers read. A terminal chat that has
+// run by default; a blank draft passes `hasTerminalActivity: false`.
 function makeSession(overrides: Partial<Session> & { id: string }): Session {
   return {
     name: overrides.id,
-    messages: overrides.messages ?? [{ id: 'm1', role: 'user', content: 'hi', timestamp: 0 }],
+    messages: [],
+    hasTerminalActivity: true,
     createdAt: 0,
     updatedAt: 0,
     ...overrides
@@ -133,7 +135,7 @@ describe('visibleSessions', () => {
   const claudePersonalChat = makeSession({ id: 'c2', model: 'claude-opus-4-8', accountId: 'claude-personal' })
   const codexBoundChat = makeSession({ id: 'x1', model: 'codex-mini', codexAccountId: 'codex-side' })
   const codexUnboundChat = makeSession({ id: 'x2', model: 'codex-mini' })
-  const draftChat = makeSession({ id: 'd1', model: 'claude-opus-4-8', messages: [] })
+  const draftChat = makeSession({ id: 'd1', model: 'claude-opus-4-8', hasTerminalActivity: false })
   const allSessions = [claudeDefaultChat, claudePersonalChat, codexBoundChat, codexUnboundChat, draftChat]
 
   // Runs inside a distro, on a Claude model, carrying an accountId it does not use.
@@ -187,7 +189,7 @@ describe('visibleSessions', () => {
   })
 
   it('keeps an origin draft out of the list like any other draft', () => {
-    const draft = makeSession({ id: 'w3', model: 'claude-opus-4-8', wslDistro: 'Ubuntu', messages: [] })
+    const draft = makeSession({ id: 'w3', model: 'claude-opus-4-8', wslDistro: 'Ubuntu', hasTerminalActivity: false })
     const result = visibleSessions([...allSessions, draft], models, 'claude', 'claude-work', defaults)
     expect(result.map((s) => s.id)).not.toContain('w3')
   })
@@ -224,8 +226,8 @@ describe('nextChatAfterClose', () => {
 
   it('skips blank drafts the sidebar does not list', () => {
     const closed = makeSession({ id: 'closed', model: 'claude-opus-4-8', accountId: 'work' })
-    const draft = makeSession({ id: 'draft', model: 'claude-opus-4-8', accountId: 'work', messages: [] })
-    const terminal = makeSession({ id: 'term', model: 'claude-opus-4-8', accountId: 'work', messages: [], hasTerminalActivity: true })
+    const draft = makeSession({ id: 'draft', model: 'claude-opus-4-8', accountId: 'work', hasTerminalActivity: false })
+    const terminal = makeSession({ id: 'term', model: 'claude-opus-4-8', accountId: 'work' })
     expect(nextChatAfterClose(closed, [draft, terminal], models, defaults)?.id).toBe('term')
   })
 
@@ -239,12 +241,31 @@ describe('nextChatAfterClose', () => {
 })
 
 describe('isUnstarted', () => {
-  it('is a chat with no messages and no terminal use', () => {
-    expect(isUnstarted(makeSession({ id: 'd', model: 'claude-opus-4-8', messages: [] }))).toBe(true)
+  it('is a chat with no terminal use, no conversation and no transcript', () => {
+    expect(isUnstarted(makeSession({ id: 'd', model: 'claude-opus-4-8', hasTerminalActivity: false }))).toBe(true)
   })
 
-  it('is not a terminal chat whose transcript has not synced yet — it may be running', () => {
-    const terminal = makeSession({ id: 't', model: 'claude-opus-4-8', messages: [], hasTerminalActivity: true })
-    expect(isUnstarted(terminal)).toBe(false)
+  it('is not a terminal chat — it may be running', () => {
+    expect(isUnstarted(makeSession({ id: 't', model: 'claude-opus-4-8' }))).toBe(false)
+  })
+})
+
+describe('hasHistory', () => {
+  const blank = { model: 'claude-opus-4-8', hasTerminalActivity: false }
+  it('is false for a blank draft', () => {
+    expect(hasHistory(makeSession({ id: 'b', ...blank }))).toBe(false)
+  })
+  it('counts terminal use', () => {
+    expect(hasHistory(makeSession({ id: 't', model: 'claude-opus-4-8' }))).toBe(true)
+  })
+  it('counts a bound Claude Code conversation that has not run here yet (resumed, or migrated)', () => {
+    expect(hasHistory(makeSession({ id: 'c', ...blank, claudeSessionId: 'abc' }))).toBe(true)
+  })
+  it('counts a pre-2.0 transcript the migration has not archived yet', () => {
+    const old = makeSession({ id: 'o', ...blank, messages: [{ id: 'm1', role: 'user', content: 'hi', timestamp: 0 }] })
+    expect(hasHistory(old)).toBe(true)
+  })
+  it('does not count the id a fresh chat reserves for its terminal', () => {
+    expect(hasHistory(makeSession({ id: 'p', ...blank, terminalSessionId: 'reserved' }))).toBe(false)
   })
 })

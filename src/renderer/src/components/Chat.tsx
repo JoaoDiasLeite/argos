@@ -149,7 +149,7 @@ export default function Chat({
           {titleBlock}
           <h2>Start a terminal</h2>
           <p>
-            Pick where it runs — the CLI starts there and can't be moved afterwards.
+            Pick the CLI and where it runs — it starts there and can't be moved afterwards.
           </p>
           <ChatConfigBar session={session} onPatch={onPatchSession} />
           <button

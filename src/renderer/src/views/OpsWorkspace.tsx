@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ApprovalRequest, OpsRunbookInfo } from '../types'
 import ChatTerminal from '../components/ChatTerminal'
 import OpsTimeline from '../components/OpsTimeline'
@@ -9,9 +9,8 @@ import './OpsWorkspace.css'
 /**
  * One runbook's workspace (Servers → Ops → a runbook).
  *
- * Two front ends over the same gate and ledger: the embedded terminal, where the CLI runs
- * with the ops MCP relay in its config, and the SDK chat. The terminal is the daily one, so
- * it is the default; the choice is remembered per runbook.
+ * The embedded terminal, where the CLI runs with the ops MCP relay in its config, beside
+ * the run's timeline. Which CLI is remembered per runbook.
  *
  * A terminal ops session is one run per CLI launch (OPS_AGENT_PLAN §9 Phase 5). The pty
  * outlives this component like every embedded terminal does, so coming back to the
@@ -19,7 +18,6 @@ import './OpsWorkspace.css'
  * only a pty that is gone gets a fresh `opsTerminalSession`.
  */
 
-type Mode = 'terminal' | 'chat'
 type Guarantee = 'tools-and-local-shell' | 'tools-only'
 type Launched = Extract<OpsTerminalSessionResult, { ok: true }>
 
@@ -41,8 +39,8 @@ const GUARANTEE_HINT: Record<Guarantee, string> = {
     'Server commands through the ops tools are gated and logged. This CLI keeps its own local shell, which Argos cannot switch off: the runbook is a rule there, not a lock.'
 }
 
-/** Only Claude Code takes --disallowedTools, so only it loses its own shell (and the SDK
- *  chat is Claude too). Used until main has said which guarantee is in force. */
+/** Only Claude Code takes --disallowedTools, so only it loses its own shell. Used until
+ *  main has said which guarantee is in force. */
 const derivedGuarantee = (provider: OpsTerminalProvider): Guarantee =>
   provider === 'claude' ? 'tools-and-local-shell' : 'tools-only'
 
@@ -106,12 +104,6 @@ type HostDot = 'checking' | 'ok' | 'error'
 interface Props {
   runbookPath: string
   onBack: () => void
-  /** Creates (or finds) this runbook's ops chat, makes it active and returns its id. */
-  openChat: (runbookPath: string, name: string) => string
-  /** The normal chat UI for a session, rendered in the workspace's body. */
-  renderChat: (sessionId: string) => ReactNode
-  /** Which chat the workspace has on screen, so App can leave its approvals to it. */
-  onChatVisible: (sessionId: string | null) => void
   /** Which ops terminal the workspace has on screen, so App can route that run's plan
    *  here instead of covering the terminal with its drawer. */
   onTerminalVisible?: (terminalId: string | null) => void
@@ -124,9 +116,6 @@ interface Props {
 export default function OpsWorkspace({
   runbookPath,
   onBack,
-  openChat,
-  renderChat,
-  onChatVisible,
   onTerminalVisible,
   pendingPlan,
   onPlanDecide,
@@ -134,13 +123,11 @@ export default function OpsWorkspace({
 }: Props) {
   const [info, setInfo] = useState<OpsRunbookInfo | null>(null)
   const [hostDots, setHostDots] = useState<Record<string, HostDot>>({})
-  const [mode, setModeState] = useState<Mode>(() => readPref(`ops.mode.${runbookPath}`, ['terminal', 'chat'], 'terminal'))
   const [provider, setProviderState] = useState<OpsTerminalProvider>(() =>
     readPref(`ops.provider.${runbookPath}`, ['claude', 'codex', 'gemini'], 'claude')
   )
   const [term, setTerm] = useState<TermState>({ kind: 'starting' })
   const [timelineOpen, setTimelineOpen] = useState(true)
-  const [chatSessionId, setChatSessionId] = useState<string | null>(null)
 
   const terminalId = opsTerminalId(runbookPath, provider)
   const keyRef = useRef(0)
@@ -148,10 +135,6 @@ export default function OpsWorkspace({
   // pressed twice) is dropped instead of overwriting the newer state.
   const startSeqRef = useRef(0)
 
-  const setMode = (m: Mode) => {
-    setModeState(m)
-    writePref(`ops.mode.${runbookPath}`, m)
-  }
   const setProvider = (p: OpsTerminalProvider) => {
     setProviderState(p)
     writePref(`ops.provider.${runbookPath}`, p)
@@ -181,7 +164,7 @@ export default function OpsWorkspace({
     }
   }, [runbookPath])
 
-  // ── Terminal mode ──
+  // ── The terminal ──
   /** `fresh`: a new run on purpose (Relaunch, Launch after close) — the old pty, if any,
    *  is ended first. Otherwise a live pty is reattached to as it is. */
   const start = useCallback(
@@ -221,12 +204,10 @@ export default function OpsWorkspace({
   )
 
   useEffect(() => {
-    if (mode !== 'terminal') return
     void start(false)
-  }, [mode, start])
+  }, [start])
 
   useEffect(() => {
-    if (mode !== 'terminal') return
     return window.electronAPI.onTerminalExit((e) => {
       if (e.id !== terminalId || KILLED_EXIT_CODES.has(e.exitCode)) return
       launches.delete(terminalId)
@@ -234,7 +215,7 @@ export default function OpsWorkspace({
         prev.kind === 'ready' ? { kind: 'exited', code: e.exitCode, launch: prev.launch, key: prev.key } : prev
       )
     })
-  }, [mode, terminalId])
+  }, [terminalId])
 
   const closeTerminal = () => {
     startSeqRef.current++
@@ -243,38 +224,18 @@ export default function OpsWorkspace({
     setTerm({ kind: 'closed' })
   }
 
-  // ── Chat mode ──
-  // Asked once per runbook per mount: App adds the session asynchronously, so a second
-  // ask in the same tick (React's strict double effect) would find nothing and make two.
-  const chatAskedRef = useRef<string | null>(null)
-  useEffect(() => {
-    if (mode !== 'chat' || chatAskedRef.current === runbookPath) return
-    chatAskedRef.current = runbookPath
-    setChatSessionId(openChat(runbookPath, baseName(runbookPath)))
-  }, [mode, runbookPath, openChat])
-
-  useEffect(() => {
-    if (mode !== 'chat' || !chatSessionId) return
-    onChatVisible(chatSessionId)
-    return () => onChatVisible(null)
-  }, [mode, chatSessionId, onChatVisible])
-
   // A plan for this terminal's run is reviewed in the side column, beside the terminal.
   useEffect(() => {
-    if (mode !== 'terminal' || !onTerminalVisible) return
+    if (!onTerminalVisible) return
     onTerminalVisible(terminalId)
     return () => onTerminalVisible(null)
-  }, [mode, terminalId, onTerminalVisible])
-  const plan = mode === 'terminal' && pendingPlan?.appSessionId === terminalId && onPlanDecide ? pendingPlan : undefined
+  }, [terminalId, onTerminalVisible])
+  const plan = pendingPlan?.appSessionId === terminalId && onPlanDecide ? pendingPlan : undefined
 
   // ── Render ──
   const name = info?.ok ? info.name : baseName(runbookPath)
   const guarantee: Guarantee =
-    mode === 'chat'
-      ? 'tools-and-local-shell'
-      : term.kind === 'ready' || term.kind === 'exited'
-        ? term.launch.guarantee
-        : derivedGuarantee(provider)
+    term.kind === 'ready' || term.kind === 'exited' ? term.launch.guarantee : derivedGuarantee(provider)
 
   return (
     <div className="view ops-ws">
@@ -293,24 +254,14 @@ export default function OpsWorkspace({
           {GUARANTEE_LABEL[guarantee]}
         </span>
         <div className="ops-ws-spacer" />
-        {mode === 'terminal' && (
-          <div className="seg-control ops-ws-seg" role="group" aria-label="CLI">
-            {PROVIDERS.map((p) => (
-              <button key={p.id} className={provider === p.id ? 'on' : ''} onClick={() => setProvider(p.id)}>
-                {p.label}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="seg-control ops-ws-seg" role="group" aria-label="Mode">
-          <button className={mode === 'terminal' ? 'on' : ''} onClick={() => setMode('terminal')}>
-            Terminal
-          </button>
-          <button className={mode === 'chat' ? 'on' : ''} onClick={() => setMode('chat')}>
-            Chat
-          </button>
+        <div className="seg-control ops-ws-seg" role="group" aria-label="CLI">
+          {PROVIDERS.map((p) => (
+            <button key={p.id} className={provider === p.id ? 'on' : ''} onClick={() => setProvider(p.id)}>
+              {p.label}
+            </button>
+          ))}
         </div>
-        {mode === 'terminal' && !timelineOpen && (
+        {!timelineOpen && (
           <button className="btn-ghost small" onClick={() => setTimelineOpen(true)}>
             Timeline
           </button>
@@ -346,59 +297,51 @@ export default function OpsWorkspace({
       </div>
 
       <div className="ops-ws-body">
-        {mode === 'terminal' ? (
-          <>
-            <div className="ops-ws-main">
-              {term.kind === 'starting' && <div className="ops-ws-state">Starting the ops session…</div>}
-              {term.kind === 'error' && (
-                <div className="ops-ws-state bad" role="alert">
-                  <span>{term.error}</span>
-                  <button className="btn-ghost small" onClick={() => void start(false)}>
-                    Retry
-                  </button>
-                </div>
-              )}
-              {term.kind === 'closed' && (
-                <div className="ops-ws-state">
-                  <span>Terminal closed; its run is over.</span>
-                  <button className="btn-ghost small" onClick={() => void start(true)}>
-                    Launch
-                  </button>
-                </div>
-              )}
-              {term.kind === 'exited' && (
-                <div className="ops-ws-strip">
-                  <span>CLI exited{term.code ? ` · code ${term.code}` : ''}</span>
-                  <button className="btn-ghost small" onClick={() => void start(true)}>
-                    Relaunch
-                  </button>
-                </div>
-              )}
-              {(term.kind === 'ready' || term.kind === 'exited') && (
-                <ChatTerminal
-                  key={`${terminalId}:${term.key}`}
-                  terminalId={terminalId}
-                  cwd={runbookPath}
-                  provider={provider}
-                  autoLaunchCli
-                  active
-                  ops={{ env: term.launch.env, mcpConfigPath: term.launch.mcpConfigPath }}
-                  onClose={closeTerminal}
-                />
-              )}
+        <div className="ops-ws-main">
+          {term.kind === 'starting' && <div className="ops-ws-state">Starting the ops session…</div>}
+          {term.kind === 'error' && (
+            <div className="ops-ws-state bad" role="alert">
+              <span>{term.error}</span>
+              <button className="btn-ghost small" onClick={() => void start(false)}>
+                Retry
+              </button>
             </div>
-            {plan && onPlanDecide ? (
-              <div className="ops-ws-plan">
-                <PlanReviewSheet key={plan.approvalId} request={plan} onDecide={onPlanDecide} onStop={onPlanStop} embedded />
-              </div>
-            ) : timelineOpen && (
-              <OpsTimeline appSessionId={terminalId} runbookPath={runbookPath} onClose={() => setTimelineOpen(false)} />
-            )}
-          </>
-        ) : (
-          <div className="ops-ws-main ops-ws-chat">
-            {chatSessionId ? renderChat(chatSessionId) : <div className="ops-ws-state">Opening the ops chat…</div>}
+          )}
+          {term.kind === 'closed' && (
+            <div className="ops-ws-state">
+              <span>Terminal closed; its run is over.</span>
+              <button className="btn-ghost small" onClick={() => void start(true)}>
+                Launch
+              </button>
+            </div>
+          )}
+          {term.kind === 'exited' && (
+            <div className="ops-ws-strip">
+              <span>CLI exited{term.code ? ` · code ${term.code}` : ''}</span>
+              <button className="btn-ghost small" onClick={() => void start(true)}>
+                Relaunch
+              </button>
+            </div>
+          )}
+          {(term.kind === 'ready' || term.kind === 'exited') && (
+            <ChatTerminal
+              key={`${terminalId}:${term.key}`}
+              terminalId={terminalId}
+              cwd={runbookPath}
+              provider={provider}
+              autoLaunchCli
+              active
+              ops={{ env: term.launch.env, mcpConfigPath: term.launch.mcpConfigPath }}
+              onClose={closeTerminal}
+            />
+          )}
+        </div>
+        {plan && onPlanDecide ? (
+          <div className="ops-ws-plan">
+            <PlanReviewSheet key={plan.approvalId} request={plan} onDecide={onPlanDecide} onStop={onPlanStop} embedded />
           </div>
+        ) : timelineOpen && (
+          <OpsTimeline appSessionId={terminalId} runbookPath={runbookPath} onClose={() => setTimelineOpen(false)} />
         )}
       </div>
     </div>

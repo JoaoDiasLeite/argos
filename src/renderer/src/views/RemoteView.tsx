@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { SshHostPublic, SshHostInput, SshAuthType, SshKeyInfo, WslDistro, SourceInfo } from '../types'
 import Menu, { MoreIcon } from '../components/Menu'
-import { readRecentRunbooks } from '../components/ChatConfigBar'
+import { readRecentRunbooks } from '../lib/recent-runbooks'
 import './views.css'
 import './RemoteView.css'
 
 interface Props {
   onConnect: (host: SshHostPublic) => void
-  /** A local Claude chat under a recent runbook that reaches this host (ops profile).
-   *  Offered only once at least one runbook has been picked. */
-  onOpsChat?: (host: SshHostPublic) => void
+  /** Opens the Ops workspace of a recent runbook that reaches this host. Offered only
+   *  once at least one runbook has been opened in Servers → Ops. */
+  onOps?: (host: SshHostPublic) => void
   onConnectWsl: (distro: string, cwd?: string) => void
   /** Opens the full Remote Session workspace (SFTP browser + terminal + history) for a host.
    *  `newSession` forces another session on a target that already has one; without it the
@@ -60,7 +60,7 @@ function emptyHost(): SshHostInput {
 
 export default function RemoteView({
   onConnect,
-  onOpsChat,
+  onOps,
   onConnectWsl,
   onOpenSession,
   onOpenWslSession,
@@ -69,7 +69,7 @@ export default function RemoteView({
   failedSshSessions = []
 }: Props) {
   const [hosts, setHosts] = useState<SshHostPublic[]>([])
-  // Read once per visit: runbooks are picked from a chat's config bar, not from here.
+  // Read once per visit: runbooks are opened in Servers → Ops, not from here.
   const [hasRunbooks] = useState(() => readRecentRunbooks().length > 0)
   const [distros, setDistros] = useState<WslDistro[]>([])
   const [sources, setSources] = useState<SourceInfo[]>([])
@@ -442,7 +442,7 @@ export default function RemoteView({
                             triggerTitle="More"
                             triggerContent={<MoreIcon />}
                             items={[
-                              { label: 'New chat here', onClick: () => onConnectWsl(d.name, cwd || undefined) },
+                              { label: 'New terminal here', onClick: () => onConnectWsl(d.name, cwd || undefined) },
                               { label: cwd ? `Working dir · ${cwd}` : 'Set working dir…', onClick: () => toggleCwd(d.name) },
                               { label: wslTesting === d.name ? 'Testing…' : 'Test connection', disabled: wslTesting === d.name, onClick: () => probeWsl(d.name, 'conn') },
                               { label: 'Check Claude Code', disabled: wslTesting === d.name, onClick: () => probeWsl(d.name, 'claude') },
@@ -532,13 +532,13 @@ export default function RemoteView({
                           >
                             Connect
                           </button>
-                          {onOpsChat && hasRunbooks && (
+                          {onOps && hasRunbooks && (
                             <button
                               className="btn-secondary small"
-                              onClick={() => onOpsChat(host)}
-                              title="Local Claude chat whose commands on this host go through a runbook's gate"
+                              onClick={() => onOps(host)}
+                              title="Open the Ops workspace of a runbook that reaches this host: its commands go through the runbook's gate"
                             >
-                              Ops chat
+                              Ops
                             </button>
                           )}
                           <Menu
@@ -546,10 +546,9 @@ export default function RemoteView({
                             triggerTitle="More"
                             triggerContent={<MoreIcon />}
                             items={[
-                              /* Says where the chat runs: this path drives the host's own
-                                 Claude Code with acceptEdits, approved once per run rather
-                                 than per tool — the opposite of the local gate. */
-                              { label: 'New chat on host (runs its Claude Code)', onClick: () => onConnect(host) },
+                              /* Says where the terminal runs: the host's own CLI over SSH,
+                                 ungated — the opposite of the Ops workspace. */
+                              { label: 'New terminal on host (runs its CLI)', onClick: () => onConnect(host) },
                               { label: testing === host.id ? 'Testing…' : 'Test connection', disabled: testing === host.id, onClick: () => probeHost(host.id, 'conn') },
                               { label: 'Check Claude Code', disabled: testing === host.id, onClick: () => probeHost(host.id, 'claude') },
                               {

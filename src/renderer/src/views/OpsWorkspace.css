@@ -128,7 +128,6 @@
   overflow: hidden;
 }
 
-.ops-ws-chat { background: var(--bg-0); }
 
 /* The plan review sheet, in the timeline's place while a plan waits. */
 .ops-ws-plan {

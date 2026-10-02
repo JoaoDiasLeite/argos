@@ -20,7 +20,7 @@ export interface AccountDefaults {
 }
 
 // Which account a chat is filed under. Fallbacks mirror how an unbound chat actually
-// RUNS (see App.tsx's buildAgentPayload), so a chat is never filed under an account it
+// RUNS (see useSessionPane), so a chat is never filed under an account it
 // wouldn't run on. A legacy chat with no accountId/codexAccountId/geminiAccountId runs
 // on that provider's current default account — Claude, Codex and Gemini all resolve the
 // same way now. (Previously Codex fell through to the literal 'default' account instead
@@ -81,9 +81,18 @@ export function idFor(
   return (provider === selectedProvider ? selectedAccountId : undefined) ?? fallback ?? 'default'
 }
 
-// Blank "New chat" drafts (no messages yet, and never used via the embedded terminal
-// either) stay out of the list — the Sessions section only appears once at least one
-// chat has real content. Chats are also scoped to the
+/**
+ * Whether a chat has anything behind it: a terminal that has run, a Claude Code
+ * conversation it is bound to (a resumed one, or a pre-2.0 chat after migration), or a
+ * pre-2.0 transcript not migrated yet. The last clause is last on purpose — it goes when
+ * `messages` leaves Session (B4).
+ */
+export function hasHistory(s: Session): boolean {
+  return !!s.hasTerminalActivity || !!s.claudeSessionId || (s.messages?.length ?? 0) > 0
+}
+
+// Blank "New chat" drafts (see hasHistory) stay out of the list — the Sessions section
+// only appears once at least one chat has real content. Chats are also scoped to the
 // selected provider + account: a chat is permanently bound to the provider/account that
 // created it, so switching either swaps the visible history. Older chats without an
 // accountId fall under that provider's machine-default account ('default'), same as
@@ -103,7 +112,7 @@ export function visibleSessions(
 ): Session[] {
   return sessions.filter(
     (s) =>
-      (s.messages.length > 0 || s.hasTerminalActivity) &&
+      hasHistory(s) &&
       provOf(models, s.model) === selectedProvider &&
       acctOf(s, models, defaults) === currentAccountId
   )
@@ -112,14 +121,14 @@ export function visibleSessions(
 /**
  * A chat nothing has happened in yet — the only kind an account switch may rebind.
  *
- * Zero messages is not enough on its own: a chat driven from the embedded terminal has
- * none until its transcript is synced, which may not be until the run is over. Treating
- * that as a blank draft moved a chat onto the account just picked while it was still
- * running there — relaunching its terminal under a login its conversation doesn't exist
- * on, and filing it under an account whose list you'd already left.
+ * A terminal chat keeps no transcript of its own, so this asks hasHistory rather than
+ * counting messages. Treating a terminal chat as a blank draft moved it onto the account
+ * just picked while it was still running there — relaunching its terminal under a login
+ * its conversation doesn't exist on, and filing it under an account whose list you'd
+ * already left.
  */
 export function isUnstarted(s: Session): boolean {
-  return s.messages.length === 0 && !s.hasTerminalActivity
+  return !hasHistory(s)
 }
 
 /** The provider and account a chat puts the sidebar on while it is the active chat. */
@@ -143,6 +152,6 @@ export function nextChatAfterClose(
 ): Session | undefined {
   const scope = scopeOf(closed, models, defaults)
   return remaining.find(
-    (s) => (s.messages.length > 0 || s.hasTerminalActivity) && scopeOf(s, models, defaults) === scope
+    (s) => hasHistory(s) && scopeOf(s, models, defaults) === scope
   )
 }

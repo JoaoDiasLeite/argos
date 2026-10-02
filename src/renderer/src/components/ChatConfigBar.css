@@ -1,5 +1,4 @@
-/* Lives inside the composer chip row — stays on a single line (overflowing chips
-   collapse behind the "+N more" popover instead of wrapping). */
+/* The pre-launch row of the terminal setup pane: environment, folder, branch. */
 .config-bar {
   display: flex;
   flex-wrap: nowrap;
@@ -48,7 +47,7 @@ button.config-pill:hover:not(:disabled) {
   cursor: default;
 }
 
-/* Read-only pills (branch, dir chips) don't look clickable. */
+/* Read-only pills (the branch) don't look clickable. */
 .config-pill.static {
   cursor: default;
   background: var(--bg-2);
@@ -59,90 +58,6 @@ button.config-pill:hover:not(:disabled) {
   margin-left: -1px;
 }
 
-/* Worktree toggle */
-.config-pill.toggle.on {
-  color: var(--accent);
-  background: var(--accent-dim);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-}
-.config-pill.toggle.on svg {
-  color: var(--accent);
-}
-
-.config-check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border: 1.5px solid var(--text-2);
-  border-radius: 4px;
-}
-.config-check.on {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
-}
-.config-check.on svg {
-  color: #fff;
-}
-
-/* Add-directory (icon-only) */
-.config-pill.add-dir {
-  padding: 0 8px;
-}
-
-/* Additional-directory chips */
-.dir-chip {
-  padding-right: 6px;
-}
-.dir-chip-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 15px;
-  height: 15px;
-  padding: 0;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-2);
-  cursor: pointer;
-}
-.dir-chip-remove:hover {
-  background: var(--bg-hover);
-  color: var(--text-0);
-}
-
-/* "+N more" overflow chip and its popover */
-.config-pill.config-more {
-  color: var(--text-2);
-  background: var(--bg-2);
-}
-.config-overflow {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 200px;
-}
-.config-overflow-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  font-size: 12.5px;
-  color: var(--text-1);
-}
-.config-overflow-row:hover {
-  background: var(--bg-hover);
-}
-.config-overflow-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 /* Environment dropdown */
 .config-env {
@@ -238,108 +153,9 @@ button.config-pill:hover:not(:disabled) {
   color: var(--text-2);
 }
 
-/* ── Ops chat (runbook) ── */
-.config-pill.config-ops-pill {
-  color: var(--accent);
-  background: var(--accent-dim);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-}
-.config-pill.config-ops-pill svg {
-  color: var(--accent);
-}
-.config-pill.config-ops-pill.config-ops-pill-bad {
-  color: var(--error);
-  background: color-mix(in srgb, var(--error) 12%, var(--bg-1));
-  border-color: color-mix(in srgb, var(--error) 50%, var(--border));
-}
-.config-pill.config-ops-pill.config-ops-pill-bad svg {
-  color: var(--error);
-}
 
-/* The runbook's hosts, its strict flag and any warning, after the env pill. Shrinks
-   (with ellipsis) rather than wrapping, like the rest of the row. */
-.config-ops-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  overflow: hidden;
-  font-size: 11.5px;
-  color: var(--text-1);
-  white-space: nowrap;
-}
-.config-ops-host {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-}
-.config-ops-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--text-2);
-  opacity: 0.6;
-}
-.config-ops-dot.ok {
-  background: var(--success);
-  opacity: 1;
-}
-.config-ops-dot.error {
-  background: var(--error);
-  opacity: 1;
-}
-.config-ops-mode,
-.config-ops-warn {
-  flex-shrink: 0;
-  padding: 2px 6px;
-  border-radius: 5px;
-  font-size: 10.5px;
-  font-weight: 600;
-  background: var(--bg-2);
-  color: var(--text-2);
-}
-.config-ops-mode.strict {
-  color: var(--accent);
-  background: var(--accent-dim);
-}
-.config-ops-warn {
-  color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 14%, var(--bg-1));
-}
-.config-ops-meta {
-  color: var(--text-2);
-}
-.config-ops-bad {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--error);
-}
-
-/* A runbook that failed to load, inside the env menu. */
-.config-ops-error {
-  margin: 4px 2px 2px;
-  padding: 7px 9px;
-  max-width: 320px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--error) 10%, var(--bg-1));
-  color: var(--error);
-  font-size: 11.5px;
-  line-height: 1.4;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.config-ops-error ul {
-  margin: 4px 0 0;
-  padding-left: 16px;
-}
-.config-menu-item:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-/* In the terminal setup pane this row is not a composer chip row — it has the whole
-   pane, so its chips are free to wrap onto a second line and sit centred. */
+/* In the terminal setup pane this row has the whole pane, so its chips are free to wrap
+   onto a second line and sit centred. */
 .terminal-setup .config-bar {
   flex-wrap: wrap;
   justify-content: center;

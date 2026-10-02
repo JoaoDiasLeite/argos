@@ -39,21 +39,22 @@ Valid `-View` names: `chat`, `projects`, `agents`, `rooms`, `planner`,
   launcher writes them on first load, then reloads. This is how to photograph state that
   otherwise only exists after a gesture — the pane layout lives under `argos.panes.v1`,
   e.g. `{"argos.panes.v1":{"v":1,"layout":"cols-2","panes":[{"sessionId":"demo"},{"sessionId":"demo2"}],"focused":"demo"}}`
-  splits the two seeded chats into two columns. Every session id named there must exist
+  splits two of the seeded terminal chats into two columns. Every session id named there must exist
   in `seed/sessions/`, or it is dropped as stale.
 - `VISUAL_CHECK_CONFIG_PATCH` merges a JSON object one level deep into the seeded
-  `config.json` before the app starts. `{"ui":{"workMode":"terminal"}}` is the one that
-  matters: it puts real embedded terminals on screen instead of chat transcripts, which
-  is the only way to photograph anything about how terminals look. The CLIs do start for
-  real in the isolated instance, so expect a trust prompt in the capture.
+  `config.json` before the app starts (theme, density, `showWeekPlanner`, …). There is
+  no work mode any more: every chat is an embedded terminal, so opening a seeded chat
+  starts its CLI for real in the isolated instance — expect a trust prompt in the
+  capture.
 - `VISUAL_CHECK_CC_SESSION` does the same for a Claude Code conversation: set it
   to a JSON target (`{"encodedDir":"-home-x-repo","sessionId":"<uuid>"}`) and the
   launcher sends `app:open-cc-session`, the channel a notification click uses. The
   conversation has to exist on disk — create a disposable project under
   `~/.claude/projects/` for it and delete it afterwards.
 - `scripts/visual-check/seed/` holds a pre-built `config.json` (onboarding
-  already marked done, dark theme) and a `sessions/demo.json` demo chat so
-  the transcript isn't empty.
+  already marked done, dark theme) and four terminal chats in `sessions/demo*.json`
+  (`hasTerminalActivity: true`, a folder, no messages), so the sidebar has rows and a
+  chat opens straight into its terminal rather than the setup pane.
 - `scripts/visual-check/run.ps1` copies the seed into a fresh temp userData
   dir, builds, launches `electron.exe scripts/visual-check/launch.js`, waits
   ~11s for render, calls `snap.ps1`, then kills the process.
