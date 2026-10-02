@@ -15,7 +15,6 @@ export const ALL_VIEWS = [
   'home',
   'chat',
   'projects',
-  'live',
   'agents',
   'rooms',
   'planner',
@@ -65,9 +64,6 @@ const ICONS: Record<string, JSX.Element> = {
     <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
   ),
   projects: <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />,
-  // A pulse: the view is about what is running right now, and a heartbeat says that
-  // without borrowing the terminal glyph the Servers group already owns.
-  live: <path d="M22 12h-4l-3 9L9 3l-3 9H2" />,
   agents: (
     <>
       <rect x="3" y="11" width="18" height="10" rx="2" />
@@ -158,9 +154,9 @@ type RailEntry =
   | { kind: 'single'; view: View; label: string }
   | { kind: 'group'; group: ViewGroup }
 
-// Live and Agents are kept out of the rail for now — the views, their routing and
-// everything that reaches them from elsewhere are untouched, so putting either entry
-// back is a matter of restoring its line here.
+// Agents is kept out of the rail for now — the view, its routing and everything that
+// reaches it from elsewhere are untouched, so putting the entry back is a matter of
+// restoring its line here.
 const RAIL: RailEntry[] = [
   { kind: 'single', view: 'home', label: 'Home' },
   { kind: 'single', view: 'chat', label: 'Chat' },

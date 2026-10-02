@@ -54,8 +54,8 @@
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
-/* Same register as `.live-terminal-cell-head`, tightened: that one heads a 420px card in a
-   scrolling view, this one steals height from a terminal where rows are the scarce resource. */
+/* Tight on purpose: this head steals height from a terminal, where rows are the scarce
+   resource. */
 .pane-head {
   display: flex;
   align-items: center;

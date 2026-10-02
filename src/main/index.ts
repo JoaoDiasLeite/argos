@@ -43,7 +43,7 @@ import {
   unarchiveSession
 } from './session-lifecycle'
 import { deleteProject, moveProjectFolder } from './project-lifecycle'
-import { listLiveSessions, takeoverSession } from './live-sessions'
+import { listLiveSessions } from './live-sessions'
 import { adoptTerminalSessions } from './session-adoption'
 import {
   BacklogRef,
@@ -2049,14 +2049,6 @@ ipcMain.handle('cc:live-sessions', () => listLiveSessions())
 // Also read-only: matches a chat terminal's pty to the live `claude` under it. See
 // session-adoption.ts for why it refuses to guess.
 ipcMain.handle('cc:adopt-sessions', (_, terminalIds: string[]) => adoptTerminalSessions(terminalIds))
-
-// The one place Argos signals a process it did not start. Every guard is in
-// takeover-pure.ts; this handler adds nothing to the decision.
-ipcMain.handle(
-  'cc:takeover-session',
-  (_, sourceId: string, sessionId: string, expectedPid: number) =>
-    takeoverSession(sourceId, sessionId, expectedPid)
-)
 
 // ─── Session tags + the label vocabulary ──────────────────────────────────────
 //

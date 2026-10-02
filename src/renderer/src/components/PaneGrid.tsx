@@ -310,8 +310,8 @@ export default function PaneGrid({
     /* The workspace panes, and only they, render their terminals on the GPU. They are the
        terminals that stream output at the same time — up to four CLIs repainting at once is
        what makes the DOM renderer hurt — and, just as importantly, there are at most four of
-       them. The Live view mounts one terminal per running pty with no such ceiling, so it
-       stays on the DOM renderer via the context's `false` default rather than by asking.
+       them. Every other terminal has no such ceiling, so it stays on the DOM renderer via
+       the context's `false` default rather than by asking.
 
        Provided here rather than passed down as a prop because the terminal is four
        components away (ChatPane → Chat → ChatTerminal) and neither component in between has

@@ -114,8 +114,8 @@ interface Props {
   onOpenScheduled: () => void
 }
 
-/** Own copy on purpose — see LiveView's `timeAgo` for why this isn't shared across
- *  files (convention 1: no cross-file coupling to save a few lines). */
+/** Own copy on purpose — ProjectsView has its own, and this isn't shared across files
+ *  (convention 1: no cross-file coupling to save a few lines). */
 function timeAgo(ts: number): string {
   if (!ts) return ''
   const diff = Date.now() - ts
@@ -128,8 +128,8 @@ function timeAgo(ts: number): string {
   return `${d}d ago`
 }
 
-/** How long a run has been going, from `startedAt`. Own copy — see LiveView's
- *  `duration` and ProjectsView's own version, this file's is the third by convention. */
+/** How long a run has been going, from `startedAt`. Own copy — ProjectsView
+ *  has its own version, by the same convention. */
 function duration(startedAt: number): string {
   if (!startedAt) return ''
   const diff = Math.max(0, Date.now() - startedAt)

@@ -363,26 +363,6 @@ export interface LiveSession {
 }
 
 /**
- * Why a takeover was refused. Nine reasons rather than one boolean, because they
- * mean genuinely different things to whoever is reading: one needs a refresh, one
- * will never work, and one means the pid was recycled and something else holds it.
- */
-export type TakeoverRefusal =
-  | 'not-found'
-  | 'foreign'
-  | 'pid-changed'
-  | 'no-proc-start'
-  | 'not-running'
-  | 'unverifiable'
-  | 'pid-reused'
-  | 'not-claude'
-  | 'failed'
-
-export type TakeoverResult =
-  | { ok: true; pid: number }
-  | { ok: false; error: TakeoverRefusal; detail?: string }
-
-/**
  * A pty the main process is currently holding. Mirrors `TerminalInfo` in
  * src/main/terminal.ts, which is deliberately narrower than the options a terminal
  * was created with: this shape exists to be displayed, and carrying the environment
@@ -1688,16 +1668,6 @@ declare global {
         claimed: string[],
         accountId?: string
       ) => Promise<Record<string, { threadId: string; title: string | null }>>
-      /**
-       * Ask a live `claude` to exit so its conversation can be resumed here.
-       * `expectedPid` is the pid the UI displayed — it is only ever used to refuse
-       * when the registry now says something else, never to choose what to signal.
-       */
-      ccTakeoverSession: (
-        sourceId: string,
-        sessionId: string,
-        expectedPid: number
-      ) => Promise<TakeoverResult>
       /** Move the project's real folder on disk, and re-key everything that named it. */
       ccProjectMove: (
         sourceId: string,

@@ -50,7 +50,7 @@ interface Props {
   closable?: boolean
   onClose?: () => void
   /** Opens the Git panel for this chat. Optional: a terminal that is nobody's chat — the
-   *  Remote Session pane, the Live view's grid — has no repository to point at and leaves
+   *  Remote Session pane — has no repository to point at and leaves
    *  it out. It belongs on this bar because in terminal mode the bar is the only chrome
    *  there is: the chat's ⋯ menu, where Git otherwise lives, is hidden for as long as a
    *  terminal is open (see the float cluster in Chat.tsx). */
@@ -70,8 +70,8 @@ interface Props {
   /** Render this terminal on the GPU (xterm's WebGL renderer) instead of in the DOM.
    *
    *  Default `false`, and deliberately so: Chromium caps the number of live WebGL contexts
-   *  per renderer process (~16), and a view that mounts one terminal per running pty (the
-   *  Live view's grid) would exhaust them and have terminals lose their context in a
+   *  per renderer process (~16), and a view that mounted one terminal per running pty
+   *  would exhaust them and have terminals lose their context in a
    *  cascade. Only a bounded set of terminals — the at-most-four workspace panes, which are
    *  also the ones streaming output at the same time — asks for it.
    *

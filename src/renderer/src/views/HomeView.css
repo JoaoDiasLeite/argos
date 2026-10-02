@@ -1,5 +1,4 @@
-/* Home — a presentation-only dashboard view. All classes scoped `home-` (convention 6,
-   see LiveView.css). The view-level vocabulary (`.view-*`) comes from views.css, which
+/* Home — a presentation-only dashboard view. All classes scoped `home-` (convention 6). The view-level vocabulary (`.view-*`) comes from views.css, which
    every view already shares. The status dot is deliberately NOT Sidebar's `.session-dot`:
    that rule lives in a component's own stylesheet, and a view that borrows it renders
    correctly only for as long as that component happens to be mounted. */

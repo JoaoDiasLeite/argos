@@ -268,8 +268,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     claimed: string[],
     accountId?: string
   ) => ipcRenderer.invoke('codex:link-threads', chats, claimed, accountId),
-  ccTakeoverSession: (sourceId: string, sessionId: string, expectedPid: number) =>
-    ipcRenderer.invoke('cc:takeover-session', sourceId, sessionId, expectedPid),
 
   // Session tags + label vocabulary
   ccSetSessionTags: (sourceId: string, encodedDir: string, sessionId: string, tags: string[]) =>

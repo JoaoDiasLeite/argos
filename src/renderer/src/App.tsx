@@ -91,7 +91,6 @@ import './styles/App.css'
 import './views/views.css'
 
 const ProjectsView = lazy(() => import('./views/ProjectsView'))
-const LiveView = lazy(() => import('./views/LiveView'))
 const AgentsView = lazy(() => import('./views/AgentsView'))
 const RoomsView = lazy(() => import('./views/RoomsView'))
 const UsageView = lazy(() => import('./views/UsageView'))
@@ -3598,11 +3597,6 @@ export default function App() {
       {view === 'projects' && (
         <Suspense fallback={<ViewLoading />}>
           <ProjectsView onResume={resumeCCSession} target={ccTarget} focus={projectFocus} />
-        </Suspense>
-      )}
-      {view === 'live' && (
-        <Suspense fallback={<ViewLoading />}>
-          <LiveView />
         </Suspense>
       )}
       {view === 'usage' && (
