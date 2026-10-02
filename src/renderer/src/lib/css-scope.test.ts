@@ -62,15 +62,10 @@ const EXEMPT_PREFIXES = ['hljs-']
  * joining an existing collision also fails rather than hiding behind the entry.
  */
 const BASELINE = [
-  'account-dot :: src/renderer/src/components/AccountPicker.css | src/renderer/src/components/AccountsModal.css',
   'account-picker-btn :: src/renderer/src/components/AccountPicker.css | src/renderer/src/views/PlannerView.css | src/renderer/src/views/SprintBoard.css',
   'assist-runwith-field :: src/renderer/src/views/PlannerView.css | src/renderer/src/views/SprintBoard.css',
-  'cc-row-tag-btn :: src/renderer/src/components/SessionTags.css | src/renderer/src/views/ProjectsView.css',
   'model-picker-btn :: src/renderer/src/components/ModelPicker.css | src/renderer/src/views/PlannerView.css | src/renderer/src/views/SprintBoard.css',
-  'peek :: src/renderer/src/components/SessionPeek.css | src/renderer/src/views/ProjectsView.css',
   'planner-label :: src/renderer/src/views/PlannerView.css | src/renderer/src/views/SprintBoard.css',
-  'tag-chips :: src/renderer/src/components/SessionTags.css | src/renderer/src/views/ProjectsView.css',
-  'tag-editor :: src/renderer/src/components/SessionTags.css | src/renderer/src/views/ProjectsView.css',
   'task-del :: src/renderer/src/views/PlannerView.css | src/renderer/src/views/SprintBoard.css'
 ]
 

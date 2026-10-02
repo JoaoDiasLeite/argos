@@ -487,6 +487,7 @@ export default function RemoteView({
                     <Menu
                       triggerClass="btn-ghost small rv-icon-btn"
                       triggerTitle="More"
+                      ariaLabel="More"
                       triggerContent={<MoreIcon />}
                       items={[
                         {

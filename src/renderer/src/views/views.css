@@ -256,7 +256,7 @@
 
    This block deliberately spans several view-owned card classes
    (.usage-card, .account-card,
-   .mcp-card, .search-hit) at once — it's a single cross-cutting "elevated
+   .mcp-card) at once — it's a single cross-cutting "elevated
    surface" trait, not a competing redefinition of any one of them (no
    property here overlaps with what each owning view's stylesheet sets).
    Kept here on purpose so the trait stays defined exactly once instead of
@@ -266,8 +266,7 @@
 /* Elevated card surfaces */
 .usage-card,
 .account-card,
-.mcp-card,
-.search-hit {
+.mcp-card {
   border-radius: var(--radius-surface);
   border: 1px solid var(--border);
   background: var(--bg-2);
@@ -277,8 +276,7 @@
 
 /* Lift on hover for the clickable cards */
 .usage-card:hover,
-.account-card:hover,
-.search-hit:hover {
+.account-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2), 0 10px 26px rgba(0, 0, 0, 0.16);
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));

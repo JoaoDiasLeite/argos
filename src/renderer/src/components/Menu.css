@@ -1,4 +1,5 @@
-/* Shared dropdown menu primitive (see components/Menu.tsx). */
+/* Shared dropdown menu primitive (see components/Menu.tsx): a 4 px --bg-1 popover with
+   the one shadow popovers are allowed, flat item rows, group labels as eyebrows. */
 .ui-menu {
   position: relative;
   display: inline-flex;
@@ -11,14 +12,14 @@
   max-width: 320px;
   max-height: 340px;
   overflow-y: auto;
-  background: var(--bg-1);
-  border: 1px solid var(--border-light);
-  border-radius: 11px;
-  padding: 5px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  padding: 4px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 .ui-menu-pop.right { right: 0; }
 .ui-menu-pop.left { left: 0; }
@@ -28,7 +29,7 @@
   gap: 9px;
   padding: 8px 10px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-surface);
   background: transparent;
   color: var(--text-1);
   font-size: 13px;
@@ -38,13 +39,13 @@
   transition: background 0.12s, color 0.12s;
 }
 .ui-menu-item:hover:not(:disabled) {
-  background: var(--bg-hover);
+  background: var(--bg-2);
   color: var(--text-0);
 }
 .ui-menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
 .ui-menu-item.danger { color: var(--error); }
 .ui-menu-item.active {
-  background: var(--accent-dim);
+  background: var(--bg-2);
   color: var(--text-0);
 }
 .ui-menu-item svg { flex-shrink: 0; opacity: 0.85; }
@@ -58,12 +59,5 @@
   display: flex;
   flex-direction: column;
 }
-.ui-menu-group {
-  padding: 8px 10px 4px;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-2);
-}
+.ui-menu-group { padding: 8px 10px 4px; }
 .ui-menu-row:first-child .ui-menu-group { padding-top: 4px; }

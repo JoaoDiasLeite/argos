@@ -18,6 +18,8 @@ interface MenuProps {
   triggerClass: string
   triggerContent: JSX.Element
   triggerTitle?: string
+  /** Accessible name for the trigger; required in practice when it is icon-only. */
+  ariaLabel?: string
   items: MenuItem[]
   /** Which edge the popover aligns to. Default 'right'. */
   align?: 'left' | 'right'
@@ -29,7 +31,7 @@ interface MenuProps {
  * views. Native <select> popups don't render in this frameless/transparent window,
  * so this is the app's standard menu primitive.
  */
-export default function Menu({ triggerClass, triggerContent, triggerTitle, items, align = 'right' }: MenuProps) {
+export default function Menu({ triggerClass, triggerContent, triggerTitle, ariaLabel, items, align = 'right' }: MenuProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -41,7 +43,15 @@ export default function Menu({ triggerClass, triggerContent, triggerTitle, items
   }, [])
   return (
     <div className="ui-menu" ref={ref}>
-      <button className={triggerClass} title={triggerTitle} onClick={() => setOpen((v) => !v)}>
+      <button
+        type="button"
+        className={triggerClass}
+        title={triggerTitle}
+        aria-label={ariaLabel}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
         {triggerContent}
       </button>
       {open && (
@@ -49,7 +59,7 @@ export default function Menu({ triggerClass, triggerContent, triggerTitle, items
           {items.map((it, i) => (
             <div key={i} className="ui-menu-row">
               {it.group && it.group !== items[i - 1]?.group && (
-                <span className="ui-menu-group">{it.group}</span>
+                <span className="eyebrow ui-menu-group">{it.group}</span>
               )}
               <button
                 className={`ui-menu-item ${it.danger ? 'danger' : ''} ${it.active ? 'active' : ''}`}

@@ -1,256 +1,127 @@
-/* Full height of the pane, never sized to content — an aside that grows and shrinks
-   as you arrow down the list makes the list beside it jump. Head and actions are
-   pinned; only the body scrolls. */
-.peek {
+/* ── SessionPeek.css ─────────────────────────────────────────────────────────
+   The detail column of Projects (wireframe 3A): 460 px on --bg-1 with a --border on the
+   left, sections separated by borders, the footer pinned to the bottom. Mounted only
+   while a session is selected. Classes are prefixed `sp-`. ─────────────────────── */
+
+.sp {
+  flex: 0 0 460px;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  height: 100%;
-  width: 340px;
-  flex-shrink: 0;
   background: var(--bg-1);
   border-left: 1px solid var(--border);
+  overflow: hidden;
 }
 
-.peek-head {
+.sp-sec {
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
   gap: 8px;
-  padding: 14px 14px 10px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
-.peek-title {
-  flex: 1;
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 600;
+.sp-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   line-height: 1.35;
   color: var(--text-0);
-  margin: 0;
-  /* Two lines, then ellipsis: a long title must not push the metadata out of view. */
+  /* Two lines, then an ellipsis: a long title must not push the rest out of view. */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-.peek-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  padding: 10px 14px 0;
-  font-size: 11px;
+.sp-meta {
+  font-size: 12px;
   color: var(--text-2);
+  line-height: 1.5;
   font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
-.peek-model {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-2);
-  background: var(--bg-3);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 2px 6px;
-}
-
-.peek-tags {
-  display: flex;
-  /* flex-start, not center: the inline editor is a column and would otherwise
-     centre itself against the chips row it replaces. */
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 5px;
-  padding: 10px 14px 12px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.peek-tag-add {
-  font-family: inherit;
-  font-size: 10.5px;
-  color: var(--text-2);
-  background: transparent;
-  border: 1px dashed var(--border-light);
-  border-radius: 3px;
-  padding: 2px 7px;
-  cursor: pointer;
-}
-.peek-tag-add:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-/* The only part that scrolls. */
-.peek-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.peek-loading {
-  font-size: 12px;
-  color: var(--text-2);
-}
-
-.peek-section h3 {
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-2);
-  margin: 0 0 6px;
-}
-
-.peek-quote {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--text-1);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 8px 10px;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.sp-path { font-family: var(--font-mono); font-size: 11.5px; }
 
-/* Where it stopped is the half that answers "do I need to go back in", so it is the
-   one that gets the accent edge. */
-.peek-quote.last {
-  border-left: 2px solid var(--accent);
-  color: var(--text-0);
+.sp-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
 }
-.peek-quote.last.user {
-  border-left-color: var(--text-2);
+.sp-tag-add.btn-ghost.small {
+  min-height: 22px;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
 }
 
-.peek-actions {
+/* The part that scrolls, when the two quotes do not fit. */
+.sp-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  gap: 14px;
+  border-bottom: 0;
+}
+.sp-part { display: flex; flex-direction: column; gap: 6px; }
+
+.sp-quote {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-light);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sp-error {
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--error);
+  line-height: 1.45;
+  flex-shrink: 0;
+}
+
+/* ── Footer: one row, or the inline form that replaces it ── */
+.sp-foot {
+  margin-top: auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  /* Resume alone. The arrow keys and Enter still work — a legend for them in the
-     corner read as a second pair of buttons, which is worse than not saying it. */
-  padding: 12px 14px;
+  padding: 14px 16px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
+.sp-resume { flex: 1; min-width: 0; }
+.sp-delete { padding: 0 4px; }
 
-.peek .btn-primary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  font-size: 12.5px;
-}
-
-/* The inline editor should use the panel's width, not the popover's fixed 250px. */
-.peek-tags .tag-editor.inline {
-  width: 100%;
-}
-
-/* ── Lifecycle actions ───────────────────────────────────────────────────── */
-
-/* Resume is the one thing you usually want, so it keeps the filled button and the
-   rest are icons beside it — present, but not competing. */
-.peek-more {
-  margin-left: auto;
-  display: flex;
-  gap: 2px;
-}
-
-.peek-more-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-2);
-  cursor: pointer;
-  transition: color 0.12s, background 0.12s, border-color 0.12s;
-}
-.peek-more-btn:hover:not(:disabled) {
-  color: var(--text-0);
-  background: var(--bg-2);
-  border-color: var(--border-light);
-}
-.peek-more-btn.danger:hover:not(:disabled) {
-  color: var(--error);
-  border-color: color-mix(in srgb, var(--error) 40%, transparent);
-}
-.peek-more-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.peek-prompt {
-  display: flex;
+.sp-form {
   flex-direction: column;
-  gap: 7px;
-  padding: 12px 14px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-2);
-  flex-shrink: 0;
-}
-.peek-prompt.danger {
-  border-top-color: color-mix(in srgb, var(--error) 45%, var(--border));
-}
-.peek-prompt label,
-.peek-prompt p {
-  font-size: 12px;
-  color: var(--text-1);
-  margin: 0;
-  line-height: 1.45;
-}
-.peek-prompt input,
-.peek-prompt select {
-  font-family: inherit;
-  font-size: 12.5px;
-  color: var(--text-0);
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 6px 8px;
-}
-.peek-prompt input:focus,
-.peek-prompt select:focus {
+  align-items: stretch;
   outline: none;
-  border-color: var(--accent);
 }
-/* The consequence, in the same breath as the control — not in a tooltip nobody
-   opens before pressing the button. */
-.peek-prompt-note {
-  font-size: 11px !important;
-  color: var(--text-2) !important;
-}
-.peek-prompt-actions {
+.sp-form-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 8px;
 }
-.peek .btn-primary.small,
-.peek .btn-ghost.small {
-  padding: 5px 11px;
-  font-size: 12px;
-}
-
-.peek-error {
-  font-size: 11.5px;
-  color: var(--error);
-  padding: 8px 14px;
-  border-top: 1px solid var(--border);
-  line-height: 1.45;
-  flex-shrink: 0;
+.sp-form-actions .help { margin-right: auto; }
+.sp-confirm {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-1);
 }

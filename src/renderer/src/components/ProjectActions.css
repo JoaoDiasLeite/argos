@@ -1,175 +1,70 @@
-/* Popover for a project's own actions. Same shape as the tag popover in
-   SessionTags.css — closes on outside click and Escape — but scoped under
-   proj-actions- so nothing here collides with it.
-
-   Positioned `fixed` from the trigger's rect, not absolutely inside the row: the
-   project column is 210px wide and scrolls, so an absolutely positioned panel is
-   clipped on both axes. Top/left come from the component. */
+/* ── ProjectActions.css ──────────────────────────────────────────────────────
+   The popover from a project row's actions button: a 4 px --bg-1 surface with the one
+   shadow a popover is allowed, flat item rows, and the move and delete forms inline.
+   Positioned `fixed` from the trigger's rect (the project column scrolls and would clip
+   it); top/left come from the component, the width is MENU_WIDTH there. ──────── */
 .proj-actions-menu {
   position: fixed;
   z-index: 40;
-  width: 260px;
-  padding: 8px;
+  width: 300px;
+  padding: 4px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  background: var(--bg-2);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.12),
-    0 8px 24px rgba(0, 0, 0, 0.18);
+  gap: 2px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
   cursor: default;
 }
 
 .proj-actions-item {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  align-items: center;
   width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: var(--radius-surface);
+  font-size: 13px;
+  color: var(--text-1);
   text-align: left;
-  font-family: inherit;
-  font-size: 12.5px;
-  color: var(--text-0);
   background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  padding: 6px 8px;
   cursor: pointer;
 }
-.proj-actions-item:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-.proj-actions-item.danger {
-  color: var(--error);
-}
-.proj-actions-item.danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--error) 12%, transparent);
-}
-.proj-actions-item:disabled {
-  color: var(--text-2);
-  cursor: default;
-}
+.proj-actions-item:hover:not(:disabled) { background: var(--bg-2); color: var(--text-0); }
+.proj-actions-item:disabled { opacity: 0.5; cursor: default; }
 
-/* Says why the disabled delete item is disabled, right under it — a disabled
-   control that does not say why is a dead end. */
-.proj-actions-reason {
-  font-size: 10.5px;
-  color: var(--text-2);
-}
+.proj-actions-note { padding: 0 10px 6px; }
 
-.proj-actions-note {
-  font-size: 10.5px;
-  color: var(--text-2);
-  line-height: 1.4;
-  padding: 0 8px;
-  margin: 0;
-}
+.proj-actions-sep { height: 1px; margin: 2px 0; background: var(--border); }
 
-.proj-actions-sep {
-  height: 1px;
-  background: var(--border);
-  margin: 2px 0;
-}
-
-.proj-actions-confirm {
+/* An inline form under the item that opened it. */
+.proj-actions-panel {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding: 8px;
-  background: var(--bg-1);
-  border: 1px solid color-mix(in srgb, var(--error) 35%, var(--border));
-  border-radius: var(--radius-sm);
+  gap: 8px;
+  padding: 6px 10px 10px;
 }
-.proj-actions-confirm p {
-  margin: 0;
-  font-size: 12px;
-  color: var(--text-1);
-  line-height: 1.45;
-}
-.proj-actions-path {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-2);
-  word-break: break-all;
-}
-.proj-actions-confirm-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-.proj-actions-error {
-  font-size: 11px;
-  color: var(--error);
-  line-height: 1.4;
-  padding: 4px 8px 0;
-}
-
-/* The folder-move prompt. Same card shape as .proj-actions-confirm, but neutral —
-   this one is a real filesystem move, not a destructive one, so it does not borrow
-   the delete confirmation's error-tinted border. */
-.proj-actions-move {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  background: var(--bg-1);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-}
-.proj-actions-move-current {
-  margin: 0;
-  font-size: 12px;
-  color: var(--text-1);
-  line-height: 1.45;
-}
-.proj-actions-move label {
-  font-size: 10.5px;
-  color: var(--text-2);
-}
-.proj-actions-move-row {
-  display: flex;
-  gap: 6px;
-}
-.proj-actions-move-input {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--text-0);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 5px 7px;
-}
-.proj-actions-move-input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-/* A success that quietly swallowed a partial failure is a lie — this is the
-   non-error tone that says the move worked but something downstream did not
-   re-key cleanly, distinct from .proj-actions-error's red. */
-.proj-actions-warn {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  background: color-mix(in srgb, var(--warn) 10%, var(--bg-1));
-  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border));
-  border-radius: var(--radius-sm);
-}
-.proj-actions-warn p {
-  margin: 0;
-  font-size: 12px;
-  color: var(--text-1);
-  line-height: 1.45;
-}
+.proj-actions-panel.block { margin: 2px 6px 6px; padding: 10px 12px; }
+.proj-actions-text { font-size: 12.5px; line-height: 1.5; color: var(--text-1); }
+.proj-actions-path { font-family: var(--font-mono); font-size: 11.5px; word-break: break-all; }
+.proj-actions-move-row { display: flex; gap: 6px; }
+.proj-actions-move-row .text-input { flex: 1; min-width: 0; height: 30px; }
+.proj-actions-buttons { display: flex; justify-content: flex-end; gap: 8px; }
 .proj-actions-warn-list {
   margin: 0;
   padding-left: 16px;
-  font-size: 11px;
-  color: var(--text-1);
+  font-size: 12px;
   line-height: 1.5;
+  color: var(--text-1);
+}
+
+.proj-actions-delete { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; }
+.proj-actions-delete .btn-text { align-self: flex-start; font-size: 13px; }
+
+.proj-actions-error {
+  padding: 4px 10px 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--error);
 }

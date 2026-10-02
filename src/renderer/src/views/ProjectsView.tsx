@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   CcSessionTarget,
   CCProject,
@@ -8,7 +8,8 @@ import {
   SearchSnippet,
   SourceProvider
 } from '../types'
-import { TagChips, TagEditor, useLabelColors } from '../components/SessionTags'
+import { TagChips, useLabelColors } from '../components/SessionTags'
+import { MoreIcon } from '../components/Menu'
 import LabelManager from '../components/LabelManager'
 import SessionPeek from '../components/SessionPeek'
 import ProjectActions from '../components/ProjectActions'
@@ -20,6 +21,7 @@ import {
   ProjectKeyContext
 } from '../lib/project-key'
 import { projectDisplayName } from '../lib/project-name'
+import { shortModel } from '../lib/model-id'
 import { groupByAge, sortSessions, SORT_LABELS, SortMode } from '../lib/session-groups'
 import './views.css'
 import './ProjectsView.css'
@@ -46,7 +48,9 @@ interface Props {
 // (MIN_WIDTH/MAX_WIDTH/STORAGE_KEY, drag handlers, cleanup on unmount).
 const LIST_MIN_WIDTH = 160
 const LIST_MAX_WIDTH = 400
-const LIST_DEFAULT_WIDTH = 210
+const LIST_DEFAULT_WIDTH = 250
+/** Recent projects listed before "Show N more"; a filter or that row lifts the limit. */
+const RECENT_LIMIT = 15
 const LIST_WIDTH_STORAGE_KEY = 'projects.listWidth'
 
 function hitToSession(h: SearchHit): CCSessionMeta {
@@ -84,8 +88,8 @@ function hitToSession(h: SearchHit): CCSessionMeta {
 function Snippet({ snippet }: { snippet: SearchSnippet }) {
   const labelled = snippet.kind === 'tool_use' || snippet.kind === 'tool_result' || snippet.kind === 'system'
   return (
-    <div className="search-hit-snippet">
-      {labelled && <span className={`snippet-kind ${snippet.kind}`}>{SNIPPET_KIND[snippet.kind]}</span>}
+    <div className="help pv-snippet">
+      {labelled && <span className="pv-snippet-kind">{SNIPPET_KIND[snippet.kind]}</span>}
       {snippet.before}
       <mark>{snippet.match}</mark>
       {snippet.after}
@@ -104,13 +108,67 @@ function timeAgo(ts: number): string {
   const diff = Date.now() - ts
   const m = Math.floor(diff / 60000)
   if (m < 1) return 'just now'
-  if (m < 60) return `${m}m ago`
+  if (m < 60) return `${m} min ago`
   const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
+  if (h < 24) return `${h} h ago`
   const d = Math.floor(h / 24)
-  if (d < 30) return `${d}d ago`
+  if (d === 1) return 'yesterday'
+  if (d < 30) return `${d} days ago`
   return new Date(ts).toLocaleDateString()
 }
+
+// ── Icons (24-unit viewBox, 2 px stroke, currentColor; SYSTEM-DESIGN.md §5) ──────────────
+
+function Icon({ children, size = 14, filled = false }: { children: ReactNode; size?: number; filled?: boolean }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={filled ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  )
+}
+const SearchIcon = () => (
+  <Icon>
+    <circle cx="11" cy="11" r="7" />
+    <path d="M20 20l-3.5-3.5" />
+  </Icon>
+)
+const XIcon = () => (
+  <Icon size={13}>
+    <path d="M18 6L6 18M6 6l12 12" />
+  </Icon>
+)
+const TagIcon = () => (
+  <Icon>
+    <path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z" />
+    <path d="M7 7h.01" />
+  </Icon>
+)
+const RefreshIcon = () => (
+  <Icon size={15}>
+    <path d="M23 4v6h-6" />
+    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+  </Icon>
+)
+const StarIcon = ({ filled }: { filled: boolean }) => (
+  <Icon size={13} filled={filled}>
+    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+  </Icon>
+)
+const FolderIcon = () => (
+  <Icon size={24}>
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+  </Icon>
+)
 
 /**
  * The same folder can show up as several `CCProject` rows — different casing,
@@ -356,7 +414,6 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchHit[]>([])
   const [searching, setSearching] = useState(false)
-  const [editingTags, setEditingTags] = useState<string | null>(null)
   const [filterTags, setFilterTags] = useState<string[]>([])
   const [filterMode, setFilterMode] = useState<'all' | 'any'>('any')
   const [showLabels, setShowLabels] = useState(false)
@@ -390,6 +447,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   // Active/Archived for the *project* column — orthogonal to `showArchived` above,
   // which scopes the sessions inside whichever project is selected.
   const [showArchivedProjects, setShowArchivedProjects] = useState(false)
+  const [showAllProjects, setShowAllProjects] = useState(false)
   // Which project's actions popover is open, and where its trigger sits. One at a
   // time, like the tag popover. The rect travels with it because the panel is
   // positioned `fixed` — see ProjectActions.
@@ -760,7 +818,6 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     const seq = ++listingSeq.current
     setSelected(g)
     setLoadingSessions(true)
-    setEditingTags(null)
     setPeeked(null)
     const s = await listGroupSessions(g, showArchived)
     if (seq !== listingSeq.current) return
@@ -977,9 +1034,19 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   const shown = projectGroups.filter((g) => matchesFilter(g) && g.archived === archivedScope)
   const pinned = shown.filter(isGroupFavorite)
   const rest = shown.filter((g) => !isGroupFavorite(g))
+  // A long tail of old folders is folded behind "Show N more" — never the selected one,
+  // and never while a filter is narrowing the list, which is the other way to reach them.
+  const selectedRestIndex = selected ? rest.findIndex((g) => g.key === selected.key) : -1
+  const restLimit =
+    showAllProjects || projectFilter.trim()
+      ? rest.length
+      : Math.max(RECENT_LIMIT, selectedRestIndex + 1)
+  const restShown = rest.slice(0, restLimit)
+  const hiddenProjects = rest.length - restShown.length
+  const listed = [...pinned, ...restShown]
   const projectSections = [
     ...(pinned.length ? [{ label: 'Pinned', projects: pinned }] : []),
-    ...(rest.length ? [{ label: 'Recent', projects: rest }] : [])
+    ...(restShown.length ? [{ label: 'Recent', projects: restShown }] : [])
   ]
 
   // Ask git for a repo name — one call per group, not per member — but only for the
@@ -987,9 +1054,9 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   // rows nobody is looking at would make Refresh (and the archived toggle) noticeably
   // slower for no visible gain. The list paints immediately with whatever name it
   // already has and quietly upgrades to the repo name once this resolves.
-  const shownKey = shown.map((g) => g.key).join('|')
+  const shownKey = listed.map((g) => g.key).join('|')
   useEffect(() => {
-    const targets = shown.filter((g) => !fetchedRepoKeys.current.has(g.key))
+    const targets = listed.filter((g) => !fetchedRepoKeys.current.has(g.key))
     if (!targets.length) return
     for (const g of targets) fetchedRepoKeys.current.add(g.key)
     for (const g of targets) {
@@ -1022,7 +1089,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       // Never steal a key from a field, and never from the tag popover.
       const el = e.target as HTMLElement | null
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return
-      if (editingTags || showLabels || projectMenu || query.trim().length >= 2) return
+      if (showLabels || projectMenu || query.trim().length >= 2) return
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         step(1)
@@ -1040,74 +1107,80 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  // The count beside each scope. The one on screen is what was just read; the other
+  // comes from the project listing.
+  const activeCount = selected ? (showArchived ? selected.sessionCount : sessions.length) : 0
+  const archivedCount = selected ? (showArchived ? sessions.length : selected.archivedCount) : 0
+
   return (
-    <div className="view">
-      <div className="view-header">
-        <div>
+    <div className="view pv">
+      <div className="pv-head">
+        <div className="pv-head-text">
           <h1>Projects</h1>
-          <p className="view-sub">Real Claude Code sessions from local and connected WSL distros — open to resume.</p>
+          <p className="pv-sub">Claude Code sessions from this machine and connected WSL distros.</p>
         </div>
-        <div className="header-actions">
-          <div className="proj-search">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <input
-              className="proj-search-input"
-              placeholder="Search all sessions…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            {query && (
-              <button className="proj-search-clear" onClick={() => setQuery('')}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            )}
-          </div>
-          <button className="btn-ghost" onClick={() => setShowLabels(true)} title="Labels">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z" />
-              <line x1="7" y1="7" x2="7.01" y2="7" />
-            </svg>
-            Labels
-          </button>
-          <button className="btn-ghost" onClick={load} title="Refresh">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="23 4 23 10 17 10" />
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-            </svg>
-            Refresh
-          </button>
+        <div className="pv-search pv-search-all">
+          <span className="pv-search-icon">
+            <SearchIcon />
+          </span>
+          <input
+            className="text-input"
+            placeholder="Search all sessions"
+            aria-label="Search all sessions"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            spellCheck={false}
+          />
+          {query && (
+            <button type="button" className="pv-search-clear" onClick={() => setQuery('')} aria-label="Clear search" title="Clear search">
+              <XIcon />
+            </button>
+          )}
         </div>
+        <button type="button" className="btn-ghost" onClick={() => setShowLabels(true)}>
+          <TagIcon />
+          Labels
+        </button>
+        <button type="button" className="btn-ghost pv-icon-btn" onClick={load} aria-label="Refresh" title="Refresh">
+          <RefreshIcon />
+        </button>
       </div>
 
       {query.trim().length >= 2 ? (
-        <div className="search-results">
-          <div className="search-results-head">
+        <div className="pv-results">
+          <div className="pv-results-head">
             {searching ? 'Searching…' : `${results.length} result${results.length !== 1 ? 's' : ''} for “${query.trim()}”`}
           </div>
           {results.map((h) => (
-            <div key={h.sourceId + h.sessionId} className="search-hit" onClick={() => onResume(hitToSession(h))}>
-              <div className="search-hit-top">
-                <span className="search-hit-title">{h.title}</span>
-                <span className="search-hit-project">{h.projectName}</span>
-                {h.kind === 'wsl' && <span className="src-badge wsl">⊞ {h.distro}</span>}
-                <span className="search-hit-date">{timeAgo(h.updatedAt)}</span>
+            <div
+              key={h.sourceId + h.sessionId}
+              className="pv-hit"
+              role="button"
+              tabIndex={0}
+              onClick={() => onResume(hitToSession(h))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onResume(hitToSession(h))
+              }}
+            >
+              <div className="pv-hit-line">
+                <span className="pv-hit-title">{h.title}</span>
+                <span className="chip">{h.projectName}</span>
+                {h.kind === 'wsl' && h.distro && <span className="chip">{h.distro}</span>}
+                <span className="pv-hit-time">{timeAgo(h.updatedAt)}</span>
               </div>
               {h.snippets[0] ? (
                 <Snippet snippet={h.snippets[0]} />
               ) : (
-                h.snippet && <div className="search-hit-snippet">{h.snippet}</div>
+                h.snippet && <div className="help pv-snippet">{h.snippet}</div>
               )}
-              {h.matchCount > 1 && (
-                <div className="search-hit-count">{h.matchCount} matches in this conversation</div>
+              {(h.matchCount > 1 || h.account?.email) && (
+                <div className="pv-hit-cap">
+                  {[h.matchCount > 1 ? `${h.matchCount} matches` : null, h.account?.email].filter(Boolean).join(' · ')}
+                </div>
               )}
-              {h.account?.email && <div className="search-hit-acct">{h.account.email}</div>}
             </div>
           ))}
-          {!searching && results.length === 0 && <div className="view-empty small">No sessions match.</div>}
+          {!searching && results.length === 0 && <p className="pv-nothing">No sessions match.</p>}
         </div>
       ) : loading ? (
         <div className="view-loading">
@@ -1116,388 +1189,346 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
         </div>
       ) : projects.length === 0 ? (
         <div className="view-empty">
-          <span className="view-empty-icon">📁</span>
+          <span className="pv-empty-icon">
+            <FolderIcon />
+          </span>
           <span className="view-empty-msg">No Claude Code projects found yet. Open a project in Claude Code to see it here.</span>
         </div>
       ) : (
-        <div className="projects-split">
-          {/* Scrolling the column moves the row out from under a `fixed` panel, so the
-              panel goes rather than drifting away from what it acts on. */}
+        <div className="pv-split">
           {/* The width and the drag handle belong to this wrapper, not to the scrolling
              column inside it: a handle positioned against a scroll container rides the
-             content and is gone as soon as the list is scrolled. Sidebar.tsx gets away
-             with the handle inside because there the scroll lives in a child. */}
-          <div className="projects-list-wrap" style={{ width: listWidth }}>
-          <div className="projects-list" onScroll={() => setProjectMenu(null)}>
-            {/* Only earns its place once there is a choice to make — a lone "Local"
-                setup has nothing for this control to do. */}
-            {accountOptions.length > 1 && (
-              <select
-                className="projects-source-filter"
-                aria-label="Filter projects by account"
-                value={effectiveAccountFilter}
-                onChange={(e) => setAccountFilter(e.target.value)}
-              >
-                <option value="all">All accounts</option>
-                {accountOptions.map((o) => (
-                  <option key={o.identity} value={o.identity}>
-                    {o.sub ? `${o.label} — ${o.sub}` : o.label}
-                  </option>
-                ))}
-              </select>
-            )}
-            <input
-              className="projects-filter"
-              placeholder="Filter projects…"
-              aria-label="Filter projects"
-              value={projectFilter}
-              onChange={(e) => setProjectFilter(e.target.value)}
-            />
-            {/* Only earns its place once something is archived — an "Active/Archived"
-                toggle over a column that has never had anything filed away is a
-                control for a state that cannot occur. */}
-            {hasArchivedProjects && (
-              <span className="projects-scope" role="group" aria-label="Which projects">
-                <button
-                  className={showArchivedProjects ? '' : 'on'}
-                  aria-pressed={!showArchivedProjects}
-                  onClick={() => setShowArchivedProjects(false)}
+             content and is gone as soon as the list is scrolled. */}
+          <div className="pv-list-wrap" style={{ width: listWidth }}>
+            {/* Scrolling the column moves the row out from under a `fixed` panel, so the
+                panel goes rather than drifting away from what it acts on. */}
+            <div className="pv-list" onScroll={() => setProjectMenu(null)}>
+              {/* Only earns its place once there is a choice to make. */}
+              {accountOptions.length > 1 && (
+                <select
+                  className="text-input pv-field"
+                  aria-label="Filter projects by account"
+                  value={effectiveAccountFilter}
+                  onChange={(e) => setAccountFilter(e.target.value)}
                 >
-                  Active
-                </button>
-                <button
-                  className={showArchivedProjects ? 'on' : ''}
-                  aria-pressed={showArchivedProjects}
-                  onClick={() => setShowArchivedProjects(true)}
-                >
-                  Archived
-                </button>
-              </span>
-            )}
-            {projectSections.map((section) => (
-              <div key={section.label} className="project-section">
-                {/* Only labelled when there is something to tell apart — a lone
-                    "Recent" header over the whole list says nothing. */}
-                {projectSections.length > 1 && (
-                  <div className="project-section-head">{section.label}</div>
-                )}
-                {section.projects.map((g) => {
-                  const key = g.key
-                  const fav = isGroupFavorite(g)
-                  const name = nameOf(g)
-                  // Actions that need one concrete CCProject (rename via the menu's
-                  // archive/move/delete, see ProjectActions) act on whichever member
-                  // was active most recently across the WHOLE folder, not just the
-                  // members the account filter currently shows — archiving, moving and
-                  // deleting are folder-wide operations, and the "most recent" member
-                  // to default to shouldn't change just because the filter narrowed.
-                  // What the actions act on is what the row is showing. With an account
-                  // filter on, `g.members` is that account's slice — deleting or moving
-                  // the directories of an account the filter has hidden would be acting
-                  // outside what the screen says is there. With no filter, this is every
-                  // member, which is the same list as before.
-                  const actionMembers = g.members
-                  const primary = primaryOfMembers(actionMembers)
-                  const accountEmails = Array.from(
-                    new Set(g.members.map((m) => m.account?.email).filter((e): e is string => !!e))
-                  )
-                  return (
-                    <div
-                      key={key}
-                      className={`project-row ${selected?.key === g.key ? 'active' : ''}`}
-                      role="button"
-                      tabIndex={0}
-                      /* The path and the account moved into the tooltip: repeated on
-                         every row they were noise, and dropping them is what lets the
-                         column be narrow. Two projects can share a name, so the path
-                         still has to be reachable. A group can hold more than one real
-                         path spelling, so every member's is listed. */
-                      title={`${g.members.map((m) => m.realPath).join('\n')}${
-                        accountEmails.length ? `\n${accountEmails.join(', ')}` : ''
-                      }`}
-                      onClick={() => selectProject(g)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          selectProject(g)
-                        }
-                      }}
-                    >
-                      <div className="project-row-name">
-                        {fav && <span className="project-star-on" aria-hidden="true">★</span>}
-                        <span className="project-row-label">{name}</span>
-                        {/* One badge per distro seen among the members, never repeated. */}
-                        {g.distros.map((d) => (
-                          <span key={d} className="src-badge wsl">{d}</span>
-                        ))}
-                      </div>
-                      <div className="project-row-meta">
-                        {/* A bare 0 reads as a loading state; say what it means instead. */}
-                        <span>
-                          {g.sessionCount + g.archivedCount === 0
-                            ? 'Empty'
-                            : g.archivedCount
-                              ? `${g.sessionCount} · ${g.archivedCount} archived`
-                              : g.sessionCount}
-                        </span>
-                        <span>·</span>
-                        <span>{timeAgo(g.lastActive)}</span>
-                      </div>
-                      <button
-                        className={`project-star ${fav ? 'on' : ''}`}
-                        title={fav ? 'Unpin' : 'Pin to top'}
-                        aria-label={fav ? `Unpin ${name}` : `Pin ${name} to top`}
-                        aria-pressed={fav}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          toggleFavorite(g)
-                        }}
-                      >
-                        ★
-                      </button>
-                      <button
-                        className="project-menu-btn"
-                        title="Actions"
-                        aria-label={`Actions for ${name}`}
-                        aria-expanded={projectMenu?.key === key}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (projectMenu?.key === key) {
-                            setProjectMenu(null)
-                            return
+                  <option value="all">All accounts</option>
+                  {accountOptions.map((o) => (
+                    <option key={o.identity} value={o.identity}>
+                      {o.sub ? `${o.label} · ${o.sub}` : o.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <input
+                className="text-input pv-field"
+                placeholder="Filter projects"
+                aria-label="Filter projects"
+                value={projectFilter}
+                onChange={(e) => setProjectFilter(e.target.value)}
+                spellCheck={false}
+              />
+              {/* Only once something is archived: a toggle for a state that cannot occur
+                  is noise, and unarchiving the last one must not strand the column. */}
+              {hasArchivedProjects && (
+                <div className="seg-control pv-scope" role="group" aria-label="Which projects">
+                  <button
+                    type="button"
+                    className={showArchivedProjects ? '' : 'on'}
+                    aria-pressed={!showArchivedProjects}
+                    onClick={() => setShowArchivedProjects(false)}
+                  >
+                    Active
+                  </button>
+                  <button
+                    type="button"
+                    className={showArchivedProjects ? 'on' : ''}
+                    aria-pressed={showArchivedProjects}
+                    onClick={() => setShowArchivedProjects(true)}
+                  >
+                    Archived
+                  </button>
+                </div>
+              )}
+              {projectSections.map((section) => (
+                <div key={section.label} className="pv-section">
+                  {/* Only labelled when there is something to tell apart. */}
+                  {projectSections.length > 1 && <div className="eyebrow pv-eyebrow">{section.label}</div>}
+                  {section.projects.map((g) => {
+                    const key = g.key
+                    const fav = isGroupFavorite(g)
+                    const name = nameOf(g)
+                    // What the actions act on is what the row is showing. With an account
+                    // filter on, `g.members` is that account's slice: deleting or moving the
+                    // directories of an account the filter has hidden would be acting outside
+                    // what the screen says is there.
+                    const actionMembers = g.members
+                    const primary = primaryOfMembers(actionMembers)
+                    const accountEmails = Array.from(
+                      new Set(g.members.map((m) => m.account?.email).filter((e): e is string => !!e))
+                    )
+                    const total = g.sessionCount + g.archivedCount
+                    // A bare 0 reads as a loading state; say what it means instead.
+                    const count =
+                      total === 0
+                        ? 'Empty'
+                        : g.archivedCount
+                          ? `${g.sessionCount} · ${g.archivedCount} archived`
+                          : String(g.sessionCount)
+                    return (
+                      <div
+                        key={key}
+                        className={`pv-proj ${selected?.key === g.key ? 'sel' : ''} ${projectMenu?.key === key ? 'menu-open' : ''}`}
+                        role="button"
+                        tabIndex={0}
+                        /* The paths and the accounts live in the tooltip: a group can hold
+                           more than one spelling, and homonyms still need telling apart. */
+                        title={`${g.members.map((m) => m.realPath).join('\n')}${
+                          accountEmails.length ? `\n${accountEmails.join(', ')}` : ''
+                        }`}
+                        onClick={() => selectProject(g)}
+                        onKeyDown={(e) => {
+                          if (e.target !== e.currentTarget) return
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            selectProject(g)
                           }
-                          const r = e.currentTarget.getBoundingClientRect()
-                          setProjectMenu({ key, top: r.bottom + 4, left: r.left })
                         }}
                       >
-                        ⋯
-                      </button>
-                      {projectMenu?.key === key && (
-                        <ProjectActions
-                          project={primary}
-                          // Every member of the folder, not just the ones the account
-                          // filter shows — see the comment on `primary` above.
-                          siblings={actionMembers.map((m) => ({ sourceId: m.sourceId, encodedDir: m.encodedDir }))}
-                          anchor={projectMenu}
-                          onClose={() => setProjectMenu(null)}
-                          onChanged={load}
-                          onMoved={setPendingSelect}
-                        />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            ))}
-            {projectSections.length === 0 && (
-              <div className="projects-filter-empty">No project matches.</div>
-            )}
-          </div>
-            {/* Not a keyboard control — aria-hidden, like Sidebar.tsx's own handle. */}
-            <div
-              className="projects-list-resize-handle"
-              onMouseDown={handleListResizeMouseDown}
-              aria-hidden="true"
-            />
+                        <div className="pv-proj-line">
+                          <span className="pv-proj-name">{name}</span>
+                          {/* One chip per distro seen among the members, never repeated. */}
+                          {g.distros.map((d) => (
+                            <span key={d} className="chip">
+                              {d}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="pv-proj-cap">
+                          {count} · {timeAgo(g.lastActive)}
+                        </div>
+                        <div className="pv-proj-actions">
+                          <button
+                            type="button"
+                            className={`pv-icon ${fav ? 'on' : ''}`}
+                            title={fav ? 'Unpin' : 'Pin to top'}
+                            aria-label={fav ? `Unpin ${name}` : `Pin ${name} to top`}
+                            aria-pressed={fav}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleFavorite(g)
+                            }}
+                          >
+                            <StarIcon filled={fav} />
+                          </button>
+                          <button
+                            type="button"
+                            className="pv-icon"
+                            title="Actions"
+                            aria-label={`Actions for ${name}`}
+                            aria-haspopup="menu"
+                            aria-expanded={projectMenu?.key === key}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (projectMenu?.key === key) {
+                                setProjectMenu(null)
+                                return
+                              }
+                              const r = e.currentTarget.getBoundingClientRect()
+                              setProjectMenu({ key, top: r.bottom + 4, left: r.left })
+                            }}
+                          >
+                            <MoreIcon />
+                          </button>
+                        </div>
+                        {projectMenu?.key === key && (
+                          <ProjectActions
+                            project={primary}
+                            siblings={actionMembers.map((m) => ({ sourceId: m.sourceId, encodedDir: m.encodedDir }))}
+                            anchor={projectMenu}
+                            onClose={() => setProjectMenu(null)}
+                            onChanged={load}
+                            onMoved={setPendingSelect}
+                          />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+              {hiddenProjects > 0 && (
+                <button type="button" className="pv-more" onClick={() => setShowAllProjects(true)}>
+                  Show {hiddenProjects} more
+                </button>
+              )}
+              {projectSections.length === 0 && <p className="pv-nothing">No project matches.</p>}
+            </div>
+            {/* Not a keyboard control; aria-hidden, like Sidebar.tsx's own handle. */}
+            <div className="pv-resize" onMouseDown={handleListResizeMouseDown} aria-hidden="true" />
           </div>
 
-          <div className="sessions-pane">
+          <div className="pv-sessions">
             {!selected ? (
               <div className="view-empty">
                 <span className="view-empty-msg">Select a project to view its sessions.</span>
               </div>
-            ) : loadingSessions ? (
-              <div className="view-loading">
-                <div className="view-spinner" />
-                <span className="view-loading-text">Loading sessions…</span>
-              </div>
-            ) : sessions.length === 0 ? (
-              <div className="view-empty">
-                <span className="view-empty-msg">
-                  {showArchived
-                    ? 'Nothing archived in this project.'
-                    : 'No sessions in this project.'}
-                </span>
-                {showArchived && (
-                  <button className="btn-ghost small" onClick={() => setShowArchived(false)}>
-                    Back to active
-                  </button>
-                )}
-              </div>
             ) : (
               <>
-                <div className="sessions-head">
-                  <div className="sessions-head-left">
-                    <span className="sessions-count">
-                      {filterTags.length > 0
+                <div className="pv-sess-head">
+                  <span className="pv-count">
+                    {loadingSessions
+                      ? 'Sessions'
+                      : filterTags.length > 0 || searchingHere
                         ? `${visibleSessions.length} of ${sessions.length} sessions`
                         : `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
-                    </span>
-                    <span className="sessions-scope" role="group" aria-label="Which sessions">
-                      <button
-                        className={showArchived ? '' : 'on'}
-                        aria-pressed={!showArchived}
-                        onClick={() => setShowArchived(false)}
-                      >
-                        Active
-                      </button>
-                      <button
-                        className={showArchived ? 'on' : ''}
-                        aria-pressed={showArchived}
-                        onClick={() => setShowArchived(true)}
-                      >
-                        Archived
-                      </button>
+                  </span>
+                  <div className="seg-control" role="group" aria-label="Which sessions">
+                    <button
+                      type="button"
+                      className={showArchived ? '' : 'on'}
+                      aria-pressed={!showArchived}
+                      onClick={() => setShowArchived(false)}
+                    >
+                      Active <em>{activeCount}</em>
+                    </button>
+                    <button
+                      type="button"
+                      className={showArchived ? 'on' : ''}
+                      aria-pressed={showArchived}
+                      onClick={() => setShowArchived(true)}
+                    >
+                      Archived <em>{archivedCount}</em>
+                    </button>
+                  </div>
+                  <div className="pv-search pv-search-in">
+                    <span className="pv-search-icon">
+                      <SearchIcon />
                     </span>
                     <input
-                      className="sessions-search"
-                      placeholder={`Search in ${nameOf(selected)}…`}
+                      className="text-input"
+                      placeholder={`Search in ${nameOf(selected)}`}
                       aria-label={`Search in ${nameOf(selected)}`}
                       value={projectQuery}
                       onChange={(e) => setProjectQuery(e.target.value)}
                       spellCheck={false}
                     />
-                    <span className="sessions-sort">
-                      <select
-                        aria-label="Sort sessions"
-                        value={sort}
-                        onChange={(e) => changeSort(e.target.value as SortMode)}
-                      >
-                        {(Object.keys(SORT_LABELS) as SortMode[]).map((m) => (
-                          <option key={m} value={m}>
-                            {SORT_LABELS[m]}
-                          </option>
-                        ))}
-                      </select>
-                    </span>
                   </div>
-                  {localVocab.length > 0 && (
-                    <div className="tag-filter">
-                      <TagChips
-                        tags={localVocab}
-                        colorFor={colorFor}
-                        onClick={toggleFilter}
-                        active={filterTags}
-                      />
-                      {filterTags.length > 1 && (
-                        <div className="tag-filter-mode" role="group" aria-label="Match mode">
-                          <button
-                            className={filterMode === 'any' ? 'on' : ''}
-                            onClick={() => setFilterMode('any')}
-                            aria-pressed={filterMode === 'any'}
-                          >
-                            ANY
-                          </button>
-                          <button
-                            className={filterMode === 'all' ? 'on' : ''}
-                            onClick={() => setFilterMode('all')}
-                            aria-pressed={filterMode === 'all'}
-                          >
-                            ALL
-                          </button>
-                        </div>
-                      )}
-                      {filterTags.length > 0 && (
-                        <button className="tag-filter-clear" onClick={() => setFilterTags([])}>
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-                {visibleSessions.length === 0 ? (
-                  <div className="view-empty small">
-                    {searchingHere
-                      ? projectSearching
-                        ? 'Searching…'
-                        : `Nothing in this project says “${projectQuery.trim()}”. The search above looks everywhere, and inside tool calls too.`
-                      : `No sessions carry ${filterMode === 'all' ? 'all' : 'any'} of those tags.`}
-                  </div>
-                ) : (
-                  <div className="cc-rows">
-                    {groups.map((group) => (
-                      <div key={group.label} className="cc-group">
-                        {/* Only the date ordering has bands worth naming; a date header
-                            over a title-sorted list describes nothing. */}
-                        {sort === 'date' && <div className="cc-group-head">{group.label}</div>}
-                        {group.sessions.map((s) => (
-                          <div
-                            key={s.sessionId}
-                            className={`cc-row ${editingTags === s.sessionId ? 'tagging' : ''} ${peeked?.sessionId === s.sessionId ? 'peeked' : ''}`}
-                            /* A click selects and shows; resuming is the panel's
-                               button, Enter, or a double click. The panel exists to
-                               make the decision possible, and a decision taken with
-                               the same gesture as the action is not a decision. */
-                            onClick={() => setPeeked(s)}
-                            onDoubleClick={() => resumeOrPeek(s)}
-                            role="button"
-                            tabIndex={0}
-                            aria-current={peeked?.sessionId === s.sessionId}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') resumeOrPeek(s)
-                            }}
-                          >
-                            <span className="cc-row-main">
-                              <span className="cc-row-title" title={s.title}>
-                                {s.title}
-                              </span>
-                              {/* Only earns its place when the visible list actually
-                                  mixes accounts — see `showSessionAccounts` above. */}
-                              {showSessionAccounts && (
-                                <span className="src-badge acct" title={sessionAccountLabel(s)}>
-                                  {sessionAccountLabel(s)}
-                                </span>
-                              )}
-                              <TagChips tags={s.tags} colorFor={colorFor} />
-                              {searchingHere && projectHits.get(s.sessionId)?.snippets[0] && (
-                                <Snippet snippet={projectHits.get(s.sessionId)!.snippets[0]} />
-                              )}
-                            </span>
-                            <span className="cc-row-model">{s.model ?? '—'}</span>
-                            <span className="cc-row-meta">{s.messageCount} msgs</span>
-                            <span className="cc-row-meta">{timeAgo(s.updatedAt)}</span>
-                            <span className="cc-row-actions">
-                              <button
-                                className={`cc-row-tag-btn ${editingTags === s.sessionId ? 'open' : ''}`}
-                                title="Tags"
-                                aria-label={`Tags for ${s.title}`}
-                                aria-expanded={editingTags === s.sessionId}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setEditingTags(editingTags === s.sessionId ? null : s.sessionId)
-                                }}
-                              >
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                  <path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z" />
-                                  <line x1="7" y1="7" x2="7.01" y2="7" />
-                                </svg>
-                              </button>
-                              <span className="cc-row-resume" aria-hidden="true">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <polygon points="5 3 19 12 5 21 5 3" />
-                                </svg>
-                              </span>
-                            </span>
-                            {editingTags === s.sessionId && (
-                              <TagEditor
-                                session={s}
-                                vocabulary={localVocab}
-                                colorFor={colorFor}
-                                onSaved={(tags) => {
-                                  setSessions((cur) =>
-                                    cur.map((x) => (x.sessionId === s.sessionId ? { ...x, tags } : x))
-                                  )
-                                  reloadLabels()
-                                }}
-                                onClose={() => setEditingTags(null)}
-                              />
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                  <span className="pv-spacer" />
+                  <select
+                    className="text-input pv-sort"
+                    aria-label="Sort sessions"
+                    value={sort}
+                    onChange={(e) => changeSort(e.target.value as SortMode)}
+                  >
+                    {(Object.keys(SORT_LABELS) as SortMode[]).map((m) => (
+                      <option key={m} value={m}>
+                        {SORT_LABELS[m]}
+                      </option>
                     ))}
+                  </select>
+                </div>
+                {localVocab.length > 0 && sessions.length > 0 && (
+                  <div className="pv-tagbar">
+                    <TagChips tags={localVocab} colorFor={colorFor} onClick={toggleFilter} active={filterTags} />
+                    {filterTags.length > 1 && (
+                      <div className="seg-control pv-match" role="group" aria-label="Match mode">
+                        <button
+                          type="button"
+                          className={filterMode === 'any' ? 'on' : ''}
+                          onClick={() => setFilterMode('any')}
+                          aria-pressed={filterMode === 'any'}
+                        >
+                          ANY
+                        </button>
+                        <button
+                          type="button"
+                          className={filterMode === 'all' ? 'on' : ''}
+                          onClick={() => setFilterMode('all')}
+                          aria-pressed={filterMode === 'all'}
+                        >
+                          ALL
+                        </button>
+                      </div>
+                    )}
+                    {filterTags.length > 0 && (
+                      <button type="button" className="btn-text" onClick={() => setFilterTags([])}>
+                        Clear
+                      </button>
+                    )}
                   </div>
                 )}
+                <div className="pv-sess-body">
+                  {loadingSessions ? (
+                    <div className="view-loading">
+                      <div className="view-spinner" />
+                      <span className="view-loading-text">Loading sessions…</span>
+                    </div>
+                  ) : sessions.length === 0 ? (
+                    <p className="pv-nothing">
+                      {showArchived ? 'Nothing archived in this project.' : 'No sessions in this project.'}
+                    </p>
+                  ) : visibleSessions.length === 0 ? (
+                    <p className="pv-nothing">
+                      {searchingHere
+                        ? projectSearching
+                          ? 'Searching…'
+                          : `Nothing in this project says “${projectQuery.trim()}”. The search at the top looks everywhere, tool calls included.`
+                        : `No sessions carry ${filterMode === 'all' ? 'all' : 'any'} of those tags.`}
+                    </p>
+                  ) : (
+                    groups.map((group) => (
+                      <div key={group.label} className="pv-group">
+                        {/* Only the date ordering has bands worth naming. */}
+                        {sort === 'date' && (
+                          <div className="divider-caption pv-divcap">
+                            {group.label} · {group.sessions.length}
+                          </div>
+                        )}
+                        {group.sessions.map((s) => {
+                          const hit = searchingHere ? projectHits.get(s.sessionId)?.snippets[0] : undefined
+                          const model = shortModel(s.model)
+                          return (
+                            <div
+                              key={s.sessionId}
+                              data-session-row
+                              className={`pv-sess ${peeked?.sessionId === s.sessionId ? 'sel' : ''}`}
+                              /* A click selects and shows; resuming is the column's button,
+                                 Enter, or a double click. A decision taken with the same
+                                 gesture as the action is not a decision. */
+                              onClick={() => setPeeked(s)}
+                              onDoubleClick={() => resumeOrPeek(s)}
+                              role="button"
+                              tabIndex={0}
+                              aria-current={peeked?.sessionId === s.sessionId}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') resumeOrPeek(s)
+                              }}
+                            >
+                              <div className="pv-sess-main">
+                                <div className="pv-sess-line">
+                                  {/* TODO(port): unread state per session (title bold when unread); CCSessionMeta carries none. */}
+                                  <span className="pv-sess-title" title={s.title}>
+                                    {s.title}
+                                  </span>
+                                  {/* Only when the visible list mixes accounts. */}
+                                  {showSessionAccounts && (
+                                    <span className="chip pv-acct" title={sessionAccountLabel(s)}>
+                                      {sessionAccountLabel(s)}
+                                    </span>
+                                  )}
+                                  <TagChips tags={s.tags} colorFor={colorFor} className="pv-sess-tags" />
+                                </div>
+                                {hit && <Snippet snippet={hit} />}
+                              </div>
+                              {model && <span className="chip pv-model">{model}</span>}
+                              <span className="pv-sess-msgs">{s.messageCount} msgs</span>
+                              <span className="pv-sess-time">{timeAgo(s.updatedAt)}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ))
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -1516,9 +1547,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                 refreshSessions()
               }}
               onTagsSaved={(tags) => {
-                setSessions((cur) =>
-                  cur.map((x) => (x.sessionId === peeked.sessionId ? { ...x, tags } : x))
-                )
+                setSessions((cur) => cur.map((x) => (x.sessionId === peeked.sessionId ? { ...x, tags } : x)))
                 setPeeked({ ...peeked, tags })
                 reloadLabels()
               }}

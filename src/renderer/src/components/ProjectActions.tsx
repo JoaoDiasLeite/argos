@@ -37,7 +37,7 @@ interface Props {
 }
 
 /** Kept in sync with `.proj-actions-menu`'s width so the flip has something to measure. */
-const MENU_WIDTH = 260
+const MENU_WIDTH = 300
 
 /** One sentence per refusal — a generic failure is exactly what the discriminated
  * union in ProjectMoveResult exists to prevent. */
@@ -101,8 +101,8 @@ function deleteFailureMessage(res: Extract<ProjectOpResult, { ok: false }>, mult
  * change folder (a real filesystem move, guarded by nine refusals) and delete
  * (destructive, but only ever of an empty directory — see the guard below).
  *
- * Shape and tone follow SessionPeek's action row: a plain button for the reversible
- * move, a confirmation block that names exactly what goes for the ones that aren't.
+ * Shape and tone follow the session column's footer: a plain row for the reversible
+ * archive, an inline confirmation that names exactly what goes for the ones that aren't.
  * Only one of the move and delete prompts is ever open — opening either closes the
  * other, the same "one open thing at a time" rule the tag popover follows.
  */
@@ -299,85 +299,77 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
   const top = Math.min(anchor.top, Math.max(8, window.innerHeight - panelHeight))
 
   return (
-    <div
-      className="proj-actions-menu"
-      ref={ref}
-      role="menu"
-      style={{ top, left }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <button
-        className="proj-actions-item"
-        role="menuitem"
-        disabled={busy}
-        onClick={doArchiveToggle}
-      >
+    <div className="proj-actions-menu" ref={ref} role="menu" style={{ top, left }} onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="proj-actions-item" role="menuitem" disabled={busy} onClick={doArchiveToggle}>
         {archived ? 'Unarchive project' : 'Archive project'}
       </button>
-      <p className="proj-actions-note">
-        Filing only — archiving a project is a preference and does not touch any
-        conversation.
-      </p>
+      <p className="help proj-actions-note">Filing only: archiving a project does not touch any conversation.</p>
 
       <div className="proj-actions-sep" />
 
-      <button className="proj-actions-item" role="menuitem" disabled={busy} onClick={openMove}>
-        Change folder…
+      <button
+        type="button"
+        className="proj-actions-item"
+        role="menuitem"
+        aria-expanded={panel === 'move'}
+        disabled={busy}
+        onClick={openMove}
+      >
+        Change folder
       </button>
 
       {panel === 'move' &&
         (moveWarnings ? (
-          <div className="proj-actions-warn">
-            <p>Moved, but not everything else followed.</p>
+          <div className="block warn proj-actions-panel">
+            <p className="proj-actions-text">Moved, but not everything else followed.</p>
             <ul className="proj-actions-warn-list">
               {moveWarnings.map((w, i) => (
                 <li key={i}>{w}</li>
               ))}
             </ul>
-            <div className="proj-actions-confirm-actions">
-              <button className="btn-primary small" onClick={dismissWarnings}>
+            <div className="proj-actions-buttons">
+              <button type="button" className="btn-text" onClick={dismissWarnings}>
                 Dismiss
               </button>
             </div>
           </div>
         ) : (
-          <div className="proj-actions-move">
-            <p className="proj-actions-move-current">
+          <div className="proj-actions-panel">
+            <p className="help">
               Currently at <span className="proj-actions-path">{realPath}</span>
             </p>
-            <label htmlFor="proj-actions-move-input">New folder</label>
             <div className="proj-actions-move-row">
               <input
-                id="proj-actions-move-input"
-                className="proj-actions-move-input"
+                className="text-input mono"
+                aria-label="New folder"
                 autoFocus
                 value={moveDraft}
                 disabled={busy}
+                spellCheck={false}
                 onChange={(e) => setMoveDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && canMove) doMove()
                 }}
               />
-              <button className="btn-ghost small" onClick={browseFolder} disabled={busy}>
-                Browse…
+              <button type="button" className="btn-ghost small" onClick={browseFolder} disabled={busy}>
+                Browse
               </button>
             </div>
             {members.length > 1 && (
-              <p className="proj-actions-note">
-                This project is recorded under {members.length} directories — the same folder
-                addressed more than one way. All {members.length} will move together.
+              <p className="help">
+                This project is recorded under {members.length} directories, the same folder addressed more than one
+                way. All {members.length} move together.
               </p>
             )}
-            <p className="proj-actions-note">
-              Browse picks the parent folder to move into — the move requires the
-              destination itself not to exist, so the current folder name is appended
-              for you.
+            <p className="help">
+              Browse picks the parent folder; the current folder name is appended, since the destination itself must
+              not exist yet.
             </p>
-            <div className="proj-actions-confirm-actions">
-              <button className="btn-ghost small" onClick={() => setPanel(null)} disabled={busy}>
+            <div className="proj-actions-buttons">
+              <button type="button" className="btn-ghost small" onClick={() => setPanel(null)} disabled={busy}>
                 Cancel
               </button>
-              <button className="btn-primary small" disabled={busy || !canMove} onClick={doMove}>
+              <button type="button" className="btn-primary small" disabled={busy || !canMove} onClick={doMove}>
                 Move
               </button>
             </div>
@@ -387,48 +379,46 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
       <div className="proj-actions-sep" />
 
       {totalSessions > 0 ? (
-        <button className="proj-actions-item danger" role="menuitem" disabled title={deleteDisabledReason}>
-          Delete project
-          <span className="proj-actions-reason">{deleteDisabledReason}</span>
-        </button>
+        <div className="proj-actions-delete">
+          <button type="button" className="btn-text danger" role="menuitem" disabled>
+            Delete project
+          </button>
+          {/* A disabled control that does not say why is a dead end. */}
+          <p className="help">{deleteDisabledReason}</p>
+        </div>
       ) : panel === 'delete' ? (
-        <div className="proj-actions-confirm">
-          <p>
+        <div className="proj-actions-panel">
+          <p className="proj-actions-text">
             {members.length > 1 ? (
               <>
-                Delete the empty project <b>{name}</b> — {members.length} directories?
+                Delete the empty project <b>{name}</b>, {members.length} directories?
               </>
             ) : (
               <>
-                Delete the empty project <b>{name}</b> —{' '}
-                <span className="proj-actions-path">{realPath}</span>?
+                Delete the empty project <b>{name}</b> at <span className="proj-actions-path">{realPath}</span>?
               </>
             )}
           </p>
-          <p className="proj-actions-note">
-            Removes the empty project director{members.length > 1 ? 'ies' : 'y'} under the
-            source's <code>projects/</code> folder, plus this project's pin and archived
-            flag. Nothing inside the real project folder on disk is touched.
+          <p className="help">
+            Removes the empty project director{members.length > 1 ? 'ies' : 'y'} under the source&apos;s{' '}
+            <code>projects/</code> folder, plus its pin and archived flag. Nothing inside the real project folder is
+            touched.
           </p>
-          {members.length > 1 && (
-            <p className="proj-actions-note">
-              This project is recorded under {members.length} directories — the same folder
-              addressed more than one way. All of them will be removed.
-            </p>
-          )}
-          <div className="proj-actions-confirm-actions">
-            <button className="btn-ghost small" onClick={() => setPanel(null)} disabled={busy}>
-              Cancel
+          <div className="proj-actions-buttons">
+            <button type="button" className="btn-ghost small" onClick={() => setPanel(null)} disabled={busy}>
+              Keep
             </button>
-            <button className="btn-primary small danger" onClick={doDelete} disabled={busy}>
-              Delete project
+            <button type="button" className="btn-primary small danger" onClick={doDelete} disabled={busy}>
+              Delete
             </button>
           </div>
         </div>
       ) : (
-        <button className="proj-actions-item danger" role="menuitem" onClick={openDelete}>
-          Delete project
-        </button>
+        <div className="proj-actions-delete">
+          <button type="button" className="btn-text danger" role="menuitem" onClick={openDelete}>
+            Delete project
+          </button>
+        </div>
       )}
 
       {error && <div className="proj-actions-error">{error}</div>}

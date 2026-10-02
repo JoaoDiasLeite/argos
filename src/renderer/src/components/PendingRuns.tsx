@@ -44,18 +44,14 @@ export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) 
   ].filter(Boolean)
   const label = `${runs.length === 1 ? '1 chat' : `${runs.length} chats`}: ${counts.join(' · ')}`
 
+  // One dot for the strip: amber when something waits for you (that is what needs you),
+  // else green while anything works, grey once everything is finished.
+  const state = waitingCount > 0 ? 'waiting' : workingCount > 0 ? 'working' : 'done'
+
   return (
     <div className="pending-runs">
       <span className="pending-runs-label">
-        {workingCount > 0 ? (
-          <svg className="pending-runs-spinner" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-            <path d="M21 12a9 9 0 1 1-6.22-8.56" />
-          </svg>
-        ) : waitingCount > 0 ? (
-          <InputIcon />
-        ) : (
-          <CheckIcon />
-        )}
+        <i className={`pending-runs-dot ${state}`} aria-hidden="true" />
         {label}
       </span>
       {runs.map((r) => (
@@ -75,47 +71,33 @@ export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) 
           onDragEnd={() => onDrag?.(null)}
         >
           <button
+            type="button"
             className="pending-run-open"
             onClick={() => onOpen(r.id)}
             title={[
               r.name,
               r.account ? `on ${r.account}` : null,
-              r.done ? 'finished — not read yet' : r.attention ? 'waiting for your input' : 'working'
+              r.done ? 'finished, not read yet' : r.attention ? 'waiting for your input' : 'working'
             ]
               .filter(Boolean)
-              .join(' — ')}
+              .join(' · ')}
           >
-            {r.done ? <CheckIcon /> : r.attention && <InputIcon />}
             <span className="pending-run-name">{r.name}</span>
             {r.account && <span className="pending-run-account">{r.account}</span>}
           </button>
           <button
+            type="button"
             className="pending-run-close"
             onClick={() => onDismiss(r.id)}
             title={r.done ? 'Mark as read' : 'Hide from this bar (the chat keeps running)'}
             aria-label={r.done ? `Mark ${r.name} as read` : `Hide ${r.name} from the pending bar`}
           >
-            ×
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
           </button>
         </span>
       ))}
     </div>
-  )
-}
-
-function CheckIcon() {
-  return (
-    <svg className="pending-run-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-  )
-}
-
-function InputIcon() {
-  return (
-    <svg className="pending-run-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 7v6M12 17h.01" />
-    </svg>
   )
 }

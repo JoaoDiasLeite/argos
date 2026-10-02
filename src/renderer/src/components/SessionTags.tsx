@@ -34,64 +34,71 @@ export function useLabelColors(): {
   }
 }
 
+function XIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+      <path d="M18 6L6 18M6 6l12 12" />
+    </svg>
+  )
+}
+
 interface ChipsProps {
   tags: string[]
   colorFor: (tag: string) => string
   onRemove?: (tag: string) => void
+  /** Makes each chip a toggle (a filter); `active` lists the ones switched on. */
   onClick?: (tag: string) => void
   active?: string[]
+  /** Extra class on the wrapper, for the caller's own layout. */
+  className?: string
 }
 
-export function TagChips({ tags, colorFor, onRemove, onClick, active }: ChipsProps) {
+/**
+ * A run of tag chips: the shared neutral `.chip`, with the label's colour only on a
+ * 6 px dot before the name (the colour is data, so it stays inline).
+ */
+export function TagChips({ tags, colorFor, onRemove, onClick, active, className }: ChipsProps) {
   if (!tags.length) return null
   return (
-    <div className="tag-chips">
+    <div className={`tag-chips ${className ?? ''}`}>
       {tags.map((tag) => {
-        const color = colorFor(tag)
-        const isActive = active?.includes(tag)
-        const chip = (
-          <>
-            <span className="tag-chip-dot" style={{ background: color }} aria-hidden="true" />
-            {tag}
+        const dot = <span className="tag-chip-dot" style={{ background: colorFor(tag) }} aria-hidden="true" />
+        if (onClick) {
+          const on = !!active?.includes(tag)
+          return (
+            <button
+              key={tag}
+              type="button"
+              className={`chip tag-chip toggle ${on ? 'on' : ''}`}
+              aria-pressed={on}
+              onClick={(e) => {
+                e.stopPropagation()
+                onClick(tag)
+              }}
+            >
+              {dot}
+              <span className="tag-chip-name">{tag}</span>
+            </button>
+          )
+        }
+        return (
+          <span key={tag} className="chip tag-chip">
+            {dot}
+            <span className="tag-chip-name">{tag}</span>
             {onRemove && (
-              <span
+              <button
+                type="button"
                 className="tag-chip-x"
-                role="button"
-                tabIndex={0}
                 aria-label={`Remove ${tag}`}
+                title={`Remove ${tag}`}
                 onClick={(e) => {
                   e.stopPropagation()
                   onRemove(tag)
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    onRemove(tag)
-                  }
-                }}
               >
-                ×
-              </span>
+                <XIcon />
+              </button>
             )}
-          </>
-        )
-        return onClick ? (
-          <button
-            key={tag}
-            type="button"
-            className={`tag-chip clickable ${isActive ? 'on' : ''}`}
-            style={{ borderColor: color, color }}
-            onClick={(e) => {
-              e.stopPropagation()
-              onClick(tag)
-            }}
-          >
-            {chip}
-          </button>
-        ) : (
-          <span key={tag} className="tag-chip" style={{ borderColor: color, color }}>
-            {chip}
           </span>
         )
       })}
@@ -105,55 +112,39 @@ interface EditorProps {
   colorFor: (tag: string) => string
   onSaved: (tags: string[]) => void
   onClose: () => void
-  /**
-   * `popover` floats over a list row and closes on an outside click. `inline` sits
-   * in the flow of a panel that is already about this session, so it has no caret
-   * and does not close when you click elsewhere in that panel — clicking the panel
-   * you are editing in should not dismiss the editor.
-   */
-  variant?: 'popover' | 'inline'
 }
 
 /**
- * Add and remove tags on one session.
+ * Add and remove tags on one session, inline in the detail column that is already
+ * about it — so it does not close when you click elsewhere in that column, only on
+ * Done or Esc.
  *
  * Each change is written straight away — one appended line per change, which is
  * how the format works anyway — so there is no save button to forget and no
- * half-applied state if the popover is dismissed.
+ * half-applied state if the editor is dismissed.
  */
-export function TagEditor({
-  session,
-  vocabulary,
-  colorFor,
-  onSaved,
-  onClose,
-  variant = 'popover'
-}: EditorProps) {
+export function TagEditor({ session, vocabulary, colorFor, onSaved, onClose }: EditorProps) {
   const [tags, setTags] = useState<string[]>(session.tags)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Bound once; read the latest onClose through a ref so focus is not retaken on
+  // every render of the caller.
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
 
   useEffect(() => {
     inputRef.current?.focus()
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
-    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        onClose()
+        closeRef.current()
       }
     }
-    if (variant === 'popover') document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [onClose, variant])
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
 
   const commit = async (next: string[]) => {
     setBusy(true)
@@ -188,21 +179,23 @@ export function TagEditor({
     .slice(0, 6)
 
   return (
-    <div
-      className={`tag-editor ${variant}`}
-      ref={ref}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {variant === 'popover' && <div className="tag-editor-head">Tags</div>}
+    <div className="tag-editor" onClick={(e) => e.stopPropagation()}>
+      <div className="tag-editor-head">
+        <span className="eyebrow">Tags</span>
+        <button type="button" className="btn-text" onClick={onClose}>
+          Done
+        </button>
+      </div>
       {tags.length > 0 ? (
         <TagChips tags={tags} colorFor={colorFor} onRemove={(t) => commit(tags.filter((x) => x !== t))} />
       ) : (
-        <div className="tag-editor-empty">No tags yet.</div>
+        <p className="help">No tags yet.</p>
       )}
       <input
         ref={inputRef}
-        className="tag-editor-input"
-        placeholder="Add a tag…"
+        className="text-input tag-editor-input"
+        placeholder="Add a tag"
+        aria-label="Add a tag"
         value={draft}
         disabled={busy}
         onChange={(e) => {
@@ -217,11 +210,11 @@ export function TagEditor({
         }}
       />
       {suggestions.length > 0 && (
-        <div className="tag-editor-suggest">
+        <div className="tag-chips">
           {suggestions.map((s) => (
-            <button key={s} type="button" className="tag-suggest" onClick={() => add(s)}>
+            <button key={s} type="button" className="chip tag-chip toggle" onClick={() => add(s)}>
               <span className="tag-chip-dot" style={{ background: colorFor(s) }} aria-hidden="true" />
-              {s}
+              <span className="tag-chip-name">{s}</span>
             </button>
           ))}
         </div>

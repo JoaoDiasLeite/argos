@@ -1,257 +1,77 @@
-/* ── Chips ─────────────────────────────────────────────────────────────────── */
+/* ── SessionTags.css ─────────────────────────────────────────────────────────
+   Tag chips are the shared neutral `.chip` (3 px, they only label); the label's colour
+   is data and sits on a 6 px dot before the name. As a filter they toggle, the active
+   one on --bg-3. The editor is inline in the detail column. ─────────────────── */
 
 .tag-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-}
-
-.tag-chip {
-  display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10.5px;
-  line-height: 1;
-  padding: 3px 7px;
-  border-radius: 999px;
-  border: 1px solid currentColor;
-  background: transparent;
-  white-space: nowrap;
-  max-width: 160px;
+  min-width: 0;
+}
+
+.chip.tag-chip {
+  gap: 5px;
+  font-weight: 500;
+  max-width: 180px;
+}
+.tag-chip-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 .tag-chip-dot {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
-.tag-chip.clickable {
+/* A filter chip toggles. Pressable, so it reads as one on hover. */
+.chip.tag-chip.toggle {
   cursor: pointer;
   font-family: inherit;
-  transition: background 0.12s;
+  color: var(--text-2);
+  transition: background 0.12s, color 0.12s;
 }
-
-.tag-chip.clickable:hover {
-  background: var(--bg-hover);
-}
-
-/* An active filter chip is filled, so "which tags am I filtering by" reads at a
-   glance instead of needing a legend. */
-.tag-chip.clickable.on {
-  background: var(--accent-dim);
+.chip.tag-chip.toggle:hover { color: var(--text-0); }
+.chip.tag-chip.toggle.on {
+  background: var(--bg-3);
+  color: var(--text-0);
+  border-color: var(--border-light);
 }
 
 .tag-chip-x {
-  cursor: pointer;
-  opacity: 0.55;
-  font-size: 13px;
-  line-height: 1;
-  padding: 0 1px;
-}
-
-.tag-chip-x:hover,
-.tag-chip-x:focus-visible {
-  opacity: 1;
-}
-
-/* ── Editor popover ────────────────────────────────────────────────────────── */
-
-/* Anchored just under the corner cluster it belongs to, inside the card's own
-   width. Hanging it off the bottom of the card (top: 100%) read as an orphan
-   floating over the next row — there was nothing tying it to the conversation
-   it edits. */
-/* Inline: no floating, no caret, no outside-click dismissal — it lives inside a
-   panel that is already about this conversation. */
-.tag-editor.inline {
-  position: static;
-  width: auto;
-  padding: 0;
-  gap: 7px;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-}
-.tag-editor.inline::before,
-.tag-editor.inline::after {
-  content: none;
-}
-
-.tag-editor {
-  position: absolute;
-  z-index: 40;
-  top: 38px;
-  right: 10px;
-  width: 250px;
-  max-width: calc(100% - 20px);
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  background: var(--bg-2);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.12),
-    0 14px 34px rgba(0, 0, 0, 0.24);
-  cursor: default;
-  text-align: left;
-}
-
-/* A caret pointing back at the button, so the panel reads as belonging to this
-   card rather than floating between two of them. */
-.tag-editor::before,
-.tag-editor::after {
-  content: '';
-  position: absolute;
-  right: 9px;
-  width: 0;
-  height: 0;
-  border-left: 7px solid transparent;
-  border-right: 7px solid transparent;
-}
-.tag-editor::before {
-  top: -7px;
-  border-bottom: 7px solid var(--border-light);
-}
-.tag-editor::after {
-  top: -6px;
-  border-bottom: 7px solid var(--bg-2);
-}
-
-.tag-editor-head {
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-2);
-}
-
-.tag-editor-empty {
-  font-size: 12px;
-  color: var(--text-2);
-}
-
-.tag-editor-input {
-  width: 100%;
-  padding: 6px 8px;
-  font-family: inherit;
-  font-size: 12.5px;
-  color: var(--text-0);
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-}
-
-.tag-editor-input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.tag-editor-suggest {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.tag-suggest {
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-family: inherit;
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg-1);
-  color: var(--text-1);
-  cursor: pointer;
-}
-
-.tag-suggest:hover {
-  border-color: var(--border-light);
-  color: var(--text-0);
-}
-
-.tag-editor-error {
-  font-size: 11.5px;
-  color: var(--error);
-  line-height: 1.4;
-}
-
-/* ── Row affordance ────────────────────────────────────────────────────────── */
-
-/* Sits inside .cc-row-actions (ProjectsView.css), which owns the placement and the
-   reveal-on-hover. This rule is only the button's own look. */
-.cc-row-tag-btn {
-  display: flex;
   align-items: center;
   justify-content: center;
-  width: 25px;
-  height: 25px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  background: var(--bg-2);
+  width: 14px;
+  height: 14px;
+  margin-right: -3px;
+  border-radius: var(--radius);
   color: var(--text-2);
+  background: transparent;
   cursor: pointer;
-  transition: color 0.12s, border-color 0.12s, background 0.12s;
 }
+.tag-chip-x:hover,
+.tag-chip-x:focus-visible { color: var(--text-0); background: var(--bg-3); }
 
-.cc-row-tag-btn:hover,
-.cc-row-tag-btn.open {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
-  background: var(--accent-dim);
+/* ── Editor (inline, in the detail column) ── */
+.tag-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
 }
-
-/* ── Filter bar ────────────────────────────────────────────────────────────── */
-
-.tag-filter {
+.tag-editor-head {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
+  justify-content: space-between;
 }
-
-.tag-filter-mode {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-
-.tag-filter-mode button {
-  font-family: inherit;
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  padding: 3px 9px;
-  border: 0;
-  background: var(--bg-1);
-  color: var(--text-2);
-  cursor: pointer;
-}
-
-.tag-filter-mode button.on {
-  background: var(--accent-dim);
-  color: var(--accent);
-}
-
-.tag-filter-clear {
-  font-family: inherit;
-  font-size: 11px;
-  padding: 3px 8px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-2);
-  cursor: pointer;
-}
-
-.tag-filter-clear:hover {
-  color: var(--text-0);
-  background: var(--bg-hover);
+.tag-editor-input { height: 32px; }
+.tag-editor-error {
+  font-size: 12px;
+  color: var(--error);
+  line-height: 1.4;
 }

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { LabelRegistry } from '../types'
-import { useModalA11y } from '../hooks/useModalA11y'
+import Sheet from './Sheet'
 import './LabelManager.css'
 
 interface Props {
@@ -23,8 +23,6 @@ export default function LabelManager({ onClose, onChanged }: Props) {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
   const [swatchFor, setSwatchFor] = useState<string | null>(null)
-  const dialogRef = useRef<HTMLDivElement>(null)
-  useModalA11y(dialogRef, onClose)
 
   const names = Object.keys(reg.labels).sort((a, b) => a.localeCompare(b))
 
@@ -95,59 +93,143 @@ export default function LabelManager({ onClose, onChanged }: Props) {
     )
   }
 
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="modal wide label-manager"
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="label-manager-title"
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h3 id="label-manager-title">Labels</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+  const open = (next: Pending, value = '') => {
+    setPending(next)
+    setDraft(value)
+    setNote('')
+  }
+
+  /** The inline form for the label it acts on, under that label's row. */
+  const form = (name: string) => {
+    if (!pending || pending.name !== name) return null
+    if (pending.kind === 'rename') {
+      return (
+        <div className="lm-form">
+          <input
+            className="text-input"
+            aria-label={`New name for ${name}`}
+            autoFocus
+            value={draft}
+            disabled={busy}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && draft.trim()) doRename(name, draft.trim())
+            }}
+          />
+          <div className="lm-form-actions">
+            <button type="button" className="btn-ghost small" onClick={() => setPending(null)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-primary small"
+              disabled={busy || !draft.trim()}
+              onClick={() => doRename(name, draft.trim())}
+            >
+              Rename
+            </button>
+          </div>
+        </div>
+      )
+    }
+    if (pending.kind === 'merge') {
+      const into = (draft || pending.suggested || '').trim()
+      return (
+        <div className="lm-form">
+          <input
+            className="text-input"
+            aria-label={`Merge ${name} into`}
+            placeholder="Merge into"
+            autoFocus
+            list="lm-merge-options"
+            value={draft || pending.suggested || ''}
+            disabled={busy}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && into) doMerge(name, into)
+            }}
+          />
+          <datalist id="lm-merge-options">
+            {names
+              .filter((n) => n !== name)
+              .map((n) => (
+                <option key={n} value={n} />
+              ))}
+          </datalist>
+          <p className="help">“{name}” disappears; the conversations carrying it keep the other label.</p>
+          <div className="lm-form-actions">
+            <button type="button" className="btn-ghost small" onClick={() => setPending(null)}>
+              Cancel
+            </button>
+            <button type="button" className="btn-primary small" disabled={busy || !into} onClick={() => doMerge(name, into)}>
+              Merge
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div className="lm-form">
+        <p className="lm-confirm">
+          Remove “{name}” from {pending.count} conversation{pending.count !== 1 ? 's' : ''}?
+        </p>
+        <p className="help">The conversations themselves are untouched; only the tag goes.</p>
+        <div className="lm-form-actions">
+          <button type="button" className="btn-ghost small" onClick={() => setPending(null)}>
+            Keep
+          </button>
+          <button type="button" className="btn-primary small danger" disabled={busy} onClick={() => doDelete(name)}>
+            Remove everywhere
           </button>
         </div>
+      </div>
+    )
+  }
 
-        <div className="modal-body">
-          <p className="label-intro">
-            A tag lives inside the conversation, so it stays there for the CLI too. Only the
-            colour is stored here — losing it costs colours, not tags.
-          </p>
+  return (
+    <Sheet
+      title="Labels"
+      width={520}
+      onClose={onClose}
+      footer={
+        <button type="button" className="btn-ghost" onClick={onClose}>
+          Done
+        </button>
+      }
+    >
+      <div className="lm-body">
+        <p className="help">
+          A tag lives inside the conversation, so the CLI sees it too. Only the colour is stored here: losing it
+          costs colours, not tags.
+        </p>
 
-          {names.length === 0 && (
-            <div className="label-empty">No labels yet. Tag a conversation to start one.</div>
-          )}
+        {note && <p className="lm-note">{note}</p>}
 
-          <ul className="label-list">
-            {names.map((name) => (
-              <li key={name} className="label-row">
+        {names.length === 0 && <p className="lm-empty">No labels yet. Tag a conversation to start one.</p>}
+
+        <ul className="lm-list">
+          {names.map((name) => (
+            <li key={name} className="lm-item">
+              <div className={`lm-row ${pending?.name === name || swatchFor === name ? 'open' : ''}`}>
                 <button
-                  className="label-swatch"
+                  type="button"
+                  className="lm-dot"
                   style={{ background: reg.labels[name] }}
                   aria-label={`Change colour of ${name}`}
+                  aria-expanded={swatchFor === name}
                   onClick={() => setSwatchFor(swatchFor === name ? null : name)}
                 />
-                <span className="label-name">{name}</span>
-                <span className="label-count">
-                  {counts[name] ?? '—'} conversation{counts[name] === 1 ? '' : 's'}
+                <span className="lm-name">{name}</span>
+                <span className="lm-count">
+                  {counts[name] ?? '…'} conversation{counts[name] === 1 ? '' : 's'}
                 </span>
-                <span className="label-actions">
+                <span className="lm-actions">
                   <button
-                    className="icon-btn"
+                    type="button"
+                    className="lm-icon"
                     title="Rename"
                     aria-label={`Rename ${name}`}
-                    onClick={() => {
-                      setPending({ kind: 'rename', name })
-                      setDraft(name)
-                      setNote('')
-                    }}
+                    onClick={() => open({ kind: 'rename', name }, name)}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="M12 20h9" />
@@ -155,143 +237,57 @@ export default function LabelManager({ onClose, onChanged }: Props) {
                     </svg>
                   </button>
                   <button
-                    className="icon-btn"
+                    type="button"
+                    className="lm-icon"
                     title="Merge into another label"
-                    aria-label={`Merge ${name}`}
-                    onClick={() => {
-                      setPending({ kind: 'merge', name })
-                      setDraft('')
-                      setNote('')
-                    }}
+                    aria-label={`Merge ${name} into another label`}
+                    onClick={() => open({ kind: 'merge', name })}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="M6 3v6a6 6 0 0 0 6 6h6" />
-                      <polyline points="15 12 18 15 15 18" />
+                      <path d="M15 12l3 3-3 3" />
                     </svg>
                   </button>
                   <button
-                    className="icon-btn danger"
+                    type="button"
+                    className="lm-icon danger"
                     title="Remove from every conversation"
                     aria-label={`Remove ${name} everywhere`}
-                    onClick={() => {
-                      setPending({ kind: 'delete', name, count: counts[name] ?? 0 })
-                      setNote('')
-                    }}
+                    onClick={() => open({ kind: 'delete', name, count: counts[name] ?? 0 })}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M3 6h18" />
                       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                     </svg>
                   </button>
                 </span>
-
-                {swatchFor === name && (
-                  <div className="label-palette">
-                    {reg.palette.map((c) => (
-                      <button
-                        key={c}
-                        className="label-palette-dot"
-                        style={{ background: c }}
-                        aria-label={`Use ${c}`}
-                        onClick={async () => {
-                          await window.electronAPI.ccLabelSetColor(name, c)
-                          setSwatchFor(null)
-                          await load()
-                          onChanged()
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-
-          {pending?.kind === 'rename' && (
-            <div className="label-prompt">
-              <label htmlFor="label-rename-input">Rename “{pending.name}” to</label>
-              <input
-                id="label-rename-input"
-                autoFocus
-                value={draft}
-                disabled={busy}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && draft.trim()) doRename(pending.name, draft.trim())
-                }}
-              />
-              <div className="label-prompt-actions">
-                <button className="btn-ghost" onClick={() => setPending(null)}>
-                  Cancel
-                </button>
-                <button
-                  className="btn-primary"
-                  disabled={busy || !draft.trim()}
-                  onClick={() => doRename(pending.name, draft.trim())}
-                >
-                  Rename
-                </button>
               </div>
-            </div>
-          )}
 
-          {pending?.kind === 'merge' && (
-            <div className="label-prompt">
-              <label htmlFor="label-merge-input">Merge “{pending.name}” into</label>
-              <input
-                id="label-merge-input"
-                autoFocus
-                list="label-merge-options"
-                value={draft || pending.suggested || ''}
-                disabled={busy}
-                onChange={(e) => setDraft(e.target.value)}
-              />
-              <datalist id="label-merge-options">
-                {names.filter((n) => n !== pending.name).map((n) => (
-                  <option key={n} value={n} />
-                ))}
-              </datalist>
-              <p className="label-prompt-warn">
-                “{pending.name}” disappears; the conversations carrying it keep the other label.
-              </p>
-              <div className="label-prompt-actions">
-                <button className="btn-ghost" onClick={() => setPending(null)}>
-                  Cancel
-                </button>
-                <button
-                  className="btn-primary"
-                  disabled={busy || !(draft || pending.suggested)}
-                  onClick={() => doMerge(pending.name, (draft || pending.suggested || '').trim())}
-                >
-                  Merge
-                </button>
-              </div>
-            </div>
-          )}
+              {swatchFor === name && (
+                <div className="lm-palette">
+                  {reg.palette.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      className={`lm-swatch ${reg.labels[name] === c ? 'on' : ''}`}
+                      style={{ background: c }}
+                      aria-label={`Use ${c}`}
+                      onClick={async () => {
+                        await window.electronAPI.ccLabelSetColor(name, c)
+                        setSwatchFor(null)
+                        await load()
+                        onChanged()
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
 
-          {pending?.kind === 'delete' && (
-            <div className="label-prompt danger">
-              <p>
-                Remove “{pending.name}” from <b>{pending.count}</b> conversation
-                {pending.count !== 1 ? 's' : ''}?
-              </p>
-              <p className="label-prompt-warn">
-                The conversations themselves are untouched — only the tag goes.
-              </p>
-              <div className="label-prompt-actions">
-                <button className="btn-ghost" onClick={() => setPending(null)}>
-                  Cancel
-                </button>
-                <button className="btn-primary danger" disabled={busy} onClick={() => doDelete(pending.name)}>
-                  Remove everywhere
-                </button>
-              </div>
-            </div>
-          )}
-
-          {note && <div className="label-note">{note}</div>}
-        </div>
+              {form(name)}
+            </li>
+          ))}
+        </ul>
       </div>
-    </div>
+    </Sheet>
   )
 }
