@@ -128,9 +128,9 @@ describe('renderClientReport', () => {
         '',
         'Foi efetuada uma intervenção técnica no [servidor de aplicações] e no [servidor de base de dados], em 05-03-2026. A intervenção incidiu sobre a plataforma *WireMaze Cityfy Platform*.',
         '',
-        '- Procedeu-se à verificação do estado do serviço em [servidor de aplicações].',
-        '- Procedeu-se à verificação da disponibilidade da base de dados.',
-        '- Procedeu-se ao reinício controlado do serviço.',
+        '- A verificação do estado do serviço em [servidor de aplicações].',
+        '- A verificação da disponibilidade da base de dados.',
+        '- O reinício controlado do serviço.',
         '',
         '## Motivo',
         '',
@@ -201,8 +201,8 @@ describe('renderClientReport', () => {
     const out = renderClientReport(MESSY, OPTS)
     const steps = out.split('\n').filter((l) => l.startsWith('- '))
     expect(steps).toEqual([
-      '- Procedeu-se à verificação do estado do serviço em [servidor de aplicações].',
-      '- Procedeu-se ao reinício controlado do serviço.'
+      '- A verificação do estado do serviço em [servidor de aplicações].',
+      '- O reinício controlado do serviço.'
     ])
     expect(out).toContain('Uma ou mais operações não foram concluídas nesta janela.')
     expect(renderClientReport(GOLDEN, OPTS)).not.toContain('não foram concluídas')
@@ -221,7 +221,7 @@ describe('renderClientReport', () => {
 
   it('renders an untitled step as an unnamed technical operation', () => {
     const out = renderClientReport(run([call({ callId: 'n', title: undefined })]), OPTS)
-    expect(out).toContain('- Foi efetuada uma operação técnica.')
+    expect(out).toContain('- Operação técnica.')
   })
 
   it('names each platform, and none when the runbook does not say', () => {
@@ -338,5 +338,20 @@ describe('renderInternalReport', () => {
   it('fences output that itself contains backticks', () => {
     const out = renderInternalReport(run([call({ callId: 'b', stdoutHead: 'a ``` b' })]))
     expect(out).toContain('   ````\n   a ``` b\n   ````')
+  })
+})
+
+describe('client report titles after the first VM run', () => {
+  it('keeps argv words that appear in a title, and lists a repeated title once', () => {
+    const s = run([
+      call({ callId: 'a', title: 'Verificação da versão do nginx', argv: ['nginx', '-v'] }),
+      call({ callId: 'b', title: 'Verificação do estado de um serviço', argv: ['systemctl', 'status', 'nginx'] }),
+      call({ callId: 'c', title: 'Verificação do estado de um serviço', argv: ['systemctl', 'status', 'redis'] })
+    ])
+    const out = renderClientReport(s, OPTS)
+    expect(out).toContain('- Verificação da versão do nginx.')
+    expect(out.split('\n').filter((l) => l === '- Verificação do estado de um serviço.')).toHaveLength(1)
+    expect(out).not.toContain('[omitido]')
+    expect(out).not.toContain('Procedeu-se')
   })
 })

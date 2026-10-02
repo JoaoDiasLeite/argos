@@ -16,6 +16,11 @@ import type { OpsHostRef, OpsPolicy } from './ops-types'
 // ─── Shared helpers ───────────────────────────────────────────────────────────────
 
 /** Executed to completion: not denied, not refused at the prompt, exit 0, no timeout. */
+/** The host as the operator knows it: its stored name, falling back to the address. */
+function hostLabel(summary: OpsRunSummary, c: OpsCallSummary): string {
+  return summary.hosts.find((h) => h.id === c.hostId)?.name || c.host || c.hostId || 'unknown host'
+}
+
 function concluded(c: OpsCallSummary): boolean {
   if (c.decision === 'deny') return false
   if (c.answer === 'deny' || c.answer === 'stop') return false
@@ -53,7 +58,7 @@ export function clientReportWarnings(summary: OpsRunSummary): string[] {
     if (!concluded(c) || (c.title && c.title.trim())) return
     const rule = c.rule ? ` (rule \`${c.rule}\`)` : ''
     out.push(
-      `Call ${i + 1} (${c.tool} on ${c.host || c.hostId || 'unknown host'})${rule} has no step title; ` +
+      `Call ${i + 1} (${c.tool} on ${hostLabel(summary, c)})${rule} has no step title; ` +
         'the client report shows it as "operação técnica". Add a `title` to the rule in policy.json.'
     )
   })
@@ -97,7 +102,7 @@ export function renderInternalReport(summary: OpsRunSummary): string {
   if (s.calls.length === 0) out.push('_No calls._', '')
   s.calls.forEach((c, i) => {
     const decision = c.answer ? `${c.decision} → ${c.answer}` : c.decision
-    out.push(`${i + 1}. **${c.tool}** on ${c.host || c.hostId || 'unknown host'} · ${c.class} · ${decision}`)
+    out.push(`${i + 1}. **${c.tool}** on ${hostLabel(summary, c)} · ${c.class} · ${decision}`)
     const pad = '   '
     const detail: string[] = []
     detail.push(`Reason: ${c.reason}`)
@@ -272,22 +277,6 @@ function ptDate(iso: string): string {
   return `${get('day')}-${get('month')}-${get('year')}`
 }
 
-/**
- * The words after "Procedeu-se". A title that opens with an article contracts with the
- * preposition ("A verificação" -> "à verificação", "O reinício" -> "ao reinício"), so a
- * runbook author can write natural titles; otherwise plain "a". A leading capital that is
- * not an acronym is lowered, and a trailing period dropped (the template adds one).
- */
-function stepPhrase(title: string): string {
-  let t = title.trim().replace(/[.\s]+$/, '')
-  const article = /^(as|os|a|o)\s+/i.exec(t)
-  if (article) {
-    const contracted = { a: 'à', o: 'ao', as: 'às', os: 'aos' }[article[1].toLowerCase()]
-    return `${contracted} ${t.slice(article[0].length)}`
-  }
-  if (/^\p{Lu}\p{Ll}/u.test(t)) t = t[0].toLowerCase() + t.slice(1)
-  return `a ${t}`
-}
 
 function joinPt(items: string[]): string {
   if (items.length <= 1) return items.join('')
@@ -334,10 +323,22 @@ export function renderClientReport(summary: OpsRunSummary, opts: ClientReportOpt
   const product = s.runbook.platform ? PRODUCT[s.runbook.platform] : undefined
   if (product) desc.push(`A intervenção incidiu sobre a plataforma ${product}.`)
 
+  // Titles are the runbook author's client-facing words, so they are sanitised only for
+  // host names and addresses, not for argv words: on the first real run "Verificação da
+  // versão do nginx" came out as "versão do [omitido]" because `nginx` was an argv word.
+  // Listed as plain noun phrases, not "Procedeu-se a <title>": the contraction (à / ao)
+  // depends on the noun's gender, which a title does not declare. Repeated titles (the same
+  // check on several services) are listed once.
+  const titleClean = (text: string): string => sanitizeForClient(text, { ...opts, argv: [], paths: [] })
   const steps = s.calls.filter(concluded)
-  const lines: string[] = steps.map((c) =>
-    c.title && c.title.trim() ? `Procedeu-se ${clean(stepPhrase(c.title))}.` : 'Foi efetuada uma operação técnica.'
-  )
+  const seen = new Set<string>()
+  const lines: string[] = []
+  for (const c of steps) {
+    const line = c.title && c.title.trim() ? titleClean(c.title.trim().replace(/[.\s]+$/, '')) + '.' : 'Operação técnica.'
+    if (seen.has(line)) continue
+    seen.add(line)
+    lines.push(line)
+  }
   const notConcluded = s.calls.some((c) => !concluded(c))
   if (s.calls.length === 0) lines.push('Não foi executada nenhuma operação nesta janela.')
 
