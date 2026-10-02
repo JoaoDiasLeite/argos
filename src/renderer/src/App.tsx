@@ -2581,21 +2581,6 @@ export default function App() {
             />
           )}
           <Suspense fallback={<ViewLoading />}>
-            {view === 'planner' && (
-              <PlannerView
-                accounts={accounts}
-                models={models}
-                defaultModel={defaultModel}
-                defaultAccountId={defaultAccountId}
-                codexAccounts={codexAccounts}
-                geminiAccounts={geminiAccounts}
-                codexDefaultAccountId={codexDefaultAccountId}
-                geminiDefaultAccountId={geminiDefaultAccountId}
-                showWeek={ui?.showWeekPlanner ?? false}
-                onRunTask={runPlannerTask}
-                onStandupChat={startStandupChat}
-              />
-            )}
             {view === 'mcp' && <McpView />}
             {(view === 'ops' || view === 'ops-workspace') && (
               <InterventionStart key={opsStartHostId ?? ''} initialHostId={opsStartHostId} onStart={openOpsWorkspace} />
@@ -2614,6 +2599,26 @@ export default function App() {
             )}
           </Suspense>
         </div>
+      )}
+
+      {/* Planner is a plain rail entry (no group since Routines went), so it renders here
+          rather than inside the group shell, which only exists for a group's members. */}
+      {view === 'planner' && (
+        <Suspense fallback={<ViewLoading />}>
+          <PlannerView
+            accounts={accounts}
+            models={models}
+            defaultModel={defaultModel}
+            defaultAccountId={defaultAccountId}
+            codexAccounts={codexAccounts}
+            geminiAccounts={geminiAccounts}
+            codexDefaultAccountId={codexDefaultAccountId}
+            geminiDefaultAccountId={geminiDefaultAccountId}
+            showWeek={ui?.showWeekPlanner ?? false}
+            onRunTask={runPlannerTask}
+            onStandupChat={startStandupChat}
+          />
+        </Suspense>
       )}
 
       {view === 'ops-workspace' && opsWorkspace && (
