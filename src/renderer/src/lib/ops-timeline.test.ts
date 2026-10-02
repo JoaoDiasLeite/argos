@@ -135,4 +135,13 @@ describe('foldOpsEvents', () => {
     expect(runs[1]).toMatchObject({ runbook: '', hosts: [] })
     expect(runs[1].calls[0]).toMatchObject({ callId: 'x', status: 'asked', reason: 'decided event missing' })
   })
+
+  it('reads the plan decision', () => {
+    const approved = ev({ kind: 'plan.approved' })
+    const [run] = foldOpsEvents([start, approved])
+    expect(run.planDecision).toBe('approved')
+    expect(run.planAt).toBe(approved.line.at)
+    const [rej] = foldOpsEvents([start, ev({ kind: 'plan.rejected' })])
+    expect(rej.planDecision).toBe('rejected')
+  })
 })

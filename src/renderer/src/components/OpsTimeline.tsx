@@ -11,7 +11,28 @@ import './OpsTimeline.css'
 // Runs from before this app start are not here; their reports still render from the ledger.
 const buffers = new Map<string, OpsLiveEvent[]>()
 const listeners = new Set<(appSessionId: string) => void>()
+// Sessions whose ledger history was already merged into the buffer (or is being fetched).
+const historyState = new Map<string, Promise<void>>()
 let subscribed = false
+
+const eventKey = (e: OpsLiveEvent): string =>
+  `${e.line?.prev}|${e.line?.at}|${e.line?.event?.kind}|${e.line?.event?.callId ?? ''}`
+
+/** Fetches the session's past ledger lines once and puts them BEFORE any live ones. */
+function loadHistory(appSessionId: string): Promise<void> {
+  let p = historyState.get(appSessionId)
+  if (!p) {
+    p = window.electronAPI.opsSessionEvents(appSessionId).then((res) => {
+      if (!res.ok) return
+      const seen = new Set(res.events.map(eventKey))
+      const live = (buffers.get(appSessionId) ?? []).filter((e) => !seen.has(eventKey(e)))
+      buffers.set(appSessionId, [...res.events, ...live])
+      listeners.forEach((fn) => fn(appSessionId))
+    }).catch(() => { historyState.delete(appSessionId) })
+    historyState.set(appSessionId, p)
+  }
+  return p
+}
 
 function ensureSubscribed(): void {
   if (subscribed) return
@@ -19,21 +40,27 @@ function ensureSubscribed(): void {
   window.electronAPI.onOpsEvent((data) => {
     if (!data || typeof data.appSessionId !== 'string') return
     const list = buffers.get(data.appSessionId) ?? []
+    const key = eventKey(data)
+    if (list.some((e) => eventKey(e) === key)) return
     buffers.set(data.appSessionId, [...list, data])
     listeners.forEach((fn) => fn(data.appSessionId))
   })
 }
 
-function useOpsEvents(appSessionId: string): OpsLiveEvent[] {
+function useOpsEvents(appSessionId: string): { events: OpsLiveEvent[]; loading: boolean } {
   const [events, setEvents] = useState<OpsLiveEvent[]>(() => buffers.get(appSessionId) ?? [])
+  const [loading, setLoading] = useState(true)
   useEffect(() => {
     ensureSubscribed()
     setEvents(buffers.get(appSessionId) ?? [])
+    let alive = true
+    setLoading(true)
+    void loadHistory(appSessionId).finally(() => { if (alive) setLoading(false) })
     const fn = (id: string) => { if (id === appSessionId) setEvents(buffers.get(appSessionId) ?? []) }
     listeners.add(fn)
-    return () => { listeners.delete(fn) }
+    return () => { alive = false; listeners.delete(fn) }
   }, [appSessionId])
-  return events
+  return { events, loading }
 }
 
 interface Props {
@@ -62,6 +89,12 @@ function formatDuration(ms?: number): string {
 function formatTime(iso: string): string {
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function formatClock(iso?: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 function statusText(row: OpsRow): string {
@@ -116,7 +149,7 @@ function CallRow({ row }: { row: OpsRow }) {
 
 /** Right-side panel of an ops chat: one block per run, newest first, one row per call. */
 export default function OpsTimeline({ appSessionId, runbookPath, onClose }: Props) {
-  const events = useOpsEvents(appSessionId)
+  const { events, loading } = useOpsEvents(appSessionId)
   const runs = useMemo(() => foldOpsEvents(events).reverse(), [events])
   const [reportRunId, setReportRunId] = useState<string | null>(null)
 
@@ -126,7 +159,8 @@ export default function OpsTimeline({ appSessionId, runbookPath, onClose }: Prop
         <strong>Ops</strong>
         <button className="btn-ghost small" onClick={onClose}>Close</button>
       </div>
-      {runs.length === 0 && <p className="ops-tl-empty">No ops calls yet in this chat.</p>}
+      {loading && <p className="ops-tl-empty">Loading history…</p>}
+      {!loading && runs.length === 0 && <p className="ops-tl-empty">No ops calls yet in this chat.</p>}
       {runs.map((run) => (
         <div key={run.runId} className="ops-tl-run">
           <div className="ops-tl-run-head">
@@ -138,7 +172,17 @@ export default function OpsTimeline({ appSessionId, runbookPath, onClose }: Prop
               {run.hosts.length > 0 && <span>{run.hosts.join(', ')}</span>}
               <span>{formatTime(run.startedAt)}</span>
             </div>
+            {run.planDecision && (
+              <div className={`ops-tl-plan ${run.planDecision}`}>
+                {run.planDecision === 'approved' ? `Plan approved ${formatClock(run.planAt)}` : 'Plan rejected'}
+              </div>
+            )}
             {run.ended?.error && <p className="ops-tl-reason">{run.ended.error}</p>}
+            {!run.ended && (
+              <button className="btn-ghost small ops-tl-stop" onClick={() => { void window.electronAPI.stopAgent(appSessionId) }}>
+                Stop run
+              </button>
+            )}
             {run.ended && (
               <button className="btn-ghost small ops-tl-report" onClick={() => setReportRunId(run.runId)}>
                 Report

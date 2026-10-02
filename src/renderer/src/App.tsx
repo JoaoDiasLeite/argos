@@ -32,6 +32,7 @@ import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, groupOwnsView } from './componen
 import ServerTabs from './components/ServerTabs'
 import ClaudeMdModal from './components/ClaudeMdModal'
 import ApprovalModal from './components/ApprovalModal'
+import SecretPrompt from './components/SecretPrompt'
 import { readRecentRunbooks } from './components/ChatConfigBar'
 import PendingRuns, { PendingRun } from './components/PendingRuns'
 import FileEditor from './components/FileEditor'
@@ -359,6 +360,13 @@ export default function App() {
     })
   }, [])
   const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([])
+  // Sudo-password requests from ops runs, answered one at a time (head of the queue).
+  const [secretQueue, setSecretQueue] = useState<{ appSessionId: string; requestId: string; hostId: string; hostName: string; prompt: string }[]>([])
+  useEffect(() => window.electronAPI.onOpsSecretRequest((req) => setSecretQueue((q) => [...q, req])), [])
+  const answerSecret = (requestId: string, value: string | null) => {
+    void window.electronAPI.respondOpsSecret({ requestId, value })
+    setSecretQueue((q) => q.filter((r) => r.requestId !== requestId))
+  }
   // When each approvalId entered the queue, for Home's "since" — ApprovalRequest itself
   // carries no timestamp, and reading Date.now() at render time would restart the count
   // on every re-render instead of showing how long it has actually been pending.
@@ -3724,7 +3732,16 @@ export default function App() {
       {/* Suppressed only where Chat renders the same request inline — which it does in
           chat mode alone. In terminal mode the chat pane is a terminal, so a run Argos
           itself is driving (Planner, Rooms, a routine) has nowhere else to ask. */}
-      {view !== 'rooms' && approvalQueue.length > 0 && !(view === 'chat' && workMode === 'chat' && visibleIds.has(approvalQueue[0].appSessionId)) && (
+      {secretQueue.length > 0 && (
+        <SecretPrompt
+          key={secretQueue[0].requestId}
+          request={secretQueue[0]}
+          onSubmit={(value) => answerSecret(secretQueue[0].requestId, value)}
+        />
+      )}
+      {/* While a password is being asked, the approval modal waits: its window-level Esc would
+          otherwise deny the call behind the prompt. */}
+      {secretQueue.length === 0 && view !== 'rooms' && approvalQueue.length > 0 && !(view === 'chat' && workMode === 'chat' && visibleIds.has(approvalQueue[0].appSessionId)) && (
         <ApprovalModal
           request={approvalQueue[0]}
           onDecide={respondApproval}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { describeOpsRequest, displayArgv } from './ops-approval'
+import { describeOpsRequest, displayArgv, summarizeOps } from './ops-approval'
 import type { ApprovalOpsContext } from '../types'
 
 const base: ApprovalOpsContext = {
@@ -28,5 +28,18 @@ describe('describeOpsRequest', () => {
     expect(describeOpsRequest({ ...base, tool: 'read', path: '/etc/hosts' }).verb).toBe('read /etc/hosts on web1')
     expect(describeOpsRequest({ ...base, tool: 'list', path: '/var' }).verb).toBe('list /var on web1')
     expect(describeOpsRequest({ ...base, tool: 'write', path: '/tmp/x' }).lines).toEqual(['/tmp/x'])
+  })
+})
+
+describe('plan approvals', () => {
+  const plan: ApprovalOpsContext = { ...base, tool: 'plan', hostName: 'restart-app', planSteps: ['check disk', 'restart service'] }
+  it('describes a plan with its steps', () => {
+    expect(describeOpsRequest(plan)).toEqual({
+      verb: 'approve the plan for restart-app', lines: ['check disk', 'restart service']
+    })
+  })
+  it('summarizes a plan', () => {
+    expect(summarizeOps(plan)).toBe('Plan: 2 steps for restart-app')
+    expect(summarizeOps({ ...plan, planSteps: ['one'] })).toBe('Plan: 1 step for restart-app')
   })
 })

@@ -14,6 +14,8 @@ export function describeOpsRequest(ops: ApprovalOpsContext): { verb: string; lin
   const argvLine = ops.argv && ops.argv.length ? displayArgv(ops.argv) : ''
   const lines: string[] = []
   switch (ops.tool) {
+    case 'plan':
+      return { verb: `approve the plan for ${host}`, lines: ops.planSteps ?? [] }
     case 'script':
       if (argvLine) lines.push(argvLine)
       if (ops.scriptSha256) lines.push(`sha256 ${ops.scriptSha256.slice(0, 12)}…`)
@@ -32,6 +34,10 @@ export function describeOpsRequest(ops: ApprovalOpsContext): { verb: string; lin
 
 /** One-line toast summary, capped at ~80 chars. */
 export function summarizeOps(ops: ApprovalOpsContext): string {
+  if (ops.tool === 'plan') {
+    const n = ops.planSteps?.length ?? 0
+    return `Plan: ${n} step${n === 1 ? '' : 's'} for ${ops.hostName}`
+  }
   const what = ops.argv && ops.argv.length ? displayArgv(ops.argv) : ops.path || ops.tool
   const full = `${ops.hostName}: ${what}`
   return full.length > 80 ? full.slice(0, 79) + '…' : full

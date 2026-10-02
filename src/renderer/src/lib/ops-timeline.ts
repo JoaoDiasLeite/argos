@@ -44,6 +44,9 @@ export interface OpsRun {
   runbook: string
   hosts: string[]
   planText?: string
+  planDecision?: 'approved' | 'rejected'
+  /** ISO time of the plan decision. */
+  planAt?: string
   calls: OpsRow[]
   ended?: { ok: boolean; aborted?: boolean; error?: string; costUsd: number }
 }
@@ -154,6 +157,12 @@ export function foldOpsEvents(events: OpsLiveEvent[]): OpsRun[] {
         const path = str(e.path)
         const backupPath = str(e.backupPath)
         if (path && backupPath) rowFor(run, callId).backup = { path, backupPath }
+        break
+      }
+      case 'plan.approved':
+      case 'plan.rejected': {
+        run.planDecision = e.kind === 'plan.approved' ? 'approved' : 'rejected'
+        run.planAt = ev.line.at
         break
       }
       case 'run.end': {
