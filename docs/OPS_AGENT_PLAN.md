@@ -374,10 +374,19 @@ to carry host/rule/argv to the modal). Tests against the fake backend: a full ru
 backend; a timed-out call is marked and the next call on that host still runs; abort ends
 channels. Commit: `feat(ops): run runbook-gated commands over ssh with an audit ledger`.
 
-### Phase 3 — UI · 2 days
-Carried over from Phase 2: the sudo password prompt (§4; `sudoPasswords` is typed and
-unused), the plan-mode first turn with `plan.approved` (§1.7), and wiring the modal's
-"Deny and stop the run" button in `App.tsx` (`respondApproval({ allow: false, stop: true })`).
+### Phase 3 — UI · done (`ac00e24`, `8bd21f9`, `65ec7a4`, `b3df5db`, `f87ccd5`, `5643c44`)
+Also landed here, carried over from Phase 2: the sudo password prompt (§4), the plan
+step (§1.7, as a sixth tool `mcp__ops__propose_plan` rather than the SDK's plan mode, so
+the approval goes through the same gate and ledger), deny-and-stop from the modal, and
+the timeline's history from the ledger after a restart.
+
+Left open after Phase 3, none blocking:
+- The runbook recents are global, not remembered per project (§8).
+- The config bar re-tests every runbook host's connection on each mount; no caching.
+- A sudo password prompt is not withdrawn when the run aborts; a late answer is ignored.
+- A `script` that calls sudo internally gets the "needs a password" note, not the prompt.
+- The visual check covered the ops chat (both themes) and the timeline; the approval
+  modal with a plan and the sudo prompt were not photographed, since they need a live run.
 Runbook picker, plan-approval bar, timeline panel, report button, Settings → Ops, host
 card relabel. `visual-check` with a seeded runbook and the fake backend behind a dev flag
 (`ARGOS_OPS_FAKE=1`), so screenshots need no server. Commit per surface.
