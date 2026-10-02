@@ -155,6 +155,11 @@ function resetLabel(iso?: string): string {
   return sameDay ? `resets ${hm}` : `resets ${d.toLocaleDateString('en-GB', { weekday: 'short' })} ${hm}`
 }
 
+/** The sidebar badge's thresholds: --warn from 70 %, --error from 90 %. */
+function planTone(pct: number): string {
+  return pct >= 90 ? "err" : pct >= 70 ? "warn" : "ok"
+}
+
 function planLine(plan: HomePlan | null): string {
   if (!plan) return 'No account connected · Settings › Connection'
   const who = `${plan.accountName} account`
@@ -497,7 +502,7 @@ export default function HomeView({
         <div className="home-main">
           <header className="home-head">
             <h1>{dayTitle(new Date())}</h1>
-            <p className="home-sub">{planLine(plan)}</p>
+            <p className="home-sub">{plan && plan.utilization !== undefined ? `${plan.accountName} account` : planLine(plan)}</p>
           </header>
 
           <div className="home-start">
@@ -609,6 +614,26 @@ export default function HomeView({
         </div>
 
         <aside className="home-side" aria-label="What is live">
+          {plan && plan.utilization !== undefined && (
+            <section className="home-sec" aria-label="Plan window">
+              <div className="home-plan-head">
+                <span className="home-plan-title">{plan.accountName} · {windowName(plan.windowMinutes)}</span>
+                <span className="home-right">
+                  {plan.utilization.toFixed(0)} %{plan.resetsAt ? ` · ${resetLabel(plan.resetsAt)}` : ""}
+                </span>
+              </div>
+              <div className="home-bar" role="img" aria-label={`${plan.utilization.toFixed(0)} % of the window used`}>
+                <b className={planTone(plan.utilization)} style={{ width: `${Math.min(100, Math.max(0, plan.utilization))}%` }} />
+              </div>
+            </section>
+          )}
+
+          {attention.length === 0 && (
+            <section className="home-sec" aria-label="Needs you">
+              <h2 className="eyebrow">Needs you · 0</h2>
+              <p className="help">Nothing waiting for you.</p>
+            </section>
+          )}
           {attention.length > 0 && (
             <div className="block warn home-needs" role="region" aria-label="Needs you">
               <div className="home-needs-head">
@@ -658,6 +683,12 @@ export default function HomeView({
             })}
           </section>
 
+          {!nothing && repos.length === 0 && recentProjects.length > 0 && (
+            <section className="home-sec" aria-label="Uncommitted work">
+              <h2 className="eyebrow">Uncommitted work · 0</h2>
+              <p className="help">All recent repos are clean.</p>
+            </section>
+          )}
           {!nothing && repos.length > 0 && (
             <section className="home-sec" aria-label="Uncommitted work">
               <h2 className="eyebrow">Uncommitted work · {repos.length}</h2>

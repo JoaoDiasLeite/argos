@@ -171,6 +171,16 @@
 
 /* The one tinted element on the screen. */
 .block.home-needs { margin: 12px 12px 0; gap: 2px; }
+/* The plan window at the top of the column: the one number that can stop the day, with
+   its bar in the badge's threshold colours. */
+.home-plan-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.home-plan-title { font-size: 13px; font-weight: 650; color: var(--text-0); }
+.home-bar { height: 4px; border-radius: 2px; background: var(--bg-3); overflow: hidden; }
+.home-bar b { display: block; height: 100%; }
+.home-bar b.ok { background: var(--success); }
+.home-bar b.warn { background: var(--warn); }
+.home-bar b.err { background: var(--error); }
+
 .home-needs-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .home-needs-title { font-size: 12.5px; font-weight: 650; color: var(--warn); }
 .home-needs-row { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; }
