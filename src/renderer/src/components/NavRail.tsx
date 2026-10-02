@@ -1,5 +1,4 @@
 import { modLabel } from '../lib/shortcuts'
-import ArgosMark from './ArgosMark'
 import './NavRail.css'
 
 /**
@@ -150,10 +149,6 @@ export default function NavRail({
 }: Props) {
   return (
     <div className="nav-rail">
-      <div className="nav-logo">
-        <ArgosMark size={24} bold title="Argos" />
-      </div>
-
       <div className="nav-items">
         {RAIL.map((entry) => {
           if (entry.kind === 'single') {

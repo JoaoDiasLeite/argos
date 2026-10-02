@@ -10,13 +10,6 @@
   -webkit-app-region: drag;
 }
 
-.nav-logo {
-  margin-bottom: 16px;
-  display: flex;
-  color: var(--accent);
-  -webkit-app-region: no-drag;
-}
-
 .nav-items {
   flex: 1;
   display: flex;
