@@ -746,7 +746,10 @@ export default function Chat(
           renders its own close control to get you back to the chat. */}
       {!termOpen && !needsTerminalSetup && (
         <div className={`chat-float-actions ${exportMenuOpen ? 'open' : ''}`}>
-          {isOpsChat && (
+          {/* Only while the panel is closed: open, it has its own Close button, and the
+              float cluster sits exactly where the panel's heading does (seen in the first
+              visual check — "Ops" drawn over "Close"). */}
+          {isOpsChat && !opsOpen && (
             <button
               className={`header-icon-btn chat-ops-toggle${opsOpen ? ' term-active' : ''}`}
               onClick={toggleOps}

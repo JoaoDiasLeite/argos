@@ -44,6 +44,8 @@ export interface OpsRun {
   runbook: string
   hosts: string[]
   planText?: string
+  /** Host id → name, from run.start, so rows can show the name instead of the address. */
+  hostNames?: Record<string, string>
   planDecision?: 'approved' | 'rejected'
   /** ISO time of the plan decision. */
   planAt?: string
@@ -101,8 +103,12 @@ export function foldOpsEvents(events: OpsLiveEvent[]): OpsRun[] {
         run.startedAt = ev.line.at
         const rb = e.runbook as { name?: unknown } | undefined
         run.runbook = str(rb?.name) ?? run.runbook
-        const hosts = Array.isArray(e.hosts) ? (e.hosts as { name?: unknown }[]) : []
+        const hosts = Array.isArray(e.hosts) ? (e.hosts as { id?: unknown; name?: unknown }[]) : []
         run.hosts = hosts.map((h) => str(h?.name)).filter((n): n is string => !!n)
+        // call.decided carries the address; the operator thinks in host names.
+        run.hostNames = Object.fromEntries(
+          hosts.flatMap((h) => (str(h?.id) && str(h?.name) ? [[str(h.id) as string, str(h.name) as string]] : []))
+        )
         const plan = str(e.planText)
         if (plan) run.planText = plan
         break
@@ -110,7 +116,7 @@ export function foldOpsEvents(events: OpsLiveEvent[]): OpsRun[] {
       case 'call.decided': {
         if (!callId) break
         const row = rowFor(run, callId)
-        row.host = str(e.host) ?? ''
+        row.host = run.hostNames?.[str(e.hostId) ?? ''] ?? str(e.host) ?? ''
         row.tool = str(e.tool) ?? ''
         row.class = str(e.class) ?? ''
         row.decision = str(e.decision) ?? ''
