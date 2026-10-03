@@ -38,26 +38,24 @@ export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) 
   const waitingCount = runs.filter((r) => !r.done && r.attention).length
   const workingCount = runs.length - doneCount - waitingCount
   const counts = [
-    workingCount ? `${workingCount} working` : null,
     waitingCount ? `${waitingCount} waiting for you` : null,
+    workingCount ? `${workingCount} working` : null,
     doneCount ? `${doneCount} finished` : null
   ].filter(Boolean)
-  const label = `${runs.length === 1 ? '1 chat' : `${runs.length} chats`}: ${counts.join(' · ')}`
 
-  // One dot for the strip: amber when something waits for you (that is what needs you),
-  // else green while anything works, grey once everything is finished.
-  const state = waitingCount > 0 ? 'waiting' : workingCount > 0 ? 'working' : 'done'
+  // What needs you first, then what is still working, finished last. Stable within a group.
+  const rank = (r: PendingRun) => (r.done ? 2 : r.attention ? 0 : 1)
+  const ordered = [...runs].sort((a, b) => rank(a) - rank(b))
 
   return (
     <div className="pending-runs">
-      <span className="pending-runs-label">
-        <i className={`pending-runs-dot ${state}`} aria-hidden="true" />
-        {label}
-      </span>
-      {runs.map((r) => (
+      <span className="pending-runs-label">{counts.join(' · ')}</span>
+      {ordered.map((r, i) => (
         <span
           key={r.id}
-          className={`pending-run ${r.done ? 'done' : r.attention ? 'attention' : 'working'}`}
+          className={`pending-run ${r.done ? 'done' : r.attention ? 'attention' : 'working'}${
+            r.done && i > 0 && !ordered[i - 1].done ? ' first-done' : ''
+          }`}
           /* Dragging a pill onto the panes opens that chat beside the one on screen, exactly
              like dragging a sidebar row (see PaneGrid). For a chat on another account this is
              the only way to do it: the sidebar lists just the account you're on, and this bar
@@ -82,6 +80,15 @@ export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) 
               .filter(Boolean)
               .join(' · ')}
           >
+            {/* One state per pill, in the sidebar's own language: a halo while it works,
+                amber when it waits for you, a tick once it is over. */}
+            {r.done ? (
+              <svg className="pending-run-tick" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M5 12.5l4.5 4.5L19 7.5" />
+              </svg>
+            ) : (
+              <i className="pending-run-dot" aria-hidden="true" />
+            )}
             <span className="pending-run-name">{r.name}</span>
             {r.account && <span className="pending-run-account">{r.account}</span>}
           </button>
