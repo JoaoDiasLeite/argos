@@ -490,9 +490,12 @@ function createWindow(): void {
     frame: false,
     resizable: true,
     backgroundColor,
-    // Resized to 256px: the packaged taskbar button showed Windows' blank page for the
-    // raw 512px PNG.
-    icon: nativeImage.createFromPath(appIconPath()).resize({ width: 256, height: 256 }),
+    // Packaged Windows takes the multi-size .ico embedded in Argos.exe: any PNG handed
+    // to the window left the taskbar button on Windows' blank page. Dev has no such exe.
+    icon:
+      app.isPackaged && process.platform === 'win32'
+        ? undefined
+        : nativeImage.createFromPath(appIconPath()).resize({ width: 256, height: 256 }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
