@@ -70,34 +70,28 @@
   background: color-mix(in srgb, var(--warn) 6%, var(--bg-2));
 }
 
-/* An intervention is running (Servers entry). Bottom-right, so it never sits on the
-   session-count badge in the top-right corner. A bare dot for one, a count for more. */
-.nav-item-pip {
-  position: absolute;
-  right: 6px;
-  bottom: 4px;
-  min-width: 8px;
-  height: 8px;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--bg-0);
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1;
-  animation: nav-item-pip-pulse 2s ease-in-out infinite;
+/* An intervention is running (Servers entry): the same badge, with the sidebar dot's
+   halo around it — green while it works, amber when it waits for you. */
+.nav-item-badge.live {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  animation: nav-item-badge-halo 1.8s ease-out infinite;
 }
-.nav-item-pip:not(:empty) { height: 13px; min-width: 13px; padding: 0 3px; }
-.nav-item-pip.warn { background: var(--warn); }
-@keyframes nav-item-pip-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
+.nav-item-badge.live.warn {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  animation-name: nav-item-badge-halo-warn;
+}
+@keyframes nav-item-badge-halo {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 50%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--success) 0%, transparent); }
+}
+@keyframes nav-item-badge-halo-warn {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 50%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--warn) 0%, transparent); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .nav-item-pip { animation: none; }
+  .nav-item-badge.live { animation: none; }
 }
 
 .nav-item-label {

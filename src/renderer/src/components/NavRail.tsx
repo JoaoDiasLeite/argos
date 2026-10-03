@@ -209,21 +209,21 @@ export default function NavRail({
                 {ICONS[group.members[0]]}
               </svg>
               <span className="nav-item-label">{group.label}</span>
-              {group.key === 'servers' && serverSessionCount > 0 && (
+              {group.key === 'servers' && (serverSessionCount > 0 || opsRunningCount > 0) && (
                 <span
-                  className="nav-item-badge"
-                  aria-label={`${serverSessionCount} open session${serverSessionCount === 1 ? '' : 's'}`}
+                  className={`nav-item-badge${opsRunningCount > 0 ? (opsNeedsYou ? ' warn live' : ' live') : ''}`}
+                  aria-label={[
+                    serverSessionCount > 0
+                      ? `${serverSessionCount} open session${serverSessionCount === 1 ? '' : 's'}`
+                      : null,
+                    opsRunningCount > 0
+                      ? `${opsRunningCount} intervention${opsRunningCount === 1 ? '' : 's'} running${opsNeedsYou ? ', one waiting for you' : ''}`
+                      : null
+                  ]
+                    .filter(Boolean)
+                    .join(', ')}
                 >
-                  {serverSessionCount}
-                </span>
-              )}
-              {group.key === 'servers' && opsRunningCount > 0 && (
-                <span
-                  className={`nav-item-pip${opsNeedsYou ? ' warn' : ''}`}
-                  role="img"
-                  aria-label={`${opsRunningCount} intervention${opsRunningCount === 1 ? '' : 's'} running${opsNeedsYou ? ', one waiting for you' : ''}`}
-                >
-                  {opsRunningCount > 1 ? opsRunningCount : null}
+                  {serverSessionCount > 0 ? serverSessionCount : opsRunningCount}
                 </span>
               )}
             </button>
