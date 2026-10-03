@@ -327,6 +327,14 @@ export function formatDuration(ms?: number): string {
 export function deniedLabel(row: OpsRow): string {
   if (row.answer === 'deny' || /^the operator refused/.test(row.reason)) return 'denied by you'
   if (/^outside this intervention's scope/.test(row.reason)) return 'outside scope'
+  const r = row.reason
+  if (/^denylisted:/.test(r)) return 'never allowed'
+  if (/^sudo command matches no literal sudo rule/.test(r)) return 'sudo rule missing'
+  if (/takes at most \d+ argument/.test(r) || /does not match the script's pattern/.test(r) || /^script args must/.test(r)) return 'bad script args'
+  if (/no valid pinned sha256/.test(r)) return 'script not pinned'
+  if (/is not allowed on this host|^host is not in this runbook/.test(r)) return 'wrong host'
+  if (/^path .* is not under any/.test(r)) return 'path not allowed'
+  if (/runs another command/.test(r)) return 'not a simple command'
   return 'not in runbook'
 }
 
