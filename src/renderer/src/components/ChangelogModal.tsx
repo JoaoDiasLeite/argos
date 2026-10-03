@@ -15,6 +15,26 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '2.0.1',
+    date: '2026-10-03',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'An intervention left running shows from anywhere: a pip on the Servers entry in the rail (a count when there are several, amber while an approval waits for you), and on the Servers screens a chip with the runbook and the task that takes you back to its workspace. Leaving the workspace never stopped the CLI; there was just no sign of it and no way back.',
+          'A halo on the running dot in the sidebar and a thin activity line in the title bar while any chat is working.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'A server saved with a trailing space or an invisible character in its address no longer fails with “getaddrinfo ENOTFOUND” on a perfectly good IP. The name, address, user and paths are trimmed when you save; passwords and passphrases are left exactly as typed. Servers already saved that way work again once you open them and save.'
+        ]
+      }
+    ]
+  },
+  {
     version: '2.0.0',
     date: '2026-10-02',
     tag: 'latest',
