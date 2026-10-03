@@ -126,7 +126,7 @@ function CallRow({ row }: { row: OpsRow }) {
  * The runbook's scripts, one click each. The click is the operator's approval, so there is
  * no plan to wait for; the gate, any approval prompt and the ledger work as for the model.
  */
-function ScriptsList({ terminalId, disabled }: { terminalId: string; disabled: boolean }) {
+function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runId?: string; disabled: boolean }) {
   const [scripts, setScripts] = useState<ScriptInfo[]>([])
   const [busy, setBusy] = useState<string | null>(null)
   const [message, setMessage] = useState<{ name: string; text: string } | null>(null)
@@ -135,13 +135,17 @@ function ScriptsList({ terminalId, disabled }: { terminalId: string; disabled: b
 
   useEffect(() => {
     let live = true
-    void window.electronAPI.opsScripts(terminalId).then((r) => {
-      if (live && r.ok) setScripts(r.scripts)
-    })
+    // The session may open after this mounts, so ask again when the run appears.
+    window.electronAPI
+      .opsScripts(terminalId)
+      .then((r) => {
+        if (live && r.ok) setScripts(r.scripts)
+      })
+      .catch(() => undefined)
     return () => {
       live = false
     }
-  }, [terminalId])
+  }, [terminalId, runId])
 
   if (scripts.length === 0) return null
 
@@ -347,7 +351,7 @@ export default function ActivityColumn({ terminalId, runbookPath, current, earli
         </div>
       )}
 
-      <ScriptsList terminalId={terminalId} disabled={!!current?.ended || !!waiting} />
+      <ScriptsList terminalId={terminalId} runId={current?.runId} disabled={!!current?.ended || !!waiting} />
 
       <div className="ac-list">
         {current && rows.length === 0 && <p className="ac-empty">No calls yet. The model reads the runbook first.</p>}
