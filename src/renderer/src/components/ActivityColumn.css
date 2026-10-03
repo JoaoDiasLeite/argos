@@ -269,38 +269,56 @@
   outline-offset: 2px;
 }
 
-/* ── Scripts list ── */
-.ac-scripts {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 12px 12px 0;
-  flex-shrink: 0;
+/* ── Scripts list: folded, one line each ── */
+.ac-scripts { display: flex; flex-direction: column; gap: 2px; margin: 10px 12px 0; flex-shrink: 0; }
+.ac-scripts-head {
+  display: flex; align-items: center; gap: 6px; padding: 4px 6px; border: none; background: transparent;
+  color: var(--text-2); font: inherit; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; cursor: pointer; text-align: left;
 }
-.ac-scripts-head { font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
-.ac-script {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-surface);
+.ac-scripts-head:hover { color: var(--text-0); }
+.ac-scripts-n { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.ac-sr-wrap { display: flex; flex-direction: column; }
+.ac-sr { display: flex; align-items: center; gap: 4px; border-radius: var(--radius-surface); }
+.ac-sr:hover { background: color-mix(in srgb, var(--bg-2) 60%, transparent); }
+.ac-sr.off { opacity: 0.5; }
+.ac-sr-main {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 6px; border: none; background: transparent;
+  color: var(--text-1); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
 }
-.ac-script-main { display: flex; align-items: center; gap: 8px; }
-.ac-script-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.ac-script-title { font-size: 12.5px; color: var(--text-0); }
-.ac-script-name { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ac-script-host,
-.ac-script-args {
-  height: 26px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border-light);
-  background: var(--bg-0);
-  color: var(--text-1);
-  font-size: 12px;
-  padding: 0 6px;
+.ac-sr-main:disabled { cursor: default; }
+.ac-sr-main:focus-visible, .ac-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ac-sr-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-0); }
+.ac-sr-tag { font-size: 10.5px; color: var(--warn); white-space: nowrap; }
+.ac-sr-state { font-size: 11px; color: var(--text-2); white-space: nowrap; }
+.ac-icon {
+  display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; flex-shrink: 0;
+  border: none; border-radius: var(--radius); background: transparent; color: var(--text-2); cursor: pointer; font-size: 12px;
 }
-.ac-script-err { font-size: 11.5px; color: var(--error); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ac-icon:hover { background: var(--bg-hover); color: var(--text-0); }
+.ac-sr-extra { display: flex; gap: 6px; padding: 2px 6px 6px; }
+.ac-script-host, .ac-script-args {
+  height: 26px; border-radius: var(--radius); border: 1px solid var(--border-light); background: var(--bg-0);
+  color: var(--text-1); font-size: 12px; padding: 0 6px; min-width: 0;
+}
+.ac-script-args { flex: 1; }
+.ac-script-err { font-size: 11.5px; color: var(--error); white-space: pre-wrap; overflow-wrap: anywhere; padding: 2px 6px 4px; }
+
+/* ── Script drawer: slides in from the right edge, over the activity column and the terminal's right side ── */
+.ac-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 92vw); z-index: 60; display: flex; flex-direction: column;
+  background: var(--bg-1); border-left: 1px solid var(--border-light); box-shadow: -12px 0 32px rgba(0, 0, 0, 0.28);
+}
+.ac-drawer-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.ac-drawer-titles { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ac-drawer-title { font-size: 14px; color: var(--text-0); }
+.ac-drawer-sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-drawer-hash { padding: 6px 14px; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-2); border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.ac-drawer-body { flex: 1; min-height: 0; overflow: auto; padding: 8px 0; }
+.ac-src { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--text-1); }
+.ac-src-line { display: block; padding: 0 14px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ac-src-line.c { color: var(--text-2); }
+.ac-src-line.m { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.ac-src-n { display: inline-block; width: 36px; margin-right: 10px; text-align: right; color: var(--text-2); opacity: 0.6; user-select: none; }
 
 /* ── Script output, one folded line per section ── */
 .ac-secs { margin: 0 6px 6px 32px; display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }

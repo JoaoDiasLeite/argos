@@ -1549,6 +1549,7 @@ declare global {
           }
         | { ok: false; error: string }
       >
+      opsScriptSource: (terminalId: string, name: string) => Promise<{ ok: true; text: string; sha256: string } | { ok: false; error: string }>
       opsRunScript: (terminalId: string, name: string, hostId: string, args: string[]) => Promise<{ ok: boolean; text?: string; error?: string }>
       /** Write a long prompt to userData/prompts/<sessionId>.md so a terminal can be told to read it. */
       promptFileWrite: (sessionId: string, text: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>

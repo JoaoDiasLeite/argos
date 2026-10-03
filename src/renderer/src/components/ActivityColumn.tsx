@@ -122,16 +122,111 @@ function CallRow({ row }: { row: OpsRow }) {
   )
 }
 
+const SCRIPTS_OPEN_KEY = 'argos.ops.scripts-open'
+
+/** Comment and `== title ==` lines stand out in the script drawer; the rest is plain. */
+function ScriptSource({ text }: { text: string }) {
+  return (
+    <pre className="ac-src">
+      {text.split('\n').map((line, i) => {
+        const cls = /^\s*#/.test(line) ? 'c' : /==\s*.+?\s*==/.test(line) ? 'm' : ''
+        return (
+          <span key={i} className={`ac-src-line ${cls}`}>
+            <span className="ac-src-n">{i + 1}</span>
+            {line}
+            {'\n'}
+          </span>
+        )
+      })}
+    </pre>
+  )
+}
+
+/** The script as it is on disk (hash-checked by main), beside the terminal, not over it. */
+function ScriptDrawer({
+  terminalId,
+  script,
+  canRun,
+  onRun,
+  onClose
+}: {
+  terminalId: string
+  script: ScriptInfo
+  canRun: boolean
+  onRun: () => void
+  onClose: () => void
+}) {
+  const [src, setSrc] = useState<{ text: string; sha256: string } | { error: string } | null>(null)
+
+  useEffect(() => {
+    let live = true
+    setSrc(null)
+    window.electronAPI
+      .opsScriptSource(terminalId, script.name)
+      .then((r) => {
+        if (live) setSrc(r.ok ? { text: r.text, sha256: r.sha256 } : { error: r.error })
+      })
+      .catch((e) => live && setSrc({ error: String(e) }))
+    return () => {
+      live = false
+    }
+  }, [terminalId, script.name])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="ac-drawer" role="dialog" aria-label={`Script ${script.name}`}>
+      <div className="ac-drawer-head">
+        <div className="ac-drawer-titles">
+          <span className="ac-drawer-title">{script.title}</span>
+          <span className="ac-drawer-sub">
+            {script.name} · {script.class} · {script.hosts.map((h) => h.name).join(', ') || 'no host'}
+          </span>
+        </div>
+        <button type="button" className="ac-btn" disabled={!canRun} onClick={onRun}>
+          Run
+        </button>
+        <button type="button" className="ac-icon" onClick={onClose} aria-label="Close">
+          ✕
+        </button>
+      </div>
+      {src && 'sha256' in src && <div className="ac-drawer-hash">sha256 {src.sha256} (matches the policy pin)</div>}
+      <div className="ac-drawer-body">
+        {!src && <div className="ac-empty">Loading…</div>}
+        {src && 'error' in src && <div className="ac-script-err">{src.error}</div>}
+        {src && 'text' in src && <ScriptSource text={src.text} />}
+      </div>
+    </div>
+  )
+}
+
 /**
- * The runbook's scripts, one click each. The click is the operator's approval, so there is
- * no plan to wait for; the gate, any approval prompt and the ledger work as for the model.
+ * The runbook's scripts: folded by default, one line each. Clicking a line runs it (the
+ * click is the operator's approval, so there is no plan to wait for; the gate, any approval
+ * prompt and the ledger work as for the model). A script that takes arguments or reaches
+ * several hosts opens a small row first. The eye shows the script's source in a drawer.
  */
 function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runId?: string; disabled: boolean }) {
   const [scripts, setScripts] = useState<ScriptInfo[]>([])
+  const [open, setOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(SCRIPTS_OPEN_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
   const [busy, setBusy] = useState<string | null>(null)
   const [message, setMessage] = useState<{ name: string; text: string } | null>(null)
   const [argText, setArgText] = useState<Record<string, string>>({})
   const [hostPick, setHostPick] = useState<Record<string, string>>({})
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [viewing, setViewing] = useState<string | null>(null)
 
   useEffect(() => {
     let live = true
@@ -149,6 +244,16 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
 
   if (scripts.length === 0) return null
 
+  const toggle = (): void => {
+    const next = !open
+    setOpen(next)
+    try {
+      localStorage.setItem(SCRIPTS_OPEN_KEY, next ? '1' : '0')
+    } catch {
+      // A remembered fold is a convenience.
+    }
+  }
+
   const run = async (s: ScriptInfo): Promise<void> => {
     const hostId = hostPick[s.name] || s.hosts[0]?.id
     if (!hostId) return
@@ -158,57 +263,86 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
     setMessage(null)
     const r = await window.electronAPI.opsRunScript(terminalId, s.name, hostId, args)
     setBusy(null)
+    setExpanded(null)
     // A success shows as a row below; only a refusal or failure needs words here.
     if (!r.ok) setMessage({ name: s.name, text: r.text ?? r.error ?? 'The script did not run.' })
   }
 
+  const needsInput = (s: ScriptInfo): boolean => s.maxArgs > 0 || s.hosts.length > 1
+  const click = (s: ScriptInfo): void => {
+    if (needsInput(s)) setExpanded(expanded === s.name ? null : s.name)
+    else void run(s)
+  }
+  const blocked = (s: ScriptInfo): boolean => disabled || busy !== null || s.hosts.length === 0
+  const tip = (s: ScriptInfo): string =>
+    s.hosts.length === 0
+      ? 'No host of this intervention is in the script’s host groups'
+      : `${s.title}\n${s.name} · ${s.class} · ${s.hosts.map((h) => h.name).join(', ')}\nClick to run`
+  const viewed = scripts.find((s) => s.name === viewing)
+
   return (
     <div className="ac-scripts">
-      <div className="ac-scripts-head">Scripts</div>
-      {scripts.map((s) => (
-        <div key={s.name} className="ac-script">
-          <div className="ac-script-main">
-            <div className="ac-script-text">
-              <span className="ac-script-title">{s.title}</span>
-              <span className="ac-script-name">
-                {s.name} · {s.class}
-              </span>
+      <button type="button" className="ac-scripts-head" aria-expanded={open} onClick={toggle}>
+        <span aria-hidden="true">{open ? '▾' : '▸'}</span> Scripts <span className="ac-scripts-n">{scripts.length}</span>
+      </button>
+      {open &&
+        scripts.map((s) => (
+          <div key={s.name} className="ac-sr-wrap">
+            <div className={`ac-sr${blocked(s) ? ' off' : ''}`} title={tip(s)}>
+              <button type="button" className="ac-sr-main" disabled={blocked(s)} onClick={() => click(s)}>
+                <span className="ac-sr-title">{s.title}</span>
+                {s.class === 'mutate' && <span className="ac-sr-tag">changes host</span>}
+                <span className="ac-sr-state">{busy === s.name ? 'running…' : needsInput(s) ? '▾' : ''}</span>
+              </button>
+              <button type="button" className="ac-icon" aria-label={`View ${s.name}`} title="View the script" onClick={() => setViewing(s.name)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              </button>
             </div>
-            {s.hosts.length > 1 && (
-              <select
-                className="ac-script-host"
-                value={hostPick[s.name] || s.hosts[0].id}
-                onChange={(e) => setHostPick({ ...hostPick, [s.name]: e.target.value })}
-                aria-label={`Host for ${s.name}`}
-              >
-                {s.hosts.map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.name}
-                  </option>
-                ))}
-              </select>
+            {expanded === s.name && (
+              <div className="ac-sr-extra">
+                {s.hosts.length > 1 && (
+                  <select
+                    className="ac-script-host"
+                    value={hostPick[s.name] || s.hosts[0].id}
+                    onChange={(e) => setHostPick({ ...hostPick, [s.name]: e.target.value })}
+                    aria-label={`Host for ${s.name}`}
+                  >
+                    {s.hosts.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {s.maxArgs > 0 && (
+                  <input
+                    className="ac-script-args"
+                    placeholder={`arguments (up to ${s.maxArgs})`}
+                    value={argText[s.name] ?? ''}
+                    onChange={(e) => setArgText({ ...argText, [s.name]: e.target.value })}
+                    onKeyDown={(e) => e.key === 'Enter' && !blocked(s) && void run(s)}
+                  />
+                )}
+                <button type="button" className="ac-btn" disabled={blocked(s)} onClick={() => void run(s)}>
+                  Run
+                </button>
+              </div>
             )}
-            <button
-              type="button"
-              className="ac-btn"
-              disabled={disabled || busy !== null || s.hosts.length === 0}
-              title={s.hosts.length === 0 ? 'No host of this intervention is in the script’s host groups' : `Run ${s.name}`}
-              onClick={() => void run(s)}
-            >
-              {busy === s.name ? 'Running…' : 'Run'}
-            </button>
+            {message?.name === s.name && <div className="ac-script-err">{message.text}</div>}
           </div>
-          {s.maxArgs > 0 && (
-            <input
-              className="ac-script-args"
-              placeholder={`arguments (up to ${s.maxArgs})`}
-              value={argText[s.name] ?? ''}
-              onChange={(e) => setArgText({ ...argText, [s.name]: e.target.value })}
-            />
-          )}
-          {message?.name === s.name && <div className="ac-script-err">{message.text}</div>}
-        </div>
-      ))}
+        ))}
+      {viewed && (
+        <ScriptDrawer
+          terminalId={terminalId}
+          script={viewed}
+          canRun={!blocked(viewed)}
+          onRun={() => void run(viewed)}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </div>
   )
 }

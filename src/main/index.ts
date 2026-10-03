@@ -1227,6 +1227,17 @@ ipcMain.handle('ops:scripts', (_, terminalId: string) => {
   return { ok: true, scripts: listOperatorScripts(s.ctx) }
 })
 
+// The script as it is on disk, for the eye in the Scripts list. readScript checks the
+// name against the policy and the file against its pinned hash, so what is shown is what
+// would run.
+ipcMain.handle('ops:script-source', async (_, terminalId: string, name: unknown) => {
+  const s = typeof terminalId === 'string' ? terminalOps.get(terminalId) : undefined
+  if (!s || s.ctx.ended) return { ok: false, error: 'No live ops session on this terminal.' }
+  if (typeof name !== 'string') return { ok: false, error: 'A script name is required.' }
+  const r = await s.ctx.readScript(s.ctx.runbook, name)
+  return r.ok ? { ok: true, text: r.content.toString('utf-8'), sha256: r.sha256 } : { ok: false, error: r.error }
+})
+
 ipcMain.handle('ops:run-script', async (_, terminalId: string, name: unknown, hostId: unknown, args: unknown) => {
   const s = typeof terminalId === 'string' ? terminalOps.get(terminalId) : undefined
   if (!s || s.ctx.ended) return { ok: false, error: 'No live ops session on this terminal.' }

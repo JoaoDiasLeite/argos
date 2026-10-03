@@ -353,6 +353,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   opsStop: (terminalId: string) => ipcRenderer.invoke('ops:stop', terminalId),
   // The runbook's scripts for the Scripts list, and the operator's own run of one.
   opsScripts: (terminalId: string) => ipcRenderer.invoke('ops:scripts', terminalId),
+  opsScriptSource: (terminalId: string, name: string) => ipcRenderer.invoke('ops:script-source', terminalId, name),
   opsRunScript: (terminalId: string, name: string, hostId: string, args: string[]) =>
     ipcRenderer.invoke('ops:run-script', terminalId, name, hostId, args),
   promptFileWrite: (sessionId: string, text: string) => ipcRenderer.invoke('prompts:write', sessionId, text),
