@@ -4,6 +4,7 @@ import * as path from 'path'
 import { Client, ConnectConfig } from 'ssh2'
 import { randomUUID } from 'crypto'
 import { verifyHostKey } from './ssh-trust'
+import { cleanHostFields } from './ssh-host-pure'
 
 export type SshAuthType = 'password' | 'key' | 'agent'
 
@@ -60,7 +61,8 @@ function genId(): string {
   return `ssh_${randomUUID()}`
 }
 
-export function saveHost(input: SshHost): SshHostPublic[] {
+export function saveHost(raw: SshHost): SshHostPublic[] {
+  const input = cleanHostFields(raw)
   const hosts = readHosts()
   const idx = input.id ? hosts.findIndex((h) => h.id === input.id) : -1
   if (idx >= 0) {
