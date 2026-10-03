@@ -171,7 +171,7 @@ export default function NavRail({
                 <span className="nav-item-label">{entry.label}</span>
                 {entry.view === 'chat' && chatRunningCount > 0 && (
                   <span
-                    className="nav-item-badge"
+                    className="nav-item-badge live"
                     aria-label={`${chatRunningCount} chat${chatRunningCount === 1 ? '' : 's'} running`}
                   >
                     {chatRunningCount}
