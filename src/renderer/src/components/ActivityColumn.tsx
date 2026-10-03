@@ -207,10 +207,10 @@ function ScriptDrawer({
 }
 
 /**
- * The runbook's scripts: folded by default, one line each. Clicking a line runs it (the
- * click is the operator's approval, so there is no plan to wait for; the gate, any approval
- * prompt and the ledger work as for the model). A script that takes arguments or reaches
- * several hosts opens a small row first. The eye shows the script's source in a drawer.
+ * The runbook's scripts: folded by default, one line each. A click opens a confirm row
+ * (with the arguments or host picker when the script needs them); Run there is the
+ * operator's approval, so there is no plan to wait for. The gate, any approval prompt and
+ * the ledger work as for the model. The eye shows the script's source in a drawer.
  */
 function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runId?: string; disabled: boolean }) {
   const [scripts, setScripts] = useState<ScriptInfo[]>([])
@@ -269,15 +269,13 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
   }
 
   const needsInput = (s: ScriptInfo): boolean => s.maxArgs > 0 || s.hosts.length > 1
-  const click = (s: ScriptInfo): void => {
-    if (needsInput(s)) setExpanded(expanded === s.name ? null : s.name)
-    else void run(s)
-  }
+  // A click only opens the confirm row; the run itself is its Run button (or Enter).
+  const click = (s: ScriptInfo): void => setExpanded(expanded === s.name ? null : s.name)
   const blocked = (s: ScriptInfo): boolean => disabled || busy !== null || s.hosts.length === 0
   const tip = (s: ScriptInfo): string =>
     s.hosts.length === 0
       ? 'No host of this intervention is in the script’s host groups'
-      : `${s.title}\n${s.name} · ${s.class} · ${s.hosts.map((h) => h.name).join(', ')}\nClick to run`
+      : `${s.title}\n${s.name} · ${s.class} · ${s.hosts.map((h) => h.name).join(', ')}\nClick to run (asks first)`
   const viewed = scripts.find((s) => s.name === viewing)
 
   return (
@@ -292,7 +290,7 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
               <button type="button" className="ac-sr-main" disabled={blocked(s)} onClick={() => click(s)}>
                 <span className="ac-sr-title">{s.title}</span>
                 {s.class === 'mutate' && <span className="ac-sr-tag">changes host</span>}
-                <span className="ac-sr-state">{busy === s.name ? 'running…' : needsInput(s) ? '▾' : ''}</span>
+                <span className="ac-sr-state">{busy === s.name ? 'running…' : expanded === s.name ? '▾' : ''}</span>
               </button>
               <button type="button" className="ac-icon" aria-label={`View ${s.name}`} title="View the script" onClick={() => setViewing(s.name)}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -326,8 +324,12 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
                     onKeyDown={(e) => e.key === 'Enter' && !blocked(s) && void run(s)}
                   />
                 )}
+                {!needsInput(s) && <span className="ac-sr-ask">Run on {s.hosts[0]?.name}?</span>}
                 <button type="button" className="ac-btn" disabled={blocked(s)} onClick={() => void run(s)}>
                   Run
+                </button>
+                <button type="button" className="ac-btn" onClick={() => setExpanded(null)}>
+                  Cancel
                 </button>
               </div>
             )}
