@@ -11,6 +11,8 @@ import { assembleRunbook, scriptPinError, type LoadedRunbook, type LoadRunbookRe
 import {
   bridgeSessionFor,
   callOpsTool,
+  listOperatorScripts,
+  runOperatorScript,
   DEFAULT_FILE_TITLES,
   finishOpsRun,
   openOpsSession,
@@ -435,6 +437,34 @@ describe('plan first', () => {
       reason: 'propose a plan first (mcp__ops__propose_plan)',
       argv: ['systemctl', 'status', 'nginx']
     })
+  })
+
+  it("the operator's own script run needs no plan, but the model's call to the same script still does", async () => {
+    const { fake, session, call } = await start({}, async () => ({ allow: true }), { plan: false })
+    const input = { hostId: 'h1', name: 'check.sh', args: [] }
+    expect((await call('script', input)).isError).toBe(true)
+    expect(hostCalls(fake)).toEqual([])
+
+    const ran = await runOperatorScript(session, 'check.sh', 'h1', [])
+    expect(ran).toMatchObject({ isError: false })
+    expect(hostCalls(fake).length).toBeGreaterThan(0)
+    // The operator's click did not approve a plan for the model.
+    expect(session.ctx.planApproved).toBe(false)
+    expect((await call('script', input)).isError).toBe(true)
+  })
+
+  it("the operator's run is still gated: a script outside the policy is refused", async () => {
+    const { fake, session } = await start({}, async () => ({ allow: true }), { plan: false })
+    const r = await runOperatorScript(session, 'other.sh', 'h1', [])
+    expect(r.isError).toBe(true)
+    expect(hostCalls(fake)).toEqual([])
+  })
+
+  it('lists the policy scripts with the hosts of this run that they reach', async () => {
+    const { session } = await start({}, undefined, { plan: false })
+    expect(listOperatorScripts(session.ctx)).toEqual([
+      { name: 'check.sh', title: 'Verificação', class: 'read', hosts: [{ id: 'h1', name: expect.any(String) }], maxArgs: 0 }
+    ])
   })
 
   it('an approved plan is asked with its steps, logged, and opens the ops tools', async () => {

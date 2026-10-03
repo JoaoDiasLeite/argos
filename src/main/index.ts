@@ -116,7 +116,16 @@ import { loadRunbook, readScript } from './ops-runbook'
 import { summarizePolicy } from './ops-policy-pure'
 import { interventionPrompt } from './ops-scope-pure'
 import type { OpsScope } from './ops-types'
-import { bridgeSessionFor, finishOpsRun, openOpsSession, type ApprovalOpsContext, type OpsRunContext } from './ops-session'
+import {
+  bridgeSessionFor,
+  finishOpsRun,
+  listOperatorScripts,
+  openOpsSession,
+  runOperatorScript,
+  type ApprovalOpsContext,
+  type OpsRunContext,
+  type OpsSession
+} from './ops-session'
 import { newOpsToken, registerToken, revokeToken, startOpsBridge, stopOpsBridge } from './ops-bridge'
 import { removeOpsMcpConfig, writeOpsMcpConfig } from './ops-mcp-config'
 import { opsRelayCommand, type OpsCli } from './ops-mcp-config-pure'
@@ -1041,6 +1050,8 @@ interface TerminalOpsSession {
   dir: string
   guarantee: 'tools-and-local-shell' | 'tools-only'
   ctx: OpsRunContext
+  /** The gate and tool handlers, so the operator can run a runbook script from the UI. */
+  session: OpsSession
   abort: AbortController
 }
 const terminalOps = new Map<string, TerminalOpsSession>()
@@ -1180,6 +1191,7 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
       dir,
       guarantee: provider === 'claude' ? 'tools-and-local-shell' : 'tools-only',
       ctx,
+      session: opened,
       abort
     }
     terminalOps.set(terminalId, s)
@@ -1200,6 +1212,23 @@ ipcMain.handle('ops:stop', async (_, terminalId: string): Promise<{ ok: boolean 
   if (typeof terminalId !== 'string' || !terminalOps.has(terminalId)) return { ok: false }
   await endTerminalOps(terminalId, { ok: false, aborted: true, error: 'stopped by the operator' })
   return { ok: true }
+})
+
+// The Scripts list of a live ops session, and the operator's click on one. A run goes
+// through the same gate, approvals and ledger as the model's call; only the plan is skipped.
+ipcMain.handle('ops:scripts', (_, terminalId: string) => {
+  const s = typeof terminalId === 'string' ? terminalOps.get(terminalId) : undefined
+  if (!s || s.ctx.ended) return { ok: false, error: 'No live ops session on this terminal.' }
+  return { ok: true, scripts: listOperatorScripts(s.ctx) }
+})
+
+ipcMain.handle('ops:run-script', async (_, terminalId: string, name: unknown, hostId: unknown, args: unknown) => {
+  const s = typeof terminalId === 'string' ? terminalOps.get(terminalId) : undefined
+  if (!s || s.ctx.ended) return { ok: false, error: 'No live ops session on this terminal.' }
+  if (typeof name !== 'string' || typeof hostId !== 'string') return { ok: false, error: 'A script name and a host are required.' }
+  const list = Array.isArray(args) && args.every((a) => typeof a === 'string') ? (args as string[]) : []
+  const r = await runOperatorScript(s.session, name, hostId, list)
+  return { ok: !r.isError, text: r.text }
 })
 
 // A terminal can only be typed into one line at a time (raw "\n" is not bracketed paste

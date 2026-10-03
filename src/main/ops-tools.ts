@@ -46,7 +46,7 @@ export interface OpsToolResult {
 type OpsHandler = (args: Record<string, unknown>) => Promise<OpsToolResult>
 
 /** The five gated tools, plus propose_plan, which canUseTool alone decides. */
-export type OpsToolHandlers = Record<OpsToolName, OpsHandler> & { propose_plan: OpsHandler }
+export type OpsToolHandlers = Record<OpsToolName, OpsHandler> & { propose_plan: OpsHandler; operatorScript: OpsHandler }
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 const text = (t: string, isError = false): OpsToolResult => ({ content: [{ type: 'text', text: t }], isError })
@@ -74,7 +74,8 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
   const { runId } = ctx
   const limits = effectiveLimits(ctx.runbook.policy)
 
-  async function handle(tool: OpsToolName, args: Record<string, unknown>): Promise<OpsToolResult> {
+  /** `operator`: the operator's own click on a script; there is no plan it could have been decided under. */
+  async function handle(tool: OpsToolName, args: Record<string, unknown>, operator = false): Promise<OpsToolResult> {
     try {
       const input = mcpInputToOpsInput(tool, args)
       if ('error' in input) return text(`Refused: ${input.error}.`, true)
@@ -107,7 +108,7 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
         await ctx.log(refusedFinishedEvent(runId, callId, `refused at execution: ${gate.reason}`))
         return text(`Refused: ${gate.reason}.`, true)
       }
-      if (!ctx.planApproved) {
+      if (!ctx.planApproved && !operator) {
         // Decided under a plan the operator has since rejected.
         await ctx.log(refusedFinishedEvent(runId, callId, `refused at execution: ${PLAN_FIRST_REASON}`))
         return text(`Refused: ${PLAN_FIRST_REASON}.`, true)
@@ -326,6 +327,7 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
   return {
     run: (a) => handle('run', a),
     script: (a) => handle('script', a),
+    operatorScript: (a) => handle('script', a, true),
     read: (a) => handle('read', a),
     list: (a) => handle('list', a),
     write: (a) => handle('write', a),

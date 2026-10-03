@@ -1,6 +1,7 @@
-import { useState, type ReactElement } from 'react'
+import { useEffect, useState, type ReactElement } from 'react'
 import type { ApprovalOpsContext, ApprovalRequest } from '../types'
 import { describeOpsRequest, displayArgv } from '../lib/ops-approval'
+import { splitSections, type OpsOutputSection } from '../lib/ops-sections'
 import { planProgress, rowLabel, rowTone, type OpsHostAnswer, type OpsRow, type OpsRun } from '../lib/ops-timeline'
 import PlanReviewSheet from './PlanReviewSheet'
 import OpsReportSheet from './OpsReportSheet'
@@ -20,6 +21,15 @@ interface Props {
   onDecide?: (allow: boolean, skipSteps?: number[]) => void
   /** Deny the waiting request and stop the run. */
   onDenyStop?: () => void
+}
+
+interface ScriptInfo {
+  name: string
+  title: string
+  class: 'read' | 'mutate'
+  hosts: { id: string; name: string }[]
+  maxArgs: number
+  argPattern?: string
 }
 
 const clock = (iso?: string): string => {
@@ -48,10 +58,43 @@ function earlierState(run: OpsRun): string {
   return run.ended.aborted ? 'stopped' : run.ended.ok ? 'finished' : 'failed'
 }
 
+/** One `== title ==` section of a script's output, folded until clicked. */
+function SectionItem({ section, forceOpen }: { section: OpsOutputSection; forceOpen: boolean }) {
+  const [open, setOpen] = useState(false)
+  const shown = open || forceOpen
+  return (
+    <div className={`ac-sec${shown ? ' open' : ''}`}>
+      <button type="button" className="ac-sec-head" aria-expanded={shown} onClick={() => setOpen(!shown)}>
+        <span className="ac-sec-caret" aria-hidden="true">{shown ? '▾' : '▸'}</span>
+        <span className="ac-sec-title">{section.title || 'output'}</span>
+        {!shown && section.body && <span className="ac-sec-peek">{section.body.split('\n')[0]}</span>}
+      </button>
+      {shown && <pre className="ac-sec-body">{section.body || '(no output)'}</pre>}
+    </div>
+  )
+}
+
+/** A script's output as one folded line per section, with an expand-all toggle. */
+function SectionedOutput({ sections, stderr }: { sections: OpsOutputSection[]; stderr: string }) {
+  const [all, setAll] = useState(false)
+  return (
+    <div className="ac-secs">
+      <button type="button" className="ac-link ac-secs-all" onClick={() => setAll((v) => !v)}>
+        {all ? 'Collapse all' : 'Expand all'}
+      </button>
+      {sections.map((s, i) => (
+        <SectionItem key={`${i}:${s.title}`} section={s} forceOpen={all} />
+      ))}
+      {stderr && <pre className="ac-sec-body ac-sec-err">{stderr}</pre>}
+    </div>
+  )
+}
+
 function CallRow({ row }: { row: OpsRow }) {
   const [open, setOpen] = useState(false)
   const tone = rowTone(row)
   const output = [row.stdoutHead, row.stderrHead].filter(Boolean).join('\n')
+  const sections = row.tool === 'script' && row.stdoutHead ? splitSections(row.stdoutHead) : null
   const refused = row.status === 'denied' || row.status === 'stopped'
   const text = rowText(row)
   const label = rowLabel(row)
@@ -74,8 +117,95 @@ function CallRow({ row }: { row: OpsRow }) {
       ) : (
         <div className={cls}>{inner}</div>
       )}
-      {open && output && <pre className="ac-output">{output}</pre>}
+      {open && output && (sections ? <SectionedOutput sections={sections} stderr={row.stderrHead ?? ''} /> : <pre className="ac-output">{output}</pre>)}
     </>
+  )
+}
+
+/**
+ * The runbook's scripts, one click each. The click is the operator's approval, so there is
+ * no plan to wait for; the gate, any approval prompt and the ledger work as for the model.
+ */
+function ScriptsList({ terminalId, disabled }: { terminalId: string; disabled: boolean }) {
+  const [scripts, setScripts] = useState<ScriptInfo[]>([])
+  const [busy, setBusy] = useState<string | null>(null)
+  const [message, setMessage] = useState<{ name: string; text: string } | null>(null)
+  const [argText, setArgText] = useState<Record<string, string>>({})
+  const [hostPick, setHostPick] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    let live = true
+    void window.electronAPI.opsScripts(terminalId).then((r) => {
+      if (live && r.ok) setScripts(r.scripts)
+    })
+    return () => {
+      live = false
+    }
+  }, [terminalId])
+
+  if (scripts.length === 0) return null
+
+  const run = async (s: ScriptInfo): Promise<void> => {
+    const hostId = hostPick[s.name] || s.hosts[0]?.id
+    if (!hostId) return
+    const raw = (argText[s.name] ?? '').trim()
+    const args = s.maxArgs > 0 && raw ? raw.split(/\s+/) : []
+    setBusy(s.name)
+    setMessage(null)
+    const r = await window.electronAPI.opsRunScript(terminalId, s.name, hostId, args)
+    setBusy(null)
+    // A success shows as a row below; only a refusal or failure needs words here.
+    if (!r.ok) setMessage({ name: s.name, text: r.text ?? r.error ?? 'The script did not run.' })
+  }
+
+  return (
+    <div className="ac-scripts">
+      <div className="ac-scripts-head">Scripts</div>
+      {scripts.map((s) => (
+        <div key={s.name} className="ac-script">
+          <div className="ac-script-main">
+            <div className="ac-script-text">
+              <span className="ac-script-title">{s.title}</span>
+              <span className="ac-script-name">
+                {s.name} · {s.class}
+              </span>
+            </div>
+            {s.hosts.length > 1 && (
+              <select
+                className="ac-script-host"
+                value={hostPick[s.name] || s.hosts[0].id}
+                onChange={(e) => setHostPick({ ...hostPick, [s.name]: e.target.value })}
+                aria-label={`Host for ${s.name}`}
+              >
+                {s.hosts.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              className="ac-btn"
+              disabled={disabled || busy !== null || s.hosts.length === 0}
+              title={s.hosts.length === 0 ? 'No host of this intervention is in the script’s host groups' : `Run ${s.name}`}
+              onClick={() => void run(s)}
+            >
+              {busy === s.name ? 'Running…' : 'Run'}
+            </button>
+          </div>
+          {s.maxArgs > 0 && (
+            <input
+              className="ac-script-args"
+              placeholder={`arguments (up to ${s.maxArgs})`}
+              value={argText[s.name] ?? ''}
+              onChange={(e) => setArgText({ ...argText, [s.name]: e.target.value })}
+            />
+          )}
+          {message?.name === s.name && <div className="ac-script-err">{message.text}</div>}
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -216,6 +346,8 @@ export default function ActivityColumn({ terminalId, runbookPath, current, earli
           )}
         </div>
       )}
+
+      <ScriptsList terminalId={terminalId} disabled={!!current?.ended || !!waiting} />
 
       <div className="ac-list">
         {current && rows.length === 0 && <p className="ac-empty">No calls yet. The model reads the runbook first.</p>}

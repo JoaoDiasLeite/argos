@@ -153,6 +153,8 @@ export interface OpsSession {
   ctx: OpsRunContext
   /** The gate's decision for one tool call, by its SDK name (`mcp__ops__run`, …). Logs before anything runs. */
   canUseTool: CanUseTool
+  /** The same gate for the operator's own script run: no plan to wait for. */
+  operatorCanUseTool: CanUseTool
   /** The functions that execute an allowed call; callOpsTool runs these after an allow. */
   tools: OpsToolHandlers
 }
@@ -261,7 +263,13 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
       hostAsks: new Map()
     }
 
-    return { ok: true, ctx, canUseTool: makeOpsCanUseTool(ctx, opts), tools: createOpsToolHandlers(ctx) }
+    return {
+      ok: true,
+      ctx,
+      canUseTool: makeOpsCanUseTool(ctx, opts),
+      operatorCanUseTool: makeOpsCanUseTool(ctx, opts, true),
+      tools: createOpsToolHandlers(ctx)
+    }
   } catch (e) {
     return { ok: false, error: `Could not start the ops run: ${message(e)}` }
   }
@@ -290,6 +298,57 @@ export async function callOpsTool(
   }
 }
 
+/** A runbook script as the Scripts list shows it. */
+export interface OpsScriptInfo {
+  name: string
+  title: string
+  class: 'read' | 'mutate'
+  /** Names of the hosts it can run on in this intervention. */
+  hosts: { id: string; name: string }[]
+  /** 0 when the script takes no arguments. */
+  maxArgs: number
+  argPattern?: string
+}
+
+/** The policy's scripts, each with the hosts of this run that its groups reach (scope honoured). */
+export function listOperatorScripts(ctx: OpsRunContext): OpsScriptInfo[] {
+  const scope = ctx.scope
+  return (ctx.runbook.policy.scripts ?? []).map((s) => {
+    const hosts = [...ctx.hosts.byId.values()]
+      .filter((h) => (scope?.kind !== 'host' || h.host.id === scope.hostId) && h.groups.some((g) => s.hosts.includes(g)))
+      .map((h) => ({ id: h.host.id, name: h.host.name }))
+    return {
+      name: s.name,
+      title: s.title ?? s.name,
+      class: s.class,
+      hosts,
+      maxArgs: s.args?.max ?? 0,
+      ...(s.args?.pattern ? { argPattern: s.args.pattern } : {})
+    }
+  })
+}
+
+/**
+ * The operator's click on a script: the same gate, approvals and ledger lines as a call
+ * from the model, minus the plan the model must propose first.
+ */
+export async function runOperatorScript(
+  session: OpsSession,
+  name: string,
+  hostId: string,
+  args: string[]
+): Promise<{ text: string; isError: boolean }> {
+  try {
+    const input = { hostId, name, args }
+    const verdict = await session.operatorCanUseTool('mcp__ops__script', input)
+    if (verdict.behavior !== 'allow') return { text: verdict.message, isError: true }
+    const r = await session.tools.operatorScript(verdict.updatedInput)
+    return { text: r.content.map((c) => c.text).join('\n'), isError: r.isError === true }
+  } catch (e) {
+    return { text: `The ops tool failed: ${message(e)}`, isError: true }
+  }
+}
+
 /**
  * The session as the terminal bridge sees it: what `hello` tells the relay (enough to
  * describe the tools) and the call pipeline.
@@ -304,7 +363,12 @@ export function bridgeSessionFor(session: OpsSession): {
   }
 }
 
-function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions): CanUseTool {
+/**
+ * `operator`: the call is the operator's own click (a script run from the Scripts list),
+ * so there is no model whose plan the operator has yet to see. Everything else about the
+ * gate (policy, scope, approvals, the ledger) is unchanged.
+ */
+function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions, operator = false): CanUseTool {
   const { runId } = ctx
   const deny = (msg: string) => ({ behavior: 'deny' as const, message: msg })
 
@@ -359,7 +423,7 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions): CanUseT
       }
       const gate = classify(parsed, ctx.runbook.policy, entry?.host ?? null, entry?.groups ?? [])
 
-      if (!ctx.planApproved) {
+      if (!ctx.planApproved && !operator) {
         // Plan first (§1.7): nothing reaches a host before the operator has seen the
         // whole plan. Logged like any deny, with what the gate would have run.
         await ctx.log({
@@ -381,7 +445,7 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions): CanUseT
 
       // A step the operator skipped stays skipped, whatever the rules would allow.
       const line = callPlanLine(parsed, gate)
-      if (line !== undefined && ctx.skippedCommands.has(line)) {
+      if (!operator && line !== undefined && ctx.skippedCommands.has(line)) {
         await ctx.log({
           kind: 'call.decided',
           runId,

@@ -351,6 +351,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('ops:open-runbook-file', dir, which),
   // Stop a terminal's ops run (plan H4): run.end aborted, in-flight exec and prompts ended.
   opsStop: (terminalId: string) => ipcRenderer.invoke('ops:stop', terminalId),
+  // The runbook's scripts for the Scripts list, and the operator's own run of one.
+  opsScripts: (terminalId: string) => ipcRenderer.invoke('ops:scripts', terminalId),
+  opsRunScript: (terminalId: string, name: string, hostId: string, args: string[]) =>
+    ipcRenderer.invoke('ops:run-script', terminalId, name, hostId, args),
   promptFileWrite: (sessionId: string, text: string) => ipcRenderer.invoke('prompts:write', sessionId, text),
   sftpDisconnect: (hostId: string) => ipcRenderer.invoke('sftp:disconnect', hostId),
 

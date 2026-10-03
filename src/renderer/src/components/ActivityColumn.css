@@ -268,3 +268,76 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* ── Scripts list ── */
+.ac-scripts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 12px 0;
+  flex-shrink: 0;
+}
+.ac-scripts-head { font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.ac-script {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+}
+.ac-script-main { display: flex; align-items: center; gap: 8px; }
+.ac-script-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ac-script-title { font-size: 12.5px; color: var(--text-0); }
+.ac-script-name { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-script-host,
+.ac-script-args {
+  height: 26px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-light);
+  background: var(--bg-0);
+  color: var(--text-1);
+  font-size: 12px;
+  padding: 0 6px;
+}
+.ac-script-err { font-size: 11.5px; color: var(--error); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ── Script output, one folded line per section ── */
+.ac-secs { margin: 0 6px 6px 32px; display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+.ac-secs-all { align-self: flex-end; }
+.ac-sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  border: none;
+  border-radius: var(--radius-surface);
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.ac-sec-head:hover { background: color-mix(in srgb, var(--bg-2) 60%, transparent); }
+.ac-sec-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ac-sec-caret { color: var(--text-2); width: 10px; }
+.ac-sec-title { font-family: var(--font-mono); color: var(--text-0); }
+.ac-sec-peek { color: var(--text-2); font-family: var(--font-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ac-sec-body {
+  margin: 0 0 4px 24px;
+  padding: 6px 10px;
+  border-radius: var(--radius-surface);
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.ac-sec-err { margin-left: 0; color: var(--error); }

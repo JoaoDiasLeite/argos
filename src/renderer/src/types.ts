@@ -1535,6 +1535,21 @@ declare global {
        * its ops calls are refused from then on. `ok: false` = no open ops run on that terminal.
        */
       opsStop: (terminalId: string) => Promise<{ ok: boolean }>
+      opsScripts: (terminalId: string) => Promise<
+        | {
+            ok: true
+            scripts: {
+              name: string
+              title: string
+              class: 'read' | 'mutate'
+              hosts: { id: string; name: string }[]
+              maxArgs: number
+              argPattern?: string
+            }[]
+          }
+        | { ok: false; error: string }
+      >
+      opsRunScript: (terminalId: string, name: string, hostId: string, args: string[]) => Promise<{ ok: boolean; text?: string; error?: string }>
       /** Write a long prompt to userData/prompts/<sessionId>.md so a terminal can be told to read it. */
       promptFileWrite: (sessionId: string, text: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>
       sftpDisconnect: (hostId: string) => Promise<{ ok: boolean }>
