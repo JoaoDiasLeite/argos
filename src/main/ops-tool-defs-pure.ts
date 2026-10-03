@@ -29,8 +29,22 @@ export function opsHostListText(hosts: OpsToolHost[]): string {
   return `Hosts in this runbook:\n${rows.length ? rows.join('\n') : '- (no hosts)'}`
 }
 
+/**
+ * What the model must know about its own limits. The CLI runs without Edit/Write/Bash on
+ * purpose (see OPS_DISALLOWED_TOOLS): a model that could rewrite policy.json could widen
+ * its own permissions. Without this text it offers edits it cannot make, then blames the
+ * wrong cause when they fail.
+ */
+export const OPS_BOUNDARY_RULES =
+  'You cannot edit, write or create files, and you cannot run local commands: this is deliberate, not a fault, ' +
+  'so do not offer to make such changes and do not look for ways around it. ' +
+  'policy.json and RUNBOOK.md are owned by the operator; you may only read them. ' +
+  'When the runbook or policy needs a change, say what to add as text for the operator to apply themselves. ' +
+  'Send commands spelled exactly as the policy allows them (sudo included); a refusal for "no allow rule matched" ' +
+  'usually means the spelling differs from the rule, so check the policy before reporting it as a gap.'
+
 export function opsServerInstructions(runbookName: string, hosts: OpsToolHost[]): string {
-  return `Remote operations for runbook ${runbookName}. ${OPS_TOOL_RULES}\n${opsHostListText(hosts)}`
+  return `Remote operations for runbook ${runbookName}. ${OPS_TOOL_RULES}\n${OPS_BOUNDARY_RULES}\n${opsHostListText(hosts)}`
 }
 
 export interface OpsToolDef {
