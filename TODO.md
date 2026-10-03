@@ -49,6 +49,17 @@ current implementation each item would change.
 - [x] **Loading / empty states.** Done: spinner + skeleton loading and friendly
   empty-state messaging in Projects, Usage, and MCP views (shared `views.css`).
 
+## Roadmap
+
+- [ ] **Pop a chat out into its own window.** Open a chat (and an Ops workspace) in a
+  separate window so it can sit beside the main one. Needs a second `BrowserWindow`
+  sharing the pty/session state, so the terminal in the pop-out and the one in the main
+  window are never two attachments to the same pty.
+- [ ] **Several interventions reachable at once.** `App` holds a single `opsWorkspace`,
+  so starting a second intervention leaves the first one's CLI running with no way back.
+  The rail's running indicator counts every live ops terminal, but its way back leads
+  only to the latest workspace.
+
 ## Done
 
 - [x] Multiple Claude logins with per-chat account selection (`feat(accounts)`, eacb8d3)
