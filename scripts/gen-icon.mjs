@@ -90,27 +90,36 @@ const inRounded = (x, y) => {
 }
 
 // ── Raster ──
-const px = Buffer.alloc(S * S * 4)
-for (let y = 0; y < S; y++) {
-  for (let x = 0; x < S; x++) {
-    let bgHits = 0
-    let markHits = 0
-    for (let sy = 0; sy < SS; sy++) {
-      for (let sx = 0; sx < SS; sx++) {
-        const fx = x + (sx + 0.5) / SS
-        const fy = y + (sy + 0.5) / SS
-        if (!inRounded(fx, fy)) continue
-        bgHits++
-        if (inside(fx, fy)) markHits++
+// `withBg` false is the dev variant: just the mark, on a transparent background.
+const rasterise = (withBg) => {
+  const px = Buffer.alloc(S * S * 4)
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      let bgHits = 0
+      let markHits = 0
+      for (let sy = 0; sy < SS; sy++) {
+        for (let sx = 0; sx < SS; sx++) {
+          const fx = x + (sx + 0.5) / SS
+          const fy = y + (sy + 0.5) / SS
+          if (withBg && !inRounded(fx, fy)) continue
+          bgHits++
+          if (inside(fx, fy)) markHits++
+        }
+      }
+      if (!bgHits) continue
+      const o = (y * S + x) * 4
+      if (withBg) {
+        const cover = bgHits / (SS * SS)
+        const m = markHits / bgHits
+        for (let c = 0; c < 3; c++) px[o + c] = Math.round(BG[c] * (1 - m) + ACCENT[c] * m)
+        px[o + 3] = Math.round(255 * cover)
+      } else if (markHits) {
+        for (let c = 0; c < 3; c++) px[o + c] = ACCENT[c]
+        px[o + 3] = Math.round((255 * markHits) / bgHits)
       }
     }
-    if (!bgHits) continue
-    const cover = bgHits / (SS * SS)
-    const m = markHits / bgHits
-    const o = (y * S + x) * 4
-    for (let c = 0; c < 3; c++) px[o + c] = Math.round(BG[c] * (1 - m) + ACCENT[c] * m)
-    px[o + 3] = Math.round(255 * cover)
   }
+  return px
 }
 
 // ── PNG encode ──
@@ -141,17 +150,22 @@ ihdr.writeUInt32BE(S, 0)
 ihdr.writeUInt32BE(S, 4)
 ihdr[8] = 8
 ihdr[9] = 6
-const raw = Buffer.alloc(S * (S * 4 + 1))
-for (let y = 0; y < S; y++) {
-  raw[y * (S * 4 + 1)] = 0
-  px.copy(raw, y * (S * 4 + 1) + 1, y * S * 4, (y + 1) * S * 4)
+const encode = (px) => {
+  const raw = Buffer.alloc(S * (S * 4 + 1))
+  for (let y = 0; y < S; y++) {
+    raw[y * (S * 4 + 1)] = 0
+    px.copy(raw, y * (S * 4 + 1) + 1, y * S * 4, (y + 1) * S * 4)
+  }
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0))
+  ])
 }
-const png = Buffer.concat([
-  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
-  chunk('IHDR', ihdr),
-  chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
-  chunk('IEND', Buffer.alloc(0))
-])
 fs.mkdirSync(path.join(ROOT, 'build'), { recursive: true })
-fs.writeFileSync(path.join(ROOT, 'build/icon.png'), png)
-console.log('wrote build/icon.png', png.length, 'bytes')
+for (const [file, withBg] of [['icon.png', true], ['icon-dev.png', false]]) {
+  const png = encode(rasterise(withBg))
+  fs.writeFileSync(path.join(ROOT, 'build', file), png)
+  console.log('wrote build/' + file, png.length, 'bytes')
+}
