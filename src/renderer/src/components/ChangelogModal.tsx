@@ -15,9 +15,21 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '2.1.1',
+    date: '2026-10-03',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Changes',
+        items: [
+          'The changelog now lives in Settings > About, and the Shortcuts button is gone from the rail (Ctrl+/ still opens the sheet).'
+        ]
+      }
+    ]
+  },
+  {
     version: '2.1.0',
     date: '2026-10-03',
-    tag: 'latest',
     sections: [
       {
         title: 'Features',
