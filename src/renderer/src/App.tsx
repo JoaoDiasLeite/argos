@@ -24,6 +24,7 @@ import ServerTabs from './components/ServerTabs'
 import ApprovalModal from './components/ApprovalModal'
 import SecretPrompt from './components/SecretPrompt'
 import { opsTerminalIdFor } from './lib/ops-terminal'
+import { markOpsEnded, markOpsRunning, summarizeOpsRunning, type OpsRunningSet } from './lib/ops-running'
 import { CLI_PROVIDERS } from './lib/cli-providers'
 import PendingRuns, { PendingRun } from './components/PendingRuns'
 import FileEditor from './components/FileEditor'
@@ -2111,6 +2112,15 @@ export default function App() {
   /** The ops terminal the workspace has on screen: its run's approvals are answered in the
    *  workspace's activity column. */
   const [opsTerminalVisibleId, setOpsTerminalVisibleId] = useState<string | null>(null)
+  // The interventions whose CLI is running, wherever the user is in the app: the workspace
+  // reports one coming up, and the exit is heard here because the workspace unmounts when
+  // the user navigates away while its pty keeps going.
+  const [opsRunning, setOpsRunning] = useState<OpsRunningSet>(new Set())
+  const reportOpsRunning = useCallback((id: string) => setOpsRunning((prev) => markOpsRunning(prev, id)), [])
+  useEffect(() => window.electronAPI.onTerminalExit((e) => setOpsRunning((prev) => markOpsEnded(prev, e.id))), [])
+  const opsSummary = summarizeOpsRunning(opsRunning, approvalQueue)
+  // The workspace the user left running, for the way back from the Servers screens.
+  const opsLeftRunning = opsWorkspace && opsRunning.has(opsTerminalIdFor(opsWorkspace)) ? opsWorkspace : null
   const openOpsWorkspace = (intervention: OpsIntervention) => {
     setOpsWorkspace(intervention)
     setView('ops-workspace')
@@ -2396,6 +2406,8 @@ export default function App() {
           serverSessionCount={serverSessions.length}
           chatRunningCount={displayRunningIds.size}
           attentionCount={approvalQueue.length}
+          opsRunningCount={opsSummary.count}
+          opsNeedsYou={opsSummary.needsYou}
           chatListHidden={sidebarCollapsed}
         />
 
@@ -2598,6 +2610,23 @@ export default function App() {
                 </button>
               ))}
             </div>
+            {/* The way back to an intervention left running: leaving the workspace keeps its
+                CLI going, and the Ops tab opens the start screen, not the workspace. */}
+            {opsLeftRunning && (
+              <button
+                type="button"
+                className="ops-running-chip"
+                onClick={() => setView('ops-workspace')}
+                title={`Back to the running intervention: ${opsLeftRunning.task}`}
+              >
+                <span
+                  className={`ops-running-dot${approvalQueue.some((r) => r.ops && r.appSessionId === opsTerminalIdFor(opsLeftRunning)) ? ' warn' : ''}`}
+                  aria-hidden="true"
+                />
+                <span className="ops-running-chip-name">{opsLeftRunning.runbookPath.split(/[\\/]/).filter(Boolean).pop()}</span>
+                <span className="ops-running-chip-task">{opsLeftRunning.task}</span>
+              </button>
+            )}
           </div>
           {/* Open Remote/WSL sessions, surfaced on the Servers screens so they're
               reachable without remembering they exist. Selecting one here has to jump
@@ -2668,6 +2697,7 @@ export default function App() {
             intervention={opsWorkspace}
             onBack={() => setView('ops')}
             onTerminalVisible={setOpsTerminalVisibleId}
+            onRunning={reportOpsRunning}
             waiting={workspaceApproval}
             onDecide={workspaceApproval ? (allow, skipSteps) => respondApprovalById(workspaceApproval.approvalId, allow, skipSteps) : undefined}
             onStop={workspaceApproval ? () => respondApprovalStopById(workspaceApproval.approvalId) : undefined}

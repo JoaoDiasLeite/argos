@@ -56,6 +56,9 @@ interface Props {
   /** Which ops terminal the workspace has on screen, so App can route that run's
    *  approvals here. */
   onTerminalVisible?: (terminalId: string | null) => void
+  /** This terminal's CLI is up. Its end is not reported here: the workspace may be gone by
+   *  then, so App listens for the exit itself. */
+  onRunning?: (terminalId: string) => void
   /** The approval waiting on this terminal's run, if any (App owns the queue). */
   waiting?: ApprovalRequest
   onDecide?: (allow: boolean, skipSteps?: number[]) => void
@@ -63,7 +66,7 @@ interface Props {
   onStop?: () => void
 }
 
-export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, waiting, onDecide, onStop }: Props) {
+export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, onRunning, waiting, onDecide, onStop }: Props) {
   const { runbookPath, scope } = intervention
   const [info, setInfo] = useState<OpsRunbookInfo | null>(null)
   const [hostDot, setHostDot] = useState<HostDot>('checking')
@@ -158,6 +161,10 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
       )
     })
   }, [terminalId])
+
+  useEffect(() => {
+    if (term.kind === 'ready') onRunning?.(terminalId)
+  }, [term.kind, terminalId, onRunning])
 
   const closeTerminal = () => {
     startSeqRef.current++

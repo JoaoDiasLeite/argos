@@ -70,6 +70,36 @@
   background: color-mix(in srgb, var(--warn) 6%, var(--bg-2));
 }
 
+/* An intervention is running (Servers entry). Bottom-right, so it never sits on the
+   session-count badge in the top-right corner. A bare dot for one, a count for more. */
+.nav-item-pip {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  min-width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--bg-0);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  animation: nav-item-pip-pulse 2s ease-in-out infinite;
+}
+.nav-item-pip:not(:empty) { height: 13px; min-width: 13px; padding: 0 3px; }
+.nav-item-pip.warn { background: var(--warn); }
+@keyframes nav-item-pip-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-item-pip { animation: none; }
+}
+
 .nav-item-label {
   font-size: 10px;
   font-weight: 500;

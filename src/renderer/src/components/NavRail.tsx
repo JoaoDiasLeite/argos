@@ -53,6 +53,11 @@ interface Props {
   /** Approvals waiting across all sessions — badged on the Home entry so the app's
       landing point always shows whether something needs attention. */
   attentionCount?: number
+  /** Interventions whose CLI is running (a pty outlives the Ops workspace), pipped on the
+      Servers entry so one left running is visible from anywhere in the app. */
+  opsRunningCount?: number
+  /** One of them is waiting on an approval: the pip turns to the warning colour. */
+  opsNeedsYou?: boolean
 }
 
 const ICONS: Record<string, JSX.Element> = {
@@ -145,6 +150,8 @@ export default function NavRail({
   serverSessionCount = 0,
   chatRunningCount = 0,
   attentionCount = 0,
+  opsRunningCount = 0,
+  opsNeedsYou = false,
   chatListHidden = false
 }: Props) {
   return (
@@ -213,6 +220,15 @@ export default function NavRail({
                   aria-label={`${serverSessionCount} open session${serverSessionCount === 1 ? '' : 's'}`}
                 >
                   {serverSessionCount}
+                </span>
+              )}
+              {group.key === 'servers' && opsRunningCount > 0 && (
+                <span
+                  className={`nav-item-pip${opsNeedsYou ? ' warn' : ''}`}
+                  role="img"
+                  aria-label={`${opsRunningCount} intervention${opsRunningCount === 1 ? '' : 's'} running${opsNeedsYou ? ', one waiting for you' : ''}`}
+                >
+                  {opsRunningCount > 1 ? opsRunningCount : null}
                 </span>
               )}
             </button>

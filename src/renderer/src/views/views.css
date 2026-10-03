@@ -34,6 +34,50 @@
 }
 .view-subnav .seg-control { -webkit-app-region: no-drag; }
 
+/* An intervention left running: the way back to its workspace (App.tsx). */
+.ops-running-chip {
+  -webkit-app-region: no-drag;
+  margin-left: 12px;
+  min-width: 0;
+  max-width: 360px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ops-running-chip:hover { background: var(--bg-hover); color: var(--text-0); }
+.ops-running-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: ops-running-pulse 2s ease-in-out infinite;
+}
+.ops-running-dot.warn { background: var(--warn); }
+.ops-running-chip-name { flex-shrink: 0; font-weight: 600; color: var(--text-0); }
+.ops-running-chip-task {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+@keyframes ops-running-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ops-running-dot { animation: none; }
+}
+
 /* ── Server sessions layer (App.tsx) ──
    Always-mounted host for open Remote/WSL "Connect" sessions — sized/positioned exactly
    like a `.view` (fills the content area, own flex column) but its visibility is toggled

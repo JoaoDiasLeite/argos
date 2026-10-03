@@ -29,9 +29,13 @@ export function hashId(s: string): string {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36)
 }
 
+/** Every ops terminal's id starts with this, which is how a terminal event is told apart
+ *  from a chat's or a server session's. */
+export const OPS_TERMINAL_PREFIX = 'opsterm_'
+
 /** The terminal of one intervention: the same runbook, scope, task, ticket and client give
  *  the same terminal (and so its earlier runs); anything else is another one. */
 export function opsTerminalIdFor(iv: OpsIntervention): string {
   const scope = iv.scope.kind === 'host' ? `host:${iv.scope.hostId}` : 'open'
-  return `opsterm_${hashId([iv.runbookPath, scope, iv.task, iv.ticket ?? '', iv.client ?? ''].join('\n'))}`
+  return `${OPS_TERMINAL_PREFIX}${hashId([iv.runbookPath, scope, iv.task, iv.ticket ?? '', iv.client ?? ''].join('\n'))}`
 }
