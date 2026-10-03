@@ -928,7 +928,12 @@ function getOpsLedger(): OpsLedger {
 function getOpsExecutor(): OpsExecutor {
   // ARGOS_OPS_FAKE=1 runs the whole gate + ledger path against the in-memory backend, so
   // screenshots and demos need no server (plan §9 Phase 3).
-  if (!opsExecutor) opsExecutor = createExecutor(process.env.ARGOS_OPS_FAKE === '1' ? createFakeBackend() : createSshBackend())
+  // ARGOS_OPS_FAKE_OUT: a text file whose contents the fake returns as stdout of every command.
+  if (!opsExecutor) {
+    const fakeOut = process.env.ARGOS_OPS_FAKE_OUT
+    const fake = () => createFakeBackend(fakeOut ? { exec: () => ({ stdout: fs.readFileSync(fakeOut, 'utf-8') }) } : {})
+    opsExecutor = createExecutor(process.env.ARGOS_OPS_FAKE === '1' ? fake() : createSshBackend())
+  }
   return opsExecutor
 }
 

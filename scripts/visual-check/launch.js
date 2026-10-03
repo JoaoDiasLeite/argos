@@ -116,4 +116,17 @@ if (configPatch) {
   }
 }
 
+// A driver script that clicks through the real UI and saves screenshots, for states that
+// only exist after a gesture and cannot be deep-linked. It runs inside this process, so it
+// never touches the user's windows. Called as driver({ app, BrowserWindow, userData }).
+const driver = process.env.VISUAL_CHECK_DRIVER
+if (driver) {
+  app.whenReady().then(() => {
+    Promise.resolve(require(path.resolve(driver))({ app, BrowserWindow, userData })).catch((e) => {
+      console.error('visual-check driver failed:', e)
+      app.exit(1)
+    })
+  })
+}
+
 require(path.join(__dirname, '..', '..', 'out', 'main', 'index.js'))
