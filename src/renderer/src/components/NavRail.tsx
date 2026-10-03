@@ -1,4 +1,3 @@
-import { modLabel } from '../lib/shortcuts'
 import './NavRail.css'
 
 /**
@@ -38,8 +37,6 @@ interface Props {
   view: View
   onChange: (view: View) => void
   onSettings: () => void
-  onChangelog: () => void
-  onShortcuts: () => void
   /** The chat list is collapsed. Pressing Chat while in Chat toggles it (see App.tsx's
       goToView), and the entry's tooltip says so. */
   chatListHidden?: boolean
@@ -145,8 +142,6 @@ export default function NavRail({
   view,
   onChange,
   onSettings,
-  onChangelog,
-  onShortcuts,
   serverSessionCount = 0,
   chatRunningCount = 0,
   attentionCount = 0,
@@ -237,25 +232,6 @@ export default function NavRail({
       </div>
 
       <div className="nav-bottom">
-        <button className="nav-item" onClick={onShortcuts} title={`Keyboard shortcuts (${modLabel('/')})`}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <rect x="2" y="5" width="20" height="14" rx="2" />
-            <path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M10 13h4" />
-          </svg>
-          <span className="nav-item-label">Shortcuts</span>
-        </button>
-
-        <button className="nav-item" onClick={onChangelog} title="What's new">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="16" y1="13" x2="8" y2="13" />
-            <line x1="16" y1="17" x2="8" y2="17" />
-            <polyline points="10 9 9 9 8 9" />
-          </svg>
-          <span className="nav-item-label">Changelog</span>
-        </button>
-
         <button
           className={`nav-item ${view === 'settings' ? 'active' : ''}`}
           onClick={onSettings}

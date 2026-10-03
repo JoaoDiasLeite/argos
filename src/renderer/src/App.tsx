@@ -35,7 +35,6 @@ import { applyTheme, zoomFor } from './lib/theme'
 import CommandPalette, { CommandItem } from './components/CommandPalette'
 import OnboardingModal from './components/OnboardingModal'
 import AccountsModal from './components/AccountsModal'
-import ChangelogModal from './components/ChangelogModal'
 import ShortcutsModal from './components/ShortcutsModal'
 import { modLabel } from './lib/shortcuts'
 import { UiPrefs, UiPrefsPatch } from './types'
@@ -233,7 +232,6 @@ export default function App() {
    * attentionIds reads it; it is filled beside the busy signal, far below.
    */
   const [waitingTerminalIds, setWaitingTerminalIds] = useState<Set<string>>(new Set())
-  const [changelogOpen, setChangelogOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [sidebarTab, setSidebarTab] = useState<'files' | 'sessions'>('sessions')
@@ -2401,8 +2399,6 @@ export default function App() {
           view={view}
           onChange={goToView}
           onSettings={() => setView('settings')}
-          onChangelog={() => setChangelogOpen(true)}
-          onShortcuts={() => setShortcutsOpen(true)}
           serverSessionCount={serverSessions.length}
           chatRunningCount={displayRunningIds.size}
           attentionCount={approvalQueue.length}
@@ -2788,7 +2784,6 @@ export default function App() {
           }}
         />
       )}
-      {changelogOpen && <ChangelogModal onClose={() => setChangelogOpen(false)} />}
       {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
       </div>
     </div>

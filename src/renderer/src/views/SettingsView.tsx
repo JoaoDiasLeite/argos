@@ -26,6 +26,7 @@ import ModelPicker from '../components/ModelPicker'
 import PermissionsModal from '../components/PermissionsModal'
 import HooksModal from '../components/HooksModal'
 import NotifyHookModal from '../components/NotifyHookModal'
+import ChangelogModal from '../components/ChangelogModal'
 import AppearanceSettings from '../components/AppearanceSettings'
 import './views.css'
 import './SettingsView.css'
@@ -192,6 +193,7 @@ export default function SettingsView({
   const [showPerms, setShowPerms] = useState(false)
   const [showHooks, setShowHooks] = useState(false)
   const [showNotifyHook, setShowNotifyHook] = useState(false)
+  const [showChangelog, setShowChangelog] = useState(false)
 
   // ── Chats from before 2.0 ──
   // How many SDK chats the startup migration exported as Markdown. Fetched here, like
@@ -642,6 +644,15 @@ export default function SettingsView({
               ) : (
                 <p className="help">Loading</p>
               )}
+              <div className="srow">
+                <div className="srow-text">
+                  <span className="srow-label">Changelog</span>
+                  <span className="help">What changed in each release.</span>
+                </div>
+                <button type="button" className="btn-ghost" onClick={() => setShowChangelog(true)}>
+                  What&apos;s new
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -649,6 +660,7 @@ export default function SettingsView({
 
       {showPerms && <PermissionsModal onClose={closeSheet(() => setShowPerms(false))} />}
       {showHooks && <HooksModal onClose={closeSheet(() => setShowHooks(false))} />}
+      {showChangelog && <ChangelogModal onClose={closeSheet(() => setShowChangelog(false))} />}
       {showNotifyHook && <NotifyHookModal onClose={closeSheet(() => setShowNotifyHook(false))} />}
     </div>
   )
