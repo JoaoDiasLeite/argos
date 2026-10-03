@@ -7,6 +7,7 @@
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
   user-select: none;
+  position: relative;
 }
 
 .titlebar-brand {
@@ -90,4 +91,32 @@
 }
 .titlebar-btn:active {
   filter: brightness(0.92);
+}
+
+/* Something is running: a 2px sweep along the bar's lower edge, there for as long as any
+   chat works so it reads from any view without taking space. */
+.titlebar-activity {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.titlebar-activity::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 22%;
+  background: linear-gradient(90deg, transparent, var(--success), transparent);
+  animation: titlebar-activity-sweep 2.2s ease-in-out infinite;
+}
+@keyframes titlebar-activity-sweep {
+  from { left: -22%; }
+  to { left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .titlebar-activity::before { left: 0; width: 100%; opacity: 0.35; animation: none; }
 }

@@ -2386,7 +2386,7 @@ export default function App() {
   return (
     <div className={`app-shell ${maximized ? 'maximized' : ''}`}>
       {!maximized && <ResizeHandles />}
-      <TitleBar maximized={maximized} />
+      <TitleBar maximized={maximized} runningCount={displayRunningIds.size} />
       <PendingRuns
         runs={pendingRuns}
         onOpen={(id) => {

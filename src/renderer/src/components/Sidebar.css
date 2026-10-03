@@ -338,16 +338,26 @@
 }
 .session-dot.running {
   background: var(--success);
-  animation: session-dot-pulse 1.4s ease-in-out infinite;
+  animation: session-dot-halo 1.8s ease-out infinite;
 }
-.session-dot.attention { background: var(--warn); }
+.session-dot.attention {
+  background: var(--warn);
+  animation: session-dot-halo-warn 2.4s ease-out infinite;
+}
 
-@keyframes session-dot-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
+/* A ring that grows out of the dot and fades: noticeable in the corner of the eye,
+   without the row itself moving or lighting up. */
+@keyframes session-dot-halo {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 55%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--success) 0%, transparent); }
+}
+@keyframes session-dot-halo-warn {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 55%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--warn) 0%, transparent); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .session-dot.running { animation: none; }
+  .session-dot.running,
+  .session-dot.attention { animation: none; }
 }
 
 /* Model / account / folder chips on a row: the .chip, set in mono because they name

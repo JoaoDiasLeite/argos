@@ -5,6 +5,8 @@ import './TitleBar.css'
 
 interface Props {
   maximized: boolean
+  /** Chats working right now; any at all lights the activity line. */
+  runningCount?: number
 }
 
 /**
@@ -12,7 +14,7 @@ interface Props {
  * minimize / maximize / close controls, styled to match the theme. The native
  * frame is hidden (see createWindow in the main process).
  */
-export default function TitleBar({ maximized }: Props) {
+export default function TitleBar({ maximized, runningCount = 0 }: Props) {
   const toggleMaximize = () => window.electronAPI.windowMaximizeToggle()
 
   // Ambient "restart to update" pill: mirrors the same 'updater:event' feed the
@@ -60,6 +62,7 @@ export default function TitleBar({ maximized }: Props) {
 
   return (
     <div className="titlebar" onDoubleClick={toggleMaximize}>
+      {runningCount > 0 && <div className="titlebar-activity" aria-hidden="true" />}
       <div className="titlebar-brand">
         <span className="titlebar-logo">
           <ArgosMark size={16} bold />
