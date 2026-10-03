@@ -1,5 +1,5 @@
 import { Tray, Menu, nativeImage } from 'electron'
-import { join } from 'path'
+import { appIconPath } from './app-icon'
 
 // System tray: keeps the app alive when the window is closed,
 // and gives quick access to the main window, a new chat, and the quick launcher.
@@ -32,7 +32,7 @@ function buildMenu(actions: TrayActions, overlayShortcut: string): Menu {
 /** Returns the created tray, or null when no usable icon exists (close-to-tray is
  *  disabled in that case so the app can't be stranded invisible). */
 export function createTray(actions: TrayActions, overlayShortcut: string): Tray | null {
-  const icon = nativeImage.createFromPath(join(__dirname, '../../build/icon.png'))
+  const icon = nativeImage.createFromPath(appIconPath())
   if (icon.isEmpty()) return null
 
   trayActions = actions

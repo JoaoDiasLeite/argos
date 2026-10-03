@@ -38,6 +38,7 @@
       "package.json"
     ],
     "asarUnpack": [
+      "build/icon.png",
       "node_modules/@anthropic-ai/claude-agent-sdk/**",
       "node_modules/@anthropic-ai/claude-agent-sdk-*/**",
       "node_modules/node-pty/**"
@@ -101,5 +102,11 @@
     "typescript": "^5.3.3",
     "vite": "^5.0.12",
     "vitest": "^4.1.10"
+  },
+  "allowScripts": {
+    "node-pty@1.1.0": true,
+    "esbuild@0.21.5": true,
+    "ssh2@1.17.0": true,
+    "electron-winstaller@5.4.0": true
   }
 }

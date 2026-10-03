@@ -3,6 +3,7 @@ import { isDevInstance, syncDevFromProd } from './dev-instance'
 import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions, clipboard, nativeTheme, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { appIconPath } from './app-icon'
 import { hardenWebContents } from './window-security'
 import { readClipboardFiles } from './clipboard-files'
 import { resolvePolicy } from './ai-policy'
@@ -480,7 +481,7 @@ function createWindow(): void {
     frame: false,
     resizable: true,
     backgroundColor,
-    icon: join(__dirname, '../../build/icon.png'),
+    icon: appIconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
