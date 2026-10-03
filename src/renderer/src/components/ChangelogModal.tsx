@@ -15,13 +15,22 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
-    version: '2.1.1',
+    version: '2.2.0',
     date: '2026-10-03',
-    tag: 'new',
+    tag: 'latest',
     sections: [
+      {
+        title: 'Features',
+        items: [
+          'Ops scripts, one click away: the activity column lists the runbook’s scripts, folded to one line each. Click one and a confirm row asks before it runs (with a picker for the server or the arguments when the script needs them). Your click replaces the plan the model has to propose; the policy, the approvals, the pinned hash and the ledger apply exactly as for the model.',
+          'The eye on a script opens a drawer beside the terminal with its source, line by line, and the sha256 Argos checked against the policy’s pin. A script that prints “== title ==” before each check shows its result as one folded section per check, with an Expand all.',
+          'A refused call says why: “sudo rule missing”, “bad script args”, “script not pinned”, “wrong host”, “path not allowed”, “not a simple command” or “never allowed”, instead of “not in runbook” for every refusal.'
+        ]
+      },
       {
         title: 'Changes',
         items: [
+          'The ops agent is told what it cannot do: it has no way to edit files or run local commands, policy.json and RUNBOOK.md belong to the operator, and a command must be spelled as the policy allows it, sudo included. It proposes changes as text instead of offering edits it cannot make.',
           'The changelog now lives in Settings > About, and the Shortcuts button is gone from the rail (Ctrl+/ still opens the sheet).'
         ]
       }
