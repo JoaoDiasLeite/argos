@@ -1,6 +1,6 @@
 // First, before anything reads userData: dev moves it aside. See dev-instance.ts.
 import { isDevInstance, syncDevFromProd } from './dev-instance'
-import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions, clipboard, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions, clipboard, nativeTheme, nativeImage, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { appIconPath } from './app-icon'
@@ -490,7 +490,9 @@ function createWindow(): void {
     frame: false,
     resizable: true,
     backgroundColor,
-    icon: appIconPath(),
+    // Resized to 256px: the packaged taskbar button showed Windows' blank page for the
+    // raw 512px PNG.
+    icon: nativeImage.createFromPath(appIconPath()).resize({ width: 256, height: 256 }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
