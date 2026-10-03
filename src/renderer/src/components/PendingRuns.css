@@ -1,7 +1,6 @@
 /* ── PendingRuns.css ─────────────────────────────────────────────────────────
    The strip of chats still in flight, between the titlebar and the app body so it is
-   seen from every view. Routine, so untinted: a short count, then quiet
-   8 px pills, each with its own state mark (draggable onto the panes, clickable to open). Only a run waiting for the
+   seen from every view. Routine, so untinted: quiet 8 px pills, each with its own state mark (draggable onto the panes, clickable to open). Only a run waiting for the
    operator takes a colour, --warn text and border, never a fill. ───────────────── */
 .pending-runs {
   display: flex;
@@ -13,11 +12,6 @@
   border-bottom: 1px solid var(--border);
   font-size: 12px;
   flex-shrink: 0;
-}
-
-.pending-runs-label {
-  flex-shrink: 0;
-  color: var(--text-2);
 }
 
 .pending-run {

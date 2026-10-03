@@ -34,22 +34,12 @@ interface Props {
 export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) {
   if (runs.length === 0) return null
 
-  const doneCount = runs.filter((r) => r.done).length
-  const waitingCount = runs.filter((r) => !r.done && r.attention).length
-  const workingCount = runs.length - doneCount - waitingCount
-  const counts = [
-    waitingCount ? `${waitingCount} waiting for you` : null,
-    workingCount ? `${workingCount} working` : null,
-    doneCount ? `${doneCount} finished` : null
-  ].filter(Boolean)
-
   // What needs you first, then what is still working, finished last. Stable within a group.
   const rank = (r: PendingRun) => (r.done ? 2 : r.attention ? 0 : 1)
   const ordered = [...runs].sort((a, b) => rank(a) - rank(b))
 
   return (
     <div className="pending-runs">
-      <span className="pending-runs-label">{counts.join(' · ')}</span>
       {ordered.map((r, i) => (
         <span
           key={r.id}
