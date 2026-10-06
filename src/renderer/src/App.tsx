@@ -26,7 +26,7 @@ import SecretPrompt from './components/SecretPrompt'
 import { opsTerminalIdFor } from './lib/ops-terminal'
 import OpsTabs, { type OpsTabItem } from './components/OpsTabs'
 import { markOpsEnded, markOpsRunning, summarizeOpsRunning, type OpsRunningSet } from './lib/ops-running'
-import { CLI_PROVIDERS } from './lib/cli-providers'
+import { CLI_PROVIDERS, isProviderHidden } from './lib/cli-providers'
 import PendingRuns, { PendingRun } from './components/PendingRuns'
 import FileEditor from './components/FileEditor'
 import { readLocalFile, writeLocalFile } from './lib/local-file-io'
@@ -425,12 +425,15 @@ export default function App() {
   const refreshProviderAccounts = useCallback(async () => {
     const [codex, gemini] = await Promise.all([
       window.electronAPI.providerAccountsList('codex'),
-      window.electronAPI.providerAccountsList('gemini')
+      isProviderHidden('gemini') ? null : window.electronAPI.providerAccountsList('gemini')
     ])
     setCodexAccounts(codex.accounts)
     setCodexDefaultAccountId(codex.defaultAccountId)
-    setGeminiAccounts(gemini.accounts)
-    setGeminiDefaultAccountId(gemini.defaultAccountId)
+    // A hidden provider keeps no accounts, so no picker or sidebar group offers it.
+    if (gemini) {
+      setGeminiAccounts(gemini.accounts)
+      setGeminiDefaultAccountId(gemini.defaultAccountId)
+    }
   }, [])
 
   // Mount: load sessions, auth, models, config

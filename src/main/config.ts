@@ -46,6 +46,11 @@ export const MODELS: ModelInfo[] = [
   { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash', inputPrice: 0.5, outputPrice: 3, context: '1M', provider: 'gemini' }
 ]
 
+/** Providers kept in the code but hidden from every picker. Antigravity (gemini) is
+ *  parked for now; its models stay in MODELS so old chats still price correctly.
+ *  The renderer's twin lives in lib/cli-providers.ts — keep the two in step. */
+export const HIDDEN_PROVIDERS: readonly ProviderId[] = ['gemini']
+
 // Effective catalog. Starts as the bundled defaults and is replaced at launch by
 // the merged catalog from models-catalog.ts (bundled + the user's models.json +
 // live discovery), so pricing for a model we only learned about at runtime is

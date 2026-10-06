@@ -4,7 +4,7 @@ import * as path from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import Anthropic from '@anthropic-ai/sdk'
-import { MODELS, ModelInfo, setCatalog } from './config'
+import { HIDDEN_PROVIDERS, MODELS, ModelInfo, setCatalog } from './config'
 import { resolveCodex } from './providers/cli-resolve'
 import { readJsonFile } from './json-file'
 import { DiscoveredModel, mergeCatalog } from './models-catalog-pure'
@@ -152,9 +152,11 @@ export async function buildModelsCatalog(force = false): Promise<ModelInfo[]> {
   if (live.length > 0) saveDiscoveryCache(live)
   else discovered = loadDiscoveryCache()
 
-  const models = mergeCatalog(MODELS, loadOverrides(), discovered)
+  const all = mergeCatalog(MODELS, loadOverrides(), discovered)
+  // Publish the full catalog to config.ts so cost math uses override/discovered
+  // pricing too, hidden providers included, so their old chats still price.
+  setCatalog(all)
+  const models = all.filter((m) => !HIDDEN_PROVIDERS.includes(m.provider))
   cached = { at: Date.now(), models }
-  // Publish to config.ts so cost math uses override/discovered pricing too.
-  setCatalog(models)
   return models
 }

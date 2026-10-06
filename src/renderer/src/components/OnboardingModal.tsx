@@ -62,7 +62,7 @@ export default function OnboardingModal({ onFinish }: Props) {
               </svg>
             </div>
             <h2 id="onboarding-modal-title">Welcome to Argos</h2>
-            <p>A desktop control center for Claude Code, Codex and Antigravity: their terminals, your projects, usage, and remote/WSL hosts, all in one place.</p>
+            <p>A desktop control center for Claude Code and Codex: their terminals, your projects, usage, and remote/WSL hosts, all in one place.</p>
             <button className="btn-primary" onClick={() => setStep(1)}>Get started</button>
           </div>
         )}

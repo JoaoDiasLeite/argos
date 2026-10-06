@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, ReactNode, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { ProviderId } from '../types'
-import { CLI_PROVIDERS } from '../lib/cli-providers'
+import { VISIBLE_CLI_PROVIDERS } from '../lib/cli-providers'
 import './views.css'
 import './HomeView.css'
 
@@ -448,7 +448,7 @@ export default function HomeView({
     return out
   }, [startOptions.projects, extraProjects])
 
-  const cliItems: SelectItem[] = CLI_PROVIDERS.map((p) => ({ key: p.id, label: p.label }))
+  const cliItems: SelectItem[] = VISIBLE_CLI_PROVIDERS.map((p) => ({ key: p.id, label: p.label }))
 
   // An account only means anything next to its own CLI — a Codex login cannot run Claude
   // Code. The select therefore offers the chosen CLI's accounts only.

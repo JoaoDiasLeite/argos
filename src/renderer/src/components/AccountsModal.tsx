@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AgentProvider, CCAccountStatus, ProviderAccountStatus } from '../types'
 import Sheet from './Sheet'
+import { isProviderHidden } from '../lib/cli-providers'
 import './AccountsModal.css'
 
 interface Props {
@@ -385,7 +386,7 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
         </section>
 
         {renderProviderSection('codex')}
-        {renderAntigravitySection()}
+        {!isProviderHidden('gemini') && renderAntigravitySection()}
       </div>
     </Sheet>
   )

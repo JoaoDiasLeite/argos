@@ -485,8 +485,8 @@ export default function SettingsView({
             <>
               <h1 className="settings-title">Connection</h1>
               <p className="help settings-lead">
-                Which logins this app runs chats under. Claude, Codex and Antigravity each sign in through their own
-                CLI; add them under Accounts.
+                Which logins this app runs chats under. Claude and Codex each sign in through their own CLI;
+                add them under Accounts.
               </p>
               {editRow('Accounts', accountsValue, onManageAccounts, 'Manage')}
             </>
