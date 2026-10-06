@@ -25,7 +25,8 @@ const CHANGELOG: Entry[] = [
         items: [
           'Home’s Running list is split by kind: Chats, Servers with a live session, and Interventions still running, each under its own quiet label and left out when empty. A server or an intervention opens with a click, and an intervention waiting for you shows an amber dot.',
           'Sheets and dialogs close when you click outside them: Accounts, Hooks, Permissions, labels, the changelog, a password prompt and the file editor, which still asks before throwing away unsaved changes.',
-          'The script viewer in an intervention has a back arrow at the top and closes when you click beside it.'
+          'The script viewer in an intervention has a back arrow at the top and closes when you click beside it.',
+          'Run on one of an intervention’s scripts now asks Claude Code to run it, so the model sees the output and explains it, instead of running it beside the model.'
         ]
       },
       {

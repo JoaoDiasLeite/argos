@@ -222,9 +222,10 @@ function ScriptDrawer({
 
 /**
  * The runbook's scripts: folded by default, one line each. A click opens a confirm row
- * (with the arguments or host picker when the script needs them); Run there is the
- * operator's approval, so there is no plan to wait for. The gate, any approval prompt and
- * the ledger work as for the model. The eye shows the script's source in a drawer.
+ * (with the arguments or host picker when the script needs them); Run there asks the CLI
+ * to run the script through its ops tool, so the model sees the output and can read it
+ * back to you. The call goes through the gate and the ledger like any other, and shows up
+ * in the list below. The eye shows the script's source in a drawer.
  */
 function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runId?: string; disabled: boolean }) {
   const [scripts, setScripts] = useState<ScriptInfo[]>([])
@@ -235,8 +236,6 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
       return false
     }
   })
-  const [busy, setBusy] = useState<string | null>(null)
-  const [message, setMessage] = useState<{ name: string; text: string } | null>(null)
   const [argText, setArgText] = useState<Record<string, string>>({})
   const [hostPick, setHostPick] = useState<Record<string, string>>({})
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -268,28 +267,32 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
     }
   }
 
-  const run = async (s: ScriptInfo): Promise<void> => {
-    const hostId = hostPick[s.name] || s.hosts[0]?.id
-    if (!hostId) return
+  const run = (s: ScriptInfo): void => {
+    const host = s.hosts.find((h) => h.id === hostPick[s.name]) ?? s.hosts[0]
+    if (!host) return
     const raw = (argText[s.name] ?? '').trim()
     const args = s.maxArgs > 0 && raw ? raw.split(/\s+/) : []
-    setBusy(s.name)
-    setMessage(null)
-    const r = await window.electronAPI.opsRunScript(terminalId, s.name, hostId, args)
-    setBusy(null)
+    // One line: a raw newline written into the pty is Enter, not part of the prompt.
+    const withArgs = args.length ? ` with the arguments ${JSON.stringify(args)}` : ' with no arguments'
+    const prompt =
+      `Run the runbook script ${s.name} ("${s.title}") on host ${host.name} (hostId ${host.id})${withArgs}, ` +
+      'using the mcp__ops__script tool. Then show me its output and tell me what it means.'
+    window.electronAPI.terminalWrite(terminalId, prompt)
+    // Enter apart from the text, as ChatTerminal sends a seeded prompt: in the same write
+    // the TUI can take the whole chunk as a paste and leave it unsent.
+    setTimeout(() => window.electronAPI.terminalWrite(terminalId, '\r'), 200)
     setExpanded(null)
-    // A success shows as a row below; only a refusal or failure needs words here.
-    if (!r.ok) setMessage({ name: s.name, text: r.text ?? r.error ?? 'The script did not run.' })
+    setViewing(null)
   }
 
   const needsInput = (s: ScriptInfo): boolean => s.maxArgs > 0 || s.hosts.length > 1
   // A click only opens the confirm row; the run itself is its Run button (or Enter).
   const click = (s: ScriptInfo): void => setExpanded(expanded === s.name ? null : s.name)
-  const blocked = (s: ScriptInfo): boolean => disabled || busy !== null || s.hosts.length === 0
+  const blocked = (s: ScriptInfo): boolean => disabled || s.hosts.length === 0
   const tip = (s: ScriptInfo): string =>
     s.hosts.length === 0
       ? 'No host of this intervention is in the script’s host groups'
-      : `${s.title}\n${s.name} · ${s.class} · ${s.hosts.map((h) => h.name).join(', ')}\nClick to run (asks first)`
+      : `${s.title}\n${s.name} · ${s.class} · ${s.hosts.map((h) => h.name).join(', ')}\nClick to ask the model to run it`
   const viewed = scripts.find((s) => s.name === viewing)
 
   return (
@@ -304,7 +307,7 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
               <button type="button" className="ac-sr-main" disabled={blocked(s)} onClick={() => click(s)}>
                 <span className="ac-sr-title">{s.title}</span>
                 {s.class === 'mutate' && <span className="ac-sr-tag">changes host</span>}
-                <span className="ac-sr-state">{busy === s.name ? 'running…' : expanded === s.name ? '▾' : ''}</span>
+                <span className="ac-sr-state">{expanded === s.name ? '▾' : ''}</span>
               </button>
               <button type="button" className="ac-icon" aria-label={`View ${s.name}`} title="View the script" onClick={() => setViewing(s.name)}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -335,11 +338,11 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
                     placeholder={`arguments (up to ${s.maxArgs})`}
                     value={argText[s.name] ?? ''}
                     onChange={(e) => setArgText({ ...argText, [s.name]: e.target.value })}
-                    onKeyDown={(e) => e.key === 'Enter' && !blocked(s) && void run(s)}
+                    onKeyDown={(e) => e.key === 'Enter' && !blocked(s) && run(s)}
                   />
                 )}
                 {!needsInput(s) && <span className="ac-sr-ask">Run on {s.hosts[0]?.name}?</span>}
-                <button type="button" className="ac-btn" disabled={blocked(s)} onClick={() => void run(s)}>
+                <button type="button" className="ac-btn" disabled={blocked(s)} onClick={() => run(s)}>
                   Run
                 </button>
                 <button type="button" className="ac-btn" onClick={() => setExpanded(null)}>
@@ -347,7 +350,6 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
                 </button>
               </div>
             )}
-            {message?.name === s.name && <div className="ac-script-err">{message.text}</div>}
           </div>
         ))}
       {viewed && (
@@ -355,7 +357,7 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
           terminalId={terminalId}
           script={viewed}
           canRun={!blocked(viewed)}
-          onRun={() => void run(viewed)}
+          onRun={() => run(viewed)}
           onClose={() => setViewing(null)}
         />
       )}
