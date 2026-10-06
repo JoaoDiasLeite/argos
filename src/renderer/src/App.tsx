@@ -2133,33 +2133,45 @@ export default function App() {
   const reportOpsRunning = useCallback((id: string) => setOpsRunning((prev) => markOpsRunning(prev, id)), [])
   useEffect(() => window.electronAPI.onTerminalExit((e) => setOpsRunning((prev) => markOpsEnded(prev, e.id))), [])
   const opsSummary = summarizeOpsRunning(opsRunning, approvalQueue)
+  // The tabs: every running intervention, plus the one on screen even once it has ended
+  // (Stop keeps it there, greyed); it drops out when the operator leaves it.
+  const opsOnScreenId = view === 'ops-workspace' && opsWorkspace ? opsTerminalIdFor(opsWorkspace) : null
   const opsTabs: OpsTabItem[] = opsOpen
-    .filter((iv) => opsRunning.has(opsTerminalIdFor(iv)))
+    .filter((iv) => opsRunning.has(opsTerminalIdFor(iv)) || opsTerminalIdFor(iv) === opsOnScreenId)
     .map((iv) => ({
       intervention: iv,
-      waiting: approvalQueue.some((r) => r.ops && r.appSessionId === opsTerminalIdFor(iv))
+      waiting: approvalQueue.some((r) => r.ops && r.appSessionId === opsTerminalIdFor(iv)),
+      ended: !opsRunning.has(opsTerminalIdFor(iv))
     }))
+  // Forget an ended intervention once it is off screen: there is no tab left to reach it.
+  useEffect(() => {
+    setOpsOpen((prev) => {
+      const next = prev.filter((iv) => opsRunning.has(opsTerminalIdFor(iv)) || opsTerminalIdFor(iv) === opsOnScreenId)
+      return next.length === prev.length ? prev : next
+    })
+  }, [opsRunning, opsOnScreenId])
   const selectOpsTab = (iv: OpsIntervention) => {
     setOpsWorkspace(iv)
     setView('ops-workspace')
   }
-  // An ended intervention (Stop, the terminal's ×, a tab's ×) is no longer running and
-  // there is nothing to go back to, so the rail badge and the tabs drop it at once. Ending
-  // the one on screen also leaves its workspace.
-  const endOpsWorkspace = (terminalId: string) => {
+  // An ended intervention is no longer running, so the rail badge drops it at once. Stop
+  // keeps it on screen (its tab stays, greyed, until the operator leaves); an × (the
+  // terminal's or a tab's) closes it, and leaves its workspace when it is the one on screen.
+  const endOpsWorkspace = (terminalId: string, leave: boolean) => {
     setOpsRunning((prev) => markOpsEnded(prev, terminalId))
+    if (!leave) return
     setOpsOpen((prev) => prev.filter((iv) => opsTerminalIdFor(iv) !== terminalId))
     if (opsWorkspace && opsTerminalIdFor(opsWorkspace) === terminalId) {
       setOpsWorkspace(null)
       setView('ops')
     }
   }
-  // A tab's ×: the same end as the workspace's Stop, for any running intervention.
+  // A tab's ×: ends that intervention (a no-op on one already stopped) and closes it.
   const closeOpsTab = async (iv: OpsIntervention) => {
     const id = opsTerminalIdFor(iv)
     await window.electronAPI.opsStop(id).catch(() => undefined)
     await window.electronAPI.terminalKill(id).catch(() => undefined)
-    endOpsWorkspace(id)
+    endOpsWorkspace(id, true)
   }
   const openOpsWorkspace = (intervention: OpsIntervention) => {
     const id = opsTerminalIdFor(intervention)

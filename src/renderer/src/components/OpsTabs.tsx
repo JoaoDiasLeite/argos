@@ -5,6 +5,8 @@ export interface OpsTabItem {
   intervention: OpsIntervention
   /** An approval of this intervention's run is waiting on the operator. */
   waiting: boolean
+  /** Stopped, but still on screen: its tab stays, greyed, until the operator leaves. */
+  ended?: boolean
 }
 
 interface Props {
@@ -35,7 +37,7 @@ export default function OpsTabs({ items, activeId, onSelect, onClose, strip }: P
   if (items.length === 0) return null
   return (
     <div className={strip ? 'server-tabs' : 'ops-tabs'} role="tablist" aria-label="Running interventions">
-      {items.map(({ intervention, waiting }) => {
+      {items.map(({ intervention, waiting, ended }) => {
         const id = opsTerminalIdFor(intervention)
         const on = id === activeId
         const name = baseName(intervention.runbookPath)
@@ -51,10 +53,10 @@ export default function OpsTabs({ items, activeId, onSelect, onClose, strip }: P
             className={strip ? `server-tab${on ? ' active' : ''}` : `ops-running-chip${on ? ' on' : ''}`}
             onClick={select}
             onKeyDown={(e) => e.key === 'Enter' && select()}
-            title={`${name}${intervention.task ? `: ${intervention.task}` : ''}${waiting ? ' (waiting for you)' : ''}`}
+            title={`${name}${intervention.task ? `: ${intervention.task}` : ''}${ended ? ' (stopped)' : waiting ? ' (waiting for you)' : ''}`}
           >
             {strip ? (
-              <span className={`server-tab-dot ${waiting ? 'connecting' : 'connected'}`} aria-hidden="true" />
+              <span className={`server-tab-dot${ended ? '' : waiting ? ' connecting' : ' connected'}`} aria-hidden="true" />
             ) : (
               <span className={`ops-running-dot${waiting ? ' warn' : ''}`} aria-hidden="true" />
             )}

@@ -22,7 +22,7 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Changes',
         items: [
-          'Stop, and the × on an intervention’s terminal, now leave you on the intervention with its terminal and activity still on screen: the run is stopped and its CLI closed at once, the rail count drops, and its tab stays, greyed, until you leave.'
+          'Stop now leaves you on the intervention with its terminal and activity still on screen: the run is stopped and its CLI closed at once, the rail count drops, and its tab stays, greyed, until you leave. The × on its terminal or on its tab still ends it and closes it.'
         ]
       }
     ]

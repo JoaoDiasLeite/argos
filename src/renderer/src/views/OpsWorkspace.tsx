@@ -45,7 +45,8 @@ type TermState =
   // The exited terminal stays on screen (its scrollback is the record of what happened)
   // with the launch it had, so ChatTerminal's own Restart can never bring the CLI back
   // without the relay config. Its token belongs to a run that is over; main drops it.
-  | { kind: 'exited'; code: number; launch: Launched; key: number }
+  // `stopped`: ended from here (Stop), not by the CLI exiting on its own.
+  | { kind: 'exited'; code: number; launch: Launched; key: number; stopped?: boolean }
 
 type HostDot = 'checking' | 'ok' | 'error'
 
@@ -63,9 +64,10 @@ interface Props {
   onDecide?: (allow: boolean, skipSteps?: number[]) => void
   /** Deny the waiting approval and stop the run. */
   onStop?: () => void
-  /** The intervention was ended from here (Stop, Deny and stop): its run is stopped and
-   *  its CLI closed, so App drops it and leaves the workspace. */
-  onEnded?: (terminalId: string) => void
+  /** The intervention was ended from here: its run is stopped and its CLI closed, so App
+   *  stops counting it. `leave`: the terminal's ×, which also closes the workspace; Stop
+   *  and Deny and stop keep it on screen until the operator leaves. */
+  onEnded?: (terminalId: string, leave: boolean) => void
   /** The tabs of the running interventions, at the top like the Remote/WSL sessions'. */
   tabs?: ReactNode
 }
@@ -171,10 +173,11 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
   }, [term.kind, terminalId, onRunning])
 
 
-  /** Stop (and the terminal's ×) is the end of the intervention, not just of the run: a CLI left up after its run
-   *  is over can only start a run that does nothing, yet it keeps the intervention counted
-   *  as running on the rail and in the Servers header. */
-  const endIntervention = async (denyFirst?: () => void) => {
+  /** Stop and the terminal's × end the intervention, not just the run: a CLI left up after
+   *  its run is over can only start a run that does nothing, yet it keeps the intervention
+   *  counted as running on the rail and in the tabs. Stop leaves the terminal's scrollback
+   *  and the activity on screen; the × also leaves the workspace. */
+  const endIntervention = async (leave: boolean, denyFirst?: () => void) => {
     startSeqRef.current++
     launches.delete(terminalId)
     denyFirst?.()
@@ -182,7 +185,12 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
     // a terminal that went away.
     await window.electronAPI.opsStop(terminalId).catch(() => undefined)
     await window.electronAPI.terminalKill(terminalId).catch(() => undefined)
-    onEnded?.(terminalId)
+    if (!leave) {
+      setTerm((prev) =>
+        prev.kind === 'ready' ? { kind: 'exited', code: 0, launch: prev.launch, key: prev.key, stopped: true } : prev
+      )
+    }
+    onEnded?.(terminalId, leave)
   }
 
   // Approvals for this terminal's run are answered in the activity column.
@@ -273,7 +281,7 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
           )}
           {term.kind === 'exited' && (
             <div className="ops-ws-strip">
-              <span>CLI exited{term.code ? ` · code ${term.code}` : ''}</span>
+              <span>{term.stopped ? 'Intervention stopped' : `CLI exited${term.code ? ` · code ${term.code}` : ''}`}</span>
               <button className="ops-ws-btn small" onClick={() => void start(true)}>
                 Relaunch
               </button>
@@ -289,7 +297,7 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
               active
               ops={{ env: term.launch.env, mcpConfigPath: term.launch.mcpConfigPath }}
               initialPrompt={term.kind === 'ready' ? term.prompt : undefined}
-              onClose={() => void endIntervention()}
+              onClose={() => void endIntervention(true)}
             />
           )}
         </div>
@@ -301,8 +309,8 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
           loading={loading}
           waiting={mine}
           onDecide={onDecide}
-          onDenyStop={onStop ? () => void endIntervention(onStop) : undefined}
-          onStop={onEnded ? () => void endIntervention() : undefined}
+          onDenyStop={onStop ? () => void endIntervention(false, onStop) : undefined}
+          onStop={onEnded ? () => void endIntervention(false) : undefined}
           cliAlive={term.kind === 'ready'}
         />
       </div>
