@@ -301,8 +301,57 @@ export function planProgress(run: OpsRun): { done: number; total: number } | nul
 
 export type OpsRowTone = 'ok' | 'warn' | 'bad' | 'idle'
 
+/** The program a call ran: argv[0] without its path, past a leading sudo and its options. */
+function programOf(argv: string[]): { name: string; rest: string[] } {
+  let i = 0
+  if (argv[0] === 'sudo') {
+    i = 1
+    while (i < argv.length && argv[i].startsWith('-')) {
+      // The options that take a value as the next word.
+      if (/^-[ugCDpRrTt]$/.test(argv[i])) i++
+      i++
+    }
+  }
+  const name = (argv[i] ?? '').split('/').pop() ?? ''
+  return { name, rest: argv.slice(i + 1) }
+}
+
+/**
+ * What a non-zero exit means when it is an answer, not a failure: pgrep finding no
+ * process, systemctl reporting a unit stopped or missing, grep finding no line. A
+ * diagnosis asks these questions on purpose, so the column says the answer in grey
+ * instead of raising an amber "exit 1". Undefined when the exit is a real failure.
+ */
+export function exitMeaning(row: OpsRow): string | undefined {
+  if (row.status !== 'failed' || row.exitCode == null || !row.argv?.length) return undefined
+  const { name, rest } = programOf(row.argv)
+  const code = row.exitCode
+  switch (name) {
+    case 'pgrep':
+      return code === 1 ? 'no process' : undefined
+    case 'grep':
+    case 'egrep':
+    case 'fgrep':
+    case 'zgrep':
+      return code === 1 ? 'no match' : undefined
+    case 'diff':
+      return code === 1 ? 'differs' : undefined
+    case 'systemctl': {
+      const verb = rest.find((w) => !w.startsWith('-'))
+      if (verb === 'status') return code === 3 ? 'inactive' : code === 4 ? 'no such unit' : undefined
+      if (verb === 'is-active') return code === 3 || code === 4 ? 'inactive' : undefined
+      if (verb === 'is-enabled') return code === 1 ? 'disabled' : undefined
+      if (verb === 'is-failed') return code === 1 ? 'not failed' : undefined
+      return undefined
+    }
+    default:
+      return undefined
+  }
+}
+
 /** The row's dot: green ran, amber asks or exited non-zero, red refused, grey otherwise. */
 export function rowTone(row: OpsRow): OpsRowTone {
+  if (exitMeaning(row)) return 'idle'
   switch (row.status) {
     case 'done':
       return 'ok'
@@ -340,6 +389,8 @@ export function deniedLabel(row: OpsRow): string {
 
 /** The row's right-hand label: duration, `exit N`, or why it did not run. */
 export function rowLabel(row: OpsRow): string {
+  const meaning = exitMeaning(row)
+  if (meaning) return meaning
   switch (row.status) {
     case 'done':
       return formatDuration(row.durationMs)
@@ -399,3 +450,4 @@ export function splitRuns(runs: OpsRun[], currentRunId?: string): { current?: Op
   earlier.sort((a, b) => (a.startedAt < b.startedAt ? 1 : a.startedAt > b.startedAt ? -1 : 0))
   return { current, earlier }
 }
+

@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { foldOpsEvents, planProgress, rowLabel, rowTone, runCounts, splitRuns, touchedHosts } from './ops-timeline'
+import {
+  exitMeaning,
+  foldOpsEvents,
+  planProgress,
+  rowLabel,
+  rowTone,
+  runCounts,
+  splitRuns,
+  touchedHosts
+} from './ops-timeline'
 import type { OpsLiveEvent } from '../types'
 
 let n = 0
@@ -232,7 +241,8 @@ describe('row reading', () => {
   it('labels and colours each outcome', () => {
     const at = (events: OpsLiveEvent[]) => { const r = row(events); return [rowTone(r), rowLabel(r)] }
     expect(at([start, decided('c1', 'allow'), finished('c1', 0)])).toEqual(['ok', '42 ms'])
-    expect(at([start, decided('c1', 'allow'), finished('c1', 4)])).toEqual(['warn', 'exit 4'])
+    expect(at([start, decided('c1', 'allow'), finished('c1', 4)])).toEqual(['idle', 'no such unit'])
+    expect(at([start, decided('c1', 'allow'), finished('c1', 1)])).toEqual(['warn', 'exit 1'])
     expect(at([start, decided('c1', 'deny', { reason: 'no allow rule matched and the runbook is strict' })])).toEqual(['bad', 'not in runbook'])
     expect(at([start, decided('c1', 'deny', { reason: "script 'x.sh' is not in this runbook" })])).toEqual(['bad', 'not in runbook'])
     expect(at([start, decided('c1', 'deny', { reason: 'sudo command matches no literal sudo rule in this runbook' })])).toEqual(['bad', 'sudo rule missing'])
@@ -295,3 +305,24 @@ describe('skipped plan steps', () => {
     expect(planProgress(run)).toBeNull()
   })
 })
+
+describe('exit meanings', () => {
+  const r = (argv: string[], code: number) =>
+    row([start, decided('c1', 'allow', { argv }), finished('c1', code)])
+
+  it('reads an expected non-zero exit as an answer', () => {
+    expect(exitMeaning(r(['pgrep', '-af', 'puma'], 1))).toBe('no process')
+    expect(exitMeaning(r(['sudo', '-u', 'app', 'grep', 'x', '/f'], 1))).toBe('no match')
+    expect(exitMeaning(r(['systemctl', 'status', 'redis', '--no-pager'], 3))).toBe('inactive')
+    expect(exitMeaning(r(['/usr/bin/systemctl', '--no-pager', 'status', 'x'], 4))).toBe('no such unit')
+    expect(exitMeaning(r(['systemctl', 'is-enabled', 'x'], 1))).toBe('disabled')
+  })
+
+  it('leaves real failures alone', () => {
+    expect(exitMeaning(r(['pgrep', '-af', 'puma'], 2))).toBeUndefined()
+    expect(exitMeaning(r(['curl', 'http://x'], 7))).toBeUndefined()
+    expect(exitMeaning(r(['systemctl', 'restart', 'x'], 1))).toBeUndefined()
+    expect(exitMeaning(r(['pgrep', 'x'], 0))).toBeUndefined()
+  })
+})
+

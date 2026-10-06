@@ -32,6 +32,7 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Fixes',
         items: [
+          'An intervention’s calls no longer flag an expected answer as a failure: pgrep finding no process, grep finding no line, or systemctl reporting a unit inactive or missing now reads as that, in grey, instead of an amber exit code.',
           'Minimizing Argos mid-run no longer brings up a status pill with a stale tick and no name ("✓ Working…"). The pill now says what is actually working, and closes on its own when that finishes.',
           'A plan waiting for approval shows each command and each reason in full, one command per line, instead of cutting them off with an ellipsis.'
         ]
