@@ -223,6 +223,14 @@ export type OpsAuditEvent =
     }
   | { kind: 'sudo.password-supplied'; runId: string; hostId: string }
   | {
+      /** The host's syslog could not take Argos's lines (logger missing or failing); once per host per run. */
+      kind: 'host.syslog-unavailable'
+      runId: string
+      hostId: string
+      host: string
+      reason: string
+    }
+  | {
       kind: 'run.end'
       runId: string
       ok: boolean

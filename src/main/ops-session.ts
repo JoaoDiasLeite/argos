@@ -72,6 +72,21 @@ export type OpsAskFn = (req: {
 /** Ask the operator for a secret (the sudo password of a host). null = declined or stopped. */
 export type OpsAskSecretFn = (req: { hostId: string; hostName: string; prompt: string }) => Promise<string | null>
 
+/** Who runs the intervention and as whom it reaches each host, for the host's syslog lines. */
+export interface OpsSyslogOptions {
+  /** The operator at the Argos machine. */
+  operator: string
+  /** The SSH user a host is reached as. */
+  sshUser: (hostId: string) => string
+}
+
+/** The run's syslog bookkeeping: the logger probe per host, and the hosts already warned about. */
+export interface OpsSyslogState extends OpsSyslogOptions {
+  /** hostId → why the host cannot take lines, or null when it can. Probed once per host. */
+  probes: Map<string, Promise<string | null>>
+  warned: Set<string>
+}
+
 export interface OpsRunContext {
   runId: string
   appSessionId: string
@@ -118,6 +133,8 @@ export interface OpsRunContext {
   deniedHosts: Set<string>
   /** Open scope: the host prompt in flight per host, so two calls on a new host ask once. */
   hostAsks: Map<string, Promise<'allow' | 'deny' | 'stop' | 'none'>>
+  /** Present: every execution also leaves start/end lines in the host's syslog. */
+  syslog?: OpsSyslogState
 }
 
 export interface OpsSessionOptions {
@@ -147,6 +164,8 @@ export interface OpsSessionOptions {
   /** Every ledger line written for this run, for the live `ops:event` timeline. */
   onEvent?: (line: OpsAuditLine) => void
   runId?: string
+  /** Leave a syslog line on the host for every execution. Absent: the ledger is the only record. */
+  syslog?: OpsSyslogOptions
 }
 
 export interface OpsSession {
@@ -260,7 +279,8 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
       ...(scope ? { scope } : {}),
       approvedHosts: new Set(),
       deniedHosts: new Set(),
-      hostAsks: new Map()
+      hostAsks: new Map(),
+      ...(opts.syslog ? { syslog: { ...opts.syslog, probes: new Map(), warned: new Set() } } : {})
     }
 
     return {

@@ -26,7 +26,8 @@ import {
   type OpsBackend,
   type OpsListResult,
   type OpsReadResult,
-  type OpsWriteResult
+  type OpsWriteResult,
+  type ScriptHooks
 } from './ops-exec-pure'
 
 export {
@@ -308,7 +309,8 @@ async function runScript(
   name: string,
   content: Buffer,
   args: string[],
-  opts: ExecOpts
+  opts: ExecOpts,
+  hooks: ScriptHooks = {}
 ): Promise<ExecResult> {
   if (!SCRIPT_NAME.test(name) || name === '.' || name === '..') return failedExec(`Invalid script name: ${name}`)
   if (opts.signal.aborted) return failedExec('aborted before start')
@@ -322,13 +324,19 @@ async function runScript(
     const mk = await p.mkdir(sftp, dir, 0o700)
     if (mk) return failedExec(`Could not create ${dir}: ${mk.message}`)
     const remote = path.posix.join(dir, name)
+    let uploaded = false
     try {
       await p.writeFile(sftp, remote, content, 0o700)
       await p.chmod(sftp, remote, 0o700) // the server's umask may have trimmed the mode
-      return await exec(hostId, [remote, ...args], opts)
+      uploaded = true
+      await hooks.uploaded?.(remote)
+      const r = await exec(hostId, [remote, ...args], opts)
+      await hooks.finished?.(r)
+      return r
     } finally {
       await p.unlink(sftp, remote)
       await p.rmdir(sftp, dir)
+      if (uploaded) await hooks.removed?.(remote)
     }
   })
   return 'exitCode' in r ? r : failedExec(r.error)

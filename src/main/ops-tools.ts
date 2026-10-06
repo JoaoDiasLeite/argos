@@ -5,7 +5,10 @@
  * already taken and logged in canUseTool (ops-session.ts); each handler here runs the same
  * deterministic classify again and refuses a deny, so a call that somehow skipped
  * canUseTool still cannot run. Then it executes through the executor's per-host queue
- * and logs `call.started` before and `call.finished` after.
+ * and logs `call.started` before and `call.finished` after. With `ctx.syslog`, every run,
+ * script and write also leaves a start and an end line in the host's own syslog
+ * (ops-syslog-pure.ts); a host that cannot take them gets one warning in the ledger and
+ * the call runs anyway.
  *
  * Handlers never throw: a throw would reach the model as a tool error with a stack, and
  * the ledger would miss the call's end. Every path returns a CallToolResult.
@@ -31,7 +34,19 @@ import {
   withSudoStdin,
   writeResultText
 } from './ops-run-pure'
-import { failedExec, type ExecResult } from './ops-exec-pure'
+import { failedExec, type ExecOpts, type ExecResult } from './ops-exec-pure'
+import { sha256Hex } from './ops-audit-pure'
+import {
+  LOGGER_PROBE_ARGV,
+  loggerArgv,
+  loggerFailureReason,
+  loggerMissingReason,
+  syslogMessage,
+  syslogPriority,
+  type SyslogCall,
+  type SyslogEvent,
+  type SyslogTarget
+} from './ops-syslog-pure'
 import type { OpsRunContext } from './ops-session'
 import type { OpsToolHost } from './ops-tool-defs-pure'
 import type { OpsAuditEvent, OpsGateResult, OpsToolInput, OpsToolName } from './ops-types'
@@ -49,6 +64,13 @@ type OpsHandler = (args: Record<string, unknown>) => Promise<OpsToolResult>
 export type OpsToolHandlers = Record<OpsToolName, OpsHandler> & { propose_plan: OpsHandler; operatorScript: OpsHandler }
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+
+/** How long one logger exec (or the probe for it) may take. */
+const LOGGER_TIMEOUT_MS = 10_000
+
+/** Not tied to the run's abort, so the end line of a command the operator stopped still lands. */
+const loggerOpts = (): ExecOpts => ({ timeoutMs: LOGGER_TIMEOUT_MS, maxOutputBytes: 4096, signal: new AbortController().signal })
+
 const text = (t: string, isError = false): OpsToolResult => ({ content: [{ type: 'text', text: t }], isError })
 
 /** An ExecResult for a file operation, so read/list/write log the same call.finished shape as a command. */
@@ -73,6 +95,76 @@ function fileExec(ok: boolean, out: string, err: string, durationMs: number): Ex
 export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
   const { runId } = ctx
   const limits = effectiveLimits(ctx.runbook.policy)
+
+  // ── The host's syslog ──
+
+  /** One warning per host in the ledger; the report shows it. */
+  async function syslogWarn(hostId: string, host: string, reason: string): Promise<void> {
+    const s = ctx.syslog
+    if (!s || s.warned.has(hostId)) return
+    s.warned.add(hostId)
+    await ctx.log({ kind: 'host.syslog-unavailable', runId, hostId, host, reason })
+  }
+
+  /** `command -v logger`, once per host for the run: why the host cannot log, or null. */
+  function syslogProbe(hostId: string): Promise<string | null> {
+    const s = ctx.syslog!
+    let probe = s.probes.get(hostId)
+    if (!probe) {
+      probe = ctx.executor.backend
+        .exec(hostId, [...LOGGER_PROBE_ARGV], loggerOpts())
+        .then(loggerMissingReason, (e) => `could not check for logger: ${message(e)}`)
+      s.probes.set(hostId, probe)
+    }
+    return probe
+  }
+
+  /** One line in the host's syslog. Never throws and never stops the call it describes. */
+  async function hostLog(hostId: string, hostName: string, call: SyslogCall, ev: SyslogEvent): Promise<void> {
+    const s = ctx.syslog
+    if (!s) return
+    try {
+      const missing = await syslogProbe(hostId)
+      if (missing) return await syslogWarn(hostId, hostName, missing)
+      const msg = syslogMessage(
+        { intervention: runId, runbook: ctx.runbook.ref.name, operator: s.operator, host: hostName, user: s.sshUser(hostId) },
+        call,
+        ev
+      )
+      const failed = loggerFailureReason(await ctx.executor.backend.exec(hostId, loggerArgv(syslogPriority(ev), msg), loggerOpts()))
+      if (failed) await syslogWarn(hostId, hostName, failed)
+    } catch (e) {
+      await syslogWarn(hostId, hostName, `logger failed: ${message(e)}`).catch(() => undefined)
+    }
+  }
+
+  /** What the syslog lines say about a call: the gate's view of it, never the sudo password or a file's content. */
+  function syslogCall(input: OpsToolInput, gate: OpsGateResult, callId: string): SyslogCall {
+    const target: SyslogTarget =
+      input.tool === 'script'
+        ? { kind: 'script', name: input.name, sha256: gate.scriptSha256 ?? '', args: input.args }
+        : input.tool === 'write'
+          ? { kind: 'write', path: gate.path ?? input.path, sha256: sha256Hex(input.content) }
+          : { kind: 'cmd', argv: gate.argv ?? [] }
+    const asked = gate.decision === 'ask'
+    return {
+      callId,
+      tool: input.tool,
+      class: gate.class,
+      approval: asked ? 'ask' : 'auto',
+      ...(asked && ctx.syslog ? { approvedBy: ctx.syslog.operator } : {}),
+      ...(gate.title ? { title: gate.title } : {}),
+      target
+    }
+  }
+
+  /** An exec between its start and end lines. */
+  async function loggedExec(hostId: string, hostName: string, call: SyslogCall, run: () => Promise<ExecResult>): Promise<ExecResult> {
+    await hostLog(hostId, hostName, call, { event: 'start' })
+    const r = await run()
+    await hostLog(hostId, hostName, call, { event: 'end', result: r })
+    return r
+  }
 
   /** `operator`: the operator's own click on a script; there is no plan it could have been decided under. */
   async function handle(tool: OpsToolName, args: Record<string, unknown>, operator = false): Promise<OpsToolResult> {
@@ -141,16 +233,20 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
     opts: { timeoutMs: number; maxOutputBytes: number; signal: AbortSignal }
   ): Promise<OpsToolResult> {
     const backend = ctx.executor.backend
+    // The gate's argv, not the -S form: the password goes on stdin and never into a line.
+    const call = syslogCall(input, gate, callId)
     const known = ctx.sudoPasswords.get(input.hostId)
     if (known !== undefined) {
-      const r = await backend.exec(input.hostId, withSudoStdin(argv), { ...opts, stdin: `${known}\n` })
+      const r = await loggedExec(input.hostId, hostName, call, () =>
+        backend.exec(input.hostId, withSudoStdin(argv), { ...opts, stdin: `${known}\n` })
+      )
       await ctx.log(finishedEventFrom(r, runId, callId))
       // Refused again: the kept password is wrong (or was changed), so the next sudo asks anew.
       if (sudoNeedsPassword(argv, r)) ctx.sudoPasswords.delete(input.hostId)
       return text(toolResultText(r), execIsError(r))
     }
 
-    const first = await backend.exec(input.hostId, argv, opts)
+    const first = await loggedExec(input.hostId, hostName, call, () => backend.exec(input.hostId, argv, opts))
     await ctx.log(finishedEventFrom(first, runId, callId))
     if (!sudoNeedsPassword(argv, first)) return text(toolResultText(first), execIsError(first))
     if (!ctx.askSecret) return text(`${toolResultText(first)}\n${SUDO_PASSWORD_NOTE}`, true)
@@ -176,7 +272,9 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
     })
     const started = decided.ok ? await ctx.log({ kind: 'call.started', runId, callId: retryId }) : decided
     if (!started.ok) return text(`${toolResultText(first)}\nThe ops ledger is unavailable, so the retry with the password did not run.`, true)
-    const retry = await backend.exec(input.hostId, withSudoStdin(argv), { ...opts, stdin: `${password}\n` })
+    const retry = await loggedExec(input.hostId, hostName, { ...call, callId: retryId }, () =>
+      backend.exec(input.hostId, withSudoStdin(argv), { ...opts, stdin: `${password}\n` })
+    )
     await ctx.log(finishedEventFrom(retry, runId, retryId))
     if (sudoNeedsPassword(argv, retry)) ctx.sudoPasswords.delete(input.hostId)
     return text(toolResultText(retry), execIsError(retry))
@@ -241,8 +339,10 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
             return await runSudo(input, gate, gate.argv, callId, rawInput, hostName, opts)
           }
           let result: ExecResult
+          const call = syslogCall(input, gate, callId)
           if (input.tool === 'run') {
-            result = await backend.exec(input.hostId, gate.argv, opts)
+            const argv = gate.argv
+            result = await loggedExec(input.hostId, hostName, call, () => backend.exec(input.hostId, argv, opts))
           } else {
             // Re-read and re-hash right before it runs: the load-time hash only proves what
             // the file was when the run started.
@@ -256,7 +356,18 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
               await ctx.log(refusedFinishedEvent(runId, callId, err, Date.now() - t0))
               return text(`Refused: ${err}`, true)
             }
-            result = await backend.runScript(input.hostId, input.name, script.content, input.args, opts)
+            // start, upload, end, remove: the end line is written before the file goes.
+            let ended = false
+            await hostLog(input.hostId, hostName, call, { event: 'start' })
+            result = await backend.runScript(input.hostId, input.name, script.content, input.args, opts, {
+              uploaded: (file) => hostLog(input.hostId, hostName, call, { event: 'upload', file }),
+              finished: async (r) => {
+                ended = true
+                await hostLog(input.hostId, hostName, call, { event: 'end', result: r })
+              },
+              removed: (file) => hostLog(input.hostId, hostName, call, { event: 'remove', file })
+            })
+            if (!ended) await hostLog(input.hostId, hostName, call, { event: 'end', result })
           }
           await ctx.log(finishedEventFrom(result, runId, callId))
           // A script that runs sudo inside gets no password: the model gets the stderr and
@@ -294,7 +405,13 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
         case 'write': {
           const p = gate.path ?? input.path
           const backup = ctx.runbook.policy.write?.backup === true
+          const call = syslogCall(input, gate, callId)
+          await hostLog(input.hostId, hostName, call, { event: 'start' })
           const r = await backend.write(input.hostId, p, input.content, backup)
+          await hostLog(input.hostId, hostName, call, {
+            event: 'end',
+            result: { ok: r.ok, exitCode: r.ok ? 0 : 1, timedOut: false, durationMs: Date.now() - t0, ...(r.ok ? {} : { error: r.error }) }
+          })
           if (r.ok && r.backupPath) {
             await ctx.log({
               kind: 'write.backup',

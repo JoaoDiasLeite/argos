@@ -194,6 +194,8 @@ export interface OpsRunSummary {
   scope?: OpsScope
   /** Open scope: the operator's answer per host, in the order given. */
   hostAnswers?: { hostId: string; host: string; answer: 'approved' | 'denied' }[]
+  /** Hosts whose syslog could not take Argos's lines, once each, with why. */
+  syslogUnavailable?: { hostId: string; host: string; reason: string }[]
   planText?: string
   /** The latest approved plan's steps, when the ledger recorded them. */
   planSteps?: OpsLoggedPlanStep[]
@@ -311,6 +313,9 @@ export function summarizeRun(lines: OpsAuditLine[], runId: string): OpsRunSummar
         callFor(e.callId).backup = { path: e.path, backupPath: e.backupPath }
         break
       case 'sudo.password-supplied':
+        break
+      case 'host.syslog-unavailable':
+        ;(s.syslogUnavailable ??= []).push({ hostId: e.hostId, host: e.host, reason: e.reason })
         break
       case 'host.approved':
       case 'host.denied':

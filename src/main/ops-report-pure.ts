@@ -65,6 +65,13 @@ export function clientReportWarnings(summary: OpsRunSummary): string[] {
   return out
 }
 
+/** Hosts that kept no syslog trace of what ran on them: the ledger is their only record. */
+export function hostSyslogWarnings(summary: OpsRunSummary): string[] {
+  return (summary.syslogUnavailable ?? []).map(
+    (w) => `${w.host} has no syslog record of this run's commands (${w.reason}); the ledger is the only record there.`
+  )
+}
+
 /** Operator-typed text on one line, so a newline cannot break the report's structure. */
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim()
 
@@ -163,6 +170,12 @@ export function renderInternalReport(summary: OpsRunSummary): string {
       `${count((c) => typeof c.exitCode === 'number' && c.exitCode !== 0)} non-zero exits, ` +
       `${count((c) => c.timedOut === true)} timed out.`
   )
+
+  const syslog = hostSyslogWarnings(s)
+  if (syslog.length) {
+    out.push('', '## Host syslog warnings', '')
+    for (const w of syslog) out.push(`- ${w}`)
+  }
 
   const warnings = clientReportWarnings(s)
   if (warnings.length) {

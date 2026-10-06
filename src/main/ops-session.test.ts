@@ -117,7 +117,7 @@ function baseOptions(fake: FakeBackend, abort = new AbortController()): OpsSessi
 async function start(
   script: FakeScript = {},
   ask?: OpsAskFn,
-  extra: { plan?: boolean; askSecret?: OpsAskSecretFn } & Pick<OpsSessionOptions, 'scope' | 'task' | 'ticket' | 'client'> = {}
+  extra: { plan?: boolean; askSecret?: OpsAskSecretFn } & Pick<OpsSessionOptions, 'scope' | 'task' | 'ticket' | 'client' | 'syslog'> = {}
 ): Promise<{
   fake: FakeBackend
   session: Extract<OpenOpsSessionResult, { ok: true }>
@@ -138,7 +138,8 @@ async function start(
     ...(extra.scope ? { scope: extra.scope } : {}),
     ...(extra.task !== undefined ? { task: extra.task } : {}),
     ...(extra.ticket !== undefined ? { ticket: extra.ticket } : {}),
-    ...(extra.client !== undefined ? { client: extra.client } : {})
+    ...(extra.client !== undefined ? { client: extra.client } : {}),
+    ...(extra.syslog ? { syslog: extra.syslog } : {})
   })
   if (!r.ok) throw new Error(r.error)
   if (extra.plan !== false) r.ctx.planApproved = true
@@ -867,5 +868,139 @@ describe('skipped plan steps', () => {
     expect(summary?.planSteps?.map((s) => s.skipped === true)).toEqual([true, false, false, false])
     const report = await ledger.report('run-1', 'internal')
     expect(report.ok && report.markdown).toContain('1. Estado do serviço web (web-01) – `systemctl status nginx` (skipped)\n')
+  })
+})
+
+describe("the host's syslog", () => {
+  const SYSLOG = { operator: 'JoãoLeite', sshUser: () => 'ops' }
+  /** The fake's answer per program: the probe, logger, or the command itself. */
+  const hosted = (over: { probe?: number; logger?: number; cmd?: FakeScript['exec'] } = {}): FakeScript => ({
+    exec: (argv) =>
+      argv[0] === 'command'
+        ? { exitCode: over.probe ?? 0, stdout: '/usr/bin/logger' }
+        : argv[0] === 'logger'
+          ? { exitCode: over.logger ?? 0, stdout: '', stderr: over.logger ? 'logger: socket /dev/log: Connection refused' : '' }
+          : (over.cmd?.(argv) ?? { stdout: 'ok' })
+  })
+  const execs = (fake: FakeBackend) =>
+    hostCalls(fake).map((c) => {
+      const argv = (c.args as { argv?: string[]; name?: string }).argv
+      return c.kind === 'exec' && argv ? argv : [c.kind]
+    })
+  const loggerLines = (fake: FakeBackend) =>
+    execs(fake)
+      .filter((a) => a[0] === 'logger')
+      .map((a) => ({ priority: a[4], msg: a[6] }))
+
+  it('probes once per host, then writes start and end around the command as separate execs', async () => {
+    const { fake, call } = await start(hosted(), undefined, { syslog: SYSLOG })
+    await call('run', { hostId: 'h1', cmd: 'systemctl status nginx' })
+    await call('run', { hostId: 'h1', cmd: 'systemctl status nginx' })
+
+    const a = execs(fake)
+    expect(a.map((x) => x[0])).toEqual(['command', 'logger', 'systemctl', 'logger', 'logger', 'systemctl', 'logger'])
+    // The approved command is exactly what the gate produced, never wrapped.
+    expect(a[2]).toEqual(['systemctl', 'status', 'nginx'])
+    expect(a[1].slice(0, 6)).toEqual(['logger', '-t', 'argos', '-p', 'user.notice', '--'])
+    const [startLine, endLine] = loggerLines(fake)
+    expect(startLine.msg).toMatch(
+      /^intervention=run-1 runbook=nginx-config-reload event=start call=run-1-1 operator="JoãoLeite" host=web-01 user=ops tool=run class=read approval=auto rule="Estado do serviço web" cmd="systemctl status nginx"$/
+    )
+    expect(endLine.msg).toMatch(/event=end exit=0 duration_ms=\d+ call=run-1-1 /)
+    expect(await kinds()).not.toContain('host.syslog-unavailable')
+  })
+
+  it('logs a failed command at err', async () => {
+    const { fake, call } = await start(hosted({ cmd: () => ({ exitCode: 3, stdout: '' }) }), undefined, { syslog: SYSLOG })
+    await call('run', { hostId: 'h1', cmd: 'systemctl status nginx' })
+    expect(loggerLines(fake).map((l) => l.priority)).toEqual(['user.notice', 'user.err'])
+    expect(loggerLines(fake)[1].msg).toContain('event=end exit=3')
+  })
+
+  it('logs a command killed by the limit as timeout, at err', async () => {
+    // The fake times out a call whose delay passes its limit: 20 ms for the command, while
+    // the logger execs keep their own 10 s.
+    const policy = JSON.parse(fs.readFileSync(path.join(rbDir, 'policy.json'), 'utf-8'))
+    fs.writeFileSync(path.join(rbDir, 'policy.json'), JSON.stringify({ ...policy, limits: { timeoutMs: 20 } }))
+    const { fake, call } = await start({ ...hosted(), delayMs: 50 }, undefined, { syslog: SYSLOG })
+    await call('run', { hostId: 'h1', cmd: 'systemctl status nginx' })
+    const [, end] = loggerLines(fake)
+    expect(end.priority).toBe('user.err')
+    expect(end.msg).toMatch(/event=timeout duration_ms=\d+ call=run-1-1 /)
+  })
+
+  it('never blocks: with logger missing the command runs and the report warns once for the host', async () => {
+    const { fake, call } = await start(hosted({ probe: 1 }), undefined, { syslog: SYSLOG })
+    expect((await call('run', { hostId: 'h1', cmd: 'systemctl status nginx' })).isError).toBe(false)
+    expect((await call('run', { hostId: 'h1', cmd: 'systemctl status nginx' })).isError).toBe(false)
+
+    // One probe for the run, no logger exec, both commands ran.
+    expect(execs(fake).map((x) => x[0])).toEqual(['command', 'systemctl', 'systemctl'])
+    const warn = (await lines()).filter((l) => l.event.kind === 'host.syslog-unavailable')
+    expect(warn.map((l) => l.event)).toEqual([
+      { kind: 'host.syslog-unavailable', runId: 'run-1', hostId: 'h1', host: 'web-01', reason: 'logger is not installed on the host' }
+    ])
+    const report = await ledger.report('run-1', 'internal')
+    expect(report.ok && report.warnings).toContain(
+      "web-01 has no syslog record of this run's commands (logger is not installed on the host); the ledger is the only record there."
+    )
+    expect(report.ok && report.markdown).toContain('## Host syslog warnings')
+  })
+
+  it('never blocks: a failing logger still lets the command run, with one warning for the host', async () => {
+    const { fake, call } = await start(hosted({ logger: 1 }), undefined, { syslog: SYSLOG })
+    expect((await call('run', { hostId: 'h1', cmd: 'systemctl status nginx' })).isError).toBe(false)
+    expect((await call('run', { hostId: 'h1', cmd: 'systemctl status nginx' })).isError).toBe(false)
+    expect(execs(fake).filter((x) => x[0] === 'systemctl')).toHaveLength(2)
+    const warn = (await lines()).filter((l) => l.event.kind === 'host.syslog-unavailable')
+    expect(warn).toHaveLength(1)
+    expect(warn[0].event).toMatchObject({ reason: 'logger exited 1: logger: socket /dev/log: Connection refused' })
+  })
+
+  it('a call the gate refuses never reaches the host, so nothing is logged there', async () => {
+    const { fake, call } = await start(hosted(), undefined, { syslog: SYSLOG })
+    expect((await call('run', { hostId: 'h1', cmd: 'rm -rf /' })).isError).toBe(true)
+    expect(hostCalls(fake)).toEqual([])
+  })
+
+  it('a script logs start, upload, end and remove, with its name, sha256 and arguments', async () => {
+    const { fake, call } = await start(hosted(), undefined, { syslog: SYSLOG })
+    await call('script', { hostId: 'h1', name: 'check.sh', args: [] })
+    // The fake records runScript as it is called, before its upload hook fires.
+    expect(execs(fake).map((x) => x[0])).toEqual(['command', 'logger', 'runScript', 'logger', 'logger', 'logger'])
+    const msgs = loggerLines(fake).map((l) => l.msg)
+    expect(msgs.map((m) => /event=(\w+)/.exec(m)?.[1])).toEqual(['start', 'upload', 'end', 'remove'])
+    expect(msgs[0]).toContain(`script=check.sh sha256=${sha256Hex(CHECK_SH)} args=""`)
+    expect(msgs[1]).toContain('file=/home/ops/.argos-ops/fake/check.sh')
+    expect(msgs[3]).toContain('file=/home/ops/.argos-ops/fake/check.sh')
+  })
+
+  it('a write logs the path and the content hash, never the content', async () => {
+    const policy = JSON.parse(fs.readFileSync(path.join(rbDir, 'policy.json'), 'utf-8'))
+    fs.writeFileSync(path.join(rbDir, 'policy.json'), JSON.stringify({ ...policy, write: { paths: ['^/etc/nginx/.*$'], approval: 'ask' } }))
+    const { fake, call } = await start(hosted(), async () => ({ allow: true }), { syslog: SYSLOG })
+    const content = 'password = s3cr3t-value\n'
+    expect((await call('write', { hostId: 'h1', path: '/etc/nginx/x.conf', content })).isError).toBe(false)
+    const msgs = loggerLines(fake).map((l) => l.msg)
+    expect(msgs).toHaveLength(2)
+    expect(msgs[0]).toContain(`path=/etc/nginx/x.conf sha256=${sha256Hex(content)}`)
+    expect(msgs[0]).toContain('approval=ask approved_by="JoãoLeite"')
+    expect(msgs[1]).toContain('event=end exit=0')
+    expect(msgs.join('\n')).not.toContain('s3cr3t')
+  })
+
+  it('a sudo retried with the password logs the gate form of the command, never the password', async () => {
+    const sudo = hosted({ cmd: (argv) => (argv[1] === '-S' ? { stdout: 'reloaded' } : { exitCode: 1, stderr: 'sudo: a password is required' }) })
+    const { fake, call } = await start(sudo, async () => ({ allow: true }), { syslog: SYSLOG, askSecret: async () => 'hunter2' })
+    expect((await call('run', { hostId: 'h1', cmd: 'sudo systemctl reload nginx' })).isError).toBe(false)
+    const msgs = loggerLines(fake).map((l) => l.msg)
+    expect(msgs.map((m) => /event=(\w+) (?:exit=(\d+) )?.*call=(\S+)/.exec(m)?.slice(1).filter(Boolean).join(':'))).toEqual([
+      'start:run-1-1',
+      'end:1:run-1-1',
+      'start:run-1-1-retry',
+      'end:0:run-1-1-retry'
+    ])
+    for (const m of msgs) expect(m).toContain('cmd="sudo systemctl reload nginx"')
+    expect(JSON.stringify(execs(fake).filter((a) => a[0] === 'logger'))).not.toContain('hunter2')
   })
 })

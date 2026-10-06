@@ -55,6 +55,19 @@ export type OpsWriteResult =
   | { ok: true; backupPath?: string; beforeSha256?: string; afterSha256: string }
   | { ok: false; error: string }
 
+/**
+ * Points in a script run the caller hears about, to leave its own trace (the host's
+ * syslog). Never throw from these: they run inside the upload's SFTP session.
+ */
+export interface ScriptHooks {
+  /** The script is on the host at `remotePath` and about to run. */
+  uploaded?(remotePath: string): Promise<void>
+  /** The script ran; called before its file is removed. */
+  finished?(result: ExecResult): Promise<void>
+  /** The uploaded file and its folder were removed. */
+  removed?(remotePath: string): Promise<void>
+}
+
 export interface OpsBackend {
   /** Run argv (already gated) on the host. The implementation quotes with shellJoin. stdin, if given, is written then closed (used for sudo -S passwords). */
   exec(hostId: string, argv: string[], opts: ExecOpts): Promise<ExecResult>
@@ -62,7 +75,7 @@ export interface OpsBackend {
   list(hostId: string, path: string): Promise<OpsListResult>
   write(hostId: string, path: string, content: string, backup: boolean): Promise<OpsWriteResult>
   /** Upload a script to a private temp dir on the host, run it with args, delete it. */
-  runScript(hostId: string, name: string, content: Buffer, args: string[], opts: ExecOpts): Promise<ExecResult>
+  runScript(hostId: string, name: string, content: Buffer, args: string[], opts: ExecOpts, hooks?: ScriptHooks): Promise<ExecResult>
   reachable(hostId: string, timeoutMs: number): Promise<{ ok: boolean; message: string }>
 }
 
@@ -233,8 +246,8 @@ export function createExecutor(backend: OpsBackend): OpsExecutor {
     read: (hostId, path, maxBytes) => backend.read(hostId, path, maxBytes),
     list: (hostId, path) => backend.list(hostId, path),
     write: (hostId, path, content, backup) => backend.write(hostId, path, content, backup),
-    runScript: (hostId, name, content, args, opts) =>
-      withApp(opts, (o) => backend.runScript(hostId, name, content, args, o)),
+    runScript: (hostId, name, content, args, opts, hooks) =>
+      withApp(opts, (o) => backend.runScript(hostId, name, content, args, o, hooks)),
     reachable: (hostId, timeoutMs) => backend.reachable(hostId, timeoutMs)
   }
   return {

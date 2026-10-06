@@ -1005,6 +1005,15 @@ function opsHostRefs(): { id: string; name: string; host: string }[] {
 }
 
 /** `user@host:port` for the approval modal's header. */
+/** The operator named in each host's syslog line: the OS account running Argos. */
+function opsOperator(): string {
+  try {
+    return os.userInfo().username
+  } catch {
+    return 'unknown'
+  }
+}
+
 function opsHostAddress(hostId: string): string {
   const h = listHosts().find((x) => x.id === hostId)
   return h ? `${h.username}@${h.host}:${h.port}` : hostId
@@ -1232,6 +1241,7 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
     loadRunbook,
     readScript,
     hostAddress: opsHostAddress,
+    syslog: { operator: opsOperator(), sshUser: (hostId) => listHosts().find((h) => h.id === hostId)?.username ?? '' },
     ask: async ({ tool, input, ops: context }) => {
       const d = await requestToolApproval(terminalId, tool, input, abort.signal, context)
       return { allow: d.allow, ...(d.stop ? { stop: true } : {}), ...(d.skipSteps?.length ? { skipSteps: d.skipSteps } : {}) }

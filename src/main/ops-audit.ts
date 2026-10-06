@@ -20,7 +20,7 @@ import {
   verifyChain,
   type OpsRunListItem
 } from './ops-audit-pure'
-import { clientReportWarnings, renderClientReport, renderInternalReport } from './ops-report-pure'
+import { clientReportWarnings, hostSyslogWarnings, renderClientReport, renderInternalReport } from './ops-report-pure'
 import type { OpsAuditEvent, OpsAuditLine, OpsHostRef } from './ops-types'
 
 export interface OpsLedger {
@@ -252,7 +252,7 @@ export function createLedger(dir: string): OpsLedger {
       if (!r.ok) return r
       const summary = summarizeRun(r.lines, runId)
       if (!summary) return { ok: false, error: `No run.start for run ${runId} in the ledger.` }
-      const warnings = clientReportWarnings(summary)
+      const warnings = [...hostSyslogWarnings(summary), ...clientReportWarnings(summary)]
       if (kind === 'internal') return { ok: true, markdown: renderInternalReport(summary), warnings }
       // Without the policy's groups the hosts still get sanitised, as plain "[servidor]".
       const clientOpts = opts ?? { hostGroups: {}, hosts: summary.hosts }

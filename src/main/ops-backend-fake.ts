@@ -164,13 +164,19 @@ export function createFakeBackend(script: FakeScript = {}): FakeBackend {
       }
     },
 
-    runScript(hostId, name, content, args, opts) {
+    async runScript(hostId, name, content, args, opts, hooks = {}) {
       calls.push({
         kind: 'runScript',
         hostId,
         args: { name, args: [...args], sha256: sha256Hex(content), stdin: opts.stdin, timeoutMs: opts.timeoutMs }
       })
-      return respond([name, ...args], opts)
+      // The same order of hooks as the ssh backend, around a made-up upload path.
+      const remote = `/home/ops/.argos-ops/fake/${name}`
+      await hooks.uploaded?.(remote)
+      const r = await respond([name, ...args], opts)
+      await hooks.finished?.(r)
+      await hooks.removed?.(remote)
+      return r
     },
 
     async reachable(hostId, timeoutMs) {
