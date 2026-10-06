@@ -227,15 +227,24 @@ describe('step progress', () => {
     expect(planProgress(foldOpsEvents([start, ev({ kind: 'plan.rejected', steps })])[0])).toBeNull()
   })
 
-  it('counts settled calls after the approval, capped at the plan size', () => {
-    const before = [start, decided('c0', 'allow'), finished('c0', 0), ev({ kind: 'plan.approved', steps })]
-    const [run] = foldOpsEvents([...before, decided('c1', 'allow'), finished('c1', 3), decided('c2', 'deny'), decided('c3', 'allow')])
-    expect(planProgress(run)).toEqual({ done: 2, total: 3 })
-    const many = foldOpsEvents([
-      ...before,
-      ...['a', 'b', 'c', 'd'].flatMap((id) => [decided(id, 'allow'), finished(id, 0)])
-    ])[0]
-    expect(planProgress(many)).toEqual({ done: 3, total: 3 })
+  // Each call's argv is its step's command, so it lands on that step.
+  const ran = (id: string, cmd: string, code = 0) => [decided(id, 'allow', { argv: [cmd] }), finished(id, code)]
+  const before = [start, decided('c0', 'allow'), finished('c0', 0), ev({ kind: 'plan.approved', steps })]
+
+  it('counts the steps the run has moved past, not the calls', () => {
+    // Several calls on step 1 alone: still 0 of 3, not "3 of 3".
+    const [onFirst] = foldOpsEvents([...before, ...ran('a', 'c1'), ...ran('b', 'c1'), ...ran('c', 'c1'), ...ran('d', 'c1')])
+    expect(planProgress(onFirst)).toEqual({ done: 0, total: 3 })
+    // Step 2 started: step 1 is done.
+    const [onSecond] = foldOpsEvents([...before, ...ran('a', 'c1', 3), ...ran('b', 'c2')])
+    expect(planProgress(onSecond)).toEqual({ done: 1, total: 3 })
+  })
+
+  it('finishes the last step when the run ends, and never a step whose call is still out', () => {
+    const all = [...before, ...ran('a', 'c1'), ...ran('b', 'c2'), ...ran('c', 'c3')]
+    expect(planProgress(foldOpsEvents([...all, ev({ kind: 'run.end', ok: true, costUsd: 0 })])[0])).toEqual({ done: 3, total: 3 })
+    const pending = foldOpsEvents([...before, decided('a', 'allow', { argv: ['c1'] }), ...ran('b', 'c2')])[0]
+    expect(planProgress(pending)).toEqual({ done: 0, total: 3 })
   })
 })
 
@@ -297,7 +306,8 @@ describe('skipped plan steps', () => {
     const [run] = foldOpsEvents([
       start,
       ev({ kind: 'plan.approved', steps, skippedSteps: [0, 2] }),
-      ...['a', 'b', 'c'].flatMap((id) => [decided(id, 'allow'), finished(id, 0)])
+      ...[['a', 'c2'], ['b', 'c4']].flatMap(([id, cmd]) => [decided(id, 'allow', { argv: [cmd] }), finished(id, 0)]),
+      ev({ kind: 'run.end', ok: true, costUsd: 0 })
     ])
     expect(planProgress(run)).toEqual({ done: 2, total: 2 })
   })

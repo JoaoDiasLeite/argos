@@ -290,17 +290,26 @@ export function foldOpsEvents(events: OpsLiveEvent[]): OpsRun[] {
 const SETTLED: ReadonlySet<OpsRowStatus> = new Set(['done', 'failed', 'timed-out', 'denied', 'stopped'])
 
 /**
- * "k of n steps" for a run whose plan was approved: n is the plan's steps the operator did
- * not skip, k the calls that reached an outcome since the approval, capped at n. Null
+ * "k of n steps" for a run whose plan was approved: n is the latest plan's steps the
+ * operator did not skip, k those finished. A step is finished once it made calls, all of
+ * them reached an outcome, and the run has moved past it: a later step made a call, or
+ * the run ended. Counting calls instead read "8 of 8" while step 2 of 8 was running. Null
  * without an approved plan, or when every step was skipped.
  */
 export function planProgress(run: OpsRun): { done: number; total: number } | null {
   if (run.planDecision !== 'approved' || !run.planSteps?.length) return null
   const total = run.planSteps.filter((s) => !s.skipped).length
-  if (total === 0) return null
-  const since = run.calls.slice(run.planCallIndex ?? 0)
-  const done = Math.min(total, since.filter((c) => SETTLED.has(c.status)).length)
-  return { done, total }
+  if (total === 0 || !run.plans?.length) return null
+  const prefix = `p${run.plans.length - 1}:s`
+  const steps = groupCallsBySteps(run).filter((g) => g.key.startsWith(prefix))
+  const skipped = new Set(run.planSteps.flatMap((s, i) => (s.skipped ? [`${prefix}${i}`] : [])))
+  let done = 0
+  steps.forEach((g, i) => {
+    if (skipped.has(g.key) || g.rows.length === 0 || !g.rows.every((r) => SETTLED.has(r.status))) return
+    const movedOn = !!run.ended || steps.slice(i + 1).some((later) => later.rows.length > 0)
+    if (movedOn) done++
+  })
+  return { done: Math.min(done, total), total }
 }
 
 export type OpsRowTone = 'ok' | 'warn' | 'bad' | 'idle'
