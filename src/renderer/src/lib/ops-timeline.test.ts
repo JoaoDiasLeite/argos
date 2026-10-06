@@ -361,23 +361,46 @@ describe('calls by plan step', () => {
       ['Before the plan', ['c0']],
       ['Sistema', ['c1', 'c2']],
       // Not in any step's commands: it stays on the step the run is on.
-      ['Serviços', ['c3', 'c4']],
-      ['Rede', []]
+      ['Serviços', ['c3', 'c4']]
+      // Rede has not run anything, so it is not listed.
     ])
     expect(currentStepKey(run, groups)).toBe('p0:s1')
   })
 
-  it('opens the first step of a plan that has not run anything yet, and none once ended', () => {
+  it('has no current step while a new plan has run nothing, nor once ended', () => {
     const approved = [start, ...call('c0', ['uptime']), ev({ kind: 'plan.approved', steps })]
     const [run] = foldOpsEvents(approved)
-    expect(currentStepKey(run, groupCallsBySteps(run))).toBe('p0:s0')
+    expect(groupCallsBySteps(run).map((g) => g.key)).toEqual(['pre'])
+    expect(currentStepKey(run, groupCallsBySteps(run))).toBeNull()
     const [done] = foldOpsEvents([...approved, ...call('c1', ['uptime']), ev({ kind: 'run.end', ok: true, costUsd: 0 })])
     expect(currentStepKey(done, groupCallsBySteps(done))).toBeNull()
   })
 
   it('keeps a skipped step out unless something ran for it', () => {
     const [run] = foldOpsEvents([start, ev({ kind: 'plan.approved', steps, skippedSteps: [1] }), ...call('c1', ['uptime'])])
-    expect(groupCallsBySteps(run).map((g) => g.title)).toEqual(['Sistema', 'Rede'])
+    expect(groupCallsBySteps(run).map((g) => g.title)).toEqual(['Sistema'])
+  })
+
+  it('matches a script call to its step, which the plan spells script <name> <args>', () => {
+    const scriptSteps = [
+      { title: 'Backup', commands: ['script wmcp-step.sh backup_current_files'], verdict: 'runs' },
+      { title: 'Ficheiros novos', commands: ["script wmcp-step.sh get_new_files --version='10.13.0'"], verdict: 'runs' },
+      { title: 'Gems', commands: ['script wmcp-step.sh install_gems'], verdict: 'runs' }
+    ]
+    const script = (id: string, argv: string[]) => [decided(id, 'allow', { tool: 'script', argv }), finished(id, 0)]
+    const [run] = foldOpsEvents([
+      start,
+      ev({ kind: 'plan.approved', steps: scriptSteps }),
+      ...script('c1', ['wmcp-step.sh', 'backup_current_files']),
+      ...script('c2', ['/opt/runbook/wmcp-step.sh', 'get_new_files', '--version=10.13.0']),
+      ...call('c3', ['pgrep', '-af', 'rake'])
+    ])
+    expect(groupCallsBySteps(run).map((g) => [g.title, g.rows.map((r) => r.callId)])).toEqual([
+      ['Backup', ['c1']],
+      // A read the plan does not name stays on the step the run is on.
+      ['Ficheiros novos', ['c2', 'c3']]
+    ])
+    expect(planProgress(run)).toEqual({ done: 1, total: 3 })
   })
 
   it('has one group and no plan when the run never got one', () => {

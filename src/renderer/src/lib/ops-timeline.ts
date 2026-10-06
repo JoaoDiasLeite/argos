@@ -481,8 +481,14 @@ export interface OpsStepGroup {
 /** Quotes and runs of spaces differ between a plan's line and the argv the gate parsed. */
 const loose = (s: string): string => s.replace(/['"]/g, '').replace(/\s+/g, ' ').trim()
 
-/** The call as a line comparable with a plan step's commands. */
+/** The call as a line comparable with a plan step's commands. A plan spells a script step
+ *  `script <name> <args>` and the gate's argv is the bare `<name> <args>`, so a script call
+ *  takes the same prefix, or no script call would ever match its step. */
 function callLine(row: OpsRow): string {
+  if (row.tool === 'script' && row.argv?.length) {
+    const [name, ...args] = row.argv
+    return loose(['script', name.split('/').pop() ?? name, ...args].join(' '))
+  }
   if (row.argv?.length) return loose(row.argv.join(' '))
   return loose([row.tool, row.path].filter(Boolean).join(' '))
 }
@@ -499,8 +505,9 @@ function stepClaims(step: OpsPlanStepRow, line: string): boolean {
  * The run's calls under the plan steps they carried out. Calls before the first approved
  * plan form their own group. After an approval each call goes to the first step at or past
  * the current one whose commands it matches, and otherwise stays on the current step, so a
- * call the model phrased differently from its plan still lands in order. Steps not reached
- * yet are listed empty; skipped ones only when something ran for them anyway.
+ * call the model phrased differently from its plan still lands in order. Only steps that
+ * made a call are listed: the column is a history of what ran, and the plan's length is
+ * already in its "k of n steps".
  */
 export function groupCallsBySteps(run: OpsRun): OpsStepGroup[] {
   const plans = run.plans ?? []
@@ -532,26 +539,21 @@ export function groupCallsBySteps(run: OpsRun): OpsStepGroup[] {
       if (g.firstCall < 0) g.firstCall = c
       g.rows.push(row)
     }
-    for (const s of steps) {
-      if (s.step.skipped && s.group.rows.length === 0) continue
-      if (s.group.firstCall < 0) s.group.firstCall = end
-      groups.push(s.group)
-    }
+    for (const s of steps) if (s.group.rows.length > 0) groups.push(s.group)
   })
   return groups
 }
 
 /**
- * The group the run is on: the latest call's, or the first step of a just-approved plan
- * that has not made a call yet. Null once the run has ended, so the column stops moving.
+ * The group the run is on: the latest call's. Null once the run has ended, so the column
+ * stops moving, and while a just-approved plan has not made a call yet, so the previous
+ * plan's last step does not stay open as if it were current.
  */
 export function currentStepKey(run: OpsRun, groups: OpsStepGroup[]): string | null {
   if (run.ended || groups.length === 0) return null
   const last = run.calls.length - 1
   const latestPlan = run.plans?.[run.plans.length - 1]
-  if (latestPlan && latestPlan.callIndex > last) {
-    return groups.find((g) => g.key.startsWith(`p${run.plans!.length - 1}:`))?.key ?? null
-  }
+  if (latestPlan && latestPlan.callIndex > last) return null
   for (let i = groups.length - 1; i >= 0; i--) {
     const g = groups[i]
     if (g.rows.length && g.firstCall <= last && last < g.firstCall + g.rows.length) return g.key

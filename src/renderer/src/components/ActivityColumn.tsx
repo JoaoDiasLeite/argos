@@ -142,8 +142,7 @@ function CallRow({ row }: { row: OpsRow }) {
 const TONE_RANK: Record<OpsRowTone, number> = { idle: 0, ok: 1, warn: 2, bad: 3 }
 
 /** A step's folded line: how many calls, and what stands out among them. */
-function stepSummary(g: OpsStepGroup, isCurrent: boolean): { text: string; tone: OpsRowTone } {
-  if (g.rows.length === 0) return { text: isCurrent ? 'next' : 'not started', tone: 'idle' }
+function stepSummary(g: OpsStepGroup): { text: string; tone: OpsRowTone } {
   const tones = g.rows.map(rowTone)
   const tone = tones.reduce<OpsRowTone>((a, t) => (TONE_RANK[t] > TONE_RANK[a] ? t : a), 'idle')
   const calls = `${g.rows.length} call${g.rows.length === 1 ? '' : 's'}`
@@ -168,7 +167,7 @@ function StepGroup({
   onToggle: () => void
   children: ReactElement[]
 }) {
-  const sum = stepSummary(group, current)
+  const sum = stepSummary(group)
   return (
     <div className={`ac-step${open ? ' open' : ''}${current ? ' current' : ''}`}>
       <button type="button" className="ac-step-head" aria-expanded={open} onClick={onToggle}>
@@ -493,8 +492,8 @@ export default function ActivityColumn({ terminalId, runbookPath, current, earli
   const running = !!current && !current.ended
   const ops = waiting?.ops
 
-  // The calls under the plan steps they carried out. The step the run is on is open and
-  // the rest folded; when the run moves to the next step, that one opens and the last one
+  // The calls under the plan steps they carried out; steps that ran nothing are not
+  // listed. The step the run is on is open and the rest folded; when the run moves to the next step, that one opens and the last one
   // folds. A click opens or folds any step in between.
   const groups = current ? groupCallsBySteps(current) : []
   const currentKey = current ? currentStepKey(current, groups) : null

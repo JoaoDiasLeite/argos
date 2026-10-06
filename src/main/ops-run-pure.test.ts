@@ -426,7 +426,10 @@ describe('plan', () => {
         { hosts: ['web'], cmd: '^sudo systemctl reload nginx$', class: 'mutate', approval: 'ask', title: 'Recarregamento' },
         { hosts: ['web'], cmd: '^df -h$', class: 'read' }
       ],
-      scripts: [{ name: 'check.sh', sha256: 'a'.repeat(64), hosts: ['web'], class: 'read', title: 'Verificação' }]
+      scripts: [
+        { name: 'check.sh', sha256: 'a'.repeat(64), hosts: ['web'], class: 'read', title: 'Verificação' },
+        { name: 'step.sh', sha256: 'b'.repeat(64), hosts: ['web'], class: 'read', title: 'Execução de um passo', args: { max: 2, pattern: '[a-z]+' } }
+      ]
     }
     const hosts = new Map([['h1', { host: web, groups: ['web'] }]])
     const run = (steps: PlanStepInput[]) => classifyPlanSteps(steps, policy, hosts)
@@ -496,6 +499,15 @@ describe('plan', () => {
       ]).steps
       expect(ok).toMatchObject({ title: 'Verificação', verdict: 'runs', commands: ['script check.sh'] })
       expect(bad).toMatchObject({ verdict: 'denied', commands: ["script check.sh 'a b'"] })
+    })
+
+    it('a script step with arguments keeps its own title, not the script one', () => {
+      const [a, b] = run([
+        { title: 'Backup', hostId: 'h1', commands: [], script: { name: 'step.sh', args: ['backup'] } },
+        { title: 'Migrações', hostId: 'h1', commands: [], script: { name: 'step.sh', args: ['migrate'] } }
+      ]).steps
+      expect(a).toMatchObject({ title: 'Backup', verdict: 'runs', commands: ['script step.sh backup'] })
+      expect(b).toMatchObject({ title: 'Migrações', verdict: 'runs' })
     })
 
     it('the summary counts steps by verdict and mutate steps', () => {

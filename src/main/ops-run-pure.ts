@@ -245,8 +245,11 @@ export function classifyPlanSteps(
     const firstNotRuns = results.find((r) => r.gate.decision !== 'allow')
     const reason = firstNotRuns ? firstNotRuns.gate.reason : first.title ?? first.reason
     // The rule's title is the client-facing wording, but only when that one rule covers
-    // every command of the step.
-    const oneRule = first.rule !== undefined && results.every((r) => r.gate.rule === first.rule) ? first : undefined
+    // every command of the step. A script run with arguments keeps the model's title: the
+    // script's title is the same for every argument, so a plan that runs one script step by
+    // step would read as the same line over and over.
+    const oneRule =
+      !step.script?.args.length && first.rule !== undefined && results.every((r) => r.gate.rule === first.rule) ? first : undefined
     const mutate = results.some((r) => r.gate.class === 'mutate')
     const sudo = results.some((r, i) => i < step.commands.length && r.gate.argv?.[0] === 'sudo')
     out.push({
