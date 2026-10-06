@@ -359,6 +359,23 @@ function mainWindowOutOfView(): boolean {
   return !mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible() || mainWindow.isMinimized()
 }
 
+/**
+ * Show the pill saying what is working right now. Always repaints it: the pill window
+ * outlives every run and keeps whatever it was last told, so showing it bare after a
+ * minimize put up the previous run's "done" tick next to a blank name ("✓ Working…").
+ */
+function showRunningPill(): void {
+  const working = listTerminals().filter((t) => busyTerminalSet.has(t.id))
+  const one = working.length === 1 ? working[0] : null
+  const sessionName = one
+    ? path.basename(one.cwd) || one.provider
+    : working.length > 1
+      ? `${working.length} terminals working`
+      : 'Terminal'
+  showPill()
+  sendToPill('pill:update', { state: 'running', sessionName, tool: null })
+}
+
 // Taskbar progress: an indeterminate bar while any terminal is working, cleared to
 // none at zero. setProgressBar is a no-op on unsupported platforms — safe to call.
 function updateRunIndicators(): void {
@@ -535,10 +552,10 @@ function createWindow(): void {
   // If a run is in flight when the user hides or minimizes the window mid-run, bring
   // up the pill at that moment so background activity stays visible.
   mainWindow.on('hide', () => {
-    if (runsInFlight() > 0) showPill()
+    if (runsInFlight() > 0) showRunningPill()
   })
   mainWindow.on('minimize', () => {
-    if (runsInFlight() > 0) showPill()
+    if (runsInFlight() > 0) showRunningPill()
   })
   // Keep the renderer's maximize/restore icon and corner rounding in sync.
   mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximized', true))
@@ -1789,15 +1806,7 @@ function onTerminalBusy(id: string, busy: boolean): void {
     if (change.kind === 'none') return
     updateRunIndicators()
     if (change.kind === 'started') {
-      if (mainWindowOutOfView()) {
-        const info = listTerminals().find((t) => t.id === id)
-        showPill()
-        sendToPill('pill:update', {
-          state: 'running',
-          sessionName: info ? path.basename(info.cwd) || info.provider : 'Terminal',
-          tool: null
-        })
-      }
+      if (mainWindowOutOfView()) showRunningPill()
       return
     }
     // flagAttention is a no-op while the window has focus.
