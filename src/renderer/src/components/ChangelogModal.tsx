@@ -30,6 +30,7 @@ const CHANGELOG: Entry[] = [
         title: 'Fixes',
         items: [
           'An ops call to a server that is down or unreachable (connection refused or reset, handshake timeout, a dropped link) now tells the model to stop and report it, instead of moving on to the next step.',
+          'The small status flyout (the name of the folder, then a tick) no longer pops up over other apps each time a CLI starts working while Argos is on screen but not focused. It shows only when Argos is hidden to the tray or minimized, as intended.',
           'A server whose port accepts and then closes before SSH is ready (a VirtualBox forward with the VM off) no longer leaves the ops call hanging with every later call queued behind it.'
         ]
       }

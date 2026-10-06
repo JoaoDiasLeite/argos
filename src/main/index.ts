@@ -351,6 +351,14 @@ function mainWindowInactive(): boolean {
   )
 }
 
+// True only while the main window cannot be seen at all: gone, hidden to the tray or
+// minimized. The status pill uses this, not mainWindowInactive: a window that is on
+// screen but merely unfocused (the user clicked another app or monitor) already shows
+// the run, and a flyout popping over every other app at each CLI turn is noise.
+function mainWindowOutOfView(): boolean {
+  return !mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible() || mainWindow.isMinimized()
+}
+
 // Taskbar progress: an indeterminate bar while any terminal is working, cleared to
 // none at zero. setProgressBar is a no-op on unsupported platforms — safe to call.
 function updateRunIndicators(): void {
@@ -1781,7 +1789,7 @@ function onTerminalBusy(id: string, busy: boolean): void {
     if (change.kind === 'none') return
     updateRunIndicators()
     if (change.kind === 'started') {
-      if (mainWindowInactive()) {
+      if (mainWindowOutOfView()) {
         const info = listTerminals().find((t) => t.id === id)
         showPill()
         sendToPill('pill:update', {
