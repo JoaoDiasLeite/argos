@@ -8,11 +8,13 @@ import {
   dropLabel,
   highlightRect,
   planDrop,
+  PANE_DRAG_TYPE,
   SESSION_DRAG_TYPE,
   type DropKind,
   type DropPlan
 } from '../lib/pane-drop'
 import type { SessionPaneApi } from '../hooks/useSessionPane'
+import { setChatDragImage } from '../lib/drag-ghost'
 import './PaneGrid.css'
 
 /**
@@ -187,7 +189,8 @@ export default function PaneGrid({
   onFocus,
   onClose,
   onSetSizes,
-  onDropSession
+  onDropSession,
+  onPaneDrag
 }: {
   panes: Pane[]
   layout: LayoutId
@@ -205,6 +208,8 @@ export default function PaneGrid({
   onSetSizes: (sizes: { cols?: number[]; rows?: number[] }) => void
   /** A chat was dropped on a pane. The plan is already resolved — just apply it. */
   onDropSession: (plan: DropPlan, sessionId: string) => void
+  /** A pane's header started (id) or stopped (null) being dragged, to move the pane. */
+  onPaneDrag: (sessionId: string | null) => void
 }) {
   const visible = Math.min(capacity(layout), panes.length)
 
@@ -281,8 +286,14 @@ export default function PaneGrid({
   // `planDrop` still refuses a *side* drop onto three panes on its own — a fourth column is
   // not a layout that exists — so this only opens the fourth pane to the vertical zones.
   const maxPanes = capacity('grid-2x2')
-  const canSplit = panes.length < maxPanes
   const paneIds = panes.slice(0, visible).map((p) => p.sessionId)
+  // Which pane's header started the drag. Kept apart from draggingSessionId (which the
+  // sidebar sets too) because dragging an open chat's sidebar row still only focuses it.
+  const [movingPane, setMovingPane] = useState<string | null>(null)
+  // A pane dragged by its header is on screen already: the drag moves it, so the pane count
+  // never grows and every zone stays on offer even with the grid full.
+  const moving = !!draggingSessionId && movingPane === draggingSessionId && paneIds.includes(draggingSessionId)
+  const canSplit = moving || panes.length < maxPanes
 
   // Which pane is under the cursor, and where inside it. Only the hovered pane lights up:
   // the highlight answers "where does *this* drop land", and every pane shouting at once
@@ -301,7 +312,7 @@ export default function PaneGrid({
 
   // A chat already on screen cannot be opened twice (see `planDrop`), so instead of lying with
   // a zone preview we point at the pane where it already lives.
-  const alreadyOpenIndex = draggingSessionId ? paneIds.indexOf(draggingSessionId) : -1
+  const alreadyOpenIndex = draggingSessionId && !moving ? paneIds.indexOf(draggingSessionId) : -1
 
   // `clientY` — and with it the whole vertical axis of `dropKindAt` — is withheld while a
   // single pane is open, on purpose. The rule in `planDrop` degrades a vertical drop on one
@@ -314,7 +325,9 @@ export default function PaneGrid({
       e.clientX,
       el.getBoundingClientRect(),
       canSplit,
-      panes.length >= 2 ? e.clientY : undefined
+      // A move keeps the count, and two panes have no stacked shape to move into: with two,
+      // the vertical zones would promise a grid and deliver a reordered pair of columns.
+      panes.length >= (moving ? 3 : 2) ? e.clientY : undefined
     )
 
   return (
@@ -341,9 +354,11 @@ export default function PaneGrid({
               ? alreadyOpenIndex === i
                 ? { kind: 'center' as DropKind, label: 'Already open' }
                 : null
-              : over?.index === i
-                ? { kind: over.kind, label: dropLabel(over.kind) }
-                : null
+              : moving && pane.sessionId === draggingSessionId
+                ? null
+                : over?.index === i
+                  ? { kind: over.kind, label: dropLabel(over.kind, moving) }
+                  : null
           const box = zone ? highlightRect(zone.kind) : null
           return (
             /* Keyed by sessionId, and placed by explicit grid lines rather than by document
@@ -395,14 +410,37 @@ export default function PaneGrid({
                 resetDrag()
                 const sessionId = e.dataTransfer.getData(SESSION_DRAG_TYPE)
                 if (!sessionId) return
+                const fromPane = Array.from(e.dataTransfer.types).includes(PANE_DRAG_TYPE)
+                setMovingPane(null)
                 onDropSession(
-                  planDrop({ paneIds, targetIndex: i, sessionId, kind, maxPanes }),
+                  planDrop({ paneIds, targetIndex: i, sessionId, kind, maxPanes, fromPane }),
                   sessionId
                 )
               }}
             >
               {showHeads && (
-                <div className="pane-head">
+                <div
+                  className="pane-head"
+                  /* The header is the handle that moves the pane: drop it on another pane's
+                     edge to put it there, or on its centre to swap the two. It carries the
+                     same session type as a sidebar drag plus PANE_DRAG_TYPE, so the grid's
+                     zones and drop path serve both, and planDrop tells them apart. */
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData(SESSION_DRAG_TYPE, pane.sessionId)
+                    e.dataTransfer.setData(PANE_DRAG_TYPE, '1')
+                    e.dataTransfer.effectAllowed = 'move'
+                    setChatDragImage(e, name)
+                    setMovingPane(pane.sessionId)
+                    onPaneDrag(pane.sessionId)
+                  }}
+                  onDragEnd={() => {
+                    setMovingPane(null)
+                    onPaneDrag(null)
+                    resetDrag()
+                  }}
+                  title="Drag to move this pane"
+                >
                   <span className="pane-head-name" title={name}>
                     {name}
                   </span>

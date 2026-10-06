@@ -172,6 +172,34 @@ export function insertPane(
   return dropStaleSizes(before, { ...state, layout, panes, focused: sessionId })
 }
 
+/**
+ * Moves an open pane to `index` under `layout`, as if it were taken out and dropped back
+ * in: `index` counts positions among the *other* panes (the pane is removed first), which
+ * is how `planDrop` describes a move. The pane count does not change, but the shape can
+ * (two columns becoming a stack), so `sizes` goes through `dropStaleSizes` like any other
+ * transition. The moved pane takes focus. A session that is not open is left alone.
+ */
+export function movePane(state: PaneState, sessionId: string, index: number, layout: LayoutId): PaneState {
+  const from = state.panes.findIndex((p) => p.sessionId === sessionId)
+  if (from === -1 || state.panes.length > capacity(layout)) return state
+  const before = shape(state)
+  const moved = state.panes[from]
+  const rest = state.panes.filter((_, i) => i !== from)
+  const at = Math.min(Math.max(index, 0), rest.length)
+  const panes = [...rest.slice(0, at), moved, ...rest.slice(at)]
+  return dropStaleSizes(before, { ...state, layout, panes, focused: sessionId })
+}
+
+/** Swaps two open panes' places; layout and sizes stay, the first one takes focus. */
+export function swapPanes(state: PaneState, a: string, b: string): PaneState {
+  const i = state.panes.findIndex((p) => p.sessionId === a)
+  const j = state.panes.findIndex((p) => p.sessionId === b)
+  if (i === -1 || j === -1 || i === j) return state
+  const panes = [...state.panes]
+  ;[panes[i], panes[j]] = [panes[j], panes[i]]
+  return { ...state, panes, focused: a }
+}
+
 export function closePane(state: PaneState, sessionId: string): PaneState {
   const index = state.panes.findIndex((p) => p.sessionId === sessionId)
   if (index === -1) {

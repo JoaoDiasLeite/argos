@@ -5,6 +5,8 @@ import {
   openInFocused,
   openInNewPane,
   insertPane,
+  movePane,
+  swapPanes,
   closePane,
   setFocus,
   setLayout,
@@ -640,5 +642,41 @@ describe('sizes discarded on pane-count changes', () => {
     )
     const result = setLayout(withSizes, 'cols-3')
     expect(result.sizes?.cols).toEqual([1])
+  })
+})
+
+describe('movePane / swapPanes', () => {
+  const three = { v: 1 as const, layout: 'cols-3' as const, panes: [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }], focused: 'a' }
+
+  it('takes the pane out and puts it back at the index among the others', () => {
+    const next = movePane(three, 'c', 0, 'cols-3')
+    expect(next.panes.map((p) => p.sessionId)).toEqual(['c', 'a', 'b'])
+    expect(next.focused).toBe('c')
+  })
+
+  it('can change the shape: c under a makes a left stack', () => {
+    const next = movePane(three, 'c', 1, 'side-main')
+    expect(next.layout).toBe('side-main')
+    expect(next.panes.map((p) => p.sessionId)).toEqual(['a', 'c', 'b'])
+  })
+
+  it('drops sizes on an axis whose track count changed, keeps them otherwise', () => {
+    const sized = { ...three, sizes: { cols: [0.5, 0.25, 0.25] } }
+    expect(movePane(sized, 'c', 0, 'cols-3').sizes).toEqual({ cols: [0.5, 0.25, 0.25] })
+    expect(movePane(sized, 'c', 1, 'side-main').sizes).toBeUndefined()
+  })
+
+  it('ignores a pane that is not open or a layout too small for the panes', () => {
+    expect(movePane(three, 'z', 0, 'cols-3')).toBe(three)
+    expect(movePane(three, 'a', 0, 'cols-2')).toBe(three)
+  })
+
+  it('swaps two panes and keeps layout and sizes', () => {
+    const sized = { ...three, sizes: { cols: [0.5, 0.25, 0.25] } }
+    const next = swapPanes(sized, 'c', 'a')
+    expect(next.panes.map((p) => p.sessionId)).toEqual(['c', 'b', 'a'])
+    expect(next.sizes).toEqual(sized.sizes)
+    expect(next.focused).toBe('c')
+    expect(swapPanes(three, 'a', 'a')).toBe(three)
   })
 })

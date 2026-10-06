@@ -206,6 +206,8 @@ export default function App() {
     // `openInNewPane` is not wired up here: every "new pane" in this app comes from a drop,
     // which brings its own position and layout and therefore goes through `insertPane`.
     insertPane,
+    movePane,
+    swapPanes,
     closePane,
     setFocus,
     setSizes,
@@ -2428,6 +2430,14 @@ export default function App() {
     // now PaneGrid's: it keys panes by sessionId and places them by explicit grid lines, so a
     // pane that moves position is reconciled into its new slot rather than unmounted and
     // remounted (a remount would restart its xterm for nothing).
+    if (plan.type === 'move') {
+      movePane(plan.sessionId, plan.index, plan.layout)
+      return
+    }
+    if (plan.type === 'swap') {
+      swapPanes(plan.sessionId, plan.withSessionId)
+      return
+    }
     insertPane(sessionId, plan.index, plan.layout)
   }
 
@@ -2607,6 +2617,7 @@ export default function App() {
               onSetSizes={setSizes}
               draggingSessionId={draggingSessionId}
               onDropSession={applyDrop}
+              onPaneDrag={setDraggingSessionId}
             />
             )}
           </div>

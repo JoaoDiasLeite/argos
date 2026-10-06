@@ -87,6 +87,10 @@
   font-size: 12.5px;
 }
 
+/* The header is the pane's drag handle (see PaneGrid). */
+.pane-head[draggable='true'] { cursor: grab; }
+.pane-head[draggable='true']:active { cursor: grabbing; }
+
 .pane-head-name {
   flex: 1;
   min-width: 0;
@@ -96,7 +100,11 @@
   font-weight: 600;
   color: var(--text-1);
 }
-.pane.focused .pane-head-name {
+.pane.focused /* The header is the pane's drag handle (see PaneGrid). */
+.pane-head[draggable='true'] { cursor: grab; }
+.pane-head[draggable='true']:active { cursor: grabbing; }
+
+.pane-head-name {
   color: var(--text-0);
 }
 

@@ -21,16 +21,6 @@ Add new follow-ups above the line as they come up.
 
 ### Panes (asked for on 2026-10-06, after 2.2.3)
 
-- **Move a pane that is already in a split.** Today a chat can only be dragged in from the
-  sidebar or the pending bar (`SESSION_DRAG_TYPE`); a pane on screen cannot be picked up and
-  dropped elsewhere in the grid. Make `.pane-head` draggable and plan the drop as a move, not
-  an insert: take the pane out, then put it where the zone says (left/right/top/bottom of
-  another pane), or swap the two on "center". The zones, highlight and labels in
-  `lib/pane-drop.ts` already describe the destination; what is new is a `move` (and `swap`)
-  plan type and a `movePane` in `lib/panes.ts` that keeps sizes honest the way
-  `dropStaleSizes` does. Dropping a pane on itself is a no-op. Watch the layouts with a
-  shape (`main-side`, `side-main`, `grid-2x2`): removing the pane first changes the count,
-  and with it the layout the drop should produce.
 - **Pop a chat out into its own window (later).** Open a chat outside the main window, as a
   separate `BrowserWindow`, so it can sit on another monitor. The pty already outlives its
   view (it is keyed by terminal id in main), so the new window can attach to the same
@@ -44,6 +34,11 @@ Add new follow-ups above the line as they come up.
 ---
 
 ## Done
+
+- **Move a pane that is already in a split.** `.pane-head` is a drag handle carrying
+  `PANE_DRAG_TYPE`; `planDrop` turns it into a `move` (`movePane`: out, then back in beside
+  the target, in the layout an insert of that many panes would give) or a `swap` on a
+  centre or where no column shape fits. Two panes get no vertical zones for a move.
 
 - **views.css "premium" card block** (shadows, hover lift on usage, account, MCP and search
   cards) deleted across the Projects, Usage and sweep batches. (`594adc1`)

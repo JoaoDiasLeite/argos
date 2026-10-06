@@ -282,3 +282,36 @@ describe('planDrop', () => {
     })
   })
 })
+
+describe('planDrop: moving a pane by its header', () => {
+  const move = (paneIds: string[], sessionId: string, targetIndex: number, kind: Parameters<typeof planDrop>[0]['kind']) =>
+    planDrop({ paneIds, targetIndex, sessionId, kind, maxPanes: 4, fromPane: true })
+
+  it('does nothing on itself and swaps on another pane’s centre', () => {
+    expect(move(['a', 'b'], 'a', 0, 'left')).toEqual({ type: 'none' })
+    expect(move(['a', 'b'], 'a', 1, 'center')).toEqual({ type: 'swap', sessionId: 'a', withSessionId: 'b' })
+  })
+
+  it('moves to a side, counting positions without the moved pane', () => {
+    expect(move(['a', 'b', 'c'], 'c', 0, 'left')).toEqual({ type: 'move', sessionId: 'c', index: 0, layout: 'cols-3' })
+    expect(move(['a', 'b', 'c'], 'a', 2, 'right')).toEqual({ type: 'move', sessionId: 'a', index: 2, layout: 'cols-3' })
+  })
+
+  it('stacks on the side of the pane it was dropped on', () => {
+    // c under a: the left pane becomes the stack.
+    expect(move(['a', 'b', 'c'], 'c', 0, 'bottom')).toEqual({ type: 'move', sessionId: 'c', index: 1, layout: 'side-main' })
+    // a over c: the right pane becomes the stack.
+    expect(move(['a', 'b', 'c'], 'a', 2, 'top')).toEqual({ type: 'move', sessionId: 'a', index: 1, layout: 'main-side' })
+  })
+
+  it('swaps on a side drop with four panes, where no column shape fits', () => {
+    expect(move(['a', 'b', 'c', 'd'], 'a', 3, 'left')).toEqual({ type: 'swap', sessionId: 'a', withSessionId: 'd' })
+    expect(move(['a', 'b', 'c', 'd'], 'a', 3, 'top')).toEqual({ type: 'move', sessionId: 'a', index: 2, layout: 'grid-2x2' })
+  })
+
+  it('names the move in the label', () => {
+    expect(dropLabel('center', true)).toBe('Swap')
+    expect(dropLabel('left', true)).toBe('Move here')
+    expect(dropLabel('bottom', true)).toBe('Move into grid')
+  })
+})

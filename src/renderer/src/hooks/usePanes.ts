@@ -10,6 +10,8 @@ import {
   normalize,
   openInFocused as openInFocusedImpl,
   insertPane as insertPaneImpl,
+  movePane as movePaneImpl,
+  swapPanes as swapPanesImpl,
   openInNewPane as openInNewPaneImpl,
   setFocus as setFocusImpl,
   setLayout as setLayoutImpl,
@@ -38,6 +40,15 @@ export function usePanes() {
   // and the target layout, so this hook only forwards them (see `insertPane` in lib/panes.ts).
   const insertPane = useCallback((sessionId: string, index: number, layout: LayoutId) => {
     setState((prev) => insertPaneImpl(prev, sessionId, index, layout))
+  }, [])
+
+  // A pane dragged by its header: moved beside another, or swapped with it (lib/panes.ts).
+  const movePane = useCallback((sessionId: string, index: number, layout: LayoutId) => {
+    setState((prev) => movePaneImpl(prev, sessionId, index, layout))
+  }, [])
+
+  const swapPanes = useCallback((a: string, b: string) => {
+    setState((prev) => swapPanesImpl(prev, a, b))
   }, [])
 
   const closePane = useCallback((sessionId: string) => {
@@ -107,6 +118,8 @@ export function usePanes() {
     openInFocused,
     openInNewPane,
     insertPane,
+    movePane,
+    swapPanes,
     closePane,
     setFocus,
     setLayout,

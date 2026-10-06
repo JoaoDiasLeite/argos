@@ -16,6 +16,13 @@ import type { LayoutId } from './panes'
 export const SESSION_DRAG_TYPE = 'application/x-argos-session'
 
 /**
+ * Set alongside `SESSION_DRAG_TYPE` when the drag started on a pane's own header: the
+ * chat is already on screen and is being moved, not opened. A type rather than data
+ * because `dragover` can read the types but never the data.
+ */
+export const PANE_DRAG_TYPE = 'application/x-argos-pane'
+
+/**
  * Which zone of the pane the cursor is in. 'center' = replace the pane's session;
  * 'left'/'right' add a column; 'top'/'bottom' stack, which is what makes the grid
  * layouts reachable by dragging.
@@ -44,6 +51,13 @@ export type DropPlan =
    * `cols-3` or `main-side`). `insertPane` in `lib/panes.ts` applies both.
    */
   | { type: 'insert'; index: number; layout: LayoutId }
+  /**
+   * A pane dragged by its header to another pane's edge: taken out and put back at
+   * `index` among the other panes, in `layout` (`movePane` in `lib/panes.ts`).
+   */
+  | { type: 'move'; sessionId: string; index: number; layout: LayoutId }
+  /** A pane dragged by its header onto another pane's centre: the two trade places. */
+  | { type: 'swap'; sessionId: string; withSessionId: string }
 
 /** Width of each side zone, as a fraction of the pane. The center takes the rest. */
 const SIDE_FRACTION = 1 / 3
@@ -142,7 +156,11 @@ export function highlightRect(kind: DropKind): {
   return { left: 0, width: 1, top: 0, height: 1 }
 }
 
-export function dropLabel(kind: DropKind): string {
+export function dropLabel(kind: DropKind, moving = false): string {
+  if (moving) {
+    if (kind === 'center') return 'Swap'
+    return kind === 'top' || kind === 'bottom' ? 'Move into grid' : 'Move here'
+  }
   if (kind === 'center') return 'Open here'
   // The vertical zones get a label of their own: the grid is the layout that
   // spends height, so it is worth naming before the drop instead of after it.
@@ -192,8 +210,11 @@ export function planDrop(args: {
   sessionId: string
   kind: DropKind
   maxPanes: number
+  /** The drag started on the pane's own header (`PANE_DRAG_TYPE`): a move, not an open. */
+  fromPane?: boolean
 }): DropPlan {
-  const { paneIds, targetIndex, sessionId, kind, maxPanes } = args
+  const { paneIds, targetIndex, sessionId, kind, maxPanes, fromPane } = args
+  if (fromPane) return planMove(paneIds, targetIndex, sessionId, kind, maxPanes)
 
   if (paneIds.length === 0) {
     // Empty state (welcome pane): nothing to replace, and no zone to speak of.
@@ -218,4 +239,26 @@ export function planDrop(args: {
   // convention `lib/panes.ts` documents for `grid-2x2` and `main-side`.
   const index = kind === 'left' || kind === 'top' ? targetIndex : targetIndex + 1
   return { type: 'insert', index, layout: insertLayout(kind, paneIds.length + 1, targetIndex) }
+}
+
+/**
+ * A pane dragged by its header. Dropping it on itself does nothing; on another pane's
+ * centre the two swap; on an edge it is taken out and put back beside that pane, so the
+ * pane count never changes and the layout is the one an insert would give that many
+ * panes. A side drop with four panes open has no column shape to land in (there is no
+ * fourth column), so it swaps instead, as a full grid's insert falls back to a replace.
+ */
+function planMove(paneIds: string[], targetIndex: number, sessionId: string, kind: DropKind, maxPanes: number): DropPlan {
+  const from = paneIds.indexOf(sessionId)
+  const target = paneIds[targetIndex]
+  if (from === -1 || target === undefined || from === targetIndex) return { type: 'none' }
+  const swap: DropPlan = { type: 'swap', sessionId, withSessionId: target }
+  const vertical = kind === 'top' || kind === 'bottom'
+  const ceiling = vertical ? maxPanes : Math.min(maxPanes, MAX_COLUMN_PANES)
+  if (kind === 'center' || paneIds.length > ceiling) return swap
+  // Positions among the other panes: the moved one is out of the list while it travels.
+  const rest = paneIds.filter((id) => id !== sessionId)
+  const t = rest.indexOf(target)
+  const index = kind === 'left' || kind === 'top' ? t : t + 1
+  return { type: 'move', sessionId, index, layout: insertLayout(kind, paneIds.length, t) }
 }

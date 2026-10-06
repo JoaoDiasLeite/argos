@@ -21,6 +21,12 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'Changes',
+        items: [
+          'A pane in split view can be moved: drag it by its header onto another pane’s edge to put it there, beside, above or below, or onto its centre to swap the two.'
+        ]
+      },
+      {
         title: 'Fixes',
         items: [
           'Home’s Running list names a running intervention by its runbook, as its tab does, instead of printing the runbook’s whole Windows path. The Chats, Servers and Interventions labels sit tighter over their rows.'
