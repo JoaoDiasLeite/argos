@@ -67,7 +67,7 @@ interface Props {
   /** The intervention was ended from here (Stop, Deny and stop): its run is stopped and
    *  its CLI closed, so App drops it and leaves the workspace. */
   onEnded?: (terminalId: string) => void
-  /** The tabs of the running interventions, shown under the header when there are several. */
+  /** The tabs of the running interventions, at the top like the Remote/WSL sessions'. */
   tabs?: ReactNode
 }
 
@@ -220,6 +220,7 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
 
   return (
     <div className="view ops-ws">
+      {tabs}
       <div className="ops-ws-header">
         <button className="ops-ws-back" onClick={onBack} title="Back to Operations" aria-label="Back to Operations">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -266,7 +267,6 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
         </button>
       </div>
 
-      {tabs}
       <div className="ops-ws-body">
         <div className="ops-ws-main">
           {term.kind === 'starting' && <div className="ops-ws-state">Starting the ops session…</div>}

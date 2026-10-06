@@ -12,8 +12,8 @@ interface Props {
   /** The intervention on screen, if any; its tab is marked as the current one. */
   activeId: string | null
   onSelect: (intervention: OpsIntervention) => void
-  /** Inside the workspace: its own strip under the header, rather than inline in the
-   *  Servers sub-nav. */
+  /** Inside the workspace: the topmost strip, styled and dragged like the Remote/WSL
+   *  session tabs, rather than chips inline in the Servers sub-nav. */
   strip?: boolean
 }
 
@@ -25,8 +25,32 @@ const baseName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p
  */
 export default function OpsTabs({ items, activeId, onSelect, strip }: Props) {
   if (items.length === 0) return null
+  if (strip) {
+    return (
+      <div className="server-tabs" role="tablist" aria-label="Running interventions">
+        {items.map(({ intervention, waiting }) => {
+          const id = opsTerminalIdFor(intervention)
+          const on = id === activeId
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              className={`server-tab${on ? ' active' : ''}`}
+              onClick={() => !on && onSelect(intervention)}
+              title={`${baseName(intervention.runbookPath)}${intervention.task ? `: ${intervention.task}` : ''}${waiting ? ' (waiting for you)' : ''}`}
+            >
+              <span className={`server-tab-dot ${waiting ? 'connecting' : 'connected'}`} aria-hidden="true" />
+              <span className="server-tab-title">{baseName(intervention.runbookPath)}</span>
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
   return (
-    <div className={`ops-tabs${strip ? ' strip' : ''}`} role="tablist" aria-label="Running interventions">
+    <div className="ops-tabs" role="tablist" aria-label="Running interventions">
       {items.map(({ intervention, waiting }) => {
         const id = opsTerminalIdFor(intervention)
         const on = id === activeId

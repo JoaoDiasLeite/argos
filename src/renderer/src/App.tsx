@@ -2708,11 +2708,7 @@ export default function App() {
             onDecide={workspaceApproval ? (allow, skipSteps) => respondApprovalById(workspaceApproval.approvalId, allow, skipSteps) : undefined}
             onStop={workspaceApproval ? () => respondApprovalStopById(workspaceApproval.approvalId) : undefined}
             onEnded={endOpsWorkspace}
-            tabs={
-              opsTabs.length > 1 ? (
-                <OpsTabs strip items={opsTabs} activeId={opsTerminalIdFor(opsWorkspace)} onSelect={selectOpsTab} />
-              ) : undefined
-            }
+            tabs={<OpsTabs strip items={opsTabs} activeId={opsTerminalIdFor(opsWorkspace)} onSelect={selectOpsTab} />}
           />
         </Suspense>
       )}
