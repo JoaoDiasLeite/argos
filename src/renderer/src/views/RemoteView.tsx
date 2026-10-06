@@ -691,8 +691,14 @@ export default function RemoteView({
                 <dd>{acct?.email ?? <span className="rv-dd-muted">not logged in</span>}</dd>
               </>
             )}
-            <dt>Claude Code</dt>
-            <dd>{claudeValue}</dd>
+            {/* WSL only: a distro runs Claude Code inside it, so whether it is installed there
+                matters. SSH hosts are worked through Operations, which runs it on this machine. */}
+            {selDistro && (
+              <>
+                <dt>Claude Code</dt>
+                <dd>{claudeValue}</dd>
+              </>
+            )}
             <dt>Checked</dt>
             <dd>{lastChecked ? relativeTime(lastChecked) : <span className="rv-dd-muted">never</span>}</dd>
           </dl>
@@ -700,9 +706,11 @@ export default function RemoteView({
             <button type="button" className="btn-ghost small" onClick={() => probe(sel, 'conn')} disabled={busy}>
               {busy ? 'Testing…' : 'Test connection'}
             </button>
-            <button type="button" className="btn-ghost small" onClick={() => probe(sel, 'claude')} disabled={busy}>
-              Check Claude Code
-            </button>
+            {selDistro && (
+              <button type="button" className="btn-ghost small" onClick={() => probe(sel, 'claude')} disabled={busy}>
+                Check Claude Code
+              </button>
+            )}
             {selHost ? (
               <button
                 type="button"
