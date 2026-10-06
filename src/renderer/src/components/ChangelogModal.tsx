@@ -15,6 +15,20 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '2.2.4',
+    date: '2026-10-06',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'Minimizing Argos mid-run no longer brings up a status pill with a stale tick and no name ("✓ Working…"). The pill now says what is actually working, and closes on its own when that finishes.',
+          'A plan waiting for approval shows each command and each reason in full, one command per line, instead of cutting them off with an ellipsis.'
+        ]
+      }
+    ]
+  },
+  {
     version: '2.2.3',
     date: '2026-10-06',
     tag: 'latest',
@@ -30,8 +44,6 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Fixes',
         items: [
-          'Minimizing Argos mid-run no longer brings up a status pill with a stale tick and no name ("✓ Working…"). The pill now says what is actually working, and closes on its own when that finishes.',
-          'A plan waiting for approval shows each command and each reason in full, one command per line, instead of cutting them off with an ellipsis.',
           'Codex models the installed CLI knows about show up in the pickers again. Argos was asking the CLI with a flag it does not accept, so the lookup always came back empty.',
           'Dropping a chat on the top or bottom half of the left pane of two now splits that pane, as the highlight shows: the new chat stacks above or below it and the right pane stays whole. It used to take the whole left column, or land at the top right.',
           'Density: Compact tightens the lists again (chats in the sidebar, Home, Servers and their files, an intervention’s calls, the planner). Its rules still pointed at rows the redesign had replaced, so the setting changed almost nothing.'
