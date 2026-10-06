@@ -74,6 +74,13 @@ function getSession(hostId: string): Promise<{ ok: true; session: Session } | { 
       sessions.delete(hostId)
       finish({ ok: false, error: e.message })
     })
+    // A socket the far end closes cleanly before the handshake (a VirtualBox NAT forward
+    // whose guest is off, a firewall that accepts then drops) emits close with no error;
+    // without this the promise never settles and every later call to the host queues
+    // behind it.
+    conn.on('close', () => {
+      finish({ ok: false, error: 'connection closed before the SSH session was ready' })
+    })
 
     try {
       conn.connect(buildConnectConfig(host))
