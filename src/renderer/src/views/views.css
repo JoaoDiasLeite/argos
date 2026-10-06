@@ -34,10 +34,27 @@
 }
 .view-subnav .seg-control { -webkit-app-region: no-drag; }
 
-/* An intervention left running: the way back to its workspace (App.tsx). */
-.ops-running-chip {
+/* The interventions left running, one tab each (OpsTabs): inline after the Servers
+   sub-nav, or as a strip under a workspace's header when there are several. */
+.ops-tabs {
   -webkit-app-region: no-drag;
   margin-left: 12px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ops-tabs.strip {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.ops-running-chip {
+  -webkit-app-region: no-drag;
+  flex: 0 1 auto;
   min-width: 0;
   max-width: 360px;
   height: 28px;
@@ -53,6 +70,12 @@
   cursor: pointer;
 }
 .ops-running-chip:hover { background: var(--bg-hover); color: var(--text-0); }
+.ops-running-chip.on {
+  border-color: var(--accent);
+  background: var(--bg-0);
+  color: var(--text-0);
+  cursor: default;
+}
 .ops-running-dot {
   flex-shrink: 0;
   width: 8px;

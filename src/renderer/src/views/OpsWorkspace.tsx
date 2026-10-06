@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { ApprovalRequest, OpsIntervention, OpsRunbookInfo } from '../types'
 import ChatTerminal from '../components/ChatTerminal'
 import ActivityColumn from '../components/ActivityColumn'
@@ -67,9 +67,11 @@ interface Props {
   /** The intervention was ended from here (Stop, Deny and stop): its run is stopped and
    *  its CLI closed, so App drops it and leaves the workspace. */
   onEnded?: (terminalId: string) => void
+  /** The tabs of the running interventions, shown under the header when there are several. */
+  tabs?: ReactNode
 }
 
-export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, onRunning, waiting, onDecide, onStop, onEnded }: Props) {
+export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, onRunning, waiting, onDecide, onStop, onEnded, tabs }: Props) {
   const { runbookPath, scope } = intervention
   const [info, setInfo] = useState<OpsRunbookInfo | null>(null)
   const [hostDot, setHostDot] = useState<HostDot>('checking')
@@ -264,6 +266,7 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
         </button>
       </div>
 
+      {tabs}
       <div className="ops-ws-body">
         <div className="ops-ws-main">
           {term.kind === 'starting' && <div className="ops-ws-state">Starting the ops session…</div>}
