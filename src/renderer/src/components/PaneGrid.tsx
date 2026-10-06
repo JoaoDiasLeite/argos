@@ -51,8 +51,8 @@ function trackCounts(layout: LayoutId, visible: number): Record<Axis, number> {
     // Row-major, so the third pane is the one that opens the second row.
     return { cols: Math.min(visible, 2), rows: Math.ceil(visible / 2) }
   }
-  if (layout === 'main-side') {
-    // Pane 0 owns a full-height column; every other pane stacks in the second one.
+  if (layout === 'main-side' || layout === 'side-main') {
+    // One pane owns a full-height column; the others stack in the other one.
     return { cols: Math.min(visible, 2), rows: Math.max(1, visible - 1) }
   }
   return { cols: visible, rows: 1 }
@@ -95,6 +95,13 @@ function panePlacement(layout: LayoutId, visible: number, i: number): CSSPropert
     }
     return { gridColumn: `${line(2)} / span 1`, gridRow: `${line(i)} / span 1` }
   }
+  if (layout === 'side-main') {
+    // The mirror: 0 and 1 stack on the left, 2 is the big pane on the right. Below three
+    // panes there is no stack, so it is plain columns, like main-side.
+    if (visible < 3) return { gridColumn: `${line(i + 1)} / span 1`, gridRow: `${line(1)} / span 1` }
+    if (i === 2) return { gridColumn: `${line(2)} / span 1`, gridRow: `${line(1)} / -1` }
+    return { gridColumn: `${line(1)} / span 1`, gridRow: `${line(i + 1)} / span 1` }
+  }
   return { gridColumn: `${line(i + 1)} / span 1`, gridRow: `${line(1)} / span 1` }
 }
 
@@ -110,7 +117,7 @@ function splitterSpecs(layout: LayoutId, visible: number): SplitterSpec[] {
   const { cols, rows } = trackCounts(layout, visible)
   const specs: SplitterSpec[] = []
 
-  if (layout === 'grid-2x2' || layout === 'main-side') {
+  if (layout === 'grid-2x2' || layout === 'main-side' || layout === 'side-main') {
     // The grid family has at most one boundary per axis (both are 2×2 at the widest), so
     // each axis gets one divider rather than a loop.
     if (cols >= 2) {
@@ -134,7 +141,12 @@ function splitterSpecs(layout: LayoutId, visible: number): SplitterSpec[] {
         index: 0,
         style: {
           gridRow: `${line(1) + 1} / span 1`,
-          gridColumn: layout === 'main-side' ? `${line(2)} / -1` : '1 / -1'
+          gridColumn:
+            layout === 'main-side'
+              ? `${line(2)} / -1`
+              : layout === 'side-main'
+                ? `${line(1)} / span 1`
+                : '1 / -1'
         }
       })
     }

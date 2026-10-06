@@ -212,11 +212,18 @@ describe('planDrop', () => {
     })
   })
 
-  it('takes the new pane to index 0 when dropped on the top of the first pane', () => {
+  it('splits the left pane into a left stack, the right pane staying whole', () => {
+    // side-main: 0 and 1 stack on the left, 2 is the big pane on the right. On top of
+    // 'a' the new pane goes above it; at its bottom, below it; 'b' stays the big one.
     expect(planDrop({ ...grid, paneIds: ['a', 'b'], targetIndex: 0, kind: 'top' })).toEqual({
       type: 'insert',
       index: 0,
-      layout: 'main-side'
+      layout: 'side-main'
+    })
+    expect(planDrop({ ...grid, paneIds: ['a', 'b'], targetIndex: 0, kind: 'bottom' })).toEqual({
+      type: 'insert',
+      index: 1,
+      layout: 'side-main'
     })
   })
 

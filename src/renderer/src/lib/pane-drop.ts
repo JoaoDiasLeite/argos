@@ -163,9 +163,12 @@ export function dropLabel(kind: DropKind): string {
  * the reverse, and the rationale for the split (the grid is never fallen into by
  * accident) is preserved.
  */
-function insertLayout(kind: DropKind, nextCount: number): LayoutId {
+function insertLayout(kind: DropKind, nextCount: number, targetIndex: number): LayoutId {
   if ((kind === 'top' || kind === 'bottom') && nextCount >= 3) {
-    return nextCount >= 4 ? 'grid-2x2' : 'main-side'
+    if (nextCount >= 4) return 'grid-2x2'
+    // The stack goes on the side of the pane that was split: the left pane of two
+    // becomes the left stack (side-main), the right one the right stack (main-side).
+    return targetIndex === 0 ? 'side-main' : 'main-side'
   }
   return COLUMN_LAYOUTS[Math.min(nextCount, MAX_COLUMN_PANES) - 1]
 }
@@ -214,5 +217,5 @@ export function planDrop(args: {
   // In the grid layouts that reads as the pane order being row-major, which is the
   // convention `lib/panes.ts` documents for `grid-2x2` and `main-side`.
   const index = kind === 'left' || kind === 'top' ? targetIndex : targetIndex + 1
-  return { type: 'insert', index, layout: insertLayout(kind, paneIds.length + 1) }
+  return { type: 'insert', index, layout: insertLayout(kind, paneIds.length + 1, targetIndex) }
 }

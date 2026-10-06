@@ -4,7 +4,7 @@
 // wires it to the UI lives in another file (the `usePanes` hook, still to be
 // written), so this module can be tested and reasoned about without mounting anything.
 
-export type LayoutId = 'single' | 'cols-2' | 'cols-3' | 'grid-2x2' | 'main-side'
+export type LayoutId = 'single' | 'cols-2' | 'cols-3' | 'grid-2x2' | 'main-side' | 'side-main'
 
 export interface Pane {
   sessionId: string
@@ -36,13 +36,19 @@ export interface PaneState {
 // insert lands there, so "first in the array" and "the one you are working in"
 // already coincide.
 //
+// `side-main` is its mirror, for a stack on the LEFT: indices 0 and 1 stack in the first
+// column, top to bottom, and index 2 is the big pane in the second. It exists so a drop on
+// the top or bottom of the left pane of two splits that pane, as its highlight promises,
+// instead of making the new chat the big pane or sending it to the right.
+//
 // `grid-2x2` is row-major: 0 1 / 2 3.
 const CAPACITY: Record<LayoutId, number> = {
   single: 1,
   'cols-2': 2,
   'cols-3': 3,
   'grid-2x2': 4,
-  'main-side': 3
+  'main-side': 3,
+  'side-main': 3
 }
 
 // Steps openInNewPane climbs on its own when it runs out of space. main-side is
@@ -253,8 +259,8 @@ function tracks(layout: LayoutId, paneCount: number): Record<Axis, number> {
     // Row-major, so the third pane is the one that opens the second row.
     return { cols: Math.min(paneCount, 2), rows: Math.ceil(paneCount / 2) }
   }
-  if (layout === 'main-side') {
-    // Pane 0 owns a full-height column; every other pane stacks in the second one.
+  if (layout === 'main-side' || layout === 'side-main') {
+    // One pane owns a full-height column; the others stack in the other one.
     return { cols: Math.min(paneCount, 2), rows: Math.max(1, paneCount - 1) }
   }
   return { cols: paneCount, rows: 1 }

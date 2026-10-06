@@ -31,6 +31,7 @@ const CHANGELOG: Entry[] = [
         title: 'Fixes',
         items: [
           'Codex models the installed CLI knows about show up in the pickers again. Argos was asking the CLI with a flag it does not accept, so the lookup always came back empty.',
+          'Dropping a chat on the top or bottom half of the left pane of two now splits that pane, as the highlight shows: the new chat stacks above or below it and the right pane stays whole. It used to take the whole left column, or land at the top right.',
           'Density: Compact tightens the lists again (chats in the sidebar, Home, Servers and their files, an intervention’s calls, the planner). Its rules still pointed at rows the redesign had replaced, so the setting changed almost nothing.'
         ]
       }
