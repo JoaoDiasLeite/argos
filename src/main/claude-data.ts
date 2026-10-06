@@ -1005,6 +1005,9 @@ export interface ChatTranscript {
   sourceId: string
   encodedDir: string
   title: string
+  /** The owner's first message, as the Projects list previews it; empty when there is none
+   *  yet. The fallback name of a conversation the CLI never titled. */
+  preview: string
   messages: CCTranscriptMessage[]
 }
 
@@ -1029,10 +1032,16 @@ export async function readChatTranscript(
     const full = await safeSessionPath(sourceId, encodedDir, sessionId)
     let aiTitle = ''
     let customTitle = ''
+    let preview = ''
     if (full) {
       try {
         for await (const obj of iterJsonl(full)) {
           if (obj.type === 'ai-title' && obj.aiTitle) aiTitle = obj.aiTitle
+          // Same rule as listSessions' preview, so a chat named from it here carries the
+          // name the Projects list would give it on reopening.
+          if (!preview && obj.type === 'user' && obj.message && !isInjectedUserEntry(obj)) {
+            preview = meaningfulUserText(obj.message.content).slice(0, 160)
+          }
           // Last one wins, same precedence listSessions applies — a `/rename` in the
           // CLI shows up here and a rename here would show up there.
           if (obj.type === 'custom-title' && obj.customTitle) customTitle = obj.customTitle
@@ -1044,7 +1053,7 @@ export async function readChatTranscript(
     const messages = await readSession(sourceId, encodedDir, sessionId)
     // Empty, never a fallback to the session id — the caller needs to be able to tell
     // "not titled yet" from "titled".
-    return { sourceId, encodedDir, title: customTitle || aiTitle || '', messages }
+    return { sourceId, encodedDir, title: customTitle || aiTitle || '', preview, messages }
   } catch {
     return null
   }

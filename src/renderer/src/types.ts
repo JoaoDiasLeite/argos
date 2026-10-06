@@ -25,6 +25,9 @@ export interface Session {
    *  visible in the sidebar and persisted to disk — see visibleSessions() in
    *  lib/account-scope.ts. */
   hasTerminalActivity?: boolean
+  /** The name is the first message, standing in until the CLI titles the conversation;
+   *  that title replaces it. Cleared by a rename. */
+  nameFromPreview?: boolean
   /**
    * The Claude Code session id this chat's embedded terminal was told to use, assigned
    * before the CLI launches so Argos owns the link from the start rather than watching a
@@ -458,6 +461,8 @@ export interface ChatTranscript {
   sourceId: string
   encodedDir: string
   title: string
+  /** The owner's first message, the fallback name of a conversation the CLI never titled. */
+  preview: string
   messages: CCTranscriptMessage[]
 }
 

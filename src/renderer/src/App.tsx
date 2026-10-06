@@ -1116,7 +1116,16 @@ export default function App() {
       const transcript = await window.electronAPI.ccChatTranscript(s.projectPath as string, sessionId, prefer)
       if (!transcript) continue
 
-      const nameFromTitle = transcript.title && s.name === 'New chat' ? transcript.title : undefined
+      // The CLI's title names a chat still on the placeholder or on its first message. A
+      // conversation the CLI never titles (it does not for every session) is named from
+      // its first message instead, as Projects names it, rather than staying "New chat"
+      // until it is reopened from there.
+      const nameFromTitle =
+        transcript.title && (s.name === 'New chat' || s.nameFromPreview) && transcript.title !== s.name
+          ? transcript.title
+          : undefined
+      const nameFromPreview =
+        !transcript.title && s.name === 'New chat' && transcript.preview ? transcript.preview : undefined
       const length = transcript.messages.length
       const previous = transcriptLengthRef.current.get(s.id)
       transcriptLengthRef.current.set(s.id, length)
@@ -1128,7 +1137,7 @@ export default function App() {
       // A tick where nothing moved would still produce a *new* session object every time
       // this runs — and this runs on a timer, which would re-save every terminal chat
       // forever for no reason.
-      if (!sessionIdChanged && !nameFromTitle && !movedAt && !markUnread) continue
+      if (!sessionIdChanged && !nameFromTitle && !nameFromPreview && !movedAt && !markUnread) continue
 
       setSessions((prev) =>
         prev.map((cur) => {
@@ -1136,7 +1145,8 @@ export default function App() {
           return {
             ...cur,
             claudeSessionId: sessionId,
-            ...(nameFromTitle ? { name: nameFromTitle } : {}),
+            ...(nameFromTitle ? { name: nameFromTitle, nameFromPreview: undefined } : {}),
+            ...(nameFromPreview ? { name: nameFromPreview, nameFromPreview: true } : {}),
             ...(movedAt ? { updatedAt: movedAt } : {}),
             // The terminal wrote new turns while this chat wasn't on screen — reads
             // seenIdsRef (not seenIds) because syncTerminalChats has no deps and would
@@ -1287,7 +1297,7 @@ export default function App() {
     setSessions((prev) =>
       prev.map((s) => {
         if (s.id !== id) return s
-        patched = { ...s, name, updatedAt: Date.now() }
+        patched = { ...s, name, nameFromPreview: undefined, updatedAt: Date.now() }
         return patched
       })
     )
