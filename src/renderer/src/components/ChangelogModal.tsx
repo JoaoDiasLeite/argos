@@ -17,7 +17,7 @@ const CHANGELOG: Entry[] = [
   {
     version: '2.2.1',
     date: '2026-10-06',
-    tag: 'new',
+    tag: 'latest',
     sections: [
       {
         title: 'Changes',
@@ -40,7 +40,6 @@ const CHANGELOG: Entry[] = [
   {
     version: '2.2.0',
     date: '2026-10-03',
-    tag: 'latest',
     sections: [
       {
         title: 'Features',
