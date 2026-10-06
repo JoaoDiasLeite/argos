@@ -22,6 +22,7 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Fixes',
         items: [
+          'Codex models the installed CLI knows about show up in the pickers again. Argos was asking the CLI with a flag it does not accept, so the lookup always came back empty.',
           'Density: Compact tightens the lists again (chats in the sidebar, Home, Servers and their files, an intervention’s calls, the planner). Its rules still pointed at rows the redesign had replaced, so the setting changed almost nothing.'
         ]
       }

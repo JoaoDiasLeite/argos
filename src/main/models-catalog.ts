@@ -67,16 +67,23 @@ function saveDiscoveryCache(models: DiscoveredModel[]): void {
 async function discoverCodexModels(): Promise<DiscoveredModel[]> {
   try {
     const { command, prefixArgs } = resolveCodex()
-    const { stdout } = await execFileAsync(command, [...prefixArgs, 'debug', 'models', '--json'], {
-      timeout: 4000
+    // Prints JSON by default (there is no --json flag; passing one makes it exit
+    // with a usage error). Each entry carries its full instructions, ~0.5 MB in all.
+    const { stdout } = await execFileAsync(command, [...prefixArgs, 'debug', 'models'], {
+      timeout: 4000,
+      maxBuffer: 8 * 1024 * 1024
     })
     if (!stdout) return []
     const parsed = JSON.parse(stdout)
     const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.models) ? parsed.models : []
     return list
       .map((m: unknown) => {
-        const id = typeof m === 'string' ? m : (m as { id?: string })?.id
+        // The CLI keys its entries by `slug`; `id` is kept for older builds.
+        const entry = m as { slug?: string; id?: string; visibility?: string }
+        const id = typeof m === 'string' ? m : (entry?.slug ?? entry?.id)
         if (typeof id !== 'string' || !id) return null
+        // 'hide' marks internal/legacy entries the CLI keeps out of its own picker.
+        if (typeof m === 'object' && entry?.visibility === 'hide') return null
         const ctx = typeof m === 'object' ? (m as { context_window?: number })?.context_window : undefined
         return { id, provider: 'codex' as const, maxInputTokens: ctx }
       })
