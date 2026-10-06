@@ -15,6 +15,20 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '2.2.1',
+    date: '2026-10-06',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'An ops call to a server that is down or unreachable (connection refused or reset, handshake timeout, a dropped link) now tells the model to stop and report it, instead of moving on to the next step.',
+          'A server whose port accepts and then closes before SSH is ready (a VirtualBox forward with the VM off) no longer leaves the ops call hanging with every later call queued behind it.'
+        ]
+      }
+    ]
+  },
+  {
     version: '2.2.0',
     date: '2026-10-03',
     tag: 'latest',
