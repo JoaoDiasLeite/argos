@@ -19,7 +19,14 @@ const CHANGELOG: Entry[] = [
     version: '2.2.5',
     date: '2026-10-06',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'Home’s Running list names a running intervention by its runbook, as its tab does, instead of printing the runbook’s whole Windows path. The Chats, Servers and Interventions labels sit tighter over their rows.'
+        ]
+      }
+    ]
   },
   {
     version: '2.2.4',

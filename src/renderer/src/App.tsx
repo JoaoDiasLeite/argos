@@ -2163,12 +2163,13 @@ export default function App() {
   const homeInterventionsRunning: HomeRunning[] = opsTabs
     .filter((t) => !t.ended)
     .map(({ intervention: iv, waiting }) => {
-      const runbook = iv.runbookPath.split(/[\/]/).filter(Boolean).pop() ?? iv.runbookPath
+      // The runbook's folder name, as its tab shows it; the task can run to a paragraph.
+      const runbook = iv.runbookPath.split(/[\\/]/).filter(Boolean).pop() ?? iv.runbookPath
       return {
         kind: 'intervention',
         id: opsTerminalIdFor(iv),
-        name: iv.task || runbook,
-        detail: iv.task ? runbook : undefined,
+        name: runbook,
+        detail: waiting ? 'waiting for you' : undefined,
         waiting
       }
     })
