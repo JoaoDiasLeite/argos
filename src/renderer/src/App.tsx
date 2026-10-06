@@ -2146,6 +2146,32 @@ export default function App() {
       waiting: approvalQueue.some((r) => r.ops && r.appSessionId === opsTerminalIdFor(iv)),
       ended: !opsRunning.has(opsTerminalIdFor(iv))
     }))
+  // Home's Running list beyond the chats: each server with a live session (one row per
+  // target, opening its latest session) and each intervention still running.
+  const liveServerGroups = new Map<string, { latestId: string; title: string; count: number }>()
+  for (const s of serverSessions) {
+    if (serverSessionStatus[s.id] === 'error') continue
+    const g = liveServerGroups.get(s.groupKey)
+    liveServerGroups.set(s.groupKey, { latestId: s.id, title: s.title, count: (g?.count ?? 0) + 1 })
+  }
+  const homeServersRunning: HomeRunning[] = [...liveServerGroups.values()].map((g) => ({
+    kind: 'server',
+    id: g.latestId,
+    name: g.title,
+    detail: g.count > 1 ? `${g.count} sessions` : undefined
+  }))
+  const homeInterventionsRunning: HomeRunning[] = opsTabs
+    .filter((t) => !t.ended)
+    .map(({ intervention: iv, waiting }) => {
+      const runbook = iv.runbookPath.split(/[\/]/).filter(Boolean).pop() ?? iv.runbookPath
+      return {
+        kind: 'intervention',
+        id: opsTerminalIdFor(iv),
+        name: iv.task || runbook,
+        detail: iv.task ? runbook : undefined,
+        waiting
+      }
+    })
   // Forget an ended intervention once it is off screen: there is no tab left to reach it.
   useEffect(() => {
     setOpsOpen((prev) => {
@@ -2590,7 +2616,7 @@ export default function App() {
         <Suspense fallback={<ViewLoading />}>
           <HomeView
             attention={homeAttention}
-            running={homeRunning}
+            running={[...homeRunning, ...homeServersRunning, ...homeInterventionsRunning]}
             repos={homeRepos}
             recentProjects={homeRecentProjects}
             recent={homeRecent}
@@ -2603,6 +2629,14 @@ export default function App() {
             onOpenSession={(id) => {
               setActiveId(id)
               setView('chat')
+            }}
+            onOpenServer={(id) => {
+              setActiveServerSessionId(id)
+              setView('remote-session')
+            }}
+            onOpenIntervention={(id) => {
+              const tab = opsTabs.find((t) => opsTerminalIdFor(t.intervention) === id)
+              if (tab) selectOpsTab(tab.intervention)
             }}
             onOpenRepo={(key) => {
               setProjectFocus({ key, at: Date.now() })

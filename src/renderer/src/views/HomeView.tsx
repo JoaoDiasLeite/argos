@@ -18,12 +18,22 @@ export interface HomeAttention {
 
 export interface HomeRunning {
   id: string
-  kind: 'chat' | 'cli'
+  /** chat/cli list under Chats, server under Servers, intervention under Interventions. */
+  kind: 'chat' | 'cli' | 'server' | 'intervention'
   name: string
   detail?: string
   startedAt?: number
   attention?: boolean
+  /** Something in it is waiting on you: the dot turns amber. */
+  waiting?: boolean
 }
+
+/** The Running list's groups, in order. A group with nothing running is left out. */
+const RUNNING_GROUPS: { label: string; kinds: HomeRunning['kind'][] }[] = [
+  { label: 'Chats', kinds: ['chat', 'cli'] },
+  { label: 'Servers', kinds: ['server'] },
+  { label: 'Interventions', kinds: ['intervention'] }
+]
 
 export interface HomeRepo {
   key: string
@@ -99,6 +109,8 @@ interface Props {
   onStart: (prompt: string, choice: HomeStartChoice) => void
   onPickFolder: () => Promise<string | null>
   onOpenSession: (id: string) => void
+  onOpenServer: (id: string) => void
+  onOpenIntervention: (id: string) => void
   onOpenRepo: (key: string) => void
 }
 
@@ -394,6 +406,8 @@ export default function HomeView({
   onStart,
   onPickFolder,
   onOpenSession,
+  onOpenServer,
+  onOpenIntervention,
   onOpenRepo
 }: Props) {
   const [prompt, setPrompt] = useState('')
@@ -662,22 +676,36 @@ export default function HomeView({
           <section className="home-sec" aria-label="Running">
             <h2 className="eyebrow">Running · {running.length}</h2>
             {running.length === 0 && <p className="help">Nothing running.</p>}
-            {/* TODO(port): an ops intervention as a running row with an --accent dot
-                ("Ops · <host> · 41 min"); Home receives no ops runs today. */}
-            {running.map((r) => {
-              const clickable = r.kind === 'chat'
-              const right = [r.detail, r.startedAt ? minutesSince(r.startedAt) : '']
-                .filter(Boolean)
-                .join(' · ')
+            {RUNNING_GROUPS.map((g) => {
+              const rows = running.filter((r) => g.kinds.includes(r.kind))
+              if (rows.length === 0) return null
               return (
-                <div
-                  key={r.id}
-                  className={`home-row home-live ${clickable ? '' : 'static'}`}
-                  {...(clickable ? rowProps(() => onOpenSession(r.id)) : {})}
-                >
-                  <span className="home-dot ok" aria-hidden="true" />
-                  <span className="home-name">{r.name}</span>
-                  <span className="home-right">{right}</span>
+                <div key={g.label} className="home-run-group" role="group" aria-label={g.label}>
+                  <div className="home-run-label">{g.label}</div>
+                  {rows.map((r) => {
+                    const open =
+                      r.kind === 'chat'
+                        ? () => onOpenSession(r.id)
+                        : r.kind === 'server'
+                          ? () => onOpenServer(r.id)
+                          : r.kind === 'intervention'
+                            ? () => onOpenIntervention(r.id)
+                            : null
+                    const right = [r.detail, r.startedAt ? minutesSince(r.startedAt) : '']
+                      .filter(Boolean)
+                      .join(' · ')
+                    return (
+                      <div
+                        key={r.id}
+                        className={`home-row home-live ${open ? '' : 'static'}`}
+                        {...(open ? rowProps(open) : {})}
+                      >
+                        <span className={`home-dot ${r.waiting ? 'warn' : 'ok'}`} aria-hidden="true" />
+                        <span className="home-name">{r.name}</span>
+                        <span className="home-right">{right}</span>
+                      </div>
+                    )
+                  })}
                 </div>
               )
             })}

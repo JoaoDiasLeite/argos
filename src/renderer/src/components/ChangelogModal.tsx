@@ -20,6 +20,12 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'Changes',
+        items: [
+          'Home’s Running list is split by kind: Chats, Servers with a live session, and Interventions still running, each under its own quiet label and left out when empty. A server or an intervention opens with a click, and an intervention waiting for you shows an amber dot.'
+        ]
+      },
+      {
         title: 'Fixes',
         items: [
           'Minimizing Argos mid-run no longer brings up a status pill with a stale tick and no name ("✓ Working…"). The pill now says what is actually working, and closes on its own when that finishes.',
