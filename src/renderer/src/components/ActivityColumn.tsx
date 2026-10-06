@@ -2,7 +2,18 @@ import { useEffect, useState, type ReactElement } from 'react'
 import type { ApprovalOpsContext, ApprovalRequest } from '../types'
 import { describeOpsRequest, displayArgv } from '../lib/ops-approval'
 import { splitSections, type OpsOutputSection } from '../lib/ops-sections'
-import { planProgress, rowLabel, rowTone, type OpsHostAnswer, type OpsRow, type OpsRun } from '../lib/ops-timeline'
+import {
+  currentStepKey,
+  groupCallsBySteps,
+  planProgress,
+  rowLabel,
+  rowTone,
+  type OpsHostAnswer,
+  type OpsRow,
+  type OpsRowTone,
+  type OpsRun,
+  type OpsStepGroup
+} from '../lib/ops-timeline'
 import PlanReviewSheet from './PlanReviewSheet'
 import OpsReportSheet from './OpsReportSheet'
 import { backdropClose } from '../lib/backdrop-close'
@@ -125,6 +136,49 @@ function CallRow({ row }: { row: OpsRow }) {
       )}
       {open && output && (sections ? <SectionedOutput sections={sections} stderr={row.stderrHead ?? ''} /> : <pre className="ac-output">{output}</pre>)}
     </>
+  )
+}
+
+const TONE_RANK: Record<OpsRowTone, number> = { idle: 0, ok: 1, warn: 2, bad: 3 }
+
+/** A step's folded line: how many calls, and what stands out among them. */
+function stepSummary(g: OpsStepGroup, isCurrent: boolean): { text: string; tone: OpsRowTone } {
+  if (g.rows.length === 0) return { text: isCurrent ? 'next' : 'not started', tone: 'idle' }
+  const tones = g.rows.map(rowTone)
+  const tone = tones.reduce<OpsRowTone>((a, t) => (TONE_RANK[t] > TONE_RANK[a] ? t : a), 'idle')
+  const calls = `${g.rows.length} call${g.rows.length === 1 ? '' : 's'}`
+  const live = g.rows.some((r) => r.status === 'running' || r.status === 'queued' || r.status === 'asked' || r.status === 'decided')
+  if (live) return { text: `${calls} · running`, tone: tone === 'idle' ? 'ok' : tone }
+  const bad = tones.filter((t) => t === 'bad').length
+  const warn = tones.filter((t) => t === 'warn').length
+  const notes = [bad ? `${bad} not allowed` : '', warn ? `${warn} failed` : ''].filter(Boolean)
+  return { text: [calls, ...notes].join(' · '), tone: tone === 'idle' ? 'ok' : tone }
+}
+
+function StepGroup({
+  group,
+  open,
+  current,
+  onToggle,
+  children
+}: {
+  group: OpsStepGroup
+  open: boolean
+  current: boolean
+  onToggle: () => void
+  children: ReactElement[]
+}) {
+  const sum = stepSummary(group, current)
+  return (
+    <div className={`ac-step${open ? ' open' : ''}${current ? ' current' : ''}`}>
+      <button type="button" className="ac-step-head" aria-expanded={open} onClick={onToggle}>
+        <span className="ac-step-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
+        {group.n !== undefined && <span className="ac-step-n">{group.n}</span>}
+        <span className="ac-step-title" title={group.title}>{group.title}</span>
+        <span className={`ac-step-sum ${sum.tone}`}>{sum.text}</span>
+      </button>
+      {open && children.length > 0 && <div className="ac-step-rows">{children}</div>}
+    </div>
   )
 }
 
@@ -439,19 +493,49 @@ export default function ActivityColumn({ terminalId, runbookPath, current, earli
   const running = !!current && !current.ended
   const ops = waiting?.ops
 
-  // Host lines sit among the rows at the point the answer came.
-  const rows: ReactElement[] = []
-  if (current) {
-    const answers = [...current.hostAnswers]
-    current.calls.forEach((row, i) => {
-      while (answers.length && answers[0].beforeCall <= i) {
-        const a = answers.shift() as OpsHostAnswer
-        rows.push(<HostLine key={`h:${a.hostId}:${a.at}`} answer={a} />)
-      }
-      rows.push(<CallRow key={row.callId} row={row} />)
+  // The calls under the plan steps they carried out. The step the run is on is open and
+  // the rest folded; when the run moves to the next step, that one opens and the last one
+  // folds. A click opens or folds any step in between.
+  const groups = current ? groupCallsBySteps(current) : []
+  const currentKey = current ? currentStepKey(current, groups) : null
+  const [openSteps, setOpenSteps] = useState<ReadonlySet<string>>(new Set())
+  useEffect(() => {
+    if (currentKey) setOpenSteps(new Set([currentKey]))
+  }, [currentKey, current?.runId])
+  const toggleStep = (key: string): void =>
+    setOpenSteps((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
     })
-    for (const a of answers) rows.push(<HostLine key={`h:${a.hostId}:${a.at}`} answer={a} />)
+
+  // Host lines sit among the rows at the point the answer came.
+  const answers = current ? [...current.hostAnswers] : []
+  const rowsOf = (rows: OpsRow[], firstCall: number): ReactElement[] => {
+    const out: ReactElement[] = []
+    rows.forEach((row, j) => {
+      while (answers.length && answers[0].beforeCall <= firstCall + j) {
+        const a = answers.shift() as OpsHostAnswer
+        out.push(<HostLine key={`h:${a.hostId}:${a.at}`} answer={a} />)
+      }
+      out.push(<CallRow key={row.callId} row={row} />)
+    })
+    return out
   }
+  const rows: ReactElement[] = []
+  // A run with no plan (yet) has nothing to group by: its calls read as a plain list.
+  if (groups.length === 1 && groups[0].key === 'pre') rows.push(...rowsOf(groups[0].rows, 0))
+  else
+    for (const g of groups) {
+      const children = rowsOf(g.rows, g.firstCall)
+      rows.push(
+        <StepGroup key={g.key} group={g} open={openSteps.has(g.key)} current={g.key === currentKey} onToggle={() => toggleStep(g.key)}>
+          {children}
+        </StepGroup>
+      )
+    }
+  for (const a of answers) rows.push(<HostLine key={`h:${a.hostId}:${a.at}`} answer={a} />)
 
   return (
     <aside className="ac" aria-label="Activity">

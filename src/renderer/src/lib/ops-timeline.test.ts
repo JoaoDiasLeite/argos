@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
+  currentStepKey,
   exitMeaning,
   foldOpsEvents,
+  groupCallsBySteps,
   planProgress,
   rowLabel,
   rowTone,
@@ -326,3 +328,50 @@ describe('exit meanings', () => {
   })
 })
 
+describe('calls by plan step', () => {
+  const steps = [
+    { title: 'Sistema', commands: ['uptime', 'free -m'], verdict: 'runs' },
+    { title: 'Serviços', commands: ["systemctl status 'puma'"], verdict: 'runs' },
+    { title: 'Rede', commands: ['ss -tlnp'], verdict: 'runs' }
+  ]
+  const call = (id: string, argv: string[]) => [decided(id, 'allow', { argv }), finished(id, 0)]
+
+  it('puts calls before the plan apart and each later call under its step', () => {
+    const [run] = foldOpsEvents([
+      start,
+      ...call('c0', ['cat', '/etc/os-release']),
+      ev({ kind: 'plan.approved', steps }),
+      ...call('c1', ['uptime']),
+      ...call('c2', ['free', '-m']),
+      ...call('c3', ['systemctl', 'status', 'puma']),
+      ...call('c4', ['journalctl', '-u', 'puma'])
+    ])
+    const groups = groupCallsBySteps(run)
+    expect(groups.map((g) => [g.title, g.rows.map((r) => r.callId)])).toEqual([
+      ['Before the plan', ['c0']],
+      ['Sistema', ['c1', 'c2']],
+      // Not in any step's commands: it stays on the step the run is on.
+      ['Serviços', ['c3', 'c4']],
+      ['Rede', []]
+    ])
+    expect(currentStepKey(run, groups)).toBe('p0:s1')
+  })
+
+  it('opens the first step of a plan that has not run anything yet, and none once ended', () => {
+    const approved = [start, ...call('c0', ['uptime']), ev({ kind: 'plan.approved', steps })]
+    const [run] = foldOpsEvents(approved)
+    expect(currentStepKey(run, groupCallsBySteps(run))).toBe('p0:s0')
+    const [done] = foldOpsEvents([...approved, ...call('c1', ['uptime']), ev({ kind: 'run.end', ok: true, costUsd: 0 })])
+    expect(currentStepKey(done, groupCallsBySteps(done))).toBeNull()
+  })
+
+  it('keeps a skipped step out unless something ran for it', () => {
+    const [run] = foldOpsEvents([start, ev({ kind: 'plan.approved', steps, skippedSteps: [1] }), ...call('c1', ['uptime'])])
+    expect(groupCallsBySteps(run).map((g) => g.title)).toEqual(['Sistema', 'Rede'])
+  })
+
+  it('has one group and no plan when the run never got one', () => {
+    const [run] = foldOpsEvents([start, ...call('c1', ['uptime'])])
+    expect(groupCallsBySteps(run).map((g) => g.key)).toEqual(['pre'])
+  })
+})

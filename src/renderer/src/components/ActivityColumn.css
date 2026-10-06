@@ -212,6 +212,34 @@
   flex-shrink: 0;
 }
 
+/* ── Calls by plan step: one folded line per step, the current one open ── */
+.ac-step { display: flex; flex-direction: column; flex-shrink: 0; }
+.ac-step + .ac-step { border-top: 1px solid var(--border); }
+.ac-step-head {
+  display: grid;
+  grid-template-columns: 12px auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-surface);
+}
+.ac-step-head:hover { background: var(--bg-2); }
+.ac-step-caret { color: var(--text-2); font-size: 10px; }
+.ac-step-n { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.ac-step-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-step.current .ac-step-title { color: var(--text-0); font-weight: 600; }
+.ac-step-sum { font-size: 11px; color: var(--text-2); white-space: nowrap; }
+.ac-step-sum.warn { color: var(--warn); }
+.ac-step-sum.bad { color: var(--error); }
+.ac-step-rows { display: flex; flex-direction: column; padding: 0 0 6px; }
+
 .ac-hostline {
   padding: 6px 6px 6px 32px;
   font-size: 11.5px;
