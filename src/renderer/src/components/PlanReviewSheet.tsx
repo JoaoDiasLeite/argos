@@ -148,16 +148,13 @@ export default function PlanReviewSheet({ request, onDecide }: Props) {
                     </button>
                   )}
                 </div>
-                {s.commands.length > 0 && (
-                  <div className="plan-sheet-cmd" title={s.commands.join('\n')}>
-                    {s.commands.join(' · ')}
+                {/* Shown in full, one command per line: this is what gets approved. */}
+                {s.commands.map((cmd, j) => (
+                  <div key={j} className="plan-sheet-cmd">
+                    {cmd}
                   </div>
-                )}
-                {flagged && s.reason && (
-                  <div className="plan-sheet-reason" title={s.reason}>
-                    {s.reason}
-                  </div>
-                )}
+                ))}
+                {flagged && s.reason && <div className="plan-sheet-reason">{s.reason}</div>}
               </div>
             </li>
           )

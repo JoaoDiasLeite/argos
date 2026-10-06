@@ -116,16 +116,13 @@
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .plan-sheet-step.flagged .plan-sheet-cmd { color: var(--text-1); }
 .plan-sheet-reason {
   font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .plan-sheet-step.asks .plan-sheet-reason { color: var(--warn); }
 .plan-sheet-step.denied .plan-sheet-reason { color: var(--error); }
