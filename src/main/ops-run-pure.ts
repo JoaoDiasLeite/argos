@@ -490,7 +490,30 @@ export function toolResultText(result: ExecResult): string {
   if (!result.ok && result.error) lines.push(`[error: ${result.error}]`)
   lines.push('stdout:', result.stdout === '' ? '(empty)' : result.stdout)
   lines.push('stderr:', result.stderr === '' ? '(empty)' : result.stderr)
+  if (!result.ok && isConnectionFailure(result.error)) lines.push(HOST_UNREACHABLE_NOTE)
   return lines.join('\n')
+}
+
+/**
+ * Socket and handshake failures from ssh2/net: the host never ran anything, or the link
+ * dropped mid-command. Told apart from a command's own failure because the right answer
+ * is different: not the next step, not a retry, but stop and tell the operator.
+ */
+const CONNECTION_FAILURE =
+  /\b(ECONNRESET|ECONNREFUSED|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|EHOSTDOWN|ENOTFOUND|EAI_AGAIN|EPIPE)\b|Timed out while waiting for handshake|connection closed before|Not connected|No response from server/i
+
+export function isConnectionFailure(error: string | undefined): boolean {
+  return typeof error === 'string' && CONNECTION_FAILURE.test(error)
+}
+
+export const HOST_UNREACHABLE_NOTE =
+  '[The connection to the host failed: the server is down or unreachable (or the VPN is not connected). ' +
+  'Stop now: run nothing else on this host and do not retry. Tell the operator the server appears to be ' +
+  'unreachable; if the call was a step that changes the host, say its outcome is unknown.]'
+
+/** `<what> failed: <error>`, with the unreachable note when the error is a connection failure. */
+function fileFailureText(what: string, error: string): string {
+  return isConnectionFailure(error) ? `${what} failed: ${error}\n${HOST_UNREACHABLE_NOTE}` : `${what} failed: ${error}`
 }
 
 /** A tool call is an error to the model when it did not run, timed out, or exited non-zero. */
@@ -499,21 +522,21 @@ export function execIsError(result: ExecResult): boolean {
 }
 
 export function readResultText(r: OpsReadResult): { text: string; isError: boolean } {
-  if (!r.ok) return { text: `read failed: ${r.error}`, isError: true }
+  if (!r.ok) return { text: fileFailureText('read', r.error), isError: true }
   if ('tooLarge' in r) return { text: 'read refused: the file is larger than the runbook allows.', isError: true }
   if ('binary' in r) return { text: 'read refused: the file is binary.', isError: true }
   return { text: r.content, isError: false }
 }
 
 export function listResultText(r: OpsListResult): { text: string; isError: boolean } {
-  if (!r.ok) return { text: `list failed: ${r.error}`, isError: true }
+  if (!r.ok) return { text: fileFailureText('list', r.error), isError: true }
   if (r.entries.length === 0) return { text: '(empty directory)', isError: false }
   const rows = r.entries.map((e) => `${e.type === 'directory' ? 'd' : '-'} ${String(e.size).padStart(10)} ${e.name}`)
   return { text: rows.join('\n'), isError: false }
 }
 
 export function writeResultText(r: OpsWriteResult, p: string): { text: string; isError: boolean } {
-  if (!r.ok) return { text: `write failed: ${r.error}`, isError: true }
+  if (!r.ok) return { text: fileFailureText('write', r.error), isError: true }
   const backup = r.backupPath ? ` Backup of the previous file: ${r.backupPath}.` : ''
   return { text: `Wrote ${p} (sha256 ${r.afterSha256}).${backup}`, isError: false }
 }

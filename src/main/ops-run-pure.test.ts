@@ -9,7 +9,9 @@ import {
   execIsError,
   finishedEventFrom,
   headBytes,
+  HOST_UNREACHABLE_NOTE,
   insideDir,
+  isConnectionFailure,
   listResultText,
   localToolVerdict,
   makeCallBook,
@@ -267,6 +269,24 @@ describe('toolResultText', () => {
     expect(t).toContain('stdout:\n(empty)')
   })
 
+  it('tells the model to stop when the host cannot be reached', () => {
+    for (const error of [
+      'read ECONNRESET',
+      'connect ECONNREFUSED 127.0.0.1:27',
+      'Timed out while waiting for handshake',
+      'connection closed before the SSH session was ready',
+      'connection closed before the command finished'
+    ]) {
+      expect(toolResultText(exec({ ok: false, exitCode: null, error }))).toContain(HOST_UNREACHABLE_NOTE)
+    }
+  })
+
+  it('leaves the note off a command that ran and failed on its own', () => {
+    expect(toolResultText(exec({ exitCode: 1, stderr: 'Connection refused' }))).not.toContain(HOST_UNREACHABLE_NOTE)
+    expect(toolResultText(exec({ ok: false, exitCode: null, error: 'aborted' }))).not.toContain(HOST_UNREACHABLE_NOTE)
+    expect(isConnectionFailure(undefined)).toBe(false)
+  })
+
   it('execIsError is false only for a clean zero exit', () => {
     expect(execIsError(exec())).toBe(false)
     expect(execIsError(exec({ exitCode: 1 }))).toBe(true)
@@ -281,6 +301,7 @@ describe('file result texts', () => {
     expect(readResultText({ ok: true, tooLarge: true }).isError).toBe(true)
     expect(readResultText({ ok: true, binary: true }).isError).toBe(true)
     expect(readResultText({ ok: false, error: 'No such file' })).toEqual({ text: 'read failed: No such file', isError: true })
+    expect(readResultText({ ok: false, error: 'read ECONNRESET' }).text).toBe(`read failed: read ECONNRESET\n${HOST_UNREACHABLE_NOTE}`)
   })
 
   it('list', () => {
