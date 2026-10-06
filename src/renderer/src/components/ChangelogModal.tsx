@@ -20,6 +20,12 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'Fixes',
+        items: [
+          'The first message Argos types into a new terminal (an intervention’s “Read RUNBOOK.md…”, a task from Home) is now submitted, not left sitting in Claude Code’s input box.'
+        ]
+      },
+      {
         title: 'Changes',
         items: [
           'Stop now leaves you on the intervention with its terminal and activity still on screen: the run is stopped and its CLI closed at once, the rail count drops, and its tab stays, greyed, until you leave. The × on its terminal or on its tab still ends it and closes it.'

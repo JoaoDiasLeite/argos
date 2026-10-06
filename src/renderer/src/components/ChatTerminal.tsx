@@ -101,6 +101,10 @@ const REVEAL_PAINT_GRACE_MS = 120
 // by then, but claude and codex both bind their input a frame or two later, and anything
 // sent before that is swallowed with no trace.
 const INITIAL_PROMPT_DELAY_MS = 500
+// Between the prompt's text and its Enter. Sent in one write, the CLI reads the burst as a
+// paste and the trailing \r lands in the input box instead of submitting, which left an
+// intervention's first message sitting there unsent.
+const PROMPT_SUBMIT_DELAY_MS = 200
 
 // Whether the terminal's current viewport has any real (non-whitespace) glyphs painted.
 // Escape-only output — cursor hide/show, screen clear, colour resets — leaves every line's
@@ -658,8 +662,11 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       if (!text || sentPromptRef.current) return
       sentPromptRef.current = true
       promptTimerRef.current = setTimeout(() => {
-        window.electronAPI.terminalWrite(terminalId, text + '\r')
-        onPromptSentRef.current?.()
+        window.electronAPI.terminalWrite(terminalId, text)
+        promptTimerRef.current = setTimeout(() => {
+          window.electronAPI.terminalWrite(terminalId, '\r')
+          onPromptSentRef.current?.()
+        }, PROMPT_SUBMIT_DELAY_MS)
       }, INITIAL_PROMPT_DELAY_MS)
     }
 
