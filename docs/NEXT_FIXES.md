@@ -21,19 +21,22 @@ Add new follow-ups above the line as they come up.
 
 ### Panes (asked for on 2026-10-06, after 2.2.3)
 
-- **Pop a chat out into its own window (later).** Open a chat outside the main window, as a
-  separate `BrowserWindow`, so it can sit on another monitor. The pty already outlives its
-  view (it is keyed by terminal id in main), so the new window can attach to the same
-  terminal the pane had, and the pane can attach back when the window closes. Open
-  questions: sessions live in the main window's App state, so the pop-out needs them pushed
-  over IPC (name, unread, status) rather than its own copy; approvals for that chat must be
-  answered in the window that shows it; the main window shows a placeholder or drops the
-  pane while the chat is out; window bounds remembered per chat; the pill/toast "window out
-  of view" checks must count the pop-out as a window that is in view.
+- **Pop-out, after the first version.** A chat opens in its own window (`chat-popout.ts`),
+  terminal only, and the pane leaves the layout while it is out. Still to do: push the
+  chat's name/unread/status to the window when they change (it gets them once, on open);
+  answer that chat's approvals in its own window; let the toast's "window out of view"
+  check count a pop-out as in view (the pill already does).
 
 ---
 
 ## Done
+
+- **Pop a chat out into its own window, first version.** The terminal bar's arrow-out
+  button opens the chat in a `BrowserWindow` of its own (`chat-popout.ts`, `popout.html`)
+  that reattaches to the same pty and replays its scrollback; terminal output is broadcast
+  to pop-outs too. The pane leaves the layout while the chat is out, and every way of
+  opening the chat brings its window forward instead; closing the window puts the pane
+  back. Bounds are remembered per chat. Approvals stay in the main window.
 
 - **Move a pane that is already in a split.** `.pane-head` is a drag handle carrying
   `PANE_DRAG_TYPE`; `planDrop` turns it into a `move` (`movePane`: out, then back in beside

@@ -81,6 +81,21 @@ export interface FileNode {
 
 export type ProviderId = 'claude' | 'codex' | 'gemini'
 
+/** What a popped-out chat's window needs to attach to the chat's terminal (mirrors
+ *  ChatPopoutSpec in src/main/chat-popout.ts). */
+export interface ChatPopoutSpec {
+  sessionId: string
+  name: string
+  terminalId: string
+  provider: ProviderId
+  cwd?: string
+  accountId?: string
+  wslDistro?: string
+  remoteHostId?: string
+  resumeSessionId?: string
+  pinSessionId?: string
+}
+
 export interface ModelInfo {
   id: string
   label: string
@@ -1259,6 +1274,13 @@ declare global {
         }) => void
       ) => () => void
       pillOpenMain: () => void
+
+      // A chat popped out into its own window
+      popoutOpen: (spec: ChatPopoutSpec) => Promise<boolean>
+      popoutSpec: (sessionId: string) => Promise<ChatPopoutSpec | null>
+      popoutFocus: (sessionId: string) => Promise<boolean>
+      popoutList: () => Promise<string[]>
+      onPopoutClosed: (cb: (sessionId: string) => void) => () => void
 
       // Config / models
       getConfig: () => Promise<AppConfig>

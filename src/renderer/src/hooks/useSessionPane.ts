@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react'
-import { ModelInfo, ProviderId, Session } from '../types'
+import { ChatPopoutSpec, ModelInfo, ProviderId, Session } from '../types'
+import { chatTerminalId } from '../lib/terminal-id'
 import { provOf, sessionProvider } from '../lib/account-scope'
 import type { Props as ChatProps } from '../components/Chat'
 
@@ -35,6 +36,8 @@ export interface SessionPaneApi {
   patchSession: (sid: string, patch: Partial<Session>) => void
   closeChatTerminal: (sid: string) => void
   clearTerminalPrompt: (sid: string) => void
+  /** Open a chat in its own window, attached to the terminal its pane has now. */
+  popOutChat: (spec: ChatPopoutSpec) => void
 }
 
 /**
@@ -55,7 +58,8 @@ export function useSessionPane(sessionId: string, api: SessionPaneApi): ChatProp
     geminiDefaultAccountId,
     patchSession,
     closeChatTerminal,
-    clearTerminalPrompt
+    clearTerminalPrompt,
+    popOutChat
   } = api
 
   const session = sessions.find((s) => s.id === sessionId)
@@ -104,8 +108,27 @@ export function useSessionPane(sessionId: string, api: SessionPaneApi): ChatProp
     [clearTerminalPrompt, sessionId]
   )
 
+  // The window gets exactly what this pane's ChatTerminal is given, so if the pty has died
+  // meanwhile it starts the same CLI, under the same account, in the same place.
+  const onPopOut = session
+    ? () =>
+        popOutChat({
+          sessionId,
+          name: session.name,
+          terminalId: chatTerminalId(sessionId),
+          provider: terminalProvider,
+          cwd: session.projectPath,
+          accountId: terminalAccountId,
+          wslDistro: session.wslDistro,
+          remoteHostId: session.remoteHostId,
+          resumeSessionId: session.claudeSessionId,
+          pinSessionId: session.terminalSessionId
+        })
+    : undefined
+
   return {
     session,
+    onPopOut,
     saveError: api.saveError,
     terminalProvider,
     terminalAccountId,

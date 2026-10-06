@@ -34,6 +34,8 @@ export interface Props {
   /** Leave this terminal — the pty is torn down and the view falls back to the welcome
    *  pane. The chat itself stays in the sidebar. */
   onCloseTerminal: () => void
+  /** Open this chat in a window of its own (the pane leaves the layout while it is out). */
+  onPopOut?: () => void
   /** True when a split-view pane header is already drawing this chat's name (see
    *  `PaneGrid`'s `pane-head`) — so this component must not draw it a second time. The
    *  rest of the title block (remote host / resumed marker) still renders, since the
@@ -55,6 +57,7 @@ export default function Chat({
   newChatNonce,
   onPatchSession,
   onCloseTerminal,
+  onPopOut,
   titleInHeader = false
 }: Props) {
   // The pty is created on the same render that mounts ChatTerminal, so where it runs has
@@ -252,6 +255,7 @@ export default function Chat({
             initialPrompt={initialTerminalPrompt}
             onInitialPromptSent={onInitialTerminalPromptSent}
             onClose={onCloseTerminal}
+            onPopOut={onPopOut}
             onActive={() => {
               // The stamp is the lower bound on which Codex conversation can be this
               // chat's, so it is written once and never moved: a terminal reopened later

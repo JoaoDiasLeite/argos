@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
 import {
   Session,
+  ChatPopoutSpec,
   AuthStatus,
   ModelInfo,
   CCSessionMeta,
@@ -61,6 +62,7 @@ import {
 import { projectDisplayName, projectDisplayNames, RepoName } from './lib/project-name'
 import { chatTerminalId, sessionIdFromTerminalId } from './lib/terminal-id'
 import { usePanes } from './hooks/usePanes'
+import type { LayoutId } from './lib/panes'
 import { SESSION_DRAG_TYPE, type DropPlan } from './lib/pane-drop'
 // The secondary views below are only ever mounted once the user navigates away
 // from the default 'chat' view, so they're loaded lazily (React.lazy) instead
@@ -202,10 +204,11 @@ export default function App() {
     layout,
     focused,
     sizes: paneSizes,
-    openInFocused,
-    // `openInNewPane` is not wired up here: every "new pane" in this app comes from a drop,
-    // which brings its own position and layout and therefore goes through `insertPane`.
-    insertPane,
+    openInFocused: openInFocusedPane,
+    // Every "new pane" the user makes comes from a drop, which brings its own position and
+    // layout (`insertPane`); `openInNewPane` is only how a popped-out chat comes back.
+    openInNewPane,
+    insertPane: insertPaneAt,
     movePane,
     swapPanes,
     closePane,
@@ -213,6 +216,65 @@ export default function App() {
     setSizes,
     restore
   } = usePanes()
+
+  // Chats popped out into windows of their own (src/main/chat-popout.ts). Such a chat has no
+  // pane here, and must not get one while it is out: two terminals on one pty would fight
+  // over its size. So every way of opening a chat goes through the two guards below, which
+  // bring its window forward instead.
+  const [poppedOut, setPoppedOut] = useState<ReadonlySet<string>>(new Set())
+  const poppedOutRef = useRef(poppedOut)
+  poppedOutRef.current = poppedOut
+  const openInFocused = useCallback(
+    (sessionId: string) => {
+      if (sessionId && poppedOutRef.current.has(sessionId)) {
+        void window.electronAPI.popoutFocus(sessionId)
+        return
+      }
+      openInFocusedPane(sessionId)
+    },
+    [openInFocusedPane]
+  )
+  const insertPane = useCallback(
+    (sessionId: string, index: number, nextLayout: LayoutId) => {
+      if (poppedOutRef.current.has(sessionId)) {
+        void window.electronAPI.popoutFocus(sessionId)
+        return
+      }
+      insertPaneAt(sessionId, index, nextLayout)
+    },
+    [insertPaneAt]
+  )
+  useEffect(() => {
+    // A reloaded main window learns again which chats are out.
+    window.electronAPI
+      .popoutList()
+      .then((ids) => setPoppedOut(new Set(ids)))
+      .catch(() => undefined)
+    // The window closed: the chat comes back as a pane, beside what is open.
+    return window.electronAPI.onPopoutClosed((sessionId) => {
+      setPoppedOut((prev) => {
+        const next = new Set(prev)
+        next.delete(sessionId)
+        return next
+      })
+      openInNewPane(sessionId)
+    })
+  }, [openInNewPane])
+  const popOutChat = (spec: ChatPopoutSpec) => {
+    setPoppedOut((prev) => new Set(prev).add(spec.sessionId))
+    closePane(spec.sessionId)
+    void window.electronAPI.popoutOpen(spec).then((ok) => {
+      if (ok) return
+      // Main refused it: nothing went out, so the pane comes straight back.
+      setPoppedOut((prev) => {
+        const next = new Set(prev)
+        next.delete(spec.sessionId)
+        return next
+      })
+      openInNewPane(spec.sessionId)
+    })
+  }
+
   const activeId = focused
   const setActiveId = openInFocused
   // Focus and visibility are different questions. `activeId` answers "which chat am I
@@ -2474,7 +2536,8 @@ export default function App() {
     geminiDefaultAccountId,
     patchSession,
     closeChatTerminal,
-    clearTerminalPrompt
+    clearTerminalPrompt,
+    popOutChat
   }
 
   return (

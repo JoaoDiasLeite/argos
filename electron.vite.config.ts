@@ -34,7 +34,9 @@ export default defineConfig({
           index: resolve('src/renderer/index.html'),
           overlay: resolve('src/renderer/overlay.html'),
           toast: resolve('src/renderer/toast.html'),
-          pill: resolve('src/renderer/pill.html')
+          pill: resolve('src/renderer/pill.html'),
+          // A chat popped out into its own window (src/main/chat-popout.ts).
+          popout: resolve('src/renderer/popout.html')
         },
         output: {
           // The `index` entry's main chunk was ~1.7 MB before any splitting (measured

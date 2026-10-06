@@ -190,6 +190,15 @@ import {
 import { createOverlayWindow, hideOverlay, toggleOverlay, registerOverlayShortcut, reregisterOverlayShortcut, overlayShortcut } from './overlay'
 import { createToastWindow, showToast, hideToast, sendToToast } from './toast'
 import { createPillWindow, showPill, hidePill, hidePillSoon, sendToPill } from './pill'
+import {
+  anyChatPopoutInView,
+  chatPopoutSpec,
+  chatPopoutWindows,
+  focusChatPopout,
+  openChatPopout,
+  openChatPopouts,
+  type ChatPopoutSpec
+} from './chat-popout'
 import { noteTerminalBusy } from './run-indicators-pure'
 import { successBadge, errorBadge, approvalBadge } from './badges'
 import { createTray, updateTrayShortcutLabel } from './tray'
@@ -356,6 +365,8 @@ function mainWindowInactive(): boolean {
 // screen but merely unfocused (the user clicked another app or monitor) already shows
 // the run, and a flyout popping over every other app at each CLI turn is noise.
 function mainWindowOutOfView(): boolean {
+  // A chat popped out into its own window on screen is a window the user can see.
+  if (anyChatPopoutInView()) return false
   return !mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible() || mainWindow.isMinimized()
 }
 
@@ -803,6 +814,31 @@ ipcMain.on('toast:open-main', () => {
 // From the status pill's "open" button: jump back to the app and drop the (now
 // redundant) pill. The main window's focus handler also hides it, but do it here
 // too so it goes away immediately even if focus is momentarily delayed.
+// ─── A chat popped out into its own window (chat-popout.ts) ────────────────────
+const isPopoutSpec = (v: unknown): v is ChatPopoutSpec => {
+  const s = v as Partial<ChatPopoutSpec> | null
+  const optStr = (x: unknown) => x === undefined || typeof x === 'string'
+  return (
+    !!s &&
+    typeof s.sessionId === 'string' &&
+    s.sessionId !== '' &&
+    typeof s.terminalId === 'string' &&
+    s.terminalId !== '' &&
+    typeof s.name === 'string' &&
+    (s.provider === 'claude' || s.provider === 'codex' || s.provider === 'gemini') &&
+    [s.cwd, s.accountId, s.wslDistro, s.remoteHostId, s.resumeSessionId, s.pinSessionId].every(optStr)
+  )
+}
+ipcMain.handle('popout:open', (_, spec: unknown) => {
+  if (!isPopoutSpec(spec)) return false
+  const backgroundColor = getConfig().ui.theme === 'light' ? '#f7f5f1' : '#141312'
+  openChatPopout(spec, backgroundColor, (sessionId) => sendToMainWindow('popout:closed', sessionId))
+  return true
+})
+ipcMain.handle('popout:spec', (_, sessionId: unknown) => (typeof sessionId === 'string' ? chatPopoutSpec(sessionId) : null))
+ipcMain.handle('popout:focus', (_, sessionId: unknown) => (typeof sessionId === 'string' ? focusChatPopout(sessionId) : false))
+ipcMain.handle('popout:list', () => openChatPopouts())
+
 ipcMain.on('pill:open-main', () => {
   hidePill()
   showMainWindow()
@@ -838,9 +874,10 @@ ipcMain.on('window:set-bounds', (_, bounds: { x: number; y: number; width: numbe
   mainWindow?.setBounds(bounds)
 })
 
-ipcMain.handle('app:set-zoom', (_, factor: number) => {
+ipcMain.handle('app:set-zoom', (e, factor: number) => {
   const f = Math.max(0.6, Math.min(1.4, factor || 1))
-  mainWindow?.webContents.setZoomFactor(f)
+  // The window that asked: the main one, or a popped-out chat following the same setting.
+  e.sender.setZoomFactor(f)
   return f
 })
 
@@ -1313,6 +1350,9 @@ ipcMain.handle('ops:terminal-session', async (_, terminalId: string, interventio
 
 function send(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload)
+  // A popped-out chat's terminal lives in its own window: it needs its pty's output and
+  // exit too. Each terminal filters by id, so the other windows ignore what is not theirs.
+  if (channel.startsWith('terminal:')) for (const w of chatPopoutWindows()) w.webContents.send(channel, payload)
 }
 
 // Pending tool-approval prompts, keyed by an approval id, awaiting a renderer decision.

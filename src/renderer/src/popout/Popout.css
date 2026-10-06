@@ -1,0 +1,26 @@
+/* A chat popped out into its own window: the terminal and nothing else, edge to edge. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--bg-0);
+}
+.popout {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.popout-term {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.popout-missing {
+  margin: auto;
+  color: var(--text-2);
+  font-size: 13px;
+}

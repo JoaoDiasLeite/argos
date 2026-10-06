@@ -147,6 +147,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   pillOpenMain: () => ipcRenderer.send('pill:open-main'),
 
+  // A chat popped out into its own window (src/main/chat-popout.ts)
+  popoutOpen: (spec: unknown) => ipcRenderer.invoke('popout:open', spec),
+  popoutSpec: (sessionId: string) => ipcRenderer.invoke('popout:spec', sessionId),
+  popoutFocus: (sessionId: string) => ipcRenderer.invoke('popout:focus', sessionId),
+  popoutList: () => ipcRenderer.invoke('popout:list'),
+  onPopoutClosed: (cb: (sessionId: string) => void) => {
+    const fn = (_: unknown, sessionId: string) => cb(sessionId)
+    ipcRenderer.on('popout:closed', fn)
+    return () => ipcRenderer.removeListener('popout:closed', fn)
+  },
+
   // Config / models
   getConfig: () => ipcRenderer.invoke('config:get'),
   getModels: () => ipcRenderer.invoke('config:models'),

@@ -23,6 +23,7 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Changes',
         items: [
+          'A chat can open in a window of its own, to sit on another monitor: the arrow button in its terminal bar pops it out, attached to the same running terminal. While it is out its pane leaves the layout, and picking the chat anywhere brings its window forward; closing the window puts the pane back. The window remembers where it was.',
           'A pane in split view can be moved: drag it by its header onto another pane’s edge to put it there, beside, above or below, or onto its centre to swap the two.'
         ]
       },
