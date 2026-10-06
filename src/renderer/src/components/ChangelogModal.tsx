@@ -16,13 +16,15 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
-    version: '2.2.5',
+    version: '2.3.0',
     date: '2026-10-06',
-    tag: 'new',
+    tag: 'latest',
     sections: [
       {
         title: 'Changes',
         items: [
+          'Everything an intervention runs on a server now leaves its own trace in that server’s syslog, under the tag argos, since commands run over SSH never reach its shell history. Each command, script and file write logs a line before it runs and one after, with the exit code and how long it took (or that it timed out), plus who ran it, from which runbook, whether you approved it and what exactly ran; scripts also log their upload and removal. Passwords and written file contents never go into these lines. A server without logger still runs everything, and the report says its syslog has no record. Read them on the server with journalctl -t argos.',
+          'An intervention’s activity column is a history of what ran: steps the run has not reached are no longer listed ahead of time.',
           'A chat can open in a window of its own, to sit on another monitor: the arrow button in its terminal bar pops it out, attached to the same running terminal. While it is out its pane leaves the layout, and picking the chat anywhere brings its window forward; closing the window puts the pane back. The window remembers where it was.',
           'A pane in split view can be moved: drag it by its header onto another pane’s edge to put it there, beside, above or below, or onto its centre to swap the two.'
         ]
@@ -30,6 +32,7 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Fixes',
         items: [
+          'An intervention’s calls land under the plan step they ran for when the plan runs a script step by step. Every script call used to pile up under the first step, the rest read “not started” and the counter stayed at 0. Those steps also keep their own titles instead of all repeating the script’s.',
           'Home’s Running list names a running intervention by its runbook, as its tab does, instead of printing the runbook’s whole Windows path. The Chats, Servers and Interventions labels sit tighter over their rows.'
         ]
       }
@@ -38,7 +41,6 @@ const CHANGELOG: Entry[] = [
   {
     version: '2.2.4',
     date: '2026-10-06',
-    tag: 'latest',
     sections: [
       {
         title: 'Changes',
