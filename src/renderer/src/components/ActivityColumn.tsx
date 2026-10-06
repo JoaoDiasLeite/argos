@@ -5,6 +5,7 @@ import { splitSections, type OpsOutputSection } from '../lib/ops-sections'
 import { planProgress, rowLabel, rowTone, type OpsHostAnswer, type OpsRow, type OpsRun } from '../lib/ops-timeline'
 import PlanReviewSheet from './PlanReviewSheet'
 import OpsReportSheet from './OpsReportSheet'
+import { backdropClose } from '../lib/backdrop-close'
 import './ActivityColumn.css'
 
 interface Props {
@@ -186,8 +187,15 @@ function ScriptDrawer({
   }, [onClose])
 
   return (
+    <>
+    <div className="ac-drawer-scrim" {...backdropClose(onClose)} />
     <div className="ac-drawer" role="dialog" aria-label={`Script ${script.name}`}>
       <div className="ac-drawer-head">
+        <button type="button" className="ac-icon ac-drawer-back" onClick={onClose} aria-label="Back" title="Back">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </button>
         <div className="ac-drawer-titles">
           <span className="ac-drawer-title">{script.title}</span>
           <span className="ac-drawer-sub">
@@ -208,6 +216,7 @@ function ScriptDrawer({
         {src && 'text' in src && <ScriptSource text={src.text} />}
       </div>
     </div>
+    </>
   )
 }
 
