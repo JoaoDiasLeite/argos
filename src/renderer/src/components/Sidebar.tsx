@@ -12,6 +12,7 @@ import {
 } from '../lib/project-key'
 import { projectDisplayName, RepoName } from '../lib/project-name'
 import { SESSION_DRAG_TYPE } from '../lib/pane-drop'
+import { setChatDragImage } from '../lib/drag-ghost'
 import FileTree from './FileTree'
 import './Sidebar.css'
 import './AccountPicker.css'
@@ -648,6 +649,7 @@ export default function Sidebar({
         onDragStart={(e) => {
           e.dataTransfer.setData(SESSION_DRAG_TYPE, s.id)
           e.dataTransfer.effectAllowed = 'move'
+          setChatDragImage(e, s.name)
           onSessionDrag?.(s.id)
         }}
         onDragEnd={() => onSessionDrag?.(null)}

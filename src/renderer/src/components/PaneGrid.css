@@ -129,6 +129,9 @@
 
    `top`/`height` come in inline alongside `left`/`width` now that a drop can also halve the
    pane horizontally — hence no `top`/`bottom` defaults here to fight them. */
+/* Strong enough to read over a terminal: the zone sits on near-black scrollback as often
+   as on the app's own surfaces, where an 8% tint and a hairline all but vanished. It
+   glides between halves rather than jumping, so the change of target is seen. */
 .pane-drop-zone {
   position: absolute;
   pointer-events: none;
@@ -136,17 +139,26 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border: 2px solid var(--accent);
   border-radius: var(--radius-surface);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  transition: left 0.12s ease, top 0.12s ease, width 0.12s ease, height 0.12s ease;
 }
 
 .pane-drop-label {
-  padding: 4px 10px;
-  font-size: 11.5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--text-0);
+  color: #fff;
+  background: var(--accent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pane-drop-zone { transition: none; }
 }
 
 /* The welcome pane is not a `.pane` — it stands in for the whole grid when nothing is open
@@ -154,6 +166,6 @@
    this file rather than drifting out of step in App.css. No zones there: with no panes the
    only possible outcome is "open it", so the whole area lights up as one. */
 .welcome-pane.pane-drop-over {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }

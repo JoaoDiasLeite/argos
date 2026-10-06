@@ -1,5 +1,6 @@
 import './PendingRuns.css'
 import { SESSION_DRAG_TYPE } from '../lib/pane-drop'
+import { setChatDragImage } from '../lib/drag-ghost'
 
 export interface PendingRun {
   /** The app session id of the chat that's still working. */
@@ -54,6 +55,7 @@ export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) 
           onDragStart={(e) => {
             e.dataTransfer.setData(SESSION_DRAG_TYPE, r.id)
             e.dataTransfer.effectAllowed = 'move'
+            setChatDragImage(e, r.name)
             onDrag?.(r.id)
           }}
           onDragEnd={() => onDrag?.(null)}
