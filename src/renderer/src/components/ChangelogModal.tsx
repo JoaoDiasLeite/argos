@@ -15,6 +15,19 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '2.2.2',
+    date: '2026-10-06',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Changes',
+        items: [
+          'Stop, and the × on an intervention’s terminal, now leave you on the intervention with its terminal and activity still on screen: the run is stopped and its CLI closed at once, the rail count drops, and its tab stays, greyed, until you leave.'
+        ]
+      }
+    ]
+  },
+  {
     version: '2.2.1',
     date: '2026-10-06',
     tag: 'latest',
