@@ -169,7 +169,7 @@ function newSession(projectPath: string | undefined, provider: ProviderId, accou
 const MEMBER_LABELS: Record<string, string> = {
   mcp: 'MCP',
   remote: 'Remote & WSL',
-  ops: 'Ops'
+  ops: 'Operations'
 }
 
 // An open Remote/WSL "Connect" session, rendered as a persistent tab (see the
@@ -2261,7 +2261,7 @@ export default function App() {
       { v: 'usage', label: 'Usage' },
       { v: 'mcp', label: 'MCP' },
       { v: 'remote', label: 'Remote & WSL' },
-      { v: 'ops', label: 'Ops' }
+      { v: 'ops', label: 'Operations' }
     ]
     for (const { v, label } of views) items.push({ id: `view:${v}`, title: `Go to ${label}`, group: 'Views', run: () => goToView(v) })
     items.push({ id: 'settings', title: 'Open Settings', group: 'Views', run: () => setView('settings') })

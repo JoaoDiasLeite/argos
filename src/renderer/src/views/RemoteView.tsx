@@ -629,7 +629,7 @@ export default function RemoteView({
                 onClick={() => onOps(selHost)}
                 title="Start an intervention on this host: its commands go through the runbook's gate"
               >
-                Ops
+                Operations
               </button>
             )}
           </div>
@@ -735,7 +735,7 @@ export default function RemoteView({
 
         {selHost && selHostRunbooks.length > 0 && (
           <section className="rv-sec">
-            <div className="eyebrow">Ops</div>
+            <div className="eyebrow">Operations</div>
             <div className="rv-ops-line">
               <span>
                 {selHostRunbooks.length} runbook{selHostRunbooks.length === 1 ? '' : 's'} appl{selHostRunbooks.length === 1 ? 'ies' : 'y'} to this host
