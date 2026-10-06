@@ -46,7 +46,6 @@ type TermState =
   // with the launch it had, so ChatTerminal's own Restart can never bring the CLI back
   // without the relay config. Its token belongs to a run that is over; main drops it.
   | { kind: 'exited'; code: number; launch: Launched; key: number }
-  | { kind: 'closed' }
 
 type HostDot = 'checking' | 'ok' | 'error'
 
@@ -115,7 +114,7 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
   }, [lockedHostId])
 
   // ── The terminal ──
-  /** `fresh`: a new run on purpose (Restart, Launch after close) — the old pty, if any,
+  /** `fresh`: a new run on purpose (Restart, Relaunch after an exit) — the old pty, if any,
    *  is ended first. Otherwise a live pty is reattached to as it is. */
   const start = useCallback(
     async (fresh: boolean) => {
@@ -171,14 +170,8 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
     if (term.kind === 'ready') onRunning?.(terminalId)
   }, [term.kind, terminalId, onRunning])
 
-  const closeTerminal = () => {
-    startSeqRef.current++
-    launches.delete(terminalId)
-    void window.electronAPI.terminalKill(terminalId)
-    setTerm({ kind: 'closed' })
-  }
 
-  /** Stop is the end of the intervention, not just of the run: a CLI left up after its run
+  /** Stop (and the terminal's ×) is the end of the intervention, not just of the run: a CLI left up after its run
    *  is over can only start a run that does nothing, yet it keeps the intervention counted
    *  as running on the rail and in the Servers header. */
   const endIntervention = async (denyFirst?: () => void) => {
@@ -278,14 +271,6 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
               </button>
             </div>
           )}
-          {term.kind === 'closed' && (
-            <div className="ops-ws-state">
-              <span>Terminal closed; its run is over.</span>
-              <button className="ops-ws-btn" onClick={() => void start(true)}>
-                Launch
-              </button>
-            </div>
-          )}
           {term.kind === 'exited' && (
             <div className="ops-ws-strip">
               <span>CLI exited{term.code ? ` · code ${term.code}` : ''}</span>
@@ -304,7 +289,7 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
               active
               ops={{ env: term.launch.env, mcpConfigPath: term.launch.mcpConfigPath }}
               initialPrompt={term.kind === 'ready' ? term.prompt : undefined}
-              onClose={closeTerminal}
+              onClose={() => void endIntervention()}
             />
           )}
         </div>

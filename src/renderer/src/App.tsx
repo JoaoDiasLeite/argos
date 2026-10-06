@@ -2133,14 +2133,24 @@ export default function App() {
     setOpsWorkspace(iv)
     setView('ops-workspace')
   }
-  // Stop in the workspace ends the intervention: it is no longer running and there is
-  // nothing to go back to, so the rail badge and the header chip drop it at once.
-  const endOpsWorkspace = useCallback((terminalId: string) => {
+  // An ended intervention (Stop, the terminal's ×, a tab's ×) is no longer running and
+  // there is nothing to go back to, so the rail badge and the tabs drop it at once. Ending
+  // the one on screen also leaves its workspace.
+  const endOpsWorkspace = (terminalId: string) => {
     setOpsRunning((prev) => markOpsEnded(prev, terminalId))
     setOpsOpen((prev) => prev.filter((iv) => opsTerminalIdFor(iv) !== terminalId))
-    setOpsWorkspace(null)
-    setView('ops')
-  }, [])
+    if (opsWorkspace && opsTerminalIdFor(opsWorkspace) === terminalId) {
+      setOpsWorkspace(null)
+      setView('ops')
+    }
+  }
+  // A tab's ×: the same end as the workspace's Stop, for any running intervention.
+  const closeOpsTab = async (iv: OpsIntervention) => {
+    const id = opsTerminalIdFor(iv)
+    await window.electronAPI.opsStop(id).catch(() => undefined)
+    await window.electronAPI.terminalKill(id).catch(() => undefined)
+    endOpsWorkspace(id)
+  }
   const openOpsWorkspace = (intervention: OpsIntervention) => {
     const id = opsTerminalIdFor(intervention)
     setOpsOpen((prev) => [...prev.filter((iv) => opsTerminalIdFor(iv) !== id), intervention])
@@ -2632,7 +2642,7 @@ export default function App() {
             </div>
             {/* The way back to the interventions left running: leaving a workspace keeps its
                 CLI going, and the Operations tab opens the start screen, not a workspace. */}
-            <OpsTabs items={opsTabs} activeId={null} onSelect={selectOpsTab} />
+            <OpsTabs items={opsTabs} activeId={null} onSelect={selectOpsTab} onClose={(iv) => void closeOpsTab(iv)} />
           </div>
           {/* Open Remote/WSL sessions, surfaced on the Servers screens so they're
               reachable without remembering they exist. Selecting one here has to jump
@@ -2708,7 +2718,7 @@ export default function App() {
             onDecide={workspaceApproval ? (allow, skipSteps) => respondApprovalById(workspaceApproval.approvalId, allow, skipSteps) : undefined}
             onStop={workspaceApproval ? () => respondApprovalStopById(workspaceApproval.approvalId) : undefined}
             onEnded={endOpsWorkspace}
-            tabs={<OpsTabs strip items={opsTabs} activeId={opsTerminalIdFor(opsWorkspace)} onSelect={selectOpsTab} />}
+            tabs={<OpsTabs strip items={opsTabs} activeId={opsTerminalIdFor(opsWorkspace)} onSelect={selectOpsTab} onClose={(iv) => void closeOpsTab(iv)} />}
           />
         </Suspense>
       )}

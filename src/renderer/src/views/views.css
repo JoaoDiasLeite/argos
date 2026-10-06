@@ -64,6 +64,21 @@
   cursor: pointer;
 }
 .ops-running-chip:hover { background: var(--bg-hover); color: var(--text-0); }
+.ops-running-chip-close {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-right: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.ops-running-chip-close:hover { color: var(--text-0); background: var(--bg-3); }
 .ops-running-chip.on {
   border-color: var(--accent);
   background: var(--bg-0);

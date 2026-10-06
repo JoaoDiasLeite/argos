@@ -23,7 +23,7 @@ const CHANGELOG: Entry[] = [
         title: 'Changes',
         items: [
           'Several interventions running at once show as tabs, like the Remote/WSL sessions: in the Servers header, and under a workspace’s header to switch between them. Ops is now called Operations.',
-          'Stop in an intervention now ends it: the run is stopped, its Claude Code is closed and you are back on the Ops screen, so the intervention no longer shows in the Servers header or as a number on the rail. Stop also works after the run has already ended, while the CLI is still open.'
+          'Stop in an intervention, the × on its terminal and the × on its tab now end it: the run is stopped, its Claude Code is closed and you are back on the Ops screen, so the intervention no longer shows in the Servers header or as a number on the rail. Stop also works after the run has already ended, while the CLI is still open.'
         ]
       },
       {
