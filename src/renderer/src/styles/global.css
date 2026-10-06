@@ -486,10 +486,17 @@
 }
 
 /* ── Density ── */
-:root[data-density='compact'] .message-row { padding-top: 8px; padding-bottom: 8px; }
-:root[data-density='compact'] .session-item { padding: 5px 8px; }
+/* Every list row the app has today, tightened. Rules for a row that no longer exists do
+   nothing, silently: when a row's class changes, its line here changes with it. */
 :root[data-density='compact'] .view-scroll { padding-top: 14px; padding-bottom: 24px; }
-:root[data-density='compact'] .usage-card { padding: 11px; }
+:root[data-density='compact'] .session-row { padding-top: 4px; padding-bottom: 4px; }
+:root[data-density='compact'] .session-group-header { min-height: 24px; padding-top: 1px; padding-bottom: 1px; }
+:root[data-density='compact'] .home-row { padding-top: 5px; padding-bottom: 5px; }
+:root[data-density='compact'] .rv-row { min-height: 30px; padding-top: 4px; padding-bottom: 4px; }
+:root[data-density='compact'] .fb-row { min-height: 26px; padding-top: 2px; padding-bottom: 2px; }
+:root[data-density='compact'] .ac-row { padding-top: 5px; padding-bottom: 5px; }
+:root[data-density='compact'] .stat-card { padding: 10px 12px; }
+:root[data-density='compact'] .sb-item { padding: 7px 10px; }
 :root[data-density='compact'] .cmd-item { padding: 5px 10px; }
 :root[data-density='compact'] .file-node { padding-top: 2px; padding-bottom: 2px; }
 

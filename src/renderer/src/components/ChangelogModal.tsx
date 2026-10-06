@@ -18,7 +18,14 @@ const CHANGELOG: Entry[] = [
     version: '2.2.3',
     date: '2026-10-06',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'Density: Compact tightens the lists again (chats in the sidebar, Home, Servers and their files, an intervention’s calls, the planner). Its rules still pointed at rows the redesign had replaced, so the setting changed almost nothing.'
+        ]
+      }
+    ]
   },
   {
     version: '2.2.2',
