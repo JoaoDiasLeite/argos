@@ -48,7 +48,7 @@ const READ_ONLY_TOOLS = ['Read', 'Grep', 'Glob']
 /** Per-provider ceiling for utility reasoning — capable, but well below the
  * provider's flagship-tier cost. */
 const CHEAP_CEILING: Record<ProviderId, string> = {
-  claude: 'claude-sonnet-4-6',
+  claude: 'claude-sonnet-5-5',
   codex: 'gpt-5.6-luna',
   gemini: 'gemini-3-flash-preview'
 }
@@ -69,9 +69,9 @@ function tierOf(providerId: ProviderId, model: string): number {
     return 2 // unknown ids treated as Sonnet-equivalent
   }
   if (providerId === 'codex') {
-    if (model.startsWith('gpt-5.4-mini') || model.startsWith('gpt-5.6-luna')) return 1
-    if (model.startsWith('gpt-5.4') || model.startsWith('gpt-5.6-terra')) return 2
-    return 3 // gpt-5.5, gpt-5.6-sol, and anything unrecognized
+    if (model.startsWith('gpt-5.4-mini') || model.includes('-luna')) return 1
+    if (model.startsWith('gpt-5.4') || model.startsWith('gpt-5.6-terra') || model.startsWith('gpt-6-sol')) return 2
+    return 3 // gpt-5.5, gpt-5.6-sol, gpt-6-astra, and anything unrecognized
   }
   // gemini
   if (model.startsWith('gemini-3-flash')) return 1

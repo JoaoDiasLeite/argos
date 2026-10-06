@@ -293,7 +293,7 @@ export default function App() {
   // Stamped so clicking the same row twice, with a detour in between, still lands.
   const [projectFocus, setProjectFocus] = useState<{ key: string; at: number } | null>(null)
   const [models, setModels] = useState<ModelInfo[]>([])
-  const [defaultModel, setDefaultModel] = useState('claude-opus-4-8')
+  const [defaultModel, setDefaultModel] = useState('claude-sonnet-5-5')
   const [ui, setUi] = useState<UiPrefs | null>(null)
   // Prompts waiting to be typed into a chat's terminal, by session id. "Start this" has no
   // transcript to post into, so the text is parked here and ChatTerminal types it into the

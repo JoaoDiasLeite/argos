@@ -39,7 +39,7 @@ A Claudia-style toolkit for Claude Code, navigated from the left icon rail:
   accounts**); adding one launches a guided `claude` login in its own terminal. The default
   account is your existing machine login.
 - **Model selection** — set the default in Settings or override per chat
-  (Opus 4.8/4.7/4.6, Sonnet 4.6, Haiku 4.5, Fable 5).
+  (Opus 5.5, Sonnet 5.5, Haiku 4.5, Fable 5.1, GPT-6 Astra/Sol/Luna, and their predecessors).
 - **Tool approval + diff viewer** — before any mutating tool (`Edit`, `Write`, `MultiEdit`,
   `NotebookEdit`, `Bash`) runs, you get an Allow/Deny prompt with a real before/after diff
   (Bash shows the command). Read-only tools auto-approve. A per-chat **Approve / Auto**

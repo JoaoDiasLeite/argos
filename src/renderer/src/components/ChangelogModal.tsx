@@ -20,6 +20,12 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'Changes',
+        items: [
+          'Model lists are current again: Opus 5.5, Sonnet 5.5, Fable 5.1 and GPT-6 Astra, Sol and Luna, with their prices. The 4.x Opus and Sonnet models and GPT-5.4 are gone from the pickers.'
+        ]
+      },
+      {
         title: 'Fixes',
         items: [
           'Codex models the installed CLI knows about show up in the pickers again. Argos was asking the CLI with a flag it does not accept, so the lookup always came back empty.',
