@@ -23,7 +23,8 @@ const CHANGELOG: Entry[] = [
         title: 'Changes',
         items: [
           'Model lists are current again: Opus 5.5, Sonnet 5.5, Fable 5.1 and GPT-6 Astra, Sol and Luna, with their prices. The 4.x Opus and Sonnet models and GPT-5.4 are gone from the pickers.',
-          'Antigravity is hidden for now: it no longer appears when starting a chat, in the account pickers, in Accounts or among the models. Chats already on it still open.'
+          'Antigravity is hidden for now: it no longer appears when starting a chat, in the account pickers, in Accounts or among the models. Chats already on it still open.',
+          'Dragging a chat into split view is easier to read: the drop zone is clearly tinted and outlined even over a terminal, glides between halves, and says where the chat will land on an accent pill; the chat itself travels as a small pill with its name.'
         ]
       },
       {
