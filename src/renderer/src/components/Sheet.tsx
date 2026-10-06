@@ -1,5 +1,6 @@
 import { useId, useRef, type ReactNode } from 'react'
 import { useModalA11y } from '../hooks/useModalA11y'
+import { backdropClose } from '../lib/backdrop-close'
 import './Sheet.css'
 
 interface Props {
@@ -20,9 +21,9 @@ interface Props {
 
 /**
  * A document or a decision that needs room, as a sheet from the right over the content
- * (SYSTEM-DESIGN.md §2). It has its own close control and Esc closes it; clicking the
- * scrim does not, so a stray click beside it never throws away what was being read or
- * typed. Focus moves into the sheet on open, stays there, and goes back on close.
+ * (SYSTEM-DESIGN.md §2). Its close control, Esc and a click on the scrim all close it
+ * (a sheet holding unsaved work guards its own onClose, as FileEditor does). Focus moves
+ * into the sheet on open, stays there, and goes back on close.
  */
 export default function Sheet({ open = true, title, width = 520, onClose, headerExtra, footer, ariaLabel, children }: Props) {
   if (!open) return null
@@ -45,7 +46,7 @@ function SheetPanel({ title, width, onClose, headerExtra, footer, ariaLabel, chi
   const px = Math.min(720, Math.max(440, width))
 
   return (
-    <div className="sheet-scrim">
+    <div className="sheet-scrim" {...backdropClose(() => closeRef.current())}>
       <div
         className="sheet"
         role="dialog"

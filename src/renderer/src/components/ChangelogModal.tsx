@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { useModalA11y } from '../hooks/useModalA11y'
+import { backdropClose } from '../lib/backdrop-close'
 import './ChangelogModal.css'
 
 interface Props {
@@ -22,7 +23,8 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Changes',
         items: [
-          'Home’s Running list is split by kind: Chats, Servers with a live session, and Interventions still running, each under its own quiet label and left out when empty. A server or an intervention opens with a click, and an intervention waiting for you shows an amber dot.'
+          'Home’s Running list is split by kind: Chats, Servers with a live session, and Interventions still running, each under its own quiet label and left out when empty. A server or an intervention opens with a click, and an intervention waiting for you shows an amber dot.',
+          'Sheets and dialogs close when you click outside them: Accounts, Hooks, Permissions, labels, the changelog, a password prompt and the file editor, which still asks before throwing away unsaved changes.'
         ]
       },
       {
@@ -1031,7 +1033,7 @@ export default function ChangelogModal({ onClose }: Props) {
   useModalA11y(dialogRef, onClose)
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Changelog">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Changelog" {...backdropClose(onClose)}>
       <div className="modal changelog-modal" ref={dialogRef}>
         <div className="modal-header">
           <h3>What's new</h3>

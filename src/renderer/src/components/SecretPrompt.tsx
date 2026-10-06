@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { useModalA11y } from '../hooks/useModalA11y'
+import { backdropClose } from '../lib/backdrop-close'
 import './SecretPrompt.css'
 
 interface Props {
@@ -14,7 +15,7 @@ export default function SecretPrompt({ request, onSubmit }: Props) {
   const titleId = `secret-prompt-${request.requestId}`
 
   return (
-    <div className="modal-backdrop">
+    <div className="modal-backdrop" {...backdropClose(() => onSubmit(null))}>
       <div
         className="modal secret-prompt"
         role="dialog"
