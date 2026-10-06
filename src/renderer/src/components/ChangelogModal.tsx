@@ -17,7 +17,7 @@ const CHANGELOG: Entry[] = [
   {
     version: '2.2.2',
     date: '2026-10-06',
-    tag: 'new',
+    tag: 'latest',
     sections: [
       {
         title: 'Fixes',
@@ -28,7 +28,8 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Changes',
         items: [
-          'Stop now leaves you on the intervention with its terminal and activity still on screen: the run is stopped and its CLI closed at once, the rail count drops, and its tab stays, greyed, until you leave. The × on its terminal or on its tab still ends it and closes it.'
+          'Stop now leaves you on the intervention with its terminal and activity still on screen: the run is stopped and its CLI closed at once, the rail count drops, and its tab stays, greyed, until you leave. The × on its terminal or on its tab still ends it and closes it.',
+          'On a server’s card, the button that opens the intervention screen is called New intervention, and SSH hosts no longer show the Claude Code check (WSL distros keep it).'
         ]
       }
     ]
@@ -36,7 +37,6 @@ const CHANGELOG: Entry[] = [
   {
     version: '2.2.1',
     date: '2026-10-06',
-    tag: 'latest',
     sections: [
       {
         title: 'Changes',
