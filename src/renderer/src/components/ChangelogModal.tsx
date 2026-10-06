@@ -20,6 +20,12 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'Changes',
+        items: [
+          'Stop in an intervention now ends it: the run is stopped, its Claude Code is closed and you are back on the Ops screen, so the intervention no longer shows in the Servers header or as a number on the rail. Stop also works after the run has already ended, while the CLI is still open.'
+        ]
+      },
+      {
         title: 'Fixes',
         items: [
           'An ops call to a server that is down or unreachable (connection refused or reset, handshake timeout, a dropped link) now tells the model to stop and report it, instead of moving on to the next step.',

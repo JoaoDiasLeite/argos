@@ -2119,6 +2119,13 @@ export default function App() {
   const opsSummary = summarizeOpsRunning(opsRunning, approvalQueue)
   // The workspace the user left running, for the way back from the Servers screens.
   const opsLeftRunning = opsWorkspace && opsRunning.has(opsTerminalIdFor(opsWorkspace)) ? opsWorkspace : null
+  // Stop in the workspace ends the intervention: it is no longer running and there is
+  // nothing to go back to, so the rail badge and the header chip drop it at once.
+  const endOpsWorkspace = useCallback((terminalId: string) => {
+    setOpsRunning((prev) => markOpsEnded(prev, terminalId))
+    setOpsWorkspace(null)
+    setView('ops')
+  }, [])
   const openOpsWorkspace = (intervention: OpsIntervention) => {
     setOpsWorkspace(intervention)
     setView('ops-workspace')
@@ -2697,6 +2704,7 @@ export default function App() {
             waiting={workspaceApproval}
             onDecide={workspaceApproval ? (allow, skipSteps) => respondApprovalById(workspaceApproval.approvalId, allow, skipSteps) : undefined}
             onStop={workspaceApproval ? () => respondApprovalStopById(workspaceApproval.approvalId) : undefined}
+            onEnded={endOpsWorkspace}
           />
         </Suspense>
       )}

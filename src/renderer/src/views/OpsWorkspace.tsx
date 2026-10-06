@@ -64,9 +64,12 @@ interface Props {
   onDecide?: (allow: boolean, skipSteps?: number[]) => void
   /** Deny the waiting approval and stop the run. */
   onStop?: () => void
+  /** The intervention was ended from here (Stop, Deny and stop): its run is stopped and
+   *  its CLI closed, so App drops it and leaves the workspace. */
+  onEnded?: (terminalId: string) => void
 }
 
-export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, onRunning, waiting, onDecide, onStop }: Props) {
+export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, onRunning, waiting, onDecide, onStop, onEnded }: Props) {
   const { runbookPath, scope } = intervention
   const [info, setInfo] = useState<OpsRunbookInfo | null>(null)
   const [hostDot, setHostDot] = useState<HostDot>('checking')
@@ -171,6 +174,20 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
     launches.delete(terminalId)
     void window.electronAPI.terminalKill(terminalId)
     setTerm({ kind: 'closed' })
+  }
+
+  /** Stop is the end of the intervention, not just of the run: a CLI left up after its run
+   *  is over can only start a run that does nothing, yet it keeps the intervention counted
+   *  as running on the rail and in the Servers header. */
+  const endIntervention = async (denyFirst?: () => void) => {
+    startSeqRef.current++
+    launches.delete(terminalId)
+    denyFirst?.()
+    // Stop first, so the ledger records the run as stopped by the operator rather than as
+    // a terminal that went away.
+    await window.electronAPI.opsStop(terminalId).catch(() => undefined)
+    await window.electronAPI.terminalKill(terminalId).catch(() => undefined)
+    onEnded?.(terminalId)
   }
 
   // Approvals for this terminal's run are answered in the activity column.
@@ -296,7 +313,9 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
           loading={loading}
           waiting={mine}
           onDecide={onDecide}
-          onDenyStop={onStop}
+          onDenyStop={onStop ? () => void endIntervention(onStop) : undefined}
+          onStop={onEnded ? () => void endIntervention() : undefined}
+          cliAlive={term.kind === 'ready'}
         />
       </div>
     </div>

@@ -21,6 +21,11 @@ interface Props {
   onDecide?: (allow: boolean, skipSteps?: number[]) => void
   /** Deny the waiting request and stop the run. */
   onDenyStop?: () => void
+  /** End the intervention: stop the run, close its CLI and leave the workspace. Without
+   *  it, Stop only stops the run. */
+  onStop?: () => void
+  /** The CLI is still up, so there is something for onStop to end even after the run has. */
+  cliAlive?: boolean
 }
 
 interface ScriptInfo {
@@ -415,7 +420,7 @@ function WaitingCall({ ops, onDecide }: { ops: ApprovalOpsContext; onDecide: (al
  * run header, whatever waits for the operator as the only highlighted block, one line per
  * call, and the earlier runs of this intervention folded to a line each.
  */
-export default function ActivityColumn({ terminalId, runbookPath, current, earlier, loading, waiting, onDecide, onDenyStop }: Props) {
+export default function ActivityColumn({ terminalId, runbookPath, current, earlier, loading, waiting, onDecide, onDenyStop, onStop, cliAlive }: Props) {
   const [reportRunId, setReportRunId] = useState<string | null>(null)
   const progress = current ? planProgress(current) : null
   const today = new Date()
@@ -461,9 +466,13 @@ export default function ActivityColumn({ terminalId, runbookPath, current, earli
           <button
             type="button"
             className="ac-btn stop"
-            disabled={!running}
-            onClick={() => void window.electronAPI.opsStop(terminalId)}
-            title="Stop this run: pending calls are refused and the CLI's ops tools stop working"
+            disabled={onStop ? !running && !cliAlive : !running}
+            onClick={() => (onStop ? onStop() : void window.electronAPI.opsStop(terminalId))}
+            title={
+              onStop
+                ? 'End this intervention: pending calls are refused, the CLI is closed and you go back to Ops'
+                : "Stop this run: pending calls are refused and the CLI's ops tools stop working"
+            }
           >
             Stop
           </button>
