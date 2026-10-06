@@ -629,7 +629,7 @@ export default function RemoteView({
                 onClick={() => onOps(selHost)}
                 title="Start an intervention on this host: its commands go through the runbook's gate"
               >
-                Operations
+                New intervention
               </button>
             )}
           </div>
