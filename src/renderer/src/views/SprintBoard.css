@@ -337,3 +337,20 @@
 .sb-bf-title { font-size: 13px; line-height: 1.4; color: var(--text-0); overflow-wrap: anywhere; }
 .sb-bf-row.dup .sb-bf-title { color: var(--text-2); }
 .sb-bf-notes { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ── Narrow windows ──
+   The 460px progress/standup column would crush the three lanes into slivers; below
+   this point it moves under the board instead. A media query, not a container query:
+   the Planner always spans the window minus the 68px rail, and the page itself has to
+   change direction, which its own @container could not restyle. Last in the file so
+   these override the base rules above at equal specificity. */
+@media (max-width: 1047px) {
+  .sb-page { flex-direction: column; overflow-y: auto; }
+  .sb-board { flex: none; overflow-y: visible; }
+  .sb-side {
+    flex: none;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    overflow-y: visible;
+  }
+}
