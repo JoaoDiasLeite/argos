@@ -1,5 +1,6 @@
 import { ClientChannel } from 'ssh2'
 import { getRemoteClient } from './sftp'
+import { ShellRegistry, type CreateResult } from './remote-shell-pure'
 
 /**
  * Interactive ssh2 shell channels backing the Remote Session ("Connect") terminal — one per
@@ -17,9 +18,11 @@ function isSafeId(id: unknown): id is string {
   return typeof id === 'string' && id.length > 0 && id.length <= 128 && SAFE_ID_RE.test(id)
 }
 
-const shells = new Map<string, ClientChannel>()
+const KILLED_ERROR = 'Terminal closed before it started'
 
-export async function remoteShellCreate(
+const shells = new ShellRegistry<ClientChannel>()
+
+export function remoteShellCreate(
   id: string,
   hostId: string,
   cols: number,
@@ -27,34 +30,50 @@ export async function remoteShellCreate(
   onData: (id: string, data: string) => void,
   onExit: (id: string, code: number) => void
 ): Promise<{ ok: boolean; error?: string }> {
-  if (!isSafeId(id)) return { ok: false, error: 'Invalid terminal id' }
-  if (shells.has(id)) return { ok: true } // benign re-create (StrictMode remount) — reuse
+  if (!isSafeId(id)) return Promise.resolve({ ok: false, error: 'Invalid terminal id' })
 
-  const res = await getRemoteClient(hostId)
-  if (!res.ok) return { ok: false, error: res.error }
+  // The id is reserved before the connection is awaited (see ShellRegistry): a kill that
+  // lands while this is still connecting (the tab closed, a StrictMode remount) closes the
+  // channel the moment it opens instead of leaving it orphaned, and a concurrent create for
+  // the same id joins this one rather than opening a second channel. A live id resolves ok
+  // straight away (benign re-create).
+  return shells.create(id, async (ticket) => {
+    const res = await getRemoteClient(hostId)
+    if (!res.ok) return { ok: false, error: res.error }
+    if (ticket.killed) return { ok: false, error: KILLED_ERROR }
 
-  const safeCols = Number.isInteger(cols) && cols > 0 ? cols : 80
-  const safeRows = Number.isInteger(rows) && rows > 0 ? rows : 24
+    const safeCols = Number.isInteger(cols) && cols > 0 ? cols : 80
+    const safeRows = Number.isInteger(rows) && rows > 0 ? rows : 24
 
-  return new Promise((resolve) => {
-    try {
-      res.conn.shell({ term: 'xterm-color', cols: safeCols, rows: safeRows }, (err, stream) => {
-        if (err) {
-          resolve({ ok: false, error: err.message })
-          return
-        }
-        shells.set(id, stream)
-        stream.on('data', (d: Buffer) => onData(id, d.toString('utf8')))
-        stream.stderr?.on('data', (d: Buffer) => onData(id, d.toString('utf8')))
-        stream.on('close', () => {
-          shells.delete(id)
-          onExit(id, 0)
+    return new Promise<CreateResult>((resolve) => {
+      try {
+        res.conn.shell({ term: 'xterm-color', cols: safeCols, rows: safeRows }, (err, stream) => {
+          if (err) {
+            resolve({ ok: false, error: err.message })
+            return
+          }
+          if (!shells.adopt(id, ticket, stream)) {
+            try {
+              stream.close()
+            } catch {
+              // no-op
+            }
+            resolve({ ok: false, error: KILLED_ERROR })
+            return
+          }
+          stream.on('data', (d: Buffer) => onData(id, d.toString('utf8')))
+          stream.stderr?.on('data', (d: Buffer) => onData(id, d.toString('utf8')))
+          stream.on('close', () => {
+            // Only a channel the far end closed reports an exit; one we killed (or one a
+            // fresh create already replaced) stays quiet towards the id's new owner.
+            if (shells.release(id, stream)) onExit(id, 0)
+          })
+          resolve({ ok: true })
         })
-        resolve({ ok: true })
-      })
-    } catch (e) {
-      resolve({ ok: false, error: e instanceof Error ? e.message : String(e) })
-    }
+      } catch (e) {
+        resolve({ ok: false, error: e instanceof Error ? e.message : String(e) })
+      }
+    })
   })
 }
 
@@ -86,24 +105,24 @@ export function remoteShellResize(id: string, cols: number, rows: number): void 
 
 export function remoteShellKill(id: string): { ok: boolean } {
   if (!isSafeId(id)) return { ok: false }
-  const stream = shells.get(id)
-  if (!stream) return { ok: false }
-  try {
-    stream.end()
-  } catch {
-    // no-op
+  const outcome = shells.kill(id)
+  if (outcome.kind === 'none') return { ok: false }
+  if (outcome.kind === 'live') {
+    try {
+      outcome.channel.end()
+    } catch {
+      // no-op
+    }
   }
-  shells.delete(id)
   return { ok: true }
 }
 
 export function remoteShellKillAll(): void {
-  for (const [id, stream] of shells) {
+  for (const stream of shells.killAll()) {
     try {
       stream.end()
     } catch {
       // no-op
     }
-    shells.delete(id)
   }
 }

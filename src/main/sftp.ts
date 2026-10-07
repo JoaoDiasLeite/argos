@@ -3,7 +3,7 @@ import { promises as fsp } from 'fs'
 import * as path from 'path'
 import { Client, SFTPWrapper, Stats } from 'ssh2'
 import { getHost, buildConnectConfig } from './ssh'
-import { isSafeRemotePath, parseHistoryLines } from './sftp-pure'
+import { isSafeRemotePath, parseHistoryLines, SingleFlightCache } from './sftp-pure'
 
 export { isSafeRemotePath, parseHistoryLines }
 
@@ -30,23 +30,33 @@ interface Session {
   sftp: SFTPWrapper
 }
 
-const sessions = new Map<string, Session>()
+type SessionResult = { ok: true; session: Session } | { ok: false; error: string }
 
-// Connect (or reuse a live connection) for a host id and open its SFTP subsystem.
-// Registers eviction on the underlying conn/sftp so a dropped connection is never left
-// dangling in the map — the next call always reconnects fresh instead of hanging off a
-// dead client.
-function getSession(hostId: string): Promise<{ ok: true; session: Session } | { ok: false; error: string }> {
-  const existing = sessions.get(hostId)
-  if (existing) return Promise.resolve({ ok: true, session: existing })
+// One entry per host id, holding the *promise* of the session rather than the session:
+// opening a server tab fires sftpConnect, sftpList and the terminal's getRemoteClient at
+// the same time, and caching only the finished session let each of them dial in on its
+// own — the last one to get ready won the slot and the others stayed open forever. With
+// the promise cached they all share the one attempt in flight. A failed attempt drops its
+// entry (see SingleFlightCache) so the next call retries.
+const sessions = new SingleFlightCache<SessionResult>()
 
+// Connect (or reuse a live or in-flight connection) for a host id and open its SFTP
+// subsystem.
+function getSession(hostId: string): Promise<SessionResult> {
+  return sessions.get(hostId, (evict) => openSession(hostId, evict))
+}
+
+// Dials the host and opens SFTP on it. Registers `evict` on the underlying conn/sftp so a
+// dropped connection is never left dangling in the cache — the next call always reconnects
+// fresh instead of hanging off a dead client.
+function openSession(hostId: string, evict: () => void): Promise<SessionResult> {
   const host = getHost(hostId)
   if (!host) return Promise.resolve({ ok: false, error: 'Host not found' })
 
   return new Promise((resolve) => {
     const conn = new Client()
     let settled = false
-    const finish = (r: { ok: true; session: Session } | { ok: false; error: string }) => {
+    const finish = (r: SessionResult) => {
       if (settled) return
       settled = true
       resolve(r)
@@ -60,18 +70,25 @@ function getSession(hostId: string): Promise<{ ok: true; session: Session } | { 
           return
         }
         const session: Session = { conn, sftp }
-        sessions.set(hostId, session)
-        const evict = () => {
-          if (sessions.get(hostId) === session) sessions.delete(hostId)
+        // A broken SFTP channel takes its connection down with it: evicting alone would
+        // leave the conn open with nothing left referencing it. A plain sftp close needs
+        // no end — the conn either closes too or stays in use by a terminal shell.
+        const evictAndEnd = () => {
+          evict()
+          try {
+            conn.end()
+          } catch {
+            // no-op
+          }
         }
         sftp.on('close', evict)
-        sftp.on('error', evict)
+        sftp.on('error', evictAndEnd)
         conn.on('close', evict)
         finish({ ok: true, session })
       })
     })
     conn.on('error', (e) => {
-      sessions.delete(hostId)
+      evict()
       finish({ ok: false, error: e.message })
     })
     // A socket the far end closes cleanly before the handshake (a VirtualBox NAT forward
@@ -340,26 +357,31 @@ export async function sftpHistory(hostId: string): Promise<{ ok: boolean; comman
   return { ok: true, commands: [] }
 }
 
-export function sftpDisconnect(hostId: string): { ok: boolean } {
-  const session = sessions.get(hostId)
-  if (session) {
-    try {
-      session.conn.end()
-    } catch {
+// Ends the connection behind a cache entry once it settles — straight away for a live
+// session, or as soon as it gets ready for one still connecting (dropping only the entry
+// would leave that connection open once its handshake finished).
+function endWhenSettled(entry: Promise<SessionResult>): void {
+  void entry.then(
+    (r) => {
+      if (!r.ok) return
+      try {
+        r.session.conn.end()
+      } catch {
+        // no-op
+      }
+    },
+    () => {
       // no-op
     }
-    sessions.delete(hostId)
-  }
+  )
+}
+
+export function sftpDisconnect(hostId: string): { ok: boolean } {
+  const entry = sessions.take(hostId)
+  if (entry) endWhenSettled(entry)
   return { ok: true }
 }
 
 export function sftpDisconnectAll(): void {
-  for (const [hostId, session] of sessions) {
-    try {
-      session.conn.end()
-    } catch {
-      // no-op
-    }
-    sessions.delete(hostId)
-  }
+  for (const entry of sessions.takeAll()) endWhenSettled(entry)
 }

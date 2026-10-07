@@ -288,7 +288,11 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
       term.write(`\r\n\x1b[2m[connection closed${e.code ? ` · code ${e.code}` : ''}]\x1b[0m\r\n`)
     })
 
+    // Set by the cleanup: a create still connecting when the effect tears down is killed in
+    // main and resolves as a failure — that's not an error to paint into the terminal.
+    let disposed = false
     window.electronAPI.remoteShellCreate(terminalId, hostId, cols, rows).then((res) => {
+      if (disposed) return
       if (!res.ok) {
         term.write(`\r\n\x1b[31mFailed to start terminal${res.error ? `: ${res.error}` : '.'}\x1b[0m\r\n`)
         setStarting(false)
@@ -300,6 +304,7 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
     })
 
     return () => {
+      disposed = true
       clearTimeout(backstopTimer)
       clearTimeout(quietTimerRef.current)
       awaitingRevealRef.current = false
