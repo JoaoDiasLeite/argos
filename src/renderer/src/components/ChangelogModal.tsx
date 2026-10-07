@@ -21,8 +21,14 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
-        title: 'Changes',
-        items: []
+        title: 'Fixes',
+        items: [
+          'Restarting an intervention’s terminal mid-run now records that run as stopped in the audit log and the report, instead of claiming it finished ok.',
+          'Skipping a plan step that has no concrete command is honoured: the step leaves the approved plan, the model is told not to run it and the audit log records the skip. Before, the skip was silently ignored and the step ran anyway.',
+          'A hosts file the app cannot read (a failed decrypt, a corrupt file) no longer looks like an empty list: saving or deleting a host refuses to overwrite it and says why, instead of silently destroying every saved server and its secrets. The file also survives the system keyring appearing or disappearing between launches, and an interrupted save can no longer truncate it.',
+          'Opening a server tab no longer dials up to three SSH connections to the same host and keeps the spares open forever; everything shares one. Closing a remote terminal while it is still connecting no longer leaves its shell running invisibly on the server.',
+          'Deleting a chat that lives in its own window closes that window too. Closing it by hand used to bring back an empty pane for the deleted chat.'
+        ]
       }
     ]
   },
