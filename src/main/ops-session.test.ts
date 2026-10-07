@@ -392,6 +392,16 @@ describe('ops session through callOpsTool', () => {
     expect((await lines())[1].event).toMatchObject({ kind: 'call.decided', decision: 'deny', reason: 'args must be an array of strings' })
   })
 
+  it('a later abort does not rewrite the outcome of a run already ended', async () => {
+    const { session } = await start()
+    await finishOpsRun(session.ctx, { ok: true, costUsd: 0 })
+    // The terminal closed after the run had ended: no second run.end, no aborted outcome.
+    await finishOpsRun(session.ctx, { ok: false, costUsd: 0, aborted: true, error: 'the terminal was closed' })
+    const ends = (await lines()).filter((l) => l.event.kind === 'run.end')
+    expect(ends).toHaveLength(1)
+    expect(ends[0].event).toEqual({ kind: 'run.end', runId: 'run-1', ok: true, costUsd: 0 })
+  })
+
   it('a stopped run refuses calls already approved', async () => {
     const { fake, session, abort } = await start()
     const input = { hostId: 'h1', cmd: 'systemctl status nginx' }

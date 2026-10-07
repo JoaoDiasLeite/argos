@@ -1223,7 +1223,7 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
     // A remount reattaches to the same live pty, whose CLI holds this token: hand back the
     // same session, or the running relay is orphaned.
     if (existing.interventionKey === interventionKey) return terminalOpsReply(existing)
-    await endTerminalOps(terminalId, { ok: true, error: 'replaced by a new ops session on the same terminal' })
+    await endTerminalOps(terminalId, { ok: false, aborted: true, error: 'replaced by a new ops session on the same terminal' })
   }
 
   const abort = new AbortController()
@@ -1938,10 +1938,15 @@ ipcMain.on('terminal:resize', (_, id: string, cols: number, rows: number) =>
   resizeTerminal(id, cols, rows)
 )
 // killTerminal drops the pty without its onExit, so a closed ops terminal ends its run here.
+// A run still open at that point was cut short (Restart kills the pty without an ops:stop
+// first, aborting any exec in flight), so it ends as aborted. A run already ended (a Stop,
+// the pty's own exit) is no longer in terminalOps and finishOpsRun logs run.end only once,
+// so its outcome is never rewritten.
+const TERMINAL_CLOSED = { ok: false, aborted: true, error: 'the terminal was closed' } as const
 ipcMain.handle('terminal:kill', (_, id: string) => {
   const r = killTerminal(id)
   dropBusyTerminal(id)
-  void endTerminalOps(id, { ok: true })
+  void endTerminalOps(id, TERMINAL_CLOSED)
   return r
 })
 ipcMain.on('terminal:kill-deferred', (_, id: string) => {
@@ -1950,7 +1955,7 @@ ipcMain.on('terminal:kill-deferred', (_, id: string) => {
   // The deferred kill fires after 250 ms unless a re-create for the same id cancels it
   // (a remount); only a terminal that is really gone ends its run.
   setTimeout(() => {
-    if (!listTerminals().some((t) => t.id === id)) void endTerminalOps(id, { ok: true })
+    if (!listTerminals().some((t) => t.id === id)) void endTerminalOps(id, TERMINAL_CLOSED)
   }, 500)
 })
 // The ptys this process holds, for the terminal grid. No consumer count: unmounting
