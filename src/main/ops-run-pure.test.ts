@@ -560,3 +560,41 @@ describe('planApprovedText', () => {
     expect(planApprovedText(steps, [])).toBe('Plan approved. Proceed step by step.')
   })
 })
+
+describe('a skipped title-only step', () => {
+  const plan = {
+    steps: [
+      { title: 'Estado', commands: ['systemctl status nginx'], verdict: 'runs' as const },
+      { title: 'Recarregar', commands: ['sudo systemctl reload nginx'], verdict: 'asks' as const },
+      { title: 'Reiniciar o serviço', commands: [], verdict: 'unknown' as const }
+    ],
+    summary: { runs: 1, asks: 1, denied: 0, mutates: 1 }
+  }
+  const input = {
+    steps: [
+      { title: 'Estado', hostId: 'h1', cmd: 'systemctl status nginx' },
+      { title: 'Recarregar', hostId: 'h1', cmd: 'sudo systemctl reload nginx' },
+      'Reiniciar o serviço'
+    ]
+  }
+
+  it('is kept as a skip, alongside one with commands', async () => {
+    const { planSkips } = await import('./ops-run-pure')
+    expect(planSkips(plan, [2, 1, 2, 3, -1, 0.5])).toEqual([1, 2])
+    expect(planSkips(plan, [2])).toEqual([2])
+    expect(planSkips(plan, 'nope')).toEqual([])
+  })
+
+  it('leaves the plan the model is told, but adds nothing for the gate to refuse', async () => {
+    const { planApprovedText, planInputWithoutSkips, skippedCommandLines } = await import('./ops-run-pure')
+    // Every step with commands approved, only the title-only one skipped.
+    expect(planInputWithoutSkips(input, [2])).toEqual({ steps: input.steps.slice(0, 2) })
+    expect(skippedCommandLines(plan, [2]).size).toBe(0)
+    expect([...skippedCommandLines(plan, [1, 2])]).toEqual(['sudo systemctl reload nginx'])
+    const text = planApprovedText(plan.steps, [2])
+    expect(text).toContain('Skipped, do NOT run these:\n- Reiniciar o serviço\n')
+    expect(text).toContain(
+      'Approved, run these in order, one command per call:\n- Estado: systemctl status nginx\n- Recarregar: sudo systemctl reload nginx\n'
+    )
+  })
+})

@@ -830,12 +830,12 @@ describe('skipped plan steps', () => {
 
   it('skipped steps are logged, named to the model, and refused when tried; the rest run', async () => {
     let planAsks = 0
-    const { fake, call } = await start(
+    const { fake, session, call } = await start(
       { exec: () => ({ stdout: 'ok' }) },
       async (req) => {
         if (req.tool !== 'mcp__ops__propose_plan') return { allow: true }
         planAsks++
-        // Out of range, a title-only step, a non-integer and a repeat are all ignored.
+        // Out of range, a non-integer and a repeat are ignored; a title-only step is not.
         return planAsks === 1 ? { allow: true, skipSteps: [2, 1, 3, 99, -1, 1.5, 1] } : { allow: true }
       },
       { plan: false }
@@ -848,8 +848,9 @@ describe('skipped plan steps', () => {
     expect(reply.text).toContain('Approved, run these in order')
     expect(reply.text).not.toMatch(/Steps? d/)
     const approved = (await lines()).find((l) => l.event.kind === 'plan.approved')?.event
-    expect(approved).toMatchObject({ kind: 'plan.approved', skippedSteps: [1, 2] })
+    expect(approved).toMatchObject({ kind: 'plan.approved', skippedSteps: [1, 2, 3] })
     expect((approved as { steps: unknown[] }).steps).toHaveLength(4)
+    expect(session.ctx.skippedCommands.size).toBe(2)
 
     const skipped = { text: 'Refused: step skipped by the operator.', isError: true }
     expect(await call('run', { hostId: 'h1', cmd: 'sudo systemctl reload nginx' })).toEqual(skipped)
@@ -864,6 +865,26 @@ describe('skipped plan steps', () => {
     // A new approved plan is a new set of decisions: the skips go.
     expect(await call('propose_plan', PLAN)).toEqual({ text: 'Plan approved. Proceed step by step.', isError: false })
     expect((await call('run', { hostId: 'h1', cmd: 'sudo systemctl reload nginx' })).isError).toBe(false)
+  })
+
+  it('a skipped title-only step leaves the approved plan and is logged, with nothing for the gate', async () => {
+    // Every step with commands approved; only "tell the operator" (no command) skipped.
+    const { session } = await start(
+      { exec: () => ({ stdout: 'ok' }) },
+      async (req) => (req.tool === 'mcp__ops__propose_plan' ? { allow: true, skipSteps: [3] } : { allow: true }),
+      { plan: false }
+    )
+    const verdict = await session.canUseTool('mcp__ops__propose_plan', PLAN)
+    expect(verdict).toEqual({ behavior: 'allow', updatedInput: { steps: PLAN.steps.slice(0, 3) } })
+    const reply = await session.tools.propose_plan(verdict.behavior === 'allow' ? verdict.updatedInput : {})
+    const text = reply.content.map((c) => c.text).join('\n')
+    expect(text).toContain('Skipped, do NOT run these:\n- tell the operator\n')
+    expect(text.split('Approved, run these in order')[1]).not.toContain('tell the operator')
+    expect(text).not.toBe('Plan approved. Proceed step by step.')
+    const approved = (await lines()).find((l) => l.event.kind === 'plan.approved')?.event
+    expect(approved).toMatchObject({ kind: 'plan.approved', skippedSteps: [3] })
+    expect(session.ctx.skippedSteps).toEqual([3])
+    expect(session.ctx.skippedCommands.size).toBe(0)
   })
 
   it('the internal report marks skipped steps', async () => {

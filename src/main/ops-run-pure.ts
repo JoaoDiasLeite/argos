@@ -634,19 +634,24 @@ export function withSudoStdin(argv: string[]): string[] {
 export const STEP_SKIPPED_REASON = 'step skipped by the operator'
 
 /**
- * The operator's skips, kept only where they mean something: whole-number indices into
- * the plan's steps, on a step that names a command (a title-only step has nothing to
- * skip). Sorted and without repeats; anything else is dropped, not an error.
+ * The operator's skips: whole-number indices into the plan's steps, sorted and without
+ * repeats; anything else is dropped, not an error. Every skipped step counts, a
+ * title-only one included ("restart the service" with no command yet): it is taken out
+ * of the plan the model is told was approved and recorded in `plan.approved`, or the
+ * model would run it anyway. Only the gate's refusal is per command (skippedCommandLines).
  */
 export function planSkips(plan: ClassifiedPlan, raw: unknown): number[] {
   if (!Array.isArray(raw)) return []
-  const ok = raw.filter(
-    (i): i is number => Number.isInteger(i) && i >= 0 && i < plan.steps.length && plan.steps[i].commands.length > 0
-  )
+  const ok = raw.filter((i): i is number => Number.isInteger(i) && i >= 0 && i < plan.steps.length)
   return [...new Set(ok)].sort((a, b) => a - b)
 }
 
-/** The canonical command lines of the skipped steps, as the plan preview spelled them. */
+/**
+ * The canonical command lines of the skipped steps, as the plan preview spelled them: what
+ * the gate refuses later (callPlanLine). A title-only step adds nothing here; there is no
+ * command to match, so honouring that skip rests on the model being told (planApprovedText)
+ * and on the operator approving whatever it does instead.
+ */
 export function skippedCommandLines(plan: ClassifiedPlan, skips: number[]): Set<string> {
   return new Set(skips.flatMap((i) => plan.steps[i]?.commands ?? []))
 }
@@ -658,7 +663,6 @@ export function planInputWithoutSkips(input: Record<string, unknown>, skips: num
   return { ...input, steps: (input.steps as unknown[]).filter((_, i) => !skip.has(i)) }
 }
 
-/** What propose_plan answers once approved; skipped steps are named 1-based. */
 /**
  * What the model reads after an approval with skips. Steps are named by title and
  * command, never by number: on the first real run the model had numbered its own prose
