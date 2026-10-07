@@ -1,6 +1,6 @@
 // Generates build/icon.png (512×512) with no external deps: the dog mark from
 // src/renderer/src/brand/argos-mark.json (the same path the title bar and the rail
-// draw) in the accent on a dark rounded square, rasterised here with an even-odd
+// draw) in white on an accent rounded square, rasterised here with an even-odd
 // scanline fill and 4×4 supersampling, then encoded as a PNG via zlib.
 import zlib from 'node:zlib'
 import fs from 'node:fs'
@@ -12,7 +12,10 @@ const mark = JSON.parse(fs.readFileSync(path.join(ROOT, 'src/renderer/src/brand/
 
 const S = 512
 const SS = 4 // supersampling per axis
-const BG = [0x1c, 0x1b, 0x19] // --bg-1
+const BG = [0xdf, 0x7a, 0x52] // --accent (Warm Rust)
+const WHITE = [0xff, 0xff, 0xff]
+// The dev variant (mark only, transparent) stays in the accent: white would vanish
+// on a light taskbar.
 const ACCENT = [0xdf, 0x7a, 0x52] // --accent (Warm Rust)
 
 // ── Path → polygons (flatten cubics) ──
@@ -111,7 +114,7 @@ const rasterise = (withBg) => {
       if (withBg) {
         const cover = bgHits / (SS * SS)
         const m = markHits / bgHits
-        for (let c = 0; c < 3; c++) px[o + c] = Math.round(BG[c] * (1 - m) + ACCENT[c] * m)
+        for (let c = 0; c < 3; c++) px[o + c] = Math.round(BG[c] * (1 - m) + WHITE[c] * m)
         px[o + 3] = Math.round(255 * cover)
       } else if (markHits) {
         for (let c = 0; c < 3; c++) px[o + c] = ACCENT[c]
