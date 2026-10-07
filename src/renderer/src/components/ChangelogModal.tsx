@@ -18,11 +18,20 @@ const CHANGELOG: Entry[] = [
   {
     version: '2.4.0',
     date: '2026-10-07',
-    tag: 'new',
+    tag: 'latest',
     sections: [
+      {
+        title: 'Changes',
+        items: [
+          'A popped-out chat has a button to return to the main window, next to Restart. Closing the window still does the same.',
+          'The app icon is inverted: the dog now sits in white on the accent, instead of the accent on a dark square.',
+          'The sprint board’s three lanes are separated by full-height hairlines, in both themes. In the light theme they used to blur into one plane, and an empty board was three headings floating on the page.'
+        ]
+      },
       {
         title: 'Fixes',
         items: [
+          'On a narrow window the board no longer crushes its lanes into slivers: the progress and standup column moves under the board when there is no room for both. The New intervention screen does the same with its "What this runbook allows" panel, which used to be squeezed until its numbers overlapped.',
           'Restarting an intervention’s terminal mid-run now records that run as stopped in the audit log and the report, instead of claiming it finished ok.',
           'Skipping a plan step that has no concrete command is honoured: the step leaves the approved plan, the model is told not to run it and the audit log records the skip. Before, the skip was silently ignored and the step ran anyway.',
           'A hosts file the app cannot read (a failed decrypt, a corrupt file) no longer looks like an empty list: saving or deleting a host refuses to overwrite it and says why, instead of silently destroying every saved server and its secrets. The file also survives the system keyring appearing or disappearing between launches, and an interrupted save can no longer truncate it.',
@@ -35,7 +44,6 @@ const CHANGELOG: Entry[] = [
   {
     version: '2.3.0',
     date: '2026-10-06',
-    tag: 'latest',
     sections: [
       {
         title: 'Changes',
