@@ -683,6 +683,9 @@ export interface SshKeyInfo {
 
 export type GenerateKeyResult = { ok: true; key: SshKeyInfo } | { ok: false; error: string }
 
+/** sshSave / sshDelete: the updated list, or why nothing was written (see src/main/ssh.ts). */
+export type SshHostsWriteResult = { ok: true; hosts: SshHostPublic[] } | { ok: false; error: string }
+
 /** One entry from an `sftpList` directory listing (see src/main/sftp.ts). */
 export interface RemoteEntry {
   name: string
@@ -1473,8 +1476,8 @@ declare global {
 
       // SSH
       sshList: () => Promise<SshHostPublic[]>
-      sshSave: (host: SshHostInput) => Promise<SshHostPublic[]>
-      sshDelete: (id: string) => Promise<SshHostPublic[]>
+      sshSave: (host: SshHostInput) => Promise<SshHostsWriteResult>
+      sshDelete: (id: string) => Promise<SshHostsWriteResult>
       sshTest: (id: string) => Promise<{ ok: boolean; message: string }>
       sshTestClaude: (id: string) => Promise<{ ok: boolean; message: string }>
       sshKeysList: () => Promise<SshKeyInfo[]>

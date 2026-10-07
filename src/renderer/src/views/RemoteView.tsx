@@ -205,6 +205,8 @@ export default function RemoteView({
   const colRef = useRef<HTMLElement>(null)
   const [editingCwd, setEditingCwd] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  /** Why the last host save/delete wrote nothing (e.g. an unreadable hosts file). */
+  const [writeError, setWriteError] = useState<string | null>(null)
 
   // Ops: the recently opened runbooks (Servers → Ops) and the selected host's runs.
   const [runbooks, setRunbooks] = useState<Extract<OpsRunbookInfo, { ok: true }>[]>([])
@@ -215,6 +217,7 @@ export default function RemoteView({
     setSelectedState(sel)
     setEditingCwd(false)
     setConfirmDelete(false)
+    setWriteError(null)
   }
 
   // The column is mounted only while a target is selected (as the Projects column): a
@@ -342,12 +345,19 @@ export default function RemoteView({
 
   const openEditor = (h: SshHostInput) => {
     editorOpenedAt.current = Date.now()
+    setWriteError(null)
     setEditing(h)
   }
 
   const save = async () => {
     if (!editing || !hostValid) return
-    setHosts(await window.electronAPI.sshSave(editing))
+    const res = await window.electronAPI.sshSave(editing)
+    if (!res.ok) {
+      // Nothing was written: the sheet stays open with what was typed.
+      setWriteError(res.error)
+      return
+    }
+    setHosts(res.hosts)
     setEditing(null)
   }
 
@@ -363,7 +373,12 @@ export default function RemoteView({
   }
 
   const remove = async (id: string) => {
-    setHosts(await window.electronAPI.sshDelete(id))
+    const res = await window.electronAPI.sshDelete(id)
+    if (!res.ok) {
+      setWriteError(res.error)
+      return
+    }
+    setHosts(res.hosts)
     select(null)
   }
 
@@ -781,8 +796,17 @@ export default function RemoteView({
           {selHost ? (
             confirmDelete ? (
               <>
-                <span className="help">Delete {selHost.name}? Its audit log stays.</span>
-                <button type="button" className="btn-ghost small" onClick={() => setConfirmDelete(false)} autoFocus>
+                {writeError ? (
+                  <span className="rv-error-text">{writeError}</span>
+                ) : (
+                  <span className="help">Delete {selHost.name}? Its audit log stays.</span>
+                )}
+                <button type="button" className="btn-ghost small" onClick={() => {
+                    setConfirmDelete(false)
+                    setWriteError(null)
+                  }}
+                  autoFocus
+                >
                   Keep
                 </button>
                 <button type="button" className="btn-primary small danger" onClick={() => remove(selHost.id)}>
@@ -966,7 +990,13 @@ export default function RemoteView({
           onClose={() => setEditing(null)}
           footer={
             <>
-              <span className="help rv-sheet-help">Enter saves · Esc cancels</span>
+              {writeError ? (
+                <span className="rv-error-text rv-sheet-help" role="alert">
+                  {writeError}
+                </span>
+              ) : (
+                <span className="help rv-sheet-help">Enter saves · Esc cancels</span>
+              )}
               <button type="button" className="btn-ghost" onClick={() => setEditing(null)}>
                 Cancel
               </button>

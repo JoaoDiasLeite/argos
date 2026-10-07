@@ -4,7 +4,7 @@ import * as path from 'path'
 import { Client, ConnectConfig } from 'ssh2'
 import { randomUUID } from 'crypto'
 import { verifyHostKey } from './ssh-trust'
-import { cleanHostFields } from './ssh-host-pure'
+import { cleanHostFields, decodeHostsFile, refuseOverwriteMessage, type HostsRead } from './ssh-host-pure'
 
 export type SshAuthType = 'password' | 'key' | 'agent'
 
@@ -27,17 +27,48 @@ export type SshHostPublic = Omit<SshHost, 'password' | 'passphrase'> & { hasSecr
 
 const hostsPath = path.join(app.getPath('userData'), 'ssh-hosts.bin')
 
-function readHosts(): SshHost[] {
+/**
+ * A missing file is an empty list; any other failure (unreadable, corrupt, undecryptable in
+ * both modes) is an error, so the write paths can refuse to overwrite it.
+ */
+function readHosts(): HostsRead<SshHost> {
+  let buf: Buffer
   try {
-    if (!fs.existsSync(hostsPath)) return []
-    const buf = fs.readFileSync(hostsPath)
-    const json = safeStorage.isEncryptionAvailable()
-      ? safeStorage.decryptString(buf)
-      : buf.toString('utf-8')
-    return JSON.parse(json)
-  } catch {
-    return []
+    buf = fs.readFileSync(hostsPath)
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return { ok: true, hosts: [] }
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
+  return decodeHostsFile<SshHost>(buf, {
+    encryptionAvailable: safeStorage.isEncryptionAvailable(),
+    decrypt: (b) => safeStorage.decryptString(b)
+  })
+}
+
+/** Read-only callers: an unreadable file shows as no hosts (logged), nothing is written. */
+function readHostsOrEmpty(): SshHost[] {
+  const res = readHosts()
+  if (res.ok) return res.hosts
+  console.error(`[ssh] could not read ${hostsPath}: ${res.error}`)
+  return []
+}
+
+export type HostsWriteResult = { ok: true; hosts: SshHostPublic[] } | { ok: false; error: string }
+
+/**
+ * Read-modify-write, fail-closed: when the file cannot be read, nothing is written, since
+ * writing would replace every saved host (and its secrets) with whatever `mutate` built
+ * from an empty list.
+ */
+function updateHosts(mutate: (hosts: SshHost[]) => SshHost[]): HostsWriteResult {
+  const res = readHosts()
+  if (!res.ok) return { ok: false, error: refuseOverwriteMessage(hostsPath, res.error) }
+  try {
+    writeHosts(mutate(res.hosts))
+  } catch (e) {
+    return { ok: false, error: `Could not save the hosts file: ${e instanceof Error ? e.message : String(e)}` }
+  }
+  return { ok: true, hosts: listHosts() }
 }
 
 function writeHosts(hosts: SshHost[]): void {
@@ -45,7 +76,11 @@ function writeHosts(hosts: SshHost[]): void {
   const data = safeStorage.isEncryptionAvailable()
     ? safeStorage.encryptString(json)
     : Buffer.from(json, 'utf-8')
-  fs.writeFileSync(hostsPath, data)
+  // Write-then-rename: an interrupted write must never leave the file truncated, since an
+  // unreadable file blocks every later save until the user moves it aside.
+  const tmp = `${hostsPath}.tmp`
+  fs.writeFileSync(tmp, data)
+  fs.renameSync(tmp, hostsPath)
 }
 
 function toPublic(h: SshHost): SshHostPublic {
@@ -54,35 +89,34 @@ function toPublic(h: SshHost): SshHostPublic {
 }
 
 export function listHosts(): SshHostPublic[] {
-  return readHosts().map(toPublic)
+  return readHostsOrEmpty().map(toPublic)
 }
 
 function genId(): string {
   return `ssh_${randomUUID()}`
 }
 
-export function saveHost(raw: SshHost): SshHostPublic[] {
+export function saveHost(raw: SshHost): HostsWriteResult {
   const input = cleanHostFields(raw)
-  const hosts = readHosts()
-  const idx = input.id ? hosts.findIndex((h) => h.id === input.id) : -1
-  if (idx >= 0) {
-    const prev = hosts[idx]
-    // Preserve existing secrets if the renderer didn't supply new ones (it never receives them).
-    hosts[idx] = {
-      ...input,
-      password: input.password || prev.password,
-      passphrase: input.passphrase || prev.passphrase
+  return updateHosts((hosts) => {
+    const idx = input.id ? hosts.findIndex((h) => h.id === input.id) : -1
+    if (idx >= 0) {
+      const prev = hosts[idx]
+      // Preserve existing secrets if the renderer didn't supply new ones (it never receives them).
+      hosts[idx] = {
+        ...input,
+        password: input.password || prev.password,
+        passphrase: input.passphrase || prev.passphrase
+      }
+    } else {
+      hosts.push({ ...input, id: input.id || genId() })
     }
-  } else {
-    hosts.push({ ...input, id: input.id || genId() })
-  }
-  writeHosts(hosts)
-  return listHosts()
+    return hosts
+  })
 }
 
-export function deleteHost(id: string): SshHostPublic[] {
-  writeHosts(readHosts().filter((h) => h.id !== id))
-  return listHosts()
+export function deleteHost(id: string): HostsWriteResult {
+  return updateHosts((hosts) => hosts.filter((h) => h.id !== id))
 }
 
 export function buildConnectConfig(h: SshHost): ConnectConfig {
@@ -109,7 +143,7 @@ export function buildConnectConfig(h: SshHost): ConnectConfig {
 }
 
 export function getHost(id: string): SshHost | null {
-  return readHosts().find((h) => h.id === id) ?? null
+  return readHostsOrEmpty().find((h) => h.id === id) ?? null
 }
 
 /**
