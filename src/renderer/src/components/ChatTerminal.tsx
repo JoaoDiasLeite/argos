@@ -51,6 +51,9 @@ interface Props {
   onClose?: () => void
   /** Shows a button that opens this chat in its own window (see src/main/chat-popout.ts). */
   onPopOut?: () => void
+  /** The inverse, shown inside a pop-out window: hand the chat back to the main window's
+   *  panes. Closing the window does the same; this is the discoverable way. */
+  onPopIn?: () => void
   /** Typed into the CLI, with Enter, once it is up. Sent at most once per mount (see
    *  sentPromptRef) so a Restart doesn't silently re-run the task. */
   initialPrompt?: string
@@ -136,7 +139,7 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onPopOut, onActive, initialPrompt, onInitialPromptSent, accelerated, ops }: Props) {
+export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onPopOut, onPopIn, onActive, initialPrompt, onInitialPromptSent, accelerated, ops }: Props) {
   // An explicit prop wins; otherwise the surrounding view decides (false by default).
   const accelFromContext = useContext(TerminalAccelContext)
   // The setup effect below runs once and cannot close over a prop that changes later, and
@@ -855,6 +858,13 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
             <button className="chat-terminal-btn" onClick={onPopOut} title="Open in its own window" aria-label="Open in its own window">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M14 4h6v6M20 4l-9 9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
+              </svg>
+            </button>
+          )}
+          {onPopIn && (
+            <button className="chat-terminal-btn" onClick={onPopIn} title="Return to the main window" aria-label="Return to the main window">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M20 10h-6V4M14 10l9-9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
               </svg>
             </button>
           )}

@@ -52,6 +52,9 @@ export default function Popout() {
           pinSessionId={spec.pinSessionId}
           active
           closable={false}
+          // Closing the window is what hands the chat back (chat-popout.ts 'closed' →
+          // the main window restores a pane); the button is the discoverable way to it.
+          onPopIn={() => window.close()}
         />
       </div>
     </div>
