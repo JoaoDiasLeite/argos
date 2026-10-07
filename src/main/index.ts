@@ -194,6 +194,7 @@ import {
   anyChatPopoutInView,
   chatPopoutSpec,
   chatPopoutWindows,
+  closeChatPopout,
   focusChatPopout,
   openChatPopout,
   openChatPopouts,
@@ -837,6 +838,7 @@ ipcMain.handle('popout:open', (_, spec: unknown) => {
 })
 ipcMain.handle('popout:spec', (_, sessionId: unknown) => (typeof sessionId === 'string' ? chatPopoutSpec(sessionId) : null))
 ipcMain.handle('popout:focus', (_, sessionId: unknown) => (typeof sessionId === 'string' ? focusChatPopout(sessionId) : false))
+ipcMain.handle('popout:close', (_, sessionId: unknown) => (typeof sessionId === 'string' ? closeChatPopout(sessionId) : false))
 ipcMain.handle('popout:list', () => openChatPopouts())
 
 ipcMain.on('pill:open-main', () => {

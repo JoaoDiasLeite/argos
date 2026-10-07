@@ -195,6 +195,8 @@ function serverGroupKey(target: RemoteTarget): string {
 
 export default function App() {
   const [sessions, setSessions] = useState<Session[]>([])
+  const sessionsRef = useRef(sessions)
+  sessionsRef.current = sessions
   // `focused`/`openInFocused` stand in for the old `activeId`/`setActiveId` state pair:
   // every one of setActiveId's call sites means "show me this chat", which is exactly
   // what openInFocused does (see lib/panes.ts for the exact semantics, including how
@@ -224,6 +226,10 @@ export default function App() {
   const [poppedOut, setPoppedOut] = useState<ReadonlySet<string>>(new Set())
   const poppedOutRef = useRef(poppedOut)
   poppedOutRef.current = poppedOut
+  // Chats deleted this run. Deleting a popped-out chat closes its window, and that close
+  // comes back as an ordinary 'popout:closed' — possibly before `sessions` (and so
+  // sessionsRef) has caught up with the delete. This answers "is it gone?" at once.
+  const deletedIdsRef = useRef(new Set<string>())
   const openInFocused = useCallback(
     (sessionId: string) => {
       if (sessionId && poppedOutRef.current.has(sessionId)) {
@@ -250,13 +256,18 @@ export default function App() {
       .popoutList()
       .then((ids) => setPoppedOut(new Set(ids)))
       .catch(() => undefined)
-    // The window closed: the chat comes back as a pane, beside what is open.
+    // The window closed: the chat comes back as a pane, beside what is open — unless the
+    // chat no longer exists (deleted while out, whichever of the delete and this event
+    // lands first), which would leave a blank pane focused on a missing id.
     return window.electronAPI.onPopoutClosed((sessionId) => {
       setPoppedOut((prev) => {
+        if (!prev.has(sessionId)) return prev
         const next = new Set(prev)
         next.delete(sessionId)
         return next
       })
+      if (deletedIdsRef.current.has(sessionId)) return
+      if (!sessionsRef.current.some((s) => s.id === sessionId)) return
       openInNewPane(sessionId)
     })
   }, [openInNewPane])
@@ -413,8 +424,6 @@ export default function App() {
   const seenIdsRef = useRef(seenIds)
   seenIdsRef.current = seenIds
   const seenKey = view === 'chat' ? visibleKey : ''
-  const sessionsRef = useRef(sessions)
-  sessionsRef.current = sessions
   // Mirror of panes for the pane-focus keyboard shortcuts, registered once on mount
   // (same pattern as sessionsRef/activeIdRef).
   const panesRef = useRef(panes)
@@ -853,6 +862,21 @@ export default function App() {
   }
 
   const deleteSession = async (id: string) => {
+    deletedIdsRef.current.add(id)
+    // A chat that is out goes with its window. The local set is updated here, not on the
+    // window's 'popout:closed' round-trip, which the handler above ignores for this id.
+    if (poppedOutRef.current.has(id)) {
+      const next = new Set(poppedOutRef.current)
+      next.delete(id)
+      poppedOutRef.current = next
+      setPoppedOut((prev) => {
+        const without = new Set(prev)
+        without.delete(id)
+        return without
+      })
+    }
+    // Always asked, even when not out here: main also drops the chat's remembered bounds.
+    await window.electronAPI.popoutClose(id).catch(() => false)
     // Chat terminals outlive their pane (see ChatTerminal's effect cleanup), so deleting the
     // chat is what finally tears its pty down — otherwise it would linger until app quit.
     await window.electronAPI.terminalKill(chatTerminalId(id))

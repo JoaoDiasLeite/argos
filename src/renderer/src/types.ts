@@ -1282,6 +1282,8 @@ declare global {
       popoutOpen: (spec: ChatPopoutSpec) => Promise<boolean>
       popoutSpec: (sessionId: string) => Promise<ChatPopoutSpec | null>
       popoutFocus: (sessionId: string) => Promise<boolean>
+      /** Closes a deleted chat's pop-out; false when it had none. */
+      popoutClose: (sessionId: string) => Promise<boolean>
       popoutList: () => Promise<string[]>
       onPopoutClosed: (cb: (sessionId: string) => void) => () => void
 

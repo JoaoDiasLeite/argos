@@ -43,6 +43,18 @@ function loadBounds(): Record<string, Rectangle> {
   }
 }
 
+/** Drops a chat's remembered bounds, for a chat that is gone for good. */
+function forgetBounds(sessionId: string): void {
+  try {
+    const all = loadBounds()
+    if (!(sessionId in all)) return
+    delete all[sessionId]
+    fs.writeFileSync(boundsPath(), JSON.stringify(all, null, 2))
+  } catch {
+    // A stale entry only costs a few bytes in the file.
+  }
+}
+
 function saveBounds(sessionId: string, bounds: Rectangle): void {
   try {
     const all = loadBounds()
@@ -122,6 +134,21 @@ export function focusChatPopout(sessionId: string): boolean {
   if (!open || open.win.isDestroyed()) return false
   if (open.win.isMinimized()) open.win.restore()
   open.win.focus()
+  return true
+}
+
+/**
+ * Closes a chat's pop-out because the chat itself was deleted, and forgets its bounds.
+ * `destroy` rather than `close`: no 'close' event, so the bounds are not saved again on the
+ * way out. 'closed' still fires and reports the chat to the main window like a manual close,
+ * which knows the chat is gone and does not bring a pane back for it. False when the chat
+ * had no pop-out (its bounds are dropped all the same).
+ */
+export function closeChatPopout(sessionId: string): boolean {
+  const open = windows.get(sessionId)
+  forgetBounds(sessionId)
+  if (!open || open.win.isDestroyed()) return false
+  open.win.destroy()
   return true
 }
 

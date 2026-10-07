@@ -151,6 +151,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   popoutOpen: (spec: unknown) => ipcRenderer.invoke('popout:open', spec),
   popoutSpec: (sessionId: string) => ipcRenderer.invoke('popout:spec', sessionId),
   popoutFocus: (sessionId: string) => ipcRenderer.invoke('popout:focus', sessionId),
+  popoutClose: (sessionId: string) => ipcRenderer.invoke('popout:close', sessionId),
   popoutList: () => ipcRenderer.invoke('popout:list'),
   onPopoutClosed: (cb: (sessionId: string) => void) => {
     const fn = (_: unknown, sessionId: string) => cb(sessionId)
