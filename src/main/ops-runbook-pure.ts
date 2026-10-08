@@ -47,6 +47,29 @@ function stripBom(text: string): string {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
 }
 
+/**
+ * Entries a runbook folder must not carry. The ops terminal starts Claude Code with the
+ * runbook folder as cwd, and the CLI honours project config found there: `.claude/`
+ * carries hooks, which run shell on THIS machine outside --disallowedTools; CLAUDE.md /
+ * CLAUDE.local.md are injected into the model silently beside RUNBOOK.md; `.mcp.json`
+ * names extra MCP servers (--strict-mcp-config already ignores it — this is the belt).
+ * A runbook is reviewable text and scripts; any of these is a refusal, not a warning,
+ * so a shared runbook cannot smuggle local execution past the gate.
+ */
+const RUNBOOK_FORBIDDEN_ENTRIES = ['.claude', '.mcp.json', 'claude.md', 'claude.local.md']
+
+/** The forbidden entries present among a folder's root entry names, as found on disk. */
+export function runbookForbiddenEntries(entryNames: string[]): string[] {
+  return entryNames.filter((n) => RUNBOOK_FORBIDDEN_ENTRIES.includes(n.toLowerCase()))
+}
+
+export function runbookForbiddenError(found: string[]): string {
+  return (
+    `The runbook folder carries CLI configuration (${found.join(', ')}), which the ops ` +
+    'terminal would honour as hooks or injected instructions. Remove it from the runbook.'
+  )
+}
+
 export interface RunbookFiles {
   /** Absolute folder path. */
   dir: string

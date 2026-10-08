@@ -11,6 +11,8 @@ import {
   assembleRunbook,
   OPS_MAX_RUNBOOK_FILE_BYTES,
   OPS_MAX_SCRIPT_BYTES,
+  runbookForbiddenEntries,
+  runbookForbiddenError,
   runbookName,
   scriptPinError,
   type LoadedRunbook,
@@ -69,6 +71,12 @@ export async function loadRunbook(dir: string): Promise<LoadRunbookResult> {
     if (!runbookName(abs)) return { ok: false, error: `Runbook folder name must be letters, digits, ".", "_" or "-": ${abs}` }
     const st = await fsp.stat(abs).catch(() => null)
     if (!st || !st.isDirectory()) return { ok: false, error: `Not a folder: ${abs}` }
+
+    // The folder becomes the ops CLI's cwd, so CLI config inside it (hooks, CLAUDE.md)
+    // would run or inject outside the gate — see runbookForbiddenEntries.
+    const rootEntries = await fsp.readdir(abs).catch(() => [] as string[])
+    const forbidden = runbookForbiddenEntries(rootEntries)
+    if (forbidden.length) return { ok: false, error: runbookForbiddenError(forbidden) }
 
     const md = await readCapped(path.join(abs, 'RUNBOOK.md'), OPS_MAX_RUNBOOK_FILE_BYTES)
     if (!md.ok) return md

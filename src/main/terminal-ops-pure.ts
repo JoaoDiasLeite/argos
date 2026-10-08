@@ -25,6 +25,9 @@ export interface OpsTerminalLaunch {
 export const OPS_DISALLOWED_TOOLS = [
   'Bash',
   'Edit',
+  // Older CLIs had MultiEdit as its own tool beside Edit; naming it costs nothing on a
+  // CLI that no longer has it and closes local file writes on one that still does.
+  'MultiEdit',
   'Write',
   'NotebookEdit',
   'WebFetch',

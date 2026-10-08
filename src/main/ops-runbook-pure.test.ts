@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { sha256Hex } from './ops-audit-pure'
-import { assembleRunbook, OPS_MAX_RUNBOOK_FILE_BYTES, runbookName, scriptPinError, type RunbookFiles } from './ops-runbook-pure'
+import { assembleRunbook, OPS_MAX_RUNBOOK_FILE_BYTES, runbookForbiddenEntries, runbookForbiddenError, runbookName, scriptPinError, type RunbookFiles } from './ops-runbook-pure'
 
 const SCRIPT = Buffer.from('#!/bin/sh\nnginx -t\n')
 const SCRIPT_SHA = sha256Hex(SCRIPT)
@@ -108,5 +108,23 @@ describe('scriptPinError', () => {
 
   it('refuses a script the policy does not list', () => {
     expect(scriptPinError(policy, 'other.sh', SCRIPT_SHA)).toMatch(/not listed/)
+  })
+})
+
+describe('runbookForbiddenEntries', () => {
+  it('finds CLI config a runbook must not carry, whatever the case', () => {
+    expect(runbookForbiddenEntries(['RUNBOOK.md', 'policy.json', 'scripts'])).toEqual([])
+    expect(runbookForbiddenEntries(['RUNBOOK.md', '.claude', 'policy.json'])).toEqual(['.claude'])
+    expect(runbookForbiddenEntries(['CLAUDE.md', 'Claude.Local.md', '.MCP.json'])).toEqual([
+      'CLAUDE.md',
+      'Claude.Local.md',
+      '.MCP.json'
+    ])
+  })
+
+  it('names every offending entry in the refusal', () => {
+    const err = runbookForbiddenError(['.claude', 'CLAUDE.md'])
+    expect(err).toContain('.claude')
+    expect(err).toContain('CLAUDE.md')
   })
 })
