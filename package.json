@@ -2,6 +2,13 @@
   "name": "argos",
   "version": "2.5.0",
   "description": "Desktop workspace for coding-agent CLIs — Claude Code, Codex and Gemini, across local, WSL and SSH sessions",
+  "author": "João Dias Leite <joaofilipe.diasleite@gmail.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/JoaoDiasLeite/argos",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JoaoDiasLeite/argos.git"
+  },
   "main": "out/main/index.js",
   "desktopName": "argos.desktop",
   "scripts": {
@@ -19,6 +26,7 @@
   "build": {
     "appId": "com.argos.app",
     "productName": "Argos",
+    "copyright": "Copyright © 2026 João Dias Leite",
     "npmRebuild": false,
     "publish": [
       {

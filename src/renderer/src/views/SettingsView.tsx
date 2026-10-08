@@ -653,6 +653,12 @@ export default function SettingsView({
                   What&apos;s new
                 </button>
               </div>
+              <div className="srow">
+                <div className="srow-text">
+                  <span className="srow-label">Made by João Dias Leite</span>
+                  <span className="help">© 2026 · MIT License · github.com/JoaoDiasLeite/argos</span>
+                </div>
+              </div>
             </>
           )}
         </div>

@@ -23,7 +23,8 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Changes',
         items: [
-          'A runbook’s platform in policy.json is now the product’s name, written exactly as the client report should print it (for example "*Acme Portal*"), instead of one of a fixed list of product codes. A runbook that still uses an old code keeps working, but its report prints the code as is until you change it.'
+          'A runbook’s platform in policy.json is now the product’s name, written exactly as the client report should print it (for example "*Acme Portal*"), instead of one of a fixed list of product codes. A runbook that still uses an old code keeps working, but its report prints the code as is until you change it.',
+          'Argos is published under the MIT License, and Settings → About now says who made it.'
         ]
       }
     ]
