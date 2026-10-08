@@ -1,106 +1,72 @@
 # Argos
 
-A desktop GUI for Claude Code, built with Electron + React + TypeScript. It runs the
-**Claude Agent SDK** under the hood, so it reuses your existing Claude Code login and
-gets real tool use (file edits, bash, search) streamed into a live activity panel.
+A desktop workspace for coding-agent CLIs. Argos runs **Claude Code** and **Codex** in
+embedded terminals, on this machine, inside WSL distros or on SSH hosts, and keeps the
+sessions, projects, sprints, usage and server operations around them in one window.
 
-## Features
+Argos does not reimplement the agents: every chat is the real CLI in a terminal, with
+its own login, its own `/model` and its own tool prompts. Argos adds the workspace.
 
-A Claudia-style toolkit for Claude Code, navigated from the left icon rail:
+## What it does
 
-- **Chat** — talk to Claude with adaptive thinking and live tool use (file edits, bash,
-  grep) shown inline and in the activity panel. Per-chat **model switcher** in the header.
-- **Projects** — browse the **real** Claude Code sessions from your local `~/.claude` **and
-  every connected WSL distro** (read over `\\wsl.localhost\…`), grouped by project with a
-  source badge, and **resume** any of them — local sessions continue locally, WSL sessions
-  continue inside that distro. Includes **full-text search across all sessions** (local + WSL)
-  by content, project, and date.
-- **Command palette** (Ctrl/Cmd-K) — fuzzy-jump to any session, project, view, or switch the
-  active chat's model.
-- **Desktop notifications** — native notification when a run finishes or errors while the
-  window isn't focused.
-- **Agents** — create, save, and run custom agents, each with its own icon, system prompt,
-  model, permission mode, and allowed tools.
-- **Usage** — token usage and estimated cost **combined across local + all connected WSL
-  distros** (toggle sources on/off), with time-range filters (last 2 days / week / month /
-  year / all) and breakdowns by day, model, and project. Includes **limit progress bars** for
-  the current hour, the current 5-hour session window, and the week, against caps you set
-  (Anthropic plan caps aren't exposed locally).
-- **MCP** — view configured MCP servers (transport, scope, auth status, full config) and
-  add/remove global servers.
-- **CLAUDE.md editor** — edit a project's `CLAUDE.md` and your global `~/.claude/CLAUDE.md`
-  (document icon in the chat header).
-- **Connect with your Anthropic account** — reuses the Claude Code CLI login on this
-  machine, with a secure API-key fallback (stored encrypted via the OS keychain).
-- **Multiple Claude accounts** — keep several Claude Code logins side by side (e.g. Work and
-  Personal) and choose which one a chat runs under from the **account picker** in the chat
-  header (or the command palette). Each account is an isolated Claude Code config dir
-  (`CLAUDE_CONFIG_DIR`) with its own login and identity (email/org/plan shown in **Manage
-  accounts**); adding one launches a guided `claude` login in its own terminal. The default
-  account is your existing machine login.
-- **Model selection** — set the default in Settings or override per chat
-  (Opus 5.5, Sonnet 5.5, Haiku 4.5, Fable 5.1, GPT-6 Astra/Sol/Luna, and their predecessors).
-- **Tool approval + diff viewer** — before any mutating tool (`Edit`, `Write`, `MultiEdit`,
-  `NotebookEdit`, `Bash`) runs, you get an Allow/Deny prompt with a real before/after diff
-  (Bash shows the command). Read-only tools auto-approve. A per-chat **Approve / Auto**
-  toggle flips to auto-accept; agents honor their own permission mode.
-- **Checkpoints / timeline** — snapshots the contents of every file Claude touches in a chat
-  (auto before each turn, plus manual). Restore rewrites those files and auto-saves a safety
-  checkpoint first. Open from the clock icon in the chat header.
-- **Git panel** — review the diff Claude produced, stage/unstage, stage-all, and commit from
-  inside the app (branch icon in the chat header).
-- **Image attachments** — paste or attach screenshots into the chat (vision input).
-- **Remote & WSL** — run Claude Code somewhere other than your local machine, all rendered
-  in the same chat:
-  - **WSL** — auto-detects every WSL distro on the machine; "New chat here" runs that distro's
-    `claude` via `wsl.exe` (optionally in a chosen working dir).
-  - **SSH** — add a host (password / key / agent auth, encrypted at rest); drives the remote
-    `claude` over SSH.
-  Both use `claude -p --output-format stream-json --include-partial-messages` (so remote/WSL
-  output **streams token-by-token** like local) and require Claude Code installed + logged in
-  on that target.
+- **Home** shows the day: the current plan window, what needs you, what is running and
+  what is uncommitted, plus the chats to pick up and recent projects.
+- **Chats** are CLI terminals. Several can run at once in a split layout (drag a pane by
+  its header to move or swap it), pop out into a window of their own, and keep running
+  in the background while you are elsewhere.
+- **Accounts**: keep several Claude Code and Codex logins side by side (Work and
+  Personal, say) and pick which one a chat starts under.
+- **Projects** lists the real sessions on disk, local and in every WSL distro, grouped by
+  project, with full-text search and resume.
+- **Planner** is a sprint board with progress, burndown and a daily standup.
+- **Usage** shows tokens, estimated cost and plan limits per account.
+- **Servers** holds SSH hosts (password, key or agent, encrypted at rest) and WSL
+  distros, with remote terminals and an SFTP file browser. **MCP** lists and edits the
+  configured MCP servers.
+- **Operations** runs an agent against servers over SSH, with nothing installed on them,
+  under a runbook: a folder with `RUNBOOK.md`, a `policy.json` that says which commands,
+  scripts (pinned by sha256) and paths each host group allows, and the scripts
+  themselves. Every call is checked against the policy, asks for approval where the
+  policy says so, lands in a hash-chained audit ledger and in the server's syslog
+  (`journalctl -t argos`), and the run ends in a report written for the client.
+- Command palette (Ctrl/Cmd+K), desktop notifications when a chat needs you, tray icon,
+  light and dark themes, auto-update from GitHub Releases.
 
-## Setup
+## Install
+
+Download the latest installer from
+[Releases](https://github.com/JoaoDiasLeite/argos/releases): `Argos-Setup-x.y.z.exe` for
+Windows or the `.AppImage` for Linux. Installed builds update themselves.
+
+Argos needs the CLIs it drives: install [Claude Code](https://claude.com/claude-code)
+and/or Codex and log in once in a terminal. For WSL and SSH chats the CLI must be
+installed and logged in on that target too. Operations needs only SSH access to the
+servers.
+
+## Development
+
+Requires Node.js 20.
 
 ```bash
 npm install
-npm run dev
+npm run dev        # run the app with hot reload
+npm test           # vitest
+npm run typecheck  # main and renderer
+npm run package    # build an installer into release/
 ```
 
-### Connecting your account
+| Folder | Responsibility |
+|--------|----------------|
+| `src/main` | Electron main process: terminals (node-pty), SSH and SFTP, sessions, accounts, usage, the ops gate, audit and reports |
+| `src/preload` | The IPC bridge (`window.electronAPI`) |
+| `src/renderer` | The React UI |
 
-Open **Connection** settings (gear icon or the status chip in the sidebar):
+Files ending in `-pure.ts` hold logic with no Electron or I/O dependency and carry most
+of the tests.
 
-1. **Use my Claude Code account** *(recommended)* — if you've run `claude` and logged in
-   on this machine, the app reuses that login automatically. No API key needed.
-2. **Use an API key** — paste a key from
-   [console.anthropic.com](https://console.anthropic.com/account/keys). It's stored
-   encrypted in your OS keychain.
+Releases are cut by pushing a `vX.Y.Z` tag; `.github/workflows/release.yml` builds the
+Windows and Linux installers and publishes them. See `CLAUDE.md` for the full process.
 
-> Not logged into Claude Code yet? Run `claude` in a terminal once, complete the login,
-> then reopen this app — it'll be detected.
+## License
 
-## Build a distributable
-
-```bash
-npm run package
-```
-
-## Architecture
-
-| Process  | Responsibility |
-|----------|----------------|
-| `src/main` | Electron main: Agent SDK runs, file system, sessions, auth (`auth.ts`) |
-| `src/preload` | Secure IPC bridge (`window.electronAPI`) |
-| `src/renderer` | React UI (chat, sidebar, file tree, activity panel, settings) |
-
-The agent runs in the main process and streams events (`text`, `thinking`, `tool-use`,
-`tool-result`, `result`) to the renderer over IPC.
-
-## Note on permissions
-
-By default, mutating tools (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash`) pause for
-an Allow/Deny prompt with a diff, via a `canUseTool` callback in `src/main/index.ts` that
-calls back into the renderer; read-only tools auto-approve. Flip the per-chat **Approve /
-Auto** toggle to skip the prompts (`permissionMode: 'acceptEdits'`), and custom agents run
-under their own permission mode.
+[MIT](LICENSE) © 2026 João Dias Leite
