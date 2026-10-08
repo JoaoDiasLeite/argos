@@ -27,7 +27,7 @@ const START: OpsAuditEvent = {
     path: '/repo/runbooks/nginx-config-reload',
     policySha256: 'a'.repeat(64),
     runbookMdSha256: 'b'.repeat(64),
-    platform: 'cityfy'
+    platform: '*Acme Portal*'
   },
   hosts: [HOST],
   model: 'claude-opus',

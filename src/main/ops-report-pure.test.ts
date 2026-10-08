@@ -75,7 +75,7 @@ function run(calls: OpsCallSummary[], over: Partial<OpsRunSummary> = {}): OpsRun
       path: '/repo/runbooks/verificar-e-reiniciar-servico',
       policySha256: 'a'.repeat(64),
       runbookMdSha256: 'b'.repeat(64),
-      platform: 'cityfy'
+      platform: '*Acme Portal*'
     },
     hosts: [HOSTS[0], HOSTS[1]],
     model: 'claude-opus',
@@ -126,7 +126,7 @@ describe('renderClientReport', () => {
         '',
         '## Descrição',
         '',
-        'Foi efetuada uma intervenção técnica no [servidor de aplicações] e no [servidor de base de dados], em 05-03-2026. A intervenção incidiu sobre a plataforma *WireMaze Cityfy Platform*.',
+        'Foi efetuada uma intervenção técnica no [servidor de aplicações] e no [servidor de base de dados], em 05-03-2026. A intervenção incidiu sobre a plataforma *Acme Portal*.',
         '',
         '- A verificação do estado do serviço em [servidor de aplicações].',
         '- A verificação da disponibilidade da base de dados.',
@@ -224,20 +224,14 @@ describe('renderClientReport', () => {
     expect(out).toContain('- Operação técnica.')
   })
 
-  it('names each platform, and none when the runbook does not say', () => {
+  it('names the platform as the runbook spells it, and none when the runbook does not say', () => {
     const cases: [string | undefined, string | null][] = [
-      ['cityfy', '*WireMaze Cityfy Platform*'],
-      ['wirerecruit', 'wireRecruit'],
-      ['wireforms', 'wireForms'],
-      ['wirechannel', 'wireChannel'],
-      ['wirefix', 'wireFix'],
-      ['wirepaper', 'wirePaper'],
+      ['*Acme Portal*', '*Acme Portal*'],
+      ['acmeForms', 'acmeForms'],
       [undefined, null]
     ]
     for (const [platform, name] of cases) {
-      const s = run([READ_WEB], {
-        runbook: { ...GOLDEN.runbook, platform: platform as OpsRunSummary['runbook']['platform'] }
-      })
+      const s = run([READ_WEB], { runbook: { ...GOLDEN.runbook, platform } })
       const out = renderClientReport(s, OPTS)
       if (name) expect(out).toContain(`A intervenção incidiu sobre a plataforma ${name}.`)
       else expect(out).not.toContain('plataforma')

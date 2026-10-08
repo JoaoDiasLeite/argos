@@ -14,7 +14,7 @@ import {
   type SyslogRunInfo
 } from './ops-syslog-pure'
 
-const RUN: SyslogRunInfo = { intervention: 'run-1', runbook: 'update-wmcp', operator: 'JoãoLeite', host: 'Rocky-9-Testes', user: 'wiremaze' }
+const RUN: SyslogRunInfo = { intervention: 'run-1', runbook: 'update-app', operator: 'JoãoLeite', host: 'rocky-test', user: 'deploy' }
 
 const cmd = (argv: string[], extra: Partial<SyslogCall> = {}): SyslogCall => ({
   callId: 'run-1-3',
@@ -46,14 +46,14 @@ describe('syslog message', () => {
         approval: 'ask',
         approvedBy: 'JoãoLeite',
         title: 'Atualização: execução de um passo da atualização',
-        target: { kind: 'script', name: 'wmcp-step.sh', sha256: 'ab'.repeat(32), args: ['test_rails'] }
+        target: { kind: 'script', name: 'app-step.sh', sha256: 'ab'.repeat(32), args: ['test_rails'] }
       },
       { event: 'start' }
     )
     expect(msg).toBe(
-      'intervention=run-1 runbook=update-wmcp event=start call=run-1-7 operator="JoãoLeite" host=Rocky-9-Testes user=wiremaze ' +
+      'intervention=run-1 runbook=update-app event=start call=run-1-7 operator="JoãoLeite" host=rocky-test user=deploy ' +
         'tool=script class=mutate approval=ask approved_by="JoãoLeite" rule="Atualização: execução de um passo da atualização" ' +
-        `script=wmcp-step.sh sha256=${'ab'.repeat(32)} args=test_rails`
+        `script=app-step.sh sha256=${'ab'.repeat(32)} args=test_rails`
     )
   })
 
@@ -84,8 +84,8 @@ describe('syslog message', () => {
   })
 
   it('upload and remove name the file in ~/.argos-ops', () => {
-    const msg = syslogMessage(RUN, cmd(['x']), { event: 'upload', file: '/home/wiremaze/.argos-ops/0a1b/wmcp-step.sh' })
-    expect(msg).toContain('event=upload file=/home/wiremaze/.argos-ops/0a1b/wmcp-step.sh call=')
+    const msg = syslogMessage(RUN, cmd(['x']), { event: 'upload', file: '/home/deploy/.argos-ops/0a1b/app-step.sh' })
+    expect(msg).toContain('event=upload file=/home/deploy/.argos-ops/0a1b/app-step.sh call=')
   })
 })
 

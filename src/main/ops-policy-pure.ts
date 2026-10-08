@@ -53,15 +53,7 @@ export const OPS_MAX_PATTERN_LENGTH = 512
 export const OPS_MAX_SCRIPT_NAME_LENGTH = 128
 export const OPS_MAX_SCRIPT_ARGS = 16
 
-type OpsPlatform = NonNullable<OpsPolicy['platform']>
-const PLATFORMS: readonly OpsPlatform[] = [
-  'cityfy',
-  'wirerecruit',
-  'wireforms',
-  'wirechannel',
-  'wirefix',
-  'wirepaper'
-]
+export const OPS_MAX_PLATFORM_LENGTH = 120
 
 const TOP_KEYS = ['version', 'strict', 'platform', 'hosts', 'allow', 'scripts', 'read', 'write', 'limits']
 const ALLOW_KEYS = ['hosts', 'cmd', 'class', 'approval', 'title']
@@ -294,8 +286,16 @@ export function parsePolicy(
   if (typeof raw.strict !== 'boolean') errors.push(`strict must be true or false, got ${JSON.stringify(raw.strict)}.`)
   const strict = raw.strict
 
-  if (raw.platform !== undefined && !PLATFORMS.includes(raw.platform as OpsPlatform)) {
-    errors.push(`platform must be one of ${PLATFORMS.join(', ')}, got ${JSON.stringify(raw.platform)}.`)
+  if (
+    raw.platform !== undefined &&
+    (typeof raw.platform !== 'string' ||
+      !raw.platform.trim() ||
+      raw.platform.length > OPS_MAX_PLATFORM_LENGTH ||
+      /[\r\n]/.test(raw.platform))
+  ) {
+    errors.push(
+      `platform must be the product's name on one line, up to ${OPS_MAX_PLATFORM_LENGTH} characters, got ${JSON.stringify(raw.platform)}.`
+    )
   }
 
   // Host groups.
@@ -473,7 +473,7 @@ export function parsePolicy(
   })
 
   const policy: OpsPolicy = { version: 1, strict: strict as boolean, hosts: hostsOut, allow, scripts }
-  if (raw.platform !== undefined) policy.platform = raw.platform as OpsPlatform
+  if (typeof raw.platform === 'string') policy.platform = raw.platform.trim()
   if (isObject(raw.read)) {
     policy.read = { paths: [...(raw.read.paths as string[])] }
     if (raw.read.maxBytes !== undefined) policy.read.maxBytes = raw.read.maxBytes as number

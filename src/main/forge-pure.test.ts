@@ -48,7 +48,7 @@ describe('forgeFromRemote', () => {
 
   it('recognises self-hosted installs', () => {
     // The case in front of us: a company GitLab on its own domain.
-    expect(forgeFromRemote('https://gitlab.cityfy.pt/adm/wm-project')).toBe('gitlab')
+    expect(forgeFromRemote('https://gitlab.acme.pt/adm/wm-project')).toBe('gitlab')
     expect(forgeFromRemote('git@github.acme.internal:team/app.git')).toBe('github')
   })
 

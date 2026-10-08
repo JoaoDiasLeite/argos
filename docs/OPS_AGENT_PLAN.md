@@ -12,8 +12,8 @@ Three words carry the design: **local, gated, logged.**
 
 ### The actual work this serves
 
-Wiremaze operates municipal platforms (*WireMaze Cityfy Platform*, wireRecruit, wireForms,
-wireChannel, wireFix, wirePaper) for câmaras municipais. The servers are the **clients'**:
+A support team operates web platforms (a citizen portal, recruitment, forms and the like)
+for municipalities. The servers are the **clients'**:
 Rocky Linux 9 and CentOS 7, nginx, Puma/Sidekiq/PM2 under Monit, PostgreSQL with mandatory
 TLS and mutual certificate auth, Redis, Elasticsearch. They are reached **over the client's
 VPN first, then SSH**, inside an agreed intervention window, and every intervention ends in a
@@ -26,7 +26,7 @@ written record the client can read. That shapes four things in this plan:
   behind a firewall, Puma workers crashing on an OpenSSL mismatch, DHCP versus static IP:
   diagnosis is `systemctl status`, `journalctl`, `openssl x509`, `tail` on logs, `psql -c`
   read queries. A read-only runbook covers most days; `mutate` runbooks are the few scripted
-  interventions (certificate renewal with the internal Wiremaze script, PostgreSQL 13→17 with
+  interventions (certificate renewal with an internal script, PostgreSQL 13→17 with
   TLS introduced in the same window, nginx reload).
 - **`sudo` is the norm on these boxes**, so the policy lists sudo commands literally instead
   of forbidding sudo outright (§1.10, §2).
@@ -152,7 +152,7 @@ These are the day-to-day cases; the gate is done when each runs end to end on th
 | `diagnose-rails-host` | read | `systemctl status` for puma/sidekiq/nginx/monit, `journalctl -u … -n 200`, `tail -n` on app and nginx logs, `openssl version`, `ruby -v`, `gem list openssl`, `free -m`, `df -h`. No mutate rules. |
 | `saml-cert-check` | read | `openssl x509 -in <path> -noout -enddate -subject` on the SP cert and the IdP metadata, `curl -sI` on the ACS URL. Paths pinned in `read.paths`. |
 | `pg-tls-check` | read | `psql -c "SHOW ssl"`, `openssl s_client -starttls postgres`, `openssl x509 -enddate` on server and client certs. |
-| `pg-cert-renew` | mutate, strict | One script: the internal Wiremaze renewal script, hash-pinned, args = none. `sudo systemctl reload postgresql-17` as a literal allow rule with `approval: ask`. |
+| `pg-cert-renew` | mutate, strict | One script: the internal renewal script, hash-pinned, args = none. `sudo systemctl reload postgresql-17` as a literal allow rule with `approval: ask`. |
 | `nginx-config-reload` | mutate, strict | `sudo nginx -t` (read), `sudo systemctl reload nginx` (ask). |
 | `pg-13-to-17-upgrade` | mutate, strict | Every step a script with a hash; the runbook's `RUNBOOK.md` is the existing migration runbook verbatim. Backups verified by a `read` step before any `mutate` step, and the preamble (§7) makes the model refuse to continue past a failed check. |
 
@@ -283,8 +283,8 @@ the one artefact here that leaves the company. Rules, each a test:
   `[servidor]` according to the policy's host group name; a test asserts no IP-shaped token
   remains.
 - **No em or en dashes anywhere** in the output; a test asserts it.
-- The product name is written *WireMaze Cityfy Platform* when the runbook metadata names
-  the platform as `cityfy`; the other platforms by their own names.
+- The product name is the policy's `platform`, written verbatim (emphasis included), and
+  left out when the runbook has none.
 - Steps are described by their runbook step titles (a `title` field per allow rule and per
   script in `policy.json`), not by what ran. A rule without a title renders as "operação
   técnica" and the internal report flags it, so the runbook author adds one.

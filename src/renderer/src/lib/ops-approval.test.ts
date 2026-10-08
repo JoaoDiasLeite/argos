@@ -86,8 +86,8 @@ describe('plan approvals', () => {
 
 describe('opsToastText', () => {
   it('asks in words, never with the MCP tool name', () => {
-    expect(opsToastText({ ...base, argv: ['systemctl', 'status', 'puma'], hostName: 'Rocky-9-Testes', title: 'Estado' })).toEqual({
-      title: 'Allow `systemctl status puma` on Rocky-9-Testes?',
+    expect(opsToastText({ ...base, argv: ['systemctl', 'status', 'puma'], hostName: 'rocky-test', title: 'Estado' })).toEqual({
+      title: 'Allow `systemctl status puma` on rocky-test?',
       detail: 'Estado'
     })
     expect(opsToastText({ ...base, tool: 'read', path: '/etc/hosts' }).title).toBe('Allow reading /etc/hosts on web1?')

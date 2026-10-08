@@ -238,12 +238,12 @@ p{max-width:72ch;color:var(--text-1);margin:0 0 10px}
         <span class="seg"><span class="on">All <em>5</em></span><span>WSL <em>3</em></span><span>SSH <em>2</em></span></span>
       </div>
       <div class="eyebrow">WSL distros</div>
-      <div class="row"><i class="dot ok"></i><span class="n">Ubuntu</span><span class="chip">default</span><span class="r"><span class="mono s muted">wsl -d Ubuntu</span><span class="muted" style="font-size:12px">joao.leite@wiremaze.com</span><span class="btn sm">Connect</span><span class="btn sm ic"><svg class="i"><use href="#more"/></svg></span></span></div>
-      <div class="row"><i class="dot ok"></i><span class="n">Ubuntu-DevOps</span><span class="r"><span class="mono s muted">wsl -d Ubuntu-DevOps</span><span class="muted" style="font-size:12px">joao.leite@wiremaze.com</span><span class="btn sm">Connect</span><span class="btn sm ic"><svg class="i"><use href="#more"/></svg></span></span></div>
+      <div class="row"><i class="dot ok"></i><span class="n">Ubuntu</span><span class="chip">default</span><span class="r"><span class="mono s muted">wsl -d Ubuntu</span><span class="muted" style="font-size:12px">you@example.com</span><span class="btn sm">Connect</span><span class="btn sm ic"><svg class="i"><use href="#more"/></svg></span></span></div>
+      <div class="row"><i class="dot ok"></i><span class="n">Ubuntu-DevOps</span><span class="r"><span class="mono s muted">wsl -d Ubuntu-DevOps</span><span class="muted" style="font-size:12px">you@example.com</span><span class="btn sm">Connect</span><span class="btn sm ic"><svg class="i"><use href="#more"/></svg></span></span></div>
       <div class="row"><i class="dot"></i><span class="n">docker-desktop</span><span class="r"><span class="mono s muted">wsl -d docker-desktop</span><span class="muted" style="font-size:12px">no Claude Code</span><span class="btn sm">Connect</span><span class="btn sm ic"><svg class="i"><use href="#more"/></svg></span></span></div>
       <div class="row" style="padding-left:8px;color:var(--text-2);font-size:12px"><svg class="i"><use href="#chevr"/></svg>1 hidden distro</div>
       <div class="eyebrow" style="margin-top:8px">SSH hosts</div>
-      <div class="row"><i class="dot ok"></i><span class="n">Rocky-9-Testes</span><span class="chip">key</span><span class="r"><span class="mono s muted">jdl@10.20.0.15:22</span><span class="btn sm">Connect</span><span class="btn sm">Ops</span><span class="btn sm ic"><svg class="i"><use href="#more"/></svg></span></span></div>
+      <div class="row"><i class="dot ok"></i><span class="n">rocky-test</span><span class="chip">key</span><span class="r"><span class="mono s muted">jdl@10.20.0.15:22</span><span class="btn sm">Connect</span><span class="btn sm">Ops</span><span class="btn sm ic"><svg class="i"><use href="#more"/></svg></span></span></div>
       <div class="row"><i class="dot e"></i><span class="n">wm-portal-staging</span><span class="chip">password</span><span class="r"><span style="font-size:12px;color:var(--error)">Permission denied (publickey)</span><span class="mono s muted">deploy@portal-stg:22</span><span class="btn sm">Connect</span><span class="btn sm ic"><svg class="i"><use href="#more"/></svg></span></span></div>
       <div class="help" style="padding:6px 10px">Click a row to connect. Everything else is in the row menu.</div>
     </div>
@@ -275,13 +275,13 @@ p{max-width:72ch;color:var(--text-1);margin:0 0 10px}
           <div class="row"><i class="dot"></i><span class="n">docker-desktop</span><span class="r"><span class="muted" style="font-size:12px">no Claude Code</span><span class="mono s muted">wsl -d docker-desktop</span></span></div>
           <div class="row" style="padding-left:8px;color:var(--text-2);font-size:12px"><svg class="i"><use href="#chevr"/></svg>1 hidden distro</div>
           <div class="eyebrow" style="margin-top:8px">SSH hosts</div>
-          <div class="row sel"><i class="dot ok"></i><span class="n">Rocky-9-Testes</span><span class="chip">key</span><span class="r"><span class="mono s muted">jdl@10.20.0.15:22</span><svg class="i muted"><use href="#chevr"/></svg></span></div>
+          <div class="row sel"><i class="dot ok"></i><span class="n">rocky-test</span><span class="chip">key</span><span class="r"><span class="mono s muted">jdl@10.20.0.15:22</span><svg class="i muted"><use href="#chevr"/></svg></span></div>
           <div class="row"><i class="dot e"></i><span class="n">wm-portal-staging</span><span class="chip">password</span><span class="r"><span style="font-size:12px;color:var(--error)">could not connect</span><span class="mono s muted">deploy@portal-stg:22</span></span></div>
         </div>
       </div>
       <div class="column">
         <div class="colsec">
-          <div style="display:flex;align-items:center;gap:8px"><i class="dot ok"></i><span class="t2">Rocky-9-Testes</span><span class="grow"></span><span class="sub">reachable · 0.4 s</span></div>
+          <div style="display:flex;align-items:center;gap:8px"><i class="dot ok"></i><span class="t2">rocky-test</span><span class="grow"></span><span class="sub">reachable · 0.4 s</span></div>
           <div class="mono s muted">jdl@10.20.0.15:22 · key ~/.ssh/id_ed25519</div>
           <div style="display:flex;gap:8px;margin-top:4px"><span class="btn p" style="flex:1"><svg class="i"><use href="#play"/></svg>Connect</span><span class="btn">New terminal</span><span class="btn">Ops</span></div>
         </div>
@@ -290,7 +290,7 @@ p{max-width:72ch;color:var(--text-1);margin:0 0 10px}
           <dl class="kv">
             <dt>Authentication</dt><dd>Private key <span class="mono s muted">id_ed25519</span></dd>
             <dt>Remote path</dt><dd class="mono s">/home/jdl/dev/wm-project</dd>
-            <dt>Claude Code</dt><dd>2.1.4 · logged in as joao.leite@wiremaze.com</dd>
+            <dt>Claude Code</dt><dd>2.1.4 · logged in as you@example.com</dd>
             <dt>Checked</dt><dd>today 17:20</dd>
           </dl>
           <div style="display:flex;gap:8px;margin-top:4px"><span class="btn sm">Test connection</span><span class="btn sm">Check Claude Code</span><span class="btn sm">Edit host</span></div>
@@ -316,13 +316,13 @@ p{max-width:72ch;color:var(--text-1);margin:0 0 10px}
   <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i class="on"><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
   <div class="main">
     <div style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg-1)">
-      <span class="btn sm" style="gap:8px;background:var(--bg-2);border-color:transparent;color:var(--text-0)"><i class="dot ok sm"></i>Rocky-9-Testes<svg class="i muted"><use href="#x"/></svg></span>
+      <span class="btn sm" style="gap:8px;background:var(--bg-2);border-color:transparent;color:var(--text-0)"><i class="dot ok sm"></i>rocky-test<svg class="i muted"><use href="#x"/></svg></span>
       <span class="btn sm" style="gap:8px;border-color:transparent"><i class="dot sm"></i>Ubuntu-DevOps <em style="font-style:normal" class="muted">2</em><svg class="i muted"><use href="#chev"/></svg></span>
       <span class="btn sm ic" style="border-color:transparent"><svg class="i"><use href="#plus"/></svg></span>
     </div>
     <div class="head" style="padding:12px 18px">
       <svg class="i muted"><use href="#chevl"/></svg>
-      <i class="dot ok sm"></i><span class="t3" style="font-size:15px">Rocky-9-Testes</span><span class="mono s muted">jdl@10.20.0.15</span>
+      <i class="dot ok sm"></i><span class="t3" style="font-size:15px">rocky-test</span><span class="mono s muted">jdl@10.20.0.15</span>
       <span class="input v mono focus" style="flex:1;max-width:520px;height:30px">/home/jdl/dev/wm-project</span>
       <span class="seg"><span class="on">Files</span><span>History</span></span>
       <span class="grow"></span>
@@ -731,7 +731,7 @@ p{max-width:72ch;color:var(--text-1);margin:0 0 10px}
         <div class="eyebrow">Running · 3</div>
         <div class="row" style="padding:6px 10px"><i class="dot ok"></i><span class="n">wm-project</span><span class="r muted" style="font-size:12px">Claude Code · 18 min</span></div>
         <div class="row" style="padding:6px 10px"><i class="dot ok"></i><span class="n">runbooks</span><span class="r muted" style="font-size:12px">Codex · 3 min</span></div>
-        <div class="row" style="padding:6px 10px"><i class="dot ok"></i><span class="n">diagnose-rails-host</span><span class="r muted" style="font-size:12px">Ops · Rocky-9-Testes · 41 min</span></div>
+        <div class="row" style="padding:6px 10px"><i class="dot ok"></i><span class="n">diagnose-rails-host</span><span class="r muted" style="font-size:12px">Ops · rocky-test · 41 min</span></div>
       </div>
       <div class="col3">
         <div class="eyebrow" style="padding-top:0">Pick up where you left off</div>
@@ -763,7 +763,7 @@ p{max-width:72ch;color:var(--text-1);margin:0 0 10px}
         <div style="display:flex;gap:8px;align-items:center">
           <span class="select v" style="height:32px;width:220px"><span>argos</span><svg class="i"><use href="#chev"/></svg></span>
           <span class="select v" style="height:32px;width:170px"><span>Claude Code</span><svg class="i"><use href="#chev"/></svg></span>
-          <span class="select v" style="height:32px;width:240px"><span>Default <span class="det">· joao.leite@wiremaze.com</span></span><svg class="i"><use href="#chev"/></svg></span>
+          <span class="select v" style="height:32px;width:240px"><span>Default <span class="det">· you@example.com</span></span><svg class="i"><use href="#chev"/></svg></span>
           <span class="grow"></span>
           <span class="btn p"><svg class="i"><use href="#play"/></svg>Start</span>
         </div>
@@ -791,7 +791,7 @@ p{max-width:72ch;color:var(--text-1);margin:0 0 10px}
         <div class="eyebrow" style="padding-top:0">Running · 3</div>
         <div class="row" style="padding:6px 0"><i class="dot ok"></i><span class="n">wm-project</span><span class="r muted" style="font-size:12px">Claude Code · 18 min</span></div>
         <div class="row" style="padding:6px 0"><i class="dot ok"></i><span class="n">runbooks</span><span class="r muted" style="font-size:12px">Codex · 3 min</span></div>
-        <div class="row" style="padding:6px 0"><i class="dot ok"></i><span class="n">diagnose-rails-host</span><span class="r muted" style="font-size:12px">Ops · Rocky-9-Testes · 41 min</span></div>
+        <div class="row" style="padding:6px 0"><i class="dot ok"></i><span class="n">diagnose-rails-host</span><span class="r muted" style="font-size:12px">Ops · rocky-test · 41 min</span></div>
       </div>
       <div class="colsec">
         <div class="eyebrow" style="padding-top:0">Uncommitted work · 2</div>
@@ -891,7 +891,7 @@ p{max-width:72ch;color:var(--text-1);margin:0 0 10px}
       <div class="colsec" style="padding-top:12px">
         <div class="row" style="padding:6px 0;flex-direction:column;align-items:stretch;gap:6px"><span style="display:flex;justify-content:space-between"><span class="t1c">Week · all models</span><span class="sub">41 % · resets Mon 09:00</span></span><span class="bar on1"><b class="s" style="width:41%"></b></span></div>
         <div class="row" style="padding:6px 0;flex-direction:column;align-items:stretch;gap:6px"><span style="display:flex;justify-content:space-between"><span class="t1c">Week · Opus</span><span class="sub">18 % · resets Mon 09:00</span></span><span class="bar on1"><b class="s" style="width:18%"></b></span></div>
-        <div class="help">Live from Anthropic · Max 5x · joao.leite@wiremaze.com</div>
+        <div class="help">Live from Anthropic · Max 5x · you@example.com</div>
       </div>
       <div class="colsec">
         <div style="display:flex;align-items:center"><span class="eyebrow" style="padding:0">Budgets</span><span class="grow"></span><span class="btn sm">Edit</span></div>

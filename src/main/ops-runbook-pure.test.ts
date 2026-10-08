@@ -8,7 +8,7 @@ const SCRIPT_SHA = sha256Hex(SCRIPT)
 const POLICY = {
   version: 1,
   strict: true,
-  platform: 'cityfy',
+  platform: '*Acme Portal*',
   hosts: { web: ['web-*'], db: ['db-01'] },
   allow: [{ hosts: ['web'], cmd: '^systemctl status nginx$', class: 'read', title: 'Verificação do serviço' }],
   scripts: [{ name: 'check.sh', sha256: SCRIPT_SHA, hosts: ['web'], class: 'read' }]
@@ -56,7 +56,7 @@ describe('assembleRunbook', () => {
       path: '/repo/runbooks/nginx-config-reload',
       policySha256: sha256Hex(Buffer.from(JSON.stringify(POLICY))),
       runbookMdSha256: sha256Hex(Buffer.from('# Reload\nFollow the steps.\n')),
-      platform: 'cityfy'
+      platform: '*Acme Portal*'
     })
     expect(rb.guidelines).toBe('# Reload\nFollow the steps.\n')
     expect(rb.hosts).toEqual([

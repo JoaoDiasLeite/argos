@@ -37,7 +37,7 @@ function fixture(overrides: Record<string, unknown> = {}): Record<string, unknow
   return {
     version: 1,
     strict: true,
-    platform: 'cityfy',
+    platform: '*Acme Portal*',
     hosts: { web: ['web-01', 'web-02'], db: ['db-*'] },
     allow: [
       { hosts: ['web'], cmd: '^systemctl status [a-z0-9@.-]+$', class: 'read', title: 'Check service' },
@@ -313,8 +313,14 @@ describe('parsePolicy — rule 9: limits', () => {
 })
 
 describe('parsePolicy — rule 10: platform', () => {
-  it('rejects an unknown platform', () => {
-    expect(errorsOf(fixture({ platform: 'wirething' }))).toEqual([expect.stringContaining('platform')])
+  it('keeps any product name, trimmed', () => {
+    expect(ok(fixture({ platform: '  *Acme Portal* ' })).policy.platform).toBe('*Acme Portal*')
+  })
+
+  it('rejects a platform that is not a one-line name', () => {
+    for (const platform of [42, '', '   ', 'Acme\nPortal', 'x'.repeat(121)]) {
+      expect(errorsOf(fixture({ platform }))).toEqual([expect.stringContaining('platform')])
+    }
   })
 
   it('accepts an absent platform', () => {

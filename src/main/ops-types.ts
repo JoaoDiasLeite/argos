@@ -42,8 +42,9 @@ export interface OpsPolicy {
   version: 1
   /** true: an unmatched call is denied. false: it asks. */
   strict: boolean
-  /** Which product this runbook serves; drives the client report's product name. */
-  platform?: 'cityfy' | 'wirerecruit' | 'wireforms' | 'wirechannel' | 'wirefix' | 'wirepaper'
+  /** The product this runbook serves, as the client report should name it (verbatim,
+      Markdown included). */
+  platform?: string
   /** Group name → stored-host names or globs (`db-*`). */
   hosts: Record<string, string[]>
   allow: OpsAllowRule[]

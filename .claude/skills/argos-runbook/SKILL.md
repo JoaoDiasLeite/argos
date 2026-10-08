@@ -47,8 +47,8 @@ The validator (`src/main/ops-policy-pure.ts`) rejects, never repairs:
   `hosts`, `allow`, `scripts`, `read`, `write`, `limits`. An unknown key anywhere is an error.
 - `hosts` maps a group name to stored-host names or globs (`pve*`). A group matching no stored
   host is a warning, and a deny at run time. Rules refer to groups, never raw hostnames.
-- `platform` is one of `cityfy`, `wirerecruit`, `wireforms`, `wirechannel`, `wirefix`,
-  `wirepaper`. Omit it for anything else; do not invent a value.
+- `platform` is the product's name as the client report should print it, verbatim (one line,
+  up to 120 characters, Markdown emphasis kept). Omit it when the runbook serves no product.
 - Every regex (`cmd`, `args.pattern`, `read.paths`, `write.paths`) is anchored `^…$`, under
   512 chars, has no top-level `|` (wrap alternatives: `^(a|b)$`), and path patterns start
   with `^/`. In JSON, escape backslashes: `"\\."`.

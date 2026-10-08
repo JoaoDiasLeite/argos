@@ -383,16 +383,16 @@ describe('calls by plan step', () => {
 
   it('matches a script call to its step, which the plan spells script <name> <args>', () => {
     const scriptSteps = [
-      { title: 'Backup', commands: ['script wmcp-step.sh backup_current_files'], verdict: 'runs' },
-      { title: 'Ficheiros novos', commands: ["script wmcp-step.sh get_new_files --version='10.13.0'"], verdict: 'runs' },
-      { title: 'Gems', commands: ['script wmcp-step.sh install_gems'], verdict: 'runs' }
+      { title: 'Backup', commands: ['script app-step.sh backup_current_files'], verdict: 'runs' },
+      { title: 'Ficheiros novos', commands: ["script app-step.sh get_new_files --version='10.13.0'"], verdict: 'runs' },
+      { title: 'Gems', commands: ['script app-step.sh install_gems'], verdict: 'runs' }
     ]
     const script = (id: string, argv: string[]) => [decided(id, 'allow', { tool: 'script', argv }), finished(id, 0)]
     const [run] = foldOpsEvents([
       start,
       ev({ kind: 'plan.approved', steps: scriptSteps }),
-      ...script('c1', ['wmcp-step.sh', 'backup_current_files']),
-      ...script('c2', ['/opt/runbook/wmcp-step.sh', 'get_new_files', '--version=10.13.0']),
+      ...script('c1', ['app-step.sh', 'backup_current_files']),
+      ...script('c2', ['/opt/runbook/app-step.sh', 'get_new_files', '--version=10.13.0']),
       ...call('c3', ['pgrep', '-af', 'rake'])
     ])
     expect(groupCallsBySteps(run).map((g) => [g.title, g.rows.map((r) => r.callId)])).toEqual([

@@ -63,7 +63,7 @@ export function sigilIsMeaningful(forge: Forge): boolean {
 /**
  * The forge behind a git remote URL — https, ssh and scp-style forms alike.
  * Self-hosted installs are the normal case here (the host is neither gitlab.com nor
- * github.com), so the hostname is matched loosely: `gitlab.cityfy.pt` and
+ * github.com), so the hostname is matched loosely: `gitlab.acme.pt` and
  * `github.acme.internal` both resolve. Anything unrecognised returns null rather
  * than guessing, and the caller falls back to whichever forge MCP is configured.
  */

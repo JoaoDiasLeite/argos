@@ -11,7 +11,7 @@
  */
 
 import type { OpsCallSummary, OpsRunSummary } from './ops-audit-pure'
-import type { OpsHostRef, OpsPolicy } from './ops-types'
+import type { OpsHostRef } from './ops-types'
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────────
 
@@ -292,15 +292,6 @@ export function sanitizeForClient(
   return t.replace(DASHES, '-')
 }
 
-const PRODUCT: Record<NonNullable<OpsPolicy['platform']>, string> = {
-  cityfy: '*WireMaze Cityfy Platform*',
-  wirerecruit: 'wireRecruit',
-  wireforms: 'wireForms',
-  wirechannel: 'wireChannel',
-  wirefix: 'wireFix',
-  wirepaper: 'wirePaper'
-}
-
 /**
  * DD-MM-AAAA in Lisbon time: the intervention happened on a Portuguese calendar day,
  * and a late-evening run in summer is already the next day in UTC.
@@ -362,8 +353,9 @@ export function renderClientReport(summary: OpsRunSummary, opts: ClientReportOpt
   if (roles.length) opening += ` ${joinPt(roles.map((r) => `no ${r}`))}`
   opening += `, em ${day}.`
   desc.push(opening)
-  const product = s.runbook.platform ? PRODUCT[s.runbook.platform] : undefined
-  if (product) desc.push(`A intervenção incidiu sobre a plataforma ${product}.`)
+  // The runbook's own spelling of the product, emphasis included: the report has no list
+  // of products to look it up in.
+  if (s.runbook.platform) desc.push(`A intervenção incidiu sobre a plataforma ${s.runbook.platform}.`)
 
   // Titles are the runbook author's client-facing words, so they are sanitised only for
   // host names and addresses, not for argv words: on the first real run "Verificação da

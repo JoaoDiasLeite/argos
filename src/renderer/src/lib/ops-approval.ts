@@ -110,7 +110,7 @@ export function opsToastQuestion(ops: ApprovalOpsContext): { lead: string; code?
   }
 }
 
-/** "Argos · diagnose-rails-host on Rocky-9-Testes": the toast's eyebrow. */
+/** "Argos · diagnose-rails-host on rocky-test": the toast's eyebrow. */
 export function opsToastEyebrow(ops: ApprovalOpsContext): string {
   const rb = ops.runbook
   if (ops.tool === 'plan') return rb ? `Argos · ${rb}` : 'Argos'

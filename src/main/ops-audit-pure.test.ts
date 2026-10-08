@@ -31,7 +31,7 @@ const RUNBOOK = {
   path: '/repo/runbooks/restart-api',
   policySha256: 'a'.repeat(64),
   runbookMdSha256: 'b'.repeat(64),
-  platform: 'cityfy' as const
+  platform: '*Acme Portal*'
 }
 const HOSTS = [{ id: 'h1', name: 'web-1', host: '10.0.0.5' }]
 

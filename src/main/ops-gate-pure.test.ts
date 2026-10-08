@@ -358,11 +358,11 @@ describe('matchDenylist', () => {
   })
   it('pg_dropcluster, dropdb', () => {
     expect(d('pg_dropcluster 13 main')).toBe('pg-drop')
-    expect(d('dropdb cityfy')).toBe('pg-drop')
+    expect(d('dropdb appdb')).toBe('pg-drop')
     expect(d('sudo -u postgres /usr/pgsql-17/bin/dropdb x')).toBe('pg-drop')
   })
   it('DROP DATABASE / DROP TABLE / TRUNCATE in psql, any case', () => {
-    expect(d('psql -c "DROP DATABASE cityfy"')).toBe('pg-drop')
+    expect(d('psql -c "DROP DATABASE appdb"')).toBe('pg-drop')
     expect(d("psql -c 'drop table users'")).toBe('pg-drop')
     expect(d('psql --command="Drop  Table x"')).toBe('pg-drop')
     expect(d('sudo -u postgres psql -d app -c "truncate sessions"')).toBe('pg-drop')

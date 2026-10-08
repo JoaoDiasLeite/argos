@@ -69,7 +69,7 @@ message, the run's record and the client report's Assunto.
   "Start intervention" with a play icon; right column "What this runbook allows" from
   `summary` with the two file buttons, and "Earlier on <server>" from `ops:runs`. Validation
   inline: runbook unusable, host not in any policy group ("this runbook does not know
-  Rocky-9-Testes; add it to a group"), empty task. The Ops member of Servers opens here.
+  rocky-test; add it to a group"), empty task. The Ops member of Servers opens here.
 - **`views/OpsWorkspace.tsx`** rewritten to board D2: header `‹ runbook · ● host ·
   read-only/strict · Claude Code · gated · Restart`; terminal left; **`components/
   ActivityColumn.tsx`** right (replaces `OpsTimeline` and the embedded `PlanReviewSheet`):
