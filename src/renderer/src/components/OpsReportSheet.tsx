@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useOpsEvents } from '../hooks/useOpsEvents'
 import { displayArgv } from '../lib/ops-approval'
+import type { TFunction } from '../../../shared/i18n'
+import { useLanguage, useT } from '../i18n'
 import { foldOpsEvents, rowLabel, rowTone, runCounts, touchedHosts, type OpsRow, type OpsRun } from '../lib/ops-timeline'
 import Markdown from './Markdown'
 import Sheet from './Sheet'
@@ -20,32 +22,32 @@ interface Props {
 type Kind = 'internal' | 'client'
 type Verified = { ok: true } | { ok: false; brokenAt?: number; reason: string } | null
 
-const clock = (iso?: string, seconds = false): string => {
+const clock = (iso?: string, seconds = false, locale?: string): string => {
   if (!iso) return ''
   const d = new Date(iso)
   return Number.isNaN(d.getTime())
     ? ''
-    : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', ...(seconds ? { second: '2-digit' } : {}) })
+    : d.toLocaleTimeString(locale ? [locale] : [], { hour: '2-digit', minute: '2-digit', ...(seconds ? { second: '2-digit' } : {}) })
 }
 
-const day = (iso: string): string => {
+const day = (iso: string, locale?: string): string => {
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString([], { day: 'numeric', month: 'short' })
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(locale ? [locale] : [], { day: 'numeric', month: 'short' })
 }
 
 /** finished / stopped / failed / running, as the context line says it. */
-export function runOutcome(run: OpsRun): string {
-  if (!run.ended) return 'running'
-  if (run.ended.aborted) return 'stopped'
-  return run.ended.ok ? 'finished' : 'failed'
+export function runOutcome(run: OpsRun, t: TFunction): string {
+  if (!run.ended) return t('ops.report.outcome.running')
+  if (run.ended.aborted) return t('ops.report.outcome.stopped')
+  return run.ended.ok ? t('ops.report.outcome.finished') : t('ops.report.outcome.failed')
 }
 
 /** The host the run was about: the locked host, the hosts an open run reached, or every host. */
-function hostLine(run: OpsRun): string {
+function hostLine(run: OpsRun, t: TFunction): string {
   if (run.scope?.kind === 'host') return run.hostNames?.[run.scope.hostId] ?? run.hosts[0] ?? ''
   if (run.scope?.kind === 'open') {
     const touched = touchedHosts(run)
-    return touched.length ? touched.join(', ') : 'any server this runbook allows'
+    return touched.length ? touched.join(', ') : t('ops.report.anyServer')
   }
   return run.hosts.join(', ')
 }
@@ -54,9 +56,9 @@ const callText = (c: OpsRow): string =>
   c.argv && c.argv.length ? displayArgv(c.argv) : c.path ? `${c.tool || 'read'} ${c.path}` : c.tool || c.callId
 
 /** A call's result, coloured: exit 0 green, a non-zero exit amber, a refusal red. */
-function resultOf(c: OpsRow): { text: string; tone: string } {
-  if (c.status === 'done') return { text: 'exit 0', tone: 'ok' }
-  return { text: rowLabel(c) || c.status, tone: rowTone(c) }
+function resultOf(c: OpsRow, t: TFunction): { text: string; tone: string } {
+  if (c.status === 'done') return { text: t('ops.timeline.row.exit', { code: 0 }), tone: 'ok' }
+  return { text: rowLabel(c, t) || c.status, tone: rowTone(c) }
 }
 
 /**
@@ -67,6 +69,8 @@ function resultOf(c: OpsRow): { text: string; tone: string } {
  * client rendering as it would be sent. Nothing here is sent anywhere.
  */
 export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClose }: Props) {
+  const t = useT()
+  const { locale } = useLanguage()
   const [kind, setKind] = useState<Kind>('internal')
   const [loading, setLoading] = useState(true)
   const [markdown, setMarkdown] = useState('')
@@ -147,7 +151,7 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
   }
 
   const rendered = loading ? (
-    <p className="ops-rs-note">Loading report…</p>
+    <p className="ops-rs-note">{t('ops.report.loading')}</p>
   ) : error ? (
     <p className="ops-rs-error" role="alert">
       {error}
@@ -158,40 +162,40 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
 
   const headerExtra = (
     <>
-      <div className="ops-rs-toggle" role="group" aria-label="Report kind">
+      <div className="ops-rs-toggle" role="group" aria-label={t('ops.report.kindAria')}>
         {(['internal', 'client'] as const).map((k) => (
           <button key={k} type="button" className={kind === k ? 'active' : ''} aria-pressed={kind === k} onClick={() => setKind(k)}>
-            {k === 'internal' ? 'Internal' : 'Client'}
+            {k === 'internal' ? t('ops.report.internal') : t('ops.report.client')}
           </button>
         ))}
       </div>
       <button type="button" className="ops-rs-btn" onClick={copy} disabled={loading || !markdown}>
-        {copied ? 'Copied' : 'Copy'}
+        {copied ? t('ops.report.copied') : t('common.copy')}
       </button>
       <button
         type="button"
         className="ops-rs-btn primary"
         onClick={save}
         disabled={!runbookPath || loading || !markdown || saving}
-        title={runbookPath ? `Writes a new file under ${runbookPath}/reports` : 'The runbook folder of this run is not known'}
+        title={runbookPath ? t('ops.report.saveTitle', { path: runbookPath }) : t('ops.report.saveUnknown')}
       >
-        {saving ? 'Saving…' : 'Save beside runbook'}
+        {saving ? t('ops.report.saving') : t('ops.report.save')}
       </button>
     </>
   )
 
   return (
-    <Sheet title="Run report" width={720} onClose={onClose} headerExtra={headerExtra}>
+    <Sheet title={t('ops.report.title')} width={720} onClose={onClose} headerExtra={headerExtra}>
       <div className="ops-rs-body">
         {(saved || warnings.length > 0) && (
           <div className="ops-rs-notices">
             {saved && (
               <p className={`ops-rs-saved${saved.ok ? '' : ' error'}`} role="status">
-                {saved.ok ? `Saved to ${saved.path}` : saved.error}
+                {saved.ok ? t('ops.report.savedTo', { path: saved.path }) : saved.error}
               </p>
             )}
             {warnings.length > 0 && (
-              <ul className="ops-rs-warnings" aria-label="Warnings">
+              <ul className="ops-rs-warnings" aria-label={t('ops.report.warnings')}>
                 {warnings.map((w, i) => (
                   <li key={i}>{w}</li>
                 ))}
@@ -202,13 +206,15 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
 
         {run && (
           <div className="ops-rs-titles">
-            <h2 className="ops-rs-title">{run.runbook || 'Run'}</h2>
+            <h2 className="ops-rs-title">{run.runbook || t('ops.report.run')}</h2>
             <div className="ops-rs-context">
               {[
-                hostLine(run),
-                `${day(run.startedAt)}, ${clock(run.startedAt)}${run.endedAt ? ` to ${clock(run.endedAt)}` : ''}`,
+                hostLine(run, t),
+                run.endedAt
+                  ? t('ops.report.timeRange', { day: day(run.startedAt, locale), start: clock(run.startedAt, false, locale), end: clock(run.endedAt, false, locale) })
+                  : t('ops.report.timeStart', { day: day(run.startedAt, locale), start: clock(run.startedAt, false, locale) }),
                 'Claude Code',
-                runOutcome(run)
+                runOutcome(run, t)
               ]
                 .filter(Boolean)
                 .join(' · ')}
@@ -227,18 +233,18 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
 
         {run && (
           <div className="ops-rs-foot">
-            Audit log <code>{ledgerDay}.jsonl</code> · run <code>{run.runId.slice(0, 8)}</code>
+            {t('ops.report.auditLog')} <code>{ledgerDay}.jsonl</code> · {t('ops.report.runId')} <code>{run.runId.slice(0, 8)}</code>
             {run.policySha256 && (
               <>
                 {' '}
-                · policy <code>{run.policySha256.slice(0, 8)}</code>
+                · {t('ops.report.policy')} <code>{run.policySha256.slice(0, 8)}</code>
               </>
             )}
-            {verified?.ok && ' · chain verified'}
+            {verified?.ok && ` · ${t('ops.report.chainVerified')}`}
             {verified && !verified.ok && (
               <span className="ops-rs-broken" title={verified.reason}>
                 {' '}
-                · chain broken{verified.brokenAt != null ? ` at line ${verified.brokenAt}` : ''}
+                · {verified.brokenAt != null ? t('ops.report.chainBrokenAt', { line: verified.brokenAt }) : t('ops.report.chainBroken')}
               </span>
             )}
           </div>
@@ -259,6 +265,8 @@ function InternalBody({
   onToggleAll: () => void
   rendered: ReactNode
 }) {
+  const t = useT()
+  const { locale } = useLanguage()
   const counts = runCounts(run)
   const steps = run.planSteps ?? []
   const askedCmds = new Set(run.calls.filter((c) => c.asked).map(callText))
@@ -268,25 +276,25 @@ function InternalBody({
       <div className="ops-rs-tiles">
         <div className="ops-rs-tile">
           <span className="ops-rs-n">{counts.calls}</span>
-          <span>calls</span>
+          <span>{t('ops.report.tile.calls')}</span>
         </div>
         <div className="ops-rs-tile">
           <span className="ops-rs-n ok">{counts.ran}</span>
-          <span>ran</span>
+          <span>{t('ops.report.tile.ran')}</span>
         </div>
         <div className="ops-rs-tile">
           <span className="ops-rs-n warn">{counts.asked}</span>
-          <span>asked you</span>
+          <span>{t('ops.report.tile.asked')}</span>
         </div>
         <div className="ops-rs-tile">
           <span className="ops-rs-n bad">{counts.notAllowed}</span>
-          <span>not allowed</span>
+          <span>{t('ops.report.tile.notAllowed')}</span>
         </div>
       </div>
 
       {steps.length > 0 && (
         <section className="ops-rs-section">
-          <h3 className="ops-rs-eyebrow">Plan</h3>
+          <h3 className="ops-rs-eyebrow">{t('ops.report.plan')}</h3>
           <ol className="ops-rs-plan">
             {steps.map((s, i) => {
               const asked = s.commands.some((c) => askedCmds.has(c))
@@ -295,13 +303,13 @@ function InternalBody({
                   <span className="ops-rs-step">{s.title}</span>
                   {s.commands.length > 0 && <span className="ops-rs-muted ops-rs-step"> · {s.commands.join(', ')}</span>}
                   {s.skipped ? (
-                    <span className="ops-rs-muted"> · skipped</span>
+                    <span className="ops-rs-muted"> · {t('ops.report.step.skipped')}</span>
                   ) : asked ? (
-                    <span className="ops-rs-warn"> · asked</span>
+                    <span className="ops-rs-warn"> · {t('ops.report.step.asked')}</span>
                   ) : s.verdict === 'asks' ? (
-                    <span className="ops-rs-warn"> · asks</span>
+                    <span className="ops-rs-warn"> · {t('ops.report.step.asks')}</span>
                   ) : s.verdict === 'denied' ? (
-                    <span className="ops-rs-bad"> · not allowed</span>
+                    <span className="ops-rs-bad"> · {t('ops.report.step.notAllowed')}</span>
                   ) : null}
                 </li>
               )
@@ -311,20 +319,20 @@ function InternalBody({
       )}
 
       <section className="ops-rs-section">
-        <h3 className="ops-rs-eyebrow">Calls</h3>
+        <h3 className="ops-rs-eyebrow">{t('ops.report.calls')}</h3>
         {run.calls.length === 0 ? (
-          <p className="ops-rs-muted">No calls in this run.</p>
+          <p className="ops-rs-muted">{t('ops.report.noCalls')}</p>
         ) : (
           <div className="ops-rs-calls">
             {run.calls.map((c) => {
-              const r = resultOf(c)
+              const r = resultOf(c, t)
               const refused = c.status === 'denied' || c.status === 'stopped'
               return (
                 <div key={c.callId} className="ops-rs-call">
-                  <span className="ops-rs-muted">{clock(c.at, true)}</span>
+                  <span className="ops-rs-muted">{clock(c.at, true, locale)}</span>
                   <span className={`ops-rs-cmd${refused ? ' refused' : ''}`}>
                     {callText(c)}
-                    {c.asked && c.answer === 'allow' && <span className="ops-rs-allowed"> · you allowed</span>}
+                    {c.asked && c.answer === 'allow' && <span className="ops-rs-allowed"> · {t('ops.report.youAllowed')}</span>}
                   </span>
                   <span className={`ops-rs-result ${r.tone}`}>{r.text}</span>
                 </div>
@@ -333,7 +341,7 @@ function InternalBody({
           </div>
         )}
         <button type="button" className="ops-rs-link" aria-expanded={showAll} onClick={onToggleAll}>
-          {showAll ? 'Hide the output of every call' : 'Show output of every call'}
+          {showAll ? t('ops.report.hideOutput') : t('ops.report.showOutput')}
         </button>
       </section>
 

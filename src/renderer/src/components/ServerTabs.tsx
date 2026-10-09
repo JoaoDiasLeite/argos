@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { plural } from '../../../shared/i18n'
+import { useT } from '../i18n'
 
 /** One open Remote/WSL session, as far as the tab strip cares — App.tsx's richer
     ServerSession (which also carries the RemoteTarget) is structurally compatible. */
@@ -84,6 +86,7 @@ function GroupTab({
   onClose: (id: string) => void
   onAdd: () => void
 }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -131,7 +134,7 @@ function GroupTab({
         ref={triggerRef}
         className={`server-tab ${hasActive ? 'active' : ''}`}
         onClick={() => setOpen((v) => !v)}
-        title={`${group.sessions.length} sessions on ${group.title}`}
+        title={plural(t, 'remote.tabs.sessionsOn', group.sessions.length, { title: group.title })}
         aria-expanded={open}
         aria-haspopup="menu"
       >
@@ -169,7 +172,7 @@ function GroupTab({
               role="menuitem"
               tabIndex={0}
             >
-              <span>Session {i + 1}</span>
+              <span>{t('remote.tabs.session', { n: i + 1 })}</span>
               <button
                 type="button"
                 className="server-tab-close"
@@ -179,8 +182,8 @@ function GroupTab({
                   if (group.sessions.length <= 2) setOpen(false)
                   onClose(s.id)
                 }}
-                title="Close session"
-                aria-label={`Close ${group.title} session ${i + 1}`}
+                title={t('remote.tabs.close')}
+                aria-label={t('remote.tabs.closeNth', { title: group.title, n: i + 1 })}
               >
                 <CloseIcon />
               </button>
@@ -196,7 +199,7 @@ function GroupTab({
             }}
             role="menuitem"
           >
-            New session
+            {t('remote.tabs.newSession')}
           </button>
         </div>
       )}
@@ -211,6 +214,7 @@ function GroupTab({
  * That difference lives entirely in the `onSelect` the caller passes.
  */
 export default function ServerTabs({ sessions, statuses = {}, activeId, onSelect, onClose, onAddToGroup, inline }: Props) {
+  const t = useT()
   return (
     <div className={`server-tabs ${inline ? 'inline' : ''}`}>
       {groupSessions(sessions).map((g) =>
@@ -232,8 +236,8 @@ export default function ServerTabs({ sessions, statuses = {}, activeId, onSelect
                 e.stopPropagation()
                 onClose(g.sessions[0].id)
               }}
-              title="Close session"
-              aria-label={`Close ${g.title}`}
+              title={t('remote.tabs.close')}
+              aria-label={t('remote.tabs.closeNamed', { title: g.title })}
             >
               <CloseIcon />
             </button>

@@ -1,5 +1,6 @@
 import type { OpsIntervention } from '../types'
 import { opsTerminalIdFor } from '../lib/ops-terminal'
+import { useT } from '../i18n'
 
 export interface OpsTabItem {
   intervention: OpsIntervention
@@ -34,9 +35,10 @@ const CloseIcon = ({ size }: { size: number }) => (
  * way back to one left running, the way across between several, and an × that ends one.
  */
 export default function OpsTabs({ items, activeId, onSelect, onClose, strip }: Props) {
+  const t = useT()
   if (items.length === 0) return null
   return (
-    <div className={strip ? 'server-tabs' : 'ops-tabs'} role="tablist" aria-label="Running interventions">
+    <div className={strip ? 'server-tabs' : 'ops-tabs'} role="tablist" aria-label={t('ops.tabs.aria')}>
       {items.map(({ intervention, waiting, ended }) => {
         const id = opsTerminalIdFor(intervention)
         const on = id === activeId
@@ -53,7 +55,7 @@ export default function OpsTabs({ items, activeId, onSelect, onClose, strip }: P
             className={strip ? `server-tab${on ? ' active' : ''}` : `ops-running-chip${on ? ' on' : ''}`}
             onClick={select}
             onKeyDown={(e) => e.key === 'Enter' && select()}
-            title={`${name}${intervention.task ? `: ${intervention.task}` : ''}${ended ? ' (stopped)' : waiting ? ' (waiting for you)' : ''}`}
+            title={`${name}${intervention.task ? `: ${intervention.task}` : ''}${ended ? t('ops.tabs.stopped') : waiting ? t('ops.tabs.waiting') : ''}`}
           >
             {strip ? (
               <span className={`server-tab-dot${ended ? '' : waiting ? ' connecting' : ' connected'}`} aria-hidden="true" />
@@ -69,8 +71,8 @@ export default function OpsTabs({ items, activeId, onSelect, onClose, strip }: P
                 e.stopPropagation()
                 onClose(intervention)
               }}
-              title="End this intervention: its run is stopped and its CLI closed"
-              aria-label={`End the ${name} intervention`}
+              title={t('ops.tabs.close')}
+              aria-label={t('ops.tabs.closeAria', { name })}
             >
               <CloseIcon size={strip ? 14 : 12} />
             </button>

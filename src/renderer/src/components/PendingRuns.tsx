@@ -1,6 +1,7 @@
 import './PendingRuns.css'
 import { SESSION_DRAG_TYPE } from '../lib/pane-drop'
 import { setChatDragImage } from '../lib/drag-ghost'
+import { useT } from '../i18n'
 
 export interface PendingRun {
   /** The app session id of the chat that's still working. */
@@ -33,6 +34,7 @@ interface Props {
  * one marks it read.
  */
 export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) {
+  const t = useT()
   if (runs.length === 0) return null
 
   // What needs you first, then what is still working, finished last. Stable within a group.
@@ -66,8 +68,8 @@ export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) 
             onClick={() => onOpen(r.id)}
             title={[
               r.name,
-              r.account ? `on ${r.account}` : null,
-              r.done ? 'finished, not read yet' : r.attention ? 'waiting for your input' : 'working'
+              r.account ? t('ops.pending.onAccount', { account: r.account }) : null,
+              r.done ? t('ops.pending.done') : r.attention ? t('ops.pending.attention') : t('ops.pending.working')
             ]
               .filter(Boolean)
               .join(' · ')}
@@ -88,8 +90,8 @@ export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) 
             type="button"
             className="pending-run-close"
             onClick={() => onDismiss(r.id)}
-            title={r.done ? 'Mark as read' : 'Hide from this bar (the chat keeps running)'}
-            aria-label={r.done ? `Mark ${r.name} as read` : `Hide ${r.name} from the pending bar`}
+            title={r.done ? t('ops.pending.markRead') : t('ops.pending.hide')}
+            aria-label={r.done ? t('ops.pending.markReadAria', { name: r.name }) : t('ops.pending.hideAria', { name: r.name })}
           >
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" />

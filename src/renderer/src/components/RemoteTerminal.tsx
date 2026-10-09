@@ -6,6 +6,7 @@ import { TERMINAL_THEME } from './terminal-theme'
 import TerminalContextMenu, { terminalMenuItems } from './TerminalContextMenu'
 import { registerOsc52Copy } from '../lib/osc52'
 import { registerTerminalLinks } from '../lib/terminal-links'
+import { useT } from '../i18n'
 import './ChatTerminal.css'
 
 interface Props {
@@ -56,6 +57,11 @@ function loadFontSize(): number {
 }
 
 export default function RemoteTerminal({ terminalId, hostId, active, onClose }: Props) {
+  const t = useT()
+  // The shell effect writes translated notes into the terminal; it must not re-run (and
+  // reconnect) when the language changes, so it reads the translator through a ref.
+  const tRef = useRef(t)
+  tRef.current = t
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -285,7 +291,9 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
     const offExit = window.electronAPI.onRemoteShellExit((e) => {
       if (e.id !== terminalId) return
       setExited(true)
-      term.write(`\r\n\x1b[2m[connection closed${e.code ? ` · code ${e.code}` : ''}]\x1b[0m\r\n`)
+      term.write(
+        `\r\n\x1b[2m[${e.code ? tRef.current('remote.terminal.closedCode', { code: e.code }) : tRef.current('remote.terminal.closed')}]\x1b[0m\r\n`
+      )
     })
 
     // Set by the cleanup: a create still connecting when the effect tears down is killed in
@@ -294,7 +302,9 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
     window.electronAPI.remoteShellCreate(terminalId, hostId, cols, rows).then((res) => {
       if (disposed) return
       if (!res.ok) {
-        term.write(`\r\n\x1b[31mFailed to start terminal${res.error ? `: ${res.error}` : '.'}\x1b[0m\r\n`)
+        term.write(
+          `\r\n\x1b[31m${res.error ? tRef.current('remote.terminal.startFailedWhy', { error: res.error }) : tRef.current('remote.terminal.startFailed')}\x1b[0m\r\n`
+        )
         setStarting(false)
         return
       }
@@ -317,14 +327,14 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
   return (
     <div className="chat-terminal">
       <div className="chat-terminal-bar">
-        <span className="chat-terminal-label">Terminal</span>
+        <span className="chat-terminal-label">{t('remote.terminal.label')}</span>
         <div className="chat-terminal-actions">
           <div className="chat-terminal-fontsize">
             <button
               className="chat-terminal-btn"
               onClick={() => setFontSize((s) => Math.max(MIN_FONT_SIZE, s - 1))}
-              title="Smaller text"
-              aria-label="Smaller text"
+              title={t('remote.terminal.smaller')}
+              aria-label={t('remote.terminal.smaller')}
               disabled={fontSize <= MIN_FONT_SIZE}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -335,8 +345,8 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
             <button
               className="chat-terminal-btn"
               onClick={() => setFontSize((s) => Math.min(MAX_FONT_SIZE, s + 1))}
-              title="Larger text"
-              aria-label="Larger text"
+              title={t('remote.terminal.larger')}
+              aria-label={t('remote.terminal.larger')}
               disabled={fontSize >= MAX_FONT_SIZE}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -350,11 +360,11 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
               window.electronAPI.remoteShellKill(terminalId)
               setReloadKey((k) => k + 1)
             }}
-            title="Reconnect the shell"
+            title={t('remote.terminal.restartTitle')}
           >
-            Restart
+            {t('remote.terminal.restart')}
           </button>
-          <button className="chat-terminal-btn" onClick={onClose} title="Close terminal" aria-label="Close terminal">
+          <button className="chat-terminal-btn" onClick={onClose} title={t('remote.terminal.close')} aria-label={t('remote.terminal.close')}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -366,14 +376,14 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
         {starting && !exited && (
           <div className="chat-terminal-loading">
             <div className="chat-terminal-spinner" />
-            <div className="chat-terminal-loading-text">Connecting…</div>
+            <div className="chat-terminal-loading-text">{t('remote.terminal.connecting')}</div>
           </div>
         )}
         {exited && (
           <div className="block chat-terminal-exited" role="status">
-            <span className="help">The shell exited.</span>
+            <span className="help">{t('remote.terminal.exited')}</span>
             <button className="btn-ghost" onClick={() => setReloadKey((k) => k + 1)}>
-              Reconnect
+              {t('remote.terminal.reconnect')}
             </button>
           </div>
         )}

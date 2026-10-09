@@ -1,4 +1,9 @@
 import type { ApprovalOpsContext, OpsPlanStep } from '../types'
+import { makeT, plural, type TFunction } from '../../../shared/i18n'
+
+// Every text helper takes the translator last and defaults to English, so a caller that
+// has not been given `t` yet (the toast window, for one) keeps compiling and reading as before.
+const EN = makeT('en')
 
 /** Words joined by spaces; any word with whitespace or a quote is single-quoted. */
 export function displayArgv(argv: string[]): string {
@@ -8,39 +13,39 @@ export function displayArgv(argv: string[]): string {
 }
 
 /** Header verb and the "what exactly will run" lines for an ops approval. */
-export function describeOpsRequest(ops: ApprovalOpsContext): { verb: string; lines: string[] } {
+export function describeOpsRequest(ops: ApprovalOpsContext, t: TFunction = EN): { verb: string; lines: string[] } {
   const host = ops.hostName
   const path = ops.path ?? ''
   const argvLine = ops.argv && ops.argv.length ? displayArgv(ops.argv) : ''
   const lines: string[] = []
   switch (ops.tool) {
     case 'plan':
-      return { verb: `approve the plan for ${host}`, lines: (ops.planSteps ?? []).map((s) => s.title) }
+      return { verb: t('ops.approval.verb.plan', { host }), lines: (ops.planSteps ?? []).map((s) => s.title) }
     case 'host':
-      return { verb: `reach ${host} for this intervention`, lines: [ops.hostAddress] }
+      return { verb: t('ops.approval.verb.host', { host }), lines: [ops.hostAddress] }
     case 'script':
       if (argvLine) lines.push(argvLine)
       if (ops.scriptSha256) lines.push(`sha256 ${ops.scriptSha256.slice(0, 12)}…`)
-      return { verb: `run script ${ops.argv?.[0] ?? ''} on ${host}`.replace('  ', ' '), lines }
+      return { verb: t('ops.approval.verb.script', { script: ops.argv?.[0] ?? '', host }).replace('  ', ' '), lines }
     case 'read':
-      return { verb: `read ${path} on ${host}`, lines: [path] }
+      return { verb: t('ops.approval.verb.read', { path, host }), lines: [path] }
     case 'list':
-      return { verb: `list ${path} on ${host}`, lines: [path] }
+      return { verb: t('ops.approval.verb.list', { path, host }), lines: [path] }
     case 'write':
-      return { verb: `write ${path} on ${host}`, lines: [path] }
+      return { verb: t('ops.approval.verb.write', { path, host }), lines: [path] }
     default:
       if (argvLine) lines.push(argvLine)
-      return { verb: `run a command on ${host}`, lines }
+      return { verb: t('ops.approval.verb.run', { host }), lines }
   }
 }
 
 /** One-line toast summary, capped at ~80 chars. */
-export function summarizeOps(ops: ApprovalOpsContext): string {
+export function summarizeOps(ops: ApprovalOpsContext, t: TFunction = EN): string {
   if (ops.tool === 'plan') {
     const n = ops.planSteps?.length ?? 0
-    return `Plan: ${n} step${n === 1 ? '' : 's'} for ${ops.hostName}`
+    return plural(t, 'ops.approval.summary.plan', n, { host: ops.hostName })
   }
-  if (ops.tool === 'host') return `Reach ${ops.hostName}?`
+  if (ops.tool === 'host') return t('ops.approval.summary.host', { host: ops.hostName })
   const what = ops.argv && ops.argv.length ? displayArgv(ops.argv) : ops.path || ops.tool
   const full = `${ops.hostName}: ${what}`
   return full.length > 80 ? full.slice(0, 79) + '…' : full
@@ -52,31 +57,36 @@ const cap = (s: string, n: number): string => (s.length > n ? s.slice(0, n - 1) 
  * The toast's wording for an ops request: a question a person can answer at a glance
  * from outside the app, and one line of detail. Never the raw `mcp__ops__*` tool name.
  */
-export function opsToastText(ops: ApprovalOpsContext): { title: string; detail: string } {
+export function opsToastText(ops: ApprovalOpsContext, t: TFunction = EN): { title: string; detail: string } {
   const host = ops.hostName
   if (ops.tool === 'plan') {
-    const t = planTotals(ops)
+    const totals = planTotals(ops)
     return {
-      title: `Approve the plan for ${ops.runbook || host}`,
-      detail: `${t.total} step${t.total === 1 ? '' : 's'} · ${planChangesLine(t)}`
+      title: t('ops.approval.toast.plan', { name: ops.runbook || host }),
+      detail: t('ops.approval.toast.planDetail', {
+        steps: plural(t, 'ops.approval.steps', totals.total),
+        changes: planChangesLine(totals, t)
+      })
     }
   }
   const detail = ops.title || ops.reason
   const path = ops.path ?? ''
   switch (ops.tool) {
     case 'host':
-      return { title: cap(`Allow reaching ${host} for this intervention?`, 90), detail: ops.reason }
+      return { title: cap(t('ops.approval.toast.host', { host }), 90), detail: ops.reason }
     case 'script':
-      return { title: cap(`Allow script ${ops.argv?.[0] ?? ''} on ${host}?`, 90), detail }
+      return { title: cap(t('ops.approval.toast.script', { script: ops.argv?.[0] ?? '', host }), 90), detail }
     case 'read':
-      return { title: cap(`Allow reading ${path} on ${host}?`, 90), detail }
+      return { title: cap(t('ops.approval.toast.read', { path, host }), 90), detail }
     case 'list':
-      return { title: cap(`Allow listing ${path} on ${host}?`, 90), detail }
+      return { title: cap(t('ops.approval.toast.list', { path, host }), 90), detail }
     case 'write':
-      return { title: cap(`Allow writing ${path} on ${host}?`, 90), detail }
+      return { title: cap(t('ops.approval.toast.write', { path, host }), 90), detail }
     default:
       return {
-        title: ops.argv?.length ? `Allow \`${cap(displayArgv(ops.argv), 60)}\` on ${host}?` : `Allow a command on ${host}?`,
+        title: ops.argv?.length
+          ? t('ops.approval.toast.command', { command: cap(displayArgv(ops.argv), 60), host })
+          : t('ops.approval.toast.anyCommand', { host }),
         detail
       }
   }
@@ -86,35 +96,47 @@ export function opsToastText(ops: ApprovalOpsContext): { title: string; detail: 
  * The toast's question in pieces (board F2): words around one mono chip, the command or
  * path the operator is asked about. A plan or a host has no chip.
  */
-export function opsToastQuestion(ops: ApprovalOpsContext): { lead: string; code?: string; tail: string } {
+export function opsToastQuestion(ops: ApprovalOpsContext, t: TFunction = EN): { lead: string; code?: string; tail: string } {
   const host = ops.hostName
   const argv = ops.argv?.length ? cap(displayArgv(ops.argv), 70) : ''
   const path = ops.path ? cap(ops.path, 70) : ''
   switch (ops.tool) {
     case 'plan': {
-      const t = planTotals(ops)
-      return { lead: `Approve the plan: ${t.total} step${t.total === 1 ? '' : 's'}, ${planChangesLine(t)}?`, tail: '' }
+      const totals = planTotals(ops)
+      return {
+        lead: t('ops.approval.question.plan', {
+          steps: plural(t, 'ops.approval.steps', totals.total),
+          changes: planChangesLine(totals, t)
+        }),
+        tail: ''
+      }
     }
     case 'host':
-      return { lead: `The model wants to reach ${host}. Allow for this intervention?`, tail: '' }
+      return { lead: t('ops.approval.question.host', { host }), tail: '' }
     case 'script':
-      return argv ? { lead: 'Allow script ', code: argv, tail: '?' } : { lead: 'Allow a script?', tail: '' }
+      return argv
+        ? { lead: t('ops.approval.question.scriptLead'), code: argv, tail: t('ops.approval.question.tail') }
+        : { lead: t('ops.approval.question.anyScript'), tail: '' }
     case 'read':
-      return { lead: 'Allow reading ', code: path, tail: '?' }
+      return { lead: t('ops.approval.question.readLead'), code: path, tail: t('ops.approval.question.tail') }
     case 'list':
-      return { lead: 'Allow listing ', code: path, tail: '?' }
+      return { lead: t('ops.approval.question.listLead'), code: path, tail: t('ops.approval.question.tail') }
     case 'write':
-      return { lead: 'Allow writing ', code: path, tail: '?' }
+      return { lead: t('ops.approval.question.writeLead'), code: path, tail: t('ops.approval.question.tail') }
     default:
-      return argv ? { lead: 'Allow ', code: argv, tail: '?' } : { lead: 'Allow a command?', tail: '' }
+      return argv
+        ? { lead: t('ops.approval.question.commandLead'), code: argv, tail: t('ops.approval.question.tail') }
+        : { lead: t('ops.approval.question.anyCommand'), tail: '' }
   }
 }
 
 /** "Argos · diagnose-rails-host on rocky-test": the toast's eyebrow. */
-export function opsToastEyebrow(ops: ApprovalOpsContext): string {
+export function opsToastEyebrow(ops: ApprovalOpsContext, t: TFunction = EN): string {
   const rb = ops.runbook
-  if (ops.tool === 'plan') return rb ? `Argos · ${rb}` : 'Argos'
-  return rb ? `Argos · ${rb} on ${ops.hostName}` : `Argos · ${ops.hostName}`
+  if (ops.tool === 'plan') return rb ? t('ops.approval.eyebrow.plan', { runbook: rb }) : 'Argos'
+  return rb
+    ? t('ops.approval.eyebrow.runbookOnHost', { runbook: rb, host: ops.hostName })
+    : t('ops.approval.eyebrow.host', { host: ops.hostName })
 }
 
 // ── Plan review sheet ──
@@ -160,32 +182,34 @@ export interface PlanTotalsGroup {
 }
 
 /** "5 run on their own · 2 will ask you first · 1 not allowed", zero groups left out. */
-export function planTotalsGroups(t: PlanTotals): PlanTotalsGroup[] {
+export function planTotalsGroups(t: PlanTotals, tr: TFunction = EN): PlanTotalsGroup[] {
   const out: PlanTotalsGroup[] = []
-  if (t.runs) out.push({ kind: 'runs', n: t.runs, text: t.runs === 1 ? 'runs on its own' : 'run on their own' })
-  if (t.asks) out.push({ kind: 'asks', n: t.asks, text: 'will ask you first' })
-  if (t.denied) out.push({ kind: 'denied', n: t.denied, text: 'not allowed' })
+  if (t.runs) out.push({ kind: 'runs', n: t.runs, text: tr(t.runs === 1 ? 'ops.approval.group.runsOne' : 'ops.approval.group.runsMany') })
+  if (t.asks) out.push({ kind: 'asks', n: t.asks, text: tr('ops.approval.group.asks') })
+  if (t.denied) out.push({ kind: 'denied', n: t.denied, text: tr('ops.approval.group.denied') })
   return out
 }
 
 /** "nothing changes" or "2 change the host". */
-export function planChangesLine(t: PlanTotals): string {
-  if (t.mutates === 0) return 'nothing changes'
-  return `${t.mutates} change${t.mutates === 1 ? 's' : ''} the host`
+export function planChangesLine(t: PlanTotals, tr: TFunction = EN): string {
+  if (t.mutates === 0) return tr('ops.approval.changes.none')
+  return plural(tr, 'ops.approval.changes', t.mutates)
 }
 
 /** What the header names after "N steps": the one host every step names, else the runbook. */
-export function planTarget(ops: ApprovalOpsContext): string {
+export function planTarget(ops: ApprovalOpsContext, t: TFunction = EN): string {
   const hosts = new Set((ops.planSteps ?? []).map((s) => s.hostName).filter((h): h is string => !!h))
-  if (hosts.size === 1) return `on ${[...hosts][0]}`
-  return ops.runbook ? `runbook ${ops.runbook}` : `on ${ops.hostName}`
+  if (hosts.size === 1) return t('ops.approval.target.host', { host: [...hosts][0] })
+  return ops.runbook
+    ? t('ops.approval.target.runbook', { runbook: ops.runbook })
+    : t('ops.approval.target.host', { host: ops.hostName })
 }
 
 /** The small right-aligned label: `read`, `read · 3`, `asks · sudo`, `not allowed`. */
-export function planStepLabel(step: OpsPlanStep): string {
-  if (step.verdict === 'denied') return 'not allowed'
-  if (step.verdict === 'asks') return step.sudo ? 'asks · sudo' : 'asks'
-  if (step.verdict === 'unknown') return 'not classified'
-  const base = step.class === 'mutate' ? 'changes' : 'read'
-  return step.commands.length > 1 ? `${base} · ${step.commands.length}` : base
+export function planStepLabel(step: OpsPlanStep, t: TFunction = EN): string {
+  if (step.verdict === 'denied') return t('ops.approval.step.denied')
+  if (step.verdict === 'asks') return step.sudo ? t('ops.approval.step.asksSudo') : t('ops.approval.step.asks')
+  if (step.verdict === 'unknown') return t('ops.approval.step.unknown')
+  const base = step.class === 'mutate' ? t('ops.approval.step.changes') : t('ops.approval.step.read')
+  return step.commands.length > 1 ? t('ops.approval.step.withCount', { label: base, n: step.commands.length }) : base
 }

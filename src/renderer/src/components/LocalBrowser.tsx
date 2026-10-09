@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { FileNode } from '../types'
 import { FbIcon } from './SftpBrowser'
+import { useT } from '../i18n'
 import './SftpBrowser.css'
 
 interface Props {
@@ -22,6 +23,7 @@ function winJoin(dir: string, name: string): string {
  *  the local-fs IPC instead of SFTP. Upload/download are omitted for v1 (see plan notes) —
  *  a WSL share is already a plain Windows folder, reachable from Explorer directly. */
 export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal }: Props) {
+  const t = useT()
   const [entries, setEntries] = useState<FileNode[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,7 +41,7 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
     setError(null)
     const res = await window.electronAPI.readDir(dir)
     setLoading(false)
-    if ('error' in res) setError(res.error || 'Failed to list directory')
+    if ('error' in res) setError(res.error || t('remote.sftp.listFailed'))
     else setEntries(res)
   }
 
@@ -63,7 +65,7 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
     setBusyPath(null)
     setConfirmDelete(null)
     if (res.ok) load()
-    else setError(res.error || 'Delete failed')
+    else setError(res.error || t('remote.sftp.deleteFailed'))
   }
 
   const doRename = async () => {
@@ -79,7 +81,7 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
     setBusyPath(null)
     setRenaming(null)
     if (res.ok) load()
-    else setError(res.error || 'Rename failed')
+    else setError(res.error || t('remote.sftp.renameFailed'))
   }
 
   const doMkdir = async () => {
@@ -92,7 +94,7 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
     setCreatingFolder(false)
     setNewFolderName('')
     if (res.ok) load()
-    else setError(res.error || 'Could not create folder')
+    else setError(res.error || t('remote.sftp.mkdirFailed'))
   }
 
   const doTouch = async () => {
@@ -105,11 +107,11 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
     // difference between "create empty file" and "truncate this one to empty" — so we
     // have to check the already-loaded listing ourselves before calling it.
     if (name.includes('/') || name.includes('\\')) {
-      setError('File name cannot contain a slash.')
+      setError(t('remote.sftp.nameSlash'))
       return
     }
     if (entries.some((e) => e.name === name)) {
-      setError('A file with that name already exists.')
+      setError(t('remote.sftp.nameExists'))
       return
     }
     const path = winJoin(dir, name)
@@ -120,14 +122,14 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
       await load()
       onOpenFile({ name, path, type: 'file' })
     } else {
-      setError(res.error || 'Could not create file')
+      setError(res.error || t('remote.sftp.createFailed'))
     }
   }
 
   return (
     <div className="fb">
       <div className="fb-toolbar">
-        <button type="button" className="btn-ghost small fb-icon-btn" onClick={load} title="Refresh" aria-label="Refresh" disabled={loading}>
+        <button type="button" className="btn-ghost small fb-icon-btn" onClick={load} title={t('remote.sftp.refresh')} aria-label={t('remote.sftp.refresh')} disabled={loading}>
           <FbIcon.refresh />
         </button>
         <button
@@ -137,8 +139,8 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
             setCreatingFolder(true)
             setCreatingFile(false)
           }}
-          title="New folder"
-          aria-label="New folder"
+          title={t('remote.sftp.newFolder')}
+          aria-label={t('remote.sftp.newFolder')}
         >
           <FbIcon.newFolder />
         </button>
@@ -149,8 +151,8 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
             setCreatingFile(true)
             setCreatingFolder(false)
           }}
-          title="New file"
-          aria-label="New file"
+          title={t('remote.sftp.newFile')}
+          aria-label={t('remote.sftp.newFile')}
         >
           <FbIcon.newFile />
         </button>
@@ -162,8 +164,8 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
           <input
             className="text-input mono"
             autoFocus
-            placeholder="new-folder"
-            aria-label="New folder name"
+            placeholder={t('remote.sftp.newFolderPlaceholder')}
+            aria-label={t('remote.sftp.newFolderName')}
             value={newFolderName}
             onChange={(e) => setNewFolderName(e.target.value)}
             onKeyDown={(e) => {
@@ -171,8 +173,8 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
               if (e.key === 'Escape') setCreatingFolder(false)
             }}
           />
-          <button type="button" className="btn-primary small" onClick={doMkdir}>Create</button>
-          <button type="button" className="btn-ghost small" onClick={() => setCreatingFolder(false)}>Cancel</button>
+          <button type="button" className="btn-primary small" onClick={doMkdir}>{t('remote.sftp.create')}</button>
+          <button type="button" className="btn-ghost small" onClick={() => setCreatingFolder(false)}>{t('common.cancel')}</button>
         </div>
       )}
 
@@ -181,8 +183,8 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
           <input
             className="text-input mono"
             autoFocus
-            placeholder="new-file.txt"
-            aria-label="New file name"
+            placeholder={t('remote.sftp.newFilePlaceholder')}
+            aria-label={t('remote.sftp.newFileName')}
             value={newFileName}
             onChange={(e) => setNewFileName(e.target.value)}
             onKeyDown={(e) => {
@@ -190,23 +192,23 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
               if (e.key === 'Escape') setCreatingFile(false)
             }}
           />
-          <button type="button" className="btn-primary small" onClick={doTouch}>Create</button>
-          <button type="button" className="btn-ghost small" onClick={() => setCreatingFile(false)}>Cancel</button>
+          <button type="button" className="btn-primary small" onClick={doTouch}>{t('remote.sftp.create')}</button>
+          <button type="button" className="btn-ghost small" onClick={() => setCreatingFile(false)}>{t('common.cancel')}</button>
         </div>
       )}
 
       {error && <p className="fb-error">{error}</p>}
 
       <div className="fb-list">
-        {loading && entries.length === 0 && <p className="fb-empty">Loading…</p>}
-        {!loading && entries.length === 0 && !error && <p className="fb-empty">Empty directory.</p>}
+        {loading && entries.length === 0 && <p className="fb-empty">{t('common.loading')}</p>}
+        {!loading && entries.length === 0 && !error && <p className="fb-empty">{t('remote.sftp.empty')}</p>}
         {entries.map((entry) => (
           <div key={entry.path} className={`fb-row ${busyPath === entry.path ? 'busy' : ''}`}>
             {renaming?.path === entry.path ? (
               <input
                 className="text-input mono fb-rename"
                 autoFocus
-                aria-label={`Rename ${entry.name}`}
+                aria-label={t('remote.sftp.renameAria', { name: entry.name })}
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
                 onKeyDown={(e) => {
@@ -224,10 +226,10 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
                 {confirmDelete?.path === entry.path ? (
                   <div className="fb-row-confirm">
                     <button type="button" className="btn-ghost small" onClick={() => setConfirmDelete(null)} autoFocus>
-                      Keep
+                      {t('remote.sftp.keep')}
                     </button>
                     <button type="button" className="btn-primary small danger" onClick={() => doDelete(entry)}>
-                      Delete
+                      {t('common.delete')}
                     </button>
                   </div>
                 ) : (
@@ -236,8 +238,8 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
                       <button
                         type="button"
                         className="fb-row-btn"
-                        title="cd the terminal here"
-                        aria-label={`cd the terminal to ${entry.name}`}
+                        title={t('remote.sftp.cdHere')}
+                        aria-label={t('remote.sftp.cdAria', { name: entry.name })}
                         onClick={() => onCdTerminal(entry.path)}
                       >
                         <FbIcon.terminal />
@@ -246,8 +248,8 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
                     <button
                       type="button"
                       className="fb-row-btn"
-                      title="Rename"
-                      aria-label={`Rename ${entry.name}`}
+                      title={t('common.rename')}
+                      aria-label={t('remote.sftp.renameAria', { name: entry.name })}
                       onClick={() => {
                         setRenaming(entry)
                         setRenameValue(entry.name)
@@ -258,8 +260,8 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
                     <button
                       type="button"
                       className="fb-row-btn danger"
-                      title="Delete"
-                      aria-label={`Delete ${entry.name}`}
+                      title={t('common.delete')}
+                      aria-label={t('remote.sftp.deleteAria', { name: entry.name })}
                       onClick={() => setConfirmDelete(entry)}
                     >
                       <FbIcon.trash />

@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { RemoteEntry } from '../types'
+import { useLanguage, useT } from '../i18n'
 import './SftpBrowser.css'
 
 interface Props {
@@ -42,10 +43,10 @@ function formatSize(bytes: number): string {
   return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`
 }
 
-function formatDate(ms: number): string {
+function formatDate(ms: number, locale?: string): string {
   if (!ms) return ''
   try {
-    return new Date(ms).toLocaleString(undefined, {
+    return new Date(ms).toLocaleString(locale, {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -86,6 +87,8 @@ export const FbIcon = {
 const entryIcon = (type: RemoteEntry['type']) => (type === 'directory' ? <FbIcon.folder /> : <FbIcon.file />)
 
 export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdTerminal }: Props) {
+  const t = useT()
+  const { locale } = useLanguage()
   const [entries, setEntries] = useState<RemoteEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -109,7 +112,7 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
     const res = await window.electronAPI.sftpList(hostId, cwd)
     setLoading(false)
     if (res.ok) setEntries(res.entries ?? [])
-    else setError(res.error || 'Failed to list directory')
+    else setError(res.error || t('remote.sftp.listFailed'))
   }
 
   useEffect(() => {
@@ -133,7 +136,7 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
     setBusyPath(null)
     setConfirmDelete(null)
     if (res.ok) load()
-    else setError(res.error || 'Delete failed')
+    else setError(res.error || t('remote.sftp.deleteFailed'))
   }
 
   const doRename = async () => {
@@ -150,7 +153,7 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
     setBusyPath(null)
     setRenaming(null)
     if (res.ok) load()
-    else setError(res.error || 'Rename failed')
+    else setError(res.error || t('remote.sftp.renameFailed'))
   }
 
   const doMkdir = async () => {
@@ -163,7 +166,7 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
     setCreatingFolder(false)
     setNewFolderName('')
     if (res.ok) load()
-    else setError(res.error || 'Could not create folder')
+    else setError(res.error || t('remote.sftp.mkdirFailed'))
   }
 
   const doTouch = async () => {
@@ -176,11 +179,11 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
     // difference between "create empty file" and "truncate this one to empty" — so we
     // have to check the already-loaded listing ourselves before calling it.
     if (name.includes('/') || name.includes('\\')) {
-      setError('File name cannot contain a slash.')
+      setError(t('remote.sftp.nameSlash'))
       return
     }
     if (entries.some((e) => e.name === name)) {
-      setError('A file with that name already exists.')
+      setError(t('remote.sftp.nameExists'))
       return
     }
     const path = posixJoin(cwd, name)
@@ -191,7 +194,7 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
       await load()
       onOpenFile({ name, path, type: 'file', size: 0, mtime: Date.now() })
     } else {
-      setError(res.error || 'Could not create file')
+      setError(res.error || t('remote.sftp.createFailed'))
     }
   }
 
@@ -200,7 +203,7 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
     if (res.ok) {
       if (res.uploaded && res.uploaded.length > 0) load()
     } else {
-      setError(res.error || 'Upload failed')
+      setError(res.error || t('remote.sftp.uploadFailed'))
     }
   }
 
@@ -217,7 +220,7 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
       const res = await window.electronAPI.sftpRename(hostId, moved, posixJoin(dir, posixBasename(moved)))
       setBusyPath(null)
       if (res.ok) load()
-      else setError(res.error || 'Move failed')
+      else setError(res.error || t('remote.sftp.moveFailed'))
       return
     }
     const paths = Array.from(e.dataTransfer.files)
@@ -228,7 +231,7 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
     setError(null)
     const res = await window.electronAPI.sftpUpload(hostId, dir, paths)
     setUploading(false)
-    if (!res.ok) setError(res.error || 'Upload failed')
+    if (!res.ok) setError(res.error || t('remote.sftp.uploadFailed'))
     if (dir === cwd && res.uploaded && res.uploaded.length > 0) load()
   }
 
@@ -251,13 +254,13 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
           onDragOver={(e) => parent && dragOver(e, parent)}
           onDragLeave={() => setDropTarget(null)}
           onDrop={(e) => parent && dropInto(e, parent)}
-          title="Up to parent"
-          aria-label="Up to parent"
+          title={t('remote.sftp.up')}
+          aria-label={t('remote.sftp.up')}
           disabled={!parent}
         >
           <FbIcon.up />
         </button>
-        <button type="button" className="btn-ghost small fb-icon-btn" onClick={load} title="Refresh" aria-label="Refresh" disabled={loading}>
+        <button type="button" className="btn-ghost small fb-icon-btn" onClick={load} title={t('remote.sftp.refresh')} aria-label={t('remote.sftp.refresh')} disabled={loading}>
           <FbIcon.refresh />
         </button>
         <button
@@ -267,8 +270,8 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
             setCreatingFolder(true)
             setCreatingFile(false)
           }}
-          title="New folder"
-          aria-label="New folder"
+          title={t('remote.sftp.newFolder')}
+          aria-label={t('remote.sftp.newFolder')}
         >
           <FbIcon.newFolder />
         </button>
@@ -279,12 +282,12 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
             setCreatingFile(true)
             setCreatingFolder(false)
           }}
-          title="New file"
-          aria-label="New file"
+          title={t('remote.sftp.newFile')}
+          aria-label={t('remote.sftp.newFile')}
         >
           <FbIcon.newFile />
         </button>
-        <button type="button" className="btn-ghost small fb-icon-btn" onClick={doUpload} title="Upload files into this folder" aria-label="Upload">
+        <button type="button" className="btn-ghost small fb-icon-btn" onClick={doUpload} title={t('remote.sftp.uploadTitle')} aria-label={t('remote.sftp.upload')}>
           <FbIcon.upload />
         </button>
         <span className="fb-path" title={cwd}>{cwd}</span>
@@ -295,8 +298,8 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
           <input
             className="text-input mono"
             autoFocus
-            placeholder="new-folder"
-            aria-label="New folder name"
+            placeholder={t('remote.sftp.newFolderPlaceholder')}
+            aria-label={t('remote.sftp.newFolderName')}
             value={newFolderName}
             onChange={(e) => setNewFolderName(e.target.value)}
             onKeyDown={(e) => {
@@ -304,8 +307,8 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
               if (e.key === 'Escape') setCreatingFolder(false)
             }}
           />
-          <button type="button" className="btn-primary small" onClick={doMkdir}>Create</button>
-          <button type="button" className="btn-ghost small" onClick={() => setCreatingFolder(false)}>Cancel</button>
+          <button type="button" className="btn-primary small" onClick={doMkdir}>{t('remote.sftp.create')}</button>
+          <button type="button" className="btn-ghost small" onClick={() => setCreatingFolder(false)}>{t('common.cancel')}</button>
         </div>
       )}
 
@@ -314,8 +317,8 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
           <input
             className="text-input mono"
             autoFocus
-            placeholder="new-file.txt"
-            aria-label="New file name"
+            placeholder={t('remote.sftp.newFilePlaceholder')}
+            aria-label={t('remote.sftp.newFileName')}
             value={newFileName}
             onChange={(e) => setNewFileName(e.target.value)}
             onKeyDown={(e) => {
@@ -323,13 +326,13 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
               if (e.key === 'Escape') setCreatingFile(false)
             }}
           />
-          <button type="button" className="btn-primary small" onClick={doTouch}>Create</button>
-          <button type="button" className="btn-ghost small" onClick={() => setCreatingFile(false)}>Cancel</button>
+          <button type="button" className="btn-primary small" onClick={doTouch}>{t('remote.sftp.create')}</button>
+          <button type="button" className="btn-ghost small" onClick={() => setCreatingFile(false)}>{t('common.cancel')}</button>
         </div>
       )}
 
       {error && <p className="fb-error">{error}</p>}
-      {uploading && <p className="fb-status">Uploading…</p>}
+      {uploading && <p className="fb-status">{t('remote.sftp.uploading')}</p>}
 
       <div
         className={`fb-list ${dropTarget === cwd ? 'drop-target' : ''}`}
@@ -339,8 +342,8 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
         }}
         onDrop={(e) => dropInto(e, cwd)}
       >
-        {loading && entries.length === 0 && <p className="fb-empty">Loading…</p>}
-        {!loading && entries.length === 0 && !error && <p className="fb-empty">Empty directory.</p>}
+        {loading && entries.length === 0 && <p className="fb-empty">{t('common.loading')}</p>}
+        {!loading && entries.length === 0 && !error && <p className="fb-empty">{t('remote.sftp.empty')}</p>}
         {entries.map((entry) => (
           <div
             key={entry.path}
@@ -359,7 +362,7 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
               <input
                 className="text-input mono fb-rename"
                 autoFocus
-                aria-label={`Rename ${entry.name}`}
+                aria-label={t('remote.sftp.renameAria', { name: entry.name })}
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
                 onKeyDown={(e) => {
@@ -377,24 +380,24 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
                 {confirmDelete?.path === entry.path ? (
                   <div className="fb-row-confirm">
                     <button type="button" className="btn-ghost small" onClick={() => setConfirmDelete(null)} autoFocus>
-                      Keep
+                      {t('remote.sftp.keep')}
                     </button>
                     <button type="button" className="btn-primary small danger" onClick={() => doDelete(entry)}>
-                      Delete
+                      {t('common.delete')}
                     </button>
                   </div>
                 ) : (
                   <>
                     <span className="fb-row-meta">
-                      {[entry.type === 'file' ? formatSize(entry.size) : '', formatDate(entry.mtime)].filter(Boolean).join(' · ')}
+                      {[entry.type === 'file' ? formatSize(entry.size) : '', formatDate(entry.mtime, locale)].filter(Boolean).join(' · ')}
                     </span>
                     <div className="fb-row-actions">
                       {entry.type === 'directory' && (
                         <button
                           type="button"
                           className="fb-row-btn"
-                          title="cd the terminal here"
-                          aria-label={`cd the terminal to ${entry.name}`}
+                          title={t('remote.sftp.cdHere')}
+                          aria-label={t('remote.sftp.cdAria', { name: entry.name })}
                           onClick={() => onCdTerminal(entry.path)}
                         >
                           <FbIcon.terminal />
@@ -404,8 +407,8 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
                         <button
                           type="button"
                           className="fb-row-btn"
-                          title="Download"
-                          aria-label={`Download ${entry.name}`}
+                          title={t('remote.sftp.download')}
+                          aria-label={t('remote.sftp.downloadAria', { name: entry.name })}
                           onClick={() => window.electronAPI.sftpDownload(hostId, entry.path)}
                         >
                           <FbIcon.download />
@@ -414,8 +417,8 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
                       <button
                         type="button"
                         className="fb-row-btn"
-                        title="Rename"
-                        aria-label={`Rename ${entry.name}`}
+                        title={t('common.rename')}
+                        aria-label={t('remote.sftp.renameAria', { name: entry.name })}
                         onClick={() => {
                           setRenaming(entry)
                           setRenameValue(entry.name)
@@ -426,8 +429,8 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
                       <button
                         type="button"
                         className="fb-row-btn danger"
-                        title="Delete"
-                        aria-label={`Delete ${entry.name}`}
+                        title={t('common.delete')}
+                        aria-label={t('remote.sftp.deleteAria', { name: entry.name })}
                         onClick={() => setConfirmDelete(entry)}
                       >
                         <FbIcon.trash />

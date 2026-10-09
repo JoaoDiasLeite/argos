@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useModalA11y } from '../hooks/useModalA11y'
 import { backdropClose } from '../lib/backdrop-close'
+import { useT } from '../i18n'
 import './SecretPrompt.css'
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export default function SecretPrompt({ request, onSubmit }: Props) {
+  const t = useT()
   const [value, setValue] = useState('')
   const dialogRef = useRef<HTMLDivElement>(null)
   useModalA11y(dialogRef, () => onSubmit(null))
@@ -26,7 +28,7 @@ export default function SecretPrompt({ request, onSubmit }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
-          <h3 id={titleId}>sudo password for {request.hostName}</h3>
+          <h3 id={titleId}>{t('ops.secret.title', { host: request.hostName })}</h3>
         </div>
         <form
           className="secret-prompt-body"
@@ -41,14 +43,14 @@ export default function SecretPrompt({ request, onSubmit }: Props) {
             spellCheck={false}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            aria-label={`sudo password for ${request.hostName}`}
+            aria-label={t('ops.secret.aria', { host: request.hostName })}
           />
           <p className="help">
-            Kept in memory only for this run and never written to the audit log.
+            {t('ops.secret.help')}
           </p>
           <div className="secret-prompt-actions">
-            <button type="button" className="btn-ghost" onClick={() => onSubmit(null)}>Decline</button>
-            <button type="submit" className="btn-primary">Use for this run</button>
+            <button type="button" className="btn-ghost" onClick={() => onSubmit(null)}>{t('ops.secret.decline')}</button>
+            <button type="submit" className="btn-primary">{t('ops.secret.use')}</button>
           </div>
         </form>
       </div>

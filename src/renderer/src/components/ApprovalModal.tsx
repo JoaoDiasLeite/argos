@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { ApprovalOpsContext, ApprovalRequest } from '../types'
+import { plural } from '../../../shared/i18n'
 import { describeOpsRequest } from '../lib/ops-approval'
 import DiffView from './DiffView'
 import { useModalA11y } from '../hooks/useModalA11y'
+import { useT } from '../i18n'
 import './ApprovalModal.css'
 
 interface Props {
@@ -17,20 +19,21 @@ function str(v: unknown): string {
 }
 
 function OpsBody({ ops }: { ops: ApprovalOpsContext }) {
-  const { lines } = describeOpsRequest(ops)
+  const t = useT()
+  const { lines } = describeOpsRequest(ops, t)
   return (
     <div className="approval-ops">
       <div className="approval-ops-meta">
-        <span>{ops.hostName} · {ops.hostAddress} · runbook {ops.runbook}</span>
+        <span>{t('ops.approval.modal.runbookMeta', { host: ops.hostName, address: ops.hostAddress, runbook: ops.runbook })}</span>
         <span className={`approval-ops-class ${ops.class}`}>{ops.class}</span>
       </div>
       {ops.title && <div className="approval-ops-title">{ops.title}</div>}
       {lines.length > 0 && <pre className="approval-ops-exec">{lines.join('\n')}</pre>}
-      <div className="approval-ops-rule">{ops.rule ? ops.rule : 'no rule matched'}</div>
+      <div className="approval-ops-rule">{ops.rule ? ops.rule : t('ops.approval.modal.noRule')}</div>
       {ops.reason && <div className="approval-desc">{ops.reason}</div>}
       {ops.queuedBehind > 0 && (
         <div className="approval-ops-queue">
-          Queued behind {ops.queuedBehind} call{ops.queuedBehind === 1 ? '' : 's'} on this host.
+          {plural(t, 'ops.approval.modal.queued', ops.queuedBehind)}
         </div>
       )}
     </div>
@@ -38,6 +41,7 @@ function OpsBody({ ops }: { ops: ApprovalOpsContext }) {
 }
 
 export default function ApprovalModal({ request, onDecide, onStop }: Props) {
+  const t = useT()
   const { tool, input, ops } = request
   const dialogRef = useRef<HTMLDivElement>(null)
   // Esc is handled by the existing keydown handler (deny), so we pass escapeToClose: false
@@ -69,8 +73,8 @@ export default function ApprovalModal({ request, onDecide, onStop }: Props) {
           which used to run target and folder together on one line. Labelled because
           this is the one dialog standing between a headless remote run and the user's
           files, and a bare hostname next to a bare path invites mixing them up. */}
-      <pre><strong>Target:</strong> {str(input.target)}</pre>
-      <pre><strong>Folder:</strong> {str(input.folder)}</pre>
+      <pre><strong>{t('ops.approval.modal.target')}</strong> {str(input.target)}</pre>
+      <pre><strong>{t('ops.approval.modal.folder')}</strong> {str(input.folder)}</pre>
       <p>{str(input.prompt)}</p>
     </div>
     if (tool === 'Edit') {
@@ -81,7 +85,7 @@ export default function ApprovalModal({ request, onDecide, onStop }: Props) {
         <div className="approval-multi">
           {(input.edits as { old_string?: string; new_string?: string }[]).map((e, i) => (
             <div key={i} className="approval-multi-item">
-              <div className="approval-multi-label">Edit {i + 1}</div>
+              <div className="approval-multi-label">{t('ops.approval.modal.editN', { n: i + 1 })}</div>
               <DiffView oldText={str(e.old_string)} newText={str(e.new_string)} filePath={filePath} />
             </div>
           ))}
@@ -102,8 +106,8 @@ export default function ApprovalModal({ request, onDecide, onStop }: Props) {
     return <pre className="approval-json">{JSON.stringify(input, null, 2)}</pre>
   }
 
-  const verb = ops ? describeOpsRequest(ops).verb :
-    tool === 'RemoteRun' ? 'start a remote run' : tool === 'Bash' ? 'run a command' : tool === 'Write' ? 'create / overwrite a file' : 'use a tool'
+  const verb = ops ? describeOpsRequest(ops, t).verb :
+    tool === 'RemoteRun' ? t('ops.approval.modal.verbRemoteRun') : tool === 'Bash' ? t('ops.approval.modal.verbBash') : tool === 'Write' ? t('ops.approval.modal.verbWrite') : t('ops.approval.modal.verbTool')
 
   return (
     <div className="modal-backdrop">
@@ -118,20 +122,20 @@ export default function ApprovalModal({ request, onDecide, onStop }: Props) {
       >
         <div className="modal-header">
           <h3 id={`approval-${request.approvalId}`}>
-            <span className="approval-tool">{tool}</span> wants to {verb}
+            <span className="approval-tool">{tool}</span> {t('ops.approval.modal.wantsTo', { verb })}
           </h3>
         </div>
         {!ops && filePath && <div className="approval-path">{filePath}</div>}
         <div className="approval-body">{renderBody()}</div>
         <div className="modal-footer approval-footer">
-          <span className="help approval-keys">Ctrl+Enter allows · Esc denies</span>
+          <span className="help approval-keys">{t('ops.approval.modal.keys')}</span>
           {ops && onStop && (
             <button className="btn-text danger" onClick={onStop}>
-              Deny and stop the run
+              {t('ops.approval.modal.denyStop')}
             </button>
           )}
-          <button className="btn-ghost" onClick={() => onDecide(false)}>Deny</button>
-          <button className="btn-primary" onClick={() => onDecide(true)}>Allow once</button>
+          <button className="btn-ghost" onClick={() => onDecide(false)}>{t('ops.approval.modal.deny')}</button>
+          <button className="btn-primary" onClick={() => onDecide(true)}>{t('ops.approval.modal.allowOnce')}</button>
         </div>
       </div>
     </div>

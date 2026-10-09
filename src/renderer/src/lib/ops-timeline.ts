@@ -1,4 +1,9 @@
 import type { OpsLiveEvent } from '../types'
+import { makeT, type TFunction } from '../../../shared/i18n'
+
+// Text helpers take the translator last and default to English, so callers that have
+// not been handed `t` yet keep compiling and reading as before.
+const EN = makeT('en')
 
 /**
  * Pure fold of live ops ledger lines (`ops:event`) into runs and call rows for the ops
@@ -335,26 +340,26 @@ function programOf(argv: string[]): { name: string; rest: string[] } {
  * diagnosis asks these questions on purpose, so the column says the answer in grey
  * instead of raising an amber "exit 1". Undefined when the exit is a real failure.
  */
-export function exitMeaning(row: OpsRow): string | undefined {
+export function exitMeaning(row: OpsRow, t: TFunction = EN): string | undefined {
   if (row.status !== 'failed' || row.exitCode == null || !row.argv?.length) return undefined
   const { name, rest } = programOf(row.argv)
   const code = row.exitCode
   switch (name) {
     case 'pgrep':
-      return code === 1 ? 'no process' : undefined
+      return code === 1 ? t('ops.timeline.exit.noProcess') : undefined
     case 'grep':
     case 'egrep':
     case 'fgrep':
     case 'zgrep':
-      return code === 1 ? 'no match' : undefined
+      return code === 1 ? t('ops.timeline.exit.noMatch') : undefined
     case 'diff':
-      return code === 1 ? 'differs' : undefined
+      return code === 1 ? t('ops.timeline.exit.differs') : undefined
     case 'systemctl': {
       const verb = rest.find((w) => !w.startsWith('-'))
-      if (verb === 'status') return code === 3 ? 'inactive' : code === 4 ? 'no such unit' : undefined
-      if (verb === 'is-active') return code === 3 || code === 4 ? 'inactive' : undefined
-      if (verb === 'is-enabled') return code === 1 ? 'disabled' : undefined
-      if (verb === 'is-failed') return code === 1 ? 'not failed' : undefined
+      if (verb === 'status') return code === 3 ? t('ops.timeline.exit.inactive') : code === 4 ? t('ops.timeline.exit.noUnit') : undefined
+      if (verb === 'is-active') return code === 3 || code === 4 ? t('ops.timeline.exit.inactive') : undefined
+      if (verb === 'is-enabled') return code === 1 ? t('ops.timeline.exit.disabled') : undefined
+      if (verb === 'is-failed') return code === 1 ? t('ops.timeline.exit.notFailed') : undefined
       return undefined
     }
     default:
@@ -386,41 +391,41 @@ export function formatDuration(ms?: number): string {
 }
 
 /** Why a refused call was refused, in the column's few words. */
-export function deniedLabel(row: OpsRow): string {
-  if (row.answer === 'deny' || /^the operator refused/.test(row.reason)) return 'denied by you'
-  if (/^outside this intervention's scope/.test(row.reason)) return 'outside scope'
+export function deniedLabel(row: OpsRow, t: TFunction = EN): string {
+  if (row.answer === 'deny' || /^the operator refused/.test(row.reason)) return t('ops.timeline.denied.you')
+  if (/^outside this intervention's scope/.test(row.reason)) return t('ops.timeline.denied.scope')
   const r = row.reason
-  if (/^denylisted:/.test(r)) return 'never allowed'
-  if (/^sudo command matches no literal sudo rule/.test(r)) return 'sudo rule missing'
-  if (/takes at most \d+ argument/.test(r) || /does not match the script's pattern/.test(r) || /^script args must/.test(r)) return 'bad script args'
-  if (/no valid pinned sha256/.test(r)) return 'script not pinned'
-  if (/is not allowed on this host|^host is not in this runbook/.test(r)) return 'wrong host'
-  if (/^path .* is not under any/.test(r)) return 'path not allowed'
-  if (/runs another command/.test(r)) return 'not a simple command'
-  return 'not in runbook'
+  if (/^denylisted:/.test(r)) return t('ops.timeline.denied.never')
+  if (/^sudo command matches no literal sudo rule/.test(r)) return t('ops.timeline.denied.sudoRule')
+  if (/takes at most \d+ argument/.test(r) || /does not match the script's pattern/.test(r) || /^script args must/.test(r)) return t('ops.timeline.denied.scriptArgs')
+  if (/no valid pinned sha256/.test(r)) return t('ops.timeline.denied.notPinned')
+  if (/is not allowed on this host|^host is not in this runbook/.test(r)) return t('ops.timeline.denied.host')
+  if (/^path .* is not under any/.test(r)) return t('ops.timeline.denied.path')
+  if (/runs another command/.test(r)) return t('ops.timeline.denied.notSimple')
+  return t('ops.timeline.denied.notInRunbook')
 }
 
 /** The row's right-hand label: duration, `exit N`, or why it did not run. */
-export function rowLabel(row: OpsRow): string {
-  const meaning = exitMeaning(row)
+export function rowLabel(row: OpsRow, t: TFunction = EN): string {
+  const meaning = exitMeaning(row, t)
   if (meaning) return meaning
   switch (row.status) {
     case 'done':
       return formatDuration(row.durationMs)
     case 'failed':
-      return row.exitCode == null ? 'failed' : `exit ${row.exitCode}`
+      return row.exitCode == null ? t('ops.timeline.row.failed') : t('ops.timeline.row.exit', { code: row.exitCode })
     case 'timed-out':
-      return 'timed out'
+      return t('ops.timeline.row.timedOut')
     case 'denied':
-      return deniedLabel(row)
+      return deniedLabel(row, t)
     case 'stopped':
-      return 'stopped'
+      return t('ops.timeline.row.stopped')
     case 'asked':
-      return 'waiting'
+      return t('ops.timeline.row.waiting')
     case 'queued':
-      return 'queued'
+      return t('ops.timeline.row.queued')
     case 'running':
-      return 'running'
+      return t('ops.timeline.row.running')
     default:
       return ''
   }
@@ -509,12 +514,12 @@ function stepClaims(step: OpsPlanStepRow, line: string): boolean {
  * made a call are listed: the column is a history of what ran, and the plan's length is
  * already in its "k of n steps".
  */
-export function groupCallsBySteps(run: OpsRun): OpsStepGroup[] {
+export function groupCallsBySteps(run: OpsRun, t: TFunction = EN): OpsStepGroup[] {
   const plans = run.plans ?? []
   const groups: OpsStepGroup[] = []
   const firstPlanAt = plans.length ? plans[0].callIndex : run.calls.length
   if (firstPlanAt > 0) {
-    groups.push({ key: 'pre', title: 'Before the plan', rows: run.calls.slice(0, firstPlanAt), firstCall: 0 })
+    groups.push({ key: 'pre', title: t('ops.timeline.group.beforePlan'), rows: run.calls.slice(0, firstPlanAt), firstCall: 0 })
   }
   plans.forEach((plan, k) => {
     const end = k + 1 < plans.length ? plans[k + 1].callIndex : run.calls.length
@@ -525,7 +530,7 @@ export function groupCallsBySteps(run: OpsRun): OpsStepGroup[] {
     const live = steps.filter((s) => !s.step.skipped)
     if (live.length === 0) {
       if (end > plan.callIndex) {
-        groups.push({ key: `p${k}:extra`, title: 'Outside the plan', rows: run.calls.slice(plan.callIndex, end), firstCall: plan.callIndex })
+        groups.push({ key: `p${k}:extra`, title: t('ops.timeline.group.outsidePlan'), rows: run.calls.slice(plan.callIndex, end), firstCall: plan.callIndex })
       }
       return
     }

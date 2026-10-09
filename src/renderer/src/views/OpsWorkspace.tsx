@@ -5,6 +5,8 @@ import ActivityColumn from '../components/ActivityColumn'
 import { useOpsEvents } from '../hooks/useOpsEvents'
 import { foldOpsEvents, splitRuns, touchedHosts } from '../lib/ops-timeline'
 import { opsTerminalIdFor, type OpsTerminalProvider, type OpsTerminalSessionResult } from '../lib/ops-terminal'
+import { plural } from '../../../shared/i18n'
+import { useT } from '../i18n'
 import './OpsWorkspace.css'
 
 /**
@@ -24,8 +26,6 @@ type Launched = Extract<OpsTerminalSessionResult, { ok: true }>
 
 const PROVIDER: OpsTerminalProvider = 'claude'
 
-const GATED_HINT =
-  'Every server command goes through the runbook’s gate, and the CLI’s own shell and file tools are switched off.'
 
 // What main issued for each live ops terminal, kept for this app run so a remount reattaches
 // with the same launch instead of asking for a new run. Dropped when the pty ends.
@@ -73,6 +73,7 @@ interface Props {
 }
 
 export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, onRunning, waiting, onDecide, onStop, onEnded, tabs }: Props) {
+  const t = useT()
   const { runbookPath, scope } = intervention
   const [info, setInfo] = useState<OpsRunbookInfo | null>(null)
   const [hostDot, setHostDot] = useState<HostDot>('checking')
@@ -108,7 +109,7 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
     setHostDot('checking')
     window.electronAPI
       .sshTest(lockedHostId)
-      .then((t) => !cancelled && setHostDot(t.ok ? 'ok' : 'error'))
+      .then((r) => !cancelled && setHostDot(r.ok ? 'ok' : 'error'))
       .catch(() => !cancelled && setHostDot('error'))
     return () => {
       cancelled = true
@@ -127,7 +128,7 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
           launches.delete(terminalId)
           await window.electronAPI.terminalKill(terminalId)
         } else {
-          const alive = (await window.electronAPI.terminalList()).some((t) => t.id === terminalId)
+          const alive = (await window.electronAPI.terminalList()).some((x) => x.id === terminalId)
           if (seq !== startSeqRef.current) return
           const known = launches.get(terminalId)
           if (alive && known) {
@@ -216,14 +217,17 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
   const lockedHost = lockedHostId ? okInfo?.hosts.find((h) => h.id === lockedHostId) : undefined
   const touched = current ? touchedHosts(current) : []
   const policyLine = okInfo
-    ? `${okInfo.summary.mutates === 0 ? 'read-only runbook' : 'runbook can change hosts'} · ${okInfo.strict ? 'strict' : 'not strict'}`
+    ? t('ops.workspace.policyLine', {
+        access: okInfo.summary.mutates === 0 ? t('ops.workspace.readOnly') : t('ops.workspace.canChange'),
+        strict: okInfo.strict ? t('ops.workspace.strict') : t('ops.workspace.notStrict')
+      })
     : ''
 
   return (
     <div className="view ops-ws">
       {tabs}
       <div className="ops-ws-header">
-        <button className="ops-ws-back" onClick={onBack} title="Back to Operations" aria-label="Back to Operations">
+        <button className="ops-ws-back" onClick={onBack} title={t('ops.workspace.back')} aria-label={t('ops.workspace.back')}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <polyline points="15 18 9 12 15 6" />
           </svg>
@@ -234,12 +238,12 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
         {scope.kind === 'host' ? (
           <span className="ops-ws-host" title={lockedHost?.host}>
             <span className={`ops-ws-dot ${hostDot}`} aria-hidden="true" />
-            {lockedHost?.name ?? (info === null ? '…' : 'unknown host')}
+            {lockedHost?.name ?? (info === null ? '…' : t('ops.workspace.unknownHost'))}
           </span>
         ) : (
-          <span className="ops-ws-host" title={touched.length ? `Reached so far: ${touched.join(', ')}` : undefined}>
+          <span className="ops-ws-host" title={touched.length ? t('ops.workspace.reached', { hosts: touched.join(', ') }) : undefined}>
             <span className="ops-ws-dot open" aria-hidden="true" />
-            any server this runbook allows
+            {t('ops.report.anyServer')}
             {touched.length > 0 && <span className="ops-ws-touched"> · {touched.join(', ')}</span>}
           </span>
         )}
@@ -251,39 +255,39 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
         )}
         {okInfo && okInfo.warnings.length > 0 && (
           <span className="ops-ws-warn" title={okInfo.warnings.join('\n')}>
-            {okInfo.warnings.length} warning{okInfo.warnings.length === 1 ? '' : 's'}
+            {plural(t, 'ops.workspace.warnings', okInfo.warnings.length)}
           </span>
         )}
         <div className="ops-ws-spacer" />
-        <span className="ops-ws-meta" title={GATED_HINT}>
-          Claude Code · gated
+        <span className="ops-ws-meta" title={t('ops.workspace.gatedHint')}>
+          {t('ops.workspace.gated')}
         </span>
         <button
           className="ops-ws-btn"
           onClick={() => void start(true)}
           disabled={term.kind === 'starting'}
-          title="End this CLI and its run, and start a new one for the same intervention"
+          title={t('ops.workspace.restartTitle')}
         >
-          Restart
+          {t('ops.workspace.restart')}
         </button>
       </div>
 
       <div className="ops-ws-body">
         <div className="ops-ws-main">
-          {term.kind === 'starting' && <div className="ops-ws-state">Starting the ops session…</div>}
+          {term.kind === 'starting' && <div className="ops-ws-state">{t('ops.workspace.starting')}</div>}
           {term.kind === 'error' && (
             <div className="ops-ws-state bad" role="alert">
               <span>{term.error}</span>
               <button className="ops-ws-btn" onClick={() => void start(false)}>
-                Retry
+                {t('common.retry')}
               </button>
             </div>
           )}
           {term.kind === 'exited' && (
             <div className="ops-ws-strip">
-              <span>{term.stopped ? 'Intervention stopped' : `CLI exited${term.code ? ` · code ${term.code}` : ''}`}</span>
+              <span>{term.stopped ? t('ops.workspace.stopped') : term.code ? t('ops.workspace.exitedCode', { code: term.code }) : t('ops.workspace.exited')}</span>
               <button className="ops-ws-btn small" onClick={() => void start(true)}>
-                Relaunch
+                {t('ops.workspace.relaunch')}
               </button>
             </div>
           )}

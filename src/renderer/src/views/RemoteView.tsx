@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { useLingering } from '../hooks/useLingering'
 import {
   SshHostPublic,
@@ -17,6 +17,8 @@ import { readRecentRunbooks } from '../lib/recent-runbooks'
 import './views.css'
 import './RemoteView.css'
 import Select from '../components/Select'
+import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
+import { useLanguage, useT } from '../i18n'
 
 interface Props {
   onConnect: (host: SshHostPublic) => void
@@ -74,6 +76,14 @@ interface Probes {
   claude?: Probe
 }
 
+/** A translated sentence with `{name}` slots filled by elements (the mono code spans). */
+function fill(text: string, nodes: Record<string, ReactNode>): ReactNode[] {
+  return text.split(/(\{\w+\})/).map((part, i) => {
+    const m = /^\{(\w+)\}$/.exec(part)
+    return <Fragment key={i}>{m && m[1] in nodes ? nodes[m[1]] : part}</Fragment>
+  })
+}
+
 const keyOf = (sel: Selection): string => (sel.kind === 'wsl' ? `wsl:${sel.name}` : `ssh:${sel.id}`)
 
 function emptyHost(): SshHostInput {
@@ -86,27 +96,29 @@ function shortKeyPath(p: string): string {
   return m ? `~/.ssh/${m[1].replace(/\\/g, '/')}` : p
 }
 
-function relativeTime(at: number): string {
+function relativeTime(at: number, t: TFunction, locale?: string): string {
   const s = Math.round((Date.now() - at) / 1000)
-  if (s < 45) return 'just now'
+  if (s < 45) return t('remote.time.justNow')
   const m = Math.round(s / 60)
-  if (m < 60) return `${m} min ago`
+  if (m < 60) return t('remote.time.minAgo', { n: m })
   const d = new Date(at)
   const sameDay = d.toDateString() === new Date().toDateString()
-  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-  return sameDay ? `today ${time}` : `${d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} ${time}`
+  const time = d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+  return sameDay
+    ? t('remote.time.today', { time })
+    : t('remote.time.dayTime', { day: d.toLocaleDateString(locale, { day: 'numeric', month: 'short' }), time })
 }
 
-function clock(iso: string): string {
+function clock(iso: string, locale?: string): string {
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
 }
 
-function runOutcome(r: OpsRunListItem): string {
-  if (r.aborted) return 'stopped'
-  if (r.ok === true) return 'finished'
-  if (r.ok === false) return 'failed'
-  return r.endedAt ? 'ended' : 'unfinished'
+function runOutcome(r: OpsRunListItem, t: TFunction): string {
+  if (r.aborted) return t('remote.run.stopped')
+  if (r.ok === true) return t('remote.run.finished')
+  if (r.ok === false) return t('remote.run.failed')
+  return r.endedAt ? t('remote.run.ended') : t('remote.run.unfinished')
 }
 
 const baseName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p
@@ -158,19 +170,20 @@ const PlayIcon = () => (
   </svg>
 )
 
-const DOT_TITLE: Record<DotState, string> = {
-  idle: 'Not tested',
-  checking: 'Checking',
-  ok: 'Reachable',
-  error: 'Last test failed',
-  live: 'Session open'
+const DOT_TITLE: Record<DotState, MessageKey> = {
+  idle: 'remote.dot.idle',
+  checking: 'remote.dot.checking',
+  ok: 'remote.dot.ok',
+  error: 'remote.dot.error',
+  live: 'remote.dot.live'
 }
-const Dot = ({ state }: { state: DotState }) => (
-  <span className={`rv-dot ${state}`} title={DOT_TITLE[state]} aria-label={DOT_TITLE[state]} role="img" />
-)
+const Dot = ({ state }: { state: DotState }) => {
+  const t = useT()
+  return <span className={`rv-dot ${state}`} title={t(DOT_TITLE[state])} aria-label={t(DOT_TITLE[state])} role="img" />
+}
 
-const AUTH_LABEL: Record<SshAuthType, string> = { password: 'Password', key: 'Private key', agent: 'SSH agent' }
-const AUTH_CHIP: Record<SshAuthType, string> = { password: 'password', key: 'key', agent: 'agent' }
+const AUTH_LABEL: Record<SshAuthType, MessageKey> = { password: 'remote.auth.password', key: 'remote.auth.key', agent: 'remote.auth.agent' }
+const AUTH_CHIP: Record<SshAuthType, MessageKey> = { password: 'remote.auth.chipPassword', key: 'remote.auth.chipKey', agent: 'remote.auth.chipAgent' }
 
 export default function RemoteView({
   onConnect,
@@ -182,6 +195,8 @@ export default function RemoteView({
   openSshSessions = [],
   failedSshSessions = []
 }: Props) {
+  const t = useT()
+  const { locale } = useLanguage()
   const [hosts, setHosts] = useState<SshHostPublic[]>([])
   const [distros, setDistros] = useState<WslDistro[]>([])
   const [sources, setSources] = useState<SourceInfo[]>([])
@@ -454,7 +469,7 @@ export default function RemoteView({
       role: 'option' as const,
       'aria-selected': isSel,
       tabIndex: 0,
-      title: `${label} · double-click to connect`,
+      title: t('remote.row.doubleClick', { label }),
       'data-rv-row': true,
       className: `rv-row ${isSel ? 'sel' : ''}`,
       onClick: () => select(sel),
@@ -477,14 +492,13 @@ export default function RemoteView({
     return (
       <div className="view rv">
         <div className="rv-head">
-          <button type="button" className="rv-back" onClick={() => setScreen('targets')} aria-label="Back to Remote & WSL" title="Back to Remote & WSL">
+          <button type="button" className="rv-back" onClick={() => setScreen('targets')} aria-label={t('remote.back')} title={t('remote.back')}>
             <ChevronLeft />
           </button>
           <div className="rv-head-text">
-            <h1>SSH keys</h1>
+            <h1>{t('remote.keys.title')}</h1>
             <p className="rv-sub">
-              Keys found in <code>~/.ssh</code>. Copy a public key into a server&apos;s <code>authorized_keys</code> to enable key
-              auth. Private keys never leave your machine.
+              {fill(t('remote.keys.sub'), { ssh: <code>~/.ssh</code>, authorized: <code>authorized_keys</code> })}
             </p>
           </div>
         </div>
@@ -500,26 +514,26 @@ export default function RemoteView({
                   </span>
                   <span className="rv-name">{k.name}</span>
                   {k.type && <span className="chip">{k.type.replace(/^ssh-/, '')}</span>}
-                  <span className="rv-key-comment">{k.comment || (k.publicKey ? '' : 'no .pub alongside this key')}</span>
+                  <span className="rv-key-comment">{k.comment || (k.publicKey ? '' : t('remote.keys.noPub'))}</span>
                   <span className="rv-key-actions">
                     {k.publicKey && (
                       <button type="button" className="btn-ghost small" onClick={() => copy(k.publicKey!, `pub:${k.privatePath}`)}>
-                        {copied === `pub:${k.privatePath}` ? 'Copied' : 'Copy public key'}
+                        {copied === `pub:${k.privatePath}` ? t('remote.copied') : t('remote.keys.copyPublic')}
                       </button>
                     )}
                     <Menu
                       triggerClass="btn-ghost small rv-icon-btn"
-                      triggerTitle="More"
-                      ariaLabel="More"
+                      triggerTitle={t('remote.more')}
+                      ariaLabel={t('remote.more')}
                       triggerContent={<MoreIcon />}
                       items={[
                         {
-                          label: copied === `cmd:${k.privatePath}` ? 'Copied' : 'Copy install command',
+                          label: copied === `cmd:${k.privatePath}` ? t('remote.copied') : t('remote.keys.copyInstall'),
                           disabled: !oneLiner,
                           onClick: () => oneLiner && copy(oneLiner, `cmd:${k.privatePath}`)
                         },
                         {
-                          label: copied === `path:${k.privatePath}` ? 'Copied' : 'Copy private key path',
+                          label: copied === `path:${k.privatePath}` ? t('remote.copied') : t('remote.keys.copyPrivatePath'),
                           onClick: () => copy(k.privatePath, `path:${k.privatePath}`)
                         }
                       ]}
@@ -529,21 +543,21 @@ export default function RemoteView({
               )
             })}
 
-            <div className="eyebrow rv-eyebrow">Generate a key</div>
+            <div className="eyebrow rv-eyebrow">{t('remote.keys.generateTitle')}</div>
             <div className="rv-gen">
               <input
                 className="text-input mono"
                 placeholder="id_ed25519_new"
-                aria-label="New key file name"
+                aria-label={t('remote.keys.newName')}
                 value={newKeyName}
                 onChange={(e) => setNewKeyName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && generate()}
               />
               <button type="button" className="btn-primary small" onClick={generate} disabled={!newKeyName.trim() || generating}>
-                {generating ? 'Generating…' : 'Generate'}
+                {generating ? t('remote.keys.generating') : t('remote.keys.generate')}
               </button>
             </div>
-            <p className="help">An ed25519 key pair, written to ~/.ssh.</p>
+            <p className="help">{t('remote.keys.generateHelp')}</p>
             {genError && <p className="rv-error-text">{genError}</p>}
           </div>
         </div>
@@ -554,7 +568,7 @@ export default function RemoteView({
   // ── The column ─────────────────────────────────────────────────────────────
   const column = (): ReactNode => {
     if (!selDistro && !selHost) {
-      return <div className="rv-col-empty">Pick a target to see what it can do.</div>
+      return <div className="rv-col-empty">{t('remote.col.empty')}</div>
     }
     const sel: Selection = selDistro ? { kind: 'wsl', name: selDistro.name } : { kind: 'ssh', id: selHost!.id }
     const key = keyOf(sel)
@@ -564,32 +578,36 @@ export default function RemoteView({
     const name = selDistro ? selDistro.name : selHost!.name
 
     const state = (() => {
-      if (busy) return 'checking…'
-      if (dot === 'live') return 'session open'
-      if (p.conn) return p.conn.ok ? `reachable · ${(p.conn.ms / 1000).toFixed(1)} s` : 'could not connect'
-      if (selHost && failedSshSessions.includes(selHost.id)) return 'could not connect'
-      if (selDistro?.running) return 'running'
-      if (selHost && wasLiveSsh.includes(selHost.id)) return 'reachable'
-      return 'not tested'
+      if (busy) return t('remote.col.state.checking')
+      if (dot === 'live') return t('remote.col.state.live')
+      if (p.conn) return p.conn.ok ? t('remote.col.state.reachableIn', { seconds: (p.conn.ms / 1000).toFixed(1) }) : t('remote.col.state.failed')
+      if (selHost && failedSshSessions.includes(selHost.id)) return t('remote.col.state.failed')
+      if (selDistro?.running) return t('remote.col.state.running')
+      if (selHost && wasLiveSsh.includes(selHost.id)) return t('remote.col.state.reachable')
+      return t('remote.col.state.untested')
     })()
 
     const meta = selDistro
-      ? `wsl -d ${selDistro.name}${selDistro.isDefault ? ' · default' : ''}`
-      : `${selHost!.username}@${selHost!.host}:${selHost!.port} · ${
-          selHost!.authType === 'key'
-            ? `key ${selHost!.privateKeyPath ? shortKeyPath(selHost!.privateKeyPath) : '(default)'}`
-            : AUTH_CHIP[selHost!.authType]
-        }`
+      ? t(selDistro.isDefault ? 'remote.col.metaWslDefault' : 'remote.col.metaWsl', { name: selDistro.name })
+      : t('remote.col.metaSsh', {
+          user: selHost!.username,
+          host: selHost!.host,
+          port: selHost!.port,
+          auth:
+            selHost!.authType === 'key'
+              ? t('remote.col.metaKey', { path: selHost!.privateKeyPath ? shortKeyPath(selHost!.privateKeyPath) : t('remote.col.defaultKey') })
+              : t(AUTH_CHIP[selHost!.authType])
+        })
 
     // The one tinted block: the last test or check that failed, or an open session that
     // could not connect.
     const failure: { title: string; reason: string; retry: 'conn' | 'claude' } | null =
       p.conn && !p.conn.ok
-        ? { title: 'Could not connect', reason: p.conn.message, retry: 'conn' }
+        ? { title: t('remote.col.failConnect'), reason: p.conn.message, retry: 'conn' }
         : !p.conn && selHost && failedSshSessions.includes(selHost.id)
-          ? { title: 'Could not connect', reason: 'The open session on this host could not connect.', retry: 'conn' }
+          ? { title: t('remote.col.failConnect'), reason: t('remote.col.failSession'), retry: 'conn' }
           : p.claude && !p.claude.ok
-            ? { title: 'Claude Code did not answer', reason: p.claude.message, retry: 'claude' }
+            ? { title: t('remote.col.failClaude'), reason: p.claude.message, retry: 'claude' }
             : null
 
     const lastChecked = Math.max(p.conn?.at ?? 0, p.claude?.at ?? 0)
@@ -598,10 +616,10 @@ export default function RemoteView({
         // TODO(port): the logged-in account; the check only returns `claude --version`.
         <span>{p.claude.message}</span>
       ) : (
-        <span className="rv-dd-err">check failed</span>
+        <span className="rv-dd-err">{t('remote.col.checkFailed')}</span>
       )
     ) : (
-      <span className="rv-dd-muted">not checked</span>
+      <span className="rv-dd-muted">{t('remote.col.notChecked')}</span>
     )
 
     const cwd = selDistro ? wslPaths[selDistro.name] ?? '' : ''
@@ -625,26 +643,26 @@ export default function RemoteView({
           </div>
           <div className="rv-col-meta">{meta}</div>
           <div className="rv-col-actions">
-            <button type="button" className="btn-primary rv-connect" onClick={connect} title={isOpen ? 'Open another session' : `Connect to ${name}`}>
+            <button type="button" className="btn-primary rv-connect" onClick={connect} title={isOpen ? t('remote.col.openAnother') : t('remote.col.connectTo', { name })}>
               <PlayIcon />
-              Connect
+              {t('remote.col.connect')}
             </button>
             <button
               type="button"
               className="btn-ghost"
               onClick={newTerminal}
-              title={selHost ? "A terminal running the host's own CLI over SSH, outside any runbook" : 'A terminal in this distro'}
+              title={selHost ? t('remote.col.newTerminalSsh') : t('remote.col.newTerminalWsl')}
             >
-              New terminal
+              {t('remote.col.newTerminal')}
             </button>
             {selHost && onOps && selHostRunbooks.length > 0 && (
               <button
                 type="button"
                 className="btn-ghost"
                 onClick={() => onOps(selHost)}
-                title="Start an intervention on this host: its commands go through the runbook's gate"
+                title={t('remote.col.newInterventionTitle')}
               >
-                New intervention
+                {t('remote.col.newIntervention')}
               </button>
             )}
           </div>
@@ -656,30 +674,30 @@ export default function RemoteView({
             <span className="rv-fail-reason">{failure.reason}</span>
             <div>
               <button type="button" className="btn-ghost small" onClick={() => probe(sel, failure.retry)} disabled={busy}>
-                {busy ? 'Testing…' : 'Test again'}
+                {busy ? t('remote.col.testing') : t('remote.col.testAgain')}
               </button>
             </div>
           </div>
         )}
 
         <section className="rv-sec">
-          <div className="eyebrow">Details</div>
+          <div className="eyebrow">{t('remote.col.details')}</div>
           <dl className="rv-dl">
             {selHost ? (
               <>
-                <dt>Authentication</dt>
+                <dt>{t('remote.col.authentication')}</dt>
                 <dd>
-                  {AUTH_LABEL[selHost.authType]}
+                  {t(AUTH_LABEL[selHost.authType])}
                   {selHost.authType === 'key' && selHost.privateKeyPath && (
                     <span className="rv-dd-mono rv-dd-muted"> {shortKeyPath(selHost.privateKeyPath)}</span>
                   )}
                 </dd>
-                <dt>Remote path</dt>
-                <dd>{selHost.remotePath ? <span className="rv-dd-mono">{selHost.remotePath}</span> : <span className="rv-dd-muted">home folder</span>}</dd>
+                <dt>{t('remote.col.remotePath')}</dt>
+                <dd>{selHost.remotePath ? <span className="rv-dd-mono">{selHost.remotePath}</span> : <span className="rv-dd-muted">{t('remote.col.homeFolder')}</span>}</dd>
               </>
             ) : (
               <>
-                <dt>Working dir</dt>
+                <dt>{t('remote.col.workingDir')}</dt>
                 <dd>
                   {editingCwd ? (
                     <span className="rv-cwd-edit">
@@ -687,23 +705,23 @@ export default function RemoteView({
                         className="text-input mono"
                         autoFocus
                         placeholder="/home/you/repo"
-                        aria-label="Working dir"
+                        aria-label={t('remote.col.workingDir')}
                         value={cwd}
                         onChange={(e) => setWslPaths((prev) => ({ ...prev, [selDistro!.name]: e.target.value }))}
                         onKeyDown={(e) => e.key === 'Enter' && setEditingCwd(false)}
                       />
                       <button type="button" className="btn-ghost small" onClick={() => setEditingCwd(false)}>
-                        Done
+                        {t('remote.col.done')}
                       </button>
                     </span>
                   ) : cwd ? (
                     <span className="rv-dd-mono">{cwd}</span>
                   ) : (
-                    <span className="rv-dd-muted">home folder</span>
+                    <span className="rv-dd-muted">{t('remote.col.homeFolder')}</span>
                   )}
                 </dd>
-                <dt>Account</dt>
-                <dd>{acct?.email ?? <span className="rv-dd-muted">not logged in</span>}</dd>
+                <dt>{t('remote.col.account')}</dt>
+                <dd>{acct?.email ?? <span className="rv-dd-muted">{t('remote.col.notLoggedIn')}</span>}</dd>
               </>
             )}
             {/* WSL only: a distro runs Claude Code inside it, so whether it is installed there
@@ -714,16 +732,16 @@ export default function RemoteView({
                 <dd>{claudeValue}</dd>
               </>
             )}
-            <dt>Checked</dt>
-            <dd>{lastChecked ? relativeTime(lastChecked) : <span className="rv-dd-muted">never</span>}</dd>
+            <dt>{t('remote.col.checked')}</dt>
+            <dd>{lastChecked ? relativeTime(lastChecked, t, locale) : <span className="rv-dd-muted">{t('remote.col.never')}</span>}</dd>
           </dl>
           <div className="rv-col-actions">
             <button type="button" className="btn-ghost small" onClick={() => probe(sel, 'conn')} disabled={busy}>
-              {busy ? 'Testing…' : 'Test connection'}
+              {busy ? t('remote.col.testing') : t('remote.col.testConnection')}
             </button>
             {selDistro && (
               <button type="button" className="btn-ghost small" onClick={() => probe(sel, 'claude')} disabled={busy}>
-                Check Claude Code
+                {t('remote.col.checkClaude')}
               </button>
             )}
             {selHost ? (
@@ -744,12 +762,12 @@ export default function RemoteView({
                   })
                 }
               >
-                Edit host
+                {t('remote.col.editHost')}
               </button>
             ) : (
               !editingCwd && (
                 <button type="button" className="btn-ghost small" onClick={() => setEditingCwd(true)}>
-                  Set working dir
+                  {t('remote.col.setWorkingDir')}
                 </button>
               )
             )}
@@ -758,32 +776,37 @@ export default function RemoteView({
 
         {selHost && selHostRunbooks.length > 0 && (
           <section className="rv-sec">
-            <div className="eyebrow">Operations</div>
+            <div className="eyebrow">{t('remote.ops.title')}</div>
             <div className="rv-ops-line">
               <span>
-                {selHostRunbooks.length} runbook{selHostRunbooks.length === 1 ? '' : 's'} appl{selHostRunbooks.length === 1 ? 'ies' : 'y'} to this host
+                {plural(t, 'remote.ops.runbooksApply', selHostRunbooks.length)}
               </span>
               <span className="rv-ops-mode">
-                {allReadOnly ? 'read-only' : 'can change the host'}
-                {allStrict ? ' · strict' : ''}
+                {allReadOnly ? t('remote.ops.readOnly') : t('remote.ops.canChange')}
+                {allStrict ? ` · ${t('remote.ops.strict')}` : ''}
               </span>
             </div>
             {todayRuns.length > 0 && (
               <>
                 <div className="divider-caption rv-divcap">
-                  Earlier today · {todayRuns.length} intervention{todayRuns.length === 1 ? '' : 's'}
+                  {plural(t, 'remote.ops.earlierToday', todayRuns.length)}
                 </div>
                 {todayRuns.map((r) => (
                   <div key={r.runId} className="rv-run">
                     <span className="rv-run-what" title={r.task || undefined}>
-                      {clock(r.startedAt)} · {baseName(r.runbook)} · {runOutcome(r)} · {r.calls} call{r.calls === 1 ? '' : 's'}
+                      {t('remote.ops.runLine', {
+                        time: clock(r.startedAt, locale),
+                        name: baseName(r.runbook),
+                        outcome: runOutcome(r, t),
+                        calls: plural(t, 'remote.ops.calls', r.calls)
+                      })}
                     </span>
                     <button
                       type="button"
                       className="rv-run-report"
                       onClick={() => setReportFor({ runId: r.runId, runbookPath: runbookDirFor(r), appSessionId: r.appSessionId })}
                     >
-                      Report
+                      {t('remote.ops.report')}
                     </button>
                   </div>
                 ))}
@@ -799,7 +822,7 @@ export default function RemoteView({
                 {writeError ? (
                   <span className="rv-error-text">{writeError}</span>
                 ) : (
-                  <span className="help">Delete {selHost.name}? Its audit log stays.</span>
+                  <span className="help">{t('remote.foot.confirmDelete', { name: selHost.name })}</span>
                 )}
                 <button type="button" className="btn-ghost small" onClick={() => {
                     setConfirmDelete(false)
@@ -807,23 +830,23 @@ export default function RemoteView({
                   }}
                   autoFocus
                 >
-                  Keep
+                  {t('remote.foot.keep')}
                 </button>
                 <button type="button" className="btn-primary small danger" onClick={() => remove(selHost.id)}>
-                  Delete
+                  {t('common.delete')}
                 </button>
               </>
             ) : (
               <>
-                <span className="help">Removing a host keeps its audit log.</span>
+                <span className="help">{t('remote.foot.removeNote')}</span>
                 <button type="button" className="btn-text danger" onClick={() => setConfirmDelete(true)}>
-                  Delete host
+                  {t('remote.foot.deleteHost')}
                 </button>
               </>
             )
           ) : (
             <>
-              <span className="help">Hidden distros stay out of Usage and Projects.</span>
+              <span className="help">{t('remote.foot.hiddenNote')}</span>
               <button
                 type="button"
                 className="btn-text"
@@ -832,7 +855,7 @@ export default function RemoteView({
                   select(null)
                 }}
               >
-                Hide from Usage &amp; Projects
+                {t('remote.foot.hide')}
               </button>
             </>
           )}
@@ -846,18 +869,16 @@ export default function RemoteView({
     <div className="view rv">
       <div className="rv-head">
         <div className="rv-head-text">
-          <h1>Remote &amp; WSL</h1>
-          <p className="rv-sub">
-            Run Claude Code inside a WSL distro or on a remote SSH host. Each target needs Claude Code installed and logged in there.
-          </p>
+          <h1>{t('remote.title')}</h1>
+          <p className="rv-sub">{t('remote.sub')}</p>
         </div>
         <button type="button" className="btn-ghost" onClick={() => setScreen('keys')}>
           <KeyIcon />
-          SSH keys
+          {t('remote.keys.title')}
         </button>
         <button type="button" className="btn-ghost" onClick={() => openEditor(emptyHost())}>
           <PlusIcon />
-          Add SSH host
+          {t('remote.addHost')}
         </button>
       </div>
 
@@ -870,13 +891,13 @@ export default function RemoteView({
               </span>
               <input
                 className="text-input"
-                placeholder="Filter targets"
+                placeholder={t('remote.filter.placeholder')}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                aria-label="Filter targets"
+                aria-label={t('remote.filter.placeholder')}
               />
               {query && (
-                <button type="button" className="rv-search-clear" onClick={() => setQuery('')} aria-label="Clear filter" title="Clear filter">
+                <button type="button" className="rv-search-clear" onClick={() => setQuery('')} aria-label={t('remote.filter.clear')} title={t('remote.filter.clear')}>
                   <XIcon />
                 </button>
               )}
@@ -884,7 +905,7 @@ export default function RemoteView({
             <div className="seg-control">
               {(
                 [
-                  ['all', 'All', visibleDistros.length + hosts.length],
+                  ['all', t('remote.filter.all'), visibleDistros.length + hosts.length],
                   ['wsl', 'WSL', visibleDistros.length],
                   ['ssh', 'SSH', hosts.length]
                 ] as [Kind, string, number][]
@@ -896,12 +917,12 @@ export default function RemoteView({
             </div>
           </div>
 
-          {nothingMatches && <p className="rv-nothing">{q ? `Nothing matches “${query}”.` : 'No targets yet.'}</p>}
+          {nothingMatches && <p className="rv-nothing">{q ? t('remote.filter.nothing', { query }) : t('remote.filter.none')}</p>}
 
           {shownDistros.length > 0 && (
             <>
-              <div className="eyebrow rv-eyebrow">WSL distros</div>
-              <div role="listbox" aria-label="WSL distros" className="rv-rows">
+              <div className="eyebrow rv-eyebrow">{t('remote.list.wsl')}</div>
+              <div role="listbox" aria-label={t('remote.list.wsl')} className="rv-rows">
                 {shownDistros.map((d) => {
                   const claude = probes[`wsl:${d.name}`]?.claude
                   const conn = probes[`wsl:${d.name}`]?.conn
@@ -909,12 +930,12 @@ export default function RemoteView({
                     <div key={d.name} {...rowProps({ kind: 'wsl', name: d.name }, () => onOpenWslSession(d.name), d.name)}>
                       <Dot state={wslDotState(d)} />
                       <span className="rv-name">{d.name}</span>
-                      {d.isDefault && <span className="chip">default</span>}
+                      {d.isDefault && <span className="chip">{t('remote.list.default')}</span>}
                       <span className="rv-row-right">
                         {conn && !conn.ok ? (
-                          <span className="rv-row-err">could not connect</span>
+                          <span className="rv-row-err">{t('remote.list.couldNotConnect')}</span>
                         ) : (
-                          claude && !claude.ok && <span className="rv-row-note">no Claude Code</span>
+                          claude && !claude.ok && <span className="rv-row-note">{t('remote.list.noClaude')}</span>
                         )}
                         <span className="rv-row-meta">wsl -d {d.name}</span>
                       </span>
@@ -931,16 +952,16 @@ export default function RemoteView({
             <div className="rv-hidden">
               <button type="button" className="rv-hidden-toggle" onClick={() => setShowHidden((v) => !v)} aria-expanded={showHidden}>
                 <ChevronRight className={showHidden ? 'open' : ''} />
-                {hiddenDistros.length} hidden {hiddenDistros.length === 1 ? 'distro' : 'distros'}
+                {plural(t, 'remote.list.hidden', hiddenDistros.length)}
               </button>
               {showHidden &&
                 hiddenDistros.map((d) => (
                   <div key={d.name} className="rv-row muted">
                     <span className="rv-name">{d.name}</span>
                     <span className="rv-row-right">
-                      <span className="rv-row-note">out of Usage &amp; Projects</span>
+                      <span className="rv-row-note">{t('remote.list.outOfUsage')}</span>
                       <button type="button" className="btn-ghost small" onClick={() => setDistroHidden(d.name, false)}>
-                        Show
+                        {t('remote.list.show')}
                       </button>
                     </span>
                   </div>
@@ -950,8 +971,8 @@ export default function RemoteView({
 
           {shownHosts.length > 0 && (
             <>
-              <div className="eyebrow rv-eyebrow">SSH hosts</div>
-              <div role="listbox" aria-label="SSH hosts" className="rv-rows">
+              <div className="eyebrow rv-eyebrow">{t('remote.list.ssh')}</div>
+              <div role="listbox" aria-label={t('remote.list.ssh')} className="rv-rows">
                 {shownHosts.map((h) => {
                   const conn = probes[`ssh:${h.id}`]?.conn
                   const failed = (conn && !conn.ok) || (!conn && failedSshSessions.includes(h.id))
@@ -959,9 +980,9 @@ export default function RemoteView({
                     <div key={h.id} {...rowProps({ kind: 'ssh', id: h.id }, () => onOpenSession(h), h.name)}>
                       <Dot state={hostDotState(h)} />
                       <span className="rv-name">{h.name}</span>
-                      <span className="chip">{AUTH_CHIP[h.authType]}</span>
+                      <span className="chip">{t(AUTH_CHIP[h.authType])}</span>
                       <span className="rv-row-right">
-                        {failed && <span className="rv-row-err">could not connect</span>}
+                        {failed && <span className="rv-row-err">{t('remote.list.couldNotConnect')}</span>}
                         <span className="rv-row-meta">
                           {h.username}@{h.host}:{h.port}
                         </span>
@@ -976,7 +997,7 @@ export default function RemoteView({
 
         <div className={`slide-col ${colOpen ? 'open' : ''}`}>
           {(selDistro || selHost) && (
-            <aside className="rv-col" aria-label="Selected target" ref={colRef}>
+            <aside className="rv-col" aria-label={t('remote.col.aria')} ref={colRef}>
               {column()}
             </aside>
           )}
@@ -985,7 +1006,7 @@ export default function RemoteView({
 
       {editing && (
         <Sheet
-          title={editing.id ? 'Edit host' : 'Add SSH host'}
+          title={editing.id ? t('remote.col.editHost') : t('remote.addHost')}
           width={520}
           onClose={() => setEditing(null)}
           footer={
@@ -995,34 +1016,34 @@ export default function RemoteView({
                   {writeError}
                 </span>
               ) : (
-                <span className="help rv-sheet-help">Enter saves · Esc cancels</span>
+                <span className="help rv-sheet-help">{t('remote.form.keys')}</span>
               )}
               <button type="button" className="btn-ghost" onClick={() => setEditing(null)}>
-                Cancel
+                {t('common.cancel')}
               </button>
               <button type="button" className="btn-primary" onClick={save} disabled={!hostValid}>
-                Save
+                {t('common.save')}
               </button>
             </>
           }
         >
           <div className="rv-form" onKeyDown={onFormKey}>
             <div className="form-group">
-              <label>Name</label>
-              <input className="text-input" value={editing.name} placeholder="dev box" onChange={(e) => setEditing({ ...editing, name: e.target.value })} autoFocus />
+              <label>{t('remote.form.name')}</label>
+              <input className="text-input" value={editing.name} placeholder={t('remote.form.namePlaceholder')} onChange={(e) => setEditing({ ...editing, name: e.target.value })} autoFocus />
             </div>
             <div className="rv-form-row">
               <div className="form-group grow">
-                <label>Host</label>
+                <label>{t('remote.form.host')}</label>
                 <input
                   className="text-input mono"
                   value={editing.host}
-                  placeholder="192.168.1.10 or host.example.com"
+                  placeholder={t('remote.form.hostPlaceholder')}
                   onChange={(e) => setEditing({ ...editing, host: e.target.value })}
                 />
               </div>
               <div className="form-group rv-port">
-                <label>Port</label>
+                <label>{t('remote.form.port')}</label>
                 <input
                   className="text-input mono"
                   type="number"
@@ -1032,26 +1053,26 @@ export default function RemoteView({
               </div>
             </div>
             <div className="form-group">
-              <label>Username</label>
+              <label>{t('remote.form.username')}</label>
               <input className="text-input mono" value={editing.username} placeholder="ubuntu" onChange={(e) => setEditing({ ...editing, username: e.target.value })} />
             </div>
             <div className="form-group">
-              <label>Authentication</label>
+              <label>{t('remote.col.authentication')}</label>
               <div className="seg-control">
                 {(['password', 'key', 'agent'] as SshAuthType[]).map((a) => (
                   <button type="button" key={a} className={editing.authType === a ? 'on' : ''} onClick={() => setEditing({ ...editing, authType: a })}>
-                    {AUTH_LABEL[a]}
+                    {t(AUTH_LABEL[a])}
                   </button>
                 ))}
               </div>
             </div>
             {editing.authType === 'password' && (
               <div className="form-group">
-                <label>Password</label>
+                <label>{t('remote.form.password')}</label>
                 <input
                   className="text-input"
                   type="password"
-                  placeholder={editing.id ? 'unchanged' : ''}
+                  placeholder={editing.id ? t('remote.form.unchanged') : ''}
                   onChange={(e) => setEditing({ ...editing, password: e.target.value })}
                 />
               </div>
@@ -1060,12 +1081,12 @@ export default function RemoteView({
               <>
                 {keys.length > 0 && (
                   <div className="form-group">
-                    <label>Discovered key</label>
+                    <label>{t('remote.form.discoveredKey')}</label>
                     <Select
                       value={keys.some((k) => k.privatePath === editing.privateKeyPath) ? editing.privateKeyPath : ''}
                       onChange={(e) => setEditing({ ...editing, privateKeyPath: e.target.value })}
                     >
-                      <option value="">Default (agent / ssh config) or custom path below</option>
+                      <option value="">{t('remote.form.defaultKey')}</option>
                       {keys.map((k) => (
                         <option key={k.privatePath} value={k.privatePath}>
                           {keyLabel(k)}
@@ -1075,7 +1096,7 @@ export default function RemoteView({
                   </div>
                 )}
                 <div className="form-group">
-                  <label>Private key path</label>
+                  <label>{t('remote.form.privateKeyPath')}</label>
                   <input
                     className="text-input mono"
                     value={editing.privateKeyPath ?? ''}
@@ -1085,12 +1106,12 @@ export default function RemoteView({
                 </div>
                 <div className="form-group">
                   <label>
-                    Passphrase<span className="optional">optional</span>
+                    {t('remote.form.passphrase')}<span className="optional">{t('remote.form.optional')}</span>
                   </label>
                   <input
                     className="text-input"
                     type="password"
-                    placeholder={editing.id ? 'unchanged' : ''}
+                    placeholder={editing.id ? t('remote.form.unchanged') : ''}
                     onChange={(e) => setEditing({ ...editing, passphrase: e.target.value })}
                   />
                 </div>
@@ -1098,7 +1119,7 @@ export default function RemoteView({
             )}
             <div className="form-group">
               <label>
-                Remote project path<span className="optional">optional</span>
+                {t('remote.form.remotePath')}<span className="optional">{t('remote.form.optional')}</span>
               </label>
               <input
                 className="text-input mono"
@@ -1109,7 +1130,7 @@ export default function RemoteView({
             </div>
             <div className="form-group">
               <label>
-                Claude path<span className="optional">optional</span>
+                {t('remote.form.claudePath')}<span className="optional">{t('remote.form.optional')}</span>
               </label>
               <input
                 className="text-input mono"
@@ -1117,7 +1138,7 @@ export default function RemoteView({
                 placeholder="claude"
                 onChange={(e) => setEditing({ ...editing, claudePath: e.target.value })}
               />
-              <p className="help">Leave empty to run the claude found on the host&apos;s PATH.</p>
+              <p className="help">{t('remote.form.claudePathHelp')}</p>
             </div>
           </div>
         </Sheet>

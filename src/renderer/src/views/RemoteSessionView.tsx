@@ -6,6 +6,8 @@ import SftpBrowser from '../components/SftpBrowser'
 import LocalBrowser from '../components/LocalBrowser'
 import FileEditor from '../components/FileEditor'
 import { readLocalFile, writeLocalFile } from '../lib/local-file-io'
+import { useT } from '../i18n'
+import type { MessageKey } from '../../../shared/i18n'
 import './views.css'
 import './RemoteSessionView.css'
 
@@ -32,6 +34,12 @@ interface RunLogEntry {
 }
 
 const RUNLOG_CAP = 200
+
+const STATUS_LABEL: Record<'connecting' | 'connected' | 'error', MessageKey> = {
+  connecting: 'remote.session.status.connecting',
+  connected: 'remote.session.status.connected',
+  error: 'remote.session.status.error'
+}
 
 function runLogKey(targetId: string): string {
   return `remote-runlog-${targetId}`
@@ -80,6 +88,7 @@ function uncToPosixPath(distro: string, uncPath: string): string {
 }
 
 export default function RemoteSessionView({ target, seq, active, onBack, onStatusChange }: Props) {
+  const t = useT()
   const isSsh = target.kind === 'ssh'
   // targetId is per TARGET (the run log is shared by every session on the same box, which
   // is what you want — it's that machine's command history). terminalId is per SESSION.
@@ -125,7 +134,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
         setCwd(target.host.remotePath || res.home || '/')
       } else {
         setStatus('error')
-        setStatusError(res.error || 'Could not connect')
+        setStatusError(res.error || t('remote.session.couldNotConnect'))
       }
     })
     return () => {
@@ -194,7 +203,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
         setCwd(target.host.remotePath || res.home || '/')
       } else {
         setStatus('error')
-        setStatusError(res.error || 'Could not connect')
+        setStatusError(res.error || t('remote.session.couldNotConnect'))
       }
     })
   }
@@ -202,13 +211,13 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
   return (
     <div className="view remote-session-view">
       <div className="remote-session-header">
-        <button type="button" className="remote-session-back" onClick={onBack} title="Back to targets" aria-label="Back to targets">
+        <button type="button" className="remote-session-back" onClick={onBack} title={t('remote.session.back')} aria-label={t('remote.session.back')}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M15 6l-6 6 6 6" />
           </svg>
         </button>
         <div className="remote-session-title">
-          <span className={`remote-session-dot ${status}`} title={status === 'error' ? statusError || 'Could not connect' : status} />
+          <span className={`remote-session-dot ${status}`} title={status === 'error' ? statusError || t('remote.session.couldNotConnect') : t(STATUS_LABEL[status])} />
           <span className="remote-session-name">{isSsh ? target.host.name : target.distro}</span>
           <span className="remote-session-target">
             {isSsh ? `${target.host.username}@${target.host.host}` : `wsl -d ${target.distro}`}
@@ -217,7 +226,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
         <input
           className="text-input mono remote-session-path"
           value={pathInput}
-          aria-label="Folder"
+          aria-label={t('remote.session.folder')}
           onChange={(e) => setPathInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') navigatePath(pathInput)
@@ -227,8 +236,8 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
           spellCheck={false}
         />
         <div className="seg-control remote-session-toggle">
-          <button type="button" className={panel === 'files' ? 'on' : ''} onClick={() => setPanel('files')}>Files</button>
-          <button type="button" className={panel === 'history' ? 'on' : ''} onClick={openHistoryPanel}>History</button>
+          <button type="button" className={panel === 'files' ? 'on' : ''} onClick={() => setPanel('files')}>{t('remote.session.files')}</button>
+          <button type="button" className={panel === 'history' ? 'on' : ''} onClick={openHistoryPanel}>{t('remote.session.history')}</button>
         </div>
         <span className="remote-session-spacer" />
       </div>
@@ -241,15 +250,15 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
           {status === 'error' && (
             <div className="block err remote-session-error" role="alert">
               <div className="remote-session-error-head">
-                <span className="remote-session-error-title">Could not connect</span>
+                <span className="remote-session-error-title">{t('remote.session.couldNotConnect')}</span>
                 {statusError && <span className="remote-session-error-why">{statusError}</span>}
               </div>
               <span className="remote-session-error-text">
-                The terminal uses the same connection, so it has no shell either.
+                {t('remote.session.noShell')}
               </span>
               <div>
                 <button type="button" className="btn-ghost small" onClick={retryConnect}>
-                  Retry
+                  {t('common.retry')}
                 </button>
               </div>
             </div>
@@ -276,25 +285,25 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
               <div className="remote-history-quickrun">
                 <input
                   className="text-input mono"
-                  placeholder="Run a command"
-                  aria-label="Run a command in the terminal"
+                  placeholder={t('remote.session.runPlaceholder')}
+                  aria-label={t('remote.session.runAria')}
                   value={quickRun}
                   onChange={(e) => setQuickRun(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && runQuickCommand()}
                 />
-                <button type="button" className="btn-primary small" onClick={runQuickCommand} disabled={!quickRun.trim()}>Run</button>
+                <button type="button" className="btn-primary small" onClick={runQuickCommand} disabled={!quickRun.trim()}>{t('remote.session.run')}</button>
               </div>
 
               <div className="eyebrow remote-history-eyebrow">
-                Remote history
-                {historyLoading && <span className="remote-history-loading">loading</span>}
+                {t('remote.session.remoteHistory')}
+                {historyLoading && <span className="remote-history-loading">{t('remote.session.loading')}</span>}
               </div>
               <div className="remote-history-list">
                 {remoteHistory.length === 0 && !historyLoading && (
-                  <p className="remote-history-empty">No shell history found.</p>
+                  <p className="remote-history-empty">{t('remote.session.noHistory')}</p>
                 )}
                 {[...remoteHistory].reverse().map((cmd, i) => (
-                  <button type="button" key={`${i}-${cmd}`} className="remote-history-item" onClick={() => sendToTerminal(cmd)} title="Send to terminal">
+                  <button type="button" key={`${i}-${cmd}`} className="remote-history-item" onClick={() => sendToTerminal(cmd)} title={t('remote.session.sendToTerminal')}>
                     {cmd}
                   </button>
                 ))}
@@ -302,11 +311,11 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
 
               {/* Only what was typed in the quick-run box, kept in this browser's
                   localStorage. It is not a record of what ran on the host. */}
-              <div className="eyebrow remote-history-eyebrow">Typed here</div>
+              <div className="eyebrow remote-history-eyebrow">{t('remote.session.typedHere')}</div>
               <div className="remote-history-list">
-                {runLog.length === 0 && <p className="remote-history-empty">Nothing typed yet.</p>}
+                {runLog.length === 0 && <p className="remote-history-empty">{t('remote.session.nothingTyped')}</p>}
                 {[...runLog].reverse().map((entry) => (
-                  <button type="button" key={entry.ts} className="remote-history-item" onClick={() => sendToTerminal(entry.cmd)} title="Send to terminal">
+                  <button type="button" key={entry.ts} className="remote-history-item" onClick={() => sendToTerminal(entry.cmd)} title={t('remote.session.sendToTerminal')}>
                     {entry.cmd}
                   </button>
                 ))}
