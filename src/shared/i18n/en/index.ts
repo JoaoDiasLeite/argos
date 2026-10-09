@@ -24,8 +24,9 @@ import mcp from './mcp'
 import accounts from './accounts'
 import chat from './chat'
 import editor from './editor'
+import runbook from './runbook'
 
-export const namespaces = { common, main, settings, app, sidebar, shortcuts, onboarding, home, projects, sessions, planner, sprints, remote, ops, usage, mcp, accounts, chat, editor }
+export const namespaces = { common, main, settings, app, sidebar, shortcuts, onboarding, home, projects, sessions, planner, sprints, remote, ops, usage, mcp, accounts, chat, editor, runbook }
 
 export const en = {
   ...prefix('common', common),
@@ -46,7 +47,8 @@ export const en = {
   ...prefix('mcp', mcp),
   ...prefix('accounts', accounts),
   ...prefix('chat', chat),
-  ...prefix('editor', editor)
+  ...prefix('editor', editor),
+  ...prefix('runbook', runbook)
 }
 
 export type MessageKey = keyof typeof en

@@ -26,6 +26,7 @@ import mcp from './mcp'
 import accounts from './accounts'
 import chat from './chat'
 import editor from './editor'
+import runbook from '../en/runbook'
 
 export const ptPT: Record<MessageKey, string> = {
   ...prefix('common', common),
@@ -46,5 +47,6 @@ export const ptPT: Record<MessageKey, string> = {
   ...prefix('mcp', mcp),
   ...prefix('accounts', accounts),
   ...prefix('chat', chat),
-  ...prefix('editor', editor)
+  ...prefix('editor', editor),
+  ...prefix('runbook', runbook)
 }
