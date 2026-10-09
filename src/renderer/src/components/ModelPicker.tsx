@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { ModelInfo } from '../types'
 import './ModelPicker.css'
+import { useT } from '../i18n'
 
 interface Props {
   /** Drawn as a 4 px select (the value, a chevron at the right) instead of the chat-bar pill. */
@@ -24,6 +25,7 @@ interface MenuPos {
 }
 
 export default function ModelPicker({ models, value, onChange, compact, disabled, variant }: Props) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const [menuPos, setMenuPos] = useState<MenuPos | null>(null)
   const ref = useRef<HTMLDivElement>(null)
@@ -53,10 +55,10 @@ export default function ModelPicker({ models, value, onChange, compact, disabled
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => {
-      const t = e.target as Node
+      const target = e.target as Node
       // The menu lives outside `ref` (portal) — check both before dismissing,
       // otherwise mousedown on an item closes the menu before its click lands.
-      if (ref.current?.contains(t) || menuRef.current?.contains(t)) return
+      if (ref.current?.contains(target) || menuRef.current?.contains(target)) return
       setOpen(false)
     }
     // The fixed-position menu doesn't follow its anchor: close on any outside
@@ -114,8 +116,8 @@ export default function ModelPicker({ models, value, onChange, compact, disabled
                   <span className="model-picker-item-name-group">
                     <span className="model-picker-item-name">{m.label}</span>
                     {m.discovered && (
-                      <span className="model-picker-item-badge" title="Detected via live discovery — not yet in the bundled catalog">
-                        new
+                      <span className="model-picker-item-badge" title={t('accounts.model.discoveredTitle')}>
+                        {t('accounts.model.new')}
                       </span>
                     )}
                   </span>
@@ -127,10 +129,12 @@ export default function ModelPicker({ models, value, onChange, compact, disabled
                 </div>
                 <div className="model-picker-item-meta">
                   {m.discovered
-                    ? `${m.context !== '?' ? `${m.context} · ` : ''}new — pricing not catalogued yet`
+                    ? m.context !== '?'
+                      ? t('accounts.model.discoveredMetaCtx', { context: m.context })
+                      : t('accounts.model.discoveredMeta')
                     : m.inputPrice === 0 && m.outputPrice === 0
-                      ? 'Coming soon'
-                      : `${m.context} · $${m.inputPrice}/$${m.outputPrice} per Mtok`}
+                      ? t('accounts.model.comingSoon')
+                      : t('accounts.model.price', { context: m.context, input: m.inputPrice, output: m.outputPrice })}
                 </div>
               </button>
             ))}

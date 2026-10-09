@@ -3,6 +3,8 @@ import { ClaudeHooks, ClaudeHookEntry, HOOK_EVENTS, HookEvent } from '../types'
 import Sheet from './Sheet'
 import './HooksModal.css'
 import Select from './Select'
+import { useT } from '../i18n'
+import { rich } from '../lib/t-rich'
 
 interface Props {
   onClose: () => void
@@ -17,6 +19,7 @@ interface NewHookForm {
 const EMPTY_FORM: NewHookForm = { event: 'PreToolUse', matcher: '', command: '' }
 
 export default function HooksModal({ onClose }: Props) {
+  const t = useT()
   const [hooks, setHooks] = useState<ClaudeHooks>({})
   const [form, setForm] = useState<NewHookForm>(EMPTY_FORM)
   const [saved, setSaved] = useState(false)
@@ -31,7 +34,7 @@ export default function HooksModal({ onClose }: Props) {
     setSaveError(null)
     const result = await window.electronAPI.setClaudeHooks(next)
     if (!result.ok) {
-      setSaveError(result.error ?? 'Unknown error saving hooks')
+      setSaveError(result.error ?? t('settings.hooks.saveFailed'))
       return
     }
     // Use the merged hooks returned by the main process (includes unknown events)
@@ -76,23 +79,22 @@ export default function HooksModal({ onClose }: Props) {
 
   return (
     <Sheet
-      title="Hooks"
+      title={t('settings.hooks.title')}
       width={520}
       onClose={onClose}
       footer={
         <>
-          <span className="help perms-saved">{saved ? 'Saved' : ''}</span>
+          <span className="help perms-saved">{saved ? t('settings.sheet.saved') : ''}</span>
           <button type="button" className="btn-ghost" onClick={onClose}>
-            Done
+            {t('settings.sheet.done')}
           </button>
-          <span className="help">Esc closes</span>
+          <span className="help">{t('settings.sheet.escCloses')}</span>
         </>
       }
     >
       <div className="hooks-body">
         <p className="help">
-          Shell commands Claude Code runs on lifecycle events. Saved to <code>~/.claude/settings.json</code> as you
-          edit.
+          {rich(t('settings.hooks.intro'), { path: <code>~/.claude/settings.json</code> })}
         </p>
 
         {saveError && (
@@ -108,7 +110,7 @@ export default function HooksModal({ onClose }: Props) {
               {(hooks[event] ?? []).map((entry, idx) => (
                 <div key={idx} className="hooks-entry">
                   {entry.matcher && (
-                    <span className="chip mono" title="Matcher (tool glob)">
+                    <span className="chip mono" title={t('settings.hooks.matcherTitle')}>
                       {entry.matcher}
                     </span>
                   )}
@@ -117,7 +119,7 @@ export default function HooksModal({ onClose }: Props) {
                     type="button"
                     className="perms-remove"
                     onClick={() => removeHook(event, idx)}
-                    aria-label={`Remove hook ${idx} from ${event}`}
+                    aria-label={t('settings.hooks.removeAria', { index: idx, event })}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                       <path d="M6 6l12 12M18 6L6 18" />
@@ -128,7 +130,7 @@ export default function HooksModal({ onClose }: Props) {
             </div>
           ))
         ) : (
-          <p className="help">No hooks configured.</p>
+          <p className="help">{t('settings.hooks.empty')}</p>
         )}
 
         <div
@@ -137,10 +139,10 @@ export default function HooksModal({ onClose }: Props) {
             if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') void addHook()
           }}
         >
-          <div className="eyebrow">Add hook</div>
+          <div className="eyebrow">{t('settings.hooks.add.title')}</div>
 
           <div className="form-group">
-            <label htmlFor="hook-event">Event</label>
+            <label htmlFor="hook-event">{t('settings.hooks.event')}</label>
             <Select
               id="hook-event"
               value={form.event}
@@ -156,40 +158,41 @@ export default function HooksModal({ onClose }: Props) {
 
           <div className="form-group">
             <label htmlFor="hook-matcher">
-              Matcher<span className="optional">optional</span>
+              {t('settings.hooks.matcher')}
+              <span className="optional">{t('settings.hooks.optional')}</span>
             </label>
             <input
               id="hook-matcher"
               className="text-input mono"
               value={form.matcher}
               onChange={(e) => setForm((f) => ({ ...f, matcher: e.target.value }))}
-              placeholder="Tool name glob, e.g. Bash"
+              placeholder={t('settings.hooks.matcherPlaceholder')}
               spellCheck={false}
             />
           </div>
 
           <div className="form-group">
-            <label htmlFor="hook-command">Command</label>
+            <label htmlFor="hook-command">{t('settings.hooks.command')}</label>
             <input
               id="hook-command"
               className="text-input mono"
               value={form.command}
               onChange={(e) => setForm((f) => ({ ...f, command: e.target.value }))}
-              placeholder="Shell command to run"
+              placeholder={t('settings.hooks.commandPlaceholder')}
               spellCheck={false}
             />
           </div>
 
           <div className="hooks-form-actions">
             <button type="button" className="btn-ghost" onClick={addHook} disabled={!form.command.trim()}>
-              Add hook
+              {t('settings.hooks.add.button')}
             </button>
           </div>
         </div>
 
         <div className="hooks-json-toggle">
           <button type="button" className="btn-text" onClick={() => setShowJson((v) => !v)}>
-            {showJson ? 'Hide JSON' : 'Show JSON'}
+            {showJson ? t('settings.hooks.json.hide') : t('settings.hooks.json.show')}
           </button>
         </div>
         {showJson && <pre className="hooks-json">{JSON.stringify(hooks, null, 2)}</pre>}

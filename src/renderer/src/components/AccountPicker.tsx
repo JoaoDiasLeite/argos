@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { ProviderId } from '../types'
 import './AccountPicker.css'
+import { useT } from '../i18n'
 
 export interface AccountPickerItem {
   provider: ProviderId
@@ -37,6 +38,7 @@ export default function AccountPicker({
   compact,
   disabled
 }: Props) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -59,12 +61,12 @@ export default function AccountPicker({
         className="account-picker-btn"
         onClick={() => setOpen((v) => !v)}
         disabled={disabled}
-        title="Account for this chat"
+        title={t('accounts.picker.title')}
         aria-haspopup="listbox"
         aria-expanded={open}
       >
         <span className={`account-dot ${current?.loggedIn ? 'ok' : 'warn'}`} />
-        <span className="account-picker-label">{current?.name ?? 'Account'}</span>
+        <span className="account-picker-label">{current?.name ?? t('accounts.picker.fallback')}</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
           <path d="M6 9l6 6 6-6" />
         </svg>
@@ -108,8 +110,8 @@ export default function AccountPicker({
                       </div>
                       <div className="account-picker-item-meta">
                         {a.loggedIn
-                          ? [a.email, a.plan].filter(Boolean).join(' · ') || 'Logged in'
-                          : 'Not logged in'}
+                          ? [a.email, a.plan].filter(Boolean).join(' · ') || t('accounts.status.loggedIn')
+                          : t('accounts.picker.notLoggedIn')}
                       </div>
                     </button>
                   )
@@ -124,7 +126,7 @@ export default function AccountPicker({
               onManage()
             }}
           >
-            Manage accounts
+            {t('accounts.picker.manage')}
           </button>
         </div>
       )}

@@ -3,6 +3,8 @@ import { AgentProvider, CCAccountStatus, ProviderAccountStatus } from '../types'
 import Sheet from './Sheet'
 import { isProviderHidden } from '../lib/cli-providers'
 import './AccountsModal.css'
+import { useT } from '../i18n'
+import { rich } from '../lib/t-rich'
 
 interface Props {
   onClose: () => void
@@ -46,6 +48,7 @@ interface RowOps {
 }
 
 export default function AccountsModal({ onClose, onChanged }: Props) {
+  const t = useT()
   const [accounts, setAccounts] = useState<CCAccountStatus[]>([])
   const [defaultId, setDefaultId] = useState('default')
   const [busy, setBusy] = useState(false)
@@ -192,12 +195,12 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
               if (e.key === 'Escape') o.onCancelRename()
             }}
             onBlur={o.onSaveRename}
-            aria-label="Account name"
+            aria-label={t('accounts.row.nameAria')}
           />
         ) : (
           <div className="acct-name">
             {a.name}
-            {a.id === o.defaultId && <span className="chip">Default</span>}
+            {a.id === o.defaultId && <span className="chip">{t('accounts.row.default')}</span>}
           </div>
         )}
         <div className="acct-meta">{o.meta}</div>
@@ -205,20 +208,20 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
       <div className="acct-actions">
         {(!a.loggedIn || !a.isDefault) && (
           <button type="button" className="btn-ghost small" onClick={o.onLogin} disabled={busy}>
-            {a.loggedIn ? 'Re-login' : 'Log in'}
+            {a.loggedIn ? t('accounts.row.relogin') : t('accounts.row.login')}
           </button>
         )}
         {a.id !== o.defaultId && (
           <button type="button" className="btn-ghost small" onClick={o.onMakeDefault} disabled={busy}>
-            Set default
+            {t('accounts.row.setDefault')}
           </button>
         )}
         <button type="button" className="btn-ghost small" onClick={o.onStartRename} disabled={busy}>
-          Rename
+          {t('common.rename')}
         </button>
         {!a.isDefault && (
           <button type="button" className="btn-text danger" onClick={o.onRemove} disabled={busy}>
-            Remove
+            {t('accounts.row.remove')}
           </button>
         )}
       </div>
@@ -227,18 +230,15 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
 
   const loginBlock = (command: string, onRefresh: () => void, onDismiss: () => void) => (
     <div className="block warn acct-login">
-      <div className="acct-login-title">Finish logging in</div>
-      <p className="help">
-        A terminal should have opened. Complete the login in your browser, then refresh. If no terminal opened,
-        run this command yourself:
-      </p>
+      <div className="acct-login-title">{t('accounts.login.title')}</div>
+      <p className="help">{t('accounts.login.hint')}</p>
       <code className="acct-cmd">{command}</code>
       <div className="acct-login-actions">
         <button type="button" className="btn-ghost small" onClick={onRefresh} disabled={busy}>
-          Refresh status
+          {t('accounts.login.refresh')}
         </button>
         <button type="button" className="btn-ghost small" onClick={onDismiss}>
-          Dismiss
+          {t('accounts.login.dismiss')}
         </button>
       </div>
     </div>
@@ -256,7 +256,7 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
         aria-label={placeholder}
       />
       <button type="button" className="btn-ghost small" onClick={onAdd} disabled={!value.trim() || busy}>
-        Add &amp; log in
+        {t('accounts.add.button')}
       </button>
     </div>
   )
@@ -266,20 +266,17 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
     return (
       <section className="acct-section" key={p}>
         <div className="eyebrow">{PROVIDER_LABEL[p]}</div>
-        <p className="help">
-          Each account is a separate {PROVIDER_LABEL[p]} login. Switch the active account from the sidebar
-          account picker when a {PROVIDER_LABEL[p]} model is selected.
-        </p>
+        <p className="help">{t('accounts.provider.intro', { provider: PROVIDER_LABEL[p] })}</p>
 
         <div className="acct-rows">
           {ui.accounts.map((a) =>
             accountRow(a, {
               defaultId: ui.defaultId,
               meta: a.loggedIn
-                ? [a.email, a.plan].filter(Boolean).join(' · ') || 'Logged in'
+                ? [a.email, a.plan].filter(Boolean).join(' · ') || t('accounts.status.loggedIn')
                 : a.isDefault
-                  ? `Uses this machine’s ${PROVIDER_LABEL[p]} CLI login`
-                  : 'Run the login to authenticate this account',
+                  ? t('accounts.provider.usesMachineLogin', { provider: PROVIDER_LABEL[p] })
+                  : t('accounts.status.runLogin'),
               editing: ui.editingId === a.id,
               editName: ui.editName,
               onEditName: (v) => updateProvider(p, { editName: v }),
@@ -301,7 +298,7 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
           )}
 
         {addRow(
-          `New ${PROVIDER_LABEL[p]} account name (e.g. Work, Personal)`,
+          t('accounts.provider.newName', { provider: PROVIDER_LABEL[p] }),
           ui.newName,
           (v) => updateProvider(p, { newName: v }),
           () => addProviderAccount(p)
@@ -313,60 +310,54 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
   const renderAntigravitySection = () => (
     <section className="acct-section">
       <div className="eyebrow">Antigravity</div>
-      <p className="help">
-        Gemini models run through Antigravity, Google&rsquo;s agentic CLI, launched with <code>agy</code>. It uses a
-        single machine-wide login stored in your OS keyring, so there is just one account.
-      </p>
+      <p className="help">{rich(t('accounts.antigravity.intro'), { cmd: <code>agy</code> })}</p>
 
       <div className="acct-rows">
         <div className="acct-row">
           <i className="acct-dot ok" />
           <div className="acct-body">
             <div className="acct-name">Antigravity</div>
-            <div className="acct-meta">Machine-wide login via agy, stored in your OS keyring</div>
+            <div className="acct-meta">{t('accounts.antigravity.meta')}</div>
           </div>
           <div className="acct-actions">
             <button type="button" className="btn-ghost small" onClick={() => loginProviderAccount('gemini', 'default')} disabled={busy}>
-              Log in
+              {t('accounts.row.login')}
             </button>
           </div>
         </div>
       </div>
-      <p className="help">Log in opens Antigravity in a terminal. Complete the Google sign-in there.</p>
+      <p className="help">{t('accounts.antigravity.loginHint')}</p>
     </section>
   )
 
   return (
     <Sheet
-      title="Accounts"
+      title={t('accounts.modal.title')}
       width={560}
       onClose={onClose}
       footer={
         <>
           <button type="button" className="btn-ghost" onClick={onClose}>
-            Done
+            {t('settings.sheet.done')}
           </button>
-          <span className="help">Esc closes</span>
+          <span className="help">{t('settings.sheet.escCloses')}</span>
         </>
       }
     >
       <div className="acct-page">
         <section className="acct-section">
           <div className="eyebrow">Claude</div>
-          <p className="help">
-            Each account is a separate Claude Code login. Switch the active account from the account picker in
-            the sidebar; new chats use the selected account.
-          </p>
+          <p className="help">{t('accounts.claude.intro')}</p>
 
           <div className="acct-rows">
             {accounts.map((a) =>
               accountRow(a, {
                 defaultId,
                 meta: a.loggedIn
-                  ? [a.email, a.org, a.plan].filter(Boolean).join(' · ') || 'Logged in'
+                  ? [a.email, a.org, a.plan].filter(Boolean).join(' · ') || t('accounts.status.loggedIn')
                   : a.isDefault
-                    ? 'Uses this machine’s Claude Code login'
-                    : 'Run the login to authenticate this account',
+                    ? t('accounts.claude.usesMachineLogin')
+                    : t('accounts.status.runLogin'),
                 editing: editingId === a.id,
                 editName,
                 onEditName: setEditName,
@@ -382,7 +373,7 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
 
           {loginCmd && loginBlock(loginCmd.command, refresh, () => setLoginCmd(null))}
 
-          {addRow('New account name (e.g. Work, Personal)', newName, setNewName, addAccount)}
+          {addRow(t('accounts.claude.newName'), newName, setNewName, addAccount)}
         </section>
 
         {renderProviderSection('codex')}

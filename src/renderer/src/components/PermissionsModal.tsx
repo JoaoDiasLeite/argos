@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { ClaudePermissions } from '../types'
 import Sheet from './Sheet'
 import './PermissionsModal.css'
+import { useT } from '../i18n'
+import { rich } from '../lib/t-rich'
+import type { MessageKey } from '../../../shared/i18n'
 
 interface Props {
   onClose: () => void
@@ -11,13 +14,14 @@ type ListKey = keyof ClaudePermissions
 
 // The dot colour is the rule's meaning, as everywhere else: ran (success), refused
 // (error), asks (warn).
-const LISTS: { key: ListKey; label: string; meaning: string; example: string; dot: string }[] = [
-  { key: 'allow', label: 'Allow', meaning: 'runs without asking', example: 'e.g. Bash(git *)', dot: 'ok' },
-  { key: 'deny', label: 'Deny', meaning: 'refused, with the rule named', example: 'e.g. Bash(rm *)', dot: 'err' },
-  { key: 'ask', label: 'Ask', meaning: 'will ask you first', example: 'e.g. Edit(src/**)', dot: 'warn' }
+const LISTS: { key: ListKey; label: MessageKey; meaning: MessageKey; rule: string; dot: string }[] = [
+  { key: 'allow', label: 'settings.permissions.allow.label', meaning: 'settings.permissions.allow.meaning', rule: 'Bash(git *)', dot: 'ok' },
+  { key: 'deny', label: 'settings.permissions.deny.label', meaning: 'settings.permissions.deny.meaning', rule: 'Bash(rm *)', dot: 'err' },
+  { key: 'ask', label: 'settings.permissions.ask.label', meaning: 'settings.permissions.ask.meaning', rule: 'Edit(src/**)', dot: 'warn' }
 ]
 
 export default function PermissionsModal({ onClose }: Props) {
+  const t = useT()
   const [perms, setPerms] = useState<ClaudePermissions>({ allow: [], deny: [], ask: [] })
   const [inputs, setInputs] = useState<Record<ListKey, string>>({ allow: '', deny: '', ask: '' })
   const [saved, setSaved] = useState(false)
@@ -31,7 +35,7 @@ export default function PermissionsModal({ onClose }: Props) {
     setSaveError(null)
     const result = await window.electronAPI.setClaudePermissions(next)
     if (!result.ok) {
-      setSaveError(result.error ?? 'Unknown error saving permissions')
+      setSaveError(result.error ?? t('settings.permissions.saveFailed'))
       return
     }
     setPerms(next)
@@ -53,23 +57,22 @@ export default function PermissionsModal({ onClose }: Props) {
 
   return (
     <Sheet
-      title="Permissions"
+      title={t('settings.general.permissions.label')}
       width={520}
       onClose={onClose}
       footer={
         <>
-          <span className="help perms-saved">{saved ? 'Saved' : ''}</span>
+          <span className="help perms-saved">{saved ? t('settings.sheet.saved') : ''}</span>
           <button type="button" className="btn-ghost" onClick={onClose}>
-            Done
+            {t('settings.sheet.done')}
           </button>
-          <span className="help">Esc closes</span>
+          <span className="help">{t('settings.sheet.escCloses')}</span>
         </>
       }
     >
       <div className="perms-body">
         <p className="help">
-          Rules Claude Code applies before asking you. Saved to <code>~/.claude/settings.json</code> as you
-          edit.
+          {rich(t('settings.permissions.intro'), { path: <code>~/.claude/settings.json</code> })}
         </p>
 
         {saveError && (
@@ -78,20 +81,20 @@ export default function PermissionsModal({ onClose }: Props) {
           </div>
         )}
 
-        {LISTS.map(({ key, label, meaning, example, dot }) => (
+        {LISTS.map(({ key, label, meaning, rule, dot }) => (
           <div key={key} className="perms-group">
             <div className="perms-head">
               <i className={`perms-dot ${dot}`} />
-              <span className="perms-word">{label}</span>
-              <span className="perms-meaning">{meaning}</span>
+              <span className="perms-word">{t(label)}</span>
+              <span className="perms-meaning">{t(meaning)}</span>
             </div>
 
             <ul className="perms-list">
-              {perms[key].length === 0 && <li className="help perms-empty">No entries</li>}
+              {perms[key].length === 0 && <li className="help perms-empty">{t('settings.permissions.empty')}</li>}
               {perms[key].map((entry) => (
                 <li key={entry} className="perms-entry">
                   <code className="perms-entry-text">{entry}</code>
-                  <button type="button" className="perms-remove" onClick={() => remove(key, entry)} aria-label={`Remove ${entry}`}>
+                  <button type="button" className="perms-remove" onClick={() => remove(key, entry)} aria-label={t('settings.permissions.removeAria', { entry })}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                       <path d="M6 6l12 12M18 6L6 18" />
                     </svg>
@@ -106,12 +109,12 @@ export default function PermissionsModal({ onClose }: Props) {
                 value={inputs[key]}
                 onChange={(e) => setInputs((prev) => ({ ...prev, [key]: e.target.value }))}
                 onKeyDown={(e) => e.key === 'Enter' && add(key)}
-                placeholder={example}
+                placeholder={t('settings.permissions.example', { rule })}
                 spellCheck={false}
-                aria-label={`Add ${label} entry`}
+                aria-label={t('settings.permissions.addAria', { list: t(label) })}
               />
               <button type="button" className="btn-ghost small" onClick={() => add(key)} disabled={!inputs[key].trim()}>
-                Add
+                {t('settings.permissions.add')}
               </button>
             </div>
           </div>

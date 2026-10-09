@@ -275,17 +275,17 @@ export default function SettingsView({
     if (!updater) return ''
     switch (updater.state) {
       case 'disabled':
-        return 'Updates are managed manually in dev builds.'
+        return t('settings.about.updater.disabled')
       case 'checking':
-        return 'Checking for updates.'
+        return t('settings.about.updater.checking')
       case 'available':
-        return `Downloading v${updater.version ?? ''}.`
+        return t('settings.about.updater.downloading', { version: updater.version ?? '' })
       case 'not-available':
-        return 'Up to date.'
+        return t('settings.about.updater.upToDate')
       case 'downloaded':
-        return `Update v${updater.version ?? ''} downloaded. Restart to apply.`
+        return t('settings.about.updater.downloaded', { version: updater.version ?? '' })
       case 'error':
-        return updater.error || 'Update check failed.'
+        return updater.error || t('settings.about.updater.failed')
       default:
         return ''
     }
@@ -341,7 +341,8 @@ export default function SettingsView({
     if (!accounts) return undefined
     const n = accounts.length + (codexAccounts?.length ?? 0)
     const def = accounts.find((a) => a.id === defaultAccountId)?.name
-    return `${n} ${n === 1 ? 'account' : 'accounts'}${def ? ` · default: ${def}` : ''}`
+    const count = plural(t, 'settings.connection.accounts.count', n)
+    return def ? t('settings.connection.accounts.withDefault', { count, name: def }) : count
   })()
 
   // ── Row builders ──
@@ -421,7 +422,7 @@ export default function SettingsView({
           {section === 'appearance' && (
             <>
               <h1 className="settings-title">{t('settings.section.appearance')}</h1>
-              {ui ? <AppearanceSettings ui={ui} onSetUi={onSetUi} /> : <p className="help">Loading preferences</p>}
+              {ui ? <AppearanceSettings ui={ui} onSetUi={onSetUi} /> : <p className="help">{t('settings.appearance.loading')}</p>}
             </>
           )}
 
@@ -518,10 +519,9 @@ export default function SettingsView({
             <>
               <h1 className="settings-title">{t('settings.section.connection')}</h1>
               <p className="help settings-lead">
-                Which logins this app runs chats under. Claude and Codex each sign in through their own CLI;
-                add them under Accounts.
+                {t('settings.connection.lead')}
               </p>
-              {editRow('Accounts', accountsValue, onManageAccounts, 'Manage')}
+              {editRow(t('settings.connection.accounts.label'), accountsValue, onManageAccounts, t('settings.connection.accounts.manage'))}
             </>
           )}
 
@@ -531,40 +531,40 @@ export default function SettingsView({
               {system ? (
                 <>
                   {toggleRow(
-                    isWindows ? 'Start with Windows' : 'Start at login',
-                    'Launch Argos when you sign in.',
+                    isWindows ? t('settings.system.startup.labelWindows') : t('settings.system.startup.label'),
+                    t('settings.system.startup.hint'),
                     system.openAtLogin,
                     (openAtLogin) => updateSystem({ openAtLogin })
                   )}
                   {toggleRow(
-                    'Start minimized to tray',
-                    'Come up in the notification area instead of a window.',
+                    t('settings.system.minimized.label'),
+                    t('settings.system.minimized.hint'),
                     system.startMinimized,
                     (startMinimized) => updateSystem({ startMinimized })
                   )}
                   {toggleRow(
-                    'Close button hides to tray',
-                    'Keeps running chats alive instead of quitting.',
+                    t('settings.system.closeToTray.label'),
+                    t('settings.system.closeToTray.hint'),
                     system.closeToTray,
                     (closeToTray) => updateSystem({ closeToTray })
                   )}
                   {isWindows &&
                     toggleRow(
-                      'Show ‘Open with Argos’ in the Explorer folder menu',
-                      'Adds an entry to the right-click menu for folders.',
+                      t('settings.system.explorerMenu.label'),
+                      t('settings.system.explorerMenu.hint'),
                       system.explorerContextMenu,
                       (explorerContextMenu) => updateSystem({ explorerContextMenu })
                     )}
 
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">Quick launcher shortcut</span>
-                      <span className="help">Opens the launcher from anywhere, even when Argos is hidden.</span>
+                      <span className="srow-label">{t('settings.system.shortcut.label')}</span>
+                      <span className="help">{t('settings.system.shortcut.hint')}</span>
                       {registeredShortcut ? (
-                        <span className="help">Registered: {registeredShortcut}</span>
+                        <span className="help">{t('settings.system.shortcut.registered', { shortcut: registeredShortcut })}</span>
                       ) : (
                         <span className="help settings-error">
-                          Could not register a quick-launcher shortcut. It may be in use by another app.
+                          {t('settings.system.shortcut.failed')}
                         </span>
                       )}
                     </div>
@@ -573,9 +573,9 @@ export default function SettingsView({
                       value={system.overlayShortcut}
                       disabled={systemBusy}
                       onChange={(e) => updateSystem({ overlayShortcut: e.target.value })}
-                      aria-label="Quick launcher shortcut"
+                      aria-label={t('settings.system.shortcut.label')}
                     >
-                      <option value="">Auto (Alt+Space)</option>
+                      <option value="">{t('settings.system.shortcut.auto')}</option>
                       <option value="Alt+Space">Alt+Space</option>
                       <option value="Ctrl+Shift+Space">Ctrl+Shift+Space</option>
                       <option value="Ctrl+Alt+Space">Ctrl+Alt+Space</option>
@@ -584,7 +584,7 @@ export default function SettingsView({
                   </div>
                 </>
               ) : (
-                <p className="help">Loading system preferences</p>
+                <p className="help">{t('settings.system.loading')}</p>
               )}
             </>
           )}
@@ -593,30 +593,33 @@ export default function SettingsView({
             <>
               <h1 className="settings-title">{t('settings.section.ops')}</h1>
               <p className="help settings-lead">
-                The audit log is append-only, written by Argos only, and never deleted by it.
+                {t('settings.ops.lead')}
               </p>
 
               {ledger ? (
                 <div className="srow">
                   <div className="srow-text">
-                    <span className="srow-label">Audit log folder</span>
+                    <span className="srow-label">{t('settings.ops.folder.label')}</span>
                     <code className="settings-path">{ledger.dir}</code>
                     <span className="help">
-                      {ledger.files} day {ledger.files === 1 ? 'file' : 'files'} · {humanBytes(ledger.bytes)}
+                      {t('settings.ops.folder.summary', {
+                        files: plural(t, 'settings.ops.folder.files', ledger.files),
+                        size: humanBytes(ledger.bytes)
+                      })}
                     </span>
                   </div>
                   <button type="button" className="btn-ghost small" onClick={copyLedgerDir}>
-                    {dirCopied ? 'Copied' : 'Copy path'}
+                    {dirCopied ? t('settings.ops.folder.copied') : t('settings.ops.folder.copy')}
                   </button>
                 </div>
               ) : (
-                <p className="help">Loading</p>
+                <p className="help">{t('common.loading')}</p>
               )}
 
               <div className="srow settings-verify">
                 <div className="srow-text">
-                  <span className="srow-label">Verify a day</span>
-                  <span className="help">Checks that the day&rsquo;s hash chain is unbroken (UTC).</span>
+                  <span className="srow-label">{t('settings.ops.verify.label')}</span>
+                  <span className="help">{t('settings.ops.verify.hint')}</span>
                   {verifyResult && (
                     <span
                       className={`help settings-result ${verifyResult.ok ? (verifyResult.lines === 0 ? '' : 'ok') : 'err'}`}
@@ -624,11 +627,11 @@ export default function SettingsView({
                     >
                       {verifyResult.ok
                         ? verifyResult.lines === 0
-                          ? 'No entries'
-                          : `Chain intact · ${verifyResult.lines} lines`
+                          ? t('settings.ops.verify.noEntries')
+                          : t('settings.ops.verify.intact', { lines: plural(t, 'settings.ops.verify.lines', verifyResult.lines) })
                         : verifyResult.brokenAt !== undefined
-                          ? `Chain broken at line ${verifyResult.brokenAt}: ${verifyResult.reason}`
-                          : `Chain broken: ${verifyResult.reason}`}
+                          ? t('settings.ops.verify.brokenAt', { line: verifyResult.brokenAt, reason: verifyResult.reason })
+                          : t('settings.ops.verify.broken', { reason: verifyResult.reason })}
                     </span>
                   )}
                 </div>
@@ -640,10 +643,10 @@ export default function SettingsView({
                     setVerifyDate(e.target.value)
                     setVerifyResult(null)
                   }}
-                  aria-label="Audit log day (UTC)"
+                  aria-label={t('settings.ops.verify.dayAria')}
                 />
                 <button type="button" className="btn-ghost" onClick={verifyLedger} disabled={verifying || !verifyDate}>
-                  {verifying ? 'Verifying' : 'Verify'}
+                  {verifying ? t('settings.ops.verify.verifying') : t('settings.ops.verify.button')}
                 </button>
               </div>
             </>
@@ -655,7 +658,7 @@ export default function SettingsView({
               {updater ? (
                 <div className="srow">
                   <div className="srow-text">
-                    <span className="srow-label">Argos v{updater.currentVersion}</span>
+                    <span className="srow-label">{t('settings.about.version', { version: updater.currentVersion })}</span>
                     <span className={`help ${updater.state === 'error' ? 'settings-error' : ''}`}>
                       {updaterStatusText()}
                     </span>
@@ -666,30 +669,30 @@ export default function SettingsView({
                     onClick={checkForUpdates}
                     disabled={checking || updater.state === 'disabled' || updater.state === 'checking'}
                   >
-                    Check for updates
+                    {t('settings.about.checkUpdates')}
                   </button>
                   {updater.state === 'downloaded' && (
                     <button type="button" className="btn-primary" onClick={() => window.electronAPI.updaterInstall()}>
-                      Restart &amp; update
+                      {t('settings.about.restartUpdate')}
                     </button>
                   )}
                 </div>
               ) : (
-                <p className="help">Loading</p>
+                <p className="help">{t('common.loading')}</p>
               )}
               <div className="srow">
                 <div className="srow-text">
-                  <span className="srow-label">Changelog</span>
-                  <span className="help">What changed in each release.</span>
+                  <span className="srow-label">{t('settings.about.changelog.label')}</span>
+                  <span className="help">{t('settings.about.changelog.hint')}</span>
                 </div>
                 <button type="button" className="btn-ghost" onClick={() => setShowChangelog(true)}>
-                  What&apos;s new
+                  {t('settings.about.changelog.button')}
                 </button>
               </div>
               <div className="srow">
                 <div className="srow-text">
-                  <span className="srow-label">Made by João Dias Leite</span>
-                  <span className="help">© 2026 · MIT License · github.com/JoaoDiasLeite/argos</span>
+                  <span className="srow-label">{t('settings.about.author')}</span>
+                  <span className="help">{t('settings.about.license')}</span>
                 </div>
               </div>
             </>

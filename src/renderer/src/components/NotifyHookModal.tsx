@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { NotifyHookInfo } from '../types'
 import Sheet from './Sheet'
 import './NotifyHookModal.css'
+import { useT } from '../i18n'
+import { rich } from '../lib/t-rich'
 
 interface Props {
   onClose: () => void
@@ -19,6 +21,7 @@ interface Props {
  * which this writer does not reach.
  */
 export default function NotifyHookModal({ onClose }: Props) {
+  const t = useT()
   const [info, setInfo] = useState<NotifyHookInfo | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [showWsl, setShowWsl] = useState(false)
@@ -35,7 +38,7 @@ export default function NotifyHookModal({ onClose }: Props) {
     try {
       const result = await window.electronAPI.notifyHookInstall()
       if (!result.ok) {
-        setInstallError(result.error ?? 'Could not write settings.json')
+        setInstallError(result.error ?? t('settings.notifyHook.writeFailed'))
         return
       }
       setInfo(result)
@@ -56,24 +59,24 @@ export default function NotifyHookModal({ onClose }: Props) {
 
   return (
     <Sheet
-      title="Session notifications"
+      title={t('settings.general.notifications.label')}
       width={520}
       onClose={onClose}
       footer={
         <>
           <button type="button" className="btn-ghost" onClick={onClose}>
-            Done
+            {t('settings.sheet.done')}
           </button>
-          <span className="help">Esc closes</span>
+          <span className="help">{t('settings.sheet.escCloses')}</span>
         </>
       }
     >
       <div className="notifyhook-body">
         <p className="help notifyhook-intro">
-          Claude Code fires a <code>Notification</code> hook whenever a session needs you, waiting on a
-          permission or idle after a question. Wired to Argos, every session on this machine notifies as{' '}
-          <strong>[project] conversation</strong>, whether it started here, in a console or in an editor.
-          Clicking the notification opens that conversation.
+          {rich(t('settings.notifyHook.intro'), {
+            hook: <code>Notification</code>,
+            title: <strong>[project] conversation</strong>
+          })}
         </p>
 
         {info && (
@@ -81,37 +84,37 @@ export default function NotifyHookModal({ onClose }: Props) {
             <div className="notifyhook-status">
               <i className={`notifyhook-dot ${info.installed ? 'ok' : ''}`} />
               <span className="notifyhook-status-text">
-                {info.installed ? 'The hook is wired up in your settings.' : 'Not wired up yet.'}
+                {info.installed ? t('settings.notifyHook.status.on') : t('settings.notifyHook.status.off')}
               </span>
               <button type="button" className="btn-ghost small" onClick={install} disabled={installing}>
                 {info.installed
                   ? installing
-                    ? 'Re-wiring'
-                    : 'Re-wire'
+                    ? t('settings.notifyHook.rewiring')
+                    : t('settings.notifyHook.rewire')
                   : installing
-                    ? 'Enabling'
-                    : 'Enable notifications'}
+                    ? t('settings.notifyHook.enabling')
+                    : t('settings.notifyHook.enable')}
               </button>
             </div>
 
             {installError && (
               <div className="block err" role="alert">
-                {installError}. You can still paste the block below by hand.
+                {t('settings.notifyHook.installError', { error: installError })}
               </div>
             )}
 
             <div className="notifyhook-step">
               <div className="notifyhook-step-head">
                 <span className="notifyhook-step-title">
-                  Or add to <code>{info.settingsPath}</code> yourself
+                  {rich(t('settings.notifyHook.manual'), { path: <code>{info.settingsPath}</code> })}
                 </span>
                 <button type="button" className="btn-ghost small" onClick={() => copy('block', info.block)}>
-                  {copied === 'block' ? 'Copied' : 'Copy block'}
+                  {copied === 'block' ? t('settings.notifyHook.copied') : t('settings.notifyHook.copyBlock')}
                 </button>
               </div>
               <pre className="notifyhook-block">{info.block}</pre>
               <p className="help">
-                Merge it into the <code>hooks</code> object you already have.
+                {rich(t('settings.notifyHook.merge'), { hooks: <code>hooks</code> })}
               </p>
             </div>
 
@@ -119,11 +122,11 @@ export default function NotifyHookModal({ onClose }: Props) {
               <div className="notifyhook-step">
                 <div className="notifyhook-step-head">
                   <button type="button" className="btn-text" onClick={() => setShowWsl((v) => !v)}>
-                    {showWsl ? 'Hide the WSL variant' : 'Show the WSL variant'}
+                    {showWsl ? t('settings.notifyHook.wsl.hide') : t('settings.notifyHook.wsl.show')}
                   </button>
                   {showWsl && (
                     <button type="button" className="btn-ghost small" onClick={() => copy('wsl', info.wslBlock ?? '')}>
-                      {copied === 'wsl' ? 'Copied' : 'Copy block'}
+                      {copied === 'wsl' ? t('settings.notifyHook.copied') : t('settings.notifyHook.copyBlock')}
                     </button>
                   )}
                 </div>
@@ -131,9 +134,10 @@ export default function NotifyHookModal({ onClose }: Props) {
                   <>
                     <pre className="notifyhook-block">{info.wslBlock}</pre>
                     <p className="help">
-                      A session running inside a distro has its own <code>~/.claude/settings.json</code> and
-                      reaches this executable through <code>/mnt</code>. Its transcript is not readable from
-                      the Windows side, so those notifications name the project rather than the conversation.
+                      {rich(t('settings.notifyHook.wsl.note'), {
+                        path: <code>~/.claude/settings.json</code>,
+                        mnt: <code>/mnt</code>
+                      })}
                     </p>
                   </>
                 )}

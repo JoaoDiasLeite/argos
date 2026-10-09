@@ -3,6 +3,8 @@ import { UsageReport, UsageEntry, SourceInfo, UsageLimits, AccountPlanUsage, Pla
 import { shortModel } from '../lib/model-id'
 import './views.css'
 import './UsageView.css'
+import { useLanguage, useT } from '../i18n'
+import type { MessageKey, TFunction } from '../../../shared/i18n'
 
 // ── Formatting ──────────────────────────────────────────────────────────────
 
@@ -21,55 +23,61 @@ const fmtUsd = (n: number): string => `$${n.toFixed(2)}`
 const fmtAxis = (n: number): string => (n >= 10 ? `$${Math.round(n)}` : `$${n.toFixed(2)}`)
 
 type RangeKey = '2d' | 'week' | 'month' | 'year' | 'all'
-const RANGES: { key: RangeKey; label: string; days: number | null; caption: string }[] = [
-  { key: '2d', label: '2 days', days: 2, caption: 'estimated cost these 2 days' },
-  { key: 'week', label: 'Week', days: 7, caption: 'estimated cost this week' },
-  { key: 'month', label: 'Month', days: 30, caption: 'estimated cost this month' },
-  { key: 'year', label: 'Year', days: 365, caption: 'estimated cost this year' },
-  { key: 'all', label: 'All', days: null, caption: 'estimated cost, all time' }
+const RANGES: { key: RangeKey; label: MessageKey; days: number | null; caption: MessageKey }[] = [
+  { key: '2d', label: 'usage.range.2d.label', days: 2, caption: 'usage.range.2d.caption' },
+  { key: 'week', label: 'usage.range.week.label', days: 7, caption: 'usage.range.week.caption' },
+  { key: 'month', label: 'usage.range.month.label', days: 30, caption: 'usage.range.month.caption' },
+  { key: 'year', label: 'usage.range.year.label', days: 365, caption: 'usage.range.year.caption' },
+  { key: 'all', label: 'usage.range.all.label', days: null, caption: 'usage.range.all.caption' }
 ]
 
+/** Day and time formatting stays British English unless the user picked another language. */
+const dateLocale = (locale: string | undefined): string => locale ?? 'en-GB'
+
 /** "resets 19:40" today, "resets Mon 09:00" on another day. */
-function resetLabel(iso?: string): string {
+function resetLabel(t: TFunction, locale: string | undefined, iso?: string): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (isNaN(d.getTime())) return ''
-  const hm = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  const loc = dateLocale(locale)
+  const hm = d.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit' })
   const sameDay = d.toDateString() === new Date().toDateString()
-  return sameDay ? `resets ${hm}` : `resets ${d.toLocaleDateString('en-GB', { weekday: 'short' })} ${hm}`
+  return sameDay
+    ? t('usage.reset.at', { time: hm })
+    : t('usage.reset.atDay', { day: d.toLocaleDateString(loc, { weekday: 'short' }), time: hm })
 }
 
-function relTime(ts: number): string {
+function relTime(t: TFunction, locale: string | undefined, ts: number): string {
   const m = Math.floor((Date.now() - ts) / 60000)
-  if (m < 1) return 'just now'
-  if (m < 60) return `${m} min ago`
+  if (m < 1) return t('usage.rel.justNow')
+  if (m < 60) return t('usage.rel.minutes', { n: m })
   const h = Math.floor(m / 60)
-  if (h < 24) return `${h} h ago`
-  return new Date(ts).toLocaleString()
+  if (h < 24) return t('usage.rel.hours', { n: h })
+  return new Date(ts).toLocaleString(locale)
 }
 
 const pad2 = (n: number): string => String(n).padStart(2, '0')
 const ymd = (dt: Date): string => `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`
 const dayDate = (d: string): Date => new Date(`${d}T00:00:00`)
 /** "Thu 2" */
-const shortDay = (d: string): string => {
+const shortDay = (loc: string, d: string): string => {
   const dt = dayDate(d)
-  return `${dt.toLocaleDateString('en-GB', { weekday: 'short' })} ${dt.getDate()}`
+  return `${dt.toLocaleDateString(loc, { weekday: 'short' })} ${dt.getDate()}`
 }
 /** "Thu 2 Oct" */
-const longDay = (d: string): string => `${shortDay(d)} ${dayDate(d).toLocaleDateString('en-GB', { month: 'short' })}`
+const longDay = (loc: string, d: string): string => `${shortDay(loc, d)} ${dayDate(d).toLocaleDateString(loc, { month: 'short' })}`
 /** "29 Sep" */
-const dayMonth = (d: string): string => dayDate(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+const dayMonth = (loc: string, d: string): string => dayDate(d).toLocaleDateString(loc, { day: 'numeric', month: 'short' })
 
 // ── Plan windows ────────────────────────────────────────────────────────────
 
 /** The row label: "Session · 5 hours", "Week · all models", "Week · Opus". */
-function windowLabel(w: PlanWindow): string {
-  return w.key === 'five_hour' ? 'Session · 5 hours' : w.label
+function windowLabel(t: TFunction, w: PlanWindow): string {
+  return w.key === 'five_hour' ? t('usage.window.sessionLabel') : w.label
 }
 /** The name in the tinted block's title: "Session window at 76 %". */
-function windowTitle(w: PlanWindow): string {
-  return w.key === 'five_hour' ? 'Session window' : w.label
+function windowTitle(t: TFunction, w: PlanWindow): string {
+  return w.key === 'five_hour' ? t('usage.window.sessionTitle') : w.label
 }
 /** Window length, for the pace estimate. */
 function windowMs(key: string): number | null {
@@ -98,7 +106,7 @@ const worstOf = (a: AccountPlanUsage): number =>
  * elapsed = length − time to reset, rate = used ÷ elapsed. Null when the window is too
  * young to say anything (under 10 minutes) or its length is unknown.
  */
-function paceLine(w: PlanWindow): string | null {
+function paceLine(t: TFunction, w: PlanWindow): string | null {
   const len = windowMs(w.key)
   if (!len || !w.resetsAt) return null
   const toReset = new Date(w.resetsAt).getTime() - Date.now()
@@ -106,33 +114,34 @@ function paceLine(w: PlanWindow): string | null {
   const elapsed = len - toReset
   if (elapsed < 10 * 60_000 || w.utilization <= 0) return null
   const toFull = ((100 - w.utilization) / w.utilization) * elapsed
-  if (toFull >= toReset) return 'At this pace it lasts until the reset.'
+  if (toFull >= toReset) return t('usage.pace.untilReset')
   const mins = Math.max(1, Math.round(toFull / 60_000))
-  const span = mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} h${mins % 60 ? ` ${pad2(mins % 60)}` : ''}`
-  return `About ${span} of the usual pace left.`
+  const span =
+    mins < 60
+      ? t('usage.pace.minutes', { m: mins })
+      : mins % 60
+        ? t('usage.pace.hoursMinutes', { h: Math.floor(mins / 60), m: pad2(mins % 60) })
+        : t('usage.pace.hours', { h: Math.floor(mins / 60) })
+  return t('usage.pace.left', { span })
 }
 
-function statusHint(a: AccountPlanUsage): { text: string; err?: boolean } | null {
+function statusHint(t: TFunction, a: AccountPlanUsage): { text: string; err?: boolean } | null {
   switch (a.status) {
     case 'ok':
-      return a.windows.length === 0
-        ? { text: 'The usage endpoint reported no limit windows for this login (API keys and some plans have none).' }
-        : null
+      return a.windows.length === 0 ? { text: t('usage.status.noWindows') } : null
     case 'unauthorized':
-      return { text: 'No valid Claude Code token for this login. It refreshes the next time Claude runs here or in the CLI; then Refresh.' }
+      return { text: t('usage.status.unauthorized') }
     case 'no-credentials':
-      return { text: 'No Claude Code login found for this account.' }
+      return { text: t('usage.status.noCredentials') }
     case 'rate-limited':
+      return { text: a.stale ? t('usage.status.rateLimitedStale') : t('usage.status.rateLimited') }
+    case 'error': {
+      const error = a.error ?? t('usage.status.unknownError')
       return {
-        text: a.stale
-          ? 'Anthropic is rate-limiting the usage endpoint; showing the last numbers fetched.'
-          : 'Anthropic is rate-limiting the usage endpoint; it retries in a couple of minutes.'
-      }
-    case 'error':
-      return {
-        text: `Could not reach the usage endpoint (${a.error ?? 'unknown error'})${a.stale ? '; showing the last numbers fetched.' : '.'}`,
+        text: a.stale ? t('usage.status.errorStale', { error }) : t('usage.status.error', { error }),
         err: true
       }
+    }
   }
   return null
 }
@@ -146,11 +155,13 @@ function Bar({ pct, level }: { pct: number; level: Level }) {
 }
 
 function LimitRow({ w }: { w: PlanWindow }) {
-  const reset = resetLabel(w.resetsAt)
+  const t = useT()
+  const { locale } = useLanguage()
+  const reset = resetLabel(t, locale, w.resetsAt)
   return (
     <div className="us-limit">
       <div className="us-limit-head">
-        <span className="us-limit-label">{windowLabel(w)}</span>
+        <span className="us-limit-label">{windowLabel(t, w)}</span>
         <span className="us-muted">
           {w.utilization.toFixed(0)} %{reset ? ` · ${reset}` : ''}
         </span>
@@ -162,7 +173,8 @@ function LimitRow({ w }: { w: PlanWindow }) {
 
 /** One account's limit rows and status hint, minus the window already in the tinted block. */
 function AccountLimits({ acc, skip }: { acc: AccountPlanUsage; skip?: PlanWindow }) {
-  const hint = statusHint(acc)
+  const t = useT()
+  const hint = statusHint(t, acc)
   return (
     <>
       {acc.windows
@@ -217,6 +229,8 @@ function CostChart({
   selected: string | null
   onSelect: (key: string) => void
 }) {
+  const t = useT()
+  const loc = dateLocale(useLanguage().locale)
   const ref = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
   useLayoutEffect(() => {
@@ -240,19 +254,22 @@ function CostChart({
   const cx = (i: number) => left + slot * i + slot / 2
   const hiX = hiIdx >= 0 ? cx(hiIdx) : 0
   const hiAnchor = hiX > width - 70 ? 'end' : hiX < left + 50 ? 'start' : 'middle'
-  const labelOf = (b: Bucket) => (weekly ? dayMonth(b.from) : shortDay(b.from))
+  const labelOf = (b: Bucket) => (weekly ? dayMonth(loc, b.from) : shortDay(loc, b.from))
 
   return (
     <div className="us-chart" ref={ref}>
       {width > 0 && (
-        <svg width={width} height={H} role="img" aria-label="Cost by day">
+        <svg width={width} height={H} role="img" aria-label={t('usage.chart.aria')}>
           <line className="us-chart-base" x1={left} y1={base} x2={width} y2={base} />
           <text className="us-chart-label" x={0} y={top + 3}>{fmtAxis(max)}</text>
           <text className="us-chart-label" x={0} y={base}>$0</text>
           {buckets.map((b, i) => {
             const h = (b.cost / max) * (base - top)
             const x = left + slot * i + (slot - barW) / 2
-            const tip = `${weekly ? `Week of ${dayMonth(b.from)}` : longDay(b.from)} · ${fmtUsd(b.cost)}`
+            const tip = t('usage.chart.tip', {
+              label: weekly ? t('usage.chart.weekOf', { date: dayMonth(loc, b.from) }) : longDay(loc, b.from),
+              cost: fmtUsd(b.cost)
+            })
             const pick = () => onSelect(b.key)
             return (
               <g
@@ -339,6 +356,9 @@ function aggregate(entries: UsageEntry[], srcMeta: Map<string, SourceInfo>): Agg
 }
 
 export default function UsageView() {
+  const t = useT()
+  const { locale } = useLanguage()
+  const loc = dateLocale(locale)
   const [report, setReport] = useState<UsageReport | null>(null)
   const [sources, setSources] = useState<SourceInfo[]>([])
   const [loading, setLoading] = useState(true)
@@ -532,7 +552,7 @@ export default function UsageView() {
       <div className="view">
         <div className="us-state">
           <div className="view-spinner" />
-          <p className="help">Reading usage from local and WSL…</p>
+          <p className="help">{t('usage.loading')}</p>
         </div>
       </div>
     )
@@ -541,14 +561,14 @@ export default function UsageView() {
       <div className="view">
         <div className="us-state">
           <span className="us-muted"><ChartIcon /></span>
-          <p className="help">No usage data found. Start a chat and come back.</p>
+          <p className="help">{t('usage.empty')}</p>
         </div>
       </div>
     )
 
   const rangeInfo = RANGES.find((r) => r.key === range)!
-  const t = view.total
-  const cacheShare = t.inTok + t.cacheTok > 0 ? Math.round((t.cacheTok / (t.inTok + t.cacheTok)) * 100) : 0
+  const tot = view.total
+  const cacheShare = tot.inTok + tot.cacheTok > 0 ? Math.round((tot.cacheTok / (tot.inTok + tot.cacheTok)) * 100) : 0
 
   // ── Column: which accounts, and the one limit closest to its ceiling ──
   const inScope = selectedAcc ? [selectedAcc] : accounts
@@ -574,12 +594,14 @@ export default function UsageView() {
         <div className="us-main">
           <div className="us-head">
             <div className="us-head-text">
-              <h1>Usage</h1>
+              <h1>{t('usage.title')}</h1>
               <p className="us-sub">
-                Local and connected WSL distros · {refreshing ? 'refreshing…' : `updated ${relTime(report.generatedAt)}`} · local estimates, not billed
+                {t('usage.subtitle', {
+                  status: refreshing ? t('usage.refreshing') : t('usage.updated', { when: relTime(t, locale, report.generatedAt) })
+                })}
               </p>
             </div>
-            <button className="btn-ghost us-icon-btn" onClick={refresh} disabled={refreshing} aria-label="Refresh" title="Refresh">
+            <button className="btn-ghost us-icon-btn" onClick={refresh} disabled={refreshing} aria-label={t('usage.refresh')} title={t('usage.refresh')}>
               <RefreshIcon spinning={refreshing} />
             </button>
           </div>
@@ -589,7 +611,7 @@ export default function UsageView() {
               <div className="seg-control">
                 {RANGES.map((r) => (
                   <button key={r.key} className={range === r.key ? 'on' : ''} onClick={() => setRange(r.key)}>
-                    {r.label}
+                    {t(r.label)}
                   </button>
                 ))}
               </div>
@@ -610,20 +632,20 @@ export default function UsageView() {
 
             <div className="us-stats">
               <div className="us-stat">
-                <span className="us-num">{fmtUsd(t.cost)}</span>
-                <span className="us-cap">{rangeInfo.caption}</span>
+                <span className="us-num">{fmtUsd(tot.cost)}</span>
+                <span className="us-cap">{t(rangeInfo.caption)}</span>
               </div>
               <div className="us-stat">
-                <span className="us-num">{fmtNum(t.inTok)}</span>
-                <span className="us-cap">input tokens</span>
+                <span className="us-num">{fmtNum(tot.inTok)}</span>
+                <span className="us-cap">{t('usage.stats.input')}</span>
               </div>
               <div className="us-stat">
-                <span className="us-num">{fmtNum(t.outTok)}</span>
-                <span className="us-cap">output tokens</span>
+                <span className="us-num">{fmtNum(tot.outTok)}</span>
+                <span className="us-cap">{t('usage.stats.output')}</span>
               </div>
               <div className="us-stat">
-                <span className="us-num">{fmtNum(t.cacheTok)}</span>
-                <span className="us-cap">cache tokens · {cacheShare} % of input</span>
+                <span className="us-num">{fmtNum(tot.cacheTok)}</span>
+                <span className="us-cap">{t('usage.stats.cache', { share: cacheShare })}</span>
               </div>
             </div>
 
@@ -637,17 +659,21 @@ export default function UsageView() {
             />
             <p className="help">
               {selBucket
-                ? `Showing ${chart.weekly ? `the week of ${dayMonth(selBucket.from)}` : longDay(selBucket.from)} · click the bar again for the whole range.`
-                : `Click a ${chart.weekly ? 'week' : 'day'} to see its models and projects below.`}
+                ? t('usage.chart.showing', {
+                    what: chart.weekly ? t('usage.chart.theWeekOf', { date: dayMonth(loc, selBucket.from) }) : longDay(loc, selBucket.from)
+                  })
+                : chart.weekly
+                  ? t('usage.chart.clickWeek')
+                  : t('usage.chart.clickDay')}
             </p>
 
             {tables.byModel.length === 0 ? (
-              <p className="help us-tables-empty">No activity in this range.</p>
+              <p className="help us-tables-empty">{t('usage.tables.empty')}</p>
             ) : (
               <div className="us-tables">
                 <table className="us-table">
                   <thead>
-                    <tr><th>Model</th><th className="r">In</th><th className="r">Out</th><th className="r">Cost</th></tr>
+                    <tr><th>{t('usage.tables.model')}</th><th className="r">{t('usage.tables.in')}</th><th className="r">{t('usage.tables.out')}</th><th className="r">{t('usage.tables.cost')}</th></tr>
                   </thead>
                   <tbody>
                     {tables.byModel.map((m) => (
@@ -662,7 +688,7 @@ export default function UsageView() {
                 </table>
                 <table className="us-table">
                   <thead>
-                    <tr><th>Project</th><th className="r">Tokens</th><th className="r">Cost</th></tr>
+                    <tr><th>{t('usage.tables.project')}</th><th className="r">{t('usage.tables.tokens')}</th><th className="r">{t('usage.tables.cost')}</th></tr>
                   </thead>
                   <tbody>
                     {tables.byProject.map((p) => (
@@ -689,12 +715,12 @@ export default function UsageView() {
         {/* ── Right: what can stop you ── */}
         <aside className="us-side">
           <div className="us-sec us-side-head">
-            <span className="us-t3">Plan usage</span>
+            <span className="us-t3">{t('usage.plan.title')}</span>
             <span className="us-grow" />
             {accounts.length > 1 && (
               <div className="seg-control">
                 <button className={accountFilter === 'all' ? 'on' : ''} onClick={() => setAccountFilter('all')}>
-                  All
+                  {t('usage.plan.all')}
                 </button>
                 {accounts.map((a) => (
                   <button
@@ -712,20 +738,20 @@ export default function UsageView() {
 
           {tinted && (() => {
             const level = levelOf(tinted.w.utilization)
-            const reset = resetLabel(tinted.w.resetsAt)
-            const pace = paceLine(tinted.w)
+            const reset = resetLabel(t, locale, tinted.w.resetsAt)
+            const pace = paceLine(t, tinted.w)
             const who = [tinted.acc.accountName, planName(tinted.acc)].filter(Boolean).join(' · ')
             return (
               <div className={`block ${level} us-tint`}>
                 <div className="us-tint-head">
                   <span className={`us-tint-title ${level}`}>
-                    {windowTitle(tinted.w)} at {tinted.w.utilization.toFixed(0)} %
+                    {t('usage.plan.windowAt', { title: windowTitle(t, tinted.w), pct: tinted.w.utilization.toFixed(0) })}
                   </span>
                   {reset && <span className="us-muted">{reset}</span>}
                 </div>
                 <Bar pct={tinted.w.utilization} level={level} />
                 <p className="help">
-                  {pace && !selectedAcc && accounts.length > 1 ? `${tinted.acc.accountName} · ${pace}` : pace ?? who}
+                  {pace && !selectedAcc && accounts.length > 1 ? t('usage.plan.accountPace', { account: tinted.acc.accountName, pace }) : pace ?? who}
                 </p>
               </div>
             )
@@ -733,7 +759,7 @@ export default function UsageView() {
 
           <div className="us-sec">
             {accounts.length === 0 ? (
-              <p className="help">No Claude Code login found. Sign in with Claude Code and Refresh.</p>
+              <p className="help">{t('usage.plan.noLogin')}</p>
             ) : selectedAcc || accounts.length === 1 ? (
               (() => {
                 const a = selectedAcc ?? accounts[0]
@@ -743,7 +769,7 @@ export default function UsageView() {
                     <AccountLimits acc={a} skip={tinted?.acc === a ? tinted.w : undefined} />
                     {live && (
                       <p className="help">
-                        {['Live from Anthropic', planName(a), a.email].filter(Boolean).join(' · ')}
+                        {[t('usage.plan.live'), planName(a), a.email].filter(Boolean).join(' · ')}
                       </p>
                     )}
                   </>
@@ -764,22 +790,22 @@ export default function UsageView() {
 
           <div className="us-sec">
             <div className="us-sec-head">
-              <span className="eyebrow">Budgets</span>
+              <span className="eyebrow">{t('usage.budgets.title')}</span>
               <span className="us-grow" />
               <button className="btn-ghost small" onClick={() => setEditingLimits((v) => !v)}>
-                {editingLimits ? 'Done' : 'Edit'}
+                {editingLimits ? t('settings.sheet.done') : t('common.edit')}
               </button>
             </div>
             {editingLimits && (
               <div className="us-budget-edit">
                 {(['hourUsd', 'sessionUsd', 'weekUsd'] as const).map((k) => (
                   <label key={k} className="us-budget-field">
-                    <span>{k === 'hourUsd' ? 'Hour $' : k === 'sessionUsd' ? 'Session (5 h) $' : 'Week $'}</span>
+                    <span>{k === 'hourUsd' ? t('usage.budgets.hour') : k === 'sessionUsd' ? t('usage.budgets.session') : t('usage.budgets.week')}</span>
                     <input
                       className="text-input"
                       type="number"
                       min={0}
-                      placeholder="0 = off"
+                      placeholder={t('usage.budgets.off')}
                       value={limits[k] || ''}
                       onChange={(e) => saveLimits({ ...limits, [k]: Number(e.target.value) || 0 })}
                     />
@@ -789,9 +815,9 @@ export default function UsageView() {
             )}
             {(
               [
-                ['Last hour', win.hour.costUsd, limits.hourUsd],
-                ['Last 5 hours', win.session.costUsd, limits.sessionUsd],
-                ['Last 7 days', win.week.costUsd, limits.weekUsd]
+                [t('usage.budgets.lastHour'), win.hour.costUsd, limits.hourUsd],
+                [t('usage.budgets.lastSession'), win.session.costUsd, limits.sessionUsd],
+                [t('usage.budgets.lastWeek'), win.week.costUsd, limits.weekUsd]
               ] as const
             ).map(([label, cost, cap]) => {
               const pct = cap > 0 ? (cost / cap) * 100 : 0
@@ -801,7 +827,7 @@ export default function UsageView() {
                     <span className="us-limit-label">{label}</span>
                     <span className="us-budget-figs">
                       <span className="us-mono">{fmtUsd(cost)}</span>
-                      <span className="us-muted">{cap > 0 ? `of $${cap}` : 'no budget'}</span>
+                      <span className="us-muted">{cap > 0 ? t('usage.budgets.of', { cap }) : t('usage.budgets.none')}</span>
                     </span>
                   </div>
                   {cap > 0 && <Bar pct={pct} level={levelOf(pct)} />}
@@ -812,14 +838,14 @@ export default function UsageView() {
 
           {others.length > 0 && (
             <div className="us-sec">
-              <div className="divider-caption">Other accounts · {others.length}</div>
+              <div className="divider-caption">{t('usage.others.title', { n: others.length })}</div>
               {others.map((a) => {
                 const worst = worstOf(a)
                 const session = a.windows.find((w) => w.key === 'five_hour')
                 const week = weekCostFor(a)
                 const right = [
-                  session ? `${session.utilization.toFixed(0)} % session` : null,
-                  week !== null ? `${fmtUsd(week)} this week` : null
+                  session ? t('usage.others.session', { pct: session.utilization.toFixed(0) }) : null,
+                  week !== null ? t('usage.others.week', { cost: fmtUsd(week) }) : null
                 ].filter(Boolean).join(' · ')
                 return (
                   <button key={a.accountKey} className="us-other" onClick={() => setAccountFilter(a.accountKey)} title={a.email}>

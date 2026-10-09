@@ -2,6 +2,8 @@ import { useRef } from 'react'
 import { useModalA11y } from '../hooks/useModalA11y'
 import { backdropClose } from '../lib/backdrop-close'
 import './ChangelogModal.css'
+import { useT } from '../i18n'
+import type { MessageKey } from '../../../shared/i18n'
 
 interface Props {
   onClose: () => void
@@ -1093,16 +1095,29 @@ const CHANGELOG: Entry[] = [
   },
 ]
 
+// The release notes themselves stay English; only the headings that recur in them are translated.
+const SECTION_TITLES: Record<string, MessageKey> = {
+  Fixes: 'settings.changelog.section.fixes',
+  Features: 'settings.changelog.section.features',
+  Changes: 'settings.changelog.section.changes',
+  Improvements: 'settings.changelog.section.improvements',
+  Removed: 'settings.changelog.section.removed',
+  New: 'settings.changelog.section.new',
+  'New look': 'settings.changelog.section.newLook',
+  Changed: 'settings.changelog.section.changed'
+}
+
 export default function ChangelogModal({ onClose }: Props) {
+  const t = useT()
   const dialogRef = useRef<HTMLDivElement>(null)
   useModalA11y(dialogRef, onClose)
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Changelog" {...backdropClose(onClose)}>
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t('settings.changelog.ariaLabel')} {...backdropClose(onClose)}>
       <div className="modal changelog-modal" ref={dialogRef}>
         <div className="modal-header">
-          <h3>What's new</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="Close changelog">
+          <h3>{t('settings.changelog.title')}</h3>
+          <button className="icon-btn" onClick={onClose} aria-label={t('settings.changelog.close')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
@@ -1117,7 +1132,7 @@ export default function ChangelogModal({ onClose }: Props) {
                 <span className="cl-version">v{entry.version}</span>
                 {entry.tag && (
                   <span className={`chip ${entry.tag === 'new' ? 'warn' : 'ok'}`}>
-                    {entry.tag === 'new' ? 'Unreleased' : 'Latest'}
+                    {entry.tag === 'new' ? t('settings.changelog.unreleased') : t('settings.changelog.latest')}
                   </span>
                 )}
                 <span className="cl-date">{entry.date}</span>
@@ -1125,7 +1140,7 @@ export default function ChangelogModal({ onClose }: Props) {
 
               {entry.sections.map((section) => (
                 <div key={section.title} className="cl-section">
-                  <div className="cl-section-title">{section.title}</div>
+                  <div className="cl-section-title">{SECTION_TITLES[section.title] ? t(SECTION_TITLES[section.title]) : section.title}</div>
                   <ul className="cl-list">
                     {section.items.map((item, i) => (
                       <li key={i} className="cl-item">{item}</li>
