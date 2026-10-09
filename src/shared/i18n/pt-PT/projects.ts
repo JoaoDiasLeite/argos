@@ -5,7 +5,7 @@ const projects: Record<keyof typeof en, string> = {
   subtitle: 'Sessões do Claude Code e do Codex desta máquina e das distros WSL ligadas.',
   refresh: 'Atualizar',
   loading: 'A carregar projetos…',
-  empty: 'Ainda não foram encontrados projetos do Claude Code. Abra um projeto no Claude Code para o ver aqui.',
+  empty: 'Ainda não foram encontrados projetos do Claude Code. Abre um projeto no Claude Code para o ver aqui.',
 
   'time.justNow': 'agora mesmo',
   'time.minutesAgo': 'há {n} min',
@@ -45,7 +45,7 @@ const projects: Record<keyof typeof en, string> = {
   'list.showMore': 'Mostrar mais {n}',
   'list.noMatch': 'Nenhum projeto corresponde.',
 
-  'sessions.select': 'Selecione um projeto para ver as respetivas sessões.',
+  'sessions.select': 'Seleciona um projeto para ver as respetivas sessões.',
   'sessions.title': 'Sessões',
   'sessions.filteredCount': '{shown} de {total} sessões',
   'sessions.count.one': '{n} sessão',
@@ -77,16 +77,16 @@ const projects: Record<keyof typeof en, string> = {
 
   'actions.move.notFound': 'Este projeto já não está onde o Argos o viu pela última vez.',
   'actions.move.invalidTarget':
-    'Esse destino não é utilizável. Indique um caminho absoluto para uma pasta nova, não a raiz de uma unidade.',
+    'Esse destino não é utilizável. Indica um caminho absoluto para uma pasta nova, não a raiz de uma unidade.',
   'actions.move.samePath': 'O projeto já está nesse local.',
   'actions.move.insideSource': 'Uma pasta não pode ser movida para dentro de si própria.',
   'actions.move.targetExists':
-    'Já existe algo nesse caminho. Escolha um nome que ainda não exista: a operação é recusada em vez de fundir o conteúdo.',
-  'actions.move.noParent': 'A pasta que o iria conter não existe. Crie-a primeiro ou escolha outro destino.',
+    'Já existe algo nesse caminho. Escolhe um nome que ainda não exista: a operação é recusada em vez de fundir o conteúdo.',
+  'actions.move.noParent': 'A pasta que o iria conter não existe. Cria-a primeiro ou escolhe outro destino.',
   'actions.move.crossVolume':
     'Esse destino está noutra unidade. O Argos recusa em vez de copiar: copiar a árvore de um projeto é uma operação diferente, e uma cópia a meio é pior do que uma recusa.',
   'actions.move.encodedCollision': 'Outro projeto já ocupa a pasta de transcrições que esse caminho usaria.',
-  'actions.move.busy': 'Está um chat em execução neste projeto. Pare-o primeiro.',
+  'actions.move.busy': 'Está um chat em execução neste projeto. Para-o primeiro.',
   'actions.move.failed': 'Não foi possível mover.',
   'actions.move.siblingDone':
     'Outra diretoria deste projeto já foi movida para esse destino; não há mais nada a mover para lá.',
@@ -109,7 +109,7 @@ const projects: Record<keyof typeof en, string> = {
   'actions.delete.subjectMultiple': 'Uma das suas diretorias',
   'actions.delete.countWithArchived': '{sessions}, {archived} arquivadas',
   'actions.delete.notEmpty':
-    '{subject} recebeu uma conversa desde que a lista foi lida (agora {count}). Atualize e tente novamente.',
+    '{subject} recebeu uma conversa desde que a lista foi lida (agora {count}). Atualiza e tenta novamente.',
   'actions.delete.partial': 'Removidas {n} de {total} diretorias. {reason}',
   'actions.delete.holds.one': 'Contém {n} conversa',
   'actions.delete.holds.other': 'Contém {n} conversas',
@@ -126,7 +126,7 @@ const projects: Record<keyof typeof en, string> = {
   'labels.done': 'Feito',
   'labels.intro':
     'Uma etiqueta fica guardada dentro da conversa, por isso a CLI também a vê. Aqui só se guarda a cor: perdê-la custa as cores, não as etiquetas.',
-  'labels.empty': 'Ainda não há etiquetas. Atribua uma etiqueta a uma conversa para criar a primeira.',
+  'labels.empty': 'Ainda não há etiquetas. Atribui uma etiqueta a uma conversa para criar a primeira.',
   'labels.count.one': '{n} conversa',
   'labels.count.other': '{n} conversas',
   'labels.partial.one': 'Não foi possível ler {n} conversa, por isso a etiqueta foi mantida.',

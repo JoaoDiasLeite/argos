@@ -20,17 +20,17 @@ const main: Record<keyof typeof en, string> = {
 
   'notify.trayHint.title': 'O Argos continua em execução',
   'notify.trayHint.body':
-    'A aplicação continua em execução na área de notificação. Utilize o ícone para a reabrir ou para sair.',
+    'A aplicação continua em execução na área de notificação. Utiliza o ícone para a reabrir ou para sair.',
 
   'sshTrust.storeUnreadable': 'Não foi possível ler o registo de confiança SSH. Ligação recusada.',
   'sshTrust.changed.title': 'A chave do anfitrião SSH foi alterada',
   'sshTrust.changed.message': 'A ligação a {endpoint} foi recusada.',
   'sshTrust.changed.detail':
-    'Confiável: {known}\nRecebida: {fingerprint}\nConfirme a identidade do servidor junto do respetivo administrador antes de alterar a confiança.',
+    'Confiável: {known}\nRecebida: {fingerprint}\nConfirma a identidade do servidor junto do respetivo administrador antes de alterar a confiança.',
   'sshTrust.verify.title': 'Verificar o servidor SSH',
   'sshTrust.verify.message': 'Confiar em {endpoint}?',
   'sshTrust.verify.detail':
-    'Impressão digital do servidor:\n{fingerprint}\nCompare-a com a impressão digital fornecida pelo administrador do servidor.',
+    'Impressão digital do servidor:\n{fingerprint}\nCompara-a com a impressão digital fornecida pelo administrador do servidor.',
   'sshTrust.verify.trust': 'Confiar neste servidor',
 
   'planUsage.window.session': 'Sessão (5h)',

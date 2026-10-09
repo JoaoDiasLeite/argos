@@ -40,9 +40,9 @@ const home: Record<keyof typeof en, string> = {
   'start.submit': 'Iniciar',
   'start.hint': 'Ctrl+Enter inicia num novo terminal · a pasta é a raiz do projeto',
 
-  'body.empty': 'Nada em execução, nada à espera. Comece algo acima.',
+  'body.empty': 'Nada em execução, nada à espera. Começa algo acima.',
 
-  'recent.title': 'Continue onde parou',
+  'recent.title': 'Continua onde paraste',
   'recent.showMore': 'Mostrar mais {n}',
 
   'projects.title': 'Projetos recentes',
@@ -51,9 +51,9 @@ const home: Record<keyof typeof en, string> = {
 
   'side.label': 'O que está ativo',
 
-  'needs.label': 'Precisa de si',
-  'needs.title': 'Precisa de si · {n}',
-  'needs.none': 'Nada à sua espera.',
+  'needs.label': 'Precisa de ti',
+  'needs.title': 'Precisa de ti · {n}',
+  'needs.none': 'Nada à tua espera.',
   'needs.oldest': 'o mais antigo há {time}',
 
   'running.label': 'Em execução',

@@ -2,7 +2,7 @@ import type en from '../en/planner'
 
 const planner: Record<keyof typeof en, string> = {
   'title': 'Planeador',
-  'loading': 'A carregar a sua semana…',
+  'loading': 'A carregar a tua semana…',
 
   'day.short.mon': 'Seg',
   'day.short.tue': 'Ter',
@@ -53,7 +53,7 @@ const planner: Record<keyof typeof en, string> = {
   'effort.option.medium': 'Médio',
   'effort.option.deep': 'Profundo',
 
-  'card.hint': 'Clique para editar · arraste para mover',
+  'card.hint': 'Clica para editar · arrasta para mover',
   'card.markDone': 'Marcar como concluída',
   'card.markNotDone': 'Marcar como não concluída',
   'card.run': 'Executar com o Claude',
@@ -78,13 +78,13 @@ const planner: Record<keyof typeof en, string> = {
   'assist.title.rebalance': 'Claude · Reequilibrar',
   'assist.title.import': 'Claude · Importar de imagem',
   'assist.hint.review':
-    'O Claude vai ler a sua semana atual e analisá-la criticamente: assinala sobrecarga, prioridades em falta e lacunas, com uma pontuação de equilíbrio e sugestões concretas.',
+    'O Claude vai ler a tua semana atual e analisá-la criticamente: assinala sobrecarga, prioridades em falta e lacunas, com uma pontuação de equilíbrio e sugestões concretas.',
   'assist.hint.reflect':
     'O Claude vai comparar as tarefas planeadas com as concluídas e refletir sobre a semana: conquistas, falhas e o que ajustar da próxima vez.',
   'assist.hint.rebalance':
     'O Claude vai redistribuir as tarefas existentes ao longo da semana para uma carga mais saudável, sem inventar nem eliminar nada.',
-  'assist.hint.draft': 'Indique ao Claude os seus objetivos e ele esboça uma semana equilibrada.',
-  'assist.hint.import': 'Carregue uma captura de ecrã do calendário e o Claude transforma-a numa semana estruturada.',
+  'assist.hint.draft': 'Diz ao Claude os teus objetivos e ele esboça uma semana equilibrada.',
+  'assist.hint.import': 'Carrega uma captura de ecrã do calendário e o Claude transforma-a numa semana estruturada.',
   'assist.start.review': 'Rever a minha semana',
   'assist.start.reflect': 'Refletir sobre a minha semana',
   'assist.start.rebalance': 'Reequilibrar a minha semana',
@@ -94,15 +94,15 @@ const planner: Record<keyof typeof en, string> = {
   'assist.account': 'Conta',
   'assist.model': 'Modelo',
   'assist.notesHint':
-    'Indique ao Claude os seus objetivos e restrições para a semana: ele propõe um plano equilibrado que pode aplicar.',
+    'Diz ao Claude os teus objetivos e restrições para a semana: ele propõe um plano equilibrado que podes aplicar.',
   'assist.notesPlaceholder':
     'p. ex. Lançar o novo fluxo de onboarding v2, preparar a apresentação para a administração, 2 idas ao ginásio, manter a tarde de sexta livre para trabalho profundo…',
   'assist.imageHint':
-    'Cole (Ctrl+V), arraste ou carregue uma captura de ecrã do seu calendário semanal: o Claude lê-a e constrói a semana. Pode rever antes de aplicar.',
+    'Cola (Ctrl+V), arrasta ou carrega uma captura de ecrã do teu calendário semanal: o Claude lê-a e constrói a semana. Podes rever antes de aplicar.',
   'assist.imageAlt': 'calendário a importar',
-  'assist.imageDrop': 'Cole, arraste ou clique para carregar',
+  'assist.imageDrop': 'Cola, arrasta ou clica para carregar',
   'assist.clear': 'Limpar',
-  'assist.thinking': 'O Claude está a analisar a sua semana…',
+  'assist.thinking': 'O Claude está a analisar a tua semana…',
   'assist.watchOut': 'Atenção',
   'assist.suggestions': 'Sugestões',
   'assist.saveReview': 'Guardar revisão na semana',
@@ -120,14 +120,14 @@ const planner: Record<keyof typeof en, string> = {
   'assist.backlog': 'Backlog',
   'assist.unknownTask': '(tarefa desconhecida)',
   'assist.applyMoves': 'Aplicar movimentos',
-  'assist.balanced': 'O Claude considera que a sua semana já está bem equilibrada.',
+  'assist.balanced': 'O Claude considera que a tua semana já está bem equilibrada.',
 
   'review.weekReview': 'Revisão da semana',
   'review.reflection': 'Reflexão',
   'review.delete': 'Eliminar revisão',
 
   // The plan-review sheet (an ops plan waiting for approval).
-  'review.waiting': 'À sua espera',
+  'review.waiting': 'À tua espera',
   'review.kind': 'plano',
   'review.steps.one': '{n} passo',
   'review.steps.other': '{n} passos',

@@ -11,12 +11,12 @@ const app: Record<keyof typeof en, string> = {
   'toast.approveToolUse': 'Aprovar a utilização da ferramenta',
   'pill.working': 'A trabalhar…',
   'pill.openApp': 'Abrir a aplicação',
-  'overlay.placeholder': 'Pergunte qualquer coisa…',
+  'overlay.placeholder': 'Pergunta qualquer coisa…',
   'overlay.promptLabel': 'Prompt para um novo terminal',
   'overlay.openArgos': 'Abrir o Argos',
   'overlay.recentChats': 'Chats recentes',
   'overlay.newChat': 'Novo chat',
-  'overlay.empty': 'Escreva um prompt e prima Enter para iniciar um terminal.',
+  'overlay.empty': 'Escreve um prompt e prime Enter para iniciar um terminal.',
   'overlay.newTerminal': 'novo terminal',
   'overlay.dismiss': 'dispensar',
   'popout.missing': 'Este chat já não está numa janela própria.',
@@ -42,7 +42,7 @@ const app: Record<keyof typeof en, string> = {
   'palette.groupSessions': 'Sessões',
   'palette.groupSwitchAccount': 'Mudar de conta',
   'welcome.title': 'Como posso ajudar?',
-  'welcome.body': 'Inicie um novo terminal ou escolha um chat na barra lateral.',
+  'welcome.body': 'Inicia um novo terminal ou escolhe um chat na barra lateral.',
   'welcome.newTerminal': 'Novo terminal'
 }
 

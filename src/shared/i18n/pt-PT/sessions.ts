@@ -35,7 +35,7 @@ const sessions: Record<keyof typeof en, string> = {
   'peek.renameNoteCodex': 'O nome vai para o índice de sessões do próprio Codex, por isso a CLI do Codex também o vê.',
   'peek.renameHint': 'Enter muda o nome · Esc cancela',
   'peek.moveTo': 'Mover para o projeto',
-  'peek.pickProject': 'Escolha um projeto',
+  'peek.pickProject': 'Escolhe um projeto',
   'peek.moveNote':
     'Apenas organização. O local onde a conversa foi executada fica registado nela e nunca é reescrito, por isso ao retomá-la abre na pasta certa.',
   'peek.moveNoteCodex':
@@ -68,7 +68,7 @@ const sessions: Record<keyof typeof en, string> = {
   'activity.run.steps.other': '{done} de {n} passos',
   'activity.run.stop': 'Parar',
   'activity.run.endTitle':
-    'Terminar esta intervenção: as chamadas pendentes são recusadas, a CLI é fechada e regressa ao Ops',
+    'Terminar esta intervenção: as chamadas pendentes são recusadas, a CLI é fechada e regressas ao Ops',
   'activity.run.stopTitle':
     'Parar esta execução: as chamadas pendentes são recusadas e as ferramentas de ops da CLI deixam de funcionar',
 
@@ -97,7 +97,7 @@ const sessions: Record<keyof typeof en, string> = {
   'activity.scripts.title': 'Scripts',
   'activity.scripts.changesHost': 'altera o anfitrião',
   'activity.scripts.noHostTip': 'Nenhum anfitrião desta intervenção está nos grupos de anfitriões do script',
-  'activity.scripts.tip': '{title}\n{name} · {class} · {hosts}\nClique para pedir ao modelo que o execute',
+  'activity.scripts.tip': '{title}\n{name} · {class} · {hosts}\nClica para pedir ao modelo que o execute',
   'activity.scripts.view': 'Ver {name}',
   'activity.scripts.viewTitle': 'Ver o script',
   'activity.scripts.hostFor': 'Anfitrião para {name}',
@@ -107,7 +107,7 @@ const sessions: Record<keyof typeof en, string> = {
   'activity.host.allowed': 'Anfitrião {host} permitido às {time}',
   'activity.host.refused': 'Anfitrião {host} recusado às {time}',
 
-  'activity.wait.eyebrow': 'À sua espera',
+  'activity.wait.eyebrow': 'À tua espera',
   'activity.wait.newHost': 'novo anfitrião',
   'activity.wait.reach': 'O modelo quer aceder a {host}. Permitir para esta intervenção?',
   'activity.wait.allow': 'Permitir',

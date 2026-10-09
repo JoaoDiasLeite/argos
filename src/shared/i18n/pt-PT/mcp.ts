@@ -7,7 +7,7 @@ const mcp: Record<keyof typeof en, string> = {
   'refresh': 'Atualizar',
   'addServer': 'Adicionar servidor',
   'loading': 'A carregar a configuração MCP…',
-  'empty': 'Não foram encontrados servidores MCP no seu {path} local nem em nenhuma distro WSL ligada. Adicione um para dar ao agente ferramentas e contexto adicionais.',
+  'empty': 'Não foram encontrados servidores MCP no teu {path} local nem em nenhuma distro WSL ligada. Adiciona um para dar ao agente ferramentas e contexto adicionais.',
   'status.needsAuth': 'Requer autenticação',
   'status.ready': 'Pronto',
   'chip.authNeeded': 'requer autenticação',
