@@ -653,7 +653,7 @@ export default function Sidebar({
         onDragStart={(e) => {
           e.dataTransfer.setData(SESSION_DRAG_TYPE, s.id)
           e.dataTransfer.effectAllowed = 'move'
-          setChatDragImage(e, s.name)
+          setChatDragImage(e, s.name, t)
           onSessionDrag?.(s.id)
         }}
         onDragEnd={() => onSessionDrag?.(null)}

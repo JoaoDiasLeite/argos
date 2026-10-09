@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { Session, WslDistro, SshHostPublic } from '../types'
 import { useT } from '../i18n'
 import { plural } from '../../../shared/i18n'
-import { SLOT, withSlot } from '../lib/t-slot'
+import { rich } from '../lib/t-rich'
 import './ChatConfigBar.css'
 
 interface Props {
@@ -264,13 +264,9 @@ export function ChatConfigFields({ session, onPatch }: Props) {
         )}
         <span className="help config-branch-help">
           {cfg.git ? (
-            withSlot(
-              t('chat.config.gitStatus', {
-                branch: SLOT,
-                changes: plural(t, 'chat.config.filesChanged', cfg.git.changed)
-              }),
-              <span className="mono">{cfg.git.branch}</span>
-            )
+            rich(t('chat.config.gitStatus', { changes: plural(t, 'chat.config.filesChanged', cfg.git.changed) }), {
+              branch: <span className="mono">{cfg.git.branch}</span>
+            })
           ) : !session.projectPath ? (
             t('chat.config.noFolder')
           ) : (

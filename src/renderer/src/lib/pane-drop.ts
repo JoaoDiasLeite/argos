@@ -157,7 +157,7 @@ export function highlightRect(kind: DropKind): {
   return { left: 0, width: 1, top: 0, height: 1 }
 }
 
-export function dropLabel(t: TFunction, kind: DropKind, moving = false): string {
+export function dropLabel(kind: DropKind, t: TFunction, moving = false): string {
   if (moving) {
     if (kind === 'center') return t('chat.drop.swap')
     return kind === 'top' || kind === 'bottom' ? t('chat.drop.moveIntoGrid') : t('chat.drop.moveHere')

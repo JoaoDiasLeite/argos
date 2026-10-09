@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useState, type ReactElement, type ReactNode } from 'react'
+import { useEffect, useState, type ReactElement } from 'react'
+import { rich } from '../lib/t-rich'
 import type { ApprovalOpsContext, ApprovalRequest } from '../types'
 import { describeOpsRequest, displayArgv } from '../lib/ops-approval'
 import { splitSections, type OpsOutputSection } from '../lib/ops-sections'
@@ -55,12 +56,6 @@ const clock = (iso: string | undefined, locale: string | undefined): string => {
   if (!iso) return ''
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
-}
-
-/** A translated sentence with markup inside it: the `{name}` placeholders the template
- *  still holds (it was fetched without those params) are swapped for the given nodes. */
-function withNodes(template: string, nodes: Record<string, ReactNode>): ReactNode[] {
-  return template.split(/\{(\w+)\}/).map((part, i) => (i % 2 === 1 ? <Fragment key={i}>{nodes[part]}</Fragment> : part))
 }
 
 const sameDay = (iso: string, now: Date): boolean => {
@@ -468,7 +463,7 @@ function WaitingCall({ ops, onDecide }: { ops: ApprovalOpsContext; onDecide: (al
           <span className="ac-wait-tag">{t('sessions.activity.wait.newHost')}</span>
         </div>
         <div className="ac-wait-title">
-          {withNodes(t('sessions.activity.wait.reach'), { host: <strong>{ops.hostName}</strong> })}
+          {rich(t('sessions.activity.wait.reach'), { host: <strong>{ops.hostName}</strong> })}
         </div>
         <div className="ac-wait-cmd">{ops.hostAddress}</div>
         <div className="ac-wait-actions">

@@ -1,4 +1,5 @@
 import './drag-ghost.css'
+import type { TFunction } from '../../../shared/i18n'
 
 /**
  * The image a dragged chat carries: a small pill with its name, instead of the browser's
@@ -9,7 +10,7 @@ import './drag-ghost.css'
  * the call, so the pill is placed off screen, handed over, and removed on the next frame;
  * the browser has rasterised it by then.
  */
-export function setChatDragImage(e: { dataTransfer: DataTransfer }, name: string): void {
+export function setChatDragImage(e: { dataTransfer: DataTransfer }, name: string, t: TFunction): void {
   try {
     const ghost = document.createElement('div')
     ghost.className = 'drag-ghost'
@@ -17,7 +18,7 @@ export function setChatDragImage(e: { dataTransfer: DataTransfer }, name: string
     dot.className = 'drag-ghost-dot'
     const label = document.createElement('span')
     label.className = 'drag-ghost-name'
-    label.textContent = name || 'New chat'
+    label.textContent = name || t('sidebar.session.newChat')
     ghost.append(dot, label)
     document.body.appendChild(ghost)
     e.dataTransfer.setDragImage(ghost, 14, 16)

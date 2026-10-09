@@ -108,14 +108,14 @@ describe('highlightRect', () => {
 
 describe('dropLabel', () => {
   it('says what will happen before the drop', () => {
-    expect(dropLabel(t, 'left')).toBe('Open in split view')
-    expect(dropLabel(t, 'right')).toBe('Open in split view')
-    expect(dropLabel(t, 'center')).toBe('Open here')
+    expect(dropLabel('left', t)).toBe('Open in split view')
+    expect(dropLabel('right', t)).toBe('Open in split view')
+    expect(dropLabel('center', t)).toBe('Open here')
   })
 
   it('names the grid, which costs height, instead of calling it a split', () => {
-    expect(dropLabel(t, 'top')).toBe('Open in grid')
-    expect(dropLabel(t, 'bottom')).toBe('Open in grid')
+    expect(dropLabel('top', t)).toBe('Open in grid')
+    expect(dropLabel('bottom', t)).toBe('Open in grid')
   })
 })
 
@@ -313,8 +313,8 @@ describe('planDrop: moving a pane by its header', () => {
   })
 
   it('names the move in the label', () => {
-    expect(dropLabel(t, 'center', true)).toBe('Swap')
-    expect(dropLabel(t, 'left', true)).toBe('Move here')
-    expect(dropLabel(t, 'bottom', true)).toBe('Move into grid')
+    expect(dropLabel('center', t, true)).toBe('Swap')
+    expect(dropLabel('left', t, true)).toBe('Move here')
+    expect(dropLabel('bottom', t, true)).toBe('Move into grid')
   })
 })

@@ -142,6 +142,9 @@ function loadFontSize(): number {
 
 export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onPopOut, onPopIn, onActive, initialPrompt, onInitialPromptSent, accelerated, ops }: Props) {
   const t = useT()
+  // Read from inside the long-lived terminal effects, which must not restart on a language change.
+  const tRef = useRef(t)
+  tRef.current = t
   // An explicit prop wins; otherwise the surrounding view decides (false by default).
   const accelFromContext = useContext(TerminalAccelContext)
   // The setup effect below runs once and cannot close over a prop that changes later, and
@@ -711,7 +714,10 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       // so surfacing it as an "exited" state is just noise (and can race a live reuse).
       if (e.exitCode === -1073741510 || e.exitCode === 3221225786) return
       setExited(true)
-      term.write(`\r\n\x1b[2m[process exited${e.exitCode ? ` · code ${e.exitCode}` : ''}]\x1b[0m\r\n`)
+      const note = e.exitCode
+        ? tRef.current('chat.terminal.processExitedCode', { code: e.exitCode })
+        : tRef.current('chat.terminal.processExited')
+      term.write(`\r\n\x1b[2m[${note}]\x1b[0m\r\n`)
     })
 
     let autoStartTimer: ReturnType<typeof setTimeout> | undefined
@@ -733,7 +739,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         if (!res.ok) {
           replayedRef.current = true
           term.write(
-            `\r\n\x1b[31mFailed to start terminal${res.error ? `: ${res.error}` : '.'}\x1b[0m\r\n`
+            `\r\n\x1b[31m${res.error ? tRef.current('remote.terminal.startFailedWhy', { error: res.error }) : tRef.current('remote.terminal.startFailed')}\x1b[0m\r\n`
           )
           setStarting(false)
           return

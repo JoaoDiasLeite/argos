@@ -1,9 +1,8 @@
 import type { OpsLiveEvent } from '../types'
-import { makeT, type TFunction } from '../../../shared/i18n'
+import type { MessageKey, TFunction } from '../../../shared/i18n'
 
-// Text helpers take the translator last and default to English, so callers that have
-// not been handed `t` yet keep compiling and reading as before.
-const EN = makeT('en')
+// Text helpers take the translator `t` after their data arguments (required: the caller
+// passes the one from `useT()`, so the text follows the chosen language).
 
 /**
  * Pure fold of live ops ledger lines (`ops:event`) into runs and call rows for the ops
@@ -294,6 +293,9 @@ export function foldOpsEvents(events: OpsLiveEvent[]): OpsRun[] {
 /** Calls that reached an outcome: ran, failed, timed out, refused or stopped. */
 const SETTLED: ReadonlySet<OpsRowStatus> = new Set(['done', 'failed', 'timed-out', 'denied', 'stopped'])
 
+/** A translator that hands back the key: for reading the step groups' structure only. */
+const KEYS_ONLY: TFunction = (key) => key
+
 /**
  * "k of n steps" for a run whose plan was approved: n is the latest plan's steps the
  * operator did not skip, k those finished. A step is finished once it made calls, all of
@@ -306,7 +308,7 @@ export function planProgress(run: OpsRun): { done: number; total: number } | nul
   const total = run.planSteps.filter((s) => !s.skipped).length
   if (total === 0 || !run.plans?.length) return null
   const prefix = `p${run.plans.length - 1}:s`
-  const steps = groupCallsBySteps(run).filter((g) => g.key.startsWith(prefix))
+  const steps = groupCallsBySteps(run, KEYS_ONLY).filter((g) => g.key.startsWith(prefix))
   const skipped = new Set(run.planSteps.flatMap((s, i) => (s.skipped ? [`${prefix}${i}`] : [])))
   let done = 0
   steps.forEach((g, i) => {
@@ -340,26 +342,32 @@ function programOf(argv: string[]): { name: string; rest: string[] } {
  * diagnosis asks these questions on purpose, so the column says the answer in grey
  * instead of raising an amber "exit 1". Undefined when the exit is a real failure.
  */
-export function exitMeaning(row: OpsRow, t: TFunction = EN): string | undefined {
+export function exitMeaning(row: OpsRow, t: TFunction): string | undefined {
+  const key = exitMeaningKey(row)
+  return key ? t(key) : undefined
+}
+
+/** The dictionary key behind `exitMeaning`, for callers that only need to know there is one. */
+function exitMeaningKey(row: OpsRow): MessageKey | undefined {
   if (row.status !== 'failed' || row.exitCode == null || !row.argv?.length) return undefined
   const { name, rest } = programOf(row.argv)
   const code = row.exitCode
   switch (name) {
     case 'pgrep':
-      return code === 1 ? t('ops.timeline.exit.noProcess') : undefined
+      return code === 1 ? 'ops.timeline.exit.noProcess' : undefined
     case 'grep':
     case 'egrep':
     case 'fgrep':
     case 'zgrep':
-      return code === 1 ? t('ops.timeline.exit.noMatch') : undefined
+      return code === 1 ? 'ops.timeline.exit.noMatch' : undefined
     case 'diff':
-      return code === 1 ? t('ops.timeline.exit.differs') : undefined
+      return code === 1 ? 'ops.timeline.exit.differs' : undefined
     case 'systemctl': {
       const verb = rest.find((w) => !w.startsWith('-'))
-      if (verb === 'status') return code === 3 ? t('ops.timeline.exit.inactive') : code === 4 ? t('ops.timeline.exit.noUnit') : undefined
-      if (verb === 'is-active') return code === 3 || code === 4 ? t('ops.timeline.exit.inactive') : undefined
-      if (verb === 'is-enabled') return code === 1 ? t('ops.timeline.exit.disabled') : undefined
-      if (verb === 'is-failed') return code === 1 ? t('ops.timeline.exit.notFailed') : undefined
+      if (verb === 'status') return code === 3 ? 'ops.timeline.exit.inactive' : code === 4 ? 'ops.timeline.exit.noUnit' : undefined
+      if (verb === 'is-active') return code === 3 || code === 4 ? 'ops.timeline.exit.inactive' : undefined
+      if (verb === 'is-enabled') return code === 1 ? 'ops.timeline.exit.disabled' : undefined
+      if (verb === 'is-failed') return code === 1 ? 'ops.timeline.exit.notFailed' : undefined
       return undefined
     }
     default:
@@ -369,7 +377,7 @@ export function exitMeaning(row: OpsRow, t: TFunction = EN): string | undefined 
 
 /** The row's dot: green ran, amber asks or exited non-zero, red refused, grey otherwise. */
 export function rowTone(row: OpsRow): OpsRowTone {
-  if (exitMeaning(row)) return 'idle'
+  if (exitMeaningKey(row)) return 'idle'
   switch (row.status) {
     case 'done':
       return 'ok'
@@ -391,7 +399,7 @@ export function formatDuration(ms?: number): string {
 }
 
 /** Why a refused call was refused, in the column's few words. */
-export function deniedLabel(row: OpsRow, t: TFunction = EN): string {
+export function deniedLabel(row: OpsRow, t: TFunction): string {
   if (row.answer === 'deny' || /^the operator refused/.test(row.reason)) return t('ops.timeline.denied.you')
   if (/^outside this intervention's scope/.test(row.reason)) return t('ops.timeline.denied.scope')
   const r = row.reason
@@ -406,7 +414,7 @@ export function deniedLabel(row: OpsRow, t: TFunction = EN): string {
 }
 
 /** The row's right-hand label: duration, `exit N`, or why it did not run. */
-export function rowLabel(row: OpsRow, t: TFunction = EN): string {
+export function rowLabel(row: OpsRow, t: TFunction): string {
   const meaning = exitMeaning(row, t)
   if (meaning) return meaning
   switch (row.status) {
@@ -514,7 +522,7 @@ function stepClaims(step: OpsPlanStepRow, line: string): boolean {
  * made a call are listed: the column is a history of what ran, and the plan's length is
  * already in its "k of n steps".
  */
-export function groupCallsBySteps(run: OpsRun, t: TFunction = EN): OpsStepGroup[] {
+export function groupCallsBySteps(run: OpsRun, t: TFunction): OpsStepGroup[] {
   const plans = run.plans ?? []
   const groups: OpsStepGroup[] = []
   const firstPlanAt = plans.length ? plans[0].callIndex : run.calls.length

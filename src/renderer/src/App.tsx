@@ -71,7 +71,7 @@ import { SESSION_DRAG_TYPE, type DropPlan } from './lib/pane-drop'
 // fallback (`ViewLoading`) rendered while each view's chunk is fetched.
 import { SshHostPublic, RemoteTarget } from './types'
 import { useT } from './i18n'
-import type { MessageKey } from '../../shared/i18n'
+import { plural, type MessageKey } from '../../shared/i18n'
 import './styles/App.css'
 // Pulled in directly (rather than left to each lazy view) so the `.view-loading`
 // spinner below is styled even before any view chunk has finished loading.
@@ -2254,7 +2254,7 @@ export default function App() {
     kind: 'server',
     id: g.latestId,
     name: g.title,
-    detail: g.count > 1 ? `${g.count} sessions` : undefined
+    detail: g.count > 1 ? plural(t, 'projects.sessions.count', g.count) : undefined
   }))
   const homeInterventionsRunning: HomeRunning[] = opsTabs
     .filter((t) => !t.ended)

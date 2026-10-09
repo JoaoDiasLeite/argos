@@ -6,9 +6,9 @@ const t = makeT('en')
 
 describe('kindLabel', () => {
   it('uses each forge’s own word', () => {
-    expect(kindLabel(t, 'gitlab', 'merge-request')).toBe('Merge request')
-    expect(kindLabel(t, 'github', 'merge-request')).toBe('Pull request')
-    expect(kindLabel(t, 'github', 'issue')).toBe('Issue')
+    expect(kindLabel('gitlab', 'merge-request', t)).toBe('Merge request')
+    expect(kindLabel('github', 'merge-request', t)).toBe('Pull request')
+    expect(kindLabel('github', 'issue', t)).toBe('Issue')
   })
 })
 

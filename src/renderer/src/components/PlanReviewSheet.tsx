@@ -103,7 +103,7 @@ export default function PlanReviewSheet({ request, onDecide }: Props) {
           <h3 id={titleId} className="plan-sheet-count">
             {plural(t, 'planner.review.steps', n)}
           </h3>
-          {ops && <span className="plan-sheet-target">{planTarget(ops)}</span>}
+          {ops && <span className="plan-sheet-target">{planTarget(ops, t)}</span>}
         </div>
         {totals && totals.total > 0 && (
           <div className="plan-sheet-bar" aria-hidden="true">
@@ -114,12 +114,12 @@ export default function PlanReviewSheet({ request, onDecide }: Props) {
         )}
         {totals && (
           <div className="plan-sheet-totals">
-            {planTotalsGroups(totals).map((g) => (
+            {planTotalsGroups(totals, t).map((g) => (
               <span key={g.kind}>
                 <span className={`plan-sheet-n ${g.kind}`}>{g.n}</span> {g.text}
               </span>
             ))}
-            <span className={`plan-sheet-changes${totals.mutates > 0 ? ' mutates' : ''}`}>{planChangesLine(totals)}</span>
+            <span className={`plan-sheet-changes${totals.mutates > 0 ? ' mutates' : ''}`}>{planChangesLine(totals, t)}</span>
           </div>
         )}
       </div>
@@ -138,7 +138,7 @@ export default function PlanReviewSheet({ request, onDecide }: Props) {
               <div className="plan-sheet-step-body">
                 <div className="plan-sheet-step-head">
                   <span className="plan-sheet-step-title">{s.title}</span>
-                  <span className="plan-sheet-label">{isSkipped ? t('planner.review.skipped') : planStepLabel(s)}</span>
+                  <span className="plan-sheet-label">{isSkipped ? t('planner.review.skipped') : planStepLabel(s, t)}</span>
                   {s.verdict !== 'denied' && (
                     <button
                       type="button"

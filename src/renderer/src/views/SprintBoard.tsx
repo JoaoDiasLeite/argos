@@ -1054,7 +1054,7 @@ function ItemCard(props: {
       {(origin || props.blockedSince) && (
         <div className="sb-item-meta">
           {origin && (
-            <span className="chip sb-ref" title={t('sprints.card.originTitle', { kind: kindLabel(t, origin.forge, origin.kind), forge: FORGE_NAMES[origin.forge] })}>
+            <span className="chip sb-ref" title={t('sprints.card.originTitle', { kind: kindLabel(origin.forge, origin.kind, t), forge: FORGE_NAMES[origin.forge] })}>
               {origin.ref}
             </span>
           )}
@@ -1709,7 +1709,7 @@ function ItemSheet(props: {
         {origin && (
           <div className="sb-origin">
             <span className="chip sb-ref">{origin.ref}</span>
-            <span className="sb-muted">{kindLabel(t, origin.forge, origin.kind)}</span>
+            <span className="sb-muted">{kindLabel(origin.forge, origin.kind, t)}</span>
             {i?.url ? (
               <a className="btn-text" href={i.url} target="_blank" rel="noreferrer">
                 {t('sprints.item.openIn', { forge: FORGE_NAMES[origin.forge] })}

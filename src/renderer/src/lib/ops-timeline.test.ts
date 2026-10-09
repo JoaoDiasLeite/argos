@@ -12,6 +12,9 @@ import {
   touchedHosts
 } from './ops-timeline'
 import type { OpsLiveEvent } from '../types'
+import { makeT } from '../../../shared/i18n'
+
+const t = makeT('en')
 
 let n = 0
 const ev = (event: Record<string, unknown>, runId = 'r1'): OpsLiveEvent => ({
@@ -250,7 +253,7 @@ describe('step progress', () => {
 
 describe('row reading', () => {
   it('labels and colours each outcome', () => {
-    const at = (events: OpsLiveEvent[]) => { const r = row(events); return [rowTone(r), rowLabel(r)] }
+    const at = (events: OpsLiveEvent[]) => { const r = row(events); return [rowTone(r), rowLabel(r, t)] }
     expect(at([start, decided('c1', 'allow'), finished('c1', 0)])).toEqual(['ok', '42 ms'])
     expect(at([start, decided('c1', 'allow'), finished('c1', 4)])).toEqual(['idle', 'no such unit'])
     expect(at([start, decided('c1', 'allow'), finished('c1', 1)])).toEqual(['warn', 'exit 1'])
@@ -323,18 +326,18 @@ describe('exit meanings', () => {
     row([start, decided('c1', 'allow', { argv }), finished('c1', code)])
 
   it('reads an expected non-zero exit as an answer', () => {
-    expect(exitMeaning(r(['pgrep', '-af', 'puma'], 1))).toBe('no process')
-    expect(exitMeaning(r(['sudo', '-u', 'app', 'grep', 'x', '/f'], 1))).toBe('no match')
-    expect(exitMeaning(r(['systemctl', 'status', 'redis', '--no-pager'], 3))).toBe('inactive')
-    expect(exitMeaning(r(['/usr/bin/systemctl', '--no-pager', 'status', 'x'], 4))).toBe('no such unit')
-    expect(exitMeaning(r(['systemctl', 'is-enabled', 'x'], 1))).toBe('disabled')
+    expect(exitMeaning(r(['pgrep', '-af', 'puma'], 1), t)).toBe('no process')
+    expect(exitMeaning(r(['sudo', '-u', 'app', 'grep', 'x', '/f'], 1), t)).toBe('no match')
+    expect(exitMeaning(r(['systemctl', 'status', 'redis', '--no-pager'], 3), t)).toBe('inactive')
+    expect(exitMeaning(r(['/usr/bin/systemctl', '--no-pager', 'status', 'x'], 4), t)).toBe('no such unit')
+    expect(exitMeaning(r(['systemctl', 'is-enabled', 'x'], 1), t)).toBe('disabled')
   })
 
   it('leaves real failures alone', () => {
-    expect(exitMeaning(r(['pgrep', '-af', 'puma'], 2))).toBeUndefined()
-    expect(exitMeaning(r(['curl', 'http://x'], 7))).toBeUndefined()
-    expect(exitMeaning(r(['systemctl', 'restart', 'x'], 1))).toBeUndefined()
-    expect(exitMeaning(r(['pgrep', 'x'], 0))).toBeUndefined()
+    expect(exitMeaning(r(['pgrep', '-af', 'puma'], 2), t)).toBeUndefined()
+    expect(exitMeaning(r(['curl', 'http://x'], 7), t)).toBeUndefined()
+    expect(exitMeaning(r(['systemctl', 'restart', 'x'], 1), t)).toBeUndefined()
+    expect(exitMeaning(r(['pgrep', 'x'], 0), t)).toBeUndefined()
   })
 })
 
@@ -356,7 +359,7 @@ describe('calls by plan step', () => {
       ...call('c3', ['systemctl', 'status', 'puma']),
       ...call('c4', ['journalctl', '-u', 'puma'])
     ])
-    const groups = groupCallsBySteps(run)
+    const groups = groupCallsBySteps(run, t)
     expect(groups.map((g) => [g.title, g.rows.map((r) => r.callId)])).toEqual([
       ['Before the plan', ['c0']],
       ['Sistema', ['c1', 'c2']],
@@ -370,15 +373,15 @@ describe('calls by plan step', () => {
   it('has no current step while a new plan has run nothing, nor once ended', () => {
     const approved = [start, ...call('c0', ['uptime']), ev({ kind: 'plan.approved', steps })]
     const [run] = foldOpsEvents(approved)
-    expect(groupCallsBySteps(run).map((g) => g.key)).toEqual(['pre'])
-    expect(currentStepKey(run, groupCallsBySteps(run))).toBeNull()
+    expect(groupCallsBySteps(run, t).map((g) => g.key)).toEqual(['pre'])
+    expect(currentStepKey(run, groupCallsBySteps(run, t))).toBeNull()
     const [done] = foldOpsEvents([...approved, ...call('c1', ['uptime']), ev({ kind: 'run.end', ok: true, costUsd: 0 })])
-    expect(currentStepKey(done, groupCallsBySteps(done))).toBeNull()
+    expect(currentStepKey(done, groupCallsBySteps(done, t))).toBeNull()
   })
 
   it('keeps a skipped step out unless something ran for it', () => {
     const [run] = foldOpsEvents([start, ev({ kind: 'plan.approved', steps, skippedSteps: [1] }), ...call('c1', ['uptime'])])
-    expect(groupCallsBySteps(run).map((g) => g.title)).toEqual(['Sistema'])
+    expect(groupCallsBySteps(run, t).map((g) => g.title)).toEqual(['Sistema'])
   })
 
   it('matches a script call to its step, which the plan spells script <name> <args>', () => {
@@ -395,7 +398,7 @@ describe('calls by plan step', () => {
       ...script('c2', ['/opt/runbook/app-step.sh', 'get_new_files', '--version=10.13.0']),
       ...call('c3', ['pgrep', '-af', 'rake'])
     ])
-    expect(groupCallsBySteps(run).map((g) => [g.title, g.rows.map((r) => r.callId)])).toEqual([
+    expect(groupCallsBySteps(run, t).map((g) => [g.title, g.rows.map((r) => r.callId)])).toEqual([
       ['Backup', ['c1']],
       // A read the plan does not name stays on the step the run is on.
       ['Ficheiros novos', ['c2', 'c3']]
@@ -405,6 +408,6 @@ describe('calls by plan step', () => {
 
   it('has one group and no plan when the run never got one', () => {
     const [run] = foldOpsEvents([start, ...call('c1', ['uptime'])])
-    expect(groupCallsBySteps(run).map((g) => g.key)).toEqual(['pre'])
+    expect(groupCallsBySteps(run, t).map((g) => g.key)).toEqual(['pre'])
   })
 })

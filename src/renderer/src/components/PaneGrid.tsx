@@ -359,7 +359,7 @@ export default function PaneGrid({
               : moving && pane.sessionId === draggingSessionId
                 ? null
                 : over?.index === i
-                  ? { kind: over.kind, label: dropLabel(t, over.kind, moving) }
+                  ? { kind: over.kind, label: dropLabel(over.kind, t, moving) }
                   : null
           const box = zone ? highlightRect(zone.kind) : null
           return (
@@ -432,7 +432,7 @@ export default function PaneGrid({
                     e.dataTransfer.setData(SESSION_DRAG_TYPE, pane.sessionId)
                     e.dataTransfer.setData(PANE_DRAG_TYPE, '1')
                     e.dataTransfer.effectAllowed = 'move'
-                    setChatDragImage(e, name)
+                    setChatDragImage(e, name, t)
                     setMovingPane(pane.sessionId)
                     onPaneDrag(pane.sessionId)
                   }}

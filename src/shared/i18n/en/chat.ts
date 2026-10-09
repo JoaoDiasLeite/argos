@@ -10,6 +10,8 @@ export default {
   'terminal.starting': 'Starting {provider}…',
   'terminal.connecting': 'Connecting…',
   'terminal.exited': 'The shell exited.',
+  'terminal.processExited': 'process exited',
+  'terminal.processExitedCode': 'process exited · code {code}',
   'terminal.reconnect': 'Reconnect',
   'menu.actions': 'Terminal actions',
   'menu.cut': 'Cut',

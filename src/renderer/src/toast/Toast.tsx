@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { ApprovalRequest } from '../types'
 import { applyTheme } from '../lib/theme'
 import { opsToastEyebrow, opsToastQuestion } from '../lib/ops-approval'
+import { rich } from '../lib/t-rich'
 import { useT } from '../i18n'
 import type { TFunction } from '../../../shared/i18n'
 
@@ -75,21 +76,19 @@ export default function Toast() {
   if (head.ops) {
     // An ops request says what it asks in words (board F2): the MCP tool name means nothing
     // to the person deciding, and a plan is approved, not "allowed".
-    const q = opsToastQuestion(head.ops)
+    const q = opsToastQuestion(head.ops, t)
     const plan = head.ops.tool === 'plan'
     return (
       <div className="toast-shell">
         <div className="toast-head">
           <span className="toast-dot" aria-hidden="true" />
-          <span className="toast-eyebrow" title={opsToastEyebrow(head.ops)}>
-            {opsToastEyebrow(head.ops)}
+          <span className="toast-eyebrow" title={opsToastEyebrow(head.ops, t)}>
+            {opsToastEyebrow(head.ops, t)}
           </span>
           {queue.length > 1 && <span className="toast-more">{t('app.toast.more', { n: queue.length - 1 })}</span>}
         </div>
         <div className="toast-question">
-          {q.lead}
-          {q.code && <code className="toast-chip">{q.code}</code>}
-          {q.tail}
+          {rich(q.text, { code: q.code ? <code className="toast-chip">{q.code}</code> : '' })}
         </div>
         <div className="toast-actions">
           <button className="toast-btn allow" onClick={() => decide(true)}>

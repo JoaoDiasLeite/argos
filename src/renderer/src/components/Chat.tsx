@@ -5,7 +5,7 @@ import { chatTerminalId } from '../lib/terminal-id'
 import { sessionProvider } from '../lib/account-scope'
 import { CLI_PROVIDERS } from '../lib/cli-providers'
 import { useT } from '../i18n'
-import { SLOT, withSlot } from '../lib/t-slot'
+import { rich } from '../lib/t-rich'
 import './Chat.css'
 
 // ChatTerminal pulls in @xterm/xterm + its addons (~300 kB), and nothing on screen needs
@@ -202,9 +202,9 @@ export default function Chat({
               <h2>{resuming ? t('chat.setup.resumeHeading') : t('chat.setup.startHeading')}</h2>
               <p>
                 {resuming ? (
-                  withSlot(t('chat.setup.resumedAs', { cli: setupCli, account: SLOT }), <b>{setupAccount}</b>)
+                  rich(t('chat.setup.resumedAs', { cli: setupCli }), { account: <b>{setupAccount}</b> })
                 ) : (
-                  withSlot(t('chat.setup.chosenAccount', { cli: setupCli, account: SLOT }), <b>{setupAccount}</b>)
+                  rich(t('chat.setup.chosenAccount', { cli: setupCli }), { account: <b>{setupAccount}</b> })
                 )}
               </p>
             </div>

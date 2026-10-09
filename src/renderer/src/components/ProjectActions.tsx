@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { rich } from '../lib/t-rich'
 import { CCProject, ProjectMoveRefusal, ProjectOpResult } from '../types'
 import { plural, type TFunction } from '../../../shared/i18n'
 import { useT } from '../i18n'
@@ -67,12 +68,6 @@ function moveRefusalMessage(t: TFunction, error: ProjectMoveRefusal, detail?: st
     default:
       return detail || t('projects.actions.move.failed')
   }
-}
-
-/** A translated sentence with markup inside it: the `{name}` placeholders the template
- *  still holds (it was fetched without those params) are swapped for the given nodes. */
-function withNodes(template: string, nodes: Record<string, ReactNode>): ReactNode[] {
-  return template.split(/\{(\w+)\}/).map((part, i) => (i % 2 === 1 ? <Fragment key={i}>{nodes[part]}</Fragment> : part))
 }
 
 /** The folder's own name, from the last segment of a path — split on both separators
@@ -348,7 +343,7 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
         ) : (
           <div className="proj-actions-panel">
             <p className="help">
-              {withNodes(t('projects.actions.move.currentlyAt'), {
+              {rich(t('projects.actions.move.currentlyAt'), {
                 path: <span className="proj-actions-path">{realPath}</span>
               })}
             </p>
@@ -402,16 +397,16 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
         <div className="proj-actions-panel">
           <p className="proj-actions-text">
             {members.length > 1
-              ? withNodes(t('projects.actions.delete.confirmMultiple', { n: members.length }), {
+              ? rich(t('projects.actions.delete.confirmMultiple', { n: members.length }), {
                   name: <b>{name}</b>
                 })
-              : withNodes(t('projects.actions.delete.confirmSingle'), {
+              : rich(t('projects.actions.delete.confirmSingle'), {
                   name: <b>{name}</b>,
                   path: <span className="proj-actions-path">{realPath}</span>
                 })}
           </p>
           <p className="help">
-            {withNodes(
+            {rich(
               members.length > 1 ? t('projects.actions.delete.noteMultiple') : t('projects.actions.delete.noteSingle'),
               { folder: <code>projects/</code> }
             )}

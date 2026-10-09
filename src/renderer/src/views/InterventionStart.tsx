@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { Fragment } from 'react'
+import { rich } from '../lib/t-rich'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import type { OpsIntervention, OpsRunbookInfo, OpsRunListItem, OpsScope, SshHostPublic } from '../types'
 import { forgetRecentRunbook, pushRecentRunbook, readRecentRunbooks } from '../lib/recent-runbooks'
@@ -54,14 +54,6 @@ function joinAnd(items: ReactNode[], t: TFunction): ReactNode[] {
     out.push(item)
   })
   return out
-}
-
-/** A translated sentence with `{name}` slots filled by elements (the mono file names). */
-function fill(text: string, nodes: Record<string, ReactNode>): ReactNode[] {
-  return text.split(/(\{\w+\})/).map((part, i) => {
-    const m = /^\{(\w+)\}$/.exec(part)
-    return <Fragment key={i}>{m && m[1] in nodes ? nodes[m[1]] : part}</Fragment>
-  })
 }
 
 function withStop(s: string): string {
@@ -600,7 +592,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
               )}
               {recents.length === 0 && !runbookPath && (
                 <span className="ivs-help">
-                  {fill(t('ops.start.runbookExplainer'), {
+                  {rich(t('ops.start.runbookExplainer'), {
                     runbook: <span className="ivs-mono">RUNBOOK.md</span>,
                     policy: <span className="ivs-mono">policy.json</span>
                   })}
@@ -698,18 +690,19 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
                   <p className="ivs-panel-text">
                     {summary.guidelinesHead.trim() ? (
                       <>
-                        {fill(t('ops.start.guidelines', { text: withStop(summary.guidelinesHead) }), {
+                        {rich(t('ops.start.guidelines'), {
+                          text: withStop(summary.guidelinesHead),
                           file: <span className="ivs-mono">RUNBOOK.md</span>
                         })}
                       </>
                     ) : (
-                      <>{fill(t('ops.start.noGuidelines'), { file: <span className="ivs-mono">RUNBOOK.md</span> })}</>
+                      <>{rich(t('ops.start.noGuidelines'), { file: <span className="ivs-mono">RUNBOOK.md</span> })}</>
                     )}{' '}
                     {summary.scripts === 0 ? t('ops.start.noScripts') : plural(t, 'ops.start.scripts', summary.scripts)}
                     {summary.readPaths.length > 0 && (
                       <>
                         {' '}
-                        {fill(t('ops.start.readsAllowed'), {
+                        {rich(t('ops.start.readsAllowed'), {
                           paths: joinAnd(
                             summary.readPaths.map((p) => (
                               <span key={p} className="ivs-mono">

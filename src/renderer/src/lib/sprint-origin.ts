@@ -30,7 +30,7 @@ export interface SprintOrigin {
  *  cannot import across the process boundary. */
 export const FORGE_NAMES: Record<Forge, string> = { gitlab: 'GitLab', github: 'GitHub' }
 
-export function kindLabel(t: TFunction, forge: Forge, kind: OriginKind): string {
+export function kindLabel(forge: Forge, kind: OriginKind, t: TFunction): string {
   if (kind === 'issue') return t('sprints.origin.issue')
   return forge === 'github' ? t('sprints.origin.pullRequest') : t('sprints.origin.mergeRequest')
 }

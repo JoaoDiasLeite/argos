@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { rich } from '../lib/t-rich'
 import { useLingering } from '../hooks/useLingering'
 import {
   SshHostPublic,
@@ -74,14 +75,6 @@ interface Probe {
 interface Probes {
   conn?: Probe
   claude?: Probe
-}
-
-/** A translated sentence with `{name}` slots filled by elements (the mono code spans). */
-function fill(text: string, nodes: Record<string, ReactNode>): ReactNode[] {
-  return text.split(/(\{\w+\})/).map((part, i) => {
-    const m = /^\{(\w+)\}$/.exec(part)
-    return <Fragment key={i}>{m && m[1] in nodes ? nodes[m[1]] : part}</Fragment>
-  })
 }
 
 const keyOf = (sel: Selection): string => (sel.kind === 'wsl' ? `wsl:${sel.name}` : `ssh:${sel.id}`)
@@ -498,7 +491,7 @@ export default function RemoteView({
           <div className="rv-head-text">
             <h1>{t('remote.keys.title')}</h1>
             <p className="rv-sub">
-              {fill(t('remote.keys.sub'), { ssh: <code>~/.ssh</code>, authorized: <code>authorized_keys</code> })}
+              {rich(t('remote.keys.sub'), { ssh: <code>~/.ssh</code>, authorized: <code>authorized_keys</code> })}
             </p>
           </div>
         </div>

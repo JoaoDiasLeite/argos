@@ -57,7 +57,7 @@ export default function PendingRuns({ runs, onOpen, onDismiss, onDrag }: Props) 
           onDragStart={(e) => {
             e.dataTransfer.setData(SESSION_DRAG_TYPE, r.id)
             e.dataTransfer.effectAllowed = 'move'
-            setChatDragImage(e, r.name)
+            setChatDragImage(e, r.name, t)
             onDrag?.(r.id)
           }}
           onDragEnd={() => onDrag?.(null)}
