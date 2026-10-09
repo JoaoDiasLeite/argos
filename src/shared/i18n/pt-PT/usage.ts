@@ -22,8 +22,8 @@ const usage: Record<keyof typeof en, string> = {
   'rel.justNow': 'agora mesmo',
   'rel.minutes': 'há {n} min',
   'rel.hours': 'há {n} h',
-  'reset.at': 'reinicia {time}',
-  'reset.atDay': 'reinicia {day} {time}',
+  'reset.at': 'reinicia às {time}',
+  'reset.atDay': 'reinicia {day} às {time}',
 
   // Stats and chart
   'stats.input': 'tokens de entrada',
