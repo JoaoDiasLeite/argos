@@ -45,8 +45,8 @@ const main: Record<keyof typeof en, string> = {
   'planUsage.alert.body': '{window}: {pct}% utilizados',
   'planUsage.alert.bodyWithReset': '{window}: {pct}% utilizados · {reset}',
   'planUsage.reset.soon': 'reinicia em breve',
-  'planUsage.reset.minutes': 'reinicia dentro de {m} min',
-  'planUsage.reset.hours': 'reinicia dentro de {h} h {m} min'
+  'planUsage.reset.minutes': 'reinicia em {m} min',
+  'planUsage.reset.hours': 'reinicia em {h} h {m} min'
 }
 
 export default main
