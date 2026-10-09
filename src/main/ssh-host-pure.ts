@@ -1,3 +1,5 @@
+import type { TFunction } from '../shared/i18n'
+
 /**
  * Cleaning the text fields of a stored SSH host before they are saved. A pasted address
  * often carries a trailing space or a zero-width character, which Node then resolves as a
@@ -84,6 +86,6 @@ export function decodeHostsFile<T>(buf: Buffer, codec: HostsCodec): HostsRead<T>
 }
 
 /** The error a write path reports instead of overwriting a file it could not read. */
-export function refuseOverwriteMessage(file: string, readError: string): string {
-  return `The saved hosts file could not be read (${readError}); refusing to overwrite it. Move ${file} aside to start over.`
+export function refuseOverwriteMessage(t: TFunction, file: string, readError: string): string {
+  return t('main.ssh.hostsUnreadable', { error: readError, file })
 }

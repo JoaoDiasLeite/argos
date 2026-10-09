@@ -406,7 +406,7 @@ function flagAttention(kind: 'success' | 'error' | 'approval'): void {
   const badge =
     kind === 'success' ? successBadge() : kind === 'error' ? errorBadge() : approvalBadge()
   const desc =
-    kind === 'success' ? 'Run finished' : kind === 'error' ? 'Run failed' : 'Approval needed'
+    kind === 'success' ? t('main.taskbar.runFinished') : kind === 'error' ? t('main.taskbar.runFailed') : t('main.taskbar.approvalNeeded')
   mainWindow.setOverlayIcon(badge, desc)
 }
 
@@ -989,7 +989,7 @@ let opsLedger: OpsLedger | null = null
 let opsExecutor: OpsExecutor | null = null
 
 function getOpsLedger(): OpsLedger {
-  if (!opsLedger) opsLedger = createLedger(path.join(app.getPath('userData'), 'ops-audit'))
+  if (!opsLedger) opsLedger = createLedger(path.join(app.getPath('userData'), 'ops-audit'), t)
   return opsLedger
 }
 
@@ -1026,7 +1026,7 @@ function opsHostAddress(hostId: string): string {
 }
 
 ipcMain.handle('ops:load-runbook', async (_, dir: string) => {
-  if (typeof dir !== 'string' || dir.trim() === '') return { ok: false, error: 'No runbook folder given.' }
+  if (typeof dir !== 'string' || dir.trim() === '') return { ok: false, error: t('main.ipc.ops.noRunbookFolder') }
   const r = await loadRunbook(dir)
   if (!r.ok) return { ok: false, error: r.error, ...(r.errors ? { errors: r.errors } : {}) }
   const rb = r.runbook
@@ -1045,8 +1045,8 @@ ipcMain.handle('ops:load-runbook', async (_, dir: string) => {
 // "Open RUNBOOK.md" / "Open policy.json" on the start screen. Only a folder that loads as
 // a runbook, and only those two names, so this cannot be pointed at an arbitrary file.
 ipcMain.handle('ops:open-runbook-file', async (_, dir: string, which: string) => {
-  if (typeof dir !== 'string' || dir.trim() === '') return { ok: false, error: 'No runbook folder given.' }
-  if (which !== 'RUNBOOK.md' && which !== 'policy.json') return { ok: false, error: `Not a runbook file: ${String(which)}` }
+  if (typeof dir !== 'string' || dir.trim() === '') return { ok: false, error: t('main.ipc.ops.noRunbookFolder') }
+  if (which !== 'RUNBOOK.md' && which !== 'policy.json') return { ok: false, error: t('main.ipc.ops.notRunbookFile', { name: String(which) }) }
   const r = await loadRunbook(dir)
   if (!r.ok) return { ok: false, error: r.error }
   const error = await shell.openPath(path.join(r.runbook.ref.path, which))
@@ -1063,8 +1063,8 @@ ipcMain.handle('ops:runs', async (_, opts?: { hostId?: string; limit?: number })
 })
 
 ipcMain.handle('ops:report', async (_, runId: string, kind: 'internal' | 'client', runbookPath?: string) => {
-  if (typeof runId !== 'string' || runId === '') return { ok: false, error: 'No run id given.' }
-  if (kind !== 'internal' && kind !== 'client') return { ok: false, error: `Unknown report kind: ${String(kind)}` }
+  if (typeof runId !== 'string' || runId === '') return { ok: false, error: t('main.ipc.ops.noRunId') }
+  if (kind !== 'internal' && kind !== 'client') return { ok: false, error: t('main.ipc.ops.unknownReportKind', { kind: String(kind) }) }
   // The ledger has no policy, so the host roles of the client report ("servidor de base
   // de dados") come from the runbook when the caller names it.
   const extraWarnings: string[] = []
@@ -1072,7 +1072,7 @@ ipcMain.handle('ops:report', async (_, runId: string, kind: 'internal' | 'client
   if (typeof runbookPath === 'string' && runbookPath !== '') {
     const rb = await loadRunbook(runbookPath)
     if (rb.ok) opts = { hostGroups: rb.runbook.policy.hosts, hosts: opsHostRefs() }
-    else extraWarnings.push(`The runbook could not be loaded, so hosts are shown as [servidor]: ${rb.error}`)
+    else extraWarnings.push(t('main.ipc.ops.reportHostsAnonymised', { error: rb.error }))
   }
   const r = await getOpsLedger().report(runId, kind, opts)
   return r.ok ? { ...r, warnings: [...extraWarnings, ...r.warnings] } : r
@@ -1082,11 +1082,11 @@ ipcMain.handle('ops:report', async (_, runId: string, kind: 'internal' | 'client
 // the ONE place Argos writes under a runbook folder (docs/OPS_AGENT_PLAN.md §8), and it
 // only ever creates a new file: `wx` refuses an existing one rather than editing it.
 ipcMain.handle('ops:save-report', async (_, runId: string, kind: 'internal' | 'client', runbookPath: string) => {
-  if (typeof runId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(runId)) return { ok: false, error: 'Invalid run id.' }
-  if (kind !== 'internal' && kind !== 'client') return { ok: false, error: `Unknown report kind: ${String(kind)}` }
-  if (typeof runbookPath !== 'string' || runbookPath === '') return { ok: false, error: 'No runbook folder given.' }
+  if (typeof runId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(runId)) return { ok: false, error: t('main.ipc.ops.invalidRunId') }
+  if (kind !== 'internal' && kind !== 'client') return { ok: false, error: t('main.ipc.ops.unknownReportKind', { kind: String(kind) }) }
+  if (typeof runbookPath !== 'string' || runbookPath === '') return { ok: false, error: t('main.ipc.ops.noRunbookFolder') }
   const rb = await loadRunbook(runbookPath)
-  if (!rb.ok) return { ok: false, error: `The runbook could not be loaded, so nothing was saved: ${rb.error}` }
+  if (!rb.ok) return { ok: false, error: t('main.ipc.ops.saveRunbookUnloadable', { error: rb.error }) }
   const ledger = getOpsLedger()
   const r = await ledger.report(runId, kind, { hostGroups: rb.runbook.policy.hosts, hosts: opsHostRefs() })
   if (!r.ok) return r
@@ -1100,8 +1100,8 @@ ipcMain.handle('ops:save-report', async (_, runId: string, kind: 'internal' | 'c
     await fs.promises.mkdir(dir, { recursive: true })
     await fs.promises.writeFile(file, r.markdown, { encoding: 'utf-8', flag: 'wx' })
   } catch (e) {
-    if ((e as NodeJS.ErrnoException)?.code === 'EEXIST') return { ok: false, error: `A report already exists at ${file}; it was not overwritten.` }
-    return { ok: false, error: `Could not save the report: ${e instanceof Error ? e.message : String(e)}` }
+    if ((e as NodeJS.ErrnoException)?.code === 'EEXIST') return { ok: false, error: t('main.ipc.ops.reportExists', { file }) }
+    return { ok: false, error: t('main.ipc.ops.reportSaveFailed', { error: e instanceof Error ? e.message : String(e) }) }
   }
   return { ok: true, path: file }
 })
@@ -1112,7 +1112,7 @@ ipcMain.handle('ops:ledger-info', () => getOpsLedger().info())
 // A reopened ops chat's timeline: every ledger line of its runs, shaped like the live
 // `ops:event` so the renderer folds both the same way.
 ipcMain.handle('ops:session-events', async (_, appSessionId: string) => {
-  if (typeof appSessionId !== 'string' || appSessionId === '') return { ok: false, error: 'No session id given.' }
+  if (typeof appSessionId !== 'string' || appSessionId === '') return { ok: false, error: t('main.ipc.ops.noSessionId') }
   const r = await getOpsLedger().readSession(appSessionId)
   if (!r.ok) return r
   return { ok: true, events: r.lines.map((line) => ({ appSessionId, runId: line.event.runId, line })) }
@@ -1168,15 +1168,15 @@ interface OpsIntervention {
 }
 
 function parseIntervention(v: unknown): OpsIntervention | { error: string } {
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return { error: 'No intervention given.' }
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return { error: t('main.ipc.ops.noIntervention') }
   const o = v as Record<string, unknown>
-  if (typeof o.runbookPath !== 'string' || o.runbookPath.trim() === '') return { error: 'No runbook folder given.' }
+  if (typeof o.runbookPath !== 'string' || o.runbookPath.trim() === '') return { error: t('main.ipc.ops.noRunbookFolder') }
   const sc = o.scope as Record<string, unknown> | null | undefined
   let scope: OpsScope
   if (sc && sc.kind === 'open') scope = { kind: 'open' }
   else if (sc && sc.kind === 'host' && typeof sc.hostId === 'string' && sc.hostId !== '') scope = { kind: 'host', hostId: sc.hostId }
-  else return { error: 'The intervention names no server.' }
-  if (typeof o.task !== 'string') return { error: 'The intervention has no task.' }
+  else return { error: t('main.ipc.ops.interventionNoServer') }
+  if (typeof o.task !== 'string') return { error: t('main.ipc.ops.interventionNoTask') }
   const text = (x: unknown, max: number): string | undefined =>
     typeof x === 'string' && x.trim() !== '' ? x.trim().slice(0, max) : undefined
   const ticket = text(o.ticket, 200)
@@ -1243,6 +1243,7 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
     model: `${provider} CLI (terminal)`,
     ledger: getOpsLedger(),
     executor: getOpsExecutor(),
+    t,
     abort,
     loadRunbook,
     readScript,
@@ -1285,10 +1286,11 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
     terminalOps.set(terminalId, s)
     return terminalOpsReply(s)
   } catch (e) {
-    const error = `Could not start the ops bridge: ${e instanceof Error ? e.message : String(e)}`
+    const detail = e instanceof Error ? e.message : String(e)
     removeOpsMcpConfig(dir)
-    await finishOpsRun(ctx, { ok: false, costUsd: 0, error })
-    return { ok: false, error }
+    // The ledger stays in English; the operator gets it in their language.
+    await finishOpsRun(ctx, { ok: false, costUsd: 0, error: `Could not start the ops bridge: ${detail}` })
+    return { ok: false, error: t('main.ipc.ops.bridgeFailed', { error: detail }) }
   }
 }
 
@@ -1306,7 +1308,7 @@ ipcMain.handle('ops:stop', async (_, terminalId: string): Promise<{ ok: boolean 
 // through the same gate, approvals and ledger as the model's call; only the plan is skipped.
 ipcMain.handle('ops:scripts', (_, terminalId: string) => {
   const s = typeof terminalId === 'string' ? terminalOps.get(terminalId) : undefined
-  if (!s || s.ctx.ended) return { ok: false, error: 'No live ops session on this terminal.' }
+  if (!s || s.ctx.ended) return { ok: false, error: t('main.ipc.ops.noLiveSession') }
   return { ok: true, scripts: listOperatorScripts(s.ctx) }
 })
 
@@ -1315,16 +1317,16 @@ ipcMain.handle('ops:scripts', (_, terminalId: string) => {
 // would run.
 ipcMain.handle('ops:script-source', async (_, terminalId: string, name: unknown) => {
   const s = typeof terminalId === 'string' ? terminalOps.get(terminalId) : undefined
-  if (!s || s.ctx.ended) return { ok: false, error: 'No live ops session on this terminal.' }
-  if (typeof name !== 'string') return { ok: false, error: 'A script name is required.' }
+  if (!s || s.ctx.ended) return { ok: false, error: t('main.ipc.ops.noLiveSession') }
+  if (typeof name !== 'string') return { ok: false, error: t('main.ipc.ops.scriptNameRequired') }
   const r = await s.ctx.readScript(s.ctx.runbook, name)
   return r.ok ? { ok: true, text: r.content.toString('utf-8'), sha256: r.sha256 } : { ok: false, error: r.error }
 })
 
 ipcMain.handle('ops:run-script', async (_, terminalId: string, name: unknown, hostId: unknown, args: unknown) => {
   const s = typeof terminalId === 'string' ? terminalOps.get(terminalId) : undefined
-  if (!s || s.ctx.ended) return { ok: false, error: 'No live ops session on this terminal.' }
-  if (typeof name !== 'string' || typeof hostId !== 'string') return { ok: false, error: 'A script name and a host are required.' }
+  if (!s || s.ctx.ended) return { ok: false, error: t('main.ipc.ops.noLiveSession') }
+  if (typeof name !== 'string' || typeof hostId !== 'string') return { ok: false, error: t('main.ipc.ops.scriptAndHostRequired') }
   const list = Array.isArray(args) && args.every((a) => typeof a === 'string') ? (args as string[]) : []
   const r = await runOperatorScript(s.session, name, hostId, list)
   return { ok: !r.isError, text: r.text }
@@ -1337,8 +1339,8 @@ ipcMain.handle('ops:run-script', async (_, terminalId: string, name: unknown, ho
 ipcMain.handle(
   'prompts:write',
   async (_, sessionId: string, text: string): Promise<{ ok: true; path: string } | { ok: false; error: string }> => {
-    if (typeof sessionId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) return { ok: false, error: 'Invalid session id.' }
-    if (typeof text !== 'string' || text.length > 512 * 1024) return { ok: false, error: 'Prompt text is missing or too long.' }
+    if (typeof sessionId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) return { ok: false, error: t('main.ipc.prompts.invalidSessionId') }
+    if (typeof text !== 'string' || text.length > 512 * 1024) return { ok: false, error: t('main.ipc.prompts.textInvalid') }
     try {
       const dir = path.join(app.getPath('userData'), 'prompts')
       await fs.promises.mkdir(dir, { recursive: true })
@@ -1352,7 +1354,7 @@ ipcMain.handle(
 )
 
 ipcMain.handle('ops:terminal-session', async (_, terminalId: string, intervention: unknown) => {
-  if (typeof terminalId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(terminalId)) return { ok: false, error: 'Invalid terminal id.' }
+  if (typeof terminalId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(terminalId)) return { ok: false, error: t('main.ipc.ops.invalidTerminalId') }
   const parsed = parseIntervention(intervention)
   if ('error' in parsed) return { ok: false, error: parsed.error }
   const pending = terminalOpsOpening.get(terminalId)
@@ -1563,6 +1565,7 @@ ipcMain.handle('config:set-ui', (_, prefs: UiPrefsPatch) => {
   if (currentLanguage() !== prevLanguage) {
     installApplicationMenu()
     refreshTrayMenu()
+    refreshJumpList()
   }
   return ui
 })
@@ -2198,12 +2201,12 @@ ipcMain.handle(
 
       const { text, costUsd, isError, errorText } = await collectText(stream)
 
-      if (isError) return { ok: false as const, error: errorText || 'The model returned an error.', costUsd }
+      if (isError) return { ok: false as const, error: errorText || t('main.ipc.ai.modelError'), costUsd }
       try {
         const data = extractJson(text)
         return { ok: true as const, data, costUsd }
       } catch {
-        return { ok: false as const, error: 'Could not parse the model’s response as JSON.', raw: text, costUsd }
+        return { ok: false as const, error: t('main.ipc.ai.unparsableJson'), raw: text, costUsd }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -2291,12 +2294,12 @@ ipcMain.handle(
         permissionMode: 'bypassPermissions'
       })
       const { text, costUsd, isError, errorText } = await collectText(stream)
-      if (isError) return { ok: false as const, error: errorText || 'The model returned an error.', costUsd, commitCount: commits.length }
+      if (isError) return { ok: false as const, error: errorText || t('main.ipc.ai.modelError'), costUsd, commitCount: commits.length }
       try {
         const data = extractJson(text)
         return { ok: true as const, data, costUsd, commitCount: commits.length }
       } catch {
-        return { ok: false as const, error: 'Could not parse the model’s response as JSON.', raw: text, costUsd, commitCount: commits.length }
+        return { ok: false as const, error: t('main.ipc.ai.unparsableJson'), raw: text, costUsd, commitCount: commits.length }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -2338,8 +2341,7 @@ ipcMain.handle(
     if (!picked) {
       return {
         ok: false as const,
-        error:
-          'No GitLab or GitHub MCP server was found (checked local and WSL). Configure one in the CLI, then try again.',
+        error: t('main.ipc.ai.noForgeMcp'),
         costUsd: 0
       }
     }
@@ -2360,14 +2362,14 @@ ipcMain.handle(
         cwd,
         timeoutMs: 180000
       })
-      if (!res.ok) return { ok: false as const, error: res.error || 'The WSL backfill run failed.', costUsd: 0 }
+      if (!res.ok) return { ok: false as const, error: res.error || t('main.ipc.ai.wslBackfillFailed'), costUsd: 0 }
       try {
         const parsed = extractJson(res.text)
         if (payload.probe) return { ok: true as const, data: { ...(parsed as object), forge }, costUsd: 0 }
         const { items, warning } = filterBackfillRows(parsed, payload.kind ?? 'issues', forge)
         return { ok: true as const, data: { ...(parsed as object), items, forge }, warning, costUsd: 0 }
       } catch {
-        return { ok: false as const, error: 'Could not parse the model’s response as JSON.', raw: res.text, costUsd: 0 }
+        return { ok: false as const, error: t('main.ipc.ai.unparsableJson'), raw: res.text, costUsd: 0 }
       }
     }
 
@@ -2403,14 +2405,14 @@ ipcMain.handle(
         mcpServers: mcpServers as Record<string, unknown>
       })
       const { text, costUsd, isError, errorText } = await collectText(stream)
-      if (isError) return { ok: false as const, error: errorText || 'The model returned an error.', costUsd }
+      if (isError) return { ok: false as const, error: errorText || t('main.ipc.ai.modelError'), costUsd }
       try {
         const data = extractJson(text)
         if (payload.probe) return { ok: true as const, data: { ...(data as object), forge }, costUsd }
         const { items, warning } = filterBackfillRows(data, payload.kind ?? 'issues', forge)
         return { ok: true as const, data: { ...(data as object), items, forge }, warning, costUsd }
       } catch {
-        return { ok: false as const, error: 'Could not parse the model’s response as JSON.', raw: text, costUsd }
+        return { ok: false as const, error: t('main.ipc.ai.unparsableJson'), raw: text, costUsd }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -2598,8 +2600,8 @@ ipcMain.handle('sessions:migration-info', async () => {
 ipcMain.handle('sessions:open-export', async (_, filePath?: string, reveal?: boolean) => {
   const target = typeof filePath === 'string' && filePath ? path.resolve(filePath) : chatExportsDir
   const rel = path.relative(chatExportsDir, target)
-  if (rel.startsWith('..') || path.isAbsolute(rel)) return { ok: false, error: 'Not a chat export.' }
-  if (!fs.existsSync(target)) return { ok: false, error: 'The file is gone.' }
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return { ok: false, error: t('main.ipc.exports.notChatExport') }
+  if (!fs.existsSync(target)) return { ok: false, error: t('main.ipc.exports.fileGone') }
   if (reveal) {
     shell.showItemInFolder(target)
     return { ok: true }

@@ -4,6 +4,9 @@ import * as path from 'path'
 import * as os from 'os'
 import { readJsonFile } from './json-file'
 import { UiPrefs, UiPrefsPatch, applyUiPatch, migrateUiPrefs, resolveUiPrefs } from './ui-prefs-pure'
+// i18n.ts reads getConfig() from here: a cycle, but both sides only call each other at
+// run time, never while the modules load.
+import { t } from './i18n'
 
 export type ProviderId = 'claude' | 'codex' | 'gemini'
 
@@ -250,7 +253,7 @@ function writeClaudeSettings(patch: Record<string, unknown>): WriteResult {
       // Tolerate a UTF-8 BOM (external tools like PowerShell 5.1 write one).
       if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1)
     } catch (e) {
-      return { ok: false, error: `Could not read settings.json: ${String(e)}` }
+      return { ok: false, error: t('main.config.settingsReadFailed', { error: String(e) }) }
     }
     try {
       existing = JSON.parse(raw)
@@ -259,9 +262,7 @@ function writeClaudeSettings(patch: Record<string, unknown>): WriteResult {
       // Refuse to overwrite — the user must fix it manually.
       return {
         ok: false,
-        error:
-          '~/.claude/settings.json exists but could not be parsed (it may contain comments or be malformed). ' +
-          'Please fix it manually before saving from this UI.'
+        error: t('main.config.settingsUnparsable')
       }
     }
   }
@@ -274,7 +275,7 @@ function writeClaudeSettings(patch: Record<string, unknown>): WriteResult {
   } catch (e) {
     // Clean up temp file on failure if it exists
     try { fs.unlinkSync(tmp) } catch { /* ignore */ }
-    return { ok: false, error: `Could not write settings.json: ${String(e)}` }
+    return { ok: false, error: t('main.config.settingsWriteFailed', { error: String(e) }) }
   }
 
   return { ok: true }
@@ -304,14 +305,14 @@ export function getClaudePermissions(): ClaudePermissions {
  */
 function coercePermissions(raw: unknown): ClaudePermissions {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new Error('Permissions must be an object')
+    throw new Error(t('main.config.permissions.notObject'))
   }
   const r = raw as Record<string, unknown>
   const toStringArray = (v: unknown, key: string): string[] => {
     if (v === undefined || v === null) return []
-    if (!Array.isArray(v)) throw new Error(`permissions.${key} must be an array`)
+    if (!Array.isArray(v)) throw new Error(t('main.config.permissions.notArray', { key }))
     return v.map((item, i) => {
-      if (typeof item !== 'string') throw new Error(`permissions.${key}[${i}] must be a string`)
+      if (typeof item !== 'string') throw new Error(t('main.config.permissions.itemNotString', { key, i }))
       return item.trim()
     }).filter(Boolean)
   }
@@ -376,25 +377,25 @@ export function getClaudeHooks(): ClaudeHooks {
  */
 function coerceHooks(raw: unknown): ClaudeHooks {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new Error('Hooks must be an object')
+    throw new Error(t('main.config.hooks.notObject'))
   }
   const r = raw as Record<string, unknown>
   const result: ClaudeHooks = {}
   for (const [event, entries] of Object.entries(r)) {
-    if (!Array.isArray(entries)) throw new Error(`hooks.${event} must be an array`)
+    if (!Array.isArray(entries)) throw new Error(t('main.config.hooks.eventNotArray', { event }))
     result[event] = entries.map((entry, i) => {
       if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-        throw new Error(`hooks.${event}[${i}] must be an object`)
+        throw new Error(t('main.config.hooks.entryNotObject', { event, i }))
       }
       const e = entry as Record<string, unknown>
-      if (!Array.isArray(e.hooks)) throw new Error(`hooks.${event}[${i}].hooks must be an array`)
+      if (!Array.isArray(e.hooks)) throw new Error(t('main.config.hooks.entryHooksNotArray', { event, i }))
       const cmds: ClaudeHookCommand[] = e.hooks.map((cmd, j) => {
         if (!cmd || typeof cmd !== 'object' || Array.isArray(cmd)) {
-          throw new Error(`hooks.${event}[${i}].hooks[${j}] must be an object`)
+          throw new Error(t('main.config.hooks.hookNotObject', { event, i, j }))
         }
         const c = cmd as Record<string, unknown>
         if (typeof c.command !== 'string' || !c.command.trim()) {
-          throw new Error(`hooks.${event}[${i}].hooks[${j}].command must be a non-empty string`)
+          throw new Error(t('main.config.hooks.commandEmpty', { event, i, j }))
         }
         // Spread first, then assert the two fields this validator is responsible for:
         // everything else the user had on the hook rides along untouched.

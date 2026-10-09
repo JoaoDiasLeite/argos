@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import { t } from './i18n'
 import * as fs from 'fs'
 import * as path from 'path'
 import { readJsonFile } from './json-file'
@@ -71,7 +72,7 @@ function buildAndSet(): void {
             program: exe,
             // --new-chat stays the argv, so a Jump List pinned by an older build still works.
             args: argsFor('--new-chat'),
-            title: 'New terminal',
+            title: t('main.jumplist.newTerminal'),
             description: 'Start a new Argos terminal',
             iconPath: exe,
             iconIndex: 0

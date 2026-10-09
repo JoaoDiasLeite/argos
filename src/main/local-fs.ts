@@ -1,5 +1,6 @@
 import * as fsp from 'fs/promises'
 import { classifyFileBuffer, isRootPath } from './local-fs-pure'
+import { t } from './i18n'
 
 export { isRootPath }
 
@@ -26,7 +27,7 @@ export async function readTextFile(
   filePath: string,
   maxBytes = DEFAULT_MAX_READ_BYTES
 ): Promise<{ ok: boolean; content?: string; tooLarge?: boolean; binary?: boolean; error?: string }> {
-  if (!isSafePath(filePath)) return { ok: false, error: 'Invalid path' }
+  if (!isSafePath(filePath)) return { ok: false, error: t('main.files.invalidPath') }
   try {
     // Stat first so an oversized file is never pulled into memory; classifyFileBuffer
     // re-checks the size, which also covers a file that grew between the stat and the read.
@@ -39,8 +40,8 @@ export async function readTextFile(
 }
 
 export async function fsWriteFile(filePath: string, content: string): Promise<{ ok: boolean; error?: string }> {
-  if (!isSafePath(filePath)) return { ok: false, error: 'Invalid path' }
-  if (typeof content !== 'string') return { ok: false, error: 'Invalid content' }
+  if (!isSafePath(filePath)) return { ok: false, error: t('main.files.invalidPath') }
+  if (typeof content !== 'string') return { ok: false, error: t('main.files.invalidContent') }
   try {
     await fsp.writeFile(filePath, content, 'utf-8')
     return { ok: true }
@@ -50,7 +51,7 @@ export async function fsWriteFile(filePath: string, content: string): Promise<{ 
 }
 
 export async function fsMkdir(dirPath: string): Promise<{ ok: boolean; error?: string }> {
-  if (!isSafePath(dirPath)) return { ok: false, error: 'Invalid path' }
+  if (!isSafePath(dirPath)) return { ok: false, error: t('main.files.invalidPath') }
   try {
     await fsp.mkdir(dirPath)
     return { ok: true }
@@ -60,7 +61,7 @@ export async function fsMkdir(dirPath: string): Promise<{ ok: boolean; error?: s
 }
 
 export async function fsRename(from: string, to: string): Promise<{ ok: boolean; error?: string }> {
-  if (!isSafePath(from) || !isSafePath(to)) return { ok: false, error: 'Invalid path' }
+  if (!isSafePath(from) || !isSafePath(to)) return { ok: false, error: t('main.files.invalidPath') }
   try {
     await fsp.rename(from, to)
     return { ok: true }
@@ -70,8 +71,8 @@ export async function fsRename(from: string, to: string): Promise<{ ok: boolean;
 }
 
 export async function fsDelete(targetPath: string): Promise<{ ok: boolean; error?: string }> {
-  if (!isSafePath(targetPath)) return { ok: false, error: 'Invalid path' }
-  if (isRootPath(targetPath)) return { ok: false, error: 'Refusing to delete a filesystem root' }
+  if (!isSafePath(targetPath)) return { ok: false, error: t('main.files.invalidPath') }
+  if (isRootPath(targetPath)) return { ok: false, error: t('main.files.refuseRootDelete') }
   try {
     const st = await fsp.stat(targetPath)
     if (st.isDirectory()) {

@@ -4,6 +4,7 @@ import * as path from 'path'
 import { Client, SFTPWrapper, Stats } from 'ssh2'
 import { getHost, buildConnectConfig } from './ssh'
 import { isSafeRemotePath, parseHistoryLines, SingleFlightCache } from './sftp-pure'
+import { t } from './i18n'
 
 export { isSafeRemotePath, parseHistoryLines }
 
@@ -208,7 +209,7 @@ export async function sftpWrite(
   filePath: string,
   content: string
 ): Promise<{ ok: boolean; error?: string }> {
-  if (!isSafeRemotePath(filePath)) return { ok: false, error: 'Invalid remote path' }
+  if (!isSafeRemotePath(filePath)) return { ok: false, error: t('main.sftp.invalidRemotePath') }
   const res = await getSession(hostId)
   if (!res.ok) return { ok: false, error: res.error }
   return new Promise((resolve) => {
@@ -219,7 +220,7 @@ export async function sftpWrite(
 }
 
 export async function sftpMkdir(hostId: string, dir: string): Promise<{ ok: boolean; error?: string }> {
-  if (!isSafeRemotePath(dir)) return { ok: false, error: 'Invalid remote path' }
+  if (!isSafeRemotePath(dir)) return { ok: false, error: t('main.sftp.invalidRemotePath') }
   const res = await getSession(hostId)
   if (!res.ok) return { ok: false, error: res.error }
   return new Promise((resolve) => {
@@ -232,7 +233,7 @@ export async function sftpRename(
   from: string,
   to: string
 ): Promise<{ ok: boolean; error?: string }> {
-  if (!isSafeRemotePath(from) || !isSafeRemotePath(to)) return { ok: false, error: 'Invalid remote path' }
+  if (!isSafeRemotePath(from) || !isSafeRemotePath(to)) return { ok: false, error: t('main.sftp.invalidRemotePath') }
   const res = await getSession(hostId)
   if (!res.ok) return { ok: false, error: res.error }
   return new Promise((resolve) => {
@@ -241,7 +242,7 @@ export async function sftpRename(
 }
 
 export async function sftpDelete(hostId: string, targetPath: string): Promise<{ ok: boolean; error?: string }> {
-  if (!isSafeRemotePath(targetPath)) return { ok: false, error: 'Invalid remote path' }
+  if (!isSafeRemotePath(targetPath)) return { ok: false, error: t('main.sftp.invalidRemotePath') }
   const res = await getSession(hostId)
   if (!res.ok) return { ok: false, error: res.error }
   const sftp = res.session.sftp
@@ -249,14 +250,14 @@ export async function sftpDelete(hostId: string, targetPath: string): Promise<{ 
   const stat = await new Promise<Stats | null>((resolve) => {
     sftp.stat(targetPath, (err, st) => resolve(err ? null : st))
   })
-  if (!stat) return { ok: false, error: 'File not found' }
+  if (!stat) return { ok: false, error: t('main.sftp.fileNotFound') }
 
   return new Promise((resolve) => {
     if (stat.isDirectory()) {
       // v1: surface "directory not empty" rather than silently recursing — a "delete
       // folder and contents" confirm flow is left as a follow-up (see plan notes).
       sftp.rmdir(targetPath, (err) =>
-        resolve(err ? { ok: false, error: `${err.message} (directory may not be empty)` } : { ok: true })
+        resolve(err ? { ok: false, error: t('main.sftp.dirMayNotBeEmpty', { error: err.message }) } : { ok: true })
       )
     } else {
       sftp.unlink(targetPath, (err) => resolve(err ? { ok: false, error: err.message } : { ok: true }))
@@ -268,12 +269,12 @@ export async function sftpDownload(
   hostId: string,
   remotePath: string
 ): Promise<{ ok: boolean; savedTo?: string; canceled?: boolean; error?: string }> {
-  if (!isSafeRemotePath(remotePath)) return { ok: false, error: 'Invalid remote path' }
+  if (!isSafeRemotePath(remotePath)) return { ok: false, error: t('main.sftp.invalidRemotePath') }
   const res = await getSession(hostId)
   if (!res.ok) return { ok: false, error: res.error }
 
   const dlg = await dialog.showSaveDialog({
-    title: 'Save file',
+    title: t('main.sftp.dialog.save'),
     defaultPath: path.posix.basename(remotePath)
   })
   if (dlg.canceled || !dlg.filePath) return { ok: true, canceled: true }
@@ -310,14 +311,14 @@ export async function sftpUpload(
   remoteDir: string,
   localPaths?: string[]
 ): Promise<{ ok: boolean; uploaded?: string[]; error?: string }> {
-  if (!isSafeRemotePath(remoteDir)) return { ok: false, error: 'Invalid remote path' }
+  if (!isSafeRemotePath(remoteDir)) return { ok: false, error: t('main.sftp.invalidRemotePath') }
   const res = await getSession(hostId)
   if (!res.ok) return { ok: false, error: res.error }
 
   let locals = localPaths ?? []
   if (!localPaths) {
     const dlg = await dialog.showOpenDialog({
-      title: 'Upload files',
+      title: t('main.sftp.dialog.upload'),
       properties: ['openFile', 'multiSelections']
     })
     if (dlg.canceled || dlg.filePaths.length === 0) return { ok: true, uploaded: [] }
@@ -331,7 +332,7 @@ export async function sftpUpload(
     if (await putRecursive(res.session.sftp, local, remote)) uploaded.push(remote)
     else failed.push(path.basename(local))
   }
-  if (failed.length > 0) return { ok: false, uploaded, error: `Upload failed: ${failed.join(', ')}` }
+  if (failed.length > 0) return { ok: false, uploaded, error: t('main.sftp.uploadFailed', { names: failed.join(', ') }) }
   return { ok: true, uploaded }
 }
 
@@ -345,7 +346,7 @@ export async function sftpHistory(hostId: string): Promise<{ ok: boolean; comman
   const home = await new Promise<string | null>((resolve) => {
     sftp.realpath('.', (err, absPath) => resolve(err ? null : absPath))
   })
-  if (!home) return { ok: false, error: 'Could not resolve home directory' }
+  if (!home) return { ok: false, error: t('main.files.noHomeDir') }
 
   for (const name of HISTORY_FILES) {
     const filePath = path.posix.join(home, name)

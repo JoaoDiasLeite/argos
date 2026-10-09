@@ -25,6 +25,7 @@ import {
 // consumes; a Codex project must be indistinguishable from a Claude Code one at the
 // IPC boundary or the view would need a second code path for it.
 import type { CCProject, CCSessionMeta, CCTranscriptMessage } from './claude-data'
+import type { TFunction } from '../shared/i18n'
 
 /**
  * Reading Codex's own transcripts, in the shapes `ccListProjects` / `ccListSessions`
@@ -523,11 +524,12 @@ export async function codexDeleteSession(
 export async function codexRenameSession(
   src: CodexSource,
   sessionId: string,
-  raw: unknown
+  raw: unknown,
+  t?: TFunction
 ): Promise<FileOpResult> {
   let title: string
   try {
-    title = normalizeTitle(raw)
+    title = normalizeTitle(raw, t)
   } catch (e) {
     return { ok: false, error: 'failed', message: (e as Error).message }
   }
@@ -565,14 +567,15 @@ export async function codexArchiveSession(
  */
 export async function codexUnarchiveSession(
   src: CodexSource,
-  sessionId: string
+  sessionId: string,
+  t: TFunction
 ): Promise<FileOpResult> {
   const file = await rolloutFileFor(src, sessionId, true)
   if (!file) return { ok: false, error: 'not-found' }
   const name = path.basename(file)
   const segments = rolloutDateSegments(name)
   if (!segments) {
-    return { ok: false, error: 'failed', message: 'This transcript has an unrecognised name.' }
+    return { ok: false, error: 'failed', message: t('main.sessions.codex.unrecognisedName') }
   }
   const res = await moveTranscript(file, path.join(src.sessionsDir, ...segments, name))
   if (res.ok) invalidateAfterWrite()
@@ -597,6 +600,7 @@ export async function codexMoveSession(
   src: CodexSource,
   sessionId: string,
   toCwd: string,
+  t: TFunction,
   archived = false
 ): Promise<FileOpResult> {
   const file = await rolloutFileFor(src, sessionId, archived)
@@ -612,7 +616,7 @@ export async function codexMoveSession(
       return {
         ok: false,
         error: 'failed',
-        message: 'This transcript has no header saying where it ran, so it cannot be refiled.'
+        message: t('main.sessions.codex.noHeader')
       }
     }
     invalidateAfterWrite()

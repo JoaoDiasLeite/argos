@@ -1,5 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
+import { makeT, type TFunction } from '../shared/i18n'
 
 /**
  * The file operations behind counting and deleting a project directory, taking
@@ -68,9 +69,9 @@ export function countTranscripts(dir: string): ProjectContents {
  * Refuses an existing destination rather than merging into it: two project trees
  * interleaved is not something a rename can undo.
  */
-export async function renameDir(from: string, to: string): Promise<ProjectOpResult> {
+export async function renameDir(from: string, to: string, t: TFunction = makeT('en')): Promise<ProjectOpResult> {
   if (!fs.existsSync(from)) return { ok: false, error: 'not-found' }
-  if (fs.existsSync(to)) return { ok: false, error: 'failed', message: `already exists: ${to}` }
+  if (fs.existsSync(to)) return { ok: false, error: 'failed', message: t('main.projects.move.alreadyExists', { path: to }) }
   try {
     await fs.promises.rename(from, to)
     return { ok: true }

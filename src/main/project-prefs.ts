@@ -2,6 +2,7 @@ import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { readJsonFile, writeJsonFileAtomic } from './json-file'
+import { t } from './i18n'
 import { rekeyProjectKeys, rekeyProjectNames, rekeyProjectPath } from './project-move-pure'
 import {
   getArchivedProjects,
@@ -93,17 +94,17 @@ export function rekeyProjectPrefs(args: {
   try {
     setFavoriteProjects(rekeyProjectKeys(getFavoriteProjects(), fromKey, toKey))
   } catch (e) {
-    warnings.push(`pinned projects: ${(e as Error).message}`)
+    warnings.push(t('main.projects.prefs.pinned', { error: (e as Error).message }))
   }
   try {
     setArchivedProjects(rekeyProjectKeys(getArchivedProjects(), fromKey, toKey))
   } catch (e) {
-    warnings.push(`archived projects: ${(e as Error).message}`)
+    warnings.push(t('main.projects.prefs.archived', { error: (e as Error).message }))
   }
   try {
     setProjectNames(rekeyProjectNames(getProjectNames(), fromPath, toPath))
   } catch (e) {
-    warnings.push(`project names: ${(e as Error).message}`)
+    warnings.push(t('main.projects.prefs.names', { error: (e as Error).message }))
   }
   for (const dir of pathRecordDirs()) {
     try {

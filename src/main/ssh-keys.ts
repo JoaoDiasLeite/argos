@@ -2,6 +2,7 @@ import { spawn } from 'child_process'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import { t } from './i18n'
 
 /**
  * SSH key discovery & generation for the Remote view.
@@ -136,7 +137,7 @@ export function readPublicKey(privatePath: string): string | null {
 export function generateKey(name: string, comment?: string): Promise<GenerateKeyResult> {
   return new Promise((resolve) => {
     if (!/^[A-Za-z0-9_-]+$/.test(name)) {
-      return resolve({ ok: false, error: 'Key name may only contain letters, numbers, "_" and "-".' })
+      return resolve({ ok: false, error: t('main.ssh.keys.invalidName') })
     }
 
     const dir = sshDir()
@@ -148,7 +149,7 @@ export function generateKey(name: string, comment?: string): Promise<GenerateKey
 
     const target = path.join(dir, name)
     if (fs.existsSync(target) || fs.existsSync(`${target}.pub`)) {
-      return resolve({ ok: false, error: `A key named "${name}" already exists in ~/.ssh.` })
+      return resolve({ ok: false, error: t('main.ssh.keys.exists', { name }) })
     }
 
     const cleanComment = (comment && comment.trim()) || `argos@${os.hostname()}`
@@ -168,13 +169,13 @@ export function generateKey(name: string, comment?: string): Promise<GenerateKey
         ok: false,
         error:
           e.code === 'ENOENT'
-            ? 'ssh-keygen not found. Install OpenSSH client and try again.'
+            ? t('main.ssh.keys.keygenMissing')
             : e.message
       })
     })
     child.on('close', (code) => {
       if (code !== 0) {
-        return resolve({ ok: false, error: stderr.trim() || `ssh-keygen exited with code ${code}.` })
+        return resolve({ ok: false, error: stderr.trim() || t('main.ssh.keys.keygenExit', { code: String(code) }) })
       }
       const info: SshKeyInfo = { name, privatePath: target }
       const pubPath = `${target}.pub`

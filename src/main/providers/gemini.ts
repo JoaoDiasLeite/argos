@@ -5,9 +5,9 @@ import * as path from 'path'
 import { costFromTokens } from './cost'
 import { resolveGemini } from './cli-resolve'
 import { ZERO_USAGE } from './types'
+import { t } from '../i18n'
 import type { AiEngine, EngineMessage, EngineRequest } from './types'
 
-const NOT_FOUND_MESSAGE = 'Gemini CLI not found. Install with: npm install -g @google/gemini-cli'
 
 /**
  * Gemini engine — spawns `gemini --output-format stream-json` (with `--resume
@@ -217,7 +217,7 @@ async function* runGeminiProcess(req: EngineRequest, prompt: string): AsyncGener
           }
 
           case 'error':
-            yield { type: 'error', message: obj.message ?? 'Gemini error.' }
+            yield { type: 'error', message: obj.message ?? t('main.providers.gemini.error') }
             break
         }
       }
@@ -227,13 +227,13 @@ async function* runGeminiProcess(req: EngineRequest, prompt: string): AsyncGener
     cleanup()
     if (spawnErr) {
       const isNotFound = spawnErr.code === 'ENOENT'
-      yield { type: 'error', message: isNotFound ? NOT_FOUND_MESSAGE : spawnErr.message }
+      yield { type: 'error', message: isNotFound ? t('main.providers.gemini.notFound') : spawnErr.message }
     } else if (!sawResult) {
       yield {
         type: 'result',
         sessionId,
         isError: true,
-        errorText: stderrBuf.trim() || `Gemini exited with code ${code}.`,
+        errorText: stderrBuf.trim() || t('main.providers.gemini.exited', { code: String(code) }),
         costUsd: 0,
         usage: ZERO_USAGE
       }
@@ -245,7 +245,7 @@ export const geminiEngine: AiEngine = {
   id: 'gemini',
   async *run(req: EngineRequest) {
     if (typeof req.prompt !== 'string') {
-      yield { type: 'error', message: 'Gemini engine only supports plain-text prompts right now.' }
+      yield { type: 'error', message: t('main.providers.gemini.textOnly') }
       return
     }
     yield* runGeminiProcess(req, req.prompt)

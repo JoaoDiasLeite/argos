@@ -2,6 +2,7 @@ import { execFile, spawn } from 'child_process'
 import * as fs from 'fs'
 import { getHiddenDistros } from './store'
 import { parseHistoryLines } from './sftp-pure'
+import { t } from './i18n'
 
 export interface WslDistro {
   name: string
@@ -200,7 +201,7 @@ const MIN_NODE_MAJOR = 18
  * A cold distro has to boot first, hence the same generous timeout as the Claude probe.
  */
 export function testDistro(distro: string): Promise<{ ok: boolean; message: string }> {
-  if (!isWindows) return Promise.resolve({ ok: false, message: 'WSL is only available on Windows' })
+  if (!isWindows) return Promise.resolve({ ok: false, message: t('main.wsl.windowsOnly') })
   return new Promise((resolve) => {
     const startedAt = Date.now()
     execFile(
@@ -210,11 +211,11 @@ export function testDistro(distro: string): Promise<{ ok: boolean; message: stri
       (err, stdout, stderr) => {
         const who = (stdout || '').trim()
         if (who) {
-          return resolve({ ok: true, message: `Started as ${who} in ${Date.now() - startedAt} ms` })
+          return resolve({ ok: true, message: t('main.wsl.startedAs', { who, ms: Date.now() - startedAt }) })
         }
         resolve({
           ok: false,
-          message: (stderr || '').trim() || (err ? err.message : 'Distro did not respond')
+          message: (stderr || '').trim() || (err ? err.message : t('main.wsl.noResponse'))
         })
       }
     )
@@ -227,7 +228,7 @@ export function testDistro(distro: string): Promise<{ ok: boolean; message: stri
  * (see testDistro).
  */
 export function testDistroClaude(distro: string): Promise<{ ok: boolean; message: string }> {
-  if (!isWindows) return Promise.resolve({ ok: false, message: 'WSL is only available on Windows' })
+  if (!isWindows) return Promise.resolve({ ok: false, message: t('main.wsl.windowsOnly') })
   return new Promise((resolve) => {
     // Probe Node and Claude together so we can blame an old/missing Node for a CLI that
     // won't start, rather than surfacing a raw SyntaxError stack trace.
@@ -260,31 +261,33 @@ export function testDistroClaude(distro: string): Promise<{ ok: boolean; message
         if (nodeMissing) {
           return resolve({
             ok: false,
-            message: 'Node.js not found in this distro. Install Node 18+ and Claude Code (npm i -g @anthropic-ai/claude-code).'
+            message: t('main.wsl.nodeMissing')
           })
         }
         if (nodeMajor !== null && nodeMajor < MIN_NODE_MAJOR) {
           return resolve({
             ok: false,
-            message: `Node ${nodeOut} is too old — Claude Code needs Node ${MIN_NODE_MAJOR}+. Upgrade Node in this distro, then reinstall: npm i -g @anthropic-ai/claude-code`
+            message: t('main.wsl.nodeTooOld', { version: nodeOut, min: MIN_NODE_MAJOR })
           })
         }
         if (looksBroken) {
           return resolve({
             ok: false,
-            message: `Claude Code failed to start${!nodeMissing ? ` (Node ${nodeOut})` : ''}. This usually means Node is too old — Claude Code needs Node ${MIN_NODE_MAJOR}+.`
+            message: !nodeMissing
+              ? t('main.wsl.claudeBrokenWithNode', { version: nodeOut, min: MIN_NODE_MAJOR })
+              : t('main.wsl.claudeBroken', { min: MIN_NODE_MAJOR })
           })
         }
         const notFound = !claudeOut || /not found|no such file|command not found/i.test(claudeOut)
         if (notFound) {
           return resolve({
             ok: false,
-            message: 'claude not found in this distro. Install it: npm i -g @anthropic-ai/claude-code'
+            message: t('main.wsl.claudeNotFound')
           })
         }
         resolve({
           ok: false,
-          message: claudeOut.slice(0, 300) || (stderr || '').trim() || (err ? err.message : 'claude not found in this distro')
+          message: claudeOut.slice(0, 300) || (stderr || '').trim() || (err ? err.message : t('main.wsl.claudeNotFoundShort'))
         })
       }
     )
@@ -365,7 +368,7 @@ export function runWslOneShot(
   prompt: string,
   opts: { model?: string; allowedTools?: string[]; cwd?: string; timeoutMs?: number }
 ): Promise<{ ok: boolean; text: string; error?: string }> {
-  if (!isWindows) return Promise.resolve({ ok: false, text: '', error: 'WSL is only available on Windows' })
+  if (!isWindows) return Promise.resolve({ ok: false, text: '', error: t('main.wsl.windowsOnly') })
   return new Promise((resolve) => {
     const flags = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'bypassPermissions']
     if (opts.model) flags.push('--model', opts.model)
@@ -387,7 +390,7 @@ export function runWslOneShot(
     }
     const timer = setTimeout(() => {
       child.kill()
-      finish({ ok: false, text: '', error: `Timed out after ${(opts.timeoutMs ?? 120000) / 1000}s` })
+      finish({ ok: false, text: '', error: t('main.wsl.timedOut', { s: (opts.timeoutMs ?? 120000) / 1000 }) })
     }, opts.timeoutMs ?? 120000)
 
     child.stdout?.on('data', (d: Buffer) => (out += d.toString('utf8')))
@@ -418,7 +421,7 @@ export function runWslOneShot(
       }
       if (resultErr) return finish({ ok: false, text, error: resultErr })
       if (code && code !== 0 && !text.trim()) {
-        return finish({ ok: false, text: '', error: stderr.trim().slice(0, 500) || `claude exited with code ${code}` })
+        return finish({ ok: false, text: '', error: stderr.trim().slice(0, 500) || t('main.wsl.claudeExited', { code }) })
       }
       finish({ ok: true, text })
     })
@@ -436,9 +439,9 @@ const HISTORY_FILES = ['.bash_history', '.zsh_history']
  * (no shell string built from user input). Reuses parseHistoryLines (sftp-pure.ts) to parse.
  */
 export async function wslHistory(distro: string): Promise<{ ok: boolean; commands?: string[]; error?: string }> {
-  if (!isWindows) return { ok: false, error: 'WSL is only available on Windows' }
+  if (!isWindows) return { ok: false, error: t('main.wsl.windowsOnly') }
   const home = await wslHome(distro)
-  if (!home) return { ok: false, error: 'Could not resolve home directory' }
+  if (!home) return { ok: false, error: t('main.files.noHomeDir') }
 
   for (const name of HISTORY_FILES) {
     const filePath = `${home}/${name}`

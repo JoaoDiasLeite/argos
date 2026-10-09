@@ -16,6 +16,7 @@ import {
 } from './codex-data'
 import { appendTitle, deleteTranscript, FileOpResult, moveTranscript } from './session-files'
 import { forgetCodexSessionTags } from './store'
+import { t } from './i18n'
 
 /**
  * Archive, unarchive, rename, move and delete a conversation, addressed the way the
@@ -62,7 +63,7 @@ export async function archiveSession(sourceId: string, encodedDir: string, sessi
 
 export async function unarchiveSession(sourceId: string, encodedDir: string, sessionId: string) {
   const codex = await resolveCodexFor(sourceId)
-  if (codex) return codexUnarchiveSession(codex, sessionId)
+  if (codex) return codexUnarchiveSession(codex, sessionId, t)
   return shuffle(sourceId, encodedDir, sessionId, true)
 }
 
@@ -94,10 +95,10 @@ export async function renameSession(
   archived = false
 ): Promise<LifecycleResult> {
   const codex = await resolveCodexFor(sourceId)
-  if (codex) return codexRenameSession(codex, sessionId, title)
+  if (codex) return codexRenameSession(codex, sessionId, title, t)
   const file = await safeSessionPath(sourceId, encodedDir, sessionId, archived)
   if (!file) return { ok: false, error: 'not-found' }
-  return appendTitle(file, sessionId, title)
+  return appendTitle(file, sessionId, title, t)
 }
 
 /**
@@ -144,13 +145,13 @@ export async function moveSession(
   if (codex) {
     const toCwd = await projectRealPathById(toSourceId, toEncodedDir)
     if (!toCwd) return { ok: false, error: 'not-found' }
-    return codexMoveSession(codex, sessionId, toCwd, archived)
+    return codexMoveSession(codex, sessionId, toCwd, t, archived)
   }
   if (await resolveCodexFor(toSourceId)) {
     return {
       ok: false,
       error: 'failed',
-      message: 'Codex has no project directory to move a Claude Code conversation into.'
+      message: t('main.sessions.codex.noProjectDir')
     }
   }
   const from = await safeSessionPath(sourceId, encodedDir, sessionId, archived)

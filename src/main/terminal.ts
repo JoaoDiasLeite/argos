@@ -4,6 +4,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { buildSubprocessEnv } from './auth'
+import { t } from './i18n'
 import { accountConfigDir, resolveClaudeBin } from './accounts'
 import { providerAccountEnv } from './provider-accounts'
 import { resolveCodex } from './providers/cli-resolve'
@@ -15,6 +16,7 @@ import {
   claudeChain,
   claudeOpsFlags,
   isOpsLaunch,
+  OPS_LOCAL_ONLY_ERROR,
   opsLaunchRefusal,
   parseWslUnc,
   quoteArgs,
@@ -338,14 +340,16 @@ export function createTerminal(
   buffer?: string
   error?: string
 } {
-  if (!isSafeId(id)) return { ok: false, error: `Invalid terminal id: ${String(id)}` }
+  if (!isSafeId(id)) return { ok: false, error: t('main.terminal.invalidId', { id: String(id) }) }
   // An ops chat must never fall back to an ungated CLI: a malformed launch, or one in a
   // shell the relay cannot reach Argos from, is refused outright.
   if (opts.ops !== undefined && !isOpsLaunch(opts.ops)) {
-    return { ok: false, error: 'Invalid ops launch for this terminal.' }
+    return { ok: false, error: t('main.terminal.invalidOpsLaunch') }
   }
   const opsRefusal = opsLaunchRefusal(opts, process.platform)
-  if (opsRefusal) return { ok: false, error: opsRefusal }
+  if (opsRefusal) {
+    return { ok: false, error: opsRefusal === OPS_LOCAL_ONLY_ERROR ? t('main.terminal.opsLocalOnly') : opsRefusal }
+  }
   const ops = opts.ops
 
   const pendingKill = pendingKills.get(id)
@@ -423,7 +427,7 @@ export function createTerminal(
       if (!ssh) {
         return {
           ok: false,
-          error: `No stored SSH host for id ${opts.remoteHostId} — it may have been deleted in Servers.`
+          error: t('main.terminal.noSshHost', { id: opts.remoteHostId })
         }
       }
       shell = ssh.shell
@@ -468,11 +472,11 @@ export function createTerminal(
           try {
             toml = fs.readFileSync(ops.mcpConfigPath, 'utf8')
           } catch {
-            return { ok: false, error: `Cannot read the ops config at ${ops.mcpConfigPath}.` }
+            return { ok: false, error: t('main.terminal.opsConfigUnreadable', { path: ops.mcpConfigPath }) }
           }
           const overlay = prepareCodexHomeFromToml(toml, env.CODEX_HOME || undefined, { persistAuth: true })
           if (!overlay.codexHome) {
-            return { ok: false, error: 'Could not prepare the Codex home for this ops terminal.' }
+            return { ok: false, error: t('main.terminal.codexHomeFailed') }
           }
           env.CODEX_HOME = overlay.codexHome
           opsCleanups.set(id, overlay.cleanup)
@@ -596,7 +600,7 @@ export function createTerminal(
     // to remove it — do it here.
     forgetOps(id)
     const msg = err instanceof Error ? err.message.trim() : String(err)
-    const reason = msg.replace(/:$/, '') || 'the shell could not be spawned'
+    const reason = msg.replace(/:$/, '') || t('main.terminal.spawnFailed')
     return { ok: false, error: attempted ? `${reason} (${attempted})` : reason }
   }
 }

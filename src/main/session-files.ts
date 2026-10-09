@@ -1,5 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
+import { makeT, type TFunction } from '../shared/i18n'
 
 /**
  * The file operations behind archive / unarchive / rename / move / delete, taking
@@ -64,13 +65,13 @@ export const MAX_TITLE = 200
 
 export class InvalidTitleError extends Error {}
 
-export function normalizeTitle(raw: unknown): string {
+export function normalizeTitle(raw: unknown, t: TFunction = makeT('en')): string {
   const clean = String(raw ?? '')
     .replace(/\s+/g, ' ')
     .trim()
-  if (!clean) throw new InvalidTitleError('A title cannot be empty.')
+  if (!clean) throw new InvalidTitleError(t('main.sessions.title.empty'))
   if (clean.length > MAX_TITLE) {
-    throw new InvalidTitleError(`Keep the title under ${MAX_TITLE} characters.`)
+    throw new InvalidTitleError(t('main.sessions.title.tooLong', { max: MAX_TITLE }))
   }
   return clean
 }
@@ -85,10 +86,10 @@ export function normalizeTitle(raw: unknown): string {
  * writes learned: validation at the write point cannot be bypassed by a second
  * caller that assembles the line itself.
  */
-export async function appendTitle(file: string, sessionId: string, raw: unknown): Promise<FileOpResult> {
+export async function appendTitle(file: string, sessionId: string, raw: unknown, t: TFunction = makeT('en')): Promise<FileOpResult> {
   let title: string
   try {
-    title = normalizeTitle(raw)
+    title = normalizeTitle(raw, t)
   } catch (e) {
     return { ok: false, error: 'failed', message: (e as Error).message }
   }

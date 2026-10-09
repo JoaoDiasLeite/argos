@@ -4,6 +4,7 @@ import * as path from 'path'
 import { Client, ConnectConfig } from 'ssh2'
 import { randomUUID } from 'crypto'
 import { verifyHostKey } from './ssh-trust'
+import { t } from './i18n'
 import { cleanHostFields, decodeHostsFile, refuseOverwriteMessage, type HostsRead } from './ssh-host-pure'
 
 export type SshAuthType = 'password' | 'key' | 'agent'
@@ -62,11 +63,11 @@ export type HostsWriteResult = { ok: true; hosts: SshHostPublic[] } | { ok: fals
  */
 function updateHosts(mutate: (hosts: SshHost[]) => SshHost[]): HostsWriteResult {
   const res = readHosts()
-  if (!res.ok) return { ok: false, error: refuseOverwriteMessage(hostsPath, res.error) }
+  if (!res.ok) return { ok: false, error: refuseOverwriteMessage(t, hostsPath, res.error) }
   try {
     writeHosts(mutate(res.hosts))
   } catch (e) {
-    return { ok: false, error: `Could not save the hosts file: ${e instanceof Error ? e.message : String(e)}` }
+    return { ok: false, error: t('main.ssh.hostsSaveFailed', { error: e instanceof Error ? e.message : String(e) }) }
   }
   return { ok: true, hosts: listHosts() }
 }
@@ -176,7 +177,7 @@ export function getSshTerminalCommand(
  */
 export function testConnection(id: string): Promise<{ ok: boolean; message: string }> {
   const host = getHost(id)
-  if (!host) return Promise.resolve({ ok: false, message: 'Host not found' })
+  if (!host) return Promise.resolve({ ok: false, message: t('main.ssh.hostNotFound') })
 
   return new Promise((resolve) => {
     const conn = new Client()
@@ -191,7 +192,7 @@ export function testConnection(id: string): Promise<{ ok: boolean; message: stri
     conn.on('ready', () =>
       done({
         ok: true,
-        message: `Connected as ${host.username}@${host.host}:${host.port} in ${Date.now() - startedAt} ms`
+        message: t('main.ssh.connectedAs', { user: host.username, host: host.host, port: host.port, ms: Date.now() - startedAt })
       })
     )
     conn.on('error', (e) => done({ ok: false, message: e.message }))
@@ -210,7 +211,7 @@ export function testConnection(id: string): Promise<{ ok: boolean; message: stri
  */
 export function testClaude(id: string): Promise<{ ok: boolean; message: string }> {
   const host = getHost(id)
-  if (!host) return Promise.resolve({ ok: false, message: 'Host not found' })
+  if (!host) return Promise.resolve({ ok: false, message: t('main.ssh.hostNotFound') })
 
   return new Promise((resolve) => {
     const conn = new Client()
@@ -224,7 +225,7 @@ export function testClaude(id: string): Promise<{ ok: boolean; message: string }
     conn.on('ready', () => {
       const claude = host.claudePath || 'claude'
       conn.exec(`${claude} --version`, (err, stream) => {
-        if (err) return done({ ok: false, message: `Connected, but: ${err.message}` })
+        if (err) return done({ ok: false, message: t('main.ssh.connectedBut', { error: err.message }) })
         let out = ''
         stream.on('data', (d: Buffer) => (out += d.toString()))
         stream.stderr.on('data', (d: Buffer) => (out += d.toString()))
@@ -238,10 +239,10 @@ export function testClaude(id: string): Promise<{ ok: boolean; message: string }
           if (/not found|no such file/i.test(text)) {
             return done({
               ok: false,
-              message: `claude not found on this host (${host.claudePath || 'claude'}). Install it: npm i -g @anthropic-ai/claude-code`
+              message: t('main.ssh.claudeNotFound', { path: host.claudePath || 'claude' })
             })
           }
-          done({ ok: false, message: text.slice(0, 300) || 'claude produced no output' })
+          done({ ok: false, message: text.slice(0, 300) || t('main.ssh.claudeNoOutput') })
         })
       })
     })

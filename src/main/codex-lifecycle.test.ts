@@ -15,6 +15,9 @@ import {
   scanCodexRollouts,
   CodexSource
 } from './codex-data'
+import { makeT } from '../shared/i18n'
+
+const t = makeT('en')
 
 /**
  * The lifecycle operations against a real CODEX_HOME laid out the way Codex lays one
@@ -114,7 +117,7 @@ describe('codexArchiveSession / codexUnarchiveSession', () => {
     expect(fs.existsSync(archivedFile)).toBe(true)
     expect(fs.existsSync(original)).toBe(false)
 
-    expect(await codexUnarchiveSession(src, SESSION_A)).toEqual({ ok: true })
+    expect(await codexUnarchiveSession(src, SESSION_A, t)).toEqual({ ok: true })
     expect(fs.existsSync(original)).toBe(true)
     expect(fs.existsSync(archivedFile)).toBe(false)
   })
@@ -161,7 +164,7 @@ describe('codexMoveSession', () => {
     const file = writeRollout('2026-09-15T14-30-56', SESSION_A, 'C:\\dev\\proj')
     const before = fs.readFileSync(file, 'utf-8').split('\n')
 
-    expect(await codexMoveSession(src, SESSION_A, 'C:\\dev\\other')).toEqual({ ok: true })
+    expect(await codexMoveSession(src, SESSION_A, 'C:\\dev\\other', t)).toEqual({ ok: true })
 
     const after = fs.readFileSync(file, 'utf-8').split('\n')
     expect(JSON.parse(after[0]).payload.cwd).toBe('C:\\dev\\other')
@@ -173,7 +176,7 @@ describe('codexMoveSession', () => {
 
   it('files the conversation under the project it was moved to', async () => {
     writeRollout('2026-09-15T14-30-56', SESSION_A, 'C:\\dev\\proj')
-    await codexMoveSession(src, SESSION_A, 'C:\\dev\\other')
+    await codexMoveSession(src, SESSION_A, 'C:\\dev\\other', t)
     invalidateCodexScan()
     expect((await codexSessions(src, 'C--dev-proj')).length).toBe(0)
     expect((await codexSessions(src, 'C--dev-other')).map((s) => s.sessionId)).toEqual([SESSION_A])
@@ -183,7 +186,7 @@ describe('codexMoveSession', () => {
     const file = writeRollout('2026-09-15T14-30-56', SESSION_A, 'C:\\dev\\proj')
     await scanCodexRollouts(src, true)
     fs.writeFileSync(file, '{"type":"response_item"}\n', 'utf-8')
-    const res = await codexMoveSession(src, SESSION_A, 'C:\\dev\\other')
+    const res = await codexMoveSession(src, SESSION_A, 'C:\\dev\\other', t)
     expect(res).toMatchObject({ ok: false, error: 'failed' })
   })
 })

@@ -1,6 +1,7 @@
 import { app, Notification } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
+import { t } from './i18n'
 import { updaterLogger } from './updater-log'
 
 // Auto-update via electron-updater, backed by GitHub Releases (see the "publish"
@@ -84,8 +85,8 @@ export function initUpdater(notifyFn: (channel: string, payload: unknown) => voi
     // next natural restart.
     if (Notification.isSupported()) {
       const n = new Notification({
-        title: 'Update ready',
-        body: `Argos ${info.version} will install on next restart.`
+        title: t('main.updater.readyTitle'),
+        body: t('main.updater.readyBody', { version: info.version })
       })
       n.on('click', () => quitAndInstall())
       n.show()

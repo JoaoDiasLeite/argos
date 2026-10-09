@@ -1,6 +1,7 @@
 import { ClientChannel } from 'ssh2'
 import { getRemoteClient } from './sftp'
 import { ShellRegistry, type CreateResult } from './remote-shell-pure'
+import { t } from './i18n'
 
 /**
  * Interactive ssh2 shell channels backing the Remote Session ("Connect") terminal — one per
@@ -30,7 +31,7 @@ export function remoteShellCreate(
   onData: (id: string, data: string) => void,
   onExit: (id: string, code: number) => void
 ): Promise<{ ok: boolean; error?: string }> {
-  if (!isSafeId(id)) return Promise.resolve({ ok: false, error: 'Invalid terminal id' })
+  if (!isSafeId(id)) return Promise.resolve({ ok: false, error: t('main.terminal.invalidIdShort') })
 
   // The id is reserved before the connection is awaited (see ShellRegistry): a kill that
   // lands while this is still connecting (the tab closed, a StrictMode remount) closes the

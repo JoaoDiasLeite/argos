@@ -8,6 +8,7 @@ import { ProjectOpResult, removeEmptyProjectDir, renameDir } from './project-fil
 import { isInside, verifyTarget } from './project-move-pure'
 import { rekeyProjectPrefs } from './project-prefs'
 import { forgetProjectPrefs } from './store'
+import { t } from './i18n'
 
 /**
  * Project-level operations, addressed the way the renderer addresses a project.
@@ -199,12 +200,12 @@ export async function moveProjectFolder(
   const warnings: string[] = []
 
   // A. The real folder.
-  const movedFolder = await renameDir(fromFs, targetFs)
+  const movedFolder = await renameDir(fromFs, targetFs, t)
   if (!movedFolder.ok) {
     return {
       ok: false,
       error: 'failed',
-      detail: `the folder could not be moved: ${detailOf(movedFolder)}`
+      detail: t('main.projects.move.folderFailed', { detail: detailOf(movedFolder) })
     }
   }
 
@@ -214,16 +215,16 @@ export async function moveProjectFolder(
   //    reachable (`a-b` and `a_b` both become `a-b`): there is nothing to rename, and
   //    asking for it would refuse on the destination already existing.
   if (newEncodedDir !== encodedDir) {
-    const movedTranscripts = await renameDir(projectDir, newProjectDir)
+    const movedTranscripts = await renameDir(projectDir, newProjectDir, t)
     if (!movedTranscripts.ok) {
-      const undo = await renameDir(targetFs, fromFs)
+      const undo = await renameDir(targetFs, fromFs, t)
       const restored = undo.ok
-        ? 'the folder was put back where it was'
-        : `AND the folder could NOT be put back — it is now at ${targetFs} (${detailOf(undo)})`
+        ? t('main.projects.move.folderRestored')
+        : t('main.projects.move.folderNotRestored', { path: targetFs, detail: detailOf(undo) })
       return {
         ok: false,
         error: 'failed',
-        detail: `the transcripts could not be moved: ${detailOf(movedTranscripts)}; ${restored}`
+        detail: t('main.projects.move.transcriptsFailed', { detail: detailOf(movedTranscripts), restored })
       }
     }
   }
@@ -238,7 +239,7 @@ export async function moveProjectFolder(
   try {
     rekeyClaudeJson(src.claudeJsonPath, fromStored, targetStored)
   } catch (e) {
-    warnings.push(`the project map in ${src.claudeJsonPath} was not updated: ${(e as Error).message}`)
+    warnings.push(t('main.projects.move.claudeJsonNotUpdated', { path: src.claudeJsonPath, error: (e as Error).message }))
   }
 
   // D. Pins, filing, and the records that name a project path.

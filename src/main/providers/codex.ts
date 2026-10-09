@@ -5,9 +5,9 @@ import * as path from 'path'
 import { costFromTokens } from './cost'
 import { resolveCodex } from './cli-resolve'
 import { ZERO_USAGE } from './types'
+import { t } from '../i18n'
 import type { AiEngine, EngineMessage, EngineRequest } from './types'
 
-const NOT_FOUND_MESSAGE = 'Codex CLI not found. Install with: npm install -g @openai/codex'
 
 /**
  * Codex engine — spawns `codex exec --json` (or `codex exec resume <id> --json`
@@ -266,14 +266,14 @@ async function* runCodexProcess(
               type: 'result',
               sessionId,
               isError: true,
-              errorText: obj.error?.message ?? 'Codex run failed.',
+              errorText: obj.error?.message ?? t('main.providers.codex.runFailed'),
               costUsd: 0,
               usage: ZERO_USAGE
             }
             break
 
           case 'error':
-            yield { type: 'error', message: obj.message ?? 'Codex error.' }
+            yield { type: 'error', message: obj.message ?? t('main.providers.codex.error') }
             break
         }
       }
@@ -282,13 +282,13 @@ async function* runCodexProcess(
     const code = await closed
     if (spawnErr) {
       const isNotFound = spawnErr.code === 'ENOENT'
-      yield { type: 'error', message: isNotFound ? NOT_FOUND_MESSAGE : spawnErr.message }
+      yield { type: 'error', message: isNotFound ? t('main.providers.codex.notFound') : spawnErr.message }
     } else if (!sawResult) {
       yield {
         type: 'result',
         sessionId,
         isError: true,
-        errorText: stderrBuf.trim() || `Codex exited with code ${code}.`,
+        errorText: stderrBuf.trim() || t('main.providers.codex.exited', { code: String(code) }),
         costUsd: 0,
         usage: ZERO_USAGE
       }
@@ -300,7 +300,7 @@ export const codexEngine: AiEngine = {
   id: 'codex',
   async *run(req: EngineRequest) {
     if (typeof req.prompt !== 'string') {
-      yield { type: 'error', message: 'Codex engine only supports plain-text prompts right now.' }
+      yield { type: 'error', message: t('main.providers.codex.textOnly') }
       return
     }
     const { codexHome, cleanup } = prepareCodexHome(req.mcpServers, req.env.CODEX_HOME)

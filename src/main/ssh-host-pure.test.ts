@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { cleanHostFields, cleanHostText, decodeHostsFile, refuseOverwriteMessage } from './ssh-host-pure'
+import { makeT } from '../shared/i18n'
 
 describe('cleanHostText', () => {
   it('trims surrounding whitespace', () => {
@@ -103,7 +104,7 @@ describe('decodeHostsFile', () => {
 
 describe('refuseOverwriteMessage', () => {
   it('says nothing was written and names the file', () => {
-    const msg = refuseOverwriteMessage('C:\\data\\ssh-hosts.bin', 'bad decrypt')
+    const msg = refuseOverwriteMessage(makeT('en'), 'C:\\data\\ssh-hosts.bin', 'bad decrypt')
     expect(msg).toContain('refusing to overwrite')
     expect(msg).toContain('bad decrypt')
     expect(msg).toContain('C:\\data\\ssh-hosts.bin')
