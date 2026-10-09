@@ -1,7 +1,7 @@
 // The Projects view: the project list, its sessions, project actions and the label manager.
 export default {
   title: 'Projects',
-  subtitle: 'Claude Code sessions from this machine and connected WSL distros.',
+  subtitle: 'Claude Code and Codex sessions from this machine and connected WSL distros.',
   refresh: 'Refresh',
   loading: 'Loading projects…',
   empty: 'No Claude Code projects found yet. Open a project in Claude Code to see it here.',

@@ -17,7 +17,7 @@ export default {
   'file.editAria': 'Edit {path}',
   'file.loading': 'Loading…',
   'file.tooLarge': 'This file is too large to edit in-app.',
-  'file.binary': "This looks like a binary file, it can't be shown as text.",
+  'file.binary': "This looks like a binary file, so it can't be shown as text.",
   'file.downloadInstead': 'Download instead',
   'file.contentsAria': 'Contents of {path}',
   'file.status': 'Ln {line}, Col {col}',

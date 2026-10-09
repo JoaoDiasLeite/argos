@@ -27,7 +27,7 @@ export default {
   // Stats and chart
   'stats.input': 'input tokens',
   'stats.output': 'output tokens',
-  'stats.cache': 'cache tokens · {share} % of input',
+  'stats.cache': 'cache tokens · {share}% of input',
   'chart.aria': 'Cost by day',
   'chart.tip': '{label} · {cost}',
   'chart.weekOf': 'Week of {date}',
@@ -46,7 +46,7 @@ export default {
   // Plan usage
   'plan.title': 'Plan usage',
   'plan.all': 'All',
-  'plan.windowAt': '{title} at {pct} %',
+  'plan.windowAt': '{title} at {pct}%',
   'plan.accountPace': '{account} · {pace}',
   'plan.noLogin': 'No Claude Code login found. Sign in with Claude Code and Refresh.',
   'plan.live': 'Live from Anthropic',
@@ -78,6 +78,6 @@ export default {
   'budgets.of': 'of ${cap}',
   'budgets.none': 'no budget',
   'others.title': 'Other accounts · {n}',
-  'others.session': '{pct} % session',
+  'others.session': '{pct}% session',
   'others.week': '{cost} this week'
 } satisfies Record<string, string>

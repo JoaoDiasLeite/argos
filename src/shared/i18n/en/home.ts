@@ -21,13 +21,13 @@ export default {
   'plan.resetsOn': 'resets {day} {time}',
   'plan.noAccount': 'No account connected · Settings › Connection',
   'plan.account': '{name} account',
-  'plan.usage': '{name} account at {pct} % of the {window}',
+  'plan.usage': '{name} account at {pct}% of the {window}',
   'plan.usageWithReset': '{usage} · {reset}',
   'plan.label': 'Plan window',
   'plan.title': '{name} · {window}',
-  'plan.pct': '{pct} %',
-  'plan.pctWithReset': '{pct} % · {reset}',
-  'plan.barLabel': '{pct} % of the window used',
+  'plan.pct': '{pct}%',
+  'plan.pctWithReset': '{pct}% · {reset}',
+  'plan.barLabel': '{pct}% of the window used',
 
   'select.empty': 'Nothing yet',
 

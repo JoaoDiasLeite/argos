@@ -1,7 +1,7 @@
 // MCP servers view.
 export default {
   // MCP servers
-  'title': 'MCP Servers',
+  'title': 'MCP servers',
   'subtitle': 'Model Context Protocol servers available to the agent.',
   'refresh': 'Refresh',
   'addServer': 'Add server',

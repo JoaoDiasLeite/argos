@@ -1,7 +1,7 @@
 // onboarding.
 export default {
   'welcome.title': 'Welcome to Argos',
-  'welcome.body': 'A desktop control center for Claude Code and Codex: their terminals, your projects, usage, and remote/WSL hosts, all in one place.',
+  'welcome.body': 'A desktop workspace for Claude Code, Codex and Antigravity: their terminals, your projects, usage, and remote/WSL hosts, all in one place.',
   'welcome.getStarted': 'Get started',
   'connect.title': 'Connect your account',
   'connect.detected': 'Claude Code login detected on this machine.',
