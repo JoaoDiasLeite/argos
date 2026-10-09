@@ -14,6 +14,8 @@
  * could have written it.
  */
 
+import type { TFunction } from '../../../shared/i18n'
+
 export type Forge = 'gitlab' | 'github'
 export type OriginKind = 'issue' | 'merge-request'
 
@@ -28,9 +30,9 @@ export interface SprintOrigin {
  *  cannot import across the process boundary. */
 export const FORGE_NAMES: Record<Forge, string> = { gitlab: 'GitLab', github: 'GitHub' }
 
-export function kindLabel(forge: Forge, kind: OriginKind): string {
-  if (kind === 'issue') return 'Issue'
-  return forge === 'github' ? 'Pull request' : 'Merge request'
+export function kindLabel(t: TFunction, forge: Forge, kind: OriginKind): string {
+  if (kind === 'issue') return t('sprints.origin.issue')
+  return forge === 'github' ? t('sprints.origin.pullRequest') : t('sprints.origin.mergeRequest')
 }
 
 /**

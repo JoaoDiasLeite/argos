@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { plural } from '../../../shared/i18n'
+import { useT } from '../i18n'
 import type { ApprovalRequest } from '../types'
 import { planChangesLine, planStepLabel, planTarget, planTotalsGroups, planTotalsWithout } from '../lib/ops-approval'
 import './PlanReviewSheet.css'
@@ -28,6 +30,7 @@ const isControl = (t: EventTarget | null) =>
  * column.
  */
 export default function PlanReviewSheet({ request, onDecide }: Props) {
+  const t = useT()
   const ops = request.ops
   const steps = ops?.planSteps ?? []
   const [skipped, setSkipped] = useState<ReadonlySet<number>>(() => new Set())
@@ -93,12 +96,12 @@ export default function PlanReviewSheet({ request, onDecide }: Props) {
     <div className="plan-sheet" role="region" aria-labelledby={titleId} tabIndex={-1} onKeyDown={onKey}>
       <div className="plan-sheet-head">
         <div className="plan-sheet-eyebrow-row">
-          <span className="plan-sheet-eyebrow">Waiting for you</span>
-          <span className="plan-sheet-kind">plan</span>
+          <span className="plan-sheet-eyebrow">{t('planner.review.waiting')}</span>
+          <span className="plan-sheet-kind">{t('planner.review.kind')}</span>
         </div>
         <div className="plan-sheet-title-row">
           <h3 id={titleId} className="plan-sheet-count">
-            {n} step{n === 1 ? '' : 's'}
+            {plural(t, 'planner.review.steps', n)}
           </h3>
           {ops && <span className="plan-sheet-target">{planTarget(ops)}</span>}
         </div>
@@ -122,7 +125,7 @@ export default function PlanReviewSheet({ request, onDecide }: Props) {
       </div>
 
       <ol className="plan-sheet-steps">
-        {steps.length === 0 && <li className="plan-sheet-empty">The plan names no steps.</li>}
+        {steps.length === 0 && <li className="plan-sheet-empty">{t('planner.review.noSteps')}</li>}
         {steps.map((s, i) => {
           const isSkipped = skipped.has(i)
           const flagged = !isSkipped && (s.verdict === 'asks' || s.verdict === 'denied')
@@ -135,16 +138,16 @@ export default function PlanReviewSheet({ request, onDecide }: Props) {
               <div className="plan-sheet-step-body">
                 <div className="plan-sheet-step-head">
                   <span className="plan-sheet-step-title">{s.title}</span>
-                  <span className="plan-sheet-label">{isSkipped ? 'skipped' : planStepLabel(s)}</span>
+                  <span className="plan-sheet-label">{isSkipped ? t('planner.review.skipped') : planStepLabel(s)}</span>
                   {s.verdict !== 'denied' && (
                     <button
                       type="button"
                       className={`plan-sheet-skip${isSkipped ? ' on' : ''}`}
                       aria-pressed={isSkipped}
-                      title={isSkipped ? 'Run this step after all' : 'Approve the plan without this step'}
+                      title={isSkipped ? t('planner.review.unskipTitle') : t('planner.review.skipTitle')}
                       onClick={() => toggleSkip(i)}
                     >
-                      {isSkipped ? 'Skipped' : 'Skip'}
+                      {isSkipped ? t('planner.review.skippedButton') : t('planner.review.skip')}
                     </button>
                   )}
                 </div>
@@ -170,13 +173,13 @@ export default function PlanReviewSheet({ request, onDecide }: Props) {
             disabled={n > 0 && left === 0}
             onClick={() => decide(true)}
           >
-            {skipped.size > 0 ? `Approve ${left} of ${n} steps` : `Approve ${n} step${n === 1 ? '' : 's'}`}
+            {skipped.size > 0 ? t('planner.review.approvePartial', { left, n }) : plural(t, 'planner.review.approve', n)}
           </button>
           <button type="button" className="plan-sheet-reject" onClick={() => decide(false)}>
-            Reject
+            {t('planner.review.reject')}
           </button>
         </div>
-        <div className="plan-sheet-hints">Enter approves · Esc rejects</div>
+        <div className="plan-sheet-hints">{t('planner.review.hints')}</div>
       </div>
     </div>
   )

@@ -17,6 +17,8 @@ import {
 import Menu, { MoreIcon } from '../components/Menu'
 import Sheet from '../components/Sheet'
 import { originOf, kindLabel, FORGE_NAMES } from '../lib/sprint-origin'
+import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
+import { useT } from '../i18n'
 import ModelPicker from '../components/ModelPicker'
 import AccountPicker, { AccountPickerItem } from '../components/AccountPicker'
 import './views.css'
@@ -67,35 +69,56 @@ function addDays(dateStr: string, n: number): string {
   d.setDate(d.getDate() + n)
   return ymd(d)
 }
-// Fixed English names, as the rest of the UI: a locale would turn "Sep" into "Sept".
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+// Fixed names from the dictionary rather than Intl: a locale would turn "Sep" into "Sept".
+const MONTH_KEYS: MessageKey[] = [
+  'sprints.month.jan',
+  'sprints.month.feb',
+  'sprints.month.mar',
+  'sprints.month.apr',
+  'sprints.month.may',
+  'sprints.month.jun',
+  'sprints.month.jul',
+  'sprints.month.aug',
+  'sprints.month.sep',
+  'sprints.month.oct',
+  'sprints.month.nov',
+  'sprints.month.dec'
+]
+const WEEKDAY_KEYS: MessageKey[] = [
+  'sprints.weekday.sun',
+  'sprints.weekday.mon',
+  'sprints.weekday.tue',
+  'sprints.weekday.wed',
+  'sprints.weekday.thu',
+  'sprints.weekday.fri',
+  'sprints.weekday.sat'
+]
 /** "29 Sep" */
-function fmtShort(dateStr: string): string {
+function fmtShort(t: TFunction, dateStr: string): string {
   const d = parseYmd(dateStr)
-  return `${d.getDate()} ${MONTHS[d.getMonth()]}`
+  return t('sprints.date.short', { day: d.getDate(), month: t(MONTH_KEYS[d.getMonth()]) })
 }
 /** "Thu 2 Oct" */
-function fmtDay(dateStr: string): string {
-  return `${WEEKDAYS[parseYmd(dateStr).getDay()]} ${fmtShort(dateStr)}`
+function fmtDay(t: TFunction, dateStr: string): string {
+  return t('sprints.date.day', { weekday: t(WEEKDAY_KEYS[parseYmd(dateStr).getDay()]), date: fmtShort(t, dateStr) })
 }
 /** "Tue" within the last week, "29 Sep" before that. */
-function fmtSince(dateStr: string): string {
+function fmtSince(t: TFunction, dateStr: string): string {
   const days = Math.round((parseYmd(ymd(new Date())).getTime() - parseYmd(dateStr).getTime()) / dayMs)
-  return days >= 0 && days < 7 ? WEEKDAYS[parseYmd(dateStr).getDay()] : fmtShort(dateStr)
+  return days >= 0 && days < 7 ? t(WEEKDAY_KEYS[parseYmd(dateStr).getDay()]) : fmtShort(t, dateStr)
 }
 const uid = () =>
   crypto?.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.round(Math.random() * 1e6)}`
 
-const COLUMNS: { status: ItemStatus; label: string }[] = [
-  { status: 'todo', label: 'To do' },
-  { status: 'in-progress', label: 'In progress' },
-  { status: 'done', label: 'Done' }
+const COLUMNS: { status: ItemStatus; label: MessageKey }[] = [
+  { status: 'todo', label: 'sprints.column.todo' },
+  { status: 'in-progress', label: 'sprints.column.inProgress' },
+  { status: 'done', label: 'sprints.column.done' }
 ]
-const STATUS_LABELS: Record<SprintStatus, string> = {
-  planning: 'Planning',
-  active: 'Active',
-  completed: 'Completed'
+const STATUS_LABELS: Record<SprintStatus, MessageKey> = {
+  planning: 'sprints.status.planning',
+  active: 'sprints.status.active',
+  completed: 'sprints.status.completed'
 }
 
 /** Enter on a sheet is ignored this long after it opens (§6). */
@@ -138,9 +161,9 @@ function mentions(text: string, item: SprintItem): boolean {
 }
 
 /** "Waiting on the client's IdP team." when the blockers text says who it waits on. */
-function waitingOn(text: string): string | undefined {
+function waitingOn(t: TFunction, text: string): string | undefined {
   const m = text.match(/waiting on ([^.\n]+)/i)
-  return m ? `Waiting on ${m[1].trim()}.` : undefined
+  return m ? t('sprints.blocked.waitingOn', { who: m[1].trim() }) : undefined
 }
 
 interface BlockInfo {
@@ -157,7 +180,7 @@ interface BlockInfo {
  * name it clears it.
  */
 // TODO(port): SprintItem has no blocked flag, so there is nothing for "Unblock" to clear.
-function blockedItems(sprint: Sprint): BlockInfo[] {
+function blockedItems(t: TFunction, sprint: Sprint): BlockInfo[] {
   const today = ymd(new Date())
   const past = sprint.standups
     .filter((s) => s.date <= today)
@@ -172,7 +195,7 @@ function blockedItems(sprint: Sprint): BlockInfo[] {
       if (!mentions(s.blockers, item)) break
       since = s.date
     }
-    out.push({ item, since, waiting: waitingOn(latest.blockers) })
+    out.push({ item, since, waiting: waitingOn(t, latest.blockers) })
   }
   return out
 }
@@ -190,9 +213,9 @@ function sprintLengthDays(s: Sprint): number {
 }
 
 /** "Sprint 3 — Checkout" -> "Sprint 4 — Checkout"; falls back to a plain count. */
-function nextSprintName(prev: string, count: number): string {
+function nextSprintName(t: TFunction, prev: string, count: number): string {
   const m = prev.match(/(\d+)/)
-  return m ? prev.replace(/\d+/, String(Number(m[1]) + 1)) : `Sprint ${count + 1}`
+  return m ? prev.replace(/\d+/, String(Number(m[1]) + 1)) : t('sprints.defaultName', { n: count + 1 })
 }
 
 /** Enter submits a sheet's form, except on a control with its own Enter, and never in the
@@ -209,11 +232,12 @@ function enterSubmits(e: ReactKeyboardEvent, openedAt: number, submit: () => voi
 // Shared Week|Sprint segmented toggle — rendered by both PlannerView and SprintBoard so
 // the control sits in the same header slot regardless of the active mode.
 export function PlannerModeToggle({ mode, onMode }: { mode: PlannerMode; onMode: (m: PlannerMode) => void }) {
+  const t = useT()
   return (
-    <div className="seg-control planner-mode" title="Switch between the weekly planner and the sprint board">
+    <div className="seg-control planner-mode" title={t('sprints.mode.title')}>
       {(['week', 'sprint'] as const).map((m) => (
         <button key={m} className={mode === m ? 'on' : ''} onClick={() => onMode(m)}>
-          {m === 'week' ? 'Week' : 'Sprint'}
+          {m === 'week' ? t('sprints.mode.week') : t('sprints.mode.sprint')}
         </button>
       ))}
     </div>
@@ -244,6 +268,7 @@ export default function SprintBoard({
   geminiDefaultAccountId,
   onStandupChat
 }: SprintBoardProps) {
+  const t = useT()
   const [sprints, setSprints] = useState<Sprint[]>([])
   const [activeId, setActiveId] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -342,7 +367,7 @@ export default function SprintBoard({
     const now = Date.now()
     const s: Sprint = {
       id: uid(),
-      name: draft.name.trim() || `Sprint ${sprints.length + 1}`,
+      name: draft.name.trim() || t('sprints.defaultName', { n: sprints.length + 1 }),
       goal: draft.goal.trim(),
       startDate: draft.startDate,
       endDate: draft.endDate,
@@ -405,7 +430,7 @@ export default function SprintBoard({
     const start = addDays(active.endDate, 1)
     const created: Sprint = {
       id: uid(),
-      name: carry.name.trim() || nextSprintName(active.name, sprints.length),
+      name: carry.name.trim() || nextSprintName(t, active.name, sprints.length),
       goal: '',
       startDate: start,
       endDate: addDays(start, sprintLengthDays(active) - 1),
@@ -568,7 +593,7 @@ export default function SprintBoard({
     })
     setGenBusy(false)
     if (!res.ok || !res.data) {
-      setGenError(res.error || 'Could not generate a standup.')
+      setGenError(res.error || t('sprints.standup.generateFailed'))
       return
     }
     patchStandup(standupDate, {
@@ -584,8 +609,8 @@ export default function SprintBoard({
     const context = buildStandupContext(active, standupFor(standupDate), standupDate)
     onStandupChat?.(
       context,
-      "Let's talk through my day. Help me prioritise what to focus on today and think through how to clear any blockers.",
-      `Standup chat · ${fmtDay(standupDate)}`
+      t('sprints.standup.chatOpener'),
+      t('sprints.standup.chatName', { date: fmtDay(t, standupDate) })
     )
   }
 
@@ -606,9 +631,9 @@ export default function SprintBoard({
     const diff = Math.round((end.getTime() - today.getTime()) / dayMs)
     return Math.max(0, diff + 1)
   }, [active])
-  const daysLeftLabel = daysLeft === 0 ? 'sprint ended' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`
+  const daysLeftLabel = daysLeft === 0 ? t('sprints.daysLeft.ended') : plural(t, 'sprints.daysLeft', daysLeft)
 
-  const blocked = useMemo(() => (active ? blockedItems(active) : []), [active])
+  const blocked = useMemo(() => (active ? blockedItems(t, active) : []), [active, t])
   const blockedById = useMemo(() => new Map(blocked.map((b) => [b.item.id, b])), [blocked])
 
   const editingItem = itemSheet && itemSheet !== 'new' ? active?.items.find((i) => i.id === itemSheet) ?? null : null
@@ -617,7 +642,7 @@ export default function SprintBoard({
 
   const projectName = active ? projectNameOf(active) : undefined
   const title = !active
-    ? 'Sprints'
+    ? t('sprints.title')
     : projectName && !active.name.toLowerCase().includes(projectName.toLowerCase())
       ? `${active.name} · ${projectName}`
       : active.name
@@ -633,17 +658,23 @@ export default function SprintBoard({
         <div className="sb-head-text">
           <div className="sb-title-row">
             <h1>{title}</h1>
-            {locked && <span className="chip ok">Completed</span>}
+            {locked && <span className="chip ok">{t('sprints.status.completed')}</span>}
             {sprints.length > 0 && <SprintSwitcher sprints={sprints} activeId={activeId} onSelect={setActiveId} />}
           </div>
           <p className="sb-sub">
             {active ? (
               <>
-                {fmtShort(active.startDate)} – {fmtShort(active.endDate)} · {stats.done} / {stats.total} pts ·{' '}
-                {stats.count} item{stats.count === 1 ? '' : 's'} · {daysLeftLabel}
+                {t('sprints.header.summary', {
+                  start: fmtShort(t, active.startDate),
+                  end: fmtShort(t, active.endDate),
+                  done: stats.done,
+                  total: stats.total,
+                  items: plural(t, 'sprints.items', stats.count),
+                  left: daysLeftLabel
+                })}
               </>
             ) : (
-              'Plan work on a board, log daily standups, and track a burndown.'
+              t('sprints.header.empty')
             )}
           </p>
         </div>
@@ -651,35 +682,35 @@ export default function SprintBoard({
         {active && (
           <Menu
             triggerClass="btn-ghost sb-icon-btn"
-            ariaLabel="More"
-            triggerTitle="More"
+            ariaLabel={t('sprints.menu.more')}
+            triggerTitle={t('sprints.menu.more')}
             triggerContent={<MoreIcon />}
             align="right"
             items={[
               ...(locked
-                ? [{ label: 'Reopen sprint', icon: <ReopenIcon />, onClick: reopenSprint }]
+                ? [{ label: t('sprints.menu.reopen'), icon: <ReopenIcon />, onClick: reopenSprint }]
                 : [
                     {
-                      label: `Import from ${FORGE_NAMES[forgeOf(active)]}`,
+                      label: t('sprints.menu.importFrom', { forge: FORGE_NAMES[forgeOf(active)] }),
                       icon: <ImportIcon />,
                       onClick: () => setBackfillOpen(true)
                     },
-                    { label: 'Complete sprint', icon: <FlagIcon />, onClick: () => setCompleteOpen(true) }
+                    { label: t('sprints.menu.complete'), icon: <FlagIcon />, onClick: () => setCompleteOpen(true) }
                   ]),
-              { label: 'Sprint settings', icon: <GearIcon />, onClick: () => setSprintSheet('edit') },
-              { label: 'New sprint', icon: <PlusIcon />, onClick: () => setSprintSheet('new') }
+              { label: t('sprints.menu.settings'), icon: <GearIcon />, onClick: () => setSprintSheet('edit') },
+              { label: t('sprints.menu.newSprint'), icon: <PlusIcon />, onClick: () => setSprintSheet('new') }
             ]}
           />
         )}
         {active &&
           (locked ? (
             <button type="button" className="btn-primary" onClick={reopenSprint}>
-              Reopen sprint
+              {t('sprints.menu.reopen')}
             </button>
           ) : (
             <button type="button" className="btn-primary" onClick={() => setItemSheet('new')}>
               <PlusIcon />
-              Add item
+              {t('sprints.addItem')}
             </button>
           ))}
       </div>
@@ -687,15 +718,15 @@ export default function SprintBoard({
       {loading ? (
         <div className="view-loading">
           <div className="view-spinner" />
-          <span className="view-loading-text">Loading sprints…</span>
+          <span className="view-loading-text">{t('sprints.loading')}</span>
         </div>
       ) : !active ? (
         <div className="sb-empty">
-          <h2>No sprints yet</h2>
-          <p className="help">Create a sprint to plan work on a board, log daily standups, and track a burndown.</p>
+          <h2>{t('sprints.empty.title')}</h2>
+          <p className="help">{t('sprints.empty.help')}</p>
           <button type="button" className="btn-primary" onClick={() => setSprintSheet('new')}>
             <PlusIcon />
-            New sprint
+            {t('sprints.menu.newSprint')}
           </button>
         </div>
       ) : (
@@ -724,9 +755,9 @@ export default function SprintBoard({
                   }}
                 >
                   <div className="sb-lane-head">
-                    <span className="sb-lane-name">{col.label}</span>
+                    <span className="sb-lane-name">{t(col.label)}</span>
                     <span className="sb-muted">
-                      {colItems.length} · {pts} p
+                      {colItems.length} · {t('sprints.points.short', { n: pts })}
                     </span>
                     {col.status !== 'done' && !locked && (
                       <button
@@ -734,8 +765,8 @@ export default function SprintBoard({
                         className="sb-ic sb-lane-advance"
                         disabled={colItems.length === 0}
                         onClick={() => advanceAll(col.status)}
-                        aria-label={col.status === 'todo' ? 'Move all to In progress' : 'Mark all done'}
-                        title={col.status === 'todo' ? 'Move all to In progress' : 'Mark all done'}
+                        aria-label={col.status === 'todo' ? t('sprints.lane.moveAll') : t('sprints.lane.markAllDone')}
+                        title={col.status === 'todo' ? t('sprints.lane.moveAll') : t('sprints.lane.markAllDone')}
                       >
                         {col.status === 'todo' ? <ArrowRightIcon /> : <CheckIcon />}
                       </button>
@@ -759,7 +790,7 @@ export default function SprintBoard({
                       />
                     ))}
                     {!locked && (
-                      <AddItemRow onAdd={(t) => addItem({ title: t, status: col.status, points: null, notes: null })} />
+                      <AddItemRow onAdd={(title) => addItem({ title, status: col.status, points: null, notes: null })} />
                     )}
                   </div>
                 </div>
@@ -767,12 +798,12 @@ export default function SprintBoard({
             })}
           </div>
 
-          <aside className="sb-side" aria-label="Sprint progress and standup">
+          <aside className="sb-side" aria-label={t('sprints.side.aria')}>
             <section className="sb-sec">
               {active.goal?.trim() && <p className="sb-goal">{active.goal}</p>}
               <div className="sb-progress-head">
                 <span className="sb-t3">
-                  {stats.done} of {stats.total} points
+                  {t('sprints.side.progress', { done: stats.done, total: stats.total })}
                 </span>
                 <span className="sb-muted">{daysLeftLabel}</span>
               </div>
@@ -853,7 +884,7 @@ export default function SprintBoard({
         <CompleteSprintSheet
           sprint={active}
           targets={sprints.filter((s) => s.id !== active.id && s.status !== 'completed')}
-          suggestedName={nextSprintName(active.name, sprints.length)}
+          suggestedName={nextSprintName(t, active.name, sprints.length)}
           onComplete={completeSprint}
           onClose={() => setCompleteOpen(false)}
         />
@@ -901,16 +932,17 @@ function SprintSwitcher({
   activeId: string
   onSelect: (id: string) => void
 }) {
+  const t = useT()
   const active = sprints.find((s) => s.id === activeId)
   return (
     <Menu
       triggerClass="sb-switch"
-      triggerTitle="Switch sprint"
-      ariaLabel="Switch sprint"
+      triggerTitle={t('sprints.switch.title')}
+      ariaLabel={t('sprints.switch.title')}
       triggerContent={
         <>
           <span className={`sb-status-dot ${active?.status ?? 'planning'}`} />
-          <span className="sb-switch-name">{active?.name ?? 'Select sprint'}</span>
+          <span className="sb-switch-name">{active?.name ?? t('sprints.switch.select')}</span>
           <ChevronDownIcon />
         </>
       }
@@ -921,8 +953,8 @@ function SprintSwitcher({
         .sort((a, b) => Number(a.status === 'completed') - Number(b.status === 'completed'))
         .map((s) => ({
           label: s.name,
-          group: s.status === 'completed' ? 'Completed' : 'Open',
-          icon: <span className={`sb-status-dot ${s.status}`} title={STATUS_LABELS[s.status]} />,
+          group: s.status === 'completed' ? t('sprints.status.completed') : t('sprints.switch.open'),
+          icon: <span className={`sb-status-dot ${s.status}`} title={t(STATUS_LABELS[s.status])} />,
           active: s.id === activeId,
           onClick: () => onSelect(s.id)
         }))}
@@ -945,11 +977,16 @@ function ItemCard(props: {
   onAdvance: () => void
   onDelete: () => void
 }) {
+  const t = useT()
   const i = props.item
   const origin = originOf(i)
   const pts = pointsOf(i)
   const advanceLabel =
-    i.status === 'done' ? 'Move back to In progress' : i.status === 'todo' ? 'Move to In progress' : 'Mark done'
+    i.status === 'done'
+      ? t('sprints.card.moveBack')
+      : i.status === 'todo'
+        ? t('sprints.card.moveToInProgress')
+        : t('sprints.card.markDone')
   const shared = {
     draggable: !props.locked,
     onDragStart: (e: React.DragEvent) => {
@@ -963,7 +1000,7 @@ function ItemCard(props: {
     onKeyDown: (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' && e.target === e.currentTarget) props.onOpen()
     },
-    title: props.locked ? 'Sprint completed: click to view' : 'Click to edit · drag to move'
+    title: props.locked ? t('sprints.card.lockedHint') : t('sprints.card.hint')
   }
   const actions = !props.locked && (
     <span className="sb-item-actions">
@@ -982,8 +1019,8 @@ function ItemCard(props: {
       <button
         type="button"
         className="sb-ic danger"
-        aria-label="Delete item"
-        title="Delete item"
+        aria-label={t('sprints.card.delete')}
+        title={t('sprints.card.delete')}
         onClick={(e) => {
           e.stopPropagation()
           props.onDelete()
@@ -1002,7 +1039,7 @@ function ItemCard(props: {
         </span>
         <span className="sb-done-title">{i.title}</span>
         {actions}
-        {pts > 0 && <span className="sb-pts">{pts} p</span>}
+        {pts > 0 && <span className="sb-pts">{t('sprints.points.short', { n: pts })}</span>}
       </div>
     )
   }
@@ -1012,16 +1049,16 @@ function ItemCard(props: {
       <div className="sb-item-row">
         <span className="sb-item-title">{i.title}</span>
         {actions}
-        {pts > 0 && <span className="sb-pts">{pts} p</span>}
+        {pts > 0 && <span className="sb-pts">{t('sprints.points.short', { n: pts })}</span>}
       </div>
       {(origin || props.blockedSince) && (
         <div className="sb-item-meta">
           {origin && (
-            <span className="chip sb-ref" title={`${kindLabel(origin.forge, origin.kind)} on ${FORGE_NAMES[origin.forge]}`}>
+            <span className="chip sb-ref" title={t('sprints.card.originTitle', { kind: kindLabel(t, origin.forge, origin.kind), forge: FORGE_NAMES[origin.forge] })}>
               {origin.ref}
             </span>
           )}
-          {props.blockedSince && <span className="sb-blocked-since">blocked since {fmtSince(props.blockedSince)}</span>}
+          {props.blockedSince && <span className="sb-blocked-since">{t('sprints.card.blockedSince', { when: fmtSince(t, props.blockedSince) })}</span>}
         </div>
       )}
     </div>
@@ -1029,7 +1066,8 @@ function ItemCard(props: {
 }
 
 /** "Add item" at the foot of a column; opens into a title input in place. */
-function AddItemRow({ onAdd }: { onAdd: (t: string) => void }) {
+function AddItemRow({ onAdd }: { onAdd: (title: string) => void }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const [val, setVal] = useState('')
   // Esc closes without adding; the blur that follows must not add what it just discarded.
@@ -1038,7 +1076,7 @@ function AddItemRow({ onAdd }: { onAdd: (t: string) => void }) {
     return (
       <button type="button" className="sb-add" onClick={() => setOpen(true)}>
         <PlusIcon />
-        Add item
+        {t('sprints.addItem')}
       </button>
     )
   }
@@ -1047,7 +1085,7 @@ function AddItemRow({ onAdd }: { onAdd: (t: string) => void }) {
       <input
         className="text-input"
         autoFocus
-        placeholder="Item title"
+        placeholder={t('sprints.addRow.placeholder')}
         value={val}
         onChange={(e) => setVal(e.target.value)}
         onKeyDown={(e) => {
@@ -1068,13 +1106,14 @@ function AddItemRow({ onAdd }: { onAdd: (t: string) => void }) {
           setOpen(false)
         }}
       />
-      <span className="help">Enter adds · Esc cancels</span>
+      <span className="help">{t('sprints.addRow.hint')}</span>
     </div>
   )
 }
 
 // ─── Burndown (hand-rolled SVG, no chart deps) ──────────────────────────────────
 function Burndown({ sprint, total }: { sprint: Sprint; total: number }) {
+  const t = useT()
   const data = useMemo(() => {
     const start = parseYmd(sprint.startDate)
     const end = parseYmd(sprint.endDate)
@@ -1104,7 +1143,7 @@ function Burndown({ sprint, total }: { sprint: Sprint; total: number }) {
     return { n, ideal, actual }
   }, [sprint, total])
 
-  if (total === 0) return <p className="help">Add story points to items to see the burndown.</p>
+  if (total === 0) return <p className="help">{t('sprints.burndown.empty')}</p>
 
   const W = 420
   const H = 90
@@ -1122,28 +1161,28 @@ function Burndown({ sprint, total }: { sprint: Sprint; total: number }) {
   const last = actualPairs[actualPairs.length - 1]
   const diff = last ? Math.round(last.v - data.ideal[last.i]) : null
   const abs = Math.abs(diff ?? 0)
-  const where =
+  const caption =
     diff === null
-      ? ''
+      ? t('sprints.burndown.caption')
       : diff === 0
-        ? ' · on the line'
-        : ` · ${abs} point${abs === 1 ? '' : 's'} ${diff > 0 ? 'above' : 'below'} the line`
+        ? t('sprints.burndown.onLine')
+        : plural(t, diff > 0 ? 'sprints.burndown.above' : 'sprints.burndown.below', abs)
 
   return (
     <>
-      <svg className="sb-burndown" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Burndown">
+      <svg className="sb-burndown" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t('sprints.burndown.aria')}>
         <line className="sb-bd-base" x1={0} y1={base} x2={W} y2={base} />
         <polyline className="sb-bd-ideal" points={idealPts} />
         {actualPts && <polyline className="sb-bd-actual" points={actualPts} />}
         {last && <circle className="sb-bd-dot" cx={x(last.i)} cy={y(last.v)} r={3} />}
         <text className="sb-bd-label" x={0} y={H - 1}>
-          {fmtShort(sprint.startDate)}
+          {fmtShort(t, sprint.startDate)}
         </text>
         <text className="sb-bd-label" x={W} y={H - 1} textAnchor="end">
-          {fmtShort(sprint.endDate)}
+          {fmtShort(t, sprint.endDate)}
         </text>
       </svg>
-      <p className="sb-cap">Ideal dashed · actual in accent{where}</p>
+      <p className="sb-cap">{caption}</p>
     </>
   )
 }
@@ -1157,22 +1196,28 @@ function BlockedBlock(props: {
   nextSprint: Sprint | null
   onMove: (target: Sprint) => void
 }) {
+  const t = useT()
   const { info } = props
   return (
     <div className="block warn sb-blocked">
       <div className="sb-blocked-head">
-        <span className="sb-blocked-title">Blocked</span>
-        <span className="sb-muted">since {fmtSince(info.since)}</span>
+        <span className="sb-blocked-title">{t('sprints.blocked.title')}</span>
+        <span className="sb-muted">{t('sprints.blocked.since', { when: fmtSince(t, info.since) })}</span>
       </div>
       <div className="sb-blocked-item">{info.item.title}</div>
       <p className="help">
-        {info.waiting ? `${info.waiting} ` : ''}Mention it in today's standup or move it out of the sprint.
-        {props.more > 0 && ` ${props.more} more item${props.more === 1 ? ' is' : 's are'} blocked.`}
+        {[
+          info.waiting,
+          t('sprints.blocked.help'),
+          props.more > 0 ? plural(t, 'sprints.blocked.more', props.more) : undefined
+        ]
+          .filter(Boolean)
+          .join(' ')}
       </p>
       {!props.locked && props.nextSprint && (
         <div className="sb-blocked-actions">
           <button type="button" className="btn-ghost small" onClick={() => props.onMove(props.nextSprint!)}>
-            Move to next sprint
+            {t('sprints.blocked.moveNext')}
           </button>
         </div>
       )}
@@ -1182,10 +1227,10 @@ function BlockedBlock(props: {
 
 // ─── Standup: the chosen day, then earlier days folded to one line each ─────────
 type StandupFields = Pick<DailyStandup, 'yesterday' | 'today' | 'blockers'>
-const STANDUP_FIELDS: { key: keyof StandupFields; label: string; hint: string }[] = [
-  { key: 'yesterday', label: 'Yesterday', hint: 'What did you get done?' },
-  { key: 'today', label: 'Today', hint: 'What are you working on?' },
-  { key: 'blockers', label: 'Blockers', hint: 'Anything in the way?' }
+const STANDUP_FIELDS: { key: keyof StandupFields; label: MessageKey; hint: MessageKey }[] = [
+  { key: 'yesterday', label: 'sprints.standup.yesterday', hint: 'sprints.standup.yesterdayHint' },
+  { key: 'today', label: 'sprints.standup.today', hint: 'sprints.standup.todayHint' },
+  { key: 'blockers', label: 'sprints.standup.blockers', hint: 'sprints.standup.blockersHint' }
 ]
 
 function StandupPanel(props: {
@@ -1211,6 +1256,7 @@ function StandupPanel(props: {
   runModel: string
   onPickRunModel: (modelId: string) => void
 }) {
+  const t = useT()
   const today = ymd(new Date())
   const s = props.standup
   const isToday = props.date === today
@@ -1235,24 +1281,24 @@ function StandupPanel(props: {
   }
   const discuss = props.onDiscuss && (
     <button type="button" className="btn-text" onClick={props.onDiscuss}>
-      Discuss in chat
+      {t('sprints.standup.discuss')}
     </button>
   )
 
   return (
     <section className="sb-sec sb-standup">
       <div className="sb-standup-head">
-        <span className="sb-t3">Standup · {fmtDay(props.date)}</span>
+        <span className="sb-t3">{t('sprints.standup.heading', { date: fmtDay(t, props.date) })}</span>
         <span className="sb-grow" />
-        <button type="button" className="sb-ic" aria-label="Previous day" title="Previous day" onClick={() => props.onDate(addDays(props.date, -1))}>
+        <button type="button" className="sb-ic" aria-label={t('sprints.standup.prevDay')} title={t('sprints.standup.prevDay')} onClick={() => props.onDate(addDays(props.date, -1))}>
           <ChevronIcon dir="left" />
         </button>
-        <button type="button" className="sb-ic" aria-label="Next day" title="Next day" onClick={() => props.onDate(addDays(props.date, 1))}>
+        <button type="button" className="sb-ic" aria-label={t('sprints.standup.nextDay')} title={t('sprints.standup.nextDay')} onClick={() => props.onDate(addDays(props.date, 1))}>
           <ChevronIcon dir="right" />
         </button>
         {!isToday && (
           <button type="button" className="btn-text" onClick={() => props.onDate(today)}>
-            Today
+            {t('sprints.standup.todayButton')}
           </button>
         )}
         {!props.locked && (
@@ -1263,18 +1309,18 @@ function StandupPanel(props: {
             disabled={props.genBusy}
             title={
               props.hasProject
-                ? 'Draft this standup from your git commits and board'
-                : 'Draft from your board (set a project folder in Sprint settings to include git commits)'
+                ? t('sprints.standup.generateTitle')
+                : t('sprints.standup.generateTitleNoProject')
             }
           >
-            {props.genBusy ? 'Generating…' : 'Generate'}
+            {props.genBusy ? t('sprints.standup.generating') : t('sprints.standup.generate')}
           </button>
         )}
       </div>
 
       {!props.locked && (
         <div className="sb-runwith">
-          <span className="sb-muted">Run with</span>
+          <span className="sb-muted">{t('sprints.standup.runWith')}</span>
           <AccountPicker
             compact
             items={props.runAccountItems}
@@ -1301,13 +1347,13 @@ function StandupPanel(props: {
           <dl className="sb-dl">
             {STANDUP_FIELDS.map((f) => (
               <div key={f.key} className="sb-dl-row">
-                <dt>{f.label}</dt>
+                <dt>{t(f.label)}</dt>
                 <dd>
                   <textarea
                     className="text-input textarea"
                     rows={2}
-                    aria-label={f.label}
-                    placeholder={f.hint}
+                    aria-label={t(f.label)}
+                    placeholder={t(f.hint)}
                     value={draft[f.key]}
                     onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
                   />
@@ -1317,7 +1363,7 @@ function StandupPanel(props: {
           </dl>
           <div className="sb-standup-actions">
             <button type="button" className="btn-ghost small" onClick={save} disabled={!dirty}>
-              Save
+              {t('common.save')}
             </button>
             {editing && (
               <button
@@ -1328,7 +1374,7 @@ function StandupPanel(props: {
                   setEditing(false)
                 }}
               >
-                Cancel
+                {t('common.cancel')}
               </button>
             )}
             {discuss}
@@ -1339,15 +1385,15 @@ function StandupPanel(props: {
           <dl className="sb-dl">
             {STANDUP_FIELDS.map((f) => (
               <div key={f.key} className="sb-dl-row">
-                <dt>{f.label}</dt>
-                <dd className={s[f.key].trim() ? '' : 'empty'}>{s[f.key].trim() || 'Nothing noted'}</dd>
+                <dt>{t(f.label)}</dt>
+                <dd className={s[f.key].trim() ? '' : 'empty'}>{s[f.key].trim() || t('sprints.standup.nothingNoted')}</dd>
               </div>
             ))}
           </dl>
           <div className="sb-standup-actions">
             {!props.locked && (
               <button type="button" className="btn-text" onClick={() => setEditing(true)}>
-                Edit
+                {t('common.edit')}
               </button>
             )}
             {discuss}
@@ -1355,29 +1401,29 @@ function StandupPanel(props: {
             {!props.locked &&
               (confirmDelete ? (
                 <>
-                  <span className="help">Delete this standup?</span>
+                  <span className="help">{t('sprints.standup.deleteConfirm')}</span>
                   <button type="button" className="btn-text" onClick={() => setConfirmDelete(false)}>
-                    Keep
+                    {t('sprints.keep')}
                   </button>
                   <button type="button" className="btn-text danger" onClick={props.onDelete}>
-                    Delete
+                    {t('common.delete')}
                   </button>
                 </>
               ) : (
                 <button type="button" className="btn-text danger" onClick={() => setConfirmDelete(true)}>
-                  Delete standup
+                  {t('sprints.standup.delete')}
                 </button>
               ))}
           </div>
         </>
       ) : (
-        <p className="help">No standup for this day.</p>
+        <p className="help">{t('sprints.standup.none')}</p>
       )}
 
       {props.earlier.length > 0 && (
         <>
           <div className="divider-caption sb-divcap">
-            Earlier · {props.earlier.length} standup{props.earlier.length === 1 ? '' : 's'}
+            {plural(t, 'sprints.standup.earlier', props.earlier.length)}
           </div>
           <div className="sb-earlier">
             {props.earlier.map((h) => {
@@ -1390,8 +1436,10 @@ function StandupPanel(props: {
                   onClick={() => props.onDate(h.date)}
                 >
                   <span className={`sb-dot ${n ? 'warn' : ''}`} />
-                  <span>{fmtDay(h.date)}</span>
-                  <span className="sb-earlier-right">{n === 0 ? 'no blockers' : `${n} blocker${n === 1 ? '' : 's'}`}</span>
+                  <span>{fmtDay(t, h.date)}</span>
+                  <span className="sb-earlier-right">
+                    {n === 0 ? t('sprints.standup.noBlockers') : plural(t, 'sprints.standup.blockerCount', n)}
+                  </span>
                 </button>
               )
             })}
@@ -1421,6 +1469,7 @@ function SprintSheet(props: {
   onDelete: () => void
   onClose: () => void
 }) {
+  const t = useT()
   const sprint = props.mode === 'edit' ? props.sprint : null
   const today = ymd(new Date())
   const [d, setD] = useState<SprintDraft>(() => ({
@@ -1450,34 +1499,34 @@ function SprintSheet(props: {
 
   return (
     <Sheet
-      title={sprint ? 'Sprint settings' : 'New sprint'}
+      title={sprint ? t('sprints.menu.settings') : t('sprints.menu.newSprint')}
       width={520}
       onClose={props.onClose}
       footer={
         confirming && sprint ? (
-          <SheetFoot help="Its items and standups go with it. This cannot be undone.">
-            <span className="sb-confirm">Delete {sprint.name}?</span>
+          <SheetFoot help={t('sprints.sheet.deleteHelp')}>
+            <span className="sb-confirm">{t('sprints.sheet.deleteConfirm', { name: sprint.name })}</span>
             <span className="sb-grow" />
             <button type="button" className="btn-ghost" onClick={() => setConfirming(false)}>
-              Keep
+              {t('sprints.keep')}
             </button>
             <button type="button" className="btn-primary danger" onClick={props.onDelete}>
-              Delete
+              {t('common.delete')}
             </button>
           </SheetFoot>
         ) : (
-          <SheetFoot help="Enter saves · Esc cancels">
+          <SheetFoot help={t('sprints.sheet.keysHelp')}>
             {sprint && (
               <button type="button" className="btn-text danger" onClick={() => setConfirming(true)}>
-                Delete sprint
+                {t('sprints.sheet.deleteSprint')}
               </button>
             )}
             <span className="sb-grow" />
             <button type="button" className="btn-ghost" onClick={props.onClose}>
-              Cancel
+              {t('common.cancel')}
             </button>
             <button type="button" className="btn-primary" onClick={submit} disabled={!valid}>
-              {sprint ? 'Save' : 'Create sprint'}
+              {sprint ? t('common.save') : t('sprints.sheet.create')}
             </button>
           </SheetFoot>
         )
@@ -1485,32 +1534,32 @@ function SprintSheet(props: {
     >
       <div className="sb-form" onKeyDown={(e) => enterSubmits(e, openedAt.current, submit)}>
         <div className="form-group">
-          <label htmlFor="sb-sprint-name">Name</label>
+          <label htmlFor="sb-sprint-name">{t('sprints.sheet.name')}</label>
           <input
             id="sb-sprint-name"
             className="text-input"
             value={d.name}
             autoFocus
-            placeholder="Sprint 14"
+            placeholder={t('sprints.sheet.namePlaceholder')}
             onChange={(e) => set({ name: e.target.value })}
           />
         </div>
         <div className="form-group">
           <label htmlFor="sb-sprint-goal">
-            Goal<span className="optional">optional</span>
+            {t('sprints.sheet.goal')}<span className="optional">{t('sprints.optional')}</span>
           </label>
           <textarea
             id="sb-sprint-goal"
             className="text-input textarea"
             rows={2}
             value={d.goal}
-            placeholder="The one outcome this sprint is about"
+            placeholder={t('sprints.sheet.goalPlaceholder')}
             onChange={(e) => set({ goal: e.target.value })}
           />
         </div>
         <div className="sb-form-row">
           <div className="form-group grow">
-            <label htmlFor="sb-sprint-start">Start</label>
+            <label htmlFor="sb-sprint-start">{t('sprints.sheet.start')}</label>
             <input
               id="sb-sprint-start"
               type="date"
@@ -1520,7 +1569,7 @@ function SprintSheet(props: {
             />
           </div>
           <div className="form-group grow">
-            <label htmlFor="sb-sprint-end">End</label>
+            <label htmlFor="sb-sprint-end">{t('sprints.sheet.end')}</label>
             <input
               id="sb-sprint-end"
               type="date"
@@ -1530,10 +1579,10 @@ function SprintSheet(props: {
             />
           </div>
         </div>
-        {!valid && <p className="help">The end date comes on or after the start date.</p>}
+        {!valid && <p className="help">{t('sprints.sheet.dateError')}</p>}
         <div className="form-group">
-          <label>Status</label>
-          <div className="seg-control" role="radiogroup" aria-label="Status">
+          <label>{t('sprints.sheet.status')}</label>
+          <div className="seg-control" role="radiogroup" aria-label={t('sprints.sheet.status')}>
             {statuses.map((st) => (
               <button
                 type="button"
@@ -1543,14 +1592,14 @@ function SprintSheet(props: {
                 className={d.status === st ? 'on' : ''}
                 onClick={() => set({ status: st })}
               >
-                {STATUS_LABELS[st]}
+                {t(STATUS_LABELS[st])}
               </button>
             ))}
           </div>
         </div>
         <div className="form-group">
           <label htmlFor="sb-sprint-folder">
-            Project folder<span className="optional">optional</span>
+            {t('sprints.sheet.folder')}<span className="optional">{t('sprints.optional')}</span>
           </label>
           <div className="sb-folder-row">
             <input
@@ -1558,19 +1607,19 @@ function SprintSheet(props: {
               className="text-input mono"
               readOnly
               value={d.projectPath ?? ''}
-              placeholder="None, standups use the board only"
+              placeholder={t('sprints.sheet.folderPlaceholder')}
               title={d.projectPath}
             />
             <button type="button" className="btn-ghost small" onClick={pickFolder}>
-              Browse
+              {t('sprints.sheet.browse')}
             </button>
             {d.projectPath && (
               <button type="button" className="btn-text" onClick={() => set({ projectPath: undefined })}>
-                Clear
+                {t('sprints.clear')}
               </button>
             )}
           </div>
-          <span className="help">A git repository lets Generate read your recent commits for the standup.</span>
+          <span className="help">{t('sprints.sheet.folderHelp')}</span>
         </div>
       </div>
     </Sheet>
@@ -1587,6 +1636,7 @@ function ItemSheet(props: {
   onDelete: () => void
   onClose: () => void
 }) {
+  const t = useT()
   const i = props.item
   const locked = !!props.locked
   const origin = i ? originOf(i) : null
@@ -1607,50 +1657,50 @@ function ItemSheet(props: {
 
   const footer = locked ? (
     <SheetFoot>
-      <span className="help">Sprint completed, read only.</span>
+      <span className="help">{t('sprints.item.lockedHelp')}</span>
       <span className="sb-grow" />
       <button type="button" className="btn-ghost" onClick={props.onClose}>
-        Close
+        {t('common.close')}
       </button>
     </SheetFoot>
   ) : confirming ? (
-    <SheetFoot help="This cannot be undone.">
-      <span className="sb-confirm">Delete this item?</span>
+    <SheetFoot help={t('sprints.item.deleteHelp')}>
+      <span className="sb-confirm">{t('sprints.item.deleteConfirm')}</span>
       <span className="sb-grow" />
       <button type="button" className="btn-ghost" onClick={() => setConfirming(false)}>
-        Keep
+        {t('sprints.keep')}
       </button>
       <button type="button" className="btn-primary danger" onClick={props.onDelete}>
-        Delete
+        {t('common.delete')}
       </button>
     </SheetFoot>
   ) : (
-    <SheetFoot help="Enter saves · Esc cancels">
+    <SheetFoot help={t('sprints.sheet.keysHelp')}>
       {i && (
         <button type="button" className="btn-text danger" onClick={() => setConfirming(true)}>
-          Delete item
+          {t('sprints.card.delete')}
         </button>
       )}
       <span className="sb-grow" />
       <button type="button" className="btn-ghost" onClick={props.onClose}>
-        Cancel
+        {t('common.cancel')}
       </button>
       <button type="button" className="btn-primary" onClick={submit} disabled={!valid}>
-        {i ? 'Save' : 'Add item'}
+        {i ? t('common.save') : t('sprints.addItem')}
       </button>
     </SheetFoot>
   )
 
   return (
-    <Sheet title={i ? 'Item' : 'New item'} width={480} onClose={props.onClose} footer={footer}>
+    <Sheet title={i ? t('sprints.item.title') : t('sprints.item.newTitle')} width={480} onClose={props.onClose} footer={footer}>
       <div className="sb-form" onKeyDown={(e) => enterSubmits(e, openedAt.current, submit)}>
         <div className="form-group">
-          <label htmlFor="sb-item-title">Title</label>
+          <label htmlFor="sb-item-title">{t('sprints.item.titleLabel')}</label>
           <input
             id="sb-item-title"
             className="text-input"
             value={d.title}
-            placeholder="What needs doing"
+            placeholder={t('sprints.item.titlePlaceholder')}
             autoFocus={!locked}
             readOnly={locked}
             onChange={(e) => set({ title: e.target.value })}
@@ -1659,19 +1709,19 @@ function ItemSheet(props: {
         {origin && (
           <div className="sb-origin">
             <span className="chip sb-ref">{origin.ref}</span>
-            <span className="sb-muted">{kindLabel(origin.forge, origin.kind)}</span>
+            <span className="sb-muted">{kindLabel(t, origin.forge, origin.kind)}</span>
             {i?.url ? (
               <a className="btn-text" href={i.url} target="_blank" rel="noreferrer">
-                Open in {FORGE_NAMES[origin.forge]}
+                {t('sprints.item.openIn', { forge: FORGE_NAMES[origin.forge] })}
               </a>
             ) : (
-              <span className="help">No link; import it again to pick one up.</span>
+              <span className="help">{t('sprints.item.noLink')}</span>
             )}
           </div>
         )}
         <div className="form-group">
-          <label>Status</label>
-          <div className="seg-control" role="radiogroup" aria-label="Status">
+          <label>{t('sprints.sheet.status')}</label>
+          <div className="seg-control" role="radiogroup" aria-label={t('sprints.sheet.status')}>
             {COLUMNS.map((c) => (
               <button
                 type="button"
@@ -1682,14 +1732,14 @@ function ItemSheet(props: {
                 disabled={locked}
                 onClick={() => set({ status: c.status })}
               >
-                {c.label}
+                {t(c.label)}
               </button>
             ))}
           </div>
         </div>
         <div className="form-group">
           <label htmlFor="sb-item-points">
-            Story points<span className="optional">optional</span>
+            {t('sprints.item.points')}<span className="optional">{t('sprints.optional')}</span>
           </label>
           <input
             id="sb-item-points"
@@ -1706,14 +1756,14 @@ function ItemSheet(props: {
         </div>
         <div className="form-group">
           <label htmlFor="sb-item-notes">
-            Notes<span className="optional">optional</span>
+            {t('sprints.item.notes')}<span className="optional">{t('sprints.optional')}</span>
           </label>
           <textarea
             id="sb-item-notes"
             className="text-input textarea"
             rows={4}
             value={d.notes ?? ''}
-            placeholder="Detail, acceptance criteria"
+            placeholder={t('sprints.item.notesPlaceholder')}
             readOnly={locked}
             onChange={(e) => set({ notes: e.target.value || null })}
           />
@@ -1734,6 +1784,7 @@ function CompleteSprintSheet(props: {
   onComplete: (carry: CarryChoice) => void
   onClose: () => void
 }) {
+  const t = useT()
   const s = props.sprint
   const unfinished = s.items.filter((i) => i.status !== 'done')
   const total = s.items.reduce((n, i) => n + pointsOf(i), 0)
@@ -1757,54 +1808,62 @@ function CompleteSprintSheet(props: {
   const choices: { kind: Kind; label: string; hint: string; hidden?: boolean }[] = [
     {
       kind: 'existing',
-      label: 'Move to an existing sprint',
-      hint: props.targets.length === 1 ? `Hand them to ${props.targets[0].name}.` : 'Hand them to a sprint already on the board.',
+      label: t('sprints.complete.existing'),
+      hint:
+        props.targets.length === 1
+          ? t('sprints.complete.existingOne', { name: props.targets[0].name })
+          : t('sprints.complete.existingMany'),
       hidden: props.targets.length === 0
     },
     {
       kind: 'new',
-      label: 'Move to a new sprint',
-      hint: `Starts ${fmtShort(addDays(s.endDate, 1))}, the same length as this one.`
+      label: t('sprints.complete.new'),
+      hint: t('sprints.complete.newHint', { date: fmtShort(t, addDays(s.endDate, 1)) })
     },
-    { kind: 'keep', label: 'Leave them here', hint: 'They stay on the closed sprint as a record.' }
+    { kind: 'keep', label: t('sprints.complete.keep'), hint: t('sprints.complete.keepHint') }
   ]
 
   return (
     <Sheet
-      title="Complete sprint"
+      title={t('sprints.menu.complete')}
       width={520}
       onClose={props.onClose}
       footer={
         <SheetFoot>
           <span className="sb-grow" />
           <button type="button" className="btn-ghost" onClick={props.onClose}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <button type="button" className="btn-primary" onClick={confirm}>
-            Complete sprint
+            {t('sprints.menu.complete')}
           </button>
         </SheetFoot>
       }
     >
       <div className="sb-form">
         <p className="sb-summary">
-          {donePts} of {total} points done · {s.items.length - unfinished.length} of {s.items.length} items
-          {leftPts > 0 && ` · ${leftPts} points left`}
+          {t('sprints.complete.summary', {
+            done: donePts,
+            total,
+            doneItems: s.items.length - unfinished.length,
+            items: s.items.length
+          })}
+          {leftPts > 0 && t('sprints.complete.summaryLeft', { left: leftPts })}
         </p>
 
         {unfinished.length === 0 ? (
-          <p className="help">Everything landed, nothing to carry over.</p>
+          <p className="help">{t('sprints.complete.allDone')}</p>
         ) : (
           <>
-            <div className="eyebrow">Unfinished items · {unfinished.length}</div>
-            <div className="sb-choices" role="radiogroup" aria-label="Unfinished items">
+            <div className="eyebrow">{t('sprints.complete.unfinished', { n: unfinished.length })}</div>
+            <div className="sb-choices" role="radiogroup" aria-label={t('sprints.complete.unfinishedLabel')}>
               {choices
                 .filter((c) => !c.hidden)
                 .map((c) => (
                   <div key={c.kind}>
                     <RadioRow on={kind === c.kind} label={c.label} hint={c.hint} onPick={() => setKind(c.kind)} />
                     {c.kind === 'existing' && kind === 'existing' && props.targets.length > 1 && (
-                      <div className="sb-choice-sub" role="radiogroup" aria-label="Sprint">
+                      <div className="sb-choice-sub" role="radiogroup" aria-label={t('sprints.complete.sprintLabel')}>
                         {props.targets.map((t) => (
                           <RadioRow key={t.id} on={targetId === t.id} label={t.name} onPick={() => setTargetId(t.id)} />
                         ))}
@@ -1815,7 +1874,7 @@ function CompleteSprintSheet(props: {
             </div>
             {kind === 'new' && (
               <div className="form-group">
-                <label htmlFor="sb-next-name">Next sprint name</label>
+                <label htmlFor="sb-next-name">{t('sprints.complete.nextName')}</label>
                 <input
                   id="sb-next-name"
                   className="text-input"
@@ -1847,33 +1906,35 @@ function RadioRow({ on, label, hint, onPick }: { on: boolean; label: string; hin
 }
 
 // ─── Import from the forge (backfill through its MCP) ───────────────────────────
-function relBackfillTime(ms: number): string {
+function relBackfillTime(t: TFunction, ms: number): string {
   const diff = Date.now() - ms
-  if (diff < 60_000) return 'just now'
-  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`
-  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`
-  return `${Math.round(diff / 86_400_000)}d ago`
+  if (diff < 60_000) return t('sprints.backfill.justNow')
+  if (diff < 3_600_000) return t('sprints.backfill.minutesAgo', { n: Math.round(diff / 60_000) })
+  if (diff < 86_400_000) return t('sprints.backfill.hoursAgo', { n: Math.round(diff / 3_600_000) })
+  return t('sprints.backfill.daysAgo', { n: Math.round(diff / 86_400_000) })
 }
 
 /** The picker's labels, in the forge's own vocabulary. */
-function kindLabels(forge: Forge): Record<BackfillKind, string> {
+function kindLabels(t: TFunction, forge: Forge): Record<BackfillKind, string> {
   return {
-    issues: 'Issues',
-    'merge-requests': forge === 'github' ? 'Pull requests' : 'Merge requests',
-    both: 'Both'
+    issues: t('sprints.backfill.kind.issues'),
+    'merge-requests': forge === 'github' ? t('sprints.backfill.kind.pullRequests') : t('sprints.backfill.kind.mergeRequests'),
+    both: t('sprints.backfill.kind.both')
   }
 }
 /** Used mid-sentence ("No open issues came back"). */
-function kindNoun(forge: Forge, kind: BackfillKind): string {
-  const changes = forge === 'github' ? 'pull requests' : 'merge requests'
-  return kind === 'issues' ? 'issues' : kind === 'merge-requests' ? changes : `issues and ${changes}`
+function kindNoun(t: TFunction, forge: Forge, kind: BackfillKind): string {
+  const github = forge === 'github'
+  if (kind === 'issues') return t('sprints.backfill.noun.issues')
+  if (kind === 'merge-requests') return t(github ? 'sprints.backfill.noun.pullRequests' : 'sprints.backfill.noun.mergeRequests')
+  return t(github ? 'sprints.backfill.noun.issuesAndPullRequests' : 'sprints.backfill.noun.issuesAndMergeRequests')
 }
 
-const SOURCE_LABELS: Record<string, string> = {
-  'git-remote': 'from the git remote',
-  'mcp-default': 'the MCP default project',
-  instructions: 'from your input',
-  guess: 'a best guess'
+const SOURCE_LABELS: Record<string, MessageKey> = {
+  'git-remote': 'sprints.backfill.source.gitRemote',
+  'mcp-default': 'sprints.backfill.source.mcpDefault',
+  instructions: 'sprints.backfill.source.instructions',
+  guess: 'sprints.backfill.source.guess'
 }
 
 function BacklogBackfillSheet(props: {
@@ -1885,6 +1946,7 @@ function BacklogBackfillSheet(props: {
   onCache: (cache: SprintBackfillCache) => void
   onClose: () => void
 }) {
+  const t = useT()
   const cache = props.sprint.backfillCache
   // Phase 1 — load the MCP and resolve which project it's attributed to.
   const [resolving, setResolving] = useState(!cache)
@@ -1916,7 +1978,7 @@ function BacklogBackfillSheet(props: {
   // then the last cached answer stands, and GitLab is the fallback.
   const [forge, setForge] = useState<Forge>(cache?.forge ?? 'gitlab')
   const forgeName = FORGE_NAMES[forge]
-  const KIND_LABELS = kindLabels(forge)
+  const KIND_LABELS = kindLabels(t, forge)
   const [fetching, setFetching] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
   // A run that succeeded but returned something other than what was asked for.
@@ -1948,7 +2010,7 @@ function BacklogBackfillSheet(props: {
     })
     setResolving(false)
     if (!res.ok || !res.data) {
-      setResolveError(res.error || 'Could not load the forge MCP.')
+      setResolveError(res.error || t('sprints.backfill.loadFailed'))
       return
     }
     if (res.data.forge) setForge(res.data.forge)
@@ -1985,7 +2047,7 @@ function BacklogBackfillSheet(props: {
     setFetching(false)
     setHasFetched(true)
     if (!res.ok || !res.data) {
-      setFetchError(res.error || `Could not fetch ${kindNoun(forge, which)}.`)
+      setFetchError(res.error || t('sprints.backfill.fetchFailed', { what: kindNoun(t, forge, which) }))
       return
     }
     if (res.data.forge) setForge(res.data.forge)
@@ -2035,10 +2097,12 @@ function BacklogBackfillSheet(props: {
   }
 
   const meta = [
-    info?.source ? SOURCE_LABELS[info.source] ?? info.source : null,
-    typeof info?.openIssueCount === 'number' ? `${info.openIssueCount} open issues` : null,
-    typeof info?.openMrCount === 'number' ? `${info.openMrCount} open ${forge === 'github' ? 'PRs' : 'MRs'}` : null,
-    cachedAt ? `cached ${relBackfillTime(cachedAt)}` : null
+    info?.source ? (SOURCE_LABELS[info.source] ? t(SOURCE_LABELS[info.source]) : info.source) : null,
+    typeof info?.openIssueCount === 'number' ? t('sprints.backfill.openIssues', { n: info.openIssueCount }) : null,
+    typeof info?.openMrCount === 'number'
+      ? t(forge === 'github' ? 'sprints.backfill.openPrs' : 'sprints.backfill.openMrs', { n: info.openMrCount })
+      : null,
+    cachedAt ? t('sprints.backfill.cached', { when: relBackfillTime(t, cachedAt) }) : null
   ].filter(Boolean)
   const newCount = items.filter((it) => !isDup(it.title)).length
   const dupCount = items.length - newCount
@@ -2046,17 +2110,17 @@ function BacklogBackfillSheet(props: {
 
   return (
     <Sheet
-      title={`Import from ${forgeName}`}
+      title={t('sprints.menu.importFrom', { forge: forgeName })}
       width={560}
       onClose={props.onClose}
       footer={
         <SheetFoot>
           <span className="sb-grow" />
           <button type="button" className="btn-ghost" onClick={props.onClose}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <button type="button" className="btn-primary" onClick={addSelected} disabled={busy || n === 0}>
-            {n === 0 ? 'Add items' : `Add ${n} item${n === 1 ? '' : 's'}`}
+            {n === 0 ? t('sprints.backfill.addNone') : plural(t, 'sprints.backfill.add', n)}
           </button>
         </SheetFoot>
       }
@@ -2065,16 +2129,16 @@ function BacklogBackfillSheet(props: {
         {resolving ? (
           <div className="sb-loading">
             <div className="view-spinner" />
-            <span>Loading the forge MCP and finding the attributed repository…</span>
+            <span>{t('sprints.backfill.resolving')}</span>
           </div>
         ) : (
           <>
             <div className="form-group">
-              <label htmlFor="sb-bf-project">Attributed project</label>
+              <label htmlFor="sb-bf-project">{t('sprints.backfill.project')}</label>
               <input
                 id="sb-bf-project"
                 className="text-input mono"
-                placeholder="group/subgroup/project, or a filter"
+                placeholder={t('sprints.backfill.projectPlaceholder')}
                 value={project}
                 onChange={(e) => setProject(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && !busy && fetchIssues()}
@@ -2088,7 +2152,7 @@ function BacklogBackfillSheet(props: {
               )}
             </div>
             <div className="sb-bf-kind">
-              <div className="seg-control" role="radiogroup" aria-label="What to import">
+              <div className="seg-control" role="radiogroup" aria-label={t('sprints.backfill.whatToImport')}>
                 {(['issues', 'merge-requests', 'both'] as BackfillKind[]).map((k) => (
                   <button
                     type="button"
@@ -2104,11 +2168,11 @@ function BacklogBackfillSheet(props: {
                 ))}
               </div>
               <button type="button" className="btn-ghost" onClick={() => fetchIssues()} disabled={busy}>
-                {fetching ? 'Fetching…' : 'Fetch'}
+                {fetching ? t('sprints.backfill.fetching') : t('sprints.backfill.fetch')}
               </button>
             </div>
             {resolveError && (
-              <div className="block err sb-msg">{resolveError} You can still type a project above and fetch.</div>
+              <div className="block err sb-msg">{t('sprints.backfill.resolveError', { error: resolveError })}</div>
             )}
           </>
         )}
@@ -2117,27 +2181,29 @@ function BacklogBackfillSheet(props: {
           <div className="sb-loading">
             <div className="view-spinner" />
             <span>
-              Reading open {kindNoun(forge, kind)} from {forgeName}…
+              {t('sprints.backfill.reading', { what: kindNoun(t, forge, kind), forge: forgeName })}
             </span>
           </div>
         )}
         {fetchError && !fetching && <div className="block err sb-msg">{fetchError}</div>}
         {fetchWarning && !fetching && !fetchError && <div className="block warn sb-msg">{fetchWarning}</div>}
         {hasFetched && !fetching && !fetchError && items.length === 0 && (
-          <p className="help">No open {kindNoun(forge, kind)} came back. Try a different repository or filter above.</p>
+          <p className="help">{t('sprints.backfill.noneCame', { what: kindNoun(t, forge, kind) })}</p>
         )}
         {!fetching && items.length > 0 && (
           <div className="sb-bf">
             <div className="sb-bf-bar">
               <span className="sb-muted">
-                {newCount} new{dupCount > 0 && ` · ${dupCount} already in sprint`} · {n} selected
+                {t('sprints.backfill.newCount', { n: newCount })}
+                {dupCount > 0 && ` · ${t('sprints.backfill.dupCount', { n: dupCount })}`} ·{' '}
+                {t('sprints.backfill.selected', { n })}
               </span>
               <span className="sb-grow" />
               <button type="button" className="btn-text" onClick={() => setSelected(new Set(items.map((_, i) => i)))}>
-                All
+                {t('sprints.backfill.all')}
               </button>
               <button type="button" className="btn-text" onClick={() => setSelected(new Set())}>
-                None
+                {t('common.none')}
               </button>
             </div>
             <div className="sb-bf-list">
@@ -2152,9 +2218,17 @@ function BacklogBackfillSheet(props: {
                       {it.notes?.trim() && <span className="help sb-bf-notes">{it.notes}</span>}
                     </span>
                     {it.ref && <span className="chip sb-ref">{it.ref}</span>}
-                    <span className="chip">{rowKind === 'merge-request' ? (forge === 'github' ? 'PR' : 'MR') : 'Issue'}</span>
-                    {typeof it.points === 'number' && it.points > 0 && <span className="sb-pts">{it.points} p</span>}
-                    {dup && <span className="sb-muted">already in sprint</span>}
+                    <span className="chip">
+                      {rowKind === 'merge-request'
+                        ? forge === 'github'
+                          ? t('sprints.backfill.row.pr')
+                          : t('sprints.backfill.row.mr')
+                        : t('sprints.origin.issue')}
+                    </span>
+                    {typeof it.points === 'number' && it.points > 0 && (
+                      <span className="sb-pts">{t('sprints.points.short', { n: it.points })}</span>
+                    )}
+                    {dup && <span className="sb-muted">{t('sprints.backfill.alreadyIn')}</span>}
                   </label>
                 )
               })}

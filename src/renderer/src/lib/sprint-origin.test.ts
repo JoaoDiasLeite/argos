@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest'
+import { makeT } from '../../../shared/i18n'
 import { originOf, kindLabel } from './sprint-origin'
+
+const t = makeT('en')
 
 describe('kindLabel', () => {
   it('uses each forge’s own word', () => {
-    expect(kindLabel('gitlab', 'merge-request')).toBe('Merge request')
-    expect(kindLabel('github', 'merge-request')).toBe('Pull request')
-    expect(kindLabel('github', 'issue')).toBe('Issue')
+    expect(kindLabel(t, 'gitlab', 'merge-request')).toBe('Merge request')
+    expect(kindLabel(t, 'github', 'merge-request')).toBe('Pull request')
+    expect(kindLabel(t, 'github', 'issue')).toBe('Issue')
   })
 })
 

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
+import { useLanguage, useT } from '../i18n'
 import { WeekPlan, PlannerTask, WeeklyPriority, Effort, PlannerAssistMode, CCAccountStatus, ModelInfo, SavedReview, ProviderAccountStatus } from '../types'
 import ModelPicker from '../components/ModelPicker'
 import AccountPicker from '../components/AccountPicker'
@@ -27,30 +29,49 @@ interface PlannerProps {
   streaming?: boolean
 }
 
-const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const DAY_SHORT_KEYS: MessageKey[] = [
+  'planner.day.short.mon',
+  'planner.day.short.tue',
+  'planner.day.short.wed',
+  'planner.day.short.thu',
+  'planner.day.short.fri',
+  'planner.day.short.sat',
+  'planner.day.short.sun'
+]
+/** The short weekday name for a 0-based Monday-first index, or undefined out of range. */
+const dayShort = (t: TFunction, i: number): string | undefined => {
+  const key = DAY_SHORT_KEYS[i]
+  return key ? t(key) : undefined
+}
 // Priorities are neutral chips told apart by their titles; `WeeklyPriority.color` stays in
 // the stored shape for older weeks but is no longer written or drawn.
 const NO_COLOR = ''
 const EFFORTS: Effort[] = ['light', 'medium', 'deep']
 
 // Start screen copy for the modes that run on demand (no notes/image needed first).
-const START_HINTS: Record<PlannerAssistMode, string> = {
-  review:
-    'Claude will read your current week and critique it — flagging overload, missing priorities and gaps, with a balance score and concrete suggestions.',
-  reflect:
-    'Claude will look at planned vs. completed tasks and reflect on the week — wins, misses, and what to adjust next time.',
-  rebalance:
-    'Claude will redistribute your existing tasks across the week for a healthier load, without inventing or deleting anything.',
-  draft: 'Tell Claude your goals and it will draft a balanced week.',
-  import: 'Upload a calendar screenshot and Claude will turn it into a structured week.'
+const START_HINTS: Record<PlannerAssistMode, MessageKey> = {
+  review: 'planner.assist.hint.review',
+  reflect: 'planner.assist.hint.reflect',
+  rebalance: 'planner.assist.hint.rebalance',
+  draft: 'planner.assist.hint.draft',
+  import: 'planner.assist.hint.import'
 }
-const START_LABELS: Record<PlannerAssistMode, string> = {
-  review: 'Review my week',
-  reflect: 'Reflect on my week',
-  rebalance: 'Rebalance my week',
-  draft: 'Draft my week',
-  import: 'Read calendar'
+const START_LABELS: Record<PlannerAssistMode, MessageKey> = {
+  review: 'planner.assist.start.review',
+  reflect: 'planner.assist.start.reflect',
+  rebalance: 'planner.assist.start.rebalance',
+  draft: 'planner.assist.start.draft',
+  import: 'planner.assist.start.import'
+}
+const EFFORT_TAG_KEYS: Record<Effort, MessageKey> = {
+  light: 'planner.effort.tag.light',
+  medium: 'planner.effort.tag.medium',
+  deep: 'planner.effort.tag.deep'
+}
+const EFFORT_OPTION_KEYS: Record<Effort, MessageKey> = {
+  light: 'planner.effort.option.light',
+  medium: 'planner.effort.option.medium',
+  deep: 'planner.effort.option.deep'
 }
 const EFFORT_WEIGHT: Record<Effort, number> = { light: 1, medium: 2, deep: 3 }
 
@@ -104,6 +125,8 @@ export default function PlannerView({
   onStandupChat,
   streaming
 }: PlannerProps) {
+  const t = useT()
+  const { locale } = useLanguage()
   // Week planner vs. sprint board — persisted so the Planner reopens where you left it.
   // A saved 'backlog' is from the board removed in 2.0.0 and lands on the sprint board.
   const [savedMode, setMode] = useState<PlannerMode>(() => {
@@ -259,7 +282,7 @@ export default function PlannerView({
     })
     setAssistBusy(false)
     if (!res.ok) {
-      setAssistError(res.error || 'Something went wrong.')
+      setAssistError(res.error || t('planner.assist.error.generic'))
       return
     }
     setAssistResult(res.data)
@@ -364,10 +387,10 @@ export default function PlannerView({
   const priorityById = (id?: string | null) => week.priorities.find((p) => p.id === id)
   const backlog = week.tasks.filter((t) => t.day === null)
 
-  const rangeLabel = `${addDays(weekStart, 0).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${addDays(
+  const rangeLabel = `${addDays(weekStart, 0).toLocaleDateString(locale, { month: 'short', day: 'numeric' })} – ${addDays(
     weekStart,
     6
-  ).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
+  ).toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })}`
 
   // Sprint mode hands off entirely to the Scrum board (it owns its own header + toggle).
   if (mode === 'sprint') {
@@ -394,13 +417,13 @@ export default function PlannerView({
         <div className="planner-title-wrap">
           <PlannerModeToggle mode={mode} onMode={changeMode} />
           <div>
-            <h1>Planner</h1>
+            <h1>{t('planner.title')}</h1>
             <p className="view-sub">
-              Week of {rangeLabel}
+              {t('planner.header.weekOf', { range: rangeLabel })}
               {stats.total > 0 && (
                 <>
                   {' · '}
-                  {stats.done}/{stats.total} done
+                  {t('planner.header.progress', { done: stats.done, total: stats.total })}
                 </>
               )}
             </p>
@@ -410,28 +433,28 @@ export default function PlannerView({
           <div className="week-nav">
             <button
               className="btn-ghost planner-icon-btn"
-              title="Previous week"
-              aria-label="Previous week"
+              title={t('planner.header.prevWeek')}
+              aria-label={t('planner.header.prevWeek')}
               onClick={() => setWeekStart((w) => shiftWeek(w, -1))}
             >
               <ChevronIcon dir="left" />
             </button>
             <button className="btn-ghost" onClick={() => setWeekStart(mondayOf(new Date()))}>
-              This week
+              {t('planner.header.thisWeek')}
             </button>
             <button
               className="btn-ghost planner-icon-btn"
-              title="Next week"
-              aria-label="Next week"
+              title={t('planner.header.nextWeek')}
+              aria-label={t('planner.header.nextWeek')}
               onClick={() => setWeekStart((w) => shiftWeek(w, 1))}
             >
               <ChevronIcon dir="right" />
             </button>
           </div>
-          <div className="seg-control week-span" title="Show weekend or work week only">
+          <div className="seg-control week-span" title={t('planner.header.spanTitle')}>
             {([
-              [false, '5d', 'Work week (Mon–Fri)'],
-              [true, '7d', 'Full week (Mon–Sun)']
+              [false, t('planner.header.workWeekShort'), t('planner.header.workWeekTip')],
+              [true, t('planner.header.fullWeekShort'), t('planner.header.fullWeekTip')]
             ] as const).map(([wk, label, tip]) => (
               <button
                 key={label}
@@ -448,19 +471,19 @@ export default function PlannerView({
           </div>
           <div className="assist-bar">
             <button className="btn-primary" onClick={() => startAssist('review')} disabled={assistBusy}>
-              <Spark /> Review my week
+              <Spark /> {t('planner.assist.start.review')}
             </button>
             <button className="btn-ghost" onClick={() => startAssist('draft')} disabled={assistBusy}>
-              Draft a week
+              {t('planner.header.draft')}
             </button>
             <button className="btn-ghost" onClick={() => startAssist('import')} disabled={assistBusy}>
-              <ImageIcon /> Import image
+              <ImageIcon /> {t('planner.header.importImage')}
             </button>
             <button className="btn-ghost" onClick={() => startAssist('rebalance')} disabled={assistBusy || stats.total === 0}>
-              Rebalance
+              {t('planner.header.rebalance')}
             </button>
             <button className="btn-ghost" onClick={() => startAssist('reflect')} disabled={assistBusy || stats.total === 0}>
-              Reflect
+              {t('planner.header.reflect')}
             </button>
           </div>
         </div>
@@ -469,7 +492,7 @@ export default function PlannerView({
       {loading ? (
         <div className="view-loading">
           <div className="view-spinner" />
-          <span className="view-loading-text">Loading your week…</span>
+          <span className="view-loading-text">{t('planner.loading')}</span>
         </div>
       ) : (
         <div className="view-scroll planner-scroll">
@@ -478,7 +501,7 @@ export default function PlannerView({
             <div className="stat-card">
               <div className="stat-body">
                 <div className="stat-value">{stats.total}</div>
-                <div className="stat-label">Tasks scheduled</div>
+                <div className="stat-label">{t('planner.stats.scheduled')}</div>
               </div>
             </div>
             <div className="stat-card">
@@ -488,27 +511,27 @@ export default function PlannerView({
                   {stats.done}
                   <span className="stat-sub">/{stats.total || 0}</span>
                 </div>
-                <div className="stat-label">Completed</div>
+                <div className="stat-label">{t('planner.stats.completed')}</div>
               </div>
             </div>
             <div className="stat-card">
               <div className="stat-body">
                 <div className="stat-value">{stats.deep}</div>
-                <div className="stat-label">Deep-work blocks</div>
+                <div className="stat-label">{t('planner.stats.deepBlocks')}</div>
               </div>
             </div>
             <div className="stat-card wide">
               <div className="stat-body">
-                <div className="stat-label">Week load</div>
+                <div className="stat-label">{t('planner.stats.weekLoad')}</div>
                 <div className="stat-spark">
                   {stats.load.slice(0, showWeekend ? 7 : 5).map((v, i) => (
                     <div
                       key={i}
                       className={`spark-bar ${i === stats.busiest && v > 0 ? 'peak' : ''}`}
                       style={{ height: `${Math.max(8, (v / stats.maxLoad) * 100)}%` }}
-                      title={`${DAY_SHORT[i]}: ${v}`}
+                      title={t('planner.stats.dayLoad', { day: dayShort(t, i) ?? '', load: v })}
                     >
-                      <span>{DAY_SHORT[i][0]}</span>
+                      <span>{(dayShort(t, i) ?? '')[0]}</span>
                     </div>
                   ))}
                 </div>
@@ -519,16 +542,16 @@ export default function PlannerView({
           {/* Intention + priorities */}
           <div className="planner-top">
             <div className="planner-intention">
-              <label className="planner-label">This week's intention</label>
+              <label className="planner-label">{t('planner.intention.label')}</label>
               <input
                 className="text-input"
-                placeholder="What's the one thing that would make this a great week?"
+                placeholder={t('planner.intention.placeholder')}
                 value={week.intention ?? ''}
                 onChange={(e) => mutate((w) => ({ ...w, intention: e.target.value }))}
               />
             </div>
             <div className="planner-priorities">
-              <label className="planner-label">Weekly priorities</label>
+              <label className="planner-label">{t('planner.priorities.label')}</label>
               <div className="priority-chips">
                 {week.priorities.map((p) => (
                   <span className="chip priority-chip" key={p.id}>
@@ -536,8 +559,8 @@ export default function PlannerView({
                     <button
                       className="chip-x"
                       onClick={() => removePriority(p.id)}
-                      title="Remove priority"
-                      aria-label={`Remove ${p.title}`}
+                      title={t('planner.priorities.remove')}
+                      aria-label={t('planner.priorities.removeNamed', { title: p.title })}
                     >
                       <XIcon size={12} />
                     </button>
@@ -546,7 +569,7 @@ export default function PlannerView({
                 {week.priorities.length < 6 && (
                   <input
                     className="priority-add"
-                    placeholder="+ add priority"
+                    placeholder={t('planner.priorities.add')}
                     value={newPriority}
                     onChange={(e) => setNewPriority(e.target.value)}
                     onKeyDown={(e) => {
@@ -561,7 +584,7 @@ export default function PlannerView({
 
           {/* Week board */}
           <div className={`planner-board ${showWeekend ? '' : 'work-week'}`}>
-            {DAY_NAMES.slice(0, showWeekend ? 7 : 5).map((_name, d) => {
+            {DAY_SHORT_KEYS.slice(0, showWeekend ? 7 : 5).map((_key, d) => {
               const dayDate = addDays(weekStart, d)
               const isToday = ymd(dayDate) === todayYmd
               const dayTasks = week.tasks.filter((t) => t.day === d)
@@ -569,7 +592,7 @@ export default function PlannerView({
                 <DayColumn
                   key={d}
                   day={d}
-                  name={DAY_SHORT[d]}
+                  name={dayShort(t, d) ?? ''}
                   date={dayDate.getDate()}
                   isToday={isToday}
                   isWeekend={d >= 5}
@@ -604,7 +627,7 @@ export default function PlannerView({
             onDrop={() => drag && (moveTask(drag, null, Number.MAX_SAFE_INTEGER), setDrag(null))}
           >
             <div className="backlog-head">
-              <span className="planner-label">Backlog / unscheduled</span>
+              <span className="planner-label">{t('planner.backlog.title')}</span>
               <span className="backlog-count">{backlog.length}</span>
             </div>
             <div className="backlog-tasks">
@@ -622,7 +645,7 @@ export default function PlannerView({
                   runDisabled={!!streaming}
                 />
               ))}
-              <AddTaskInline onAdd={(title) => addTask(null, title)} placeholder="+ capture a task" />
+              <AddTaskInline onAdd={(title) => addTask(null, title)} placeholder={t('planner.backlog.capture')} />
             </div>
           </div>
 
@@ -630,7 +653,7 @@ export default function PlannerView({
           {week.reviews && week.reviews.length > 0 && (
             <div className="planner-reviews">
               <div className="backlog-head">
-                <span className="planner-label">Saved reviews</span>
+                <span className="planner-label">{t('planner.reviews.title')}</span>
                 <span className="backlog-count">{week.reviews.length}</span>
               </div>
               <div className="reviews-list">
@@ -725,6 +748,7 @@ function DayColumn(props: {
   onRunTask?: (task: PlannerTask) => void
   runDisabled?: boolean
 }) {
+  const t = useT()
   const [overIndex, setOverIndex] = useState<number | null>(null)
   const loadPct = props.maxLoad ? (props.load / props.maxLoad) * 100 : 0
   const heavy = props.load >= 7
@@ -743,7 +767,7 @@ function DayColumn(props: {
       }}
     >
       <div className="day-head">
-        <label className="day-check-wrap" title="Mark all tasks in this day">
+        <label className="day-check-wrap" title={t('planner.day.markAll')}>
           <input
             type="checkbox"
             className="day-check"
@@ -755,7 +779,7 @@ function DayColumn(props: {
         </label>
         <span className="day-date">{props.date}</span>
       </div>
-      <div className="day-load" title={`Load: ${props.load}`}>
+      <div className="day-load" title={t('planner.day.load', { load: props.load })}>
         <div className={`day-load-fill ${heavy ? 'heavy' : ''}`} style={{ width: `${loadPct}%` }} />
       </div>
       <div
@@ -796,7 +820,7 @@ function DayColumn(props: {
           </div>
         ))}
         {dragging && overIndex === props.tasks.length && <div className="drop-line" />}
-        <AddTaskInline onAdd={props.onAdd} placeholder="+ task" />
+        <AddTaskInline onAdd={props.onAdd} placeholder={t('planner.day.addTask')} />
       </div>
     </div>
   )
@@ -814,10 +838,11 @@ function TaskCard(props: {
   onRun?: () => void
   runDisabled?: boolean
 }) {
-  const t = props.task
+  const t = useT()
+  const task = props.task
   return (
     <div
-      className={`task-card ${t.done ? 'done' : ''}`}
+      className={`task-card ${task.done ? 'done' : ''}`}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = 'move'
@@ -825,21 +850,21 @@ function TaskCard(props: {
       }}
       onDragEnd={props.onDragEnd}
       onClick={props.onOpen}
-      title="Click to edit · drag to move"
+      title={t('planner.card.hint')}
     >
       <div className="task-main">
         <button
-          className={`task-check ${t.done ? 'on' : ''}`}
+          className={`task-check ${task.done ? 'on' : ''}`}
           onClick={(e) => {
             e.stopPropagation()
-            props.onToggle(!t.done)
+            props.onToggle(!task.done)
           }}
-          title={t.done ? 'Mark not done' : 'Mark done'}
-          aria-label={t.done ? 'Mark not done' : 'Mark done'}
+          title={task.done ? t('planner.card.markNotDone') : t('planner.card.markDone')}
+          aria-label={task.done ? t('planner.card.markNotDone') : t('planner.card.markDone')}
         >
-          {t.done && <CheckIcon size={11} />}
+          {task.done && <CheckIcon size={11} />}
         </button>
-        <span className="task-title">{t.title}</span>
+        <span className="task-title">{task.title}</span>
         {props.onRun && (
           <button
             className="task-run"
@@ -847,7 +872,7 @@ function TaskCard(props: {
               e.stopPropagation()
               props.onRun!()
             }}
-            title={props.runDisabled ? 'A run is already in progress' : 'Run with Claude'}
+            title={props.runDisabled ? t('planner.card.runBusy') : t('planner.card.run')}
             disabled={!!props.runDisabled}
           >
             <Spark />
@@ -859,20 +884,20 @@ function TaskCard(props: {
             e.stopPropagation()
             props.onDelete()
           }}
-          title="Delete task"
-          aria-label="Delete task"
+          title={t('planner.card.delete')}
+          aria-label={t('planner.card.delete')}
         >
           <XIcon size={13} />
         </button>
       </div>
       <div className="task-meta">
-        {t.timeOfDay && (
+        {task.timeOfDay && (
           <span className="task-time">
-            {t.timeOfDay}
-            {t.endTime ? `–${t.endTime}` : ''}
+            {task.timeOfDay}
+            {task.endTime ? `–${task.endTime}` : ''}
           </span>
         )}
-        <span className="chip effort-tag">{t.effort ?? 'medium'}</span>
+        <span className="chip effort-tag">{t(EFFORT_TAG_KEYS[task.effort ?? 'medium'])}</span>
         {props.priority && <span className="chip task-prio">{props.priority.title}</span>}
       </div>
     </div>
@@ -931,12 +956,13 @@ function AssistDrawer(props: {
   onPickAccount: (id: string) => void
   onPickModel: (id: string) => void
 }) {
+  const t = useT()
   const titles: Record<PlannerAssistMode, string> = {
-    review: 'Claude · Week review',
-    draft: 'Claude · Draft a week',
-    reflect: 'Claude · Weekly reflection',
-    rebalance: 'Claude · Rebalance',
-    import: 'Claude · Import from image'
+    review: t('planner.assist.title.review'),
+    draft: t('planner.assist.title.draft'),
+    reflect: t('planner.assist.title.reflect'),
+    rebalance: t('planner.assist.title.rebalance'),
+    import: t('planner.assist.title.import')
   }
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -980,7 +1006,7 @@ function AssistDrawer(props: {
             dropdown menus aren't clipped. */}
         <div className="assist-runwith">
           <div className="assist-runwith-field">
-            <span className="assist-runwith-label">Account</span>
+            <span className="assist-runwith-label">{t('planner.assist.account')}</span>
             <AccountPicker
               items={props.accounts.map((a) => ({
                 provider: 'claude' as const,
@@ -998,7 +1024,7 @@ function AssistDrawer(props: {
             />
           </div>
           <div className="assist-runwith-field">
-            <span className="assist-runwith-label">Model</span>
+            <span className="assist-runwith-label">{t('planner.assist.model')}</span>
             <ModelPicker variant="select" models={props.models} value={props.runModel} onChange={props.onPickModel} disabled={props.busy} />
           </div>
         </div>
@@ -1007,20 +1033,18 @@ function AssistDrawer(props: {
           {props.needNotes && !r && (
             <div className="assist-notes">
               <p className="assist-hint">
-                Tell Claude your goals and constraints for the week — it'll propose a balanced plan you can apply.
+                {t('planner.assist.notesHint')}
               </p>
               <textarea
                 className="text-input textarea"
                 rows={5}
-                placeholder={
-                  'e.g. Ship the v2 onboarding flow, prep the board deck, 2 gym sessions, keep Friday afternoon free for deep work…'
-                }
+                placeholder={t('planner.assist.notesPlaceholder')}
                 value={props.notes}
                 onChange={(e) => props.setNotes(e.target.value)}
                 autoFocus
               />
               <button className="btn-primary planner-wide" onClick={props.onRunWithNotes} disabled={!props.notes.trim()}>
-                <Spark /> Draft my week
+                <Spark /> {t('planner.assist.start.draft')}
               </button>
             </div>
           )}
@@ -1028,8 +1052,7 @@ function AssistDrawer(props: {
           {props.needImage && !r && (
             <div className="assist-notes">
               <p className="assist-hint">
-                Paste (Ctrl+V), drop, or upload a screenshot of your weekly calendar — Claude reads it and
-                builds the week. You can review before applying.
+                {t('planner.assist.imageHint')}
               </p>
               <div
                 className={`import-zone ${props.image ? 'has-image' : ''}`}
@@ -1038,11 +1061,11 @@ function AssistDrawer(props: {
                 onDrop={onDropFile}
               >
                 {props.image ? (
-                  <img className="import-preview" src={props.image.preview} alt="calendar to import" />
+                  <img className="import-preview" src={props.image.preview} alt={t('planner.assist.imageAlt')} />
                 ) : (
                   <div className="import-hint">
                     <ImageIcon />
-                    <span>Paste, drop, or click to upload</span>
+                    <span>{t('planner.assist.imageDrop')}</span>
                   </div>
                 )}
                 <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPickFile} />
@@ -1050,10 +1073,10 @@ function AssistDrawer(props: {
               {props.image && (
                 <div className="assist-apply-row">
                   <button className="btn-primary" onClick={props.onRunImage}>
-                    <Spark /> Read calendar
+                    <Spark /> {t('planner.assist.start.import')}
                   </button>
                   <button className="btn-ghost" onClick={() => props.setImage(null)}>
-                    Clear
+                    {t('planner.assist.clear')}
                   </button>
                 </div>
               )}
@@ -1063,9 +1086,9 @@ function AssistDrawer(props: {
           {/* Review / Reflect / Rebalance: pick account & model, then Start. */}
           {!props.needNotes && !props.needImage && !r && !props.busy && (
             <div className="assist-notes">
-              <p className="assist-hint">{START_HINTS[props.mode]}</p>
+              <p className="assist-hint">{t(START_HINTS[props.mode])}</p>
               <button className="btn-primary planner-wide" onClick={props.onStart}>
-                <Spark /> {START_LABELS[props.mode]}
+                <Spark /> {t(START_LABELS[props.mode])}
               </button>
             </div>
           )}
@@ -1073,7 +1096,7 @@ function AssistDrawer(props: {
           {props.busy && (
             <div className="assist-loading">
               <div className="view-spinner" />
-              <span>Claude is thinking through your week…</span>
+              <span>{t('planner.assist.thinking')}</span>
             </div>
           )}
 
@@ -1086,10 +1109,10 @@ function AssistDrawer(props: {
                 <>
                   {typeof r.score === 'number' && <ScoreRing score={r.score} />}
                   {r.summary && <p className="assist-summary">{r.summary}</p>}
-                  {renderList('Watch out', r.warnings, 'warn')}
+                  {renderList(t('planner.assist.watchOut'), r.warnings, 'warn')}
                   {Array.isArray(r.suggestions) && r.suggestions.length > 0 && (
                     <div className="assist-section">
-                      <h4>Suggestions</h4>
+                      <h4>{t('planner.assist.suggestions')}</h4>
                       <ul className="assist-list">
                         {r.suggestions.map((s: any, i: number) => (
                           <li key={i}>
@@ -1105,7 +1128,7 @@ function AssistDrawer(props: {
                   )}
                   <div className="assist-apply-row">
                     <button className="btn-primary" onClick={() => props.onSaveReview('review', r)}>
-                      Save review to week
+                      {t('planner.assist.saveReview')}
                     </button>
                   </div>
                 </>
@@ -1115,12 +1138,12 @@ function AssistDrawer(props: {
               {props.mode === 'reflect' && (
                 <>
                   {r.summary && <p className="assist-summary">{r.summary}</p>}
-                  {renderList('Wins', r.wins, 'good')}
-                  {renderList('Misses', r.misses, 'warn')}
-                  {renderList('Try next week', r.adjustments)}
+                  {renderList(t('planner.assist.wins'), r.wins, 'good')}
+                  {renderList(t('planner.assist.misses'), r.misses, 'warn')}
+                  {renderList(t('planner.assist.tryNextWeek'), r.adjustments)}
                   <div className="assist-apply-row">
                     <button className="btn-primary" onClick={() => props.onSaveReview('reflect', r)}>
-                      Save reflection to week
+                      {t('planner.assist.saveReflection')}
                     </button>
                   </div>
                 </>
@@ -1131,12 +1154,12 @@ function AssistDrawer(props: {
                 <>
                   {r.intention && (
                     <p className="assist-summary">
-                      <strong>Intention:</strong> {r.intention}
+                      <strong>{t('planner.assist.intention')}</strong> {r.intention}
                     </p>
                   )}
                   {Array.isArray(r.priorities) && (
                     <div className="assist-section">
-                      <h4>Priorities</h4>
+                      <h4>{t('planner.assist.priorities')}</h4>
                       <ul className="assist-list">
                         {r.priorities.map((p: any, i: number) => (
                           <li key={i}>
@@ -1149,13 +1172,17 @@ function AssistDrawer(props: {
                   )}
                   {Array.isArray(r.tasks) && (
                     <div className="assist-section">
-                      <h4>{r.tasks.length} tasks across the week</h4>
+                      <h4>{plural(t, 'planner.assist.taskCount', r.tasks.length)}</h4>
                       <ul className="assist-list compact">
-                        {r.tasks.map((t: any, i: number) => (
+                        {r.tasks.map((tk: any, i: number) => (
                           <li key={i}>
-                            <span className="draft-day">{t.day >= 0 && t.day <= 6 ? DAY_SHORT[t.day] : '—'}</span>
-                            {t.title}
-                            {t.effort && <span className="chip effort-tag inline">{t.effort}</span>}
+                            <span className="draft-day">{tk.day >= 0 && tk.day <= 6 ? dayShort(t, tk.day) : '—'}</span>
+                            {tk.title}
+                            {tk.effort && (
+                              <span className="chip effort-tag inline">
+                                {EFFORT_TAG_KEYS[tk.effort as Effort] ? t(EFFORT_TAG_KEYS[tk.effort as Effort]) : tk.effort}
+                              </span>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -1163,10 +1190,10 @@ function AssistDrawer(props: {
                   )}
                   <div className="assist-apply-row">
                     <button className="btn-primary" onClick={() => props.onApplyDraft(r)}>
-                      Apply (replaces current week)
+                      {t('planner.assist.applyDraft')}
                     </button>
                     <button className="btn-ghost" onClick={props.onClose}>
-                      Discard
+                      {t('planner.assist.discard')}
                     </button>
                   </div>
                 </>
@@ -1179,17 +1206,17 @@ function AssistDrawer(props: {
                   {Array.isArray(r.moves) && r.moves.length > 0 ? (
                     <>
                       <div className="assist-section">
-                        <h4>Proposed moves</h4>
+                        <h4>{t('planner.assist.proposedMoves')}</h4>
                         <ul className="assist-list">
                           {r.moves.map((m: any, i: number) => {
                             const task = props.tasksById(m.id)
                             return (
                               <li key={i}>
                                 <span className="draft-day">
-                                  {m.day === null ? 'Backlog' : DAY_SHORT[m.day] ?? '?'}
+                                  {m.day === null ? t('planner.assist.backlog') : dayShort(t, m.day) ?? '?'}
                                 </span>
                                 <span>
-                                  {task ? task.title : '(unknown task)'}
+                                  {task ? task.title : t('planner.assist.unknownTask')}
                                   {m.reason && <span className="move-reason"> — {m.reason}</span>}
                                 </span>
                               </li>
@@ -1199,15 +1226,15 @@ function AssistDrawer(props: {
                       </div>
                       <div className="assist-apply-row">
                         <button className="btn-primary" onClick={() => props.onApplyRebalance(r)}>
-                          Apply moves
+                          {t('planner.assist.applyMoves')}
                         </button>
                         <button className="btn-ghost" onClick={props.onClose}>
-                          Discard
+                          {t('planner.assist.discard')}
                         </button>
                       </div>
                     </>
                   ) : (
-                    <p className="assist-summary">Claude thinks your week is already well balanced.</p>
+                    <p className="assist-summary">{t('planner.assist.balanced')}</p>
                   )}
                 </>
               )}
@@ -1226,102 +1253,103 @@ function TaskModal(props: {
   onDelete: () => void
   onClose: () => void
 }) {
-  const t = props.task
+  const t = useT()
+  const task = props.task
   return (
     <Sheet
-      title="Edit task"
+      title={t('planner.modal.title')}
       width={480}
       onClose={props.onClose}
       footer={
         <>
           <button className="btn-text danger" onClick={props.onDelete}>
-            Delete task
+            {t('planner.modal.delete')}
           </button>
           <span className="planner-grow" />
           <button className="btn-primary" onClick={props.onClose}>
-            Done
+            {t('planner.modal.done')}
           </button>
         </>
       }
     >
       <div className="planner-form">
         <div className="form-group">
-          <label htmlFor="planner-task-title">Title</label>
+          <label htmlFor="planner-task-title">{t('planner.modal.titleLabel')}</label>
           <textarea
             id="planner-task-title"
             className="text-input textarea"
             rows={2}
-            value={t.title}
-            placeholder="Task title"
+            value={task.title}
+            placeholder={t('planner.modal.titlePlaceholder')}
             autoFocus
             onChange={(e) => props.onPatch({ title: e.target.value })}
           />
         </div>
 
         <div className="form-group">
-          <label>Day</label>
-          <div className="seg-control" role="radiogroup" aria-label="Day">
-            {DAY_SHORT.map((d, i) => (
-              <button key={i} role="radio" aria-checked={t.day === i} className={t.day === i ? 'on' : ''} onClick={() => props.onPatch({ day: i })}>
-                {d}
+          <label>{t('planner.modal.day')}</label>
+          <div className="seg-control" role="radiogroup" aria-label={t('planner.modal.day')}>
+            {DAY_SHORT_KEYS.map((_key, i) => (
+              <button key={i} role="radio" aria-checked={task.day === i} className={task.day === i ? 'on' : ''} onClick={() => props.onPatch({ day: i })}>
+                {dayShort(t, i)}
               </button>
             ))}
-            <button role="radio" aria-checked={t.day === null} className={t.day === null ? 'on' : ''} onClick={() => props.onPatch({ day: null })}>
-              Backlog
+            <button role="radio" aria-checked={task.day === null} className={task.day === null ? 'on' : ''} onClick={() => props.onPatch({ day: null })}>
+              {t('planner.assist.backlog')}
             </button>
           </div>
         </div>
 
         <div className="planner-form-row">
           <div className="form-group grow">
-            <label htmlFor="planner-task-start">Start</label>
+            <label htmlFor="planner-task-start">{t('planner.modal.start')}</label>
             <input
               id="planner-task-start"
               type="time"
               className="text-input"
-              value={t.timeOfDay ?? ''}
+              value={task.timeOfDay ?? ''}
               onChange={(e) => props.onPatch({ timeOfDay: e.target.value || null })}
             />
           </div>
           <div className="form-group grow">
-            <label htmlFor="planner-task-end">End</label>
+            <label htmlFor="planner-task-end">{t('planner.modal.end')}</label>
             <input
               id="planner-task-end"
               type="time"
               className="text-input"
-              value={t.endTime ?? ''}
+              value={task.endTime ?? ''}
               onChange={(e) => props.onPatch({ endTime: e.target.value || null })}
             />
           </div>
         </div>
 
         <div className="form-group">
-          <label>Effort</label>
-          <div className="seg-control" role="radiogroup" aria-label="Effort">
+          <label>{t('planner.modal.effort')}</label>
+          <div className="seg-control" role="radiogroup" aria-label={t('planner.modal.effort')}>
             {EFFORTS.map((ef) => (
               <button
                 key={ef}
                 role="radio"
-                aria-checked={(t.effort ?? 'medium') === ef}
-                className={(t.effort ?? 'medium') === ef ? 'on' : ''}
+                aria-checked={(task.effort ?? 'medium') === ef}
+                className={(task.effort ?? 'medium') === ef ? 'on' : ''}
                 onClick={() => props.onPatch({ effort: ef })}
               >
-                {ef[0].toUpperCase() + ef.slice(1)}
+                {t(EFFORT_OPTION_KEYS[ef])}
               </button>
             ))}
           </div>
         </div>
 
         <div className="form-group">
-          <label>Priority</label>
+          <label>{t('planner.modal.priority')}</label>
           <div className="pill-row">
-            <button className={`pill ${!t.priorityId ? 'on' : ''}`} onClick={() => props.onPatch({ priorityId: null })}>
-              None
+            <button className={`pill ${!task.priorityId ? 'on' : ''}`} onClick={() => props.onPatch({ priorityId: null })}>
+              {t('common.none')}
             </button>
             {props.priorities.map((p) => (
               <button
                 key={p.id}
-                className={`pill ${t.priorityId === p.id ? 'on' : ''}`}
+                className={`pill ${task.priorityId === p.id ? 'on' : ''}`}
                 onClick={() => props.onPatch({ priorityId: p.id })}
               >
                 {p.title}
@@ -1331,8 +1359,8 @@ function TaskModal(props: {
         </div>
 
         <label className="task-modal-done">
-          <input type="checkbox" checked={t.done} onChange={(e) => props.onPatch({ done: e.target.checked })} />
-          <span>Mark as done</span>
+          <input type="checkbox" checked={task.done} onChange={(e) => props.onPatch({ done: e.target.checked })} />
+          <span>{t('planner.modal.markDone')}</span>
         </label>
       </div>
     </Sheet>
@@ -1340,14 +1368,16 @@ function TaskModal(props: {
 }
 
 function ReviewCard({ review, flash, onDelete }: { review: SavedReview; flash?: boolean; onDelete: () => void }) {
+  const t = useT()
+  const { locale } = useLanguage()
   const [open, setOpen] = useState(false)
-  const when = new Date(review.createdAt).toLocaleString(undefined, {
+  const when = new Date(review.createdAt).toLocaleString(locale, {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit'
   })
-  const title = review.mode === 'review' ? 'Week review' : 'Reflection'
+  const title = review.mode === 'review' ? t('planner.review.weekReview') : t('planner.review.reflection')
   const score = review.score
   const tone = typeof score === 'number' ? (score >= 75 ? 'good' : score >= 50 ? 'mid' : 'low') : ''
   return (
@@ -1367,8 +1397,8 @@ function ReviewCard({ review, flash, onDelete }: { review: SavedReview; flash?: 
             e.stopPropagation()
             onDelete()
           }}
-          title="Delete review"
-          aria-label="Delete review"
+          title={t('planner.review.delete')}
+          aria-label={t('planner.review.delete')}
         >
           <XIcon size={13} />
         </button>
@@ -1383,10 +1413,10 @@ function ReviewCard({ review, flash, onDelete }: { review: SavedReview; flash?: 
       {review.summary && <p className="review-card-summary">{review.summary}</p>}
       {open && (
         <div className="review-card-body">
-          {renderList('Watch out', review.warnings, 'warn')}
+          {renderList(t('planner.assist.watchOut'), review.warnings, 'warn')}
           {review.suggestions && review.suggestions.length > 0 && (
             <div className="assist-section">
-              <h4>Suggestions</h4>
+              <h4>{t('planner.assist.suggestions')}</h4>
               <ul className="assist-list">
                 {review.suggestions.map((s, i) => (
                   <li key={i}>
@@ -1400,9 +1430,9 @@ function ReviewCard({ review, flash, onDelete }: { review: SavedReview; flash?: 
               </ul>
             </div>
           )}
-          {renderList('Wins', review.wins, 'good')}
-          {renderList('Misses', review.misses, 'warn')}
-          {renderList('Try next week', review.adjustments)}
+          {renderList(t('planner.assist.wins'), review.wins, 'good')}
+          {renderList(t('planner.assist.misses'), review.misses, 'warn')}
+          {renderList(t('planner.assist.tryNextWeek'), review.adjustments)}
         </div>
       )}
     </div>
