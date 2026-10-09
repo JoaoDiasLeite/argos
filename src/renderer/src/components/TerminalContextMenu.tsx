@@ -1,11 +1,14 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { Terminal } from '@xterm/xterm'
 import { useModalA11y } from '../hooks/useModalA11y'
+import { useT } from '../i18n'
+import type { MessageKey } from '../../../shared/i18n'
 import './Menu.css'
 import './TerminalContextMenu.css'
 
 export interface TerminalMenuItem {
-  label: string
+  /** Dictionary key, translated when the menu renders. */
+  label: MessageKey
   onClick: () => void
   disabled?: boolean
 }
@@ -42,7 +45,7 @@ export function terminalMenuItems(
 ): TerminalMenuItem[] {
   return [
     {
-      label: 'Copy',
+      label: 'chat.menu.copy',
       disabled: !term?.hasSelection(),
       onClick: () => {
         const sel = term?.getSelection()
@@ -50,7 +53,7 @@ export function terminalMenuItems(
       }
     },
     {
-      label: 'Paste',
+      label: 'chat.menu.paste',
       onClick: () => {
         // Read through the main process, not navigator.clipboard: reading needs a
         // permission this app has no way to grant, so that path failed silently
@@ -60,8 +63,8 @@ export function terminalMenuItems(
         })
       }
     },
-    { label: 'Select all', onClick: () => term?.selectAll() },
-    { label: 'Clear', onClick: () => term?.clear() }
+    { label: 'chat.menu.selectAll', onClick: () => term?.selectAll() },
+    { label: 'chat.menu.clear', onClick: () => term?.clear() }
   ]
 }
 
@@ -80,6 +83,7 @@ export function terminalMenuItems(
  * only the positioning shell is local.
  */
 export default function TerminalContextMenu({ x, y, items, onClose }: Props) {
+  const t = useT()
   const ref = useRef<HTMLDivElement>(null)
   // Null until measured. Rendered hidden for that one frame so the pre-clamp position never
   // flashes at the wrong spot (the menu's own size is only knowable once it's in the DOM).
@@ -124,7 +128,7 @@ export default function TerminalContextMenu({ x, y, items, onClose }: Props) {
       ref={ref}
       className="terminal-ctx-menu"
       role="menu"
-      aria-label="Terminal actions"
+      aria-label={t('chat.menu.actions')}
       tabIndex={-1}
       style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? 'visible' : 'hidden' }}
     >
@@ -142,7 +146,7 @@ export default function TerminalContextMenu({ x, y, items, onClose }: Props) {
             it.onClick()
           }}
         >
-          <span>{it.label}</span>
+          <span>{t(it.label)}</span>
         </button>
       ))}
     </div>

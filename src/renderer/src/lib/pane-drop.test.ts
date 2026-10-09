@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { dropKindAt, highlightRect, dropLabel, planDrop, SESSION_DRAG_TYPE } from './pane-drop'
+import { makeT } from '../../../shared/i18n'
+
+const t = makeT('en')
 
 // Thirds across: 100..200 | 200..300 | 300..400. Thirds down: 50..110 | 110..170 | 170..230.
 const rect = { left: 100, width: 300, top: 50, height: 180 }
@@ -105,14 +108,14 @@ describe('highlightRect', () => {
 
 describe('dropLabel', () => {
   it('says what will happen before the drop', () => {
-    expect(dropLabel('left')).toBe('Open in split view')
-    expect(dropLabel('right')).toBe('Open in split view')
-    expect(dropLabel('center')).toBe('Open here')
+    expect(dropLabel(t, 'left')).toBe('Open in split view')
+    expect(dropLabel(t, 'right')).toBe('Open in split view')
+    expect(dropLabel(t, 'center')).toBe('Open here')
   })
 
   it('names the grid, which costs height, instead of calling it a split', () => {
-    expect(dropLabel('top')).toBe('Open in grid')
-    expect(dropLabel('bottom')).toBe('Open in grid')
+    expect(dropLabel(t, 'top')).toBe('Open in grid')
+    expect(dropLabel(t, 'bottom')).toBe('Open in grid')
   })
 })
 
@@ -310,8 +313,8 @@ describe('planDrop: moving a pane by its header', () => {
   })
 
   it('names the move in the label', () => {
-    expect(dropLabel('center', true)).toBe('Swap')
-    expect(dropLabel('left', true)).toBe('Move here')
-    expect(dropLabel('bottom', true)).toBe('Move into grid')
+    expect(dropLabel(t, 'center', true)).toBe('Swap')
+    expect(dropLabel(t, 'left', true)).toBe('Move here')
+    expect(dropLabel(t, 'bottom', true)).toBe('Move into grid')
   })
 })

@@ -2,10 +2,12 @@ import { useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
+import { useT } from '../i18n'
 import './Markdown.css'
 
 /** A fenced code block wrapped with a copy button. */
 function CodeBlock({ children }: { children?: ReactNode }) {
+  const t = useT()
   const ref = useRef<HTMLPreElement>(null)
   const [copied, setCopied] = useState(false)
 
@@ -20,7 +22,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
 
   return (
     <div className="md-code-block">
-      <button className="md-code-copy" onClick={copy} title="Copy code">
+      <button className="md-code-copy" onClick={copy} title={t('editor.markdown.copyCode')}>
         {copied ? (
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12" />
@@ -31,7 +33,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
           </svg>
         )}
-        {copied ? 'Copied' : 'Copy'}
+        {copied ? t('editor.markdown.copied') : t('common.copy')}
       </button>
       <pre ref={ref}>{children}</pre>
     </div>

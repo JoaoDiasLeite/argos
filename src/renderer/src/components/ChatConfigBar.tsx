@@ -1,5 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Session, WslDistro, SshHostPublic } from '../types'
+import { useT } from '../i18n'
+import { plural } from '../../../shared/i18n'
+import { SLOT, withSlot } from '../lib/t-slot'
 import './ChatConfigBar.css'
 
 interface Props {
@@ -35,6 +38,7 @@ const Chevron = ({ size = 12, right = false }: { size?: number; right?: boolean 
  * gives it, and a chat switched to a runbook here used to start an ungated CLI instead.
  */
 function useChatConfig(session: Session, onPatch: Props['onPatch']) {
+  const t = useT()
   const [distros, setDistros] = useState<WslDistro[]>([])
   const [hosts, setHosts] = useState<SshHostPublic[]>([])
   const [envOpen, setEnvOpen] = useState(false)
@@ -143,7 +147,7 @@ function useChatConfig(session: Session, onPatch: Props['onPatch']) {
     setPathOpen(false)
   }
 
-  const envLabel = isRemote ? session.remoteHostName || 'Remote' : isWsl ? session.wslDistro! : 'Local'
+  const envLabel = isRemote ? session.remoteHostName || t('chat.config.remote') : isWsl ? session.wslDistro! : t('chat.config.local')
 
   return {
     distros, hosts, envOpen, setEnvOpen, pathOpen, setPathOpen, pathDraft, setPathDraft, git,
@@ -156,11 +160,12 @@ type Config = ReturnType<typeof useChatConfig>
 
 /** The Local / WSL / Remote (SSH) list: a flat 4 px popover with an eyebrow per group. */
 function EnvMenu({ cfg, session }: { cfg: Config; session: Session }) {
+  const t = useT()
   return (
     <div className="config-menu" role="menu">
-      <div className="eyebrow config-menu-label">Local</div>
+      <div className="eyebrow config-menu-label">{t('chat.config.local')}</div>
       <button className={`config-menu-item ${cfg.isLocal ? 'selected' : ''}`} onClick={cfg.chooseLocal} role="menuitem">
-        Local
+        {t('chat.config.local')}
       </button>
       {cfg.distros.length > 0 && <div className="eyebrow config-menu-label">WSL</div>}
       {cfg.distros.map((d) => (
@@ -173,7 +178,7 @@ function EnvMenu({ cfg, session }: { cfg: Config; session: Session }) {
           {d.name}
         </button>
       ))}
-      {cfg.hosts.length > 0 && <div className="eyebrow config-menu-label">Remote (SSH)</div>}
+      {cfg.hosts.length > 0 && <div className="eyebrow config-menu-label">{t('chat.config.remoteGroup')}</div>}
       {cfg.hosts.map((h) => (
         <button
           key={h.id}
@@ -193,6 +198,7 @@ function EnvMenu({ cfg, session }: { cfg: Config; session: Session }) {
  * — the account chosen at the top of the sidebar already fixes it (see Chat.tsx).
  */
 export function ChatConfigFields({ session, onPatch }: Props) {
+  const t = useT()
   const cfg = useChatConfig(session, onPatch)
   const envId = useId()
   const folderId = useId()
@@ -201,7 +207,7 @@ export function ChatConfigFields({ session, onPatch }: Props) {
   return (
     <>
       <div className="form-group">
-        <label htmlFor={envId}>Where it runs</label>
+        <label htmlFor={envId}>{t('chat.config.whereLabel')}</label>
         <div className="config-env" ref={cfg.envRef}>
           <button
             id={envId}
@@ -218,12 +224,12 @@ export function ChatConfigFields({ session, onPatch }: Props) {
           </button>
           {cfg.envOpen && <EnvMenu cfg={cfg} session={session} />}
         </div>
-        <span className="help">Local, a WSL distro or an SSH host. The CLI must be installed there.</span>
+        <span className="help">{t('chat.config.whereHelp')}</span>
       </div>
 
       <div className="form-group">
         <label htmlFor={folderId}>
-          Folder<span className="optional">optional</span>
+          {t('chat.config.folder')}<span className="optional">{t('chat.config.optional')}</span>
         </label>
         <button
           id={folderId}
@@ -232,7 +238,7 @@ export function ChatConfigFields({ session, onPatch }: Props) {
           title={session.projectPath || undefined}
           aria-expanded={cfg.isRemote ? cfg.pathOpen : undefined}
         >
-          <span className="config-select-value">{session.projectPath || 'Add folder'}</span>
+          <span className="config-select-value">{session.projectPath || t('chat.config.addFolder')}</span>
           <Chevron right />
         </button>
         {cfg.isRemote && cfg.pathOpen && (
@@ -244,7 +250,7 @@ export function ChatConfigFields({ session, onPatch }: Props) {
               autoFocus
               spellCheck={false}
               placeholder="/home/user/project"
-              aria-label="Folder on the remote host"
+              aria-label={t('chat.config.remoteFolderAria')}
               onChange={(e) => cfg.setPathDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') cfg.commitPath()
@@ -252,20 +258,23 @@ export function ChatConfigFields({ session, onPatch }: Props) {
               }}
             />
             <button className="btn-ghost small" onClick={cfg.commitPath}>
-              Set folder
+              {t('chat.config.setFolder')}
             </button>
           </div>
         )}
         <span className="help config-branch-help">
           {cfg.git ? (
-            <>
-              On <span className="mono">{cfg.git.branch}</span> ·{' '}
-              {cfg.git.changed === 1 ? '1 file changed' : `${cfg.git.changed} files changed`}
-            </>
+            withSlot(
+              t('chat.config.gitStatus', {
+                branch: SLOT,
+                changes: plural(t, 'chat.config.filesChanged', cfg.git.changed)
+              }),
+              <span className="mono">{cfg.git.branch}</span>
+            )
           ) : !session.projectPath ? (
-            'No folder chosen: it starts in your home folder.'
+            t('chat.config.noFolder')
           ) : (
-            'The CLI starts in this folder.'
+            t('chat.config.cliStartsHere')
           )}
         </span>
       </div>

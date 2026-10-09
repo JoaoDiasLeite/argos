@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 import ChatPane from './ChatPane'
+import { useT } from '../i18n'
 import PaneSplitter from './PaneSplitter'
 import { TerminalAccelContext } from './terminal-accel'
 import { capacity, type LayoutId, type Pane, type PaneState } from '../lib/panes'
@@ -211,6 +212,7 @@ export default function PaneGrid({
   /** A pane's header started (id) or stopped (null) being dragged, to move the pane. */
   onPaneDrag: (sessionId: string | null) => void
 }) {
+  const t = useT()
   const visible = Math.min(capacity(layout), panes.length)
 
   const gridRef = useRef<HTMLDivElement>(null)
@@ -344,7 +346,7 @@ export default function PaneGrid({
       <div className={`pane-grid ${showHeads ? 'split' : ''}`} style={style} ref={gridRef}>
         {panes.slice(0, visible).map((pane, i) => {
           const isFocused = pane.sessionId === focused
-          const name = api.sessions.find((s) => s.id === pane.sessionId)?.name ?? 'Chat'
+          const name = api.sessions.find((s) => s.id === pane.sessionId)?.name ?? t('chat.pane.defaultName')
           // Gated on an actual drag in flight: a `dragend` outside the grid (cancelled drag,
           // dropped on the sidebar) never reaches the pane's own handlers, so `over` can outlive
           // the drag that set it.
@@ -352,12 +354,12 @@ export default function PaneGrid({
             ? null
             : alreadyOpenIndex !== -1
               ? alreadyOpenIndex === i
-                ? { kind: 'center' as DropKind, label: 'Already open' }
+                ? { kind: 'center' as DropKind, label: t('chat.pane.alreadyOpen') }
                 : null
               : moving && pane.sessionId === draggingSessionId
                 ? null
                 : over?.index === i
-                  ? { kind: over.kind, label: dropLabel(over.kind, moving) }
+                  ? { kind: over.kind, label: dropLabel(t, over.kind, moving) }
                   : null
           const box = zone ? highlightRect(zone.kind) : null
           return (
@@ -439,7 +441,7 @@ export default function PaneGrid({
                     onPaneDrag(null)
                     resetDrag()
                   }}
-                  title="Drag to move this pane"
+                  title={t('chat.pane.drag')}
                 >
                   <span className="pane-head-name" title={name}>
                     {name}
@@ -450,8 +452,8 @@ export default function PaneGrid({
                        existing. Ending a terminal is the close button inside Chat, which is a
                        different and deliberately more destructive thing. */
                     onClick={() => onClose(pane.sessionId)}
-                    title="Close pane (the chat keeps running)"
-                    aria-label={`Close pane ${name}`}
+                    title={t('chat.pane.close')}
+                    aria-label={t('chat.pane.closeAria', { name })}
                   >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                       <path d="M6 6l12 12M18 6L6 18" />

@@ -6,6 +6,7 @@
 // The handlers keep only what only they can do — read the mouse and the rect.
 
 import type { LayoutId } from './panes'
+import type { TFunction } from '../../../shared/i18n'
 
 /**
  * The MIME type of the drag. Custom on purpose: `Chat` accepts files
@@ -156,16 +157,16 @@ export function highlightRect(kind: DropKind): {
   return { left: 0, width: 1, top: 0, height: 1 }
 }
 
-export function dropLabel(kind: DropKind, moving = false): string {
+export function dropLabel(t: TFunction, kind: DropKind, moving = false): string {
   if (moving) {
-    if (kind === 'center') return 'Swap'
-    return kind === 'top' || kind === 'bottom' ? 'Move into grid' : 'Move here'
+    if (kind === 'center') return t('chat.drop.swap')
+    return kind === 'top' || kind === 'bottom' ? t('chat.drop.moveIntoGrid') : t('chat.drop.moveHere')
   }
-  if (kind === 'center') return 'Open here'
+  if (kind === 'center') return t('chat.drop.openHere')
   // The vertical zones get a label of their own: the grid is the layout that
   // spends height, so it is worth naming before the drop instead of after it.
-  if (kind === 'top' || kind === 'bottom') return 'Open in grid'
-  return 'Open in split view'
+  if (kind === 'top' || kind === 'bottom') return t('chat.drop.openInGrid')
+  return t('chat.drop.openInSplit')
 }
 
 /**

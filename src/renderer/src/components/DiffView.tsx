@@ -30,6 +30,7 @@ import swift from 'highlight.js/lib/languages/swift'
 import lua from 'highlight.js/lib/languages/lua'
 import r from 'highlight.js/lib/languages/r'
 import makefile from 'highlight.js/lib/languages/makefile'
+import { useT } from '../i18n'
 import './DiffView.css'
 
 for (const [name, lang] of [
@@ -194,6 +195,7 @@ const HIGHLIGHT_ROW_LIMIT = 2000
 const HIGHLIGHT_CHAR_LIMIT = 200_000
 
 export default function DiffView({ oldText, newText, filePath }: Props) {
+  const t = useT()
   const rows = diffLines(oldText.split('\n'), newText.split('\n'))
   const tooLarge =
     rows.length > HIGHLIGHT_ROW_LIMIT ||
@@ -204,7 +206,7 @@ export default function DiffView({ oldText, newText, filePath }: Props) {
     <div className="diff-view">
       {tooLarge && (
         <div className="diff-truncation-notice">
-          Diff is large — syntax highlighting disabled to keep the UI responsive.
+          {t('editor.diff.large')}
         </div>
       )}
       {rows.map((r, i) => (

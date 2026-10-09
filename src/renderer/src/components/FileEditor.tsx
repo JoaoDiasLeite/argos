@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 // fraction of the full bundle. Anything unmapped falls back to plaintext (see detectLanguage).
 import hljs from 'highlight.js/lib/common'
 import Sheet from './Sheet'
+import { useT } from '../i18n'
 import './FileEditor.css'
 
 interface ReadResult {
@@ -103,6 +104,7 @@ function formatBytes(n: number): string {
  *  Highlighting is a `<pre>` painted *under* a transparent textarea, so native editing,
  *  selection, IME and undo all keep working. */
 export default function FileEditor({ filePath, onClose, read, write, onDownload }: Props) {
+  const t = useT()
   const [content, setContent] = useState('')
   const [original, setOriginal] = useState('')
   const [loading, setLoading] = useState(true)
@@ -147,7 +149,7 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
       if (cancelled) return
       setLoading(false)
       if (!res.ok) {
-        setError(res.error || 'Failed to read file')
+        setError(res.error || t('editor.file.readFailed'))
         return
       }
       if (res.tooLarge) {
@@ -177,8 +179,8 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
     const res = await write(filePath, content)
     setSaving(false)
     if (res.ok) setOriginal(content)
-    else setError(res.error || 'Failed to save file')
-  }, [dirty, saving, write, filePath, content])
+    else setError(res.error || t('editor.file.saveFailed'))
+  }, [dirty, saving, write, filePath, content, t])
 
   /** Closing with unsaved edits raises an inline confirmation instead of throwing them away. */
   const requestClose = useCallback(() => {
@@ -524,24 +526,24 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
     }
   }, [content])
 
-  const matchLabel = query ? (matches.length ? `${matchIndex + 1} of ${matches.length}` : 'No results') : ''
+  const matchLabel = query ? (matches.length ? t('editor.find.matchCount', { index: matchIndex + 1, total: matches.length }) : t('editor.find.noResults')) : ''
 
   const footer = confirmDiscard ? (
-    <div className="file-editor-foot" role="alertdialog" aria-label="Unsaved changes" onKeyDown={onKeyDown}>
-      <span className="help file-editor-foot-note">Discard your unsaved changes to this file?</span>
+    <div className="file-editor-foot" role="alertdialog" aria-label={t('editor.file.unsaved')} onKeyDown={onKeyDown}>
+      <span className="help file-editor-foot-note">{t('editor.file.discardPrompt')}</span>
       <button className="btn-ghost" onClick={() => setConfirmDiscard(false)} autoFocus>
-        Keep editing
+        {t('editor.file.keepEditing')}
       </button>
       <button className="btn-primary danger" onClick={onClose}>
-        Discard
+        {t('editor.file.discard')}
       </button>
     </div>
   ) : (
     <div className="file-editor-foot" onKeyDown={onKeyDown}>
       <span className="help file-editor-foot-note">
-        {editable ? 'Ctrl+S saves · Esc closes' : 'Esc closes'}
+        {editable ? t('editor.file.hintEditable') : t('editor.file.hintReadOnly')}
         {editable && !highlightEnabled && (
-          <span title="Syntax highlighting is off above 200k characters"> · no highlighting (large file)</span>
+          <span title={t('editor.file.noHighlightTitle')}>{t('editor.file.noHighlight')}</span>
         )}
       </span>
       {editable && (
@@ -549,15 +551,15 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
           className="btn-ghost small"
           onClick={() => setWrap((v) => !v)}
           aria-pressed={wrap}
-          title={wrap ? 'Word wrap on (line numbers hidden)' : 'Word wrap off'}
+          title={wrap ? t('editor.file.wrapOn') : t('editor.file.wrapOff')}
         >
-          Wrap
+          {t('editor.file.wrap')}
         </button>
       )}
-      <button className="btn-ghost" onClick={requestClose}>Close</button>
+      <button className="btn-ghost" onClick={requestClose}>{t('common.close')}</button>
       {editable && (
-        <button className="btn-primary" onClick={save} disabled={!dirty || saving} title="Save (Ctrl+S)">
-          {saving ? 'Saving…' : 'Save'}
+        <button className="btn-primary" onClick={save} disabled={!dirty || saving} title={t('editor.file.saveTitle')}>
+          {saving ? t('editor.file.saving') : t('common.save')}
         </button>
       )}
     </div>
@@ -568,33 +570,33 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
       title={
         <span className="mono file-editor-title" title={filePath}>
           <span className="file-editor-path">{filePath}</span>
-          {dirty && <span className="file-editor-dirty" role="img" aria-label="Unsaved changes" />}
+          {dirty && <span className="file-editor-dirty" role="img" aria-label={t('editor.file.unsaved')} />}
         </span>
       }
-      ariaLabel={`Edit ${filePath}`}
+      ariaLabel={t('editor.file.editAria', { path: filePath })}
       width={720}
       onClose={requestClose}
       footer={footer}
     >
       <div className="file-editor-body" onKeyDown={onKeyDown}>
-        {loading && <div className="view-empty small">Loading…</div>}
+        {loading && <div className="view-empty small">{t('editor.file.loading')}</div>}
         {!loading && error && <div className="ssh-test err">{error}</div>}
         {!loading && !error && tooLarge && (
           <div className="file-editor-notice">
-            <p>This file is too large to edit in-app.</p>
+            <p>{t('editor.file.tooLarge')}</p>
             {onDownload && (
               <button className="btn-ghost small" onClick={onDownload}>
-                Download instead
+                {t('editor.file.downloadInstead')}
               </button>
             )}
           </div>
         )}
         {!loading && !error && binary && (
           <div className="file-editor-notice">
-            <p>This looks like a binary file, it can&apos;t be shown as text.</p>
+            <p>{t('editor.file.binary')}</p>
             {onDownload && (
               <button className="btn-ghost small" onClick={onDownload}>
-                Download instead
+                {t('editor.file.downloadInstead')}
               </button>
             )}
           </div>
@@ -603,13 +605,13 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
           <>
             {/* In normal flow, above the code, so a floating bar would not cover the first line. */}
             {findOpen && (
-              <div className="file-editor-find" role="search" aria-label="Find and replace">
+              <div className="file-editor-find" role="search" aria-label={t('editor.find.region')}>
                 <div className="file-editor-find-row">
                   <input
                     ref={findInputRef}
                     className="text-input file-editor-find-input"
-                    placeholder="Find"
-                    aria-label="Find"
+                    placeholder={t('editor.find.placeholder')}
+                    aria-label={t('editor.find.placeholder')}
                     value={query}
                     spellCheck={false}
                     onChange={(e) => {
@@ -628,8 +630,8 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
                     className="btn-ghost small"
                     onClick={() => setCaseSensitive((v) => !v)}
                     aria-pressed={caseSensitive}
-                    aria-label="Match case"
-                    title="Match case"
+                    aria-label={t('editor.find.matchCase')}
+                    title={t('editor.find.matchCase')}
                   >
                     Aa
                   </button>
@@ -637,8 +639,8 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
                     className="icon-btn"
                     onClick={() => step(-1)}
                     disabled={matches.length === 0}
-                    aria-label="Previous match"
-                    title="Previous match (Shift+Enter)"
+                    aria-label={t('editor.find.previous')}
+                    title={t('editor.find.previousTitle')}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="M6 15l6-6 6 6" />
@@ -648,8 +650,8 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
                     className="icon-btn"
                     onClick={() => step(1)}
                     disabled={matches.length === 0}
-                    aria-label="Next match"
-                    title="Next match (Enter)"
+                    aria-label={t('editor.find.next')}
+                    title={t('editor.find.nextTitle')}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="M6 9l6 6 6-6" />
@@ -659,14 +661,14 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
                     className="icon-btn"
                     onClick={() => setReplaceShown((v) => !v)}
                     aria-pressed={replaceShown}
-                    aria-label="Toggle replace"
-                    title="Toggle replace (Ctrl+H)"
+                    aria-label={t('editor.find.toggleReplace')}
+                    title={t('editor.find.toggleReplaceTitle')}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="M17 3l4 4-4 4M21 7H8M7 21l-4-4 4-4M3 17h13" />
                     </svg>
                   </button>
-                  <button className="icon-btn" onClick={closeFind} aria-label="Close find" title="Close find (Esc)">
+                  <button className="icon-btn" onClick={closeFind} aria-label={t('editor.find.close')} title={t('editor.find.closeTitle')}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="M6 6l12 12M18 6L6 18" />
                     </svg>
@@ -676,8 +678,8 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
                   <div className="file-editor-find-row">
                     <input
                       className="text-input file-editor-find-input"
-                      placeholder="Replace with"
-                      aria-label="Replace with"
+                      placeholder={t('editor.find.replaceWith')}
+                      aria-label={t('editor.find.replaceWith')}
                       value={replacement}
                       spellCheck={false}
                       onChange={(e) => setReplacement(e.target.value)}
@@ -686,19 +688,19 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
                       className="btn-ghost small"
                       onClick={replaceCurrent}
                       disabled={matches.length === 0}
-                      aria-label="Replace current match"
-                      title="Replace current match"
+                      aria-label={t('editor.find.replaceCurrent')}
+                      title={t('editor.find.replaceCurrent')}
                     >
-                      Replace
+                      {t('editor.find.replace')}
                     </button>
                     <button
                       className="btn-ghost small"
                       onClick={replaceAll}
                       disabled={matches.length === 0}
-                      aria-label="Replace all matches"
-                      title="Replace all matches"
+                      aria-label={t('editor.find.replaceAllAria')}
+                      title={t('editor.find.replaceAllAria')}
                     >
-                      All
+                      {t('editor.find.all')}
                     </button>
                   </div>
                 )}
@@ -748,7 +750,7 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
                   onKeyUp={syncCaret}
                   wrap={wrap ? 'soft' : 'off'}
                   spellCheck={false}
-                  aria-label={`Contents of ${filePath}`}
+                  aria-label={t('editor.file.contentsAria', { path: filePath })}
                   autoFocus
                 />
               </div>
@@ -756,13 +758,13 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
 
             <div className="file-editor-status">
               <span>
-                Ln {caret.line}, Col {caret.col}
+                {t('editor.file.status', { line: caret.line, col: caret.col })}
               </span>
-              {caret.selLen > 0 && <span>{caret.selLen} selected</span>}
+              {caret.selLen > 0 && <span>{t('editor.file.selected', { n: caret.selLen })}</span>}
               <span className="file-editor-status-spacer" />
               <span>{language}</span>
               <span>{formatBytes(size)}</span>
-              {dirty && <span className="file-editor-modified">Modified</span>}
+              {dirty && <span className="file-editor-modified">{t('editor.file.modified')}</span>}
             </div>
           </>
         )}

@@ -4,6 +4,8 @@ import { ChatConfigFields } from './ChatConfigBar'
 import { chatTerminalId } from '../lib/terminal-id'
 import { sessionProvider } from '../lib/account-scope'
 import { CLI_PROVIDERS } from '../lib/cli-providers'
+import { useT } from '../i18n'
+import { SLOT, withSlot } from '../lib/t-slot'
 import './Chat.css'
 
 // ChatTerminal pulls in @xterm/xterm + its addons (~300 kB), and nothing on screen needs
@@ -108,6 +110,7 @@ export default function Chat({
   // clears itself once a save succeeds), so "dismiss" only has to mean "stop showing me
   // *this* failure" — tracked by comparing against the last message the user waved away.
   const [dismissedSaveError, setDismissedSaveError] = useState('')
+  const t = useT()
 
   // Title block for the setup pane: the chat's name plus one quiet meta line. Only for a
   // chat that already has a name of its own — a fresh one is still the placeholder "New
@@ -124,7 +127,7 @@ export default function Chat({
       ? session?.codexAccountName
       : setupProvider === 'gemini'
         ? session?.geminiAccountName
-        : session?.accountName) || 'Default'
+        : session?.accountName) || t('chat.setup.defaultAccount')
   const resuming = !!session?.claudeSessionId
   const setupRef = useRef<HTMLDivElement>(null)
   // Enter starts and Esc goes back to the list, from anywhere in the pane that does not
@@ -159,11 +162,11 @@ export default function Chat({
       {showTitleName && <div className="chat-title-name">{session.name}</div>}
       {hasTitleMeta && (
         <div className="chat-title-meta">
-          {session.remoteHostName && <span title="Where it runs">{session.remoteHostName}</span>}
+          {session.remoteHostName && <span title={t('chat.title.runsWhere')}>{session.remoteHostName}</span>}
           {session.remoteHostName && session.claudeSessionId && (
             <span className="chat-title-sep" aria-hidden="true">·</span>
           )}
-          {session.claudeSessionId && <span title="Resumed CLI session">resumed</span>}
+          {session.claudeSessionId && <span title={t('chat.title.resumedTitle')}>{t('chat.title.resumed')}</span>}
         </div>
       )}
     </div>
@@ -174,16 +177,15 @@ export default function Chat({
       {saveError && dismissedSaveError !== saveError && (
         <div className="block err save-error-banner" role="alert">
           <span className="save-error-text">
-            This chat could not be saved to disk, so its name, folder and link to the CLI
-            conversation may be lost if the app closes. {/* The caller hands us a
-            stringified Error; its "Error: " prefix is noise in a sentence the user reads. */}
-            ({saveError.replace(/^Error:\s*/, '')})
+            {/* The caller hands us a stringified Error; its "Error: " prefix is noise in a
+                sentence the user reads. */}
+            {t('chat.saveError.message', { error: saveError.replace(/^Error:\s*/, '') })}
           </span>
           <button
             className="icon-btn"
             onClick={() => setDismissedSaveError(saveError)}
-            title="Dismiss"
-            aria-label="Dismiss this warning"
+            title={t('chat.saveError.dismiss')}
+            aria-label={t('chat.saveError.dismissAria')}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -197,27 +199,23 @@ export default function Chat({
           <div className="terminal-setup-col">
             {titleBlock}
             <div>
-              <h2>{resuming ? 'Resume in a terminal' : 'Start a terminal'}</h2>
+              <h2>{resuming ? t('chat.setup.resumeHeading') : t('chat.setup.startHeading')}</h2>
               <p>
                 {resuming ? (
-                  <>
-                    {setupCli} · resumed as <b>{setupAccount}</b>. Pick where it runs.
-                  </>
+                  withSlot(t('chat.setup.resumedAs', { cli: setupCli, account: SLOT }), <b>{setupAccount}</b>)
                 ) : (
-                  <>
-                    {setupCli}, as the <b>{setupAccount}</b> account chosen above. Pick where it runs.
-                  </>
+                  withSlot(t('chat.setup.chosenAccount', { cli: setupCli, account: SLOT }), <b>{setupAccount}</b>)
                 )}
               </p>
             </div>
             {session.archivedTranscript && (
               <div className="terminal-setup-archive">
-                <span className="help">Argos chat from before 2.0. Its transcript is saved as Markdown.</span>
+                <span className="help">{t('chat.setup.archived')}</span>
                 <button className="btn-ghost small" onClick={() => void window.electronAPI.openChatExport(session.archivedTranscript)}>
-                  Open
+                  {t('common.open')}
                 </button>
                 <button className="btn-ghost small" onClick={() => void window.electronAPI.openChatExport(session.archivedTranscript, true)}>
-                  Show in folder
+                  {t('chat.setup.showInFolder')}
                 </button>
               </div>
             )}
@@ -230,9 +228,9 @@ export default function Chat({
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
                   <polygon points="6 4 20 12 6 20" />
                 </svg>
-                {resuming ? 'Resume in terminal' : 'Start terminal'}
+                {resuming ? t('chat.setup.resume') : t('chat.setup.start')}
               </button>
-              <span className="help">Enter starts · Esc goes back to the list</span>
+              <span className="help">{t('chat.setup.keys')}</span>
             </div>
           </div>
         </div>

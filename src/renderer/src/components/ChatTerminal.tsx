@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { ProviderId } from '../types'
+import { useT } from '../i18n'
 import { TERMINAL_THEME } from './terminal-theme'
 import TerminalContextMenu, { terminalMenuItems } from './TerminalContextMenu'
 import { TerminalAccelContext } from './terminal-accel'
@@ -140,6 +141,7 @@ function loadFontSize(): number {
 }
 
 export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onPopOut, onPopIn, onActive, initialPrompt, onInitialPromptSent, accelerated, ops }: Props) {
+  const t = useT()
   // An explicit prop wins; otherwise the surrounding view decides (false by default).
   const accelFromContext = useContext(TerminalAccelContext)
   // The setup effect below runs once and cannot close over a prop that changes later, and
@@ -825,7 +827,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     <div className="chat-terminal">
       <div className="chat-terminal-bar">
         <span className="chat-terminal-label">
-          Terminal
+          {t('chat.terminal.label')}
           {cwd && <span className="chat-terminal-cwd" title={cwd}>{cwd.split(/[\\/]/).filter(Boolean).pop()}</span>}
         </span>
         <div className="chat-terminal-actions">
@@ -833,8 +835,8 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
             <button
               className="chat-terminal-btn"
               onClick={() => setFontSize((s) => Math.max(MIN_FONT_SIZE, s - 1))}
-              title="Smaller text"
-              aria-label="Smaller text"
+              title={t('chat.terminal.smaller')}
+              aria-label={t('chat.terminal.smaller')}
               disabled={fontSize <= MIN_FONT_SIZE}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -845,8 +847,8 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
             <button
               className="chat-terminal-btn"
               onClick={() => setFontSize((s) => Math.min(MAX_FONT_SIZE, s + 1))}
-              title="Larger text"
-              aria-label="Larger text"
+              title={t('chat.terminal.larger')}
+              aria-label={t('chat.terminal.larger')}
               disabled={fontSize >= MAX_FONT_SIZE}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -855,14 +857,14 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
             </button>
           </div>
           {onPopOut && (
-            <button className="chat-terminal-btn" onClick={onPopOut} title="Open in its own window" aria-label="Open in its own window">
+            <button className="chat-terminal-btn" onClick={onPopOut} title={t('chat.terminal.popOut')} aria-label={t('chat.terminal.popOut')}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M14 4h6v6M20 4l-9 9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
               </svg>
             </button>
           )}
           {onPopIn && (
-            <button className="chat-terminal-btn" onClick={onPopIn} title="Return to the main window" aria-label="Return to the main window">
+            <button className="chat-terminal-btn" onClick={onPopIn} title={t('chat.terminal.popIn')} aria-label={t('chat.terminal.popIn')}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M20 10h-6V4M14 10l9-9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
               </svg>
@@ -877,12 +879,12 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
               window.electronAPI.terminalKill(terminalId)
               setReloadKey((k) => k + 1)
             }}
-            title="Restart the terminal (relaunch the CLI)"
+            title={t('chat.terminal.restartTitle')}
           >
-            Restart
+            {t('chat.terminal.restart')}
           </button>
           {closable && (
-            <button className="chat-terminal-btn" onClick={onClose} title="Close terminal" aria-label="Close terminal">
+            <button className="chat-terminal-btn" onClick={onClose} title={t('chat.terminal.close')} aria-label={t('chat.terminal.close')}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -895,12 +897,12 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         {starting && !exited && (
           <div className="chat-terminal-loading">
             <div className="chat-terminal-spinner" />
-            <div className="chat-terminal-loading-text">{autoLaunchCli ? `Starting ${providerLabel}…` : 'Connecting…'}</div>
+            <div className="chat-terminal-loading-text">{autoLaunchCli ? t('chat.terminal.starting', { provider: providerLabel }) : t('chat.terminal.connecting')}</div>
           </div>
         )}
         {exited && (
           <div className="block chat-terminal-exited" role="status">
-            <span className="help">The shell exited.</span>
+            <span className="help">{t('chat.terminal.exited')}</span>
             <button
               className="btn-ghost"
               onClick={() => {
@@ -908,7 +910,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
                 setReloadKey((k) => k + 1)
               }}
             >
-              Reconnect
+              {t('chat.terminal.reconnect')}
             </button>
           </div>
         )}

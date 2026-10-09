@@ -26,7 +26,7 @@ function itemsFor(field: HTMLInputElement | HTMLTextAreaElement | null, selectio
 
   if (field) {
     items.push({
-      label: 'Cut',
+      label: 'chat.menu.cut',
       disabled: !hasSelection,
       onClick: () => {
         const start = field.selectionStart ?? 0
@@ -43,7 +43,7 @@ function itemsFor(field: HTMLInputElement | HTMLTextAreaElement | null, selectio
   }
 
   items.push({
-    label: 'Copy',
+    label: 'chat.menu.copy',
     disabled: !hasSelection,
     onClick: () => {
       if (selection) void navigator.clipboard.writeText(selection).catch(() => {})
@@ -52,7 +52,7 @@ function itemsFor(field: HTMLInputElement | HTMLTextAreaElement | null, selectio
 
   if (field) {
     items.push({
-      label: 'Paste',
+      label: 'chat.menu.paste',
       onClick: () => {
         // Focus first: the menu took it when it opened, and insertText writes wherever
         // the caret actually is.
@@ -63,7 +63,7 @@ function itemsFor(field: HTMLInputElement | HTMLTextAreaElement | null, selectio
       }
     })
     items.push({
-      label: 'Select all',
+      label: 'chat.menu.selectAll',
       onClick: () => {
         field.focus()
         field.select()
