@@ -71,6 +71,7 @@ import { SESSION_DRAG_TYPE, type DropPlan } from './lib/pane-drop'
 // fallback (`ViewLoading`) rendered while each view's chunk is fetched.
 import { SshHostPublic, RemoteTarget } from './types'
 import { useT } from './i18n'
+import { NEW_CHAT_NAME, chatDisplayName } from './lib/chat-name'
 import { plural, type MessageKey } from '../../shared/i18n'
 import './styles/App.css'
 // Pulled in directly (rather than left to each lazy view) so the `.view-loading`
@@ -151,7 +152,7 @@ function newSession(projectPath: string | undefined, provider: ProviderId, accou
   const wsl = projectPath ? parseWslUnc(projectPath) : null
   return {
     id: generateId(),
-    name: 'New chat',
+    name: NEW_CHAT_NAME,
     projectPath: wsl ? wsl.posixPath : projectPath,
     wslDistro: wsl?.distro,
     remoteHostName: wsl ? `WSL · ${wsl.distro}` : undefined,
@@ -1220,11 +1221,11 @@ export default function App() {
       // its first message instead, as Projects names it, rather than staying "New chat"
       // until it is reopened from there.
       const nameFromTitle =
-        transcript.title && (s.name === 'New chat' || s.nameFromPreview) && transcript.title !== s.name
+        transcript.title && (s.name === NEW_CHAT_NAME || s.nameFromPreview) && transcript.title !== s.name
           ? transcript.title
           : undefined
       const nameFromPreview =
-        !transcript.title && s.name === 'New chat' && transcript.preview ? transcript.preview : undefined
+        !transcript.title && s.name === NEW_CHAT_NAME && transcript.preview ? transcript.preview : undefined
       const length = transcript.messages.length
       const previous = transcriptLengthRef.current.get(s.id)
       transcriptLengthRef.current.set(s.id, length)
@@ -1338,7 +1339,7 @@ export default function App() {
             // Only a chat still carrying the placeholder is renamed. A name the user
             // typed, or one an earlier round already took from this conversation, is
             // not something a later listing gets to overwrite.
-            ...(hit.title && s.name === 'New chat' ? { name: hit.title } : {})
+            ...(hit.title && s.name === NEW_CHAT_NAME ? { name: hit.title } : {})
           }
           touched.push(updated)
           return updated
@@ -1650,7 +1651,7 @@ export default function App() {
       // and look in the right place.
       const origin = originOf(s)
       if (origin) {
-        return { id: s.id, name: s.name, attention, done, account: origin.label }
+        return { id: s.id, name: chatDisplayName(s.name, t), attention, done, account: origin.label }
       }
       const acctId = acctOf(s, defaults)
       const provider = sessionProvider(s)
@@ -1659,7 +1660,7 @@ export default function App() {
       const name = list.find((a) => a.id === acctId)?.name ?? s.accountName ?? acctId
       return {
         id: s.id,
-        name: s.name,
+        name: chatDisplayName(s.name, t),
         attention,
         done,
         account: `${provider}:${acctId}` === scopeKey ? undefined : name
@@ -1847,7 +1848,7 @@ export default function App() {
       return {
         id: r.approvalId,
         kind: 'approval',
-        title: session?.name ?? t('app.home.chatFallback'),
+        title: session ? chatDisplayName(session.name, t) : t('app.home.chatFallback'),
         detail: target,
         mono: r.tool === 'Bash',
         context: session?.projectPath
@@ -1867,7 +1868,7 @@ export default function App() {
       .map((s) => ({
         kind: 'chat',
         id: s.id,
-        name: s.name,
+        name: chatDisplayName(s.name, t),
         detail: CLI_PROVIDERS.find((p) => p.id === sessionProvider(s))?.label,
         attention: attentionIds.has(s.id)
       }))
@@ -1976,7 +1977,7 @@ export default function App() {
         .slice(0, 12)
         .map((s) => ({
           id: s.id,
-          name: s.name,
+          name: chatDisplayName(s.name, t),
           projectName: s.projectPath ? resolveHomeProjectName(s.projectPath, s.wslDistro) : undefined,
           updatedAt: s.updatedAt,
           preview: ''
@@ -2451,7 +2452,7 @@ export default function App() {
     for (const s of sessions) {
       items.push({
         id: `sess:${s.id}`,
-        title: s.name || t('app.palette.newChat'),
+        title: chatDisplayName(s.name, t),
         subtitle: s.remoteHostName ?? s.projectPath?.split(/[\\/]/).filter(Boolean).pop(),
         group: t('app.palette.groupSessions'),
         run: () => {

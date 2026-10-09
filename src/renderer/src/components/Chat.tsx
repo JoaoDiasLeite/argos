@@ -6,6 +6,7 @@ import { sessionProvider } from '../lib/account-scope'
 import { CLI_PROVIDERS } from '../lib/cli-providers'
 import { useT } from '../i18n'
 import { rich } from '../lib/t-rich'
+import { isUnnamedChat } from '../lib/chat-name'
 import './Chat.css'
 
 // ChatTerminal pulls in @xterm/xterm + its addons (~300 kB), and nothing on screen needs
@@ -156,7 +157,7 @@ export default function Chat({
   }, [needsTerminalSetup, session?.id])
 
   const hasTitleMeta = !!(session?.remoteHostName || session?.claudeSessionId)
-  const showTitleName = !titleInHeader && !!session?.name && session.name !== 'New chat'
+  const showTitleName = !titleInHeader && !!session?.name && !isUnnamedChat(session.name)
   const titleBlock = session && (showTitleName || hasTitleMeta) && (
     <div className="chat-title-block">
       {showTitleName && <div className="chat-title-name">{session.name}</div>}

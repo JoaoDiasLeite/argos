@@ -1,5 +1,6 @@
 import './drag-ghost.css'
 import type { TFunction } from '../../../shared/i18n'
+import { chatDisplayName } from './chat-name'
 
 /**
  * The image a dragged chat carries: a small pill with its name, instead of the browser's
@@ -18,7 +19,7 @@ export function setChatDragImage(e: { dataTransfer: DataTransfer }, name: string
     dot.className = 'drag-ghost-dot'
     const label = document.createElement('span')
     label.className = 'drag-ghost-name'
-    label.textContent = name || t('sidebar.session.newChat')
+    label.textContent = chatDisplayName(name, t)
     ghost.append(dot, label)
     document.body.appendChild(ghost)
     e.dataTransfer.setDragImage(ghost, 14, 16)

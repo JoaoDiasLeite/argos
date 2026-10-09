@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Session } from '../types'
 import { applyTheme } from '../lib/theme'
 import { useT } from '../i18n'
+import { chatDisplayName } from '../lib/chat-name'
 
 // Quick-launcher overlay window. Summoned via a global shortcut from anywhere in
 // the OS; every action hands off to the main window and dismisses the overlay.
@@ -125,7 +126,7 @@ export default function Overlay() {
             role="option"
             aria-selected={i === selected}
           >
-            <span className="overlay-item-title">{s.name || t('app.overlay.newChat')}</span>
+            <span className="overlay-item-title">{chatDisplayName(s.name, t)}</span>
             <span className="overlay-item-sub">
               {s.remoteHostName ?? s.projectPath?.split(/[\\/]/).filter(Boolean).pop() ?? ''}
             </span>

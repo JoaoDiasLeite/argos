@@ -16,6 +16,7 @@ import { setChatDragImage } from '../lib/drag-ghost'
 import { useLanguage, useT } from '../i18n'
 import type { TFunction } from '../../../shared/i18n'
 import FileTree from './FileTree'
+import { chatDisplayName, isUnnamedChat } from '../lib/chat-name'
 import './Sidebar.css'
 import './AccountPicker.css'
 
@@ -577,7 +578,7 @@ export default function Sidebar({
     setRenamingId(s.id)
     // Seeded with the real name, not the "New chat" placeholder — the placeholder is what
     // you are trying to get rid of, so handing it back as the text to edit is busywork.
-    setRenameDraft(s.name === 'New chat' ? '' : s.name)
+    setRenameDraft(isUnnamedChat(s.name) ? '' : s.name)
   }
 
   const commitRename = (s: Session) => {
@@ -597,7 +598,7 @@ export default function Sidebar({
         className="session-rename-input"
         autoFocus
         value={renameDraft}
-        placeholder={s.name || t('sidebar.session.newChat')}
+        placeholder={chatDisplayName(s.name, t)}
         onChange={(e) => setRenameDraft(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') commitRename(s)
@@ -638,7 +639,7 @@ export default function Sidebar({
         ? (s.accountName || accounts.find((a) => a.id === s.accountId)?.name || null)
         : null
     // Date and project path moved off the visible row and into its tooltip.
-    const rowTitle = [s.name || t('sidebar.session.newChat'), origin?.label, s.projectPath, formatDate(s.updatedAt)]
+    const rowTitle = [chatDisplayName(s.name, t), origin?.label, s.projectPath, formatDate(s.updatedAt)]
       .filter(Boolean)
       .join(' — ')
     return (
@@ -667,7 +668,7 @@ export default function Sidebar({
           className={`session-row-name ${!status && !s.unread ? 'quiet' : ''}`}
           onDoubleClick={(e) => { e.stopPropagation(); startRename(s) }}
         >
-          {s.name || t('sidebar.session.newChat')}
+          {chatDisplayName(s.name, t)}
         </span>
         {showProject && s.projectPath && (
           <span className="chip session-chip" title={s.projectPath}>

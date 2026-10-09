@@ -16,6 +16,7 @@ import {
 } from '../lib/pane-drop'
 import type { SessionPaneApi } from '../hooks/useSessionPane'
 import { setChatDragImage } from '../lib/drag-ghost'
+import { chatDisplayName } from '../lib/chat-name'
 import './PaneGrid.css'
 
 /**
@@ -346,7 +347,8 @@ export default function PaneGrid({
       <div className={`pane-grid ${showHeads ? 'split' : ''}`} style={style} ref={gridRef}>
         {panes.slice(0, visible).map((pane, i) => {
           const isFocused = pane.sessionId === focused
-          const name = api.sessions.find((s) => s.id === pane.sessionId)?.name ?? t('chat.pane.defaultName')
+          const found = api.sessions.find((s) => s.id === pane.sessionId)
+          const name = found ? chatDisplayName(found.name, t) : t('chat.pane.defaultName')
           // Gated on an actual drag in flight: a `dragend` outside the grid (cancelled drag,
           // dropped on the sidebar) never reaches the pane's own handlers, so `over` can outlive
           // the drag that set it.
