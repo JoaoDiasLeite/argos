@@ -202,7 +202,8 @@ import {
 } from './chat-popout'
 import { noteTerminalBusy } from './run-indicators-pure'
 import { successBadge, errorBadge, approvalBadge } from './badges'
-import { createTray, updateTrayShortcutLabel } from './tray'
+import { createTray, refreshTrayMenu, updateTrayShortcutLabel } from './tray'
+import { currentLanguage, t } from './i18n'
 import { initUpdater, getUpdaterState, checkNow, quitAndInstall } from './updater'
 import { getPlanUsageForIpc, startPlanUsageWatcher } from './plan-usage'
 import { getCodexAccountsUsage } from './codex-usage'
@@ -492,20 +493,23 @@ function installApplicationMenu(): void {
     // the app with no Cmd+Q. It carries no clipboard roles, so it's safe to keep.
     ...(process.platform === 'darwin' ? [{ role: 'appMenu' } as MenuItemConstructorOptions] : []),
     {
-      label: 'View',
+      label: t('main.menu.view'),
       submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { role: 'toggleDevTools' },
+        { role: 'reload', label: t('main.menu.reload') },
+        { role: 'forceReload', label: t('main.menu.forceReload') },
+        { role: 'toggleDevTools', label: t('main.menu.toggleDevTools') },
         { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' }
+        { role: 'resetZoom', label: t('main.menu.resetZoom') },
+        { role: 'zoomIn', label: t('main.menu.zoomIn') },
+        { role: 'zoomOut', label: t('main.menu.zoomOut') }
       ]
     },
     {
-      label: 'Window',
-      submenu: [{ role: 'minimize' }, { role: 'close' }]
+      label: t('main.menu.window'),
+      submenu: [
+        { role: 'minimize', label: t('main.menu.minimize') },
+        { role: 'close', label: t('main.menu.close') }
+      ]
     }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
@@ -591,8 +595,8 @@ function createWindow(): void {
     if (!trayHintShown && Notification.isSupported()) {
       trayHintShown = true
       new Notification({
-        title: 'Argos is still running',
-        body: 'The app keeps running in the system tray. Use the tray icon to reopen or quit.'
+        title: t('main.notify.trayHint.title'),
+        body: t('main.notify.trayHint.body')
       }).show()
     }
   })
@@ -1552,8 +1556,14 @@ function broadcastUiPrefs(ui: UiPrefs): void {
 }
 
 ipcMain.handle('config:set-ui', (_, prefs: UiPrefsPatch) => {
+  const prevLanguage = currentLanguage()
   const ui = setUiPrefs(prefs)
   broadcastUiPrefs(ui)
+  // Menus are built once with their labels baked in; rebuild them in the new language.
+  if (currentLanguage() !== prevLanguage) {
+    installApplicationMenu()
+    refreshTrayMenu()
+  }
   return ui
 })
 ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {

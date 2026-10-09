@@ -31,6 +31,8 @@ import AppearanceSettings from '../components/AppearanceSettings'
 import './views.css'
 import './SettingsView.css'
 import Select from '../components/Select'
+import { useT } from '../i18n'
+import { LANGUAGES, isLanguage, plural, type MessageKey } from '../../../shared/i18n'
 
 type SectionId = 'appearance' | 'general' | 'connection' | 'system' | 'ops' | 'about'
 
@@ -49,10 +51,10 @@ interface Props {
   onBack: () => void
 }
 
-const SECTIONS: { id: SectionId; label: string; icon: JSX.Element }[] = [
+const SECTIONS: { id: SectionId; labelKey: MessageKey; icon: JSX.Element }[] = [
   {
     id: 'appearance',
-    label: 'Appearance',
+    labelKey: 'settings.section.appearance',
     icon: (
       <>
         <circle cx="12" cy="12" r="9" />
@@ -62,7 +64,7 @@ const SECTIONS: { id: SectionId; label: string; icon: JSX.Element }[] = [
   },
   {
     id: 'general',
-    label: 'General',
+    labelKey: 'settings.section.general',
     icon: (
       <>
         <circle cx="12" cy="12" r="3" />
@@ -72,7 +74,7 @@ const SECTIONS: { id: SectionId; label: string; icon: JSX.Element }[] = [
   },
   {
     id: 'connection',
-    label: 'Connection',
+    labelKey: 'settings.section.connection',
     icon: (
       <>
         <path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 0 10h-2" />
@@ -82,7 +84,7 @@ const SECTIONS: { id: SectionId; label: string; icon: JSX.Element }[] = [
   },
   {
     id: 'system',
-    label: 'System',
+    labelKey: 'settings.section.system',
     icon: (
       <>
         <rect x="2" y="4" width="20" height="13" rx="2" />
@@ -93,7 +95,7 @@ const SECTIONS: { id: SectionId; label: string; icon: JSX.Element }[] = [
   },
   {
     id: 'ops',
-    label: 'Ops audit',
+    labelKey: 'settings.section.ops',
     icon: (
       <>
         <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" />
@@ -103,7 +105,7 @@ const SECTIONS: { id: SectionId; label: string; icon: JSX.Element }[] = [
   },
   {
     id: 'about',
-    label: 'About',
+    labelKey: 'settings.section.about',
     icon: (
       <>
         <circle cx="12" cy="12" r="9" />
@@ -137,6 +139,7 @@ export default function SettingsView({
   codexAccounts,
   onBack
 }: Props) {
+  const t = useT()
   const [section, setSection] = useState<SectionId>('appearance')
   const pane = useRef<HTMLDivElement>(null)
 
@@ -310,21 +313,28 @@ export default function SettingsView({
   }
 
   const permissionsValue = permCounts
-    ? `${permCounts.allow.length} allow · ${permCounts.deny.length} deny · ${permCounts.ask.length} ask`
+    ? t('settings.general.permissions.value', {
+        allow: permCounts.allow.length,
+        deny: permCounts.deny.length,
+        ask: permCounts.ask.length
+      })
     : undefined
   const hooksValue = (() => {
     if (!hooks) return undefined
     const events = Object.keys(hooks).filter((k) => hooks[k]?.length > 0)
-    if (events.length === 0) return 'No hooks'
+    if (events.length === 0) return t('settings.general.hooks.none')
     const n = events.reduce((sum, k) => sum + hooks[k].reduce((s, e) => s + (e.hooks?.length ?? 0), 0), 0)
-    return `${n} ${n === 1 ? 'hook' : 'hooks'} on ${events.length} ${events.length === 1 ? 'event' : 'events'}`
+    return t('settings.general.hooks.value', {
+      hooks: plural(t, 'settings.general.hooks.count', n),
+      events: plural(t, 'settings.general.hooks.events', events.length)
+    })
   })()
   const notifyValue =
     notifyInstalled === null
       ? undefined
       : notifyInstalled
-        ? 'Wired up · toast when a chat needs you'
-        : 'Not wired up'
+        ? t('settings.general.notifications.on')
+        : t('settings.general.notifications.off')
 
   // ── Accounts row ──
   const accountsValue = (() => {
@@ -356,13 +366,18 @@ export default function SettingsView({
     </div>
   )
 
-  const editRow = (label: string, value: string | undefined, onClick: () => void, action = 'Edit') => (
+  const editRow = (label: string, value: string | undefined, onClick: () => void, action = t('common.edit')) => (
     <div className="srow">
       <div className="srow-text">
         <span className="srow-label">{label}</span>
         {value && <span className="help">{value}</span>}
       </div>
-      <button type="button" className="btn-ghost" onClick={onClick} aria-label={`${action} ${label.toLowerCase()}`}>
+      <button
+        type="button"
+        className="btn-ghost"
+        onClick={onClick}
+        aria-label={t('settings.row.actionAria', { action, label: label.toLowerCase() })}
+      >
         {action}
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M9 6l6 6-6 6" />
@@ -373,15 +388,15 @@ export default function SettingsView({
 
   return (
     <div className="settings-screen">
-      <nav className="settings-nav" aria-label="Settings sections">
+      <nav className="settings-nav" aria-label={t('settings.nav.ariaLabel')}>
         <button type="button" className="settings-back" onClick={onBack}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M15 6l-6 6 6 6" />
           </svg>
-          Back to app
+          {t('settings.nav.back')}
         </button>
 
-        <h2 className="settings-nav-title">Settings</h2>
+        <h2 className="settings-nav-title">{t('settings.nav.title')}</h2>
 
         <div className="settings-nav-items">
           {SECTIONS.map((s) => (
@@ -395,7 +410,7 @@ export default function SettingsView({
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 {s.icon}
               </svg>
-              {s.label}
+              {t(s.labelKey)}
             </button>
           ))}
         </div>
@@ -405,19 +420,19 @@ export default function SettingsView({
         <div className="settings-column">
           {section === 'appearance' && (
             <>
-              <h1 className="settings-title">Appearance</h1>
+              <h1 className="settings-title">{t('settings.section.appearance')}</h1>
               {ui ? <AppearanceSettings ui={ui} onSetUi={onSetUi} /> : <p className="help">Loading preferences</p>}
             </>
           )}
 
           {section === 'general' && (
             <>
-              <h1 className="settings-title">General</h1>
+              <h1 className="settings-title">{t('settings.section.general')}</h1>
 
               <div className="srow">
                 <div className="srow-text">
-                  <span className="srow-label">Model for background tasks</span>
-                  <span className="help">Runs headless work: standup, sprint backfill and planner assist.</span>
+                  <span className="srow-label">{t('settings.general.backgroundModel.label')}</span>
+                  <span className="help">{t('settings.general.backgroundModel.hint')}</span>
                 </div>
                 <ModelPicker models={models} value={defaultModel} onChange={onSetDefaultModel} variant="select" />
               </div>
@@ -426,30 +441,51 @@ export default function SettingsView({
                 <>
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">Density</span>
-                      <span className="help">How much breathing room lists and rows get.</span>
+                      <span className="srow-label">{t('settings.general.language.label')}</span>
+                      <span className="help">{t('settings.general.language.hint')}</span>
                     </div>
-                    <div className="seg-control" role="group" aria-label="Density">
+                    <Select
+                      className="settings-select"
+                      value={ui.language ?? 'en'}
+                      onChange={(e) => {
+                        if (isLanguage(e.target.value)) onSetUi({ language: e.target.value })
+                      }}
+                      aria-label={t('settings.general.language.label')}
+                    >
+                      {LANGUAGES.map((l) => (
+                        <option key={l.id} value={l.id} lang={l.id}>
+                          {l.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+
+                  <div className="srow">
+                    <div className="srow-text">
+                      <span className="srow-label">{t('settings.general.density.label')}</span>
+                      <span className="help">{t('settings.general.density.hint')}</span>
+                    </div>
+                    <div className="seg-control" role="group" aria-label={t('settings.general.density.label')}>
                       <button type="button" className={ui.density === 'comfortable' ? 'on' : ''} onClick={() => onSetUi({ density: 'comfortable' })}>
-                        Comfortable
+                        {t('settings.general.density.comfortable')}
                       </button>
                       <button type="button" className={ui.density === 'compact' ? 'on' : ''} onClick={() => onSetUi({ density: 'compact' })}>
-                        Compact
+                        {t('settings.general.density.compact')}
                       </button>
                     </div>
                   </div>
 
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">Weekly planner</span>
-                      <span className="help">Shows the Week mode next to Sprint.</span>
+                      <span className="srow-label">{t('settings.general.weekPlanner.label')}</span>
+                      <span className="help">{t('settings.general.weekPlanner.hint')}</span>
                     </div>
                     <label className="toggle-switch">
                       <input
                         type="checkbox"
                         checked={ui.showWeekPlanner}
                         onChange={(e) => onSetUi({ showWeekPlanner: e.target.checked })}
-                        aria-label="Weekly planner"
+                        aria-label={t('settings.general.weekPlanner.label')}
                       />
                       <span className="toggle-track">
                         <span className="toggle-thumb" />
@@ -462,28 +498,25 @@ export default function SettingsView({
               {archivedChats > 0 && (
                 <div className="srow">
                   <div className="srow-text">
-                    <span className="srow-label">Chats from before 2.0</span>
-                    <span className="help">
-                      {archivedChats === 1 ? '1 chat' : `${archivedChats} chats`} saved as Markdown when Argos became
-                      terminal-only.
-                    </span>
+                    <span className="srow-label">{t('settings.general.archived.label')}</span>
+                    <span className="help">{plural(t, 'settings.general.archived.hint', archivedChats)}</span>
                   </div>
                   <button type="button" className="btn-ghost" onClick={() => void window.electronAPI.openChatExport()}>
-                    Open folder
+                    {t('settings.general.archived.openFolder')}
                   </button>
                 </div>
               )}
 
               <div className="eyebrow settings-eyebrow">Claude Code</div>
-              {editRow('Permissions', permissionsValue, () => setShowPerms(true))}
-              {editRow('Hooks', hooksValue, () => setShowHooks(true))}
-              {editRow('Session notifications', notifyValue, () => setShowNotifyHook(true))}
+              {editRow(t('settings.general.permissions.label'), permissionsValue, () => setShowPerms(true))}
+              {editRow(t('settings.general.hooks.label'), hooksValue, () => setShowHooks(true))}
+              {editRow(t('settings.general.notifications.label'), notifyValue, () => setShowNotifyHook(true))}
             </>
           )}
 
           {section === 'connection' && (
             <>
-              <h1 className="settings-title">Connection</h1>
+              <h1 className="settings-title">{t('settings.section.connection')}</h1>
               <p className="help settings-lead">
                 Which logins this app runs chats under. Claude and Codex each sign in through their own CLI;
                 add them under Accounts.
@@ -494,7 +527,7 @@ export default function SettingsView({
 
           {section === 'system' && (
             <>
-              <h1 className="settings-title">System</h1>
+              <h1 className="settings-title">{t('settings.section.system')}</h1>
               {system ? (
                 <>
                   {toggleRow(
@@ -558,7 +591,7 @@ export default function SettingsView({
 
           {section === 'ops' && (
             <>
-              <h1 className="settings-title">Ops audit</h1>
+              <h1 className="settings-title">{t('settings.section.ops')}</h1>
               <p className="help settings-lead">
                 The audit log is append-only, written by Argos only, and never deleted by it.
               </p>
@@ -618,7 +651,7 @@ export default function SettingsView({
 
           {section === 'about' && (
             <>
-              <h1 className="settings-title">About</h1>
+              <h1 className="settings-title">{t('settings.section.about')}</h1>
               {updater ? (
                 <div className="srow">
                   <div className="srow-text">

@@ -1,3 +1,5 @@
+import type { Language } from '../../shared/i18n'
+
 export interface ToolCall {
   id: string
   tool: string
@@ -167,6 +169,8 @@ export interface UiPrefs {
   uiFontSize?: number
   /** Code/monospace size in px, 10–18. */
   codeFontSize?: number
+  /** UI language. Absent means English. */
+  language?: Language
 }
 
 /**

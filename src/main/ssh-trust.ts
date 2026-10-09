@@ -2,6 +2,7 @@ import { app, dialog } from 'electron'
 import { createHash, randomUUID } from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
+import { t } from './i18n'
 
 const pending = new Map<string, Promise<boolean>>()
 
@@ -18,19 +19,19 @@ export async function verifyHostKey(host: string, port: number, key: Buffer): Pr
     try { return JSON.parse(fs.readFileSync(filename, 'utf8')) }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
-      throw new Error('SSH trust store could not be read. Connection refused.')
+      throw new Error(t('main.sshTrust.storeUnreadable'))
     }
   }
   const known = read()[endpoint]
   if (known) {
     if (known === fingerprint) return true
-    await dialog.showMessageBox({ type: 'error', title: 'SSH host key changed', message: `Connection to ${endpoint} was refused.`, detail: `Trusted: ${known}\nReceived: ${fingerprint}\nVerify the server identity with its administrator before changing trust.`, buttons: ['Close'] })
+    await dialog.showMessageBox({ type: 'error', title: t('main.sshTrust.changed.title'), message: t('main.sshTrust.changed.message', { endpoint }), detail: t('main.sshTrust.changed.detail', { known, fingerprint }), buttons: [t('common.close')] })
     return false
   }
   const pendingKey = `${endpoint}/${fingerprint}`
   if (pending.has(pendingKey)) return pending.get(pendingKey)!
   const decision = (async () => {
-    const result = await dialog.showMessageBox({ type: 'question', title: 'Verify SSH server', message: `Trust ${endpoint}?`, detail: `Server fingerprint:\n${fingerprint}\nCompare this with the fingerprint supplied by the server administrator.`, buttons: ['Cancel', 'Trust this server'], defaultId: 0, cancelId: 0, noLink: true })
+    const result = await dialog.showMessageBox({ type: 'question', title: t('main.sshTrust.verify.title'), message: t('main.sshTrust.verify.message', { endpoint }), detail: t('main.sshTrust.verify.detail', { fingerprint }), buttons: [t('common.cancel'), t('main.sshTrust.verify.trust')], defaultId: 0, cancelId: 0, noLink: true })
     if (result.response !== 1) return false
     const latest = read()
     if (latest[endpoint] && latest[endpoint] !== fingerprint) return false

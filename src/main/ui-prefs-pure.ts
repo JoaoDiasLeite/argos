@@ -8,6 +8,8 @@
 // with `ui-prefs-pure.test.ts` next to them, and config.ts is left holding only the
 // file I/O.
 
+import { isLanguage, type Language } from '../shared/i18n'
+
 /** One side of the appearance model: everything that can differ between light and dark. */
 export interface ThemeSettings {
   /** Palette id (see global.css [data-palette]). */
@@ -67,6 +69,8 @@ export interface UiPrefs {
   uiFontSize?: number
   /** Code/monospace size in px, 10–18. */
   codeFontSize?: number
+  /** UI language. Absent means English, which is what every older config says. */
+  language?: Language
 }
 
 /**
@@ -151,6 +155,8 @@ export function migrateUiPrefs(ui: UiPrefs): UiPrefs {
   }
   // Absent before 2.0.0, when the weekly planner became opt-in.
   if (typeof next.showWeekPlanner !== 'boolean') next.showWeekPlanner = false
+  // Absent stays absent (= English); only a value no build ever wrote is dropped.
+  if ('language' in next && !isLanguage(next.language)) delete next.language
   if (!next.light) next.light = { palette: ui.palette }
   if (!next.dark) next.dark = { palette: ui.palette }
   return next
@@ -245,6 +251,15 @@ export function applyUiPatch(current: UiPrefs, patch: UiPrefsPatch, systemPrefer
   }
   if ('codeFontSize' in patch) {
     next.codeFontSize = patch.codeFontSize === undefined ? undefined : clampInt(patch.codeFontSize, CODE_FONT_SIZE_MIN, CODE_FONT_SIZE_MAX)
+  }
+  if ('language' in patch) {
+    // The scalar spread above already copied whatever was sent. A known language stays,
+    // undefined/null goes back to absent (English), and anything else is ignored: what
+    // was there before is put back rather than an unknown id being stored.
+    const value: unknown = patch.language
+    if (isLanguage(value)) next.language = value
+    else if (value === undefined || value === null || base.language === undefined) delete next.language
+    else next.language = base.language
   }
 
   return resolveUiPrefs(next, systemPrefersDark)

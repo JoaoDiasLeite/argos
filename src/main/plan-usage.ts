@@ -7,6 +7,8 @@ import { getWslCredentialsPaths } from './wsl'
 import { updateTrayTooltip } from './tray'
 import { readJsonFile } from './json-file'
 import { nextAlert, type AlertState } from './plan-alerts-pure'
+import { t } from './i18n'
+import type { MessageKey } from '../shared/i18n'
 
 // Real plan usage straight from Anthropic, the way community HUDs (claude-hud,
 // claudeline, ccusage-style statuslines) do it: GET api.anthropic.com/api/oauth/usage
@@ -77,11 +79,13 @@ const STALE_OK_MS = 30 * 60_000
 const NETWORK_GAP_MS = 300
 
 // Known window spellings across endpoint revisions / community reports.
-const WINDOW_SHAPES: { key: string; label: string; alts: string[] }[] = [
-  { key: 'five_hour', label: 'Session (5h)', alts: ['five_hour', 'current', 'session'] },
-  { key: 'seven_day', label: 'Week · all models', alts: ['seven_day', 'weekly'] },
-  { key: 'seven_day_opus', label: 'Week · Opus', alts: ['seven_day_opus'] },
-  { key: 'seven_day_sonnet', label: 'Week · Sonnet', alts: ['seven_day_sonnet'] }
+// The label is translated when the report is built, so a language change shows up on
+// the next refresh rather than instantly.
+const WINDOW_SHAPES: { key: string; labelKey: MessageKey; alts: string[] }[] = [
+  { key: 'five_hour', labelKey: 'main.planUsage.window.session', alts: ['five_hour', 'current', 'session'] },
+  { key: 'seven_day', labelKey: 'main.planUsage.window.weekAll', alts: ['seven_day', 'weekly'] },
+  { key: 'seven_day_opus', labelKey: 'main.planUsage.window.weekOpus', alts: ['seven_day_opus'] },
+  { key: 'seven_day_sonnet', labelKey: 'main.planUsage.window.weekSonnet', alts: ['seven_day_sonnet'] }
 ]
 
 interface OauthCreds {
@@ -302,7 +306,7 @@ function extractWindows(body: Record<string, unknown>): PlanWindow[] {
       if (typeof u !== 'number' || !isFinite(u)) continue
       windows.push({
         key: shape.key,
-        label: shape.label,
+        label: t(shape.labelKey),
         utilization: Math.max(0, Math.min(100, u)),
         resetsAt: typeof rec.resets_at === 'string' ? rec.resets_at : undefined
       })
@@ -452,7 +456,7 @@ const alertStates = new Map<string, AlertState>()
 const NOTIFY_WINDOW_KEYS = new Set(['five_hour', 'seven_day'])
 
 function windowLabelForTooltip(key: string): string {
-  return key === 'five_hour' ? 'Session' : 'Week'
+  return key === 'five_hour' ? t('main.planUsage.short.session') : t('main.planUsage.short.week')
 }
 
 function buildTooltip(report: PlanUsageReport): string {
@@ -461,21 +465,21 @@ function buildTooltip(report: PlanUsageReport): string {
   const parts: string[] = []
   const five = primary.windows.find((w) => w.key === 'five_hour')
   const seven = primary.windows.find((w) => w.key === 'seven_day')
-  if (five) parts.push(`Session ${five.utilization.toFixed(0)}%`)
-  if (seven) parts.push(`Week ${seven.utilization.toFixed(0)}%`)
+  if (five) parts.push(t('main.planUsage.tooltip.part', { window: windowLabelForTooltip(five.key), pct: five.utilization.toFixed(0) }))
+  if (seven) parts.push(t('main.planUsage.tooltip.part', { window: windowLabelForTooltip(seven.key), pct: seven.utilization.toFixed(0) }))
   if (parts.length === 0) return 'Argos'
-  return `Argos — ${parts.join(' · ')}`
+  return t('main.planUsage.tooltip', { parts: parts.join(' · ') })
 }
 
 // "resets in 1h 20m" for a notification body — plain and terse.
 function fmtResetShort(iso?: string): string {
   if (!iso) return ''
-  const t = new Date(iso).getTime()
-  if (!isFinite(t)) return ''
-  const mins = Math.round((t - Date.now()) / 60000)
-  if (mins <= 0) return 'resets soon'
-  if (mins < 60) return `resets in ${mins}m`
-  return `resets in ${Math.floor(mins / 60)}h ${mins % 60}m`
+  const at = new Date(iso).getTime()
+  if (!isFinite(at)) return ''
+  const mins = Math.round((at - Date.now()) / 60000)
+  if (mins <= 0) return t('main.planUsage.reset.soon')
+  if (mins < 60) return t('main.planUsage.reset.minutes', { m: mins })
+  return t('main.planUsage.reset.hours', { h: Math.floor(mins / 60), m: mins % 60 })
 }
 
 function checkThresholds(report: PlanUsageReport, showMain: () => void): void {
@@ -490,11 +494,10 @@ function checkThresholds(report: PlanUsageReport, showMain: () => void): void {
       alertStates.set(stateKey, state)
       if (notify === null) continue
       const reset = fmtResetShort(w.resetsAt)
-      const body =
-        `${windowLabelForTooltip(w.key)} window ${w.utilization.toFixed(0)}% used` +
-        (reset ? ` · ${reset}` : '')
+      const params = { window: windowLabelForTooltip(w.key), pct: w.utilization.toFixed(0), reset }
+      const body = reset ? t('main.planUsage.alert.bodyWithReset', params) : t('main.planUsage.alert.body', params)
       try {
-        const n = new Notification({ title: `Plan limit warning — ${acc.accountName}`, body })
+        const n = new Notification({ title: t('main.planUsage.alert.title', { account: acc.accountName }), body })
         n.on('click', () => showMain())
         n.show()
       } catch {

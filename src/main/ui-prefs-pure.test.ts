@@ -256,3 +256,42 @@ describe('patching', () => {
     expect(applyUiPatch(next, { fonts: { ui: '' } }, false).fonts).toEqual({ code: 'consolas' })
   })
 })
+
+describe('language', () => {
+  it('leaves language absent on migration, which means English', () => {
+    expect('language' in migrateUiPrefs(LEGACY)).toBe(false)
+  })
+
+  it('keeps a stored language through migration', () => {
+    expect(migrateUiPrefs({ ...LEGACY, language: 'pt-PT' }).language).toBe('pt-PT')
+  })
+
+  it('drops a stored language no build ever wrote', () => {
+    const odd = { ...LEGACY, language: 'klingon' } as unknown as UiPrefs
+    expect('language' in migrateUiPrefs(odd)).toBe(false)
+  })
+
+  it('accepts a language patch and leaves the rest alone', () => {
+    const start = applyUiPatch(LEGACY, {}, false)
+    const next = applyUiPatch(start, { language: 'pt-PT' }, false)
+    expect(next.language).toBe('pt-PT')
+    expect({ ...next, language: undefined }).toEqual({ ...start, language: undefined })
+  })
+
+  it('ignores an unknown language rather than storing it', () => {
+    const start = applyUiPatch(LEGACY, { language: 'pt-PT' }, false)
+    const patch = { language: 'xx' } as unknown as Parameters<typeof applyUiPatch>[1]
+    expect(applyUiPatch(start, patch, false).language).toBe('pt-PT')
+    expect('language' in applyUiPatch(LEGACY, patch, false)).toBe(false)
+  })
+
+  it('goes back to English when the patch clears it', () => {
+    const start = applyUiPatch(LEGACY, { language: 'pt-PT' }, false)
+    expect('language' in applyUiPatch(start, { language: undefined }, false)).toBe(false)
+  })
+
+  it('does not touch the language when the patch does not name it', () => {
+    const start = applyUiPatch(LEGACY, { language: 'pt-PT' }, false)
+    expect(applyUiPatch(start, { density: 'comfortable' }, false).language).toBe('pt-PT')
+  })
+})
