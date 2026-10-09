@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Session } from '../types'
 import { applyTheme } from '../lib/theme'
+import { useT } from '../i18n'
 
 // Quick-launcher overlay window. Summoned via a global shortcut from anywhere in
 // the OS; every action hands off to the main window and dismisses the overlay.
@@ -8,6 +9,7 @@ import { applyTheme } from '../lib/theme'
 const RECENT_COUNT = 6
 
 export default function Overlay() {
+  const t = useT()
   const [prompt, setPrompt] = useState('')
   const [recent, setRecent] = useState<Session[]>([])
   const [selected, setSelected] = useState(-1)
@@ -95,16 +97,16 @@ export default function Overlay() {
             setSelected(-1)
           }}
           onKeyDown={onInputKeyDown}
-          placeholder="Ask anything…"
+          placeholder={t('app.overlay.placeholder')}
           autoFocus
           spellCheck={false}
-          aria-label="Prompt for a new terminal"
+          aria-label={t('app.overlay.promptLabel')}
         />
         <button
           className="overlay-open-app"
           onClick={() => window.electronAPI.overlayOpenMain()}
-          title="Open Argos"
-          aria-label="Open Argos"
+          title={t('app.overlay.openArgos')}
+          aria-label={t('app.overlay.openArgos')}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M15 3h6v6" /><path d="M10 14L21 3" />
@@ -113,8 +115,8 @@ export default function Overlay() {
         </button>
       </div>
 
-      <div className="overlay-list" role="listbox" aria-label="Recent chats">
-        {recent.length > 0 && <div className="overlay-section">Recent chats</div>}
+      <div className="overlay-list" role="listbox" aria-label={t('app.overlay.recentChats')}>
+        {recent.length > 0 && <div className="overlay-section">{t('app.overlay.recentChats')}</div>}
         {recent.map((s, i) => (
           <button
             key={s.id}
@@ -123,20 +125,20 @@ export default function Overlay() {
             role="option"
             aria-selected={i === selected}
           >
-            <span className="overlay-item-title">{s.name || 'New chat'}</span>
+            <span className="overlay-item-title">{s.name || t('app.overlay.newChat')}</span>
             <span className="overlay-item-sub">
               {s.remoteHostName ?? s.projectPath?.split(/[\\/]/).filter(Boolean).pop() ?? ''}
             </span>
           </button>
         ))}
         {recent.length === 0 && (
-          <div className="overlay-empty">Type a prompt and press Enter to start a terminal.</div>
+          <div className="overlay-empty">{t('app.overlay.empty')}</div>
         )}
       </div>
 
       <div className="overlay-footer">
-        <span><kbd>Enter</kbd> new terminal</span>
-        <span><kbd>Esc</kbd> dismiss</span>
+        <span><kbd>Enter</kbd> {t('app.overlay.newTerminal')}</span>
+        <span><kbd>Esc</kbd> {t('app.overlay.dismiss')}</span>
         {shortcut && <span className="overlay-shortcut">{shortcut}</span>}
       </div>
     </div>

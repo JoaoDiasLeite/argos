@@ -1,6 +1,7 @@
 import { useId, useRef, type ReactNode } from 'react'
 import { useModalA11y } from '../hooks/useModalA11y'
 import { backdropClose } from '../lib/backdrop-close'
+import { useT } from '../i18n'
 import './Sheet.css'
 
 interface Props {
@@ -35,6 +36,7 @@ export default function Sheet({ open = true, title, width = 520, onClose, header
 }
 
 function SheetPanel({ title, width, onClose, headerExtra, footer, ariaLabel, children }: Omit<Props, 'open'> & { width: number }) {
+  const t = useT()
   const ref = useRef<HTMLDivElement>(null)
   const titleId = useId()
   // useModalA11y binds its handler once; read the latest onClose through a ref.
@@ -62,7 +64,7 @@ function SheetPanel({ title, width, onClose, headerExtra, footer, ariaLabel, chi
             {title}
           </h2>
           {headerExtra}
-          <button type="button" className="sheet-close" onClick={onClose} aria-label="Close">
+          <button type="button" className="sheet-close" onClick={onClose} aria-label={t('common.close')}>
             <svg
               width="16"
               height="16"

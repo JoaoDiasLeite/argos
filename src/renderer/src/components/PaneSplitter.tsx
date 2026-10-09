@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, type CSSProperties, type RefObject } from 'react'
+import { useT } from '../i18n'
 
 /**
  * Drag handle for the boundary between tracks `index` and `index + 1` of one axis of
@@ -47,6 +48,7 @@ export default function PaneSplitter({
   /** Fired once on mouseup with the final fractions — this is what gets persisted. */
   onCommit: (sizes: number[]) => void
 }) {
+  const t = useT()
   const isRow = axis === 'rows'
   const cursor = isRow ? 'row-resize' : 'col-resize'
 
@@ -130,7 +132,7 @@ export default function PaneSplitter({
       /* A divider between stacked panes separates them along the vertical axis, so its own
          orientation is horizontal — the ARIA sense is the opposite of the visual one. */
       aria-orientation={isRow ? 'horizontal' : 'vertical'}
-      aria-label="Resize panes"
+      aria-label={t('app.paneSplitter.resize')}
     />
   )
 }

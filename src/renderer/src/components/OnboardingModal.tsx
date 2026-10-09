@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AuthStatus, AuthMode } from '../types'
 import { useModalA11y } from '../hooks/useModalA11y'
+import { useT } from '../i18n'
 import './OnboardingModal.css'
 
 interface Props {
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export default function OnboardingModal({ onFinish }: Props) {
+  const t = useT()
   const [step, setStep] = useState(0)
   const [auth, setAuth] = useState<AuthStatus | null>(null)
   const [key, setKey] = useState('')
@@ -61,20 +63,20 @@ export default function OnboardingModal({ onFinish }: Props) {
                 <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" />
               </svg>
             </div>
-            <h2 id="onboarding-modal-title">Welcome to Argos</h2>
-            <p>A desktop control center for Claude Code and Codex: their terminals, your projects, usage, and remote/WSL hosts, all in one place.</p>
-            <button className="btn-primary" onClick={() => setStep(1)}>Get started</button>
+            <h2 id="onboarding-modal-title">{t('onboarding.welcome.title')}</h2>
+            <p>{t('onboarding.welcome.body')}</p>
+            <button className="btn-primary" onClick={() => setStep(1)}>{t('onboarding.welcome.getStarted')}</button>
           </div>
         )}
 
         {step === 1 && (
           <div className="ob-step">
-            <h3 id="onboarding-modal-title">Connect your account</h3>
+            <h3 id="onboarding-modal-title">{t('onboarding.connect.title')}</h3>
             <div className={`ob-detect ${detected ? 'ok' : 'warn'}`}>
               <span className={`auth-dot ${detected ? 'ok' : 'warn'}`} />
               {detected
-                ? 'Claude Code login detected on this machine.'
-                : 'No Claude Code login found yet.'}
+                ? t('onboarding.connect.detected')
+                : t('onboarding.connect.notDetected')}
             </div>
 
             <button
@@ -84,10 +86,10 @@ export default function OnboardingModal({ onFinish }: Props) {
             >
               <div className="auth-option-radio"><span className={auth?.mode === 'claude-code' ? 'on' : ''} /></div>
               <div className="auth-option-body">
-                <div className="auth-option-title">Use my Claude Code account {detected && <span className="chip ok">Detected</span>}</div>
+                <div className="auth-option-title">{t('onboarding.connect.useClaudeCode')} {detected && <span className="chip ok">{t('onboarding.connect.detectedChip')}</span>}</div>
                 <div className="auth-option-desc">
-                  Terminals and background tasks reuse the CLI login — no API key needed.{' '}
-                  {!detected && 'Run `claude` once and log in, then click Re-check.'}
+                  {t('onboarding.connect.claudeCodeDesc')}{' '}
+                  {!detected && t('onboarding.connect.claudeCodeHint')}
                 </div>
               </div>
             </button>
@@ -99,8 +101,8 @@ export default function OnboardingModal({ onFinish }: Props) {
             >
               <div className="auth-option-radio"><span className={auth?.mode === 'api-key' ? 'on' : ''} /></div>
               <div className="auth-option-body">
-                <div className="auth-option-title">Use an API key {auth?.hasApiKey && <span className="chip ok">Saved</span>}</div>
-                <div className="auth-option-desc">Stored encrypted in your OS keychain. Terminals and background tasks (standup, planner assist) use it.</div>
+                <div className="auth-option-title">{t('onboarding.connect.useApiKey')} {auth?.hasApiKey && <span className="chip ok">{t('onboarding.connect.savedChip')}</span>}</div>
+                <div className="auth-option-desc">{t('onboarding.connect.apiKeyDesc')}</div>
               </div>
             </button>
 
@@ -114,16 +116,16 @@ export default function OnboardingModal({ onFinish }: Props) {
                   onChange={(e) => setKey(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && saveKey()}
                 />
-                <button className="btn-ghost" onClick={saveKey} disabled={!key.trim() || busy}>Save</button>
+                <button className="btn-ghost" onClick={saveKey} disabled={!key.trim() || busy}>{t('common.save')}</button>
               </div>
             )}
 
             <div className="ob-actions">
-              <button className="btn-ghost" onClick={refresh}>Re-check</button>
+              <button className="btn-ghost" onClick={refresh}>{t('onboarding.connect.recheck')}</button>
               <div className="ob-spacer" />
-              <button className="btn-ghost" onClick={onFinish}>Skip</button>
+              <button className="btn-ghost" onClick={onFinish}>{t('onboarding.connect.skip')}</button>
               <button className="btn-primary" onClick={onFinish} disabled={!ready}>
-                {ready ? 'Start using Argos' : 'Connect to continue'}
+                {ready ? t('onboarding.connect.start') : t('onboarding.connect.continue')}
               </button>
             </div>
           </div>

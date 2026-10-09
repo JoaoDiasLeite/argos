@@ -1,3 +1,5 @@
+import { plural, type MessageKey } from '../../../shared/i18n'
+import { useT } from '../i18n'
 import './NavRail.css'
 
 /**
@@ -106,7 +108,7 @@ const ICONS: Record<string, JSX.Element> = {
 // derive the active group and render the segmented sub-nav for its members.
 export interface ViewGroup {
   key: string
-  label: string
+  label: MessageKey
   members: View[]
   /** Views that belong to the group but get no sub-nav button of their own — they're
       reached from within a member (e.g. a Remote/WSL session opened from the list).
@@ -120,21 +122,21 @@ export function groupOwnsView(group: ViewGroup, view: View): boolean {
 }
 
 export const VIEW_GROUPS: ViewGroup[] = [
-  { key: 'servers', label: 'Servers', members: ['remote', 'ops', 'mcp'], extras: ['remote-session', 'ops-workspace'] }
+  { key: 'servers', label: 'sidebar.nav.servers', members: ['remote', 'ops', 'mcp'], extras: ['remote-session', 'ops-workspace'] }
 ]
 
 // A rail entry is either a standalone view or a group of views. Groups use the
 // icon of their first member.
 type RailEntry =
-  | { kind: 'single'; view: View; label: string }
+  | { kind: 'single'; view: View; label: MessageKey }
   | { kind: 'group'; group: ViewGroup }
 
 const RAIL: RailEntry[] = [
-  { kind: 'single', view: 'home', label: 'Home' },
-  { kind: 'single', view: 'chat', label: 'Chat' },
-  { kind: 'single', view: 'projects', label: 'Projects' },
-  { kind: 'single', view: 'planner', label: 'Planner' },
-  { kind: 'single', view: 'usage', label: 'Usage' },
+  { kind: 'single', view: 'home', label: 'sidebar.nav.home' },
+  { kind: 'single', view: 'chat', label: 'sidebar.nav.chat' },
+  { kind: 'single', view: 'projects', label: 'sidebar.nav.projects' },
+  { kind: 'single', view: 'planner', label: 'sidebar.nav.planner' },
+  { kind: 'single', view: 'usage', label: 'sidebar.nav.usage' },
   { kind: 'group', group: VIEW_GROUPS[0] }
 ]
 
@@ -149,6 +151,7 @@ export default function NavRail({
   opsNeedsYou = false,
   chatListHidden = false
 }: Props) {
+  const t = useT()
   return (
     <div className="nav-rail">
       <div className="nav-items">
@@ -161,18 +164,18 @@ export default function NavRail({
                 onClick={() => onChange(entry.view)}
                 title={
                   entry.view === 'chat' && view === 'chat'
-                    ? `${chatListHidden ? 'Show' : 'Hide'} the chat list`
-                    : entry.label
+                    ? t(chatListHidden ? 'sidebar.nav.showChatList' : 'sidebar.nav.hideChatList')
+                    : t(entry.label)
                 }
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   {ICONS[entry.view]}
                 </svg>
-                <span className="nav-item-label">{entry.label}</span>
+                <span className="nav-item-label">{t(entry.label)}</span>
                 {entry.view === 'chat' && chatRunningCount > 0 && (
                   <span
                     className="nav-item-badge live"
-                    aria-label={`${chatRunningCount} chat${chatRunningCount === 1 ? '' : 's'} running`}
+                    aria-label={plural(t, 'sidebar.nav.chatsRunning', chatRunningCount)}
                   >
                     {chatRunningCount}
                   </span>
@@ -180,7 +183,7 @@ export default function NavRail({
                 {entry.view === 'home' && attentionCount > 0 && (
                   <span
                     className="nav-item-badge warn"
-                    aria-label={`${attentionCount} approval${attentionCount === 1 ? '' : 's'} waiting`}
+                    aria-label={plural(t, 'sidebar.nav.approvalsWaiting', attentionCount)}
                   >
                     {attentionCount}
                   </span>
@@ -203,21 +206,27 @@ export default function NavRail({
               key={group.key}
               className={`nav-item ${active ? 'active' : ''}`}
               onClick={onClickGroup}
-              title={group.label}
+              title={t(group.label)}
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 {ICONS[group.members[0]]}
               </svg>
-              <span className="nav-item-label">{group.label}</span>
+              <span className="nav-item-label">{t(group.label)}</span>
               {group.key === 'servers' && (serverSessionCount > 0 || opsRunningCount > 0) && (
                 <span
                   className={`nav-item-badge${opsRunningCount > 0 ? (opsNeedsYou ? ' warn live' : ' live') : ''}`}
                   aria-label={[
                     serverSessionCount > 0
-                      ? `${serverSessionCount} open session${serverSessionCount === 1 ? '' : 's'}`
+                      ? plural(t, 'sidebar.nav.openSessions', serverSessionCount)
                       : null,
                     opsRunningCount > 0
-                      ? `${opsRunningCount} intervention${opsRunningCount === 1 ? '' : 's'} running${opsNeedsYou ? ', one waiting for you' : ''}`
+                      ? plural(
+                          t,
+                          opsNeedsYou
+                            ? 'sidebar.nav.interventionsRunningWaiting'
+                            : 'sidebar.nav.interventionsRunning',
+                          opsRunningCount
+                        )
                       : null
                   ]
                     .filter(Boolean)
@@ -235,13 +244,13 @@ export default function NavRail({
         <button
           className={`nav-item ${view === 'settings' ? 'active' : ''}`}
           onClick={onSettings}
-          title="Settings"
+          title={t('sidebar.nav.settings')}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
-          <span className="nav-item-label">Settings</span>
+          <span className="nav-item-label">{t('sidebar.nav.settings')}</span>
         </button>
       </div>
     </div>

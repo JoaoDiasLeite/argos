@@ -13,6 +13,8 @@ import {
 import { projectDisplayName, RepoName } from '../lib/project-name'
 import { SESSION_DRAG_TYPE } from '../lib/pane-drop'
 import { setChatDragImage } from '../lib/drag-ghost'
+import { useLanguage, useT } from '../i18n'
+import type { TFunction } from '../../../shared/i18n'
 import FileTree from './FileTree'
 import './Sidebar.css'
 import './AccountPicker.css'
@@ -117,14 +119,14 @@ interface Props {
 }
 
 // "resets in 3h 12m" for the plan badge tooltip.
-function fmtReset(iso?: string): string {
+function fmtReset(iso: string | undefined, t: TFunction): string {
   if (!iso) return ''
-  const t = new Date(iso).getTime()
-  if (!isFinite(t)) return ''
-  const mins = Math.round((t - Date.now()) / 60000)
-  if (mins <= 0) return 'resets soon'
-  if (mins < 60) return `resets in ${mins}m`
-  return `resets in ${Math.floor(mins / 60)}h ${mins % 60}m`
+  const at = new Date(iso).getTime()
+  if (!isFinite(at)) return ''
+  const mins = Math.round((at - Date.now()) / 60000)
+  if (mins <= 0) return t('sidebar.reset.soon')
+  if (mins < 60) return t('sidebar.reset.minutes', { m: mins })
+  return t('sidebar.reset.hoursMinutes', { h: Math.floor(mins / 60), m: mins % 60 })
 }
 
 const MIN_WIDTH = 200
@@ -174,6 +176,8 @@ export default function Sidebar({
   defaultModel,
   defaultAccountId
 }: Props) {
+  const t = useT()
+  const { locale } = useLanguage()
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   /** The one row being renamed in place, and the text typed into it. A chat's name was
    *  previously only ever set from its first prompt, so a conversation the CLI titled
@@ -306,7 +310,7 @@ export default function Sidebar({
 
   // What starting one is called here — the same wording the welcome pane uses, so the two
   // entry points to the same action don't disagree. A chat is a terminal now.
-  const newLabel = 'New terminal'
+  const newLabel = t('sidebar.list.newTerminal')
 
   const authReady = auth
     ? auth.mode === 'api-key'
@@ -315,16 +319,16 @@ export default function Sidebar({
     : false
 
   const authLabel = !auth
-    ? 'Checking'
+    ? t('sidebar.auth.checking')
     : auth.mode === 'claude-code'
       ? auth.claudeCodeDetected
-        ? 'Claude Code account'
+        ? t('sidebar.auth.claudeCodeAccount')
         : auth.hasApiKey
-          ? 'API key (no Claude Code login)'
-          : 'Not connected'
+          ? t('sidebar.auth.apiKeyNoLogin')
+          : t('sidebar.auth.notConnected')
       : auth.hasApiKey
-        ? 'API key'
-        : 'No API key'
+        ? t('sidebar.auth.apiKey')
+        : t('sidebar.auth.noApiKey')
 
   // Surface the account currently IN EFFECT: the active chat's account, falling back to
   // the default account of whichever provider the app-wide default model belongs to. That
@@ -356,7 +360,7 @@ export default function Sidebar({
   // The pill shows just the account name — email/plan live in the tooltip, so the
   // ~200px row never ellipsizes mid-email against the usage badge.
   const statusLabel = currentAccount
-    ? currentAccount.name + (ready ? '' : ' · not logged in')
+    ? currentAccount.name + (ready ? '' : t('sidebar.auth.notLoggedInSuffix'))
     : authLabel
   // The row doubles as a (grouped, cross-provider) account picker whenever more than one
   // account exists anywhere — Codex/Gemini always have a default, so this lets users
@@ -366,7 +370,7 @@ export default function Sidebar({
   const isAccountPicker = totalAccounts > 1
   const statusTitle =
     (accountDetail ? `${accountDetail} — ` : '') +
-    (isAccountPicker ? 'Switch default account' : 'Open connection settings')
+    (isAccountPicker ? t('sidebar.auth.switchDefault') : t('sidebar.auth.openConnection'))
 
   // Toggle the (portaled) account picker, anchoring the fixed-position menu under the
   // account row. Closing just flips the flag.
@@ -387,8 +391,8 @@ export default function Sidebar({
   useEffect(() => {
     if (!accountMenuOpen) return
     const onDoc = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (accountRef.current?.contains(t) || accountMenuRef.current?.contains(t)) return
+      const target = e.target as Node
+      if (accountRef.current?.contains(target) || accountMenuRef.current?.contains(target)) return
       setAccountMenuOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
@@ -437,8 +441,8 @@ export default function Sidebar({
   // Debounce so typing doesn't re-filter (and re-scan every message) on every keystroke
   // for people with a lot of history.
   useEffect(() => {
-    const t = setTimeout(() => setSearchQuery(searchInput), 150)
-    return () => clearTimeout(t)
+    const timer = setTimeout(() => setSearchQuery(searchInput), 150)
+    return () => clearTimeout(timer)
   }, [searchInput])
 
   const clearSearch = () => {
@@ -506,7 +510,7 @@ export default function Sidebar({
           path: canonical,
           basename: canonical
             ? canonical.split(/[\\/]/).filter(Boolean).pop() || canonical
-            : 'No folder',
+            : t('sidebar.list.noFolder'),
           sessions: [],
           legacyKeys: []
         }
@@ -528,7 +532,7 @@ export default function Sidebar({
       return bLatest - aLatest
     })
     return list
-  }, [filteredSessions, keyCtx])
+  }, [filteredSessions, keyCtx, t])
 
   // Ask git for each group's repo name once its canonical path is known. Fire-and-forget
   // per group so one folder failing (not a repo, git missing, …) can't hold up the rest.
@@ -564,9 +568,9 @@ export default function Sidebar({
     const d = new Date(ts)
     const now = new Date()
     if (d.toDateString() === now.toDateString()) {
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      return d.toLocaleTimeString(locale ?? [], { hour: '2-digit', minute: '2-digit' })
     }
-    return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+    return d.toLocaleDateString(locale ?? [], { month: 'short', day: 'numeric' })
   }
 
   const startRename = (s: Session) => {
@@ -593,7 +597,7 @@ export default function Sidebar({
         className="session-rename-input"
         autoFocus
         value={renameDraft}
-        placeholder={s.name || 'New chat'}
+        placeholder={s.name || t('sidebar.session.newChat')}
         onChange={(e) => setRenameDraft(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') commitRename(s)
@@ -617,8 +621,8 @@ export default function Sidebar({
         ? 'running'
         : null
     const statusTitle =
-      status === 'attention' ? 'Waiting for approval'
-        : status === 'running' ? 'Running' : undefined
+      status === 'attention' ? t('sidebar.session.waitingApproval')
+        : status === 'running' ? t('sidebar.session.running') : undefined
     // The CLI, when it is not the one a new chat starts on.
     const provider = sessionProvider(s)
     const modelLabel = provider !== provOf(models, defaultModel)
@@ -634,7 +638,7 @@ export default function Sidebar({
         ? (s.accountName || accounts.find((a) => a.id === s.accountId)?.name || null)
         : null
     // Date and project path moved off the visible row and into its tooltip.
-    const rowTitle = [s.name || 'New chat', origin?.label, s.projectPath, formatDate(s.updatedAt)]
+    const rowTitle = [s.name || t('sidebar.session.newChat'), origin?.label, s.projectPath, formatDate(s.updatedAt)]
       .filter(Boolean)
       .join(' — ')
     return (
@@ -663,7 +667,7 @@ export default function Sidebar({
           className={`session-row-name ${!status && !s.unread ? 'quiet' : ''}`}
           onDoubleClick={(e) => { e.stopPropagation(); startRename(s) }}
         >
-          {s.name || 'New chat'}
+          {s.name || t('sidebar.session.newChat')}
         </span>
         {showProject && s.projectPath && (
           <span className="chip session-chip" title={s.projectPath}>
@@ -677,14 +681,14 @@ export default function Sidebar({
           </span>
         )}
         {/* Hidden on hover — the rename/delete buttons take the same right-edge space. */}
-        {s.unread && hoveredId !== s.id && <span className="session-unread-dot" aria-hidden="true" title="Unread" />}
+        {s.unread && hoveredId !== s.id && <span className="session-unread-dot" aria-hidden="true" title={t('sidebar.session.unread')} />}
         {hoveredId === s.id && (
           <>
             <button
               className="sidebar-icon-btn"
               onClick={(e) => { e.stopPropagation(); startRename(s) }}
-              title="Rename (or double-click the name)"
-              aria-label="Rename session"
+              title={t('sidebar.session.renameTitle')}
+              aria-label={t('sidebar.session.renameLabel')}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 20h9" />
@@ -694,8 +698,8 @@ export default function Sidebar({
             <button
               className="sidebar-icon-btn danger"
               onClick={(e) => { e.stopPropagation(); onDeleteSession(s.id) }}
-              title="Delete"
-              aria-label="Delete session"
+              title={t('common.delete')}
+              aria-label={t('sidebar.session.deleteLabel')}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                 <line x1="18" y1="6" x2="6" y2="18" />
@@ -725,7 +729,11 @@ export default function Sidebar({
           {currentUsage && (
             <span
               className={`chip ${planTone(currentUsage.utilization)}`}
-              title={`${statusLabel} — ${currentUsage.utilization.toFixed(0)}% used${currentUsage.resetsAt ? ` · ${fmtReset(currentUsage.resetsAt)}` : ''}`}
+              title={
+                currentUsage.resetsAt
+                  ? t('sidebar.usage.statusUsedReset', { label: statusLabel, pct: currentUsage.utilization.toFixed(0), reset: fmtReset(currentUsage.resetsAt, t) })
+                  : t('sidebar.usage.statusUsed', { label: statusLabel, pct: currentUsage.utilization.toFixed(0) })
+              }
             >
               {currentUsage.utilization.toFixed(0)}%
             </span>
@@ -735,7 +743,7 @@ export default function Sidebar({
               <path d="M6 9l6 6 6-6" />
             </svg>
           )}
-          {!ready && <span className="chip">Connect</span>}
+          {!ready && <span className="chip">{t('sidebar.auth.connect')}</span>}
         </button>
         {isAccountPicker && accountMenuOpen && accountMenuPos &&
           createPortal(
@@ -793,7 +801,11 @@ export default function Sidebar({
                             {usage && (
                               <span
                                 className={`chip ${planTone(usage.utilization)}`}
-                                title={`${usage.utilization.toFixed(0)}% used${usage.resetsAt ? ` · ${fmtReset(usage.resetsAt)}` : ''}`}
+                                title={
+                                  usage.resetsAt
+                                    ? t('sidebar.usage.usedReset', { pct: usage.utilization.toFixed(0), reset: fmtReset(usage.resetsAt, t) })
+                                    : t('sidebar.usage.used', { pct: usage.utilization.toFixed(0) })
+                                }
                               >
                                 {usage.utilization.toFixed(0)}%
                               </span>
@@ -806,8 +818,8 @@ export default function Sidebar({
                           </div>
                           <div className="account-picker-item-meta">
                             {a.loggedIn
-                              ? [a.email, a.plan].filter(Boolean).join(' · ') || 'Logged in'
-                              : 'Not logged in'}
+                              ? [a.email, a.plan].filter(Boolean).join(' · ') || t('sidebar.account.loggedIn')
+                              : t('sidebar.account.notLoggedIn')}
                           </div>
                         </button>
                       )
@@ -823,7 +835,7 @@ export default function Sidebar({
                   onManageAccounts()
                 }}
               >
-                Manage accounts
+                {t('sidebar.account.manage')}
               </button>
             </div>,
             document.body
@@ -832,8 +844,8 @@ export default function Sidebar({
           <button
             className="icon-btn"
             onClick={onCollapse}
-            title="Collapse sidebar (press Chat in the rail to bring it back)"
-            aria-label="Collapse sidebar"
+            title={t('sidebar.collapse.title')}
+            aria-label={t('sidebar.collapse.label')}
           >
             {/* A panel with its left column ruled off, pointing left: "fold this away". */}
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -845,12 +857,12 @@ export default function Sidebar({
         )}
       </div>
 
-      <div className="seg-control sidebar-seg" role="group" aria-label="Sidebar">
+      <div className="seg-control sidebar-seg" role="group" aria-label={t('sidebar.tabs.label')}>
         <button className={tab === 'sessions' ? 'on' : ''} aria-pressed={tab === 'sessions'} onClick={() => onTabChange('sessions')}>
-          Chats
+          {t('sidebar.tabs.chats')}
         </button>
         <button className={tab === 'files' ? 'on' : ''} aria-pressed={tab === 'files'} onClick={() => onTabChange('files')}>
-          Files
+          {t('sidebar.tabs.files')}
         </button>
       </div>
 
@@ -883,7 +895,7 @@ export default function Sidebar({
                   ref={searchInputRef}
                   type="text"
                   className="text-input"
-                  placeholder="Search chats"
+                  placeholder={t('sidebar.search.placeholder')}
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -893,14 +905,14 @@ export default function Sidebar({
                       searchInputRef.current?.blur()
                     }
                   }}
-                  aria-label="Search chats"
+                  aria-label={t('sidebar.search.placeholder')}
                 />
                 {searchInput && (
                   <button
                     className="sidebar-icon-btn sidebar-search-clear"
                     onClick={clearSearch}
-                    title="Clear search"
-                    aria-label="Clear search"
+                    title={t('sidebar.search.clear')}
+                    aria-label={t('sidebar.search.clear')}
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                       <line x1="18" y1="6" x2="6" y2="18" />
@@ -913,11 +925,11 @@ export default function Sidebar({
             <div className="session-list">
               {visibleSessions.length === 0 && (
                 <div className="help sidebar-empty">
-                  No chats yet. Start a terminal and it will show up here.
+                  {t('sidebar.list.empty')}
                 </div>
               )}
               {visibleSessions.length > 0 && filteredSessions.length === 0 && (
-                <div className="help sidebar-empty">No chats match.</div>
+                <div className="help sidebar-empty">{t('sidebar.list.noMatch')}</div>
               )}
               {searchQuery.trim() ? (
                 // Flatten while searching — results read as one list, collapse state
@@ -965,7 +977,7 @@ export default function Sidebar({
                             toggleGroupCollapse(g.key)
                           }
                         }}
-                        title={g.path || 'No folder'}
+                        title={g.path || t('sidebar.list.noFolder')}
                       >
                         <Chevron open={!isCollapsed} />
                         {isRenamingGroup ? (
@@ -1005,8 +1017,8 @@ export default function Sidebar({
                                 <button
                                   className="sidebar-icon-btn"
                                   onClick={(e) => { e.stopPropagation(); startGroupRename(g) }}
-                                  title="Rename project (or double-click the name)"
-                                  aria-label={`Rename ${displayName}`}
+                                  title={t('sidebar.list.renameProjectTitle')}
+                                  aria-label={t('sidebar.list.renameProjectLabel', { name: displayName })}
                                 >
                                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                                     <path d="M12 20h9" />
@@ -1017,8 +1029,8 @@ export default function Sidebar({
                               <button
                                 className="sidebar-icon-btn"
                                 onClick={(e) => { e.stopPropagation(); onNewSession(g.path) }}
-                                title={`${newLabel} in ${displayName}`}
-                                aria-label={`${newLabel} in ${displayName}`}
+                                title={t('sidebar.list.newTerminalIn', { name: displayName })}
+                                aria-label={t('sidebar.list.newTerminalIn', { name: displayName })}
                               >
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                                   <line x1="12" y1="5" x2="12" y2="19" />
@@ -1037,7 +1049,7 @@ export default function Sidebar({
                               className="session-group-more"
                               onClick={() => setExpandedGroups((prev) => new Set(prev).add(g.key))}
                             >
-                              Show {remaining} more
+                              {t('sidebar.list.showMore', { n: remaining })}
                             </button>
                           )}
                         </div>
@@ -1052,14 +1064,14 @@ export default function Sidebar({
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
-              Explore all chats
+              {t('sidebar.list.explore')}
             </button>
           </>
         ) : (
           <>
             <div className="sidebar-folder-row">
-              <span className="sidebar-folder-name">{projectPath ? projectPath.split(/[\\/]/).pop() : 'No folder'}</span>
-              <button className="icon-btn" onClick={handleOpenFolder} title="Open folder" aria-label="Open folder">
+              <span className="sidebar-folder-name">{projectPath ? projectPath.split(/[\\/]/).pop() : t('sidebar.list.noFolder')}</span>
+              <button className="icon-btn" onClick={handleOpenFolder} title={t('sidebar.files.openFolder')} aria-label={t('sidebar.files.openFolder')}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                 </svg>
@@ -1069,7 +1081,7 @@ export default function Sidebar({
               <FileTree rootPath={projectPath} onOpenFile={onOpenFile} selectedPath={openFilePath} />
             ) : (
               <button className="btn-ghost sidebar-open-folder" onClick={handleOpenFolder}>
-                Open a folder
+                {t('sidebar.files.openAFolder')}
               </button>
             )}
           </>

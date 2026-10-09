@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import ChatTerminal from '../components/ChatTerminal'
 import { applyTheme, zoomFor } from '../lib/theme'
 import type { ChatPopoutSpec } from '../types'
+import { useT } from '../i18n'
 
 /**
  * A chat popped out of the main window (src/main/chat-popout.ts): its terminal alone,
@@ -10,6 +11,7 @@ import type { ChatPopoutSpec } from '../types'
  * hands the chat back to the main window's panes; the pty keeps running throughout.
  */
 export default function Popout() {
+  const t = useT()
   const sessionId = new URLSearchParams(window.location.search).get('sessionId') ?? ''
   const [spec, setSpec] = useState<ChatPopoutSpec | null | undefined>(undefined)
 
@@ -34,7 +36,7 @@ export default function Popout() {
   if (spec === null) {
     return (
       <div className="popout">
-        <p className="popout-missing">This chat is no longer popped out.</p>
+        <p className="popout-missing">{t('app.popout.missing')}</p>
       </div>
     )
   }

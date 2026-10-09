@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import ArgosMark from './ArgosMark'
 import { UpdaterState } from '../types'
+import { useT } from '../i18n'
 import './TitleBar.css'
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
  * frame is hidden (see createWindow in the main process).
  */
 export default function TitleBar({ maximized, runningCount = 0 }: Props) {
+  const t = useT()
   const toggleMaximize = () => window.electronAPI.windowMaximizeToggle()
 
   // Ambient "restart to update" pill: mirrors the same 'updater:event' feed the
@@ -45,8 +47,8 @@ export default function TitleBar({ maximized, runningCount = 0 }: Props) {
   }, [])
   useEffect(() => {
     if (sync !== 'confirm' && sync !== 'failed') return
-    const t = setTimeout(() => setSync('idle'), 4000)
-    return () => clearTimeout(t)
+    const timer = setTimeout(() => setSync('idle'), 4000)
+    return () => clearTimeout(timer)
   }, [sync])
   const onSync = async () => {
     if (sync === 'syncing') return
@@ -74,7 +76,7 @@ export default function TitleBar({ maximized, runningCount = 0 }: Props) {
             onClick={onSync}
             onDoubleClick={(e) => e.stopPropagation()}
             disabled={sync === 'syncing'}
-            title="Replace this dev instance's data with a fresh copy of the installed Argos's"
+            title={t('sidebar.titleBar.devSyncTitle')}
           >
             <svg
               className={sync === 'syncing' ? 'spinning' : undefined}
@@ -94,12 +96,12 @@ export default function TitleBar({ maximized, runningCount = 0 }: Props) {
               <path d="M4.5 21.5v-4.8h4.8" />
             </svg>
             {sync === 'confirm'
-              ? 'Overwrite dev data?'
+              ? t('sidebar.titleBar.devSyncConfirm')
               : sync === 'syncing'
-                ? 'Syncing…'
+                ? t('sidebar.titleBar.devSyncing')
                 : sync === 'failed'
-                  ? 'Sync failed'
-                  : 'Sync with Argos'}
+                  ? t('sidebar.titleBar.devSyncFailed')
+                  : t('sidebar.titleBar.devSync')}
           </button>
         )}
       </div>
@@ -110,7 +112,7 @@ export default function TitleBar({ maximized, runningCount = 0 }: Props) {
         <button
           className="btn-ghost small titlebar-update-pill"
           onClick={() => window.electronAPI.updaterInstall()}
-          title={`Install Argos v${updater.version ?? ''} and relaunch`}
+          title={t('sidebar.titleBar.installUpdate', { version: updater.version ?? '' })}
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" />
@@ -118,7 +120,7 @@ export default function TitleBar({ maximized, runningCount = 0 }: Props) {
             <path d="M21 12a9 9 0 0 1-15.3 6.4L3 16" />
             <path d="M3 21v-5h5" />
           </svg>
-          Restart to update
+          {t('sidebar.titleBar.restartToUpdate')}
         </button>
       )}
 
@@ -126,8 +128,8 @@ export default function TitleBar({ maximized, runningCount = 0 }: Props) {
         <button
           className="titlebar-btn"
           onClick={() => window.electronAPI.windowMinimize()}
-          aria-label="Minimize"
-          title="Minimize"
+          aria-label={t('sidebar.titleBar.minimize')}
+          title={t('sidebar.titleBar.minimize')}
         >
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
             <rect x="1" y="4.5" width="8" height="1" fill="currentColor" />
@@ -136,8 +138,8 @@ export default function TitleBar({ maximized, runningCount = 0 }: Props) {
         <button
           className="titlebar-btn"
           onClick={toggleMaximize}
-          aria-label={maximized ? 'Restore' : 'Maximize'}
-          title={maximized ? 'Restore' : 'Maximize'}
+          aria-label={maximized ? t('sidebar.titleBar.restore') : t('sidebar.titleBar.maximize')}
+          title={maximized ? t('sidebar.titleBar.restore') : t('sidebar.titleBar.maximize')}
         >
           {maximized ? (
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
@@ -153,8 +155,8 @@ export default function TitleBar({ maximized, runningCount = 0 }: Props) {
         <button
           className="titlebar-btn close"
           onClick={() => window.electronAPI.windowClose()}
-          aria-label="Close"
-          title="Close"
+          aria-label={t('common.close')}
+          title={t('common.close')}
         >
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" aria-hidden="true">
             <line x1="1.5" y1="1.5" x2="8.5" y2="8.5" />

@@ -1,3 +1,5 @@
+import type { MessageKey } from '../../../shared/i18n'
+
 /**
  * The app's keyboard shortcuts, written down once so the cheat sheet can show them.
  *
@@ -27,13 +29,13 @@ export interface Shortcut {
   /** The chord, already split into keys — rendered one <kbd> per entry. */
   keys: string[]
   /** What it does, in the imperative. */
-  action: string
+  action: MessageKey
   /** When it applies, where that isn't obvious from the group. */
-  note?: string
+  note?: MessageKey
 }
 
 export interface ShortcutGroup {
-  title: string
+  title: MessageKey
   /** Where the binding actually lives, so this file can be checked against it. */
   where: string
   items: Shortcut[]
@@ -44,71 +46,71 @@ export const OVERLAY_CHORD = '\u0000overlay'
 
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
-    title: 'Anywhere',
+    title: 'shortcuts.group.anywhere',
     where: 'App.tsx — window keydown',
     items: [
-      { keys: [MOD, 'K'], action: 'Command palette' },
-      { keys: [MOD, 'N'], action: 'New terminal' },
-      { keys: [MOD, '/'], action: 'Show this list' },
-      { keys: [MOD, '1'], action: 'Focus the first pane', note: '…2, 3 for the rest' },
-      { keys: [MOD, 'Shift', 'W'], action: 'Close the focused pane', note: 'the chat itself is untouched' }
+      { keys: [MOD, 'K'], action: 'shortcuts.action.palette' },
+      { keys: [MOD, 'N'], action: 'shortcuts.action.newTerminal' },
+      { keys: [MOD, '/'], action: 'shortcuts.action.showList' },
+      { keys: [MOD, '1'], action: 'shortcuts.action.focusPane', note: 'shortcuts.note.restPanes' },
+      { keys: [MOD, 'Shift', 'W'], action: 'shortcuts.action.closePane', note: 'shortcuts.note.chatUntouched' }
     ]
   },
   {
-    title: 'Quick launcher',
+    title: 'shortcuts.group.launcher',
     where: 'main/overlay.ts, overlay/Overlay.tsx',
     items: [
-      { keys: [OVERLAY_CHORD], action: 'Show or hide the launcher', note: 'works with Argos in the background' },
-      { keys: ['Enter'], action: 'Start a new terminal' },
-      { keys: ['Esc'], action: 'Dismiss' }
+      { keys: [OVERLAY_CHORD], action: 'shortcuts.action.toggleLauncher', note: 'shortcuts.note.background' },
+      { keys: ['Enter'], action: 'shortcuts.action.startTerminal' },
+      { keys: ['Esc'], action: 'shortcuts.action.dismiss' }
     ]
   },
   {
-    title: 'Command palette',
+    title: 'shortcuts.group.palette',
     where: 'components/CommandPalette.tsx',
     items: [
-      { keys: ['↑'], action: 'Previous result' },
-      { keys: ['↓'], action: 'Next result' },
-      { keys: ['Enter'], action: 'Run the highlighted result' },
-      { keys: ['Esc'], action: 'Close' }
+      { keys: ['↑'], action: 'shortcuts.action.prevResult' },
+      { keys: ['↓'], action: 'shortcuts.action.nextResult' },
+      { keys: ['Enter'], action: 'shortcuts.action.runResult' },
+      { keys: ['Esc'], action: 'shortcuts.action.close' }
     ]
   },
   {
-    title: 'Terminal',
+    title: 'shortcuts.group.terminal',
     where: 'components/ChatTerminal.tsx',
     items: [
-      { keys: [MOD, 'C'], action: 'Copy the selection', note: 'selecting already copies' },
-      { keys: [MOD, 'V'], action: 'Paste' },
-      { keys: ['Alt', 'V'], action: 'Paste an image', note: 'the CLI\u2019s own key' },
-      { keys: ['Shift', 'right-click'], action: 'Terminal menu', note: 'select all, clear, paste' }
+      { keys: [MOD, 'C'], action: 'shortcuts.action.copy', note: 'shortcuts.note.selectCopies' },
+      { keys: [MOD, 'V'], action: 'shortcuts.action.paste' },
+      { keys: ['Alt', 'V'], action: 'shortcuts.action.pasteImage', note: 'shortcuts.note.cliKey' },
+      { keys: ['Shift', 'right-click'], action: 'shortcuts.action.terminalMenu', note: 'shortcuts.note.terminalMenu' }
     ]
   },
   {
-    title: 'Approving a tool call',
+    title: 'shortcuts.group.approval',
     where: 'components/ApprovalModal.tsx',
     items: [
-      { keys: [MOD, 'Enter'], action: 'Allow once' },
-      { keys: ['Esc'], action: 'Deny' }
+      { keys: [MOD, 'Enter'], action: 'shortcuts.action.allowOnce' },
+      { keys: ['Esc'], action: 'shortcuts.action.deny' }
     ]
   },
   {
-    title: 'File editor',
+    title: 'shortcuts.group.editor',
     where: 'components/FileEditor.tsx',
     items: [
-      { keys: [MOD, 'S'], action: 'Save' },
-      { keys: [MOD, 'F'], action: 'Find' },
-      { keys: [MOD, 'H'], action: 'Find and replace' },
-      { keys: ['Enter'], action: 'Next match', note: 'in the find bar; Shift+Enter for the previous' },
-      { keys: ['Tab'], action: 'Indent', note: 'Shift+Tab outdents' },
-      { keys: ['Esc'], action: 'Close' }
+      { keys: [MOD, 'S'], action: 'shortcuts.action.save' },
+      { keys: [MOD, 'F'], action: 'shortcuts.action.find' },
+      { keys: [MOD, 'H'], action: 'shortcuts.action.replace' },
+      { keys: ['Enter'], action: 'shortcuts.action.nextMatch', note: 'shortcuts.note.findBar' },
+      { keys: ['Tab'], action: 'shortcuts.action.indent', note: 'shortcuts.note.outdent' },
+      { keys: ['Esc'], action: 'shortcuts.action.close' }
     ]
   },
   {
-    title: 'Any dialog',
+    title: 'shortcuts.group.dialog',
     where: 'hooks/useModalA11y.ts',
     items: [
-      { keys: ['Esc'], action: 'Close' },
-      { keys: ['Tab'], action: 'Next control', note: 'focus stays inside the dialog' }
+      { keys: ['Esc'], action: 'shortcuts.action.close' },
+      { keys: ['Tab'], action: 'shortcuts.action.nextControl', note: 'shortcuts.note.focusInside' }
     ]
   }
 ]

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { applyTheme } from '../lib/theme'
+import { useT } from '../i18n'
 
 // Agent status pill window. A tiny always-on-top "picture-in-picture" surface shown
 // while a run is in flight and the main window is hidden/minimized. It reflects live
@@ -20,6 +21,7 @@ interface PillData {
 type PillUpdate = Partial<PillData>
 
 export default function Pill() {
+  const t = useT()
   const [data, setData] = useState<PillData>({ state: 'running', sessionName: '', tool: null })
 
   useEffect(() => {
@@ -79,13 +81,13 @@ export default function Pill() {
     <div className={`pill-shell pill-${data.state}`}>
       {icon}
       <span className="pill-name" title={data.sessionName}>
-        {data.sessionName || 'Working…'}
+        {data.sessionName || t('app.pill.working')}
       </span>
       {data.state === 'running' && data.tool && <span className="pill-tool">{data.tool}</span>}
       <button
         className="pill-open"
-        title="Open app"
-        aria-label="Open app"
+        title={t('app.pill.openApp')}
+        aria-label={t('app.pill.openApp')}
         onClick={() => window.electronAPI.pillOpenMain()}
       >
         <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden>

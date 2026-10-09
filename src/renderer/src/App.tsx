@@ -70,6 +70,8 @@ import { SESSION_DRAG_TYPE, type DropPlan } from './lib/pane-drop'
 // they alone pull in — out of the initial renderer chunk. See the Suspense
 // fallback (`ViewLoading`) rendered while each view's chunk is fetched.
 import { SshHostPublic, RemoteTarget } from './types'
+import { useT } from './i18n'
+import type { MessageKey } from '../../shared/i18n'
 import './styles/App.css'
 // Pulled in directly (rather than left to each lazy view) so the `.view-loading`
 // spinner below is styled even before any view chunk has finished loading.
@@ -90,10 +92,11 @@ const SIDEBAR_COLLAPSED_KEY = 'sidebar-collapsed'
 
 /** Minimal, style-consistent fallback shown while a lazy view's chunk loads. */
 function ViewLoading() {
+  const t = useT()
   return (
     <div className="view-loading">
       <div className="view-spinner" />
-      <div className="view-loading-text">Loading…</div>
+      <div className="view-loading-text">{t('app.loading')}</div>
     </div>
   )
 }
@@ -169,10 +172,10 @@ function newSession(projectPath: string | undefined, provider: ProviderId, accou
 }
 
 // Labels for the segmented sub-nav shown above a group's active view.
-const MEMBER_LABELS: Record<string, string> = {
-  mcp: 'MCP',
-  remote: 'Remote & WSL',
-  ops: 'Operations'
+const MEMBER_LABELS: Record<string, MessageKey> = {
+  mcp: 'app.views.mcp',
+  remote: 'app.views.remote',
+  ops: 'app.views.ops'
 }
 
 // An open Remote/WSL "Connect" session, rendered as a persistent tab (see the
@@ -194,6 +197,11 @@ function serverGroupKey(target: RemoteTarget): string {
 }
 
 export default function App() {
+  const t = useT()
+  // Read from inside long-lived effects and intervals, which must not restart when the
+  // language changes.
+  const tRef = useRef(t)
+  tRef.current = t
   const [sessions, setSessions] = useState<Session[]>([])
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
@@ -565,7 +573,7 @@ export default function App() {
         if (savedSessionsRef.current.get(session.id) === session) continue
         savedSessionsRef.current.set(session.id, session)
         window.electronAPI.saveSession(session).then((result) => {
-          if (!result.success) throw new Error('Session could not be saved')
+          if (!result.success) throw new Error(tRef.current('app.saveFailed'))
           setSaveError('')
         }).catch((error) => {
           savedSessionsRef.current.delete(session.id)
@@ -1839,7 +1847,7 @@ export default function App() {
       return {
         id: r.approvalId,
         kind: 'approval',
-        title: session?.name ?? 'Chat',
+        title: session?.name ?? t('app.home.chatFallback'),
         detail: target,
         mono: r.tool === 'Bash',
         context: session?.projectPath
@@ -1847,11 +1855,11 @@ export default function App() {
           : undefined,
         since: approvalSinceRef.current.get(r.approvalId),
         // What the button does: it opens the chat (or the ops workspace) holding the request.
-        actionLabel: 'Open'
+        actionLabel: t('common.open')
       }
     })
     return approvals
-  }, [approvalQueue, sessions, resolveHomeProjectName])
+  }, [approvalQueue, sessions, resolveHomeProjectName, t])
 
   const homeRunning = useMemo<HomeRunning[]>(() => {
     const chats: HomeRunning[] = sessions
@@ -1909,7 +1917,7 @@ export default function App() {
           if (cancelled) return
           setHomeRepoStatus((prev) => ({
             ...prev,
-            [entry.key]: { fileCount: 0, error: 'Could not read status' }
+            [entry.key]: { fileCount: 0, error: tRef.current('app.home.statusError') }
           }))
         })
     }
@@ -2413,32 +2421,39 @@ export default function App() {
 
   const paletteItems: CommandItem[] = useMemo(() => {
     const items: CommandItem[] = []
-    items.push({ id: 'new', title: 'New terminal', group: 'Actions', subtitle: '⌘N', run: createSession })
+    items.push({ id: 'new', title: t('app.palette.newTerminal'), group: t('app.palette.groupActions'), subtitle: '⌘N', run: createSession })
     items.push({
       id: 'shortcuts',
-      title: 'Keyboard shortcuts',
+      title: t('app.palette.shortcuts'),
       subtitle: modLabel('/'),
-      group: 'Actions',
+      group: t('app.palette.groupActions'),
       run: () => setShortcutsOpen(true)
     })
-    const views: { v: View; label: string }[] = [
-      { v: 'chat', label: 'Chat' },
-      { v: 'projects', label: 'Projects' },
-      { v: 'planner', label: 'Planner' },
-      { v: 'usage', label: 'Usage' },
-      { v: 'mcp', label: 'MCP' },
-      { v: 'remote', label: 'Remote & WSL' },
-      { v: 'ops', label: 'Operations' }
+    const views: { v: View; label: MessageKey }[] = [
+      { v: 'chat', label: 'sidebar.nav.chat' },
+      { v: 'projects', label: 'sidebar.nav.projects' },
+      { v: 'planner', label: 'sidebar.nav.planner' },
+      { v: 'usage', label: 'sidebar.nav.usage' },
+      { v: 'mcp', label: 'app.views.mcp' },
+      { v: 'remote', label: 'app.views.remote' },
+      { v: 'ops', label: 'app.views.ops' }
     ]
-    for (const { v, label } of views) items.push({ id: `view:${v}`, title: `Go to ${label}`, group: 'Views', run: () => goToView(v) })
-    items.push({ id: 'settings', title: 'Open Settings', group: 'Views', run: () => setView('settings') })
-    items.push({ id: 'accounts', title: 'Manage Claude accounts', group: 'Views', run: () => setAccountsOpen(true) })
+    for (const { v, label } of views) {
+      items.push({
+        id: `view:${v}`,
+        title: t('app.palette.goTo', { view: t(label) }),
+        group: t('app.palette.groupViews'),
+        run: () => goToView(v)
+      })
+    }
+    items.push({ id: 'settings', title: t('app.palette.openSettings'), group: t('app.palette.groupViews'), run: () => setView('settings') })
+    items.push({ id: 'accounts', title: t('app.palette.manageAccounts'), group: t('app.palette.groupViews'), run: () => setAccountsOpen(true) })
     for (const s of sessions) {
       items.push({
         id: `sess:${s.id}`,
-        title: s.name || 'New chat',
+        title: s.name || t('app.palette.newChat'),
         subtitle: s.remoteHostName ?? s.projectPath?.split(/[\\/]/).filter(Boolean).pop(),
-        group: 'Sessions',
+        group: t('app.palette.groupSessions'),
         run: () => {
           setActiveId(s.id)
           setView('chat')
@@ -2448,15 +2463,15 @@ export default function App() {
     for (const a of accounts) {
       items.push({
         id: `account:${a.id}`,
-        title: `Switch default account: ${a.name}`,
-        subtitle: a.loggedIn ? a.email ?? 'new chats' : 'not logged in',
-        group: 'Switch account',
+        title: t('app.palette.switchAccount', { name: a.name }),
+        subtitle: a.loggedIn ? a.email ?? t('app.palette.accountNewChats') : t('app.palette.accountNotLoggedIn'),
+        group: t('app.palette.groupSwitchAccount'),
         run: () => switchDefaultAccount(a.id)
       })
     }
     return items
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, accounts])
+  }, [sessions, accounts, t])
 
   // What the Remote & WSL list's SSH dots are allowed to claim. A host counts as reachable
   // only once one of its sessions has actually connected; a host whose sessions have all
@@ -2598,8 +2613,8 @@ export default function App() {
             <button
               className="sidebar-expand-tab"
               onClick={toggleSidebar}
-              title="Show the chat list"
-              aria-label="Show the chat list"
+              title={t('sidebar.nav.showChatList')}
+              aria-label={t('sidebar.nav.showChatList')}
             >
               {/* The collapse button's icon, mirrored: the arrow points back out. */}
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -2684,11 +2699,11 @@ export default function App() {
                   <circle cx="12" cy="12" r="10" stroke="var(--accent)" strokeWidth="1.5" />
                   <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
-                <h2>How can I help?</h2>
-                <p>Start a new terminal, or pick a chat from the sidebar.</p>
+                <h2>{t('app.welcome.title')}</h2>
+                <p>{t('app.welcome.body')}</p>
                 <div className="welcome-actions">
                   <button className="btn-primary" onClick={createSession}>
-                    New terminal
+                    {t('app.welcome.newTerminal')}
                   </button>
                 </div>
               </div>
@@ -2784,7 +2799,7 @@ export default function App() {
       {activeGroup && view !== 'remote-session' && !(view === 'ops-workspace' && opsWorkspace) && (
         <div className="view-with-subnav">
           <div className="view-subnav">
-            <div className="seg-control" role="tablist" aria-label={activeGroup.label}>
+            <div className="seg-control" role="tablist" aria-label={t(activeGroup.label)}>
               {activeGroup.members.map((m) => (
                 <button
                   key={m}
@@ -2794,7 +2809,7 @@ export default function App() {
                   className={view === m ? 'on' : ''}
                   onClick={() => setView(m)}
                 >
-                  {MEMBER_LABELS[m]}
+                  {t(MEMBER_LABELS[m])}
                 </button>
               ))}
             </div>

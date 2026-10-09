@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useModalA11y } from '../hooks/useModalA11y'
+import { useT } from '../i18n'
 import './CommandPalette.css'
 
 export interface CommandItem {
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export default function CommandPalette({ items, onClose }: Props) {
+  const t = useT()
   const [q, setQ] = useState('')
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
@@ -80,7 +82,7 @@ export default function CommandPalette({ items, onClose }: Props) {
         className="cmd-palette"
         role="dialog"
         aria-modal="true"
-        aria-label="Command palette"
+        aria-label={t('shortcuts.palette.label')}
         tabIndex={-1}
         ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
@@ -92,8 +94,8 @@ export default function CommandPalette({ items, onClose }: Props) {
           </svg>
           <input
             className="text-input"
-            placeholder="Jump to a session, project, view or model"
-            aria-label="Command palette"
+            placeholder={t('shortcuts.palette.placeholder')}
+            aria-label={t('shortcuts.palette.label')}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={onKey}
@@ -101,7 +103,7 @@ export default function CommandPalette({ items, onClose }: Props) {
           />
         </div>
         <div className="cmd-list" ref={listRef}>
-          {filtered.length === 0 && <div className="help cmd-empty">No matches</div>}
+          {filtered.length === 0 && <div className="help cmd-empty">{t('shortcuts.palette.noMatches')}</div>}
           {filtered.map((it, i) => {
             const showGroup = it.group !== lastGroup
             lastGroup = it.group
@@ -121,9 +123,9 @@ export default function CommandPalette({ items, onClose }: Props) {
           })}
         </div>
         <div className="cmd-foot">
-          <span className="help"><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
-          <span className="help"><kbd>Enter</kbd> open</span>
-          <span className="help"><kbd>Esc</kbd> close</span>
+          <span className="help"><kbd>↑</kbd><kbd>↓</kbd> {t('shortcuts.palette.navigate')}</span>
+          <span className="help"><kbd>Enter</kbd> {t('shortcuts.palette.open')}</span>
+          <span className="help"><kbd>Esc</kbd> {t('shortcuts.palette.close')}</span>
         </div>
       </div>
     </div>

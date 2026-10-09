@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { ApprovalRequest } from '../types'
 import { applyTheme } from '../lib/theme'
 import { opsToastEyebrow, opsToastQuestion } from '../lib/ops-approval'
+import { useT } from '../i18n'
+import type { TFunction } from '../../../shared/i18n'
 
 // Approval toast window. Shown bottom-right, always on top, whenever an agent run
 // needs tool approval while the main window is hidden/unfocused, so the run never
@@ -10,17 +12,17 @@ import { opsToastEyebrow, opsToastQuestion } from '../lib/ops-approval'
 // keep both UIs in sync (whichever one didn't answer clears that entry).
 
 /** One-line human summary of the tool's most salient argument. */
-function summarize(req: ApprovalRequest): string {
+function summarize(req: ApprovalRequest, t: TFunction): string {
   const input = req.input || {}
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
   switch (req.tool) {
     case 'Bash':
-      return str(input.command) || 'Run a command'
+      return str(input.command) || t('app.toast.runCommand')
     case 'Edit':
     case 'Write':
     case 'MultiEdit':
     case 'NotebookEdit':
-      return str(input.file_path) || str(input.notebook_path) || 'Modify a file'
+      return str(input.file_path) || str(input.notebook_path) || t('app.toast.modifyFile')
     default: {
       // Fall back to the first string-valued argument, else a compact JSON blob.
       const first = Object.values(input).find((v) => typeof v === 'string')
@@ -35,6 +37,7 @@ function summarize(req: ApprovalRequest): string {
 }
 
 export default function Toast() {
+  const t = useT()
   const [queue, setQueue] = useState<ApprovalRequest[]>([])
 
   useEffect(() => {
@@ -81,7 +84,7 @@ export default function Toast() {
           <span className="toast-eyebrow" title={opsToastEyebrow(head.ops)}>
             {opsToastEyebrow(head.ops)}
           </span>
-          {queue.length > 1 && <span className="toast-more">+{queue.length - 1} more</span>}
+          {queue.length > 1 && <span className="toast-more">{t('app.toast.more', { n: queue.length - 1 })}</span>}
         </div>
         <div className="toast-question">
           {q.lead}
@@ -90,14 +93,14 @@ export default function Toast() {
         </div>
         <div className="toast-actions">
           <button className="toast-btn allow" onClick={() => decide(true)}>
-            {plan ? 'Approve' : 'Allow'}
+            {plan ? t('app.toast.approve') : t('app.toast.allow')}
           </button>
           <button className="toast-btn deny" onClick={() => decide(false)}>
-            Deny
+            {t('app.toast.deny')}
           </button>
           <span className="toast-spacer" />
           <button className="toast-link" onClick={() => window.electronAPI.toastOpenMain()}>
-            Open Argos
+            {t('app.toast.openArgos')}
           </button>
         </div>
       </div>
@@ -107,25 +110,25 @@ export default function Toast() {
   return (
     <div className="toast-shell">
       <div className="toast-head">
-        <span className="toast-title">Approve tool use</span>
-        {queue.length > 1 && <span className="toast-more">+{queue.length - 1} more</span>}
+        <span className="toast-title">{t('app.toast.approveToolUse')}</span>
+        {queue.length > 1 && <span className="toast-more">{t('app.toast.more', { n: queue.length - 1 })}</span>}
       </div>
       <div className="toast-body">
         <span className="toast-tool">{head.tool}</span>
-        <span className="toast-summary" title={summarize(head)}>
-          {summarize(head)}
+        <span className="toast-summary" title={summarize(head, t)}>
+          {summarize(head, t)}
         </span>
       </div>
       <div className="toast-actions">
         <button className="toast-btn allow" onClick={() => decide(true)}>
-          Allow
+          {t('app.toast.allow')}
         </button>
         <button className="toast-btn deny" onClick={() => decide(false)}>
-          Deny
+          {t('app.toast.deny')}
         </button>
         <span className="toast-spacer" />
         <button className="toast-link" onClick={() => window.electronAPI.toastOpenMain()}>
-          Open Argos
+          {t('app.toast.openArgos')}
         </button>
       </div>
     </div>
