@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { CCSessionMeta } from '../types'
+import { makeT } from '../../../shared/i18n'
 import { groupByAge, sortSessions } from './session-groups'
+
+const t = makeT('en')
 
 function s(over: Partial<CCSessionMeta>): CCSessionMeta {
   return {
@@ -58,12 +61,12 @@ describe('groupByAge', () => {
     // 23:00 last night is ten hours old at 09:00, and calling it "Today" is the kind
     // of wrong label that makes a reader stop trusting the rest of them.
     const lastNight = at(new Date(2026, 7, 26, 23, 0))
-    const [g] = groupByAge([s({ updatedAt: lastNight })], NOW)
+    const [g] = groupByAge([s({ updatedAt: lastNight })], t, NOW)
     expect(g.label).toBe('Yesterday')
   })
 
   it('counts a session from earlier today as Today', () => {
-    const [g] = groupByAge([s({ updatedAt: at(new Date(2026, 7, 27, 1, 30)) })], NOW)
+    const [g] = groupByAge([s({ updatedAt: at(new Date(2026, 7, 27, 1, 30)) })], t, NOW)
     expect(g.label).toBe('Today')
   })
 
@@ -75,7 +78,7 @@ describe('groupByAge', () => {
       s({ title: 'month', updatedAt: NOW - 20 * DAY }),
       s({ title: 'ancient', updatedAt: NOW - 200 * DAY })
     ]
-    expect(groupByAge(list, NOW).map((g) => g.label)).toEqual([
+    expect(groupByAge(list, t, NOW).map((g) => g.label)).toEqual([
       'Today',
       'Yesterday',
       'Last 7 days',
@@ -86,7 +89,7 @@ describe('groupByAge', () => {
 
   it('drops bands with nothing in them', () => {
     const list = [s({ updatedAt: NOW - 3600_000 }), s({ updatedAt: NOW - 200 * DAY })]
-    expect(groupByAge(list, NOW).map((g) => g.label)).toEqual(['Today', 'Older'])
+    expect(groupByAge(list, t, NOW).map((g) => g.label)).toEqual(['Today', 'Older'])
   })
 
   it('keeps the given order inside a band', () => {
@@ -94,14 +97,14 @@ describe('groupByAge', () => {
       s({ title: 'first', updatedAt: NOW - 3600_000 }),
       s({ title: 'second', updatedAt: NOW - 7200_000 })
     ]
-    expect(groupByAge(list, NOW)[0].sessions.map((x) => x.title)).toEqual(['first', 'second'])
+    expect(groupByAge(list, t, NOW)[0].sessions.map((x) => x.title)).toEqual(['first', 'second'])
   })
 
   it('puts a session with no timestamp at all in Older', () => {
-    expect(groupByAge([s({ updatedAt: 0 })], NOW)[0].label).toBe('Older')
+    expect(groupByAge([s({ updatedAt: 0 })], t, NOW)[0].label).toBe('Older')
   })
 
   it('returns nothing for an empty list', () => {
-    expect(groupByAge([], NOW)).toEqual([])
+    expect(groupByAge([], t, NOW)).toEqual([])
   })
 })

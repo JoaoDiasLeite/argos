@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { CCProject, ProjectMoveRefusal, ProjectOpResult } from '../types'
+import { plural, type TFunction } from '../../../shared/i18n'
+import { useT } from '../i18n'
 import './ProjectActions.css'
 
 interface Props {
@@ -41,30 +43,36 @@ const MENU_WIDTH = 300
 
 /** One sentence per refusal — a generic failure is exactly what the discriminated
  * union in ProjectMoveResult exists to prevent. */
-function moveRefusalMessage(error: ProjectMoveRefusal, detail?: string): string {
+function moveRefusalMessage(t: TFunction, error: ProjectMoveRefusal, detail?: string): string {
   switch (error) {
     case 'not-found':
-      return 'This project is no longer where Argos last saw it.'
+      return t('projects.actions.move.notFound')
     case 'invalid-target':
-      return 'That is not a usable destination. Give an absolute path to a new folder, not a drive root.'
+      return t('projects.actions.move.invalidTarget')
     case 'same-path':
-      return 'That is where the project already is.'
+      return t('projects.actions.move.samePath')
     case 'target-inside-source':
-      return 'A folder cannot move inside itself.'
+      return t('projects.actions.move.insideSource')
     case 'target-exists':
-      return 'Something is already at that path. Pick a name that does not exist yet — the move refuses rather than merging into it.'
+      return t('projects.actions.move.targetExists')
     case 'no-parent':
-      return 'The folder that would contain it does not exist. Create it first, or pick another destination.'
+      return t('projects.actions.move.noParent')
     case 'cross-volume':
-      return 'That is on a different drive. Argos refuses rather than copying: a copy of a project tree is a different operation, and a half-finished one is worse than a refusal.'
+      return t('projects.actions.move.crossVolume')
     case 'encoded-collision':
-      return 'Another project already owns the transcript folder that path would use.'
+      return t('projects.actions.move.encodedCollision')
     case 'busy':
-      return 'A chat is running in this project. Stop it first.'
+      return t('projects.actions.move.busy')
     case 'failed':
     default:
-      return detail || 'The move failed.'
+      return detail || t('projects.actions.move.failed')
   }
+}
+
+/** A translated sentence with markup inside it: the `{name}` placeholders the template
+ *  still holds (it was fetched without those params) are swapped for the given nodes. */
+function withNodes(template: string, nodes: Record<string, ReactNode>): ReactNode[] {
+  return template.split(/\{(\w+)\}/).map((part, i) => (i % 2 === 1 ? <Fragment key={i}>{nodes[part]}</Fragment> : part))
 }
 
 /** The folder's own name, from the last segment of a path — split on both separators
@@ -78,17 +86,19 @@ function baseName(path: string): string {
  * rather than the whole project once there is more than one member — a `not-empty`
  * on the second spelling of a folder does not mean the project itself gained a
  * session, just that this particular transcript directory did. */
-function deleteFailureMessage(res: Extract<ProjectOpResult, { ok: false }>, multiple: boolean): string {
+function deleteFailureMessage(t: TFunction, res: Extract<ProjectOpResult, { ok: false }>, multiple: boolean): string {
   switch (res.error) {
     case 'not-found':
       return multiple
-        ? "One of this project's directories is no longer on disk."
-        : 'This project is no longer on disk.'
+        ? t('projects.actions.delete.notFoundMultiple')
+        : t('projects.actions.delete.notFound')
     case 'not-empty': {
-      const subject = multiple ? 'One of its directories' : 'This project'
-      return `${subject} picked up a conversation since the list was read (now ${res.sessions} session${
-        res.sessions !== 1 ? 's' : ''
-      }${res.archived ? `, ${res.archived} archived` : ''}). Refresh and try again.`
+      const subject = multiple ? t('projects.actions.delete.subjectMultiple') : t('projects.actions.delete.subjectSingle')
+      const sessions = plural(t, 'projects.actions.sessions', res.sessions)
+      const count = res.archived
+        ? t('projects.actions.delete.countWithArchived', { sessions, archived: res.archived })
+        : sessions
+      return t('projects.actions.delete.notEmpty', { subject, count })
     }
     case 'failed':
     default:
@@ -107,6 +117,7 @@ function deleteFailureMessage(res: Extract<ProjectOpResult, { ok: false }>, mult
  * other, the same "one open thing at a time" rule the tag popover follows.
  */
 export default function ProjectActions({ project, siblings, anchor, onChanged, onMoved, onClose }: Props) {
+  const t = useT()
   const [panel, setPanel] = useState<'delete' | 'move' | null>(null)
   const [moveDraft, setMoveDraft] = useState('')
   // Set once a move succeeds with something downstream left unfixed. Kept separate
@@ -176,7 +187,7 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
         deleted++
         continue
       }
-      failures.push(deleteFailureMessage(res, multiple))
+      failures.push(deleteFailureMessage(t, res, multiple))
       // Stale-list message: there's no point leaving a single-directory confirm
       // panel open over data that's already known to be wrong.
       if (!multiple && res.error === 'not-empty') stale = true
@@ -189,7 +200,7 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
     }
     setError(
       multiple
-        ? `Removed ${deleted} of ${members.length} directories. ${failures[0]}`
+        ? t('projects.actions.delete.partial', { n: deleted, total: members.length, reason: failures[0] })
         : failures[0]
     )
     if (stale) setPanel(null)
@@ -245,13 +256,13 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
       // benefit of the doubt — nothing has moved yet the first time, so a refusal
       // there is real.
       if (i > 0 && res.error === 'target-exists') {
-        warnings.push("Another directory for this project already led to that destination — nothing more to move there.")
+        warnings.push(t('projects.actions.move.siblingDone'))
         continue
       }
       // A real refusal, on the first member or not: stop rather than press on with
       // the rest. A half-moved project is worse than one left where it was.
       setBusy(false)
-      setError(moveRefusalMessage(res.error, res.detail))
+      setError(moveRefusalMessage(t, res.error, res.detail))
       return
     }
     setBusy(false)
@@ -284,10 +295,11 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
   movedRef.current = moved
   dismissRef.current = dismissWarnings
 
+  const holds = plural(t, 'projects.actions.delete.holds', totalSessions)
   const deleteDisabledReason = totalSessions
-    ? `Holds ${totalSessions} conversation${totalSessions !== 1 ? 's' : ''}${
-        archivedCount ? ` (${archivedCount} archived)` : ''
-      }`
+    ? archivedCount
+      ? t('projects.actions.delete.holdsWithArchived', { holds, archived: archivedCount })
+      : holds
     : ''
 
   // Kept on screen rather than trusting the anchor: a row near the right edge or the
@@ -301,9 +313,9 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
   return (
     <div className="proj-actions-menu" ref={ref} role="menu" style={{ top, left }} onClick={(e) => e.stopPropagation()}>
       <button type="button" className="proj-actions-item" role="menuitem" disabled={busy} onClick={doArchiveToggle}>
-        {archived ? 'Unarchive project' : 'Archive project'}
+        {archived ? t('projects.actions.unarchive') : t('projects.actions.archive')}
       </button>
-      <p className="help proj-actions-note">Filing only: archiving a project does not touch any conversation.</p>
+      <p className="help proj-actions-note">{t('projects.actions.archiveNote')}</p>
 
       <div className="proj-actions-sep" />
 
@@ -315,13 +327,13 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
         disabled={busy}
         onClick={openMove}
       >
-        Change folder
+        {t('projects.actions.changeFolder')}
       </button>
 
       {panel === 'move' &&
         (moveWarnings ? (
           <div className="block warn proj-actions-panel">
-            <p className="proj-actions-text">Moved, but not everything else followed.</p>
+            <p className="proj-actions-text">{t('projects.actions.move.warned')}</p>
             <ul className="proj-actions-warn-list">
               {moveWarnings.map((w, i) => (
                 <li key={i}>{w}</li>
@@ -329,19 +341,21 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
             </ul>
             <div className="proj-actions-buttons">
               <button type="button" className="btn-text" onClick={dismissWarnings}>
-                Dismiss
+                {t('projects.actions.move.dismiss')}
               </button>
             </div>
           </div>
         ) : (
           <div className="proj-actions-panel">
             <p className="help">
-              Currently at <span className="proj-actions-path">{realPath}</span>
+              {withNodes(t('projects.actions.move.currentlyAt'), {
+                path: <span className="proj-actions-path">{realPath}</span>
+              })}
             </p>
             <div className="proj-actions-move-row">
               <input
                 className="text-input mono"
-                aria-label="New folder"
+                aria-label={t('projects.actions.move.newFolder')}
                 autoFocus
                 value={moveDraft}
                 disabled={busy}
@@ -352,25 +366,23 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
                 }}
               />
               <button type="button" className="btn-ghost small" onClick={browseFolder} disabled={busy}>
-                Browse
+                {t('projects.actions.move.browse')}
               </button>
             </div>
             {members.length > 1 && (
               <p className="help">
-                This project is recorded under {members.length} directories, the same folder addressed more than one
-                way. All {members.length} move together.
+                {t('projects.actions.move.multiple', { n: members.length })}
               </p>
             )}
             <p className="help">
-              Browse picks the parent folder; the current folder name is appended, since the destination itself must
-              not exist yet.
+              {t('projects.actions.move.browseNote')}
             </p>
             <div className="proj-actions-buttons">
               <button type="button" className="btn-ghost small" onClick={() => setPanel(null)} disabled={busy}>
-                Cancel
+                {t('common.cancel')}
               </button>
               <button type="button" className="btn-primary small" disabled={busy || !canMove} onClick={doMove}>
-                Move
+                {t('projects.actions.move.submit')}
               </button>
             </div>
           </div>
@@ -381,7 +393,7 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
       {totalSessions > 0 ? (
         <div className="proj-actions-delete">
           <button type="button" className="btn-text danger" role="menuitem" disabled>
-            Delete project
+            {t('projects.actions.delete.menu')}
           </button>
           {/* A disabled control that does not say why is a dead end. */}
           <p className="help">{deleteDisabledReason}</p>
@@ -389,34 +401,34 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
       ) : panel === 'delete' ? (
         <div className="proj-actions-panel">
           <p className="proj-actions-text">
-            {members.length > 1 ? (
-              <>
-                Delete the empty project <b>{name}</b>, {members.length} directories?
-              </>
-            ) : (
-              <>
-                Delete the empty project <b>{name}</b> at <span className="proj-actions-path">{realPath}</span>?
-              </>
-            )}
+            {members.length > 1
+              ? withNodes(t('projects.actions.delete.confirmMultiple', { n: members.length }), {
+                  name: <b>{name}</b>
+                })
+              : withNodes(t('projects.actions.delete.confirmSingle'), {
+                  name: <b>{name}</b>,
+                  path: <span className="proj-actions-path">{realPath}</span>
+                })}
           </p>
           <p className="help">
-            Removes the empty project director{members.length > 1 ? 'ies' : 'y'} under the source&apos;s{' '}
-            <code>projects/</code> folder, plus its pin and archived flag. Nothing inside the real project folder is
-            touched.
+            {withNodes(
+              members.length > 1 ? t('projects.actions.delete.noteMultiple') : t('projects.actions.delete.noteSingle'),
+              { folder: <code>projects/</code> }
+            )}
           </p>
           <div className="proj-actions-buttons">
             <button type="button" className="btn-ghost small" onClick={() => setPanel(null)} disabled={busy}>
-              Keep
+              {t('projects.actions.delete.keep')}
             </button>
             <button type="button" className="btn-primary small danger" onClick={doDelete} disabled={busy}>
-              Delete
+              {t('common.delete')}
             </button>
           </div>
         </div>
       ) : (
         <div className="proj-actions-delete">
           <button type="button" className="btn-text danger" role="menuitem" onClick={openDelete}>
-            Delete project
+            {t('projects.actions.delete.menu')}
           </button>
         </div>
       )}

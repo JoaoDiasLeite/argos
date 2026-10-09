@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { CCSessionMeta } from '../types'
+import { useT } from '../i18n'
 import './SessionTags.css'
 
 /**
@@ -58,6 +59,7 @@ interface ChipsProps {
  * 6 px dot before the name (the colour is data, so it stays inline).
  */
 export function TagChips({ tags, colorFor, onRemove, onClick, active, className }: ChipsProps) {
+  const t = useT()
   if (!tags.length) return null
   return (
     <div className={`tag-chips ${className ?? ''}`}>
@@ -89,8 +91,8 @@ export function TagChips({ tags, colorFor, onRemove, onClick, active, className 
               <button
                 type="button"
                 className="tag-chip-x"
-                aria-label={`Remove ${tag}`}
-                title={`Remove ${tag}`}
+                aria-label={t('sessions.tags.remove', { tag })}
+                title={t('sessions.tags.remove', { tag })}
                 onClick={(e) => {
                   e.stopPropagation()
                   onRemove(tag)
@@ -124,6 +126,7 @@ interface EditorProps {
  * half-applied state if the editor is dismissed.
  */
 export function TagEditor({ session, vocabulary, colorFor, onSaved, onClose }: EditorProps) {
+  const t = useT()
   const [tags, setTags] = useState<string[]>(session.tags)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
@@ -160,18 +163,18 @@ export function TagEditor({ session, vocabulary, colorFor, onSaved, onClose }: E
       setTags(res.tags)
       onSaved(res.tags)
     } else {
-      setError(res.error === 'not-found' ? 'This conversation is no longer on disk.' : res.message)
+      setError(res.error === 'not-found' ? t('sessions.tags.notFound') : res.message)
     }
   }
 
   const add = (raw: string) => {
-    const t = raw.trim()
-    if (!t || tags.includes(t)) {
+    const tag = raw.trim()
+    if (!tag || tags.includes(tag)) {
       setDraft('')
       return
     }
     setDraft('')
-    commit([...tags, t])
+    commit([...tags, tag])
   }
 
   const suggestions = vocabulary
@@ -181,21 +184,21 @@ export function TagEditor({ session, vocabulary, colorFor, onSaved, onClose }: E
   return (
     <div className="tag-editor" onClick={(e) => e.stopPropagation()}>
       <div className="tag-editor-head">
-        <span className="eyebrow">Tags</span>
+        <span className="eyebrow">{t('sessions.tags.title')}</span>
         <button type="button" className="btn-text" onClick={onClose}>
-          Done
+          {t('sessions.tags.done')}
         </button>
       </div>
       {tags.length > 0 ? (
-        <TagChips tags={tags} colorFor={colorFor} onRemove={(t) => commit(tags.filter((x) => x !== t))} />
+        <TagChips tags={tags} colorFor={colorFor} onRemove={(tag) => commit(tags.filter((x) => x !== tag))} />
       ) : (
-        <p className="help">No tags yet.</p>
+        <p className="help">{t('sessions.tags.empty')}</p>
       )}
       <input
         ref={inputRef}
         className="text-input tag-editor-input"
-        placeholder="Add a tag"
-        aria-label="Add a tag"
+        placeholder={t('sessions.tags.add')}
+        aria-label={t('sessions.tags.add')}
         value={draft}
         disabled={busy}
         onChange={(e) => {

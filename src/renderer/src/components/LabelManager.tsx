@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { LabelRegistry } from '../types'
+import { plural } from '../../../shared/i18n'
+import { useT } from '../i18n'
 import Sheet from './Sheet'
 import './LabelManager.css'
 
@@ -16,6 +18,7 @@ type Pending =
   | null
 
 export default function LabelManager({ onClose, onChanged }: Props) {
+  const t = useT()
   const [reg, setReg] = useState<LabelRegistry>({ palette: [], labels: {} })
   const [counts, setCounts] = useState<Record<string, number>>({})
   const [pending, setPending] = useState<Pending>(null)
@@ -50,8 +53,7 @@ export default function LabelManager({ onClose, onChanged }: Props) {
   }
 
   /** A partial sweep leaves the registry alone — say so instead of implying success. */
-  const partial = (failed: number) =>
-    `${failed} conversation${failed !== 1 ? 's' : ''} could not be read, so the label was kept.`
+  const partial = (failed: number) => plural(t, 'projects.labels.partial', failed)
 
   const doRename = async (from: string, to: string) => {
     setBusy(true)
@@ -61,13 +63,13 @@ export default function LabelManager({ onClose, onChanged }: Props) {
       // Renaming onto an existing name is a merge. Offer it rather than doing it:
       // merging silently loses a label nobody asked to lose.
       setPending({ kind: 'merge', name: from, suggested: res.target, count: res.count })
-      setNote(`“${res.target}” already exists on ${res.count} conversation${res.count !== 1 ? 's' : ''}.`)
+      setNote(plural(t, 'projects.labels.exists', res.count, { target: res.target }))
       return
     }
     await after(
       res.failed > 0
         ? partial(res.failed)
-        : `Renamed on ${res.renamed} conversation${res.renamed !== 1 ? 's' : ''}.`
+        : plural(t, 'projects.labels.renamed', res.renamed)
     )
   }
 
@@ -78,7 +80,7 @@ export default function LabelManager({ onClose, onChanged }: Props) {
     await after(
       res.failed > 0
         ? partial(res.failed)
-        : `Merged into “${into}” on ${res.merged} conversation${res.merged !== 1 ? 's' : ''}.`
+        : plural(t, 'projects.labels.merged', res.merged, { into })
     )
   }
 
@@ -89,7 +91,7 @@ export default function LabelManager({ onClose, onChanged }: Props) {
     await after(
       res.failed > 0
         ? partial(res.failed)
-        : `Removed from ${res.cleared} conversation${res.cleared !== 1 ? 's' : ''}.`
+        : plural(t, 'projects.labels.removed', res.cleared)
     )
   }
 
@@ -107,7 +109,7 @@ export default function LabelManager({ onClose, onChanged }: Props) {
         <div className="lm-form">
           <input
             className="text-input"
-            aria-label={`New name for ${name}`}
+            aria-label={t('projects.labels.newNameFor', { name })}
             autoFocus
             value={draft}
             disabled={busy}
@@ -118,7 +120,7 @@ export default function LabelManager({ onClose, onChanged }: Props) {
           />
           <div className="lm-form-actions">
             <button type="button" className="btn-ghost small" onClick={() => setPending(null)}>
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="button"
@@ -126,7 +128,7 @@ export default function LabelManager({ onClose, onChanged }: Props) {
               disabled={busy || !draft.trim()}
               onClick={() => doRename(name, draft.trim())}
             >
-              Rename
+              {t('common.rename')}
             </button>
           </div>
         </div>
@@ -138,8 +140,8 @@ export default function LabelManager({ onClose, onChanged }: Props) {
         <div className="lm-form">
           <input
             className="text-input"
-            aria-label={`Merge ${name} into`}
-            placeholder="Merge into"
+            aria-label={t('projects.labels.mergeInto', { name })}
+            placeholder={t('projects.labels.mergeIntoPlaceholder')}
             autoFocus
             list="lm-merge-options"
             value={draft || pending.suggested || ''}
@@ -156,13 +158,13 @@ export default function LabelManager({ onClose, onChanged }: Props) {
                 <option key={n} value={n} />
               ))}
           </datalist>
-          <p className="help">“{name}” disappears; the conversations carrying it keep the other label.</p>
+          <p className="help">{t('projects.labels.mergeNote', { name })}</p>
           <div className="lm-form-actions">
             <button type="button" className="btn-ghost small" onClick={() => setPending(null)}>
-              Cancel
+              {t('common.cancel')}
             </button>
             <button type="button" className="btn-primary small" disabled={busy || !into} onClick={() => doMerge(name, into)}>
-              Merge
+              {t('projects.labels.merge')}
             </button>
           </div>
         </div>
@@ -171,15 +173,15 @@ export default function LabelManager({ onClose, onChanged }: Props) {
     return (
       <div className="lm-form">
         <p className="lm-confirm">
-          Remove “{name}” from {pending.count} conversation{pending.count !== 1 ? 's' : ''}?
+          {plural(t, 'projects.labels.confirmRemove', pending.count, { name })}
         </p>
-        <p className="help">The conversations themselves are untouched; only the tag goes.</p>
+        <p className="help">{t('projects.labels.confirmRemoveNote')}</p>
         <div className="lm-form-actions">
           <button type="button" className="btn-ghost small" onClick={() => setPending(null)}>
-            Keep
+            {t('projects.labels.keep')}
           </button>
           <button type="button" className="btn-primary small danger" disabled={busy} onClick={() => doDelete(name)}>
-            Remove everywhere
+            {t('projects.labels.removeEverywhere')}
           </button>
         </div>
       </div>
@@ -188,24 +190,23 @@ export default function LabelManager({ onClose, onChanged }: Props) {
 
   return (
     <Sheet
-      title="Labels"
+      title={t('projects.labels.title')}
       width={520}
       onClose={onClose}
       footer={
         <button type="button" className="btn-ghost" onClick={onClose}>
-          Done
+          {t('projects.labels.done')}
         </button>
       }
     >
       <div className="lm-body">
         <p className="help">
-          A tag lives inside the conversation, so the CLI sees it too. Only the colour is stored here: losing it
-          costs colours, not tags.
+          {t('projects.labels.intro')}
         </p>
 
         {note && <p className="lm-note">{note}</p>}
 
-        {names.length === 0 && <p className="lm-empty">No labels yet. Tag a conversation to start one.</p>}
+        {names.length === 0 && <p className="lm-empty">{t('projects.labels.empty')}</p>}
 
         <ul className="lm-list">
           {names.map((name) => (
@@ -215,20 +216,22 @@ export default function LabelManager({ onClose, onChanged }: Props) {
                   type="button"
                   className="lm-dot"
                   style={{ background: reg.labels[name] }}
-                  aria-label={`Change colour of ${name}`}
+                  aria-label={t('projects.labels.changeColour', { name })}
                   aria-expanded={swatchFor === name}
                   onClick={() => setSwatchFor(swatchFor === name ? null : name)}
                 />
                 <span className="lm-name">{name}</span>
                 <span className="lm-count">
-                  {counts[name] ?? '…'} conversation{counts[name] === 1 ? '' : 's'}
+                  {counts[name] === undefined
+                    ? t('projects.labels.count.other', { n: '…' })
+                    : plural(t, 'projects.labels.count', counts[name])}
                 </span>
                 <span className="lm-actions">
                   <button
                     type="button"
                     className="lm-icon"
-                    title="Rename"
-                    aria-label={`Rename ${name}`}
+                    title={t('common.rename')}
+                    aria-label={t('projects.labels.renameLabel', { name })}
                     onClick={() => open({ kind: 'rename', name }, name)}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -239,8 +242,8 @@ export default function LabelManager({ onClose, onChanged }: Props) {
                   <button
                     type="button"
                     className="lm-icon"
-                    title="Merge into another label"
-                    aria-label={`Merge ${name} into another label`}
+                    title={t('projects.labels.mergeTitle')}
+                    aria-label={t('projects.labels.mergeLabel', { name })}
                     onClick={() => open({ kind: 'merge', name })}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -251,8 +254,8 @@ export default function LabelManager({ onClose, onChanged }: Props) {
                   <button
                     type="button"
                     className="lm-icon danger"
-                    title="Remove from every conversation"
-                    aria-label={`Remove ${name} everywhere`}
+                    title={t('projects.labels.removeTitle')}
+                    aria-label={t('projects.labels.removeLabel', { name })}
                     onClick={() => open({ kind: 'delete', name, count: counts[name] ?? 0 })}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -271,7 +274,7 @@ export default function LabelManager({ onClose, onChanged }: Props) {
                       type="button"
                       className={`lm-swatch ${reg.labels[name] === c ? 'on' : ''}`}
                       style={{ background: c }}
-                      aria-label={`Use ${c}`}
+                      aria-label={t('projects.labels.useColour', { colour: c })}
                       onClick={async () => {
                         await window.electronAPI.ccLabelSetColor(name, c)
                         setSwatchFor(null)

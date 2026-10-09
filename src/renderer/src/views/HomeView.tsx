@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useMemo, ReactNode, KeyboardEvent as React
 import { createPortal } from 'react-dom'
 import { ProviderId } from '../types'
 import { VISIBLE_CLI_PROVIDERS } from '../lib/cli-providers'
+import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
+import { useLanguage, useT } from '../i18n'
 import './views.css'
 import './HomeView.css'
 
@@ -29,10 +31,10 @@ export interface HomeRunning {
 }
 
 /** The Running list's groups, in order. A group with nothing running is left out. */
-const RUNNING_GROUPS: { label: string; kinds: HomeRunning['kind'][] }[] = [
-  { label: 'Chats', kinds: ['chat', 'cli'] },
-  { label: 'Servers', kinds: ['server'] },
-  { label: 'Interventions', kinds: ['intervention'] }
+const RUNNING_GROUPS: { id: string; label: MessageKey; kinds: HomeRunning['kind'][] }[] = [
+  { id: 'chats', label: 'home.running.group.chats', kinds: ['chat', 'cli'] },
+  { id: 'servers', label: 'home.running.group.servers', kinds: ['server'] },
+  { id: 'interventions', label: 'home.running.group.interventions', kinds: ['intervention'] }
 ]
 
 export interface HomeRepo {
@@ -119,52 +121,54 @@ const RECENT_SHOWN = 6
 
 /** Own copy on purpose — ProjectsView has its own, and this isn't shared across files
  *  (convention 1: no cross-file coupling to save a few lines). */
-function timeAgo(ts: number): string {
+function timeAgo(ts: number, t: TFunction): string {
   if (!ts) return ''
   const diff = Date.now() - ts
   const m = Math.floor(diff / 60000)
-  if (m < 1) return 'just now'
-  if (m < 60) return `${m}m ago`
+  if (m < 1) return t('home.time.justNow')
+  if (m < 60) return t('home.time.minutesAgo', { n: m })
   const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
+  if (h < 24) return t('home.time.hoursAgo', { n: h })
   const d = Math.floor(h / 24)
-  return `${d}d ago`
+  return t('home.time.daysAgo', { n: d })
 }
 
 /** "18 min" / "2 h 5 min" for how long something has been going or waiting. */
-function minutesSince(ts: number): string {
+function minutesSince(ts: number, t: TFunction): string {
   const m = Math.floor(Math.max(0, Date.now() - ts) / 60000)
-  if (m < 1) return '<1 min'
-  if (m < 60) return `${m} min`
+  if (m < 1) return t('home.duration.lessThanMinute')
+  if (m < 60) return t('home.duration.minutes', { n: m })
   const h = Math.floor(m / 60)
   const rem = m % 60
-  if (h < 24) return rem ? `${h} h ${rem} min` : `${h} h`
-  return `${Math.floor(h / 24)} d`
+  if (h < 24) return rem ? t('home.duration.hoursMinutes', { h, m: rem }) : t('home.duration.hours', { h })
+  return t('home.duration.days', { n: Math.floor(h / 24) })
 }
 
 /** "Thursday, 2 October". */
-function dayTitle(d: Date): string {
-  const weekday = d.toLocaleDateString('en-GB', { weekday: 'long' })
-  const month = d.toLocaleDateString('en-GB', { month: 'long' })
-  return `${weekday}, ${d.getDate()} ${month}`
+function dayTitle(d: Date, t: TFunction, locale: string | undefined): string {
+  const weekday = d.toLocaleDateString(locale ?? 'en-GB', { weekday: 'long' })
+  const month = d.toLocaleDateString(locale ?? 'en-GB', { month: 'long' })
+  return t('home.header.dayTitle', { weekday, day: d.getDate(), month })
 }
 
 /** "5-hour window" / "weekly window" from the window's length in minutes. */
-function windowName(minutes?: number): string {
-  if (!minutes) return 'plan window'
-  if (minutes === 10080) return 'weekly window'
-  if (minutes < 1440) return `${Math.round(minutes / 60)}-hour window`
-  return `${Math.round(minutes / 1440)}-day window`
+function windowName(t: TFunction, minutes?: number): string {
+  if (!minutes) return t('home.plan.window.default')
+  if (minutes === 10080) return t('home.plan.window.weekly')
+  if (minutes < 1440) return t('home.plan.window.hours', { n: Math.round(minutes / 60) })
+  return t('home.plan.window.days', { n: Math.round(minutes / 1440) })
 }
 
 /** "resets 19:40" today, "resets Fri 09:00" on another day. */
-function resetLabel(iso?: string): string {
+function resetLabel(t: TFunction, locale: string | undefined, iso?: string): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (isNaN(d.getTime())) return ''
-  const hm = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  const hm = d.toLocaleTimeString(locale ?? 'en-GB', { hour: '2-digit', minute: '2-digit' })
   const sameDay = d.toDateString() === new Date().toDateString()
-  return sameDay ? `resets ${hm}` : `resets ${d.toLocaleDateString('en-GB', { weekday: 'short' })} ${hm}`
+  return sameDay
+    ? t('home.plan.resets', { time: hm })
+    : t('home.plan.resetsOn', { day: d.toLocaleDateString(locale ?? 'en-GB', { weekday: 'short' }), time: hm })
 }
 
 /** The sidebar badge's thresholds: --warn from 70 %, --error from 90 %. */
@@ -172,13 +176,17 @@ function planTone(pct: number): string {
   return pct >= 90 ? "err" : pct >= 70 ? "warn" : "ok"
 }
 
-function planLine(plan: HomePlan | null): string {
-  if (!plan) return 'No account connected · Settings › Connection'
-  const who = `${plan.accountName} account`
+function planLine(plan: HomePlan | null, t: TFunction, locale: string | undefined): string {
+  if (!plan) return t('home.plan.noAccount')
+  const who = t('home.plan.account', { name: plan.accountName })
   if (plan.utilization === undefined) return who
-  const pct = `${who} at ${plan.utilization.toFixed(0)} % of the ${windowName(plan.windowMinutes)}`
-  const reset = resetLabel(plan.resetsAt)
-  return reset ? `${pct} · ${reset}` : pct
+  const usage = t('home.plan.usage', {
+    name: plan.accountName,
+    pct: plan.utilization.toFixed(0),
+    window: windowName(t, plan.windowMinutes)
+  })
+  const reset = resetLabel(t, locale, plan.resetsAt)
+  return reset ? t('home.plan.usageWithReset', { usage, reset }) : usage
 }
 
 function ChevronIcon() {
@@ -237,6 +245,7 @@ function HomeSelect({
   footerLabel?: string
   onFooter?: () => void
 }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const [menuPos, setMenuPos] = useState<MenuPos | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -269,8 +278,8 @@ function HomeSelect({
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return
+      const target = e.target as Node
+      if (btnRef.current?.contains(target) || menuRef.current?.contains(target)) return
       close(false)
     }
     const onKeyDown = (e: KeyboardEvent) => {
@@ -341,7 +350,7 @@ function HomeSelect({
               }
             }}
           >
-            {items.length === 0 && <div className="home-select-empty">Nothing yet</div>}
+            {items.length === 0 && <div className="home-select-empty">{t('home.select.empty')}</div>}
             {items.map((it) => (
               <button
                 key={it.key}
@@ -410,6 +419,8 @@ export default function HomeView({
   onOpenIntervention,
   onOpenRepo
 }: Props) {
+  const t = useT()
+  const { locale } = useLanguage()
   const [prompt, setPrompt] = useState('')
   const [recentOpen, setRecentOpen] = useState(false)
 
@@ -485,11 +496,11 @@ export default function HomeView({
   }
 
   const projectLabel =
-    projectItems.find((p) => p.key === choice.projectPath)?.label ?? start.projectName ?? 'Project'
-  const cliLabel = cliItems.find((p) => p.key === chosenProvider)?.label ?? 'CLI'
+    projectItems.find((p) => p.key === choice.projectPath)?.label ?? start.projectName ?? t('home.start.project')
+  const cliLabel = cliItems.find((p) => p.key === chosenProvider)?.label ?? t('home.start.cli')
   const chosenAccount = accountItems.find((a) => a.key === choice.accountId)
   const accountLabel =
-    chosenAccount?.label ?? start.accountName ?? choice.accountId ?? start.accountId ?? 'Account'
+    chosenAccount?.label ?? start.accountName ?? choice.accountId ?? start.accountId ?? t('home.start.account')
 
   function submitStart() {
     const trimmed = prompt.trim()
@@ -515,15 +526,19 @@ export default function HomeView({
       <div className="home-page">
         <div className="home-main">
           <header className="home-head">
-            <h1>{dayTitle(new Date())}</h1>
-            <p className="home-sub">{plan && plan.utilization !== undefined ? `${plan.accountName} account` : planLine(plan)}</p>
+            <h1>{dayTitle(new Date(), t, locale)}</h1>
+            <p className="home-sub">
+              {plan && plan.utilization !== undefined
+                ? t('home.plan.account', { name: plan.accountName })
+                : planLine(plan, t, locale)}
+            </p>
           </header>
 
           <div className="home-start">
             <textarea
-              aria-label="What are we doing?"
+              aria-label={t('home.start.prompt')}
               className="text-input textarea home-start-input"
-              placeholder="What are we doing?"
+              placeholder={t('home.start.prompt')}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={(e) => {
@@ -536,17 +551,17 @@ export default function HomeView({
             <div className="home-start-row">
               <HomeSelect
                 value={projectLabel}
-                ariaLabel="Project"
+                ariaLabel={t('home.start.project')}
                 className="project"
                 items={projectItems}
                 selectedKey={choice.projectPath}
                 onSelect={(key) => pick('projectPath', key)}
-                footerLabel="New project"
+                footerLabel={t('home.start.newProject')}
                 onFooter={handleNewProject}
               />
               <HomeSelect
                 value={cliLabel}
-                ariaLabel="CLI"
+                ariaLabel={t('home.start.cli')}
                 className="cli"
                 items={cliItems}
                 selectedKey={chosenProvider}
@@ -560,7 +575,7 @@ export default function HomeView({
                       {chosenAccount?.detail && <span className="home-select-detail"> · {chosenAccount.detail}</span>}
                     </>
                   }
-                  ariaLabel="Account"
+                  ariaLabel={t('home.start.account')}
                   className="account"
                   items={accountItems}
                   selectedKey={choice.accountId}
@@ -570,26 +585,26 @@ export default function HomeView({
               <span className="home-grow" />
               <button className="btn-primary" disabled={!prompt.trim()} onClick={submitStart}>
                 <PlayIcon />
-                Start
+                {t('home.start.submit')}
               </button>
             </div>
-            <p className="help">Ctrl+Enter starts in a new terminal · the folder is the project's root</p>
+            <p className="help">{t('home.start.hint')}</p>
           </div>
 
           <div className="home-body">
             {nothing ? (
-              <p className="help">Nothing running, nothing waiting. Start something above.</p>
+              <p className="help">{t('home.body.empty')}</p>
             ) : (
               <>
                 {recent.length > 0 && (
-                  <section aria-label="Pick up where you left off">
-                    <h2 className="eyebrow home-eyebrow">Pick up where you left off</h2>
+                  <section aria-label={t('home.recent.title')}>
+                    <h2 className="eyebrow home-eyebrow">{t('home.recent.title')}</h2>
                     {shownRecent.map((r) => (
                       <div key={r.id} className="home-row home-recent" {...rowProps(() => onOpenSession(r.id))}>
                         <div className="home-recent-top">
                           <span className="home-name">{r.name}</span>
                           <span className="home-right">
-                            {[r.projectName, timeAgo(r.updatedAt)].filter(Boolean).join(' · ')}
+                            {[r.projectName, timeAgo(r.updatedAt, t)].filter(Boolean).join(' · ')}
                           </span>
                         </div>
                         {r.preview && <span className="help home-preview">{r.preview}</span>}
@@ -597,27 +612,27 @@ export default function HomeView({
                     ))}
                     {hiddenRecent > 0 && (
                       <button type="button" className="btn-text home-more" onClick={() => setRecentOpen(true)}>
-                        Show {hiddenRecent} more
+                        {t('home.recent.showMore', { n: hiddenRecent })}
                       </button>
                     )}
                   </section>
                 )}
 
                 {recentProjects.length > 0 && (
-                  <section aria-label="Recent projects">
-                    <h2 className="eyebrow home-eyebrow">Recent projects</h2>
+                  <section aria-label={t('home.projects.title')}>
+                    <h2 className="eyebrow home-eyebrow">{t('home.projects.title')}</h2>
                     {recentProjects.map((p) => (
                       <div key={p.key} className="home-row" {...rowProps(() => onOpenRepo(p.key))}>
                         <span className="home-name">{p.name}</span>
                         {p.wslDistro && <span className="chip">{p.wslDistro}</span>}
                         {p.loading ? (
-                          <span className="view-spinner small" aria-label="Reading git status" />
+                          <span className="view-spinner small" aria-label={t('home.projects.readingGit')} />
                         ) : p.noGit ? (
-                          <span className="home-muted">no git</span>
+                          <span className="home-muted">{t('home.projects.noGit')}</span>
                         ) : (
                           p.branch && <span className="home-branch">{p.branch}</span>
                         )}
-                        <span className="home-right">{timeAgo(p.lastUsed)}</span>
+                        <span className="home-right">{timeAgo(p.lastUsed, t)}</span>
                       </div>
                     ))}
                   </section>
@@ -627,32 +642,34 @@ export default function HomeView({
           </div>
         </div>
 
-        <aside className="home-side" aria-label="What is live">
+        <aside className="home-side" aria-label={t('home.side.label')}>
           {plan && plan.utilization !== undefined && (
-            <section className="home-sec" aria-label="Plan window">
+            <section className="home-sec" aria-label={t('home.plan.label')}>
               <div className="home-plan-head">
-                <span className="home-plan-title">{plan.accountName} · {windowName(plan.windowMinutes)}</span>
+                <span className="home-plan-title">{t('home.plan.title', { name: plan.accountName, window: windowName(t, plan.windowMinutes) })}</span>
                 <span className="home-right">
-                  {plan.utilization.toFixed(0)} %{plan.resetsAt ? ` · ${resetLabel(plan.resetsAt)}` : ""}
+                  {plan.resetsAt
+                    ? t('home.plan.pctWithReset', { pct: plan.utilization.toFixed(0), reset: resetLabel(t, locale, plan.resetsAt) })
+                    : t('home.plan.pct', { pct: plan.utilization.toFixed(0) })}
                 </span>
               </div>
-              <div className="home-bar" role="img" aria-label={`${plan.utilization.toFixed(0)} % of the window used`}>
+              <div className="home-bar" role="img" aria-label={t('home.plan.barLabel', { pct: plan.utilization.toFixed(0) })}>
                 <b className={planTone(plan.utilization)} style={{ width: `${Math.min(100, Math.max(0, plan.utilization))}%` }} />
               </div>
             </section>
           )}
 
           {attention.length === 0 && (
-            <section className="home-sec" aria-label="Needs you">
-              <h2 className="eyebrow">Needs you · 0</h2>
-              <p className="help">Nothing waiting for you.</p>
+            <section className="home-sec" aria-label={t('home.needs.label')}>
+              <h2 className="eyebrow">{t('home.needs.title', { n: 0 })}</h2>
+              <p className="help">{t('home.needs.none')}</p>
             </section>
           )}
           {attention.length > 0 && (
-            <div className="block warn home-needs" role="region" aria-label="Needs you">
+            <div className="block warn home-needs" role="region" aria-label={t('home.needs.label')}>
               <div className="home-needs-head">
-                <span className="home-needs-title">Needs you · {attention.length}</span>
-                {oldestSince && <span className="home-right">oldest {minutesSince(oldestSince)}</span>}
+                <span className="home-needs-title">{t('home.needs.title', { n: attention.length })}</span>
+                {oldestSince && <span className="home-right">{t('home.needs.oldest', { time: minutesSince(oldestSince, t) })}</span>}
               </div>
               {attention.map((a) => (
                 <div key={a.id} className="home-needs-row">
@@ -673,15 +690,15 @@ export default function HomeView({
             </div>
           )}
 
-          <section className="home-sec" aria-label="Running">
-            <h2 className="eyebrow">Running · {running.length}</h2>
-            {running.length === 0 && <p className="help">Nothing running.</p>}
+          <section className="home-sec" aria-label={t('home.running.label')}>
+            <h2 className="eyebrow">{t('home.running.title', { n: running.length })}</h2>
+            {running.length === 0 && <p className="help">{t('home.running.none')}</p>}
             {RUNNING_GROUPS.map((g) => {
               const rows = running.filter((r) => g.kinds.includes(r.kind))
               if (rows.length === 0) return null
               return (
-                <div key={g.label} className="home-run-group" role="group" aria-label={g.label}>
-                  <div className="home-run-label">{g.label}</div>
+                <div key={g.id} className="home-run-group" role="group" aria-label={t(g.label)}>
+                  <div className="home-run-label">{t(g.label)}</div>
                   {rows.map((r) => {
                     const open =
                       r.kind === 'chat'
@@ -691,7 +708,7 @@ export default function HomeView({
                           : r.kind === 'intervention'
                             ? () => onOpenIntervention(r.id)
                             : null
-                    const right = [r.detail, r.startedAt ? minutesSince(r.startedAt) : '']
+                    const right = [r.detail, r.startedAt ? minutesSince(r.startedAt, t) : '']
                       .filter(Boolean)
                       .join(' · ')
                     return (
@@ -712,28 +729,28 @@ export default function HomeView({
           </section>
 
           {!nothing && repos.length === 0 && recentProjects.length > 0 && (
-            <section className="home-sec" aria-label="Uncommitted work">
-              <h2 className="eyebrow">Uncommitted work · 0</h2>
-              <p className="help">All recent repos are clean.</p>
+            <section className="home-sec" aria-label={t('home.repos.label')}>
+              <h2 className="eyebrow">{t('home.repos.title', { n: 0 })}</h2>
+              <p className="help">{t('home.repos.clean')}</p>
             </section>
           )}
           {!nothing && repos.length > 0 && (
-            <section className="home-sec" aria-label="Uncommitted work">
-              <h2 className="eyebrow">Uncommitted work · {repos.length}</h2>
+            <section className="home-sec" aria-label={t('home.repos.label')}>
+              <h2 className="eyebrow">{t('home.repos.title', { n: repos.length })}</h2>
               {repos.map((r) => (
                 <div key={r.key} className="home-row home-live static">
                   <span className="home-name">{r.name}</span>
                   {r.branch && <span className="home-branch">{r.branch}</span>}
                   <span className="home-grow" />
                   {r.loading ? (
-                    <span className="view-spinner small" aria-label="Counting changes" />
+                    <span className="view-spinner small" aria-label={t('home.repos.counting')} />
                   ) : r.error ? (
                     <span className="home-error" role="alert">
                       {r.error}
                     </span>
                   ) : (
                     <button className="btn-ghost small" onClick={() => onOpenRepo(r.key)}>
-                      {r.fileCount === 1 ? '1 file' : `${r.fileCount} files`}
+                      {plural(t, 'home.repos.files', r.fileCount)}
                     </button>
                   )}
                 </div>

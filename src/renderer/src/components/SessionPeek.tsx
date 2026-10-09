@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { CCProject, CCSessionMeta, LifecycleResult, SessionPeek as Peek } from '../types'
 import { TagChips, TagEditor } from './SessionTags'
 import { shortModel } from '../lib/model-id'
+import type { TFunction } from '../../../shared/i18n'
+import { useLanguage, useT } from '../i18n'
 import './SessionPeek.css'
 import Select from './Select'
 
@@ -30,15 +32,15 @@ function fmtCost(usd: number): string {
 }
 
 /** "today 18:02", "yesterday 09:15", or the date and time. */
-function fmtWhen(ts: number): string {
+function fmtWhen(ts: number, t: TFunction, locale: string | undefined): string {
   if (!ts) return ''
   const d = new Date(ts)
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const time = d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
   const startOf = (x: Date): number => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
   const days = Math.round((startOf(new Date()) - startOf(d)) / 86_400_000)
-  if (days === 0) return `today ${time}`
-  if (days === 1) return `yesterday ${time}`
-  return `${d.toLocaleDateString()} ${time}`
+  if (days === 0) return t('sessions.peek.today', { time })
+  if (days === 1) return t('sessions.peek.yesterday', { time })
+  return t('sessions.peek.dateTime', { date: d.toLocaleDateString(locale), time })
 }
 
 /** Enter on a destructive confirmation is ignored this long after it appears (§6). */
@@ -70,6 +72,8 @@ export default function SessionPeek({
   onTagsSaved,
   onChanged
 }: Props) {
+  const t = useT()
+  const { locale } = useLanguage()
   const [peek, setPeek] = useState<Peek | null>(null)
   const [loading, setLoading] = useState(true)
   const [editingTags, setEditingTags] = useState(false)
@@ -141,9 +145,9 @@ export default function SessionPeek({
     if (!res.ok) {
       setError(
         res.error === 'not-found'
-          ? 'This conversation is no longer on disk.'
+          ? t('sessions.peek.notFound')
           : res.error === 'exists'
-            ? 'A conversation with the same id is already there.'
+            ? t('sessions.peek.exists')
             : res.message
       )
       return
@@ -221,9 +225,9 @@ export default function SessionPeek({
 
   const meta = [
     shortModel(session.model),
-    `${session.messageCount} msgs`,
+    t('sessions.peek.msgs', { n: session.messageCount }),
     peek ? fmtCost(peek.costUsd) : '',
-    fmtWhen(session.updatedAt)
+    fmtWhen(session.updatedAt, t, locale)
   ].filter(Boolean)
 
   const moveTargets = projects
@@ -233,7 +237,7 @@ export default function SessionPeek({
     .filter((p) => codex || p.provider !== 'codex')
 
   return (
-    <aside className="sp" ref={colRef} aria-label="Session details">
+    <aside className="sp" ref={colRef} aria-label={t('sessions.peek.label')}>
       <section className="sp-sec">
         <h2 className="sp-title" title={session.title}>
           {session.title}
@@ -261,7 +265,7 @@ export default function SessionPeek({
             <>
               <TagChips tags={session.tags} colorFor={colorFor} />
               <button type="button" className="btn-ghost small sp-tag-add" onClick={() => setEditingTags(true)}>
-                + tag
+                {t('sessions.peek.addTag')}
               </button>
             </>
           )}
@@ -270,20 +274,20 @@ export default function SessionPeek({
 
       <section className="sp-sec sp-body">
         {loading ? (
-          <p className="help">Reading…</p>
+          <p className="help">{t('sessions.peek.reading')}</p>
         ) : !peek || (!peek.first && !peek.last) ? (
-          <p className="help">Nothing to show for this session.</p>
+          <p className="help">{t('sessions.peek.nothing')}</p>
         ) : (
           <>
             {peek.first && (
               <div className="sp-part">
-                <div className="eyebrow">Started with</div>
+                <div className="eyebrow">{t('sessions.peek.startedWith')}</div>
                 <p className="sp-quote">{peek.first}</p>
               </div>
             )}
             {peek.last && peek.last !== peek.first && (
               <div className="sp-part">
-                <div className="eyebrow">Left off at</div>
+                <div className="eyebrow">{t('sessions.peek.leftOffAt')}</div>
                 <p className="sp-quote">{peek.last}</p>
               </div>
             )}
@@ -297,7 +301,7 @@ export default function SessionPeek({
         <div className="sp-foot sp-form">
           <input
             className="text-input"
-            aria-label="New name"
+            aria-label={t('sessions.peek.newName')}
             autoFocus
             value={draft}
             disabled={busy}
@@ -311,23 +315,23 @@ export default function SessionPeek({
           />
           <p className="help">
             {codex
-              ? "The name goes into Codex's own session index, so the Codex CLI sees it too."
-              : 'The name is stored inside the conversation, so Claude Code sees it too.'}
+              ? t('sessions.peek.renameNoteCodex')
+              : t('sessions.peek.renameNote')}
           </p>
           <div className="sp-form-actions">
-            <span className="help">Enter renames · Esc cancels</span>
+            <span className="help">{t('sessions.peek.renameHint')}</span>
             <button type="button" className="btn-ghost small" onClick={() => setPrompt(null)}>
-              Cancel
+              {t('common.cancel')}
             </button>
             <button type="button" className="btn-primary small" disabled={busy || !draft.trim()} onClick={doRename}>
-              Rename
+              {t('common.rename')}
             </button>
           </div>
         </div>
       ) : prompt === 'move' ? (
         <div className="sp-foot sp-form">
           <Select
-            aria-label="Move to project"
+            aria-label={t('sessions.peek.moveTo')}
             autoFocus
             value={draft}
             disabled={busy}
@@ -339,7 +343,7 @@ export default function SessionPeek({
               }
             }}
           >
-            <option value="">Pick a project</option>
+            <option value="">{t('sessions.peek.pickProject')}</option>
             {moveTargets.map((p) => (
               <option key={`${p.sourceId}:${p.encodedDir}`} value={`${p.sourceId}:${p.encodedDir}`}>
                 {p.name}
@@ -349,33 +353,32 @@ export default function SessionPeek({
           </Select>
           <p className="help">
             {codex
-              ? 'Codex files a conversation by the folder recorded in it, so moving rewrites that folder: resuming this one starts in the new project.'
-              : 'Filing only. Where the conversation ran is recorded inside it and never rewritten, so resuming still lands in the right folder.'}
+              ? t('sessions.peek.moveNoteCodex')
+              : t('sessions.peek.moveNote')}
           </p>
           <div className="sp-form-actions">
-            <span className="help">Enter moves · Esc cancels</span>
+            <span className="help">{t('sessions.peek.moveHint')}</span>
             <button type="button" className="btn-ghost small" onClick={() => setPrompt(null)}>
-              Cancel
+              {t('common.cancel')}
             </button>
             <button type="button" className="btn-primary small" disabled={busy || !draft} onClick={doMove}>
-              Move
+              {t('sessions.peek.move')}
             </button>
           </div>
         </div>
       ) : prompt === 'delete' ? (
         <div className="sp-foot sp-form" ref={deleteRef} tabIndex={-1}>
           <p className="sp-confirm">
-            Delete this conversation and its {session.messageCount} messages? Archiving keeps it and takes it out
-            of the list.
+            {t('sessions.peek.deleteConfirm', { n: session.messageCount })}
           </p>
-          <p className="help">This cannot be undone.</p>
+          <p className="help">{t('sessions.peek.deleteUndone')}</p>
           <div className="sp-form-actions">
-            <span className="help">Enter deletes · Esc keeps</span>
+            <span className="help">{t('sessions.peek.deleteHint')}</span>
             <button type="button" className="btn-ghost small" onClick={() => setPrompt(null)}>
-              Keep
+              {t('sessions.peek.keep')}
             </button>
             <button type="button" className="btn-primary small danger" disabled={busy} onClick={doDelete}>
-              Delete
+              {t('common.delete')}
             </button>
           </div>
         </div>
@@ -386,12 +389,12 @@ export default function SessionPeek({
             className="btn-primary sp-resume"
             onClick={onResume}
             disabled={!resumable}
-            title={resumable ? undefined : 'Written by Codex: the Claude Code CLI cannot resume it'}
+            title={resumable ? undefined : t('sessions.peek.notResumable')}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
               <path d="M6 4l14 8-14 8Z" />
             </svg>
-            Resume
+            {t('sessions.peek.resume')}
           </button>
           <button
             type="button"
@@ -402,7 +405,7 @@ export default function SessionPeek({
               setPrompt('rename')
             }}
           >
-            Rename
+            {t('common.rename')}
           </button>
           <button
             type="button"
@@ -413,11 +416,11 @@ export default function SessionPeek({
               setPrompt('move')
             }}
           >
-            Move
+            {t('sessions.peek.move')}
           </button>
           {/* Archiving is the reversible one, so it acts on a single press; delete asks first. */}
           <button type="button" className="btn-ghost" disabled={busy} onClick={doArchiveToggle}>
-            {archived ? 'Unarchive' : 'Archive'}
+            {archived ? t('sessions.peek.unarchive') : t('sessions.peek.archive')}
           </button>
           <button
             type="button"
@@ -427,7 +430,7 @@ export default function SessionPeek({
               setPrompt('delete')
             }}
           >
-            Delete
+            {t('common.delete')}
           </button>
         </div>
       )}

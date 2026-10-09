@@ -1,4 +1,5 @@
 import { CCSessionMeta } from '../types'
+import type { MessageKey, TFunction } from '../../../shared/i18n'
 
 /**
  * Ordering and date-grouping for the sessions list. Pure, so the boundaries can be
@@ -7,10 +8,11 @@ import { CCSessionMeta } from '../types'
 
 export type SortMode = 'date' | 'title' | 'size'
 
-export const SORT_LABELS: Record<SortMode, string> = {
-  date: 'Newest first',
-  title: 'Title',
-  size: 'Longest first'
+/** The dictionary key of each ordering's label in the sort select. */
+export const SORT_LABEL_KEYS: Record<SortMode, MessageKey> = {
+  date: 'sessions.sort.date',
+  title: 'sessions.sort.title',
+  size: 'sessions.sort.size'
 }
 
 export function sortSessions(sessions: CCSessionMeta[], mode: SortMode): CCSessionMeta[] {
@@ -50,14 +52,14 @@ const DAY = 86_400_000
  * Only meaningful for the date ordering — a date header over a title-sorted list
  * describes nothing, so the caller skips grouping there.
  */
-export function groupByAge(sessions: CCSessionMeta[], now: number = Date.now()): SessionGroup[] {
+export function groupByAge(sessions: CCSessionMeta[], t: TFunction, now: number = Date.now()): SessionGroup[] {
   const today = startOfDay(now)
   const bands: { label: string; from: number }[] = [
-    { label: 'Today', from: today },
-    { label: 'Yesterday', from: today - DAY },
-    { label: 'Last 7 days', from: today - 7 * DAY },
-    { label: 'Last 30 days', from: today - 30 * DAY },
-    { label: 'Older', from: -Infinity }
+    { label: t('sessions.groups.today'), from: today },
+    { label: t('sessions.groups.yesterday'), from: today - DAY },
+    { label: t('sessions.groups.last7'), from: today - 7 * DAY },
+    { label: t('sessions.groups.last30'), from: today - 30 * DAY },
+    { label: t('sessions.groups.older'), from: -Infinity }
   ]
 
   const groups: SessionGroup[] = []

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from 'react'
+import { Fragment, useEffect, useState, type ReactElement, type ReactNode } from 'react'
 import type { ApprovalOpsContext, ApprovalRequest } from '../types'
 import { describeOpsRequest, displayArgv } from '../lib/ops-approval'
 import { splitSections, type OpsOutputSection } from '../lib/ops-sections'
@@ -17,6 +17,8 @@ import {
 import PlanReviewSheet from './PlanReviewSheet'
 import OpsReportSheet from './OpsReportSheet'
 import { backdropClose } from '../lib/backdrop-close'
+import { plural, type TFunction } from '../../../shared/i18n'
+import { useLanguage, useT } from '../i18n'
 import './ActivityColumn.css'
 
 interface Props {
@@ -49,10 +51,16 @@ interface ScriptInfo {
   argPattern?: string
 }
 
-const clock = (iso?: string): string => {
+const clock = (iso: string | undefined, locale: string | undefined): string => {
   if (!iso) return ''
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+}
+
+/** A translated sentence with markup inside it: the `{name}` placeholders the template
+ *  still holds (it was fetched without those params) are swapped for the given nodes. */
+function withNodes(template: string, nodes: Record<string, ReactNode>): ReactNode[] {
+  return template.split(/\{(\w+)\}/).map((part, i) => (i % 2 === 1 ? <Fragment key={i}>{nodes[part]}</Fragment> : part))
 }
 
 const sameDay = (iso: string, now: Date): boolean => {
@@ -64,40 +72,46 @@ const sameDay = (iso: string, now: Date): boolean => {
 const rowText = (r: OpsRow): string =>
   r.argv && r.argv.length ? displayArgv(r.argv) : r.path ? `${r.tool || 'read'} ${r.path}` : r.tool || r.callId
 
-function runState(run: OpsRun): string {
-  if (!run.ended) return `Running since ${clock(run.startedAt)}`
-  if (run.ended.aborted) return 'Stopped'
-  return `Finished ${clock(run.endedAt)}`
+function runState(run: OpsRun, t: TFunction, locale: string | undefined): string {
+  if (!run.ended) return t('sessions.activity.run.runningSince', { time: clock(run.startedAt, locale) })
+  if (run.ended.aborted) return t('sessions.activity.run.stopped')
+  return t('sessions.activity.run.finished', { time: clock(run.endedAt, locale) })
 }
 
-function earlierState(run: OpsRun): string {
-  if (!run.ended) return 'not closed'
-  return run.ended.aborted ? 'stopped' : run.ended.ok ? 'finished' : 'failed'
+function earlierState(run: OpsRun, t: TFunction): string {
+  if (!run.ended) return t('sessions.activity.earlier.notClosed')
+  return run.ended.aborted
+    ? t('sessions.activity.earlier.stopped')
+    : run.ended.ok
+      ? t('sessions.activity.earlier.finished')
+      : t('sessions.activity.earlier.failed')
 }
 
 /** One `== title ==` section of a script's output, folded until clicked. */
 function SectionItem({ section, forceOpen }: { section: OpsOutputSection; forceOpen: boolean }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const shown = open || forceOpen
   return (
     <div className={`ac-sec${shown ? ' open' : ''}`}>
       <button type="button" className="ac-sec-head" aria-expanded={shown} onClick={() => setOpen(!shown)}>
         <span className="ac-sec-caret" aria-hidden="true">{shown ? '▾' : '▸'}</span>
-        <span className="ac-sec-title">{section.title || 'output'}</span>
+        <span className="ac-sec-title">{section.title || t('sessions.activity.section.output')}</span>
         {!shown && section.body && <span className="ac-sec-peek">{section.body.split('\n')[0]}</span>}
       </button>
-      {shown && <pre className="ac-sec-body">{section.body || '(no output)'}</pre>}
+      {shown && <pre className="ac-sec-body">{section.body || t('sessions.activity.section.noOutput')}</pre>}
     </div>
   )
 }
 
 /** A script's output as one folded line per section, with an expand-all toggle. */
 function SectionedOutput({ sections, stderr }: { sections: OpsOutputSection[]; stderr: string }) {
+  const t = useT()
   const [all, setAll] = useState(false)
   return (
     <div className="ac-secs">
       <button type="button" className="ac-link ac-secs-all" onClick={() => setAll((v) => !v)}>
-        {all ? 'Collapse all' : 'Expand all'}
+        {all ? t('sessions.activity.section.collapseAll') : t('sessions.activity.section.expandAll')}
       </button>
       {sections.map((s, i) => (
         <SectionItem key={`${i}:${s.title}`} section={s} forceOpen={all} />
@@ -108,13 +122,14 @@ function SectionedOutput({ sections, stderr }: { sections: OpsOutputSection[]; s
 }
 
 function CallRow({ row }: { row: OpsRow }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const tone = rowTone(row)
   const output = [row.stdoutHead, row.stderrHead].filter(Boolean).join('\n')
   const sections = row.tool === 'script' && row.stdoutHead ? splitSections(row.stdoutHead) : null
   const refused = row.status === 'denied' || row.status === 'stopped'
   const text = rowText(row)
-  const label = rowLabel(row)
+  const label = rowLabel(row, t)
   const cls = `ac-row${open ? ' open' : ''}${refused ? ' refused' : ''}${output ? ' has-output' : ''}`
   const inner = (
     <>
@@ -142,15 +157,18 @@ function CallRow({ row }: { row: OpsRow }) {
 const TONE_RANK: Record<OpsRowTone, number> = { idle: 0, ok: 1, warn: 2, bad: 3 }
 
 /** A step's folded line: how many calls, and what stands out among them. */
-function stepSummary(g: OpsStepGroup): { text: string; tone: OpsRowTone } {
+function stepSummary(g: OpsStepGroup, t: TFunction): { text: string; tone: OpsRowTone } {
   const tones = g.rows.map(rowTone)
-  const tone = tones.reduce<OpsRowTone>((a, t) => (TONE_RANK[t] > TONE_RANK[a] ? t : a), 'idle')
-  const calls = `${g.rows.length} call${g.rows.length === 1 ? '' : 's'}`
+  const tone = tones.reduce<OpsRowTone>((a, x) => (TONE_RANK[x] > TONE_RANK[a] ? x : a), 'idle')
+  const calls = plural(t, 'sessions.activity.calls', g.rows.length)
   const live = g.rows.some((r) => r.status === 'running' || r.status === 'queued' || r.status === 'asked' || r.status === 'decided')
-  if (live) return { text: `${calls} · running`, tone: tone === 'idle' ? 'ok' : tone }
-  const bad = tones.filter((t) => t === 'bad').length
-  const warn = tones.filter((t) => t === 'warn').length
-  const notes = [bad ? `${bad} not allowed` : '', warn ? `${warn} failed` : ''].filter(Boolean)
+  if (live) return { text: t('sessions.activity.step.running', { calls }), tone: tone === 'idle' ? 'ok' : tone }
+  const bad = tones.filter((x) => x === 'bad').length
+  const warn = tones.filter((x) => x === 'warn').length
+  const notes = [
+    bad ? t('sessions.activity.step.notAllowed', { n: bad }) : '',
+    warn ? t('sessions.activity.step.failed', { n: warn }) : ''
+  ].filter(Boolean)
   return { text: [calls, ...notes].join(' · '), tone: tone === 'idle' ? 'ok' : tone }
 }
 
@@ -167,7 +185,8 @@ function StepGroup({
   onToggle: () => void
   children: ReactElement[]
 }) {
-  const sum = stepSummary(group)
+  const t = useT()
+  const sum = stepSummary(group, t)
   return (
     <div className={`ac-step${open ? ' open' : ''}${current ? ' current' : ''}`}>
       <button type="button" className="ac-step-head" aria-expanded={open} onClick={onToggle}>
@@ -215,6 +234,7 @@ function ScriptDrawer({
   onRun: () => void
   onClose: () => void
 }) {
+  const t = useT()
   const [src, setSrc] = useState<{ text: string; sha256: string } | { error: string } | null>(null)
 
   useEffect(() => {
@@ -242,9 +262,9 @@ function ScriptDrawer({
   return (
     <>
     <div className="ac-drawer-scrim" {...backdropClose(onClose)} />
-    <div className="ac-drawer" role="dialog" aria-label={`Script ${script.name}`}>
+    <div className="ac-drawer" role="dialog" aria-label={t('sessions.activity.drawer.label', { name: script.name })}>
       <div className="ac-drawer-head">
-        <button type="button" className="ac-icon ac-drawer-back" onClick={onClose} aria-label="Back" title="Back">
+        <button type="button" className="ac-icon ac-drawer-back" onClick={onClose} aria-label={t('sessions.activity.drawer.back')} title={t('sessions.activity.drawer.back')}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M15 18l-6-6 6-6" />
           </svg>
@@ -252,19 +272,19 @@ function ScriptDrawer({
         <div className="ac-drawer-titles">
           <span className="ac-drawer-title">{script.title}</span>
           <span className="ac-drawer-sub">
-            {script.name} · {script.class} · {script.hosts.map((h) => h.name).join(', ') || 'no host'}
+            {script.name} · {script.class} · {script.hosts.map((h) => h.name).join(', ') || t('sessions.activity.drawer.noHost')}
           </span>
         </div>
         <button type="button" className="ac-btn" disabled={!canRun} onClick={onRun}>
-          Run
+          {t('sessions.activity.run')}
         </button>
-        <button type="button" className="ac-icon" onClick={onClose} aria-label="Close">
+        <button type="button" className="ac-icon" onClick={onClose} aria-label={t('common.close')}>
           ✕
         </button>
       </div>
-      {src && 'sha256' in src && <div className="ac-drawer-hash">sha256 {src.sha256} (matches the policy pin)</div>}
+      {src && 'sha256' in src && <div className="ac-drawer-hash">{t('sessions.activity.drawer.hash', { hash: src.sha256 })}</div>}
       <div className="ac-drawer-body">
-        {!src && <div className="ac-empty">Loading…</div>}
+        {!src && <div className="ac-empty">{t('sessions.activity.loading')}</div>}
         {src && 'error' in src && <div className="ac-script-err">{src.error}</div>}
         {src && 'text' in src && <ScriptSource text={src.text} />}
       </div>
@@ -281,6 +301,7 @@ function ScriptDrawer({
  * in the list below. The eye shows the script's source in a drawer.
  */
 function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runId?: string; disabled: boolean }) {
+  const t = useT()
   const [scripts, setScripts] = useState<ScriptInfo[]>([])
   const [open, setOpen] = useState<boolean>(() => {
     try {
@@ -344,14 +365,19 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
   const blocked = (s: ScriptInfo): boolean => disabled || s.hosts.length === 0
   const tip = (s: ScriptInfo): string =>
     s.hosts.length === 0
-      ? 'No host of this intervention is in the script’s host groups'
-      : `${s.title}\n${s.name} · ${s.class} · ${s.hosts.map((h) => h.name).join(', ')}\nClick to ask the model to run it`
+      ? t('sessions.activity.scripts.noHostTip')
+      : t('sessions.activity.scripts.tip', {
+          title: s.title,
+          name: s.name,
+          class: s.class,
+          hosts: s.hosts.map((h) => h.name).join(', ')
+        })
   const viewed = scripts.find((s) => s.name === viewing)
 
   return (
     <div className="ac-scripts">
       <button type="button" className="ac-scripts-head" aria-expanded={open} onClick={toggle}>
-        <span aria-hidden="true">{open ? '▾' : '▸'}</span> Scripts <span className="ac-scripts-n">{scripts.length}</span>
+        <span aria-hidden="true">{open ? '▾' : '▸'}</span> {t('sessions.activity.scripts.title')} <span className="ac-scripts-n">{scripts.length}</span>
       </button>
       {open &&
         scripts.map((s) => (
@@ -359,10 +385,10 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
             <div className={`ac-sr${blocked(s) ? ' off' : ''}`} title={tip(s)}>
               <button type="button" className="ac-sr-main" disabled={blocked(s)} onClick={() => click(s)}>
                 <span className="ac-sr-title">{s.title}</span>
-                {s.class === 'mutate' && <span className="ac-sr-tag">changes host</span>}
+                {s.class === 'mutate' && <span className="ac-sr-tag">{t('sessions.activity.scripts.changesHost')}</span>}
                 <span className="ac-sr-state">{expanded === s.name ? '▾' : ''}</span>
               </button>
-              <button type="button" className="ac-icon" aria-label={`View ${s.name}`} title="View the script" onClick={() => setViewing(s.name)}>
+              <button type="button" className="ac-icon" aria-label={t('sessions.activity.scripts.view', { name: s.name })} title={t('sessions.activity.scripts.viewTitle')} onClick={() => setViewing(s.name)}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" />
                   <circle cx="12" cy="12" r="3" />
@@ -376,7 +402,7 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
                     className="ac-script-host"
                     value={hostPick[s.name] || s.hosts[0].id}
                     onChange={(e) => setHostPick({ ...hostPick, [s.name]: e.target.value })}
-                    aria-label={`Host for ${s.name}`}
+                    aria-label={t('sessions.activity.scripts.hostFor', { name: s.name })}
                   >
                     {s.hosts.map((h) => (
                       <option key={h.id} value={h.id}>
@@ -388,18 +414,18 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
                 {s.maxArgs > 0 && (
                   <input
                     className="ac-script-args"
-                    placeholder={`arguments (up to ${s.maxArgs})`}
+                    placeholder={t('sessions.activity.scripts.args', { n: s.maxArgs })}
                     value={argText[s.name] ?? ''}
                     onChange={(e) => setArgText({ ...argText, [s.name]: e.target.value })}
                     onKeyDown={(e) => e.key === 'Enter' && !blocked(s) && run(s)}
                   />
                 )}
-                {!needsInput(s) && <span className="ac-sr-ask">Run on {s.hosts[0]?.name}?</span>}
+                {!needsInput(s) && <span className="ac-sr-ask">{t('sessions.activity.scripts.runOn', { host: s.hosts[0]?.name ?? '' })}</span>}
                 <button type="button" className="ac-btn" disabled={blocked(s)} onClick={() => run(s)}>
-                  Run
+                  {t('sessions.activity.run')}
                 </button>
                 <button type="button" className="ac-btn" onClick={() => setExpanded(null)}>
-                  Cancel
+                  {t('common.cancel')}
                 </button>
               </div>
             )}
@@ -419,60 +445,72 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
 }
 
 function HostLine({ answer }: { answer: OpsHostAnswer }) {
+  const t = useT()
+  const { locale } = useLanguage()
   return (
     <div className={`ac-hostline ${answer.answer}`}>
-      Host {answer.host} {answer.answer === 'approved' ? 'allowed' : 'refused'} {clock(answer.at)}
+      {t(answer.answer === 'approved' ? 'sessions.activity.host.allowed' : 'sessions.activity.host.refused', {
+        host: answer.host,
+        time: clock(answer.at, locale)
+      })}
     </div>
   )
 }
 
 /** The call or host variant of the waiting block. */
 function WaitingCall({ ops, onDecide }: { ops: ApprovalOpsContext; onDecide: (allow: boolean) => void }) {
+  const t = useT()
   if (ops.tool === 'host') {
     return (
       <>
         <div className="ac-wait-head">
-          <span className="ac-wait-eyebrow">Waiting for you</span>
-          <span className="ac-wait-tag">new host</span>
+          <span className="ac-wait-eyebrow">{t('sessions.activity.wait.eyebrow')}</span>
+          <span className="ac-wait-tag">{t('sessions.activity.wait.newHost')}</span>
         </div>
         <div className="ac-wait-title">
-          The model wants to reach <strong>{ops.hostName}</strong>. Allow for this intervention?
+          {withNodes(t('sessions.activity.wait.reach'), { host: <strong>{ops.hostName}</strong> })}
         </div>
         <div className="ac-wait-cmd">{ops.hostAddress}</div>
         <div className="ac-wait-actions">
           <button type="button" className="ac-allow" onClick={() => onDecide(true)}>
-            Allow
+            {t('sessions.activity.wait.allow')}
           </button>
           <button type="button" className="ac-deny" onClick={() => onDecide(false)}>
-            Deny
+            {t('sessions.activity.wait.deny')}
           </button>
         </div>
       </>
     )
   }
-  const { verb, lines } = describeOpsRequest(ops)
+  const { verb, lines } = describeOpsRequest(ops, t)
   const sudo = ops.argv?.[0] === 'sudo'
   const title = ops.title || verb.charAt(0).toUpperCase() + verb.slice(1)
   return (
     <>
       <div className="ac-wait-head">
-        <span className="ac-wait-eyebrow">Waiting for you</span>
-        <span className="ac-wait-tag">{sudo ? 'sudo' : ops.class === 'mutate' ? 'changes the host' : 'read'}</span>
+        <span className="ac-wait-eyebrow">{t('sessions.activity.wait.eyebrow')}</span>
+        <span className="ac-wait-tag">
+          {sudo
+            ? 'sudo'
+            : ops.class === 'mutate'
+              ? t('sessions.activity.wait.changesHost')
+              : t('sessions.activity.wait.read')}
+        </span>
       </div>
       <div className="ac-wait-title">{title}</div>
       {lines.length > 0 && <div className="ac-wait-cmd">{lines.join('\n')}</div>}
       {sudo && ops.reason && <div className="ac-wait-reason">{ops.reason}</div>}
       {ops.queuedBehind > 0 && (
         <div className="ac-wait-reason">
-          Queued behind {ops.queuedBehind} call{ops.queuedBehind === 1 ? '' : 's'} on {ops.hostName}.
+          {plural(t, 'sessions.activity.wait.queued', ops.queuedBehind, { host: ops.hostName })}
         </div>
       )}
       <div className="ac-wait-actions">
         <button type="button" className="ac-allow" onClick={() => onDecide(true)}>
-          Allow
+          {t('sessions.activity.wait.allow')}
         </button>
         <button type="button" className="ac-deny" onClick={() => onDecide(false)}>
-          Deny
+          {t('sessions.activity.wait.deny')}
         </button>
       </div>
     </>
@@ -485,6 +523,8 @@ function WaitingCall({ ops, onDecide }: { ops: ApprovalOpsContext; onDecide: (al
  * call, and the earlier runs of this intervention folded to a line each.
  */
 export default function ActivityColumn({ terminalId, runbookPath, current, earlier, loading, waiting, onDecide, onDenyStop, onStop, cliAlive }: Props) {
+  const t = useT()
+  const { locale } = useLanguage()
   const [reportRunId, setReportRunId] = useState<string | null>(null)
   const progress = current ? planProgress(current) : null
   const today = new Date()
@@ -495,7 +535,7 @@ export default function ActivityColumn({ terminalId, runbookPath, current, earli
   // The calls under the plan steps they carried out; steps that ran nothing are not
   // listed. The step the run is on is open and the rest folded; when the run moves to the next step, that one opens and the last one
   // folds. A click opens or folds any step in between.
-  const groups = current ? groupCallsBySteps(current) : []
+  const groups = current ? groupCallsBySteps(current, t) : []
   const currentKey = current ? currentStepKey(current, groups) : null
   const [openSteps, setOpenSteps] = useState<ReadonlySet<string>>(new Set())
   useEffect(() => {
@@ -537,13 +577,13 @@ export default function ActivityColumn({ terminalId, runbookPath, current, earli
   for (const a of answers) rows.push(<HostLine key={`h:${a.hostId}:${a.at}`} answer={a} />)
 
   return (
-    <aside className="ac" aria-label="Activity">
+    <aside className="ac" aria-label={t('sessions.activity.label')}>
       <div className="ac-run">
         <div className="ac-run-line">
-          <span className="ac-run-state">{current ? runState(current) : loading ? 'Loading…' : 'Starting the run…'}</span>
+          <span className="ac-run-state">{current ? runState(current, t, locale) : loading ? t('sessions.activity.loading') : t('sessions.activity.run.starting')}</span>
           {progress && (
             <span className="ac-run-steps">
-              {progress.done} of {progress.total} step{progress.total === 1 ? '' : 's'}
+              {plural(t, 'sessions.activity.run.steps', progress.total, { done: progress.done })}
             </span>
           )}
         </div>
@@ -555,7 +595,7 @@ export default function ActivityColumn({ terminalId, runbookPath, current, earli
         {current?.ended?.error && <div className="ac-run-error">{current.ended.error}</div>}
         <div className="ac-run-actions">
           <button type="button" className="ac-btn" disabled={!current} onClick={() => current && setReportRunId(current.runId)}>
-            Report
+            {t('sessions.activity.report')}
           </button>
           <button
             type="button"
@@ -564,11 +604,11 @@ export default function ActivityColumn({ terminalId, runbookPath, current, earli
             onClick={() => (onStop ? onStop() : void window.electronAPI.opsStop(terminalId))}
             title={
               onStop
-                ? 'End this intervention: pending calls are refused, the CLI is closed and you go back to Ops'
-                : "Stop this run: pending calls are refused and the CLI's ops tools stop working"
+                ? t('sessions.activity.run.endTitle')
+                : t('sessions.activity.run.stopTitle')
             }
           >
-            Stop
+            {t('sessions.activity.run.stop')}
           </button>
         </div>
       </div>
@@ -584,7 +624,7 @@ export default function ActivityColumn({ terminalId, runbookPath, current, earli
           </div>
           {onDenyStop && (
             <button type="button" className="ac-denystop" onClick={onDenyStop}>
-              Deny and stop
+              {t('sessions.activity.wait.denyStop')}
             </button>
           )}
         </div>
@@ -593,24 +633,28 @@ export default function ActivityColumn({ terminalId, runbookPath, current, earli
       <ScriptsList terminalId={terminalId} runId={current?.runId} disabled={!!current?.ended || !!waiting} />
 
       <div className="ac-list">
-        {current && rows.length === 0 && <p className="ac-empty">No calls yet. The model reads the runbook first.</p>}
+        {current && rows.length === 0 && <p className="ac-empty">{t('sessions.activity.noCalls')}</p>}
         {rows}
 
         {earlierToday.length > 0 && (
           <>
             <div className="ac-divider">
               <span>
-                Earlier today · {earlierToday.length} run{earlierToday.length === 1 ? '' : 's'}
+                {plural(t, 'sessions.activity.earlier.title', earlierToday.length)}
               </span>
             </div>
             {earlierToday.map((r) => (
               <div key={r.runId} className="ac-earlier">
                 <span>
-                  {clock(r.startedAt)} · {earlierState(r)} · {r.calls.length} call{r.calls.length === 1 ? '' : 's'}
+                  {t('sessions.activity.earlier.line', {
+                    time: clock(r.startedAt, locale),
+                    state: earlierState(r, t),
+                    calls: plural(t, 'sessions.activity.calls', r.calls.length)
+                  })}
                 </span>
                 <span className="ac-muted">${(r.ended?.costUsd ?? 0).toFixed(2)}</span>
                 <button type="button" className="ac-link" onClick={() => setReportRunId(r.runId)}>
-                  Report
+                  {t('sessions.activity.report')}
                 </button>
               </div>
             ))}

@@ -23,7 +23,9 @@ import {
 } from '../lib/project-key'
 import { projectDisplayName } from '../lib/project-name'
 import { shortModel } from '../lib/model-id'
-import { groupByAge, sortSessions, SORT_LABELS, SortMode } from '../lib/session-groups'
+import { groupByAge, sortSessions, SORT_LABEL_KEYS, SortMode } from '../lib/session-groups'
+import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
+import { useLanguage, useT } from '../i18n'
 import './views.css'
 import './ProjectsView.css'
 import Select from '../components/Select'
@@ -88,10 +90,11 @@ function hitToSession(h: SearchHit): CCSessionMeta {
  * saying so is what stops "found in this conversation" from implying someone said it.
  */
 function Snippet({ snippet }: { snippet: SearchSnippet }) {
+  const t = useT()
   const labelled = snippet.kind === 'tool_use' || snippet.kind === 'tool_result' || snippet.kind === 'system'
   return (
     <div className="help pv-snippet">
-      {labelled && <span className="pv-snippet-kind">{SNIPPET_KIND[snippet.kind]}</span>}
+      {labelled && <span className="pv-snippet-kind">{t(SNIPPET_KIND[snippet.kind])}</span>}
       {snippet.before}
       <mark>{snippet.match}</mark>
       {snippet.after}
@@ -99,24 +102,24 @@ function Snippet({ snippet }: { snippet: SearchSnippet }) {
   )
 }
 
-const SNIPPET_KIND: Record<string, string> = {
-  tool_use: 'in a tool call',
-  tool_result: 'in tool output',
-  system: 'injected'
+const SNIPPET_KIND: Record<string, MessageKey> = {
+  tool_use: 'projects.snippet.toolUse',
+  tool_result: 'projects.snippet.toolResult',
+  system: 'projects.snippet.system'
 }
 
-function timeAgo(ts: number): string {
+function timeAgo(ts: number, t: TFunction, locale: string | undefined): string {
   if (!ts) return ''
   const diff = Date.now() - ts
   const m = Math.floor(diff / 60000)
-  if (m < 1) return 'just now'
-  if (m < 60) return `${m} min ago`
+  if (m < 1) return t('projects.time.justNow')
+  if (m < 60) return t('projects.time.minutesAgo', { n: m })
   const h = Math.floor(m / 60)
-  if (h < 24) return `${h} h ago`
+  if (h < 24) return t('projects.time.hoursAgo', { n: h })
   const d = Math.floor(h / 24)
-  if (d === 1) return 'yesterday'
-  if (d < 30) return `${d} days ago`
-  return new Date(ts).toLocaleDateString()
+  if (d === 1) return t('projects.time.yesterday')
+  if (d < 30) return t('projects.time.daysAgo', { n: d })
+  return new Date(ts).toLocaleDateString(locale)
 }
 
 // ── Icons (24-unit viewBox, 2 px stroke, currentColor; SYSTEM-DESIGN.md §5) ──────────────
@@ -324,6 +327,8 @@ function scopeGroups(
 }
 
 export default function ProjectsView({ onResume, target, focus }: Props) {
+  const t = useT()
+  const { locale } = useLanguage()
   // Only Claude Code transcripts can be resumed: `claude --resume` is handed the session
   // id verbatim, and a Codex uuid means nothing to it. The main process already refuses
   // to rename, archive, move or delete one; this is the reading side of the same rule.
@@ -784,12 +789,12 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       return
     }
     setSearching(true)
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       const hits = await window.electronAPI.ccSearch(q)
       setResults(hits)
       setSearching(false)
     }, 250)
-    return () => clearTimeout(t)
+    return () => clearTimeout(timer)
   }, [query])
 
   // Favorites, like archiving, are a preference about the folder — not about
@@ -936,7 +941,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     }
     setProjectSearching(true)
     let cancelled = false
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       // One search per member, merged — a hit filed under a sibling spelling of this
       // same folder still has to surface here.
       const results = await Promise.all(
@@ -950,7 +955,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     }, 250)
     return () => {
       cancelled = true
-      clearTimeout(t)
+      clearTimeout(timer)
     }
   }, [projectQuery, selected])
 
@@ -1004,7 +1009,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     ),
     sort
   )
-  const groups = sort === 'date' ? groupByAge(visibleSessions) : [{ label: '', sessions: visibleSessions }]
+  const groups = sort === 'date' ? groupByAge(visibleSessions, t) : [{ label: '', sessions: visibleSessions }]
   // A per-row account badge only earns its place when it disambiguates something —
   // if every visible session belongs to the same account, tagging each one is pure
   // noise. Same condition Sidebar.tsx applies to its own session badges (model/
@@ -1018,7 +1023,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   }
 
   const toggleFilter = (tag: string) =>
-    setFilterTags((cur) => (cur.includes(tag) ? cur.filter((t) => t !== tag) : [...cur, tag]))
+    setFilterTags((cur) => (cur.includes(tag) ? cur.filter((x) => x !== tag) : [...cur, tag]))
 
   // Pinned first, then the rest by recency. Sections are only worth labelling when
   // both exist — see the render.
@@ -1049,8 +1054,8 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   const hiddenProjects = rest.length - restShown.length
   const listed = [...pinned, ...restShown]
   const projectSections = [
-    ...(pinned.length ? [{ label: 'Pinned', projects: pinned }] : []),
-    ...(restShown.length ? [{ label: 'Recent', projects: restShown }] : [])
+    ...(pinned.length ? [{ id: 'pinned', label: t('projects.list.pinned'), projects: pinned }] : []),
+    ...(restShown.length ? [{ id: 'recent', label: t('projects.list.recent'), projects: restShown }] : [])
   ]
 
   // Ask git for a repo name — one call per group, not per member — but only for the
@@ -1120,8 +1125,8 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     <div className="view pv">
       <div className="pv-head">
         <div className="pv-head-text">
-          <h1>Projects</h1>
-          <p className="pv-sub">Claude Code sessions from this machine and connected WSL distros.</p>
+          <h1>{t('projects.title')}</h1>
+          <p className="pv-sub">{t('projects.subtitle')}</p>
         </div>
         <div className="pv-search pv-search-all">
           <span className="pv-search-icon">
@@ -1129,23 +1134,23 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
           </span>
           <input
             className="text-input"
-            placeholder="Search all sessions"
-            aria-label="Search all sessions"
+            placeholder={t('projects.search.all')}
+            aria-label={t('projects.search.all')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             spellCheck={false}
           />
           {query && (
-            <button type="button" className="pv-search-clear" onClick={() => setQuery('')} aria-label="Clear search" title="Clear search">
+            <button type="button" className="pv-search-clear" onClick={() => setQuery('')} aria-label={t('projects.search.clear')} title={t('projects.search.clear')}>
               <XIcon />
             </button>
           )}
         </div>
         <button type="button" className="btn-ghost" onClick={() => setShowLabels(true)}>
           <TagIcon />
-          Labels
+          {t('projects.labels.button')}
         </button>
-        <button type="button" className="btn-ghost pv-icon-btn" onClick={load} aria-label="Refresh" title="Refresh">
+        <button type="button" className="btn-ghost pv-icon-btn" onClick={load} aria-label={t('projects.refresh')} title={t('projects.refresh')}>
           <RefreshIcon />
         </button>
       </div>
@@ -1153,7 +1158,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       {query.trim().length >= 2 ? (
         <div className="pv-results">
           <div className="pv-results-head">
-            {searching ? 'Searching…' : `${results.length} result${results.length !== 1 ? 's' : ''} for “${query.trim()}”`}
+            {searching ? t('projects.search.searching') : plural(t, 'projects.search.results', results.length, { query: query.trim() })}
           </div>
           {results.map((h) => (
             <div
@@ -1170,7 +1175,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                 <span className="pv-hit-title">{h.title}</span>
                 <span className="chip">{h.projectName}</span>
                 {h.kind === 'wsl' && h.distro && <span className="chip">{h.distro}</span>}
-                <span className="pv-hit-time">{timeAgo(h.updatedAt)}</span>
+                <span className="pv-hit-time">{timeAgo(h.updatedAt, t, locale)}</span>
               </div>
               {h.snippets[0] ? (
                 <Snippet snippet={h.snippets[0]} />
@@ -1179,24 +1184,24 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
               )}
               {(h.matchCount > 1 || h.account?.email) && (
                 <div className="pv-hit-cap">
-                  {[h.matchCount > 1 ? `${h.matchCount} matches` : null, h.account?.email].filter(Boolean).join(' · ')}
+                  {[h.matchCount > 1 ? t('projects.search.matches', { n: h.matchCount }) : null, h.account?.email].filter(Boolean).join(' · ')}
                 </div>
               )}
             </div>
           ))}
-          {!searching && results.length === 0 && <p className="pv-nothing">No sessions match.</p>}
+          {!searching && results.length === 0 && <p className="pv-nothing">{t('projects.search.none')}</p>}
         </div>
       ) : loading ? (
         <div className="view-loading">
           <div className="view-spinner" />
-          <span className="view-loading-text">Loading projects…</span>
+          <span className="view-loading-text">{t('projects.loading')}</span>
         </div>
       ) : projects.length === 0 ? (
         <div className="view-empty">
           <span className="pv-empty-icon">
             <FolderIcon />
           </span>
-          <span className="view-empty-msg">No Claude Code projects found yet. Open a project in Claude Code to see it here.</span>
+          <span className="view-empty-msg">{t('projects.empty')}</span>
         </div>
       ) : (
         <div className="pv-split">
@@ -1211,11 +1216,11 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
               {accountOptions.length > 1 && (
                 <Select
                   className="pv-field"
-                  aria-label="Filter projects by account"
+                  aria-label={t('projects.list.filterByAccount')}
                   value={effectiveAccountFilter}
                   onChange={(e) => setAccountFilter(e.target.value)}
                 >
-                  <option value="all">All accounts</option>
+                  <option value="all">{t('projects.list.allAccounts')}</option>
                   {accountOptions.map((o) => (
                     <option key={o.identity} value={o.identity}>
                       {o.sub ? `${o.label} · ${o.sub}` : o.label}
@@ -1225,8 +1230,8 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
               )}
               <input
                 className="text-input pv-field"
-                placeholder="Filter projects"
-                aria-label="Filter projects"
+                placeholder={t('projects.list.filter')}
+                aria-label={t('projects.list.filter')}
                 value={projectFilter}
                 onChange={(e) => setProjectFilter(e.target.value)}
                 spellCheck={false}
@@ -1234,14 +1239,14 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
               {/* Only once something is archived: a toggle for a state that cannot occur
                   is noise, and unarchiving the last one must not strand the column. */}
               {hasArchivedProjects && (
-                <div className="seg-control pv-scope" role="group" aria-label="Which projects">
+                <div className="seg-control pv-scope" role="group" aria-label={t('projects.list.which')}>
                   <button
                     type="button"
                     className={showArchivedProjects ? '' : 'on'}
                     aria-pressed={!showArchivedProjects}
                     onClick={() => setShowArchivedProjects(false)}
                   >
-                    Active
+                    {t('projects.list.active')}
                   </button>
                   <button
                     type="button"
@@ -1249,12 +1254,12 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                     aria-pressed={showArchivedProjects}
                     onClick={() => setShowArchivedProjects(true)}
                   >
-                    Archived
+                    {t('projects.list.archived')}
                   </button>
                 </div>
               )}
               {projectSections.map((section) => (
-                <div key={section.label} className="pv-section">
+                <div key={section.id} className="pv-section">
                   {/* Only labelled when there is something to tell apart. */}
                   {projectSections.length > 1 && <div className="eyebrow pv-eyebrow">{section.label}</div>}
                   {section.projects.map((g) => {
@@ -1274,9 +1279,9 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                     // A bare 0 reads as a loading state; say what it means instead.
                     const count =
                       total === 0
-                        ? 'Empty'
+                        ? t('projects.list.empty')
                         : g.archivedCount
-                          ? `${g.sessionCount} · ${g.archivedCount} archived`
+                          ? t('projects.list.countArchived', { n: g.sessionCount, archived: g.archivedCount })
                           : String(g.sessionCount)
                     return (
                       <div
@@ -1308,14 +1313,14 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                           ))}
                         </div>
                         <div className="pv-proj-cap">
-                          {count} · {timeAgo(g.lastActive)}
+                          {t('projects.list.caption', { count, time: timeAgo(g.lastActive, t, locale) })}
                         </div>
                         <div className="pv-proj-actions">
                           <button
                             type="button"
                             className={`pv-icon ${fav ? 'on' : ''}`}
-                            title={fav ? 'Unpin' : 'Pin to top'}
-                            aria-label={fav ? `Unpin ${name}` : `Pin ${name} to top`}
+                            title={fav ? t('projects.list.unpin') : t('projects.list.pin')}
+                            aria-label={fav ? t('projects.list.unpinNamed', { name }) : t('projects.list.pinNamed', { name })}
                             aria-pressed={fav}
                             onClick={(e) => {
                               e.stopPropagation()
@@ -1327,8 +1332,8 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                           <button
                             type="button"
                             className="pv-icon"
-                            title="Actions"
-                            aria-label={`Actions for ${name}`}
+                            title={t('projects.list.actions')}
+                            aria-label={t('projects.list.actionsFor', { name })}
                             aria-haspopup="menu"
                             aria-expanded={projectMenu?.key === key}
                             onClick={(e) => {
@@ -1361,10 +1366,10 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
               ))}
               {hiddenProjects > 0 && (
                 <button type="button" className="pv-more" onClick={() => setShowAllProjects(true)}>
-                  Show {hiddenProjects} more
+                  {t('projects.list.showMore', { n: hiddenProjects })}
                 </button>
               )}
-              {projectSections.length === 0 && <p className="pv-nothing">No project matches.</p>}
+              {projectSections.length === 0 && <p className="pv-nothing">{t('projects.list.noMatch')}</p>}
             </div>
             {/* Not a keyboard control; aria-hidden, like Sidebar.tsx's own handle. */}
             <div className="pv-resize" onMouseDown={handleListResizeMouseDown} aria-hidden="true" />
@@ -1373,26 +1378,26 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
           <div className="pv-sessions">
             {!selected ? (
               <div className="view-empty">
-                <span className="view-empty-msg">Select a project to view its sessions.</span>
+                <span className="view-empty-msg">{t('projects.sessions.select')}</span>
               </div>
             ) : (
               <>
                 <div className="pv-sess-head">
                   <span className="pv-count">
                     {loadingSessions
-                      ? 'Sessions'
+                      ? t('projects.sessions.title')
                       : filterTags.length > 0 || searchingHere
-                        ? `${visibleSessions.length} of ${sessions.length} sessions`
-                        : `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
+                        ? t('projects.sessions.filteredCount', { shown: visibleSessions.length, total: sessions.length })
+                        : plural(t, 'projects.sessions.count', sessions.length)}
                   </span>
-                  <div className="seg-control" role="group" aria-label="Which sessions">
+                  <div className="seg-control" role="group" aria-label={t('projects.sessions.which')}>
                     <button
                       type="button"
                       className={showArchived ? '' : 'on'}
                       aria-pressed={!showArchived}
                       onClick={() => setShowArchived(false)}
                     >
-                      Active <em>{activeCount}</em>
+                      {t('projects.sessions.active')} <em>{activeCount}</em>
                     </button>
                     <button
                       type="button"
@@ -1400,7 +1405,7 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                       aria-pressed={showArchived}
                       onClick={() => setShowArchived(true)}
                     >
-                      Archived <em>{archivedCount}</em>
+                      {t('projects.sessions.archived')} <em>{archivedCount}</em>
                     </button>
                   </div>
                   <div className="pv-search pv-search-in">
@@ -1409,8 +1414,8 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                     </span>
                     <input
                       className="text-input"
-                      placeholder={`Search in ${nameOf(selected)}`}
-                      aria-label={`Search in ${nameOf(selected)}`}
+                      placeholder={t('projects.sessions.searchIn', { name: nameOf(selected) })}
+                      aria-label={t('projects.sessions.searchIn', { name: nameOf(selected) })}
                       value={projectQuery}
                       onChange={(e) => setProjectQuery(e.target.value)}
                       spellCheck={false}
@@ -1419,13 +1424,13 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                   <span className="pv-spacer" />
                   <Select
                     className="pv-sort"
-                    aria-label="Sort sessions"
+                    aria-label={t('projects.sessions.sort')}
                     value={sort}
                     onChange={(e) => changeSort(e.target.value as SortMode)}
                   >
-                    {(Object.keys(SORT_LABELS) as SortMode[]).map((m) => (
+                    {(Object.keys(SORT_LABEL_KEYS) as SortMode[]).map((m) => (
                       <option key={m} value={m}>
-                        {SORT_LABELS[m]}
+                        {t(SORT_LABEL_KEYS[m])}
                       </option>
                     ))}
                   </Select>
@@ -1434,14 +1439,14 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                   <div className="pv-tagbar">
                     <TagChips tags={localVocab} colorFor={colorFor} onClick={toggleFilter} active={filterTags} />
                     {filterTags.length > 1 && (
-                      <div className="seg-control pv-match" role="group" aria-label="Match mode">
+                      <div className="seg-control pv-match" role="group" aria-label={t('projects.sessions.matchMode')}>
                         <button
                           type="button"
                           className={filterMode === 'any' ? 'on' : ''}
                           onClick={() => setFilterMode('any')}
                           aria-pressed={filterMode === 'any'}
                         >
-                          ANY
+                          {t('projects.sessions.matchAny')}
                         </button>
                         <button
                           type="button"
@@ -1449,13 +1454,13 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                           onClick={() => setFilterMode('all')}
                           aria-pressed={filterMode === 'all'}
                         >
-                          ALL
+                          {t('projects.sessions.matchAll')}
                         </button>
                       </div>
                     )}
                     {filterTags.length > 0 && (
                       <button type="button" className="btn-text" onClick={() => setFilterTags([])}>
-                        Clear
+                        {t('projects.sessions.clear')}
                       </button>
                     )}
                   </div>
@@ -1464,19 +1469,19 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                   {loadingSessions ? (
                     <div className="view-loading">
                       <div className="view-spinner" />
-                      <span className="view-loading-text">Loading sessions…</span>
+                      <span className="view-loading-text">{t('projects.sessions.loading')}</span>
                     </div>
                   ) : sessions.length === 0 ? (
                     <p className="pv-nothing">
-                      {showArchived ? 'Nothing archived in this project.' : 'No sessions in this project.'}
+                      {showArchived ? t('projects.sessions.noneArchived') : t('projects.sessions.none')}
                     </p>
                   ) : visibleSessions.length === 0 ? (
                     <p className="pv-nothing">
                       {searchingHere
                         ? projectSearching
-                          ? 'Searching…'
-                          : `Nothing in this project says “${projectQuery.trim()}”. The search at the top looks everywhere, tool calls included.`
-                        : `No sessions carry ${filterMode === 'all' ? 'all' : 'any'} of those tags.`}
+                          ? t('projects.search.searching')
+                          : t('projects.sessions.noMatch', { query: projectQuery.trim() })
+                        : t(filterMode === 'all' ? 'projects.sessions.noTagsAll' : 'projects.sessions.noTagsAny')}
                     </p>
                   ) : (
                     groups.map((group) => (
@@ -1524,8 +1529,8 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
                                 {hit && <Snippet snippet={hit} />}
                               </div>
                               {model && <span className="chip pv-model">{model}</span>}
-                              <span className="pv-sess-msgs">{s.messageCount} msgs</span>
-                              <span className="pv-sess-time">{timeAgo(s.updatedAt)}</span>
+                              <span className="pv-sess-msgs">{t('projects.sessions.msgs', { n: s.messageCount })}</span>
+                              <span className="pv-sess-time">{timeAgo(s.updatedAt, t, locale)}</span>
                             </div>
                           )
                         })}
