@@ -8,8 +8,6 @@ export default {
   'toast.deny': 'Deny',
   'toast.openArgos': 'Open Argos',
   'toast.approveToolUse': 'Approve tool use',
-  'pill.working': 'Working…',
-  'pill.openApp': 'Open app',
   'overlay.placeholder': 'Ask anything…',
   'overlay.promptLabel': 'Prompt for a new terminal',
   'overlay.openArgos': 'Open Argos',

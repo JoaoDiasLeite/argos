@@ -139,14 +139,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   toastOpenMain: () => ipcRenderer.send('toast:open-main'),
 
-  // Agent status pill window (events received in / calls made by the PILL window)
-  onPillUpdate: (cb: (data: unknown) => void) => {
-    const fn = (_: unknown, data: unknown) => cb(data)
-    ipcRenderer.on('pill:update', fn)
-    return () => ipcRenderer.removeListener('pill:update', fn)
-  },
-  pillOpenMain: () => ipcRenderer.send('pill:open-main'),
-
   // A chat popped out into its own window (src/main/chat-popout.ts)
   popoutOpen: (spec: unknown) => ipcRenderer.invoke('popout:open', spec),
   popoutSpec: (sessionId: string) => ipcRenderer.invoke('popout:spec', sessionId),

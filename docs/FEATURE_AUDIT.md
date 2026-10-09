@@ -69,7 +69,7 @@ no use. Hiding is cheap; removing is better when nothing would be missed.
 | SFTP / local browsers, file editor | 07-27 | 1 497 | Remote file panes and the code editor. | |
 | Ops timeline, report modal | 10-02 | 350 | Ledger timeline, internal/client report. | |
 | Quick-launcher overlay (window) | 07-02 | 276 | Alt+Space acrylic window: new chat, quick chat, 6 recents. | |
-| Status pill (window) | 07-02 | 236 | Always-on-top pill while a run is in flight and the window is hidden. | |
+| Status pill (window) | 07-02 | 236 | Always-on-top pill while a run is in flight and the window is hidden. | Removed in 2.6.0: the taskbar progress bar and success badge already cover it. |
 | Approval toast (window) | 07-02 | 180 | Flyout for approvals when the window is hidden. | |
 | Taskbar badges, tray, jump list, Explorer menu | 07-02/03 | 287 | OS integration. | |
 

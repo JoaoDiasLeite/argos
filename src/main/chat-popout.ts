@@ -162,7 +162,3 @@ export function chatPopoutWindows(): BrowserWindow[] {
   return [...windows.values()].map((o) => o.win).filter((w) => !w.isDestroyed())
 }
 
-/** A pop-out on screen means the user can see a chat, whatever the main window is doing. */
-export function anyChatPopoutInView(): boolean {
-  return chatPopoutWindows().some((w) => w.isVisible() && !w.isMinimized())
-}

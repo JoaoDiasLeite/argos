@@ -29,12 +29,11 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          // Main window + quick-launcher overlay + approval toast + status pill
-          // auxiliary windows (see src/main/overlay.ts, toast.ts, pill.ts).
+          // Main window + quick-launcher overlay + approval toast auxiliary
+          // windows (see src/main/overlay.ts, toast.ts).
           index: resolve('src/renderer/index.html'),
           overlay: resolve('src/renderer/overlay.html'),
           toast: resolve('src/renderer/toast.html'),
-          pill: resolve('src/renderer/pill.html'),
           // A chat popped out into its own window (src/main/chat-popout.ts).
           popout: resolve('src/renderer/popout.html')
         },
@@ -60,7 +59,7 @@ export default defineConfig({
           // the 500 kB warning threshold and gives the browser/Electron a stable,
           // separately-cacheable vendor file.
           //
-          // This only affects the `index` entry: overlay/toast/pill never import
+          // This only affects the `index` entry: overlay/toast never import
           // Markdown or highlight.js, so `manualChunks` (keyed off module id) simply
           // never assigns any of their modules to this chunk for those builds.
           manualChunks(id) {

@@ -1,13 +1,12 @@
 /**
- * What the out-of-window indicators (taskbar progress, the status pill, the attention
- * badge) should do when a terminal's CLI starts or stops working (docs/TERMINAL_ONLY_PLAN.md
+ * What the out-of-window indicators (taskbar progress, the attention badge) should do when a terminal's CLI starts or stops working (docs/TERMINAL_ONLY_PLAN.md
  * H5). Pure: index.ts holds the set and does the Electron calls.
  */
 
 export type TerminalBusyChange =
-  /** The terminal went busy: the run indicators turn on, the pill shows "running". */
+  /** The terminal went busy: the run indicators turn on. */
   | { kind: 'started'; total: number }
-  /** It went idle: flag success; `total` 0 means nothing else is working, so the pill says done. */
+  /** It went idle: flag success; `total` 0 means nothing else is working. */
   | { kind: 'finished'; total: number }
   /** No transition (a repeat, or an idle report for a terminal that was not busy). */
   | { kind: 'none'; total: number }

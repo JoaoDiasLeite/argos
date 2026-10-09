@@ -21,7 +21,14 @@ const CHANGELOG: Entry[] = [
     version: '2.6.0',
     date: '2026-10-09',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Changes',
+        items: [
+          'The floating status pill is gone. It popped up over every other app whenever a terminal was working and Argos was hidden or minimized, and the taskbar progress bar and the success badge already say the same thing. The tray, the taskbar and the approval toast carry on as before.'
+        ]
+      }
+    ]
   },
   {
     version: '2.5.0',

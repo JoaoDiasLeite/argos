@@ -1272,16 +1272,6 @@ declare global {
       onToastApproval: (cb: (data: ApprovalRequest) => void) => () => void
       toastOpenMain: () => void
 
-      // Agent status pill window
-      onPillUpdate: (
-        cb: (data: {
-          state?: 'running' | 'done' | 'error'
-          sessionName?: string
-          tool?: string | null
-        }) => void
-      ) => () => void
-      pillOpenMain: () => void
-
       // A chat popped out into its own window
       popoutOpen: (spec: ChatPopoutSpec) => Promise<boolean>
       popoutSpec: (sessionId: string) => Promise<ChatPopoutSpec | null>

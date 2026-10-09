@@ -1,6 +1,6 @@
 // The renderer's side of i18n: one provider per window, holding the current language.
 //
-// Every window (main, overlay, pill, popout, toast) wraps its root in <I18nProvider>.
+// Every window (main, overlay, popout, toast) wraps its root in <I18nProvider>.
 // The provider reads `config.ui.language` once and then follows `onUiPrefs`, which the
 // main process broadcasts to every window on each write, so a change in Settings
 // re-renders all of them at once with no restart.

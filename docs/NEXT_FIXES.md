@@ -25,7 +25,7 @@ Add new follow-ups above the line as they come up.
   terminal only, and the pane leaves the layout while it is out. Still to do: push the
   chat's name/unread/status to the window when they change (it gets them once, on open);
   answer that chat's approvals in its own window; let the toast's "window out of view"
-  check count a pop-out as in view (the pill already does).
+  check count a pop-out as in view.
 
 ---
 

@@ -189,9 +189,7 @@ import {
 } from './terminal'
 import { createOverlayWindow, hideOverlay, toggleOverlay, registerOverlayShortcut, reregisterOverlayShortcut, overlayShortcut } from './overlay'
 import { createToastWindow, showToast, hideToast, sendToToast } from './toast'
-import { createPillWindow, showPill, hidePill, hidePillSoon, sendToPill } from './pill'
 import {
-  anyChatPopoutInView,
   chatPopoutSpec,
   chatPopoutWindows,
   closeChatPopout,
@@ -339,12 +337,12 @@ function routeLaunchAction(action: LaunchAction | null): void {
 }
 
 // Terminals whose CLI is working right now, fed from terminal:create's onBusy (plan H5).
-// They drive the out-of-window indicators: taskbar progress, the pill, the attention
+// They drive the out-of-window indicators: taskbar progress and the attention
 // badge. (Not `busyTerminals`: that is terminal.ts's own list, which the renderer
 // seeds itself from.)
 const busyTerminalSet = new Set<string>()
 
-/** What the taskbar, the pill and the hide/minimize cue count. */
+/** What the taskbar progress bar counts. */
 function runsInFlight(): number {
   return busyTerminalSet.size
 }
@@ -360,33 +358,6 @@ function mainWindowInactive(): boolean {
     mainWindow.isMinimized() ||
     !mainWindow.isFocused()
   )
-}
-
-// True only while the main window cannot be seen at all: gone, hidden to the tray or
-// minimized. The status pill uses this, not mainWindowInactive: a window that is on
-// screen but merely unfocused (the user clicked another app or monitor) already shows
-// the run, and a flyout popping over every other app at each CLI turn is noise.
-function mainWindowOutOfView(): boolean {
-  // A chat popped out into its own window on screen is a window the user can see.
-  if (anyChatPopoutInView()) return false
-  return !mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible() || mainWindow.isMinimized()
-}
-
-/**
- * Show the pill saying what is working right now. Always repaints it: the pill window
- * outlives every run and keeps whatever it was last told, so showing it bare after a
- * minimize put up the previous run's "done" tick next to a blank name ("✓ Working…").
- */
-function showRunningPill(): void {
-  const working = listTerminals().filter((t) => busyTerminalSet.has(t.id))
-  const one = working.length === 1 ? working[0] : null
-  const sessionName = one
-    ? path.basename(one.cwd) || one.provider
-    : working.length > 1
-      ? `${working.length} terminals working`
-      : 'Terminal'
-  showPill()
-  sendToPill('pill:update', { state: 'running', sessionName, tool: null })
 }
 
 // Taskbar progress: an indeterminate bar while any terminal is working, cleared to
@@ -561,17 +532,7 @@ function createWindow(): void {
   mainWindow.on('focus', () => {
     mainWindow?.flashFrame(false)
     mainWindow?.setOverlayIcon(null, '')
-    // The app is visible/focused now, so the background-activity pill is redundant.
-    hidePill()
     withdrawToastApprovals()
-  })
-  // If a run is in flight when the user hides or minimizes the window mid-run, bring
-  // up the pill at that moment so background activity stays visible.
-  mainWindow.on('hide', () => {
-    if (runsInFlight() > 0) showRunningPill()
-  })
-  mainWindow.on('minimize', () => {
-    if (runsInFlight() > 0) showRunningPill()
   })
   // Keep the renderer's maximize/restore icon and corner rounding in sync.
   mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximized', true))
@@ -695,7 +656,6 @@ app.whenReady().then(async () => {
   if (launchTarget) openSessionTarget(launchTarget)
   createOverlayWindow()
   createToastWindow()
-  createPillWindow()
   // No-op in dev (see updater.ts) — schedules its own delayed first check + interval.
   initUpdater(sendToMainWindow)
   const shortcut = registerOverlayShortcut(getConfig().system.overlayShortcut)
@@ -816,9 +776,6 @@ ipcMain.on('toast:open-main', () => {
   hideOverlay()
   showMainWindow()
 })
-// From the status pill's "open" button: jump back to the app and drop the (now
-// redundant) pill. The main window's focus handler also hides it, but do it here
-// too so it goes away immediately even if focus is momentarily delayed.
 // ─── A chat popped out into its own window (chat-popout.ts) ────────────────────
 const isPopoutSpec = (v: unknown): v is ChatPopoutSpec => {
   const s = v as Partial<ChatPopoutSpec> | null
@@ -845,10 +802,6 @@ ipcMain.handle('popout:focus', (_, sessionId: unknown) => (typeof sessionId === 
 ipcMain.handle('popout:close', (_, sessionId: unknown) => (typeof sessionId === 'string' ? closeChatPopout(sessionId) : false))
 ipcMain.handle('popout:list', () => openChatPopouts())
 
-ipcMain.on('pill:open-main', () => {
-  hidePill()
-  showMainWindow()
-})
 ipcMain.on('overlay:submit', (_, payload: { prompt: string }) => {
   if (!payload || typeof payload.prompt !== 'string' || !payload.prompt.trim()) return
   hideOverlay()
@@ -1545,11 +1498,11 @@ ipcMain.handle('config:set-limits', (_, limits: Partial<UsageLimits>) => setLimi
  * Push the resolved appearance to EVERY window, not just the main one.
  *
  * Unlike the other pushes in this file, this one cannot go through sendToMainWindow:
- * the overlay, the toast and the status pill each paint themselves from the same
+ * the overlay and the toast each paint themselves from the same
  * palette, and they read it exactly once when they mount. Before this, the only way
  * they picked up a theme change was by being recreated — which is fine for a change
  * the user just made in the main window's settings, and useless for the OS flipping
- * to dark at sunset while all four windows are alive.
+ * to dark at sunset while all three windows are alive.
  */
 function broadcastUiPrefs(ui: UiPrefs): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -1861,8 +1814,8 @@ ipcMain.handle('mcp:remove', (_, name: string) => removeGlobalMcpServer(name))
 // ─── Terminal (embedded PTY) ────────────────────────────────────────────────
 
 /**
- * A terminal's CLI started or stopped working (plan H5): the taskbar bar, the pill and,
- * on busy→idle with the window out of view, the success badge. Decorative: never let it
+ * A terminal's CLI started or stopped working (plan H5): the taskbar bar and, on
+ * busy→idle with the window out of view, the success badge. Decorative: never let it
  * disturb the terminal.
  */
 function onTerminalBusy(id: string, busy: boolean): void {
@@ -1870,16 +1823,9 @@ function onTerminalBusy(id: string, busy: boolean): void {
     const change = noteTerminalBusy(busyTerminalSet, id, busy)
     if (change.kind === 'none') return
     updateRunIndicators()
-    if (change.kind === 'started') {
-      if (mainWindowOutOfView()) showRunningPill()
-      return
-    }
+    if (change.kind === 'started') return
     // flagAttention is a no-op while the window has focus.
     flagAttention('success')
-    if (change.total === 0) {
-      sendToPill('pill:update', { state: 'done' })
-      hidePillSoon(2500)
-    }
   } catch {
     /* indicators are decorative */
   }
@@ -1889,7 +1835,6 @@ function onTerminalBusy(id: string, busy: boolean): void {
 function dropBusyTerminal(id: string): void {
   if (!busyTerminalSet.delete(id)) return
   updateRunIndicators()
-  if (runsInFlight() === 0) hidePillSoon(2500)
 }
 
 ipcMain.handle(
