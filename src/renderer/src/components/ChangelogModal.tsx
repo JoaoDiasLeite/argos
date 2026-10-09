@@ -23,6 +23,12 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'Features',
+        items: [
+          'Argos speaks Portuguese. Settings → General → Language switches every menu, label and message between English and Português (Portugal), in all windows and in the tray, with no restart. English stays the default.'
+        ]
+      },
+      {
         title: 'Changes',
         items: [
           'A runbook’s platform in policy.json is now the product’s name, written exactly as the client report should print it (for example "*Acme Portal*"), instead of one of a fixed list of product codes. A runbook that still uses an old code keeps working, but its report prints the code as is until you change it.',
