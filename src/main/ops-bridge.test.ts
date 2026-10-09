@@ -15,6 +15,7 @@ import { sha256Hex } from './ops-audit-pure'
 import { createFakeBackend, type FakeBackend } from './ops-backend-fake'
 import { createExecutor } from './ops-exec-pure'
 import { assembleRunbook, scriptPinError, type LoadedRunbook, type LoadRunbookResult } from './ops-runbook-pure'
+import { makeT } from '../shared/i18n'
 import { bridgeSessionFor, finishOpsRun, openOpsSession, type OpsAskFn, type OpsSession } from './ops-session'
 import { newOpsToken, registerToken, revokeToken, startOpsBridge, stopOpsBridge } from './ops-bridge'
 import { runOpsRelay, type McpParts } from './ops-relay'
@@ -36,7 +37,7 @@ async function loadFixture(dir: string): Promise<LoadRunbookResult> {
     policyJson: fs.readFileSync(path.join(dir, 'policy.json')),
     scriptHashes,
     hosts: HOSTS
-  })
+  }, makeT('en'))
 }
 
 async function readFixtureScript(runbook: LoadedRunbook, name: string) {

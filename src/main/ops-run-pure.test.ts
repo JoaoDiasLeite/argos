@@ -4,6 +4,7 @@ import { sha256Hex } from './ops-audit-pure'
 import type { ExecResult } from './ops-exec-pure'
 import type { LoadedRunbook } from './ops-runbook-pure'
 import type { OpsGateResult, OpsHostRef, OpsPolicy } from './ops-types'
+import { makeT } from '../shared/i18n'
 import {
   callKey,
   execIsError,
@@ -432,7 +433,7 @@ describe('plan', () => {
       ]
     }
     const hosts = new Map([['h1', { host: web, groups: ['web'] }]])
-    const run = (steps: PlanStepInput[]) => classifyPlanSteps(steps, policy, hosts)
+    const run = (steps: PlanStepInput[]) => classifyPlanSteps(steps, policy, hosts, makeT('en'))
 
     it('a step whose command the gate allows runs, canonical and titled by its rule', () => {
       const { steps, summary } = run([{ title: 'ver o nginx', hostId: 'h1', commands: ["systemctl  'status'  nginx"] }])

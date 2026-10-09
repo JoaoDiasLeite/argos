@@ -26,7 +26,7 @@ import mcp from './mcp'
 import accounts from './accounts'
 import chat from './chat'
 import editor from './editor'
-import runbook from '../en/runbook'
+import runbook from './runbook'
 
 export const ptPT: Record<MessageKey, string> = {
   ...prefix('common', common),

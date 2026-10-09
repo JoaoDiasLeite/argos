@@ -17,6 +17,7 @@ import { isSafeRemotePath } from './sftp-pure'
 import { testConnection } from './ssh'
 import { shellJoin } from './ops-gate-pure'
 import { sha256Hex } from './ops-audit-pure'
+import { t } from './i18n'
 import {
   backupPathFor,
   failedExec,
@@ -348,7 +349,8 @@ async function reachable(hostId: string, timeoutMs: number): Promise<{ ok: boole
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<{ ok: boolean; message: string }>((resolve) => {
     timer = setTimeout(
-      () => resolve({ ok: false, message: `No answer within ${Math.round(timeoutMs / 1000)} s` }),
+      // Only openOpsSession's refusal shows this, so it is in the operator's language.
+      () => resolve({ ok: false, message: t('runbook.session.noAnswer', { seconds: Math.round(timeoutMs / 1000) }) }),
       timeoutMs
     )
   })

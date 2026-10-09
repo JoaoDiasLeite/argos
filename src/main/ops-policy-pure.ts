@@ -21,6 +21,7 @@ import {
   type OpsPolicy,
   type OpsScriptRule
 } from './ops-types'
+import type { TFunction } from '../shared/i18n'
 
 export interface PolicyParseOk {
   ok: true
@@ -77,9 +78,9 @@ function isPositiveInt(v: unknown): v is number {
 }
 
 /** Unknown keys inside a rule are as dangerous as at the top: `aproval` would silently default. */
-function checkKeys(obj: Record<string, unknown>, allowed: string[], where: string, errors: string[]): void {
+function checkKeys(obj: Record<string, unknown>, allowed: string[], where: string, errors: string[], t: TFunction): void {
   for (const k of Object.keys(obj)) {
-    if (!allowed.includes(k)) errors.push(`${where} has an unknown key "${k}".`)
+    if (!allowed.includes(k)) errors.push(t('runbook.policy.unknownKey', { where, key: k }))
   }
 }
 
@@ -117,75 +118,75 @@ function endsWithEscapedDollar(src: string): boolean {
 }
 
 /** Rule 2: a pattern the gate can trust to match the whole string and nothing more. */
-function checkPattern(v: unknown, where: string, errors: string[], absolutePath = false): v is string {
+function checkPattern(v: unknown, where: string, errors: string[], t: TFunction, absolutePath = false): v is string {
   if (typeof v !== 'string') {
-    errors.push(`${where} must be a string.`)
+    errors.push(t('runbook.policy.pattern.notString', { where }))
     return false
   }
   const before = errors.length
   if (v.length >= OPS_MAX_PATTERN_LENGTH) {
-    errors.push(`${where} is ${v.length} characters; patterns must be under ${OPS_MAX_PATTERN_LENGTH}.`)
+    errors.push(t('runbook.policy.pattern.tooLong', { where, length: v.length, max: OPS_MAX_PATTERN_LENGTH }))
   }
   if (/[\n\r]/.test(v) || v.includes(LINE_SEP) || v.includes(PARA_SEP)) {
-    errors.push(`${where} contains a newline character.`)
+    errors.push(t('runbook.policy.pattern.newline', { where }))
   }
   try {
     new RegExp(v)
   } catch (e) {
-    errors.push(`${where} does not compile as a regular expression (${(e as Error).message}).`)
+    errors.push(t('runbook.policy.pattern.notRegex', { where, error: (e as Error).message }))
   }
   if (!v.startsWith('^') || !v.endsWith('$') || v.length < 2 || endsWithEscapedDollar(v)) {
-    errors.push(`${where} must be anchored at both ends (start with ^ and end with an unescaped $): ${JSON.stringify(v)}.`)
+    errors.push(t('runbook.policy.pattern.notAnchored', { where, value: JSON.stringify(v) }))
   } else if (hasTopLevelAlternation(v)) {
-    errors.push(`${where} uses | outside a group, which unanchors it; wrap the alternatives in (…): ${JSON.stringify(v)}.`)
+    errors.push(t('runbook.policy.pattern.alternation', { where, value: JSON.stringify(v) }))
   }
   if (absolutePath && !v.startsWith('^/')) {
-    errors.push(`${where} must start with ^/ (an absolute POSIX path): ${JSON.stringify(v)}.`)
+    errors.push(t('runbook.policy.pattern.notAbsolute', { where, value: JSON.stringify(v) }))
   }
   return errors.length === before
 }
 
-function checkClass(v: unknown, where: string, errors: string[]): v is OpsClass {
+function checkClass(v: unknown, where: string, errors: string[], t: TFunction): v is OpsClass {
   if (v === 'read' || v === 'mutate') return true
-  errors.push(`${where}.class must be "read" or "mutate", got ${JSON.stringify(v)}.`)
+  errors.push(t('runbook.policy.rule.class', { where, value: JSON.stringify(v) }))
   return false
 }
 
-function checkApproval(v: unknown, where: string, errors: string[]): v is OpsApproval | undefined {
+function checkApproval(v: unknown, where: string, errors: string[], t: TFunction): v is OpsApproval | undefined {
   if (v === undefined || v === 'auto' || v === 'ask') return true
-  errors.push(`${where}.approval must be "auto" or "ask" when present, got ${JSON.stringify(v)}.`)
+  errors.push(t('runbook.policy.rule.approval', { where, value: JSON.stringify(v) }))
   return false
 }
 
 /** Rule 6: mutate+auto under non-strict would let unknowns ask while known writes run unseen. */
-function checkMutateAuto(cls: unknown, approval: unknown, strict: unknown, where: string, errors: string[]): void {
+function checkMutateAuto(cls: unknown, approval: unknown, strict: unknown, where: string, errors: string[], t: TFunction): void {
   if (cls === 'mutate' && approval === 'auto' && strict !== true) {
-    errors.push(`${where} is a mutate rule with approval "auto", which is only allowed when strict is true.`)
+    errors.push(t('runbook.policy.rule.mutateAuto', { where }))
   }
 }
 
-function checkRuleHosts(v: unknown, groups: Set<string>, where: string, errors: string[]): v is string[] {
+function checkRuleHosts(v: unknown, groups: Set<string>, where: string, errors: string[], t: TFunction): v is string[] {
   if (!Array.isArray(v) || v.some((g) => typeof g !== 'string')) {
-    errors.push(`${where}.hosts must be an array of host group names.`)
+    errors.push(t('runbook.policy.rule.hostsNotArray', { where }))
     return false
   }
   if (v.length === 0) {
-    errors.push(`${where}.hosts is empty; name at least one host group.`)
+    errors.push(t('runbook.policy.rule.hostsEmpty', { where }))
     return false
   }
   let ok = true
   for (const g of v as string[]) {
     if (!groups.has(g)) {
-      errors.push(`${where}.hosts names "${g}", which is not a group in policy.hosts.`)
+      errors.push(t('runbook.policy.rule.hostsUnknown', { where, group: g }))
       ok = false
     }
   }
   return ok
 }
 
-function checkScriptName(v: unknown, where: string, errors: string[]): v is string {
+function checkScriptName(v: unknown, where: string, errors: string[], t: TFunction): v is string {
   if (typeof v !== 'string' || v.length === 0) {
-    errors.push(`${where}.name must be a non-empty string.`)
+    errors.push(t('runbook.policy.script.nameEmpty', { where }))
     return false
   }
   const bad =
@@ -196,9 +197,7 @@ function checkScriptName(v: unknown, where: string, errors: string[]): v is stri
     v.length > OPS_MAX_SCRIPT_NAME_LENGTH ||
     /[\0\n\r]/.test(v)
   if (bad) {
-    errors.push(
-      `${where}.name ${JSON.stringify(v)} must be a plain file name: no / or \\, no .., no leading -, at most ${OPS_MAX_SCRIPT_NAME_LENGTH} characters.`
-    )
+    errors.push(t('runbook.policy.script.nameNotPlain', { where, value: JSON.stringify(v), max: OPS_MAX_SCRIPT_NAME_LENGTH }))
     return false
   }
   return true
@@ -248,42 +247,44 @@ export function effectiveLimits(policy: OpsPolicy): OpsEffectiveLimits {
 }
 
 /** Rule 9: present limits are positive integers; over the ceiling is a warning (clamped later). */
-function checkLimit(v: unknown, max: number, where: string, errors: string[], warnings: string[]): void {
+function checkLimit(v: unknown, max: number, where: string, errors: string[], warnings: string[], t: TFunction): void {
   if (v === undefined) return
   if (!isPositiveInt(v)) {
-    errors.push(`${where} must be a positive integer, got ${JSON.stringify(v)}.`)
+    errors.push(t('runbook.policy.limit.notPositive', { where, value: JSON.stringify(v) }))
   } else if (v > max) {
-    warnings.push(`${where} is ${v}, above the app ceiling of ${max}; ${max} will be used.`)
+    warnings.push(t('runbook.policy.limit.aboveCeiling', { where, value: v, max }))
   }
 }
 
-function checkPaths(v: unknown, where: string, errors: string[]): string[] {
+function checkPaths(v: unknown, where: string, errors: string[], t: TFunction): string[] {
   if (!Array.isArray(v)) {
-    errors.push(`${where} must be an array of path patterns.`)
+    errors.push(t('runbook.policy.paths.notArray', { where }))
     return []
   }
-  v.forEach((p, i) => checkPattern(p, `${where}[${i}]`, errors, true))
+  v.forEach((p, i) => checkPattern(p, `${where}[${i}]`, errors, t, true))
   return v as string[]
 }
 
 /**
  * Parse and validate a raw policy.json value. `scriptHashes` maps each file actually in
  * scripts/ to its sha256 hex; `hosts` are the stored SSH hosts, used only for warnings.
+ * `t` words the errors and warnings in the operator's language.
  */
 export function parsePolicy(
   raw: unknown,
   scriptHashes: Record<string, string>,
-  hosts: OpsHostRef[]
+  hosts: OpsHostRef[],
+  t: TFunction
 ): PolicyParseOk | PolicyParseErr {
   const errors: string[] = []
   const warnings: string[] = []
 
-  if (!isObject(raw)) return { ok: false, errors: ['policy.json must be a JSON object.'] }
+  if (!isObject(raw)) return { ok: false, errors: [t('runbook.policy.notObject')] }
 
-  checkKeys(raw, TOP_KEYS, 'policy.json', errors)
+  checkKeys(raw, TOP_KEYS, 'policy.json', errors, t)
 
-  if (raw.version !== 1) errors.push(`version must be 1, got ${JSON.stringify(raw.version)}.`)
-  if (typeof raw.strict !== 'boolean') errors.push(`strict must be true or false, got ${JSON.stringify(raw.strict)}.`)
+  if (raw.version !== 1) errors.push(t('runbook.policy.version', { value: JSON.stringify(raw.version) }))
+  if (typeof raw.strict !== 'boolean') errors.push(t('runbook.policy.strict', { value: JSON.stringify(raw.strict) }))
   const strict = raw.strict
 
   if (
@@ -293,108 +294,106 @@ export function parsePolicy(
       raw.platform.length > OPS_MAX_PLATFORM_LENGTH ||
       /[\r\n]/.test(raw.platform))
   ) {
-    errors.push(
-      `platform must be the product's name on one line, up to ${OPS_MAX_PLATFORM_LENGTH} characters, got ${JSON.stringify(raw.platform)}.`
-    )
+    errors.push(t('runbook.policy.platform', { max: OPS_MAX_PLATFORM_LENGTH, value: JSON.stringify(raw.platform) }))
   }
 
   // Host groups.
   const groups = new Set<string>()
   if (!isObject(raw.hosts)) {
-    errors.push('hosts must be an object mapping group names to arrays of host names or globs.')
+    errors.push(t('runbook.policy.hosts.notObject'))
   } else {
     const names = Object.keys(raw.hosts)
-    if (names.length === 0) errors.push('hosts must define at least one host group.')
+    if (names.length === 0) errors.push(t('runbook.policy.hosts.empty'))
     for (const name of names) {
       const entries = raw.hosts[name]
       if (!Array.isArray(entries) || entries.some((e) => typeof e !== 'string' || e.length === 0)) {
-        errors.push(`hosts.${name} must be an array of non-empty strings.`)
+        errors.push(t('runbook.policy.hosts.groupInvalid', { name }))
         continue
       }
       groups.add(name)
       const matched = hosts.some((h) => (entries as string[]).some((e) => entryMatches(e, h)))
-      if (!matched) warnings.push(`Host group "${name}" matches none of the stored hosts.`)
+      if (!matched) warnings.push(t('runbook.policy.hosts.groupNoMatch', { name }))
     }
   }
 
   // Allow rules.
   if (!Array.isArray(raw.allow)) {
-    errors.push('allow must be an array (it may be empty).')
+    errors.push(t('runbook.policy.list.notArray', { where: 'allow' }))
   } else {
     raw.allow.forEach((rule, i) => {
       const where = `allow[${i}]`
       if (!isObject(rule)) {
-        errors.push(`${where} must be an object.`)
+        errors.push(t('runbook.policy.notAnObject', { where }))
         return
       }
-      checkKeys(rule, ALLOW_KEYS, where, errors)
-      checkRuleHosts(rule.hosts, groups, where, errors)
-      checkPattern(rule.cmd, `${where}.cmd`, errors)
-      checkClass(rule.class, where, errors)
-      checkApproval(rule.approval, where, errors)
-      checkMutateAuto(rule.class, rule.approval, strict, where, errors)
+      checkKeys(rule, ALLOW_KEYS, where, errors, t)
+      checkRuleHosts(rule.hosts, groups, where, errors, t)
+      checkPattern(rule.cmd, `${where}.cmd`, errors, t)
+      checkClass(rule.class, where, errors, t)
+      checkApproval(rule.approval, where, errors, t)
+      checkMutateAuto(rule.class, rule.approval, strict, where, errors, t)
       if (rule.title !== undefined && typeof rule.title !== 'string') {
-        errors.push(`${where}.title must be a string when present.`)
+        errors.push(t('runbook.policy.rule.titleNotString', { where }))
       }
       if (rule.title === undefined || rule.title === '') {
-        warnings.push(`${where} has no title; the client report will fall back to a generic step name.`)
+        warnings.push(t('runbook.policy.rule.titleMissing', { where }))
       }
     })
   }
 
   // Scripts.
   if (!Array.isArray(raw.scripts)) {
-    errors.push('scripts must be an array (it may be empty).')
+    errors.push(t('runbook.policy.list.notArray', { where: 'scripts' }))
   } else {
     const seen = new Set<string>()
     raw.scripts.forEach((rule, i) => {
       const where = `scripts[${i}]`
       if (!isObject(rule)) {
-        errors.push(`${where} must be an object.`)
+        errors.push(t('runbook.policy.notAnObject', { where }))
         return
       }
-      checkKeys(rule, SCRIPT_KEYS, where, errors)
-      if (checkScriptName(rule.name, where, errors)) {
+      checkKeys(rule, SCRIPT_KEYS, where, errors, t)
+      if (checkScriptName(rule.name, where, errors, t)) {
         const name = rule.name as string
-        if (seen.has(name)) errors.push(`${where}.name "${name}" is listed more than once.`)
+        if (seen.has(name)) errors.push(t('runbook.policy.script.duplicate', { where, name }))
         seen.add(name)
         const pinned = rule.sha256
         if (typeof pinned !== 'string' || !SHA256_RE.test(pinned)) {
-          errors.push(`${where}.sha256 must be 64 lower-case hex characters, got ${JSON.stringify(pinned)}.`)
+          errors.push(t('runbook.policy.script.badSha256', { where, value: JSON.stringify(pinned) }))
         } else {
           const actual = Object.prototype.hasOwnProperty.call(scriptHashes, name)
             ? scriptHashes[name].toLowerCase()
             : undefined
           if (actual === undefined) {
-            errors.push(`${where} "${name}" is pinned to ${pinned} but the file is not found in scripts/.`)
+            errors.push(t('runbook.policy.script.fileMissing', { where, name, pinned }))
           } else if (actual !== pinned) {
-            errors.push(`${where} "${name}" has changed: policy pins ${pinned}, file hashes to ${actual}.`)
+            errors.push(t('runbook.policy.script.changed', { where, name, pinned, actual }))
           }
         }
       }
-      checkRuleHosts(rule.hosts, groups, where, errors)
-      checkClass(rule.class, where, errors)
-      checkApproval(rule.approval, where, errors)
-      checkMutateAuto(rule.class, rule.approval, strict, where, errors)
+      checkRuleHosts(rule.hosts, groups, where, errors, t)
+      checkClass(rule.class, where, errors, t)
+      checkApproval(rule.approval, where, errors, t)
+      checkMutateAuto(rule.class, rule.approval, strict, where, errors, t)
       if (rule.title !== undefined && typeof rule.title !== 'string') {
-        errors.push(`${where}.title must be a string when present.`)
+        errors.push(t('runbook.policy.rule.titleNotString', { where }))
       }
       if (rule.title === undefined || rule.title === '') {
-        warnings.push(`${where} has no title; the client report will fall back to a generic step name.`)
+        warnings.push(t('runbook.policy.rule.titleMissing', { where }))
       }
       if (rule.args !== undefined) {
         if (!isObject(rule.args)) {
-          errors.push(`${where}.args must be an object.`)
+          errors.push(t('runbook.policy.notAnObject', { where: `${where}.args` }))
         } else {
-          checkKeys(rule.args, ARGS_KEYS, `${where}.args`, errors)
+          checkKeys(rule.args, ARGS_KEYS, `${where}.args`, errors, t)
           const max = rule.args.max
           if (max !== undefined && (typeof max !== 'number' || !Number.isInteger(max) || max < 0 || max > OPS_MAX_SCRIPT_ARGS)) {
-            errors.push(`${where}.args.max must be an integer from 0 to ${OPS_MAX_SCRIPT_ARGS}, got ${JSON.stringify(max)}.`)
+            errors.push(t('runbook.policy.script.argsMax', { where, max: OPS_MAX_SCRIPT_ARGS, value: JSON.stringify(max) }))
           }
           if (typeof max === 'number' && max > 0 && rule.args.pattern === undefined) {
-            errors.push(`${where}.args.pattern is required when args.max is above 0.`)
+            errors.push(t('runbook.policy.script.argsPatternRequired', { where }))
           } else if (rule.args.pattern !== undefined) {
-            checkPattern(rule.args.pattern, `${where}.args.pattern`, errors)
+            checkPattern(rule.args.pattern, `${where}.args.pattern`, errors, t)
           }
         }
       }
@@ -404,24 +403,24 @@ export function parsePolicy(
   // read / write.
   if (raw.read !== undefined) {
     if (!isObject(raw.read)) {
-      errors.push('read must be an object.')
+      errors.push(t('runbook.policy.notAnObject', { where: 'read' }))
     } else {
-      checkKeys(raw.read, READ_KEYS, 'read', errors)
-      checkPaths(raw.read.paths, 'read.paths', errors)
-      checkLimit(raw.read.maxBytes, OPS_MAX_READ_BYTES, 'read.maxBytes', errors, warnings)
+      checkKeys(raw.read, READ_KEYS, 'read', errors, t)
+      checkPaths(raw.read.paths, 'read.paths', errors, t)
+      checkLimit(raw.read.maxBytes, OPS_MAX_READ_BYTES, 'read.maxBytes', errors, warnings, t)
     }
   }
   if (raw.write !== undefined) {
     if (!isObject(raw.write)) {
-      errors.push('write must be an object.')
+      errors.push(t('runbook.policy.notAnObject', { where: 'write' }))
     } else {
-      checkKeys(raw.write, WRITE_KEYS, 'write', errors)
-      checkPaths(raw.write.paths, 'write.paths', errors)
-      checkApproval(raw.write.approval, 'write', errors)
+      checkKeys(raw.write, WRITE_KEYS, 'write', errors, t)
+      checkPaths(raw.write.paths, 'write.paths', errors, t)
+      checkApproval(raw.write.approval, 'write', errors, t)
       // A write is always a mutation, so the same strict-only rule applies to auto.
-      checkMutateAuto('mutate', raw.write.approval, strict, 'write', errors)
+      checkMutateAuto('mutate', raw.write.approval, strict, 'write', errors, t)
       if (raw.write.backup !== undefined && typeof raw.write.backup !== 'boolean') {
-        errors.push('write.backup must be true or false when present.')
+        errors.push(t('runbook.policy.write.backup'))
       }
     }
   }
@@ -429,12 +428,12 @@ export function parsePolicy(
   // limits.
   if (raw.limits !== undefined) {
     if (!isObject(raw.limits)) {
-      errors.push('limits must be an object.')
+      errors.push(t('runbook.policy.notAnObject', { where: 'limits' }))
     } else {
-      checkKeys(raw.limits, LIMIT_KEYS, 'limits', errors)
-      checkLimit(raw.limits.timeoutMs, OPS_MAX_TIMEOUT_MS, 'limits.timeoutMs', errors, warnings)
-      checkLimit(raw.limits.maxOutputBytes, OPS_MAX_OUTPUT_BYTES, 'limits.maxOutputBytes', errors, warnings)
-      checkLimit(raw.limits.concurrentPerHost, OPS_MAX_CONCURRENT_PER_HOST, 'limits.concurrentPerHost', errors, warnings)
+      checkKeys(raw.limits, LIMIT_KEYS, 'limits', errors, t)
+      checkLimit(raw.limits.timeoutMs, OPS_MAX_TIMEOUT_MS, 'limits.timeoutMs', errors, warnings, t)
+      checkLimit(raw.limits.maxOutputBytes, OPS_MAX_OUTPUT_BYTES, 'limits.maxOutputBytes', errors, warnings, t)
+      checkLimit(raw.limits.concurrentPerHost, OPS_MAX_CONCURRENT_PER_HOST, 'limits.concurrentPerHost', errors, warnings, t)
     }
   }
 

@@ -12,6 +12,7 @@ import {
   type PolicyParseErr,
   type PolicyParseOk
 } from './ops-policy-pure'
+import { makeT } from '../shared/i18n'
 import {
   OPS_DEFAULT_OUTPUT_BYTES,
   OPS_DEFAULT_READ_BYTES,
@@ -74,7 +75,7 @@ function withScript(rule: Record<string, unknown>): Record<string, unknown> {
 }
 
 function parse(raw: unknown): PolicyParseOk | PolicyParseErr {
-  return parsePolicy(raw, SCRIPT_HASHES, HOSTS)
+  return parsePolicy(raw, SCRIPT_HASHES, HOSTS, makeT('en'))
 }
 
 function errorsOf(raw: unknown): string[] {

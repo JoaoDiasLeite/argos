@@ -22,6 +22,7 @@ import {
 } from './ops-audit-pure'
 import { clientReportWarnings, hostSyslogWarnings, renderClientReport, renderInternalReport } from './ops-report-pure'
 import type { OpsAuditEvent, OpsAuditLine, OpsHostRef } from './ops-types'
+import { makeT, type TFunction } from '../shared/i18n'
 
 export interface OpsLedger {
   append(event: OpsAuditEvent, at?: Date): Promise<{ ok: true; raw: string } | { ok: false; error: string }>
@@ -102,7 +103,11 @@ async function readTail(file: string): Promise<{ last: string | null; partial: b
   }
 }
 
-export function createLedger(dir: string): OpsLedger {
+/**
+ * `t` words the errors and reasons handed back to the screen (absent: English). The
+ * ledger's own lines are never translated.
+ */
+export function createLedger(dir: string, t: TFunction = makeT('en')): OpsLedger {
   const fileFor = (date: string): string => path.join(dir, `${date}.jsonl`)
   let queue: Promise<unknown> = Promise.resolve()
   let state: { date: string; prevRaw: string | null; needsNewline: boolean } | null = null
@@ -135,7 +140,7 @@ export function createLedger(dir: string): OpsLedger {
     } catch (e) {
       // We no longer know what the file ends with; read the tail again next time.
       state = null
-      return { ok: false, error: `Could not append to the ops ledger: ${message(e)}` }
+      return { ok: false, error: t('runbook.audit.appendFailed', { error: message(e) }) }
     }
   }
 
@@ -176,7 +181,7 @@ export function createLedger(dir: string): OpsLedger {
         }
         return { ok: true as const, lines }
       } catch (e) {
-        return { ok: false as const, error: `Could not read the ops ledger: ${message(e)}` }
+        return { ok: false as const, error: t('runbook.audit.readFailed', { error: message(e) }) }
       }
     })
   }
@@ -207,7 +212,7 @@ export function createLedger(dir: string): OpsLedger {
           const lines = runIds.size === 0 ? [] : days.flat().filter((l) => runIds.has(l.event.runId))
           return { ok: true as const, lines }
         } catch (e) {
-          return { ok: false as const, error: `Could not read the ops ledger: ${message(e)}` }
+          return { ok: false as const, error: t('runbook.audit.readFailed', { error: message(e) }) }
         }
       })
     },
@@ -242,7 +247,7 @@ export function createLedger(dir: string): OpsLedger {
           runs.sort((a, b) => (a.startedAt < b.startedAt ? 1 : a.startedAt > b.startedAt ? -1 : 0))
           return { ok: true as const, runs: runs.slice(0, limit) }
         } catch (e) {
-          return { ok: false as const, error: `Could not read the ops ledger: ${message(e)}` }
+          return { ok: false as const, error: t('runbook.audit.readFailed', { error: message(e) }) }
         }
       })
     },
@@ -251,7 +256,7 @@ export function createLedger(dir: string): OpsLedger {
       const r = await readRun(runId)
       if (!r.ok) return r
       const summary = summarizeRun(r.lines, runId)
-      if (!summary) return { ok: false, error: `No run.start for run ${runId} in the ledger.` }
+      if (!summary) return { ok: false, error: t('runbook.audit.noRunStart', { runId }) }
       const warnings = [...hostSyslogWarnings(summary), ...clientReportWarnings(summary)]
       if (kind === 'internal') return { ok: true, markdown: renderInternalReport(summary), warnings }
       // Without the policy's groups the hosts still get sanitised, as plain "[servidor]".
@@ -261,13 +266,13 @@ export function createLedger(dir: string): OpsLedger {
 
     verify(date) {
       return enqueue(async () => {
-        if (!DATE.test(date)) return { ok: false as const, reason: `Not a YYYY-MM-DD date: ${date}` }
+        if (!DATE.test(date)) return { ok: false as const, reason: t('runbook.audit.badDate', { date }) }
         try {
           return verifyChain(await fsp.readFile(fileFor(date), 'utf-8'))
         } catch (e) {
           // No file is no entries, not a broken chain: the day simply has not been written to.
           if (isMissing(e)) return { ok: true as const, lines: 0 }
-          return { ok: false as const, reason: `Could not read the ledger for ${date}: ${message(e)}` }
+          return { ok: false as const, reason: t('runbook.audit.readDayFailed', { date, error: message(e) }) }
         }
       })
     },

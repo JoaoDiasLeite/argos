@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { sha256Hex } from './ops-audit-pure'
 import { assembleRunbook, OPS_MAX_RUNBOOK_FILE_BYTES, runbookForbiddenEntries, runbookForbiddenError, runbookName, scriptPinError, type RunbookFiles } from './ops-runbook-pure'
+import { makeT } from '../shared/i18n'
+
+const t = makeT('en')
 
 const SCRIPT = Buffer.from('#!/bin/sh\nnginx -t\n')
 const SCRIPT_SHA = sha256Hex(SCRIPT)
@@ -47,7 +50,7 @@ describe('runbookName', () => {
 
 describe('assembleRunbook', () => {
   it('builds the ref, guidelines and the hosts that belong to a group', () => {
-    const r = assembleRunbook(files())
+    const r = assembleRunbook(files(), t)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     const rb = r.runbook
@@ -68,33 +71,33 @@ describe('assembleRunbook', () => {
 
   it('strips a UTF-8 BOM before parsing but hashes the bytes as they are', () => {
     const bytes = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(JSON.stringify(POLICY))])
-    const r = assembleRunbook(files({ policyJson: bytes }))
+    const r = assembleRunbook(files({ policyJson: bytes }), t)
     expect(r.ok && r.runbook.ref.policySha256).toBe(sha256Hex(bytes))
   })
 
   it('refuses invalid JSON, an invalid policy, and oversized files', () => {
-    expect(assembleRunbook(files({ policyJson: Buffer.from('{') }))).toMatchObject({ ok: false, error: /not valid JSON/ })
-    const bad = assembleRunbook(files({ policyJson: Buffer.from(JSON.stringify({ ...POLICY, strict: 'yes' })) }))
+    expect(assembleRunbook(files({ policyJson: Buffer.from('{') }), t)).toMatchObject({ ok: false, error: /not valid JSON/ })
+    const bad = assembleRunbook(files({ policyJson: Buffer.from(JSON.stringify({ ...POLICY, strict: 'yes' })) }), t)
     expect(bad.ok).toBe(false)
     expect(!bad.ok && bad.errors?.length).toBeGreaterThan(0)
     const big = Buffer.alloc(OPS_MAX_RUNBOOK_FILE_BYTES + 1, 0x20)
-    expect(assembleRunbook(files({ runbookMd: big })).ok).toBe(false)
-    expect(assembleRunbook(files({ policyJson: big })).ok).toBe(false)
+    expect(assembleRunbook(files({ runbookMd: big }), t).ok).toBe(false)
+    expect(assembleRunbook(files({ policyJson: big }), t).ok).toBe(false)
   })
 
   it('refuses a script whose hash does not match, or that is missing', () => {
-    expect(assembleRunbook(files({ scriptHashes: { 'check.sh': 'f'.repeat(64) } })).ok).toBe(false)
-    expect(assembleRunbook(files({ scriptHashes: {} })).ok).toBe(false)
+    expect(assembleRunbook(files({ scriptHashes: { 'check.sh': 'f'.repeat(64) } }), t).ok).toBe(false)
+    expect(assembleRunbook(files({ scriptHashes: {} }), t).ok).toBe(false)
   })
 
   it('refuses a folder name outside the charset', () => {
-    expect(assembleRunbook(files({ dir: '/repo/runbooks/bad name' })).ok).toBe(false)
+    expect(assembleRunbook(files({ dir: '/repo/runbooks/bad name' }), t).ok).toBe(false)
   })
 })
 
 describe('scriptPinError', () => {
   const policy = (() => {
-    const r = assembleRunbook(files())
+    const r = assembleRunbook(files(), t)
     if (!r.ok) throw new Error('fixture')
     return r.runbook.policy
   })()
@@ -123,7 +126,7 @@ describe('runbookForbiddenEntries', () => {
   })
 
   it('names every offending entry in the refusal', () => {
-    const err = runbookForbiddenError(['.claude', 'CLAUDE.md'])
+    const err = runbookForbiddenError(['.claude', 'CLAUDE.md'], t)
     expect(err).toContain('.claude')
     expect(err).toContain('CLAUDE.md')
   })

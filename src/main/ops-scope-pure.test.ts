@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { HOST_ASK_REASON, hostApprovalContext, interventionPrompt, scopeVerdict } from './ops-scope-pure'
 import { classifyPlanSteps } from './ops-run-pure'
 import type { OpsPolicy } from './ops-types'
+import { makeT } from '../shared/i18n'
+
+const t = makeT('en')
 
 describe('scopeVerdict', () => {
   const none = new Set<string>()
@@ -71,11 +74,11 @@ describe('classifyPlanSteps with a scope', () => {
   ]
 
   it('without a scope, both steps run as before', () => {
-    expect(classifyPlanSteps(STEPS, POLICY, HOSTS).steps.map((s) => s.verdict)).toEqual(['runs', 'runs'])
+    expect(classifyPlanSteps(STEPS, POLICY, HOSTS, t).steps.map((s) => s.verdict)).toEqual(['runs', 'runs'])
   })
 
   it('a locked scope denies the other host with the scope reason', () => {
-    const plan = classifyPlanSteps(STEPS, POLICY, HOSTS, { scope: { kind: 'host', hostId: 'h1' } })
+    const plan = classifyPlanSteps(STEPS, POLICY, HOSTS, t, { scope: { kind: 'host', hostId: 'h1' } })
     expect(plan.steps[1]).toEqual({
       title: 'db',
       hostName: 'db-01',
@@ -87,7 +90,7 @@ describe('classifyPlanSteps with a scope', () => {
   })
 
   it('an open scope shows a refused host as denied and a host not asked about yet as the gate says', () => {
-    const plan = classifyPlanSteps(STEPS, POLICY, HOSTS, { scope: { kind: 'open' }, deniedHosts: new Set(['h2']) })
+    const plan = classifyPlanSteps(STEPS, POLICY, HOSTS, t, { scope: { kind: 'open' }, deniedHosts: new Set(['h2']) })
     expect(plan.steps.map((s) => [s.verdict, s.reason])).toEqual([
       ['runs', 'matched allow rule ^uptime$ (read, auto)'],
       ['denied', 'the operator refused db-01 for this intervention']

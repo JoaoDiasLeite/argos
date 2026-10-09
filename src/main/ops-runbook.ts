@@ -19,22 +19,35 @@ import {
   type LoadRunbookResult
 } from './ops-runbook-pure'
 import type { OpsHostRef } from './ops-types'
+import { t } from './i18n'
+import { makeT, type TFunction } from '../shared/i18n'
 
 export type { LoadedRunbook, LoadRunbookResult } from './ops-runbook-pure'
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
+/**
+ * A script read at call time answers the model and lands in the ops ledger, both of
+ * which stay English; only the load-time refusals are for the screen.
+ */
+const tEn = makeT('en')
+
 /** A required regular file, refused past `max` before it is read. */
-async function readCapped(file: string, max: number): Promise<{ ok: true; bytes: Buffer } | { ok: false; error: string }> {
+async function readCapped(
+  file: string,
+  max: number,
+  tr: TFunction
+): Promise<{ ok: true; bytes: Buffer } | { ok: false; error: string }> {
+  const name = path.basename(file)
   try {
     const st = await fsp.lstat(file)
-    if (!st.isFile()) return { ok: false, error: `${path.basename(file)} is not a regular file.` }
-    if (st.size > max) return { ok: false, error: `${path.basename(file)} is ${st.size} bytes; the limit is ${max}.` }
+    if (!st.isFile()) return { ok: false, error: tr('runbook.load.notRegularFile', { file: name }) }
+    if (st.size > max) return { ok: false, error: tr('runbook.load.fileTooLarge', { file: name, size: st.size, max }) }
     return { ok: true, bytes: await fsp.readFile(file) }
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') return { ok: false, error: `${path.basename(file)} is missing from the runbook folder.` }
-    return { ok: false, error: `Could not read ${path.basename(file)}: ${message(e)}` }
+    if (code === 'ENOENT') return { ok: false, error: tr('runbook.load.fileMissing', { file: name }) }
+    return { ok: false, error: tr('runbook.load.readFailed', { file: name, error: message(e) }) }
   }
 }
 
@@ -49,12 +62,12 @@ async function hashScripts(dir: string): Promise<{ ok: true; hashes: Record<stri
     entries = await fsp.readdir(dir, { withFileTypes: true })
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { ok: true, hashes: {} }
-    return { ok: false, error: `Could not list scripts/: ${message(e)}` }
+    return { ok: false, error: t('runbook.load.listScriptsFailed', { error: message(e) }) }
   }
   const hashes: Record<string, string> = {}
   for (const entry of entries) {
     if (!entry.isFile()) continue
-    const r = await readCapped(path.join(dir, entry.name), OPS_MAX_SCRIPT_BYTES)
+    const r = await readCapped(path.join(dir, entry.name), OPS_MAX_SCRIPT_BYTES, t)
     if (!r.ok) return r
     hashes[entry.name] = sha256Hex(r.bytes)
   }
@@ -68,32 +81,35 @@ function storedHosts(): OpsHostRef[] {
 export async function loadRunbook(dir: string): Promise<LoadRunbookResult> {
   try {
     const abs = path.resolve(dir)
-    if (!runbookName(abs)) return { ok: false, error: `Runbook folder name must be letters, digits, ".", "_" or "-": ${abs}` }
+    if (!runbookName(abs)) return { ok: false, error: t('runbook.load.nameChars', { dir: abs }) }
     const st = await fsp.stat(abs).catch(() => null)
-    if (!st || !st.isDirectory()) return { ok: false, error: `Not a folder: ${abs}` }
+    if (!st || !st.isDirectory()) return { ok: false, error: t('runbook.load.notFolder', { dir: abs }) }
 
     // The folder becomes the ops CLI's cwd, so CLI config inside it (hooks, CLAUDE.md)
     // would run or inject outside the gate — see runbookForbiddenEntries.
     const rootEntries = await fsp.readdir(abs).catch(() => [] as string[])
     const forbidden = runbookForbiddenEntries(rootEntries)
-    if (forbidden.length) return { ok: false, error: runbookForbiddenError(forbidden) }
+    if (forbidden.length) return { ok: false, error: runbookForbiddenError(forbidden, t) }
 
-    const md = await readCapped(path.join(abs, 'RUNBOOK.md'), OPS_MAX_RUNBOOK_FILE_BYTES)
+    const md = await readCapped(path.join(abs, 'RUNBOOK.md'), OPS_MAX_RUNBOOK_FILE_BYTES, t)
     if (!md.ok) return md
-    const policy = await readCapped(path.join(abs, 'policy.json'), OPS_MAX_RUNBOOK_FILE_BYTES)
+    const policy = await readCapped(path.join(abs, 'policy.json'), OPS_MAX_RUNBOOK_FILE_BYTES, t)
     if (!policy.ok) return policy
     const scripts = await hashScripts(path.join(abs, 'scripts'))
     if (!scripts.ok) return scripts
 
-    return assembleRunbook({
-      dir: abs,
-      runbookMd: md.bytes,
-      policyJson: policy.bytes,
-      scriptHashes: scripts.hashes,
-      hosts: storedHosts()
-    })
+    return assembleRunbook(
+      {
+        dir: abs,
+        runbookMd: md.bytes,
+        policyJson: policy.bytes,
+        scriptHashes: scripts.hashes,
+        hosts: storedHosts()
+      },
+      t
+    )
   } catch (e) {
-    return { ok: false, error: `Could not load runbook: ${message(e)}` }
+    return { ok: false, error: t('runbook.load.failed', { error: message(e) }) }
   }
 }
 
@@ -113,7 +129,7 @@ export async function readScript(
     if (name !== path.basename(name) || name === '.' || name === '..') {
       return { ok: false, error: `Invalid script name: ${name}` }
     }
-    const r = await readCapped(path.join(runbook.scriptsDir, name), OPS_MAX_SCRIPT_BYTES)
+    const r = await readCapped(path.join(runbook.scriptsDir, name), OPS_MAX_SCRIPT_BYTES, tEn)
     if (!r.ok) return r
     const sha256 = sha256Hex(r.bytes)
     const err = scriptPinError(runbook.policy, name, sha256)

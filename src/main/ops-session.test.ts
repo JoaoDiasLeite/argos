@@ -8,6 +8,7 @@ import { clientReportWarnings } from './ops-report-pure'
 import { createFakeBackend, type FakeBackend, type FakeScript } from './ops-backend-fake'
 import { createExecutor } from './ops-exec-pure'
 import { assembleRunbook, scriptPinError, type LoadedRunbook, type LoadRunbookResult } from './ops-runbook-pure'
+import { makeT } from '../shared/i18n'
 import {
   bridgeSessionFor,
   callOpsTool,
@@ -58,7 +59,7 @@ async function loadFixture(dir: string): Promise<LoadRunbookResult> {
     policyJson: fs.readFileSync(path.join(dir, 'policy.json')),
     scriptHashes,
     hosts: HOSTS
-  })
+  }, makeT('en'))
 }
 
 async function readFixtureScript(runbook: LoadedRunbook, name: string) {

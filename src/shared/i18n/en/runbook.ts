@@ -1,2 +1,77 @@
 // runbook. Runbook validation diagnostics and ops backend errors (main process).
-export default {} satisfies Record<string, string>
+//
+// `policy.*` are the policy.json validator's errors and warnings: `{where}` is the JSON
+// location as written (`allow[2]`, `scripts[0].args`, `read.paths[1]`), `{value}` the
+// offending value as JSON. JSON keys, file names and regex syntax stay untranslated.
+export default {
+  'policy.notObject': 'policy.json must be a JSON object.',
+  'policy.unknownKey': '{where} has an unknown key "{key}".',
+  'policy.version': 'version must be 1, got {value}.',
+  'policy.strict': 'strict must be true or false, got {value}.',
+  'policy.platform': "platform must be the product's name on one line, up to {max} characters, got {value}.",
+  'policy.hosts.notObject': 'hosts must be an object mapping group names to arrays of host names or globs.',
+  'policy.hosts.empty': 'hosts must define at least one host group.',
+  'policy.hosts.groupInvalid': 'hosts.{name} must be an array of non-empty strings.',
+  'policy.hosts.groupNoMatch': 'Host group "{name}" matches none of the stored hosts.',
+  'policy.list.notArray': '{where} must be an array (it may be empty).',
+  'policy.notAnObject': '{where} must be an object.',
+  'policy.pattern.notString': '{where} must be a string.',
+  'policy.pattern.tooLong': '{where} is {length} characters; patterns must be under {max}.',
+  'policy.pattern.newline': '{where} contains a newline character.',
+  'policy.pattern.notRegex': '{where} does not compile as a regular expression ({error}).',
+  'policy.pattern.notAnchored': '{where} must be anchored at both ends (start with ^ and end with an unescaped $): {value}.',
+  'policy.pattern.alternation': '{where} uses | outside a group, which unanchors it; wrap the alternatives in (…): {value}.',
+  'policy.pattern.notAbsolute': '{where} must start with ^/ (an absolute POSIX path): {value}.',
+  'policy.paths.notArray': '{where} must be an array of path patterns.',
+  'policy.rule.class': '{where}.class must be "read" or "mutate", got {value}.',
+  'policy.rule.approval': '{where}.approval must be "auto" or "ask" when present, got {value}.',
+  'policy.rule.mutateAuto': '{where} is a mutate rule with approval "auto", which is only allowed when strict is true.',
+  'policy.rule.hostsNotArray': '{where}.hosts must be an array of host group names.',
+  'policy.rule.hostsEmpty': '{where}.hosts is empty; name at least one host group.',
+  'policy.rule.hostsUnknown': '{where}.hosts names "{group}", which is not a group in policy.hosts.',
+  'policy.rule.titleNotString': '{where}.title must be a string when present.',
+  'policy.rule.titleMissing': '{where} has no title; the client report will fall back to a generic step name.',
+  'policy.script.nameEmpty': '{where}.name must be a non-empty string.',
+  'policy.script.nameNotPlain':
+    '{where}.name {value} must be a plain file name: no / or \, no .., no leading -, at most {max} characters.',
+  'policy.script.duplicate': '{where}.name "{name}" is listed more than once.',
+  'policy.script.badSha256': '{where}.sha256 must be 64 lower-case hex characters, got {value}.',
+  'policy.script.fileMissing': '{where} "{name}" is pinned to {pinned} but the file is not found in scripts/.',
+  'policy.script.changed': '{where} "{name}" has changed: policy pins {pinned}, file hashes to {actual}.',
+  'policy.script.argsMax': '{where}.args.max must be an integer from 0 to {max}, got {value}.',
+  'policy.script.argsPatternRequired': '{where}.args.pattern is required when args.max is above 0.',
+  'policy.write.backup': 'write.backup must be true or false when present.',
+  'policy.limit.notPositive': '{where} must be a positive integer, got {value}.',
+  'policy.limit.aboveCeiling': '{where} is {value}, above the app ceiling of {max}; {max} will be used.',
+
+  'load.nameMustMatch': 'Runbook folder name must match {pattern}: {dir}',
+  'load.nameChars': 'Runbook folder name must be letters, digits, ".", "_" or "-": {dir}',
+  'load.notFolder': 'Not a folder: {dir}',
+  'load.forbiddenEntries':
+    'The runbook folder carries CLI configuration ({found}), which the ops terminal would honour as hooks or injected instructions. Remove it from the runbook.',
+  'load.fileTooLarge': '{file} is {size} bytes; the limit is {max}.',
+  'load.notRegularFile': '{file} is not a regular file.',
+  'load.fileMissing': '{file} is missing from the runbook folder.',
+  'load.readFailed': 'Could not read {file}: {error}',
+  'load.listScriptsFailed': 'Could not list scripts/: {error}',
+  'load.invalidJson': 'policy.json is not valid JSON: {error}',
+  'load.policyErrors': 'policy.json has {n} error(s).',
+  'load.failed': 'Could not load runbook: {error}',
+
+  'session.noHosts': 'No stored SSH host belongs to any host group of runbook {name}.',
+  'session.hostNotInRunbook': 'This host is not in any host group of runbook {name}; add it to a group in policy.json.',
+  'session.unreachable': '{host} is unreachable. Is the VPN connected? {error}',
+  'session.noAnswer': 'No answer within {seconds} s',
+  'session.ledgerUnavailable': 'The ops ledger is unavailable, so the run did not start: {error}',
+  'session.startFailed': 'Could not start the ops run: {error}',
+
+  'plan.noCommand': 'the step names no command, so the gate cannot judge it yet',
+  'plan.noHost': 'the step names no host',
+  'plan.unknownHost': "host '{host}' is not in this runbook",
+
+  'audit.appendFailed': 'Could not append to the ops ledger: {error}',
+  'audit.readFailed': 'Could not read the ops ledger: {error}',
+  'audit.noRunStart': 'No run.start for run {runId} in the ledger.',
+  'audit.badDate': 'Not a YYYY-MM-DD date: {date}',
+  'audit.readDayFailed': 'Could not read the ledger for {date}: {error}'
+} satisfies Record<string, string>

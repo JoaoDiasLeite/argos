@@ -45,6 +45,7 @@ import type { OpsExecutor } from './ops-exec-pure'
 import type { OpsLedger } from './ops-audit'
 import { hostApprovalContext, hostDeniedReason, outOfScopeReason, scopeVerdict } from './ops-scope-pure'
 import type { OpsAuditEvent, OpsAuditLine, OpsHostRef, OpsLoggedPlanStep, OpsScope, OpsToolName } from './ops-types'
+import { makeT, type TFunction } from '../shared/i18n'
 
 export type { ApprovalOpsContext } from './ops-run-pure'
 
@@ -166,6 +167,11 @@ export interface OpsSessionOptions {
   runId?: string
   /** Leave a syslog line on the host for every execution. Absent: the ledger is the only record. */
   syslog?: OpsSyslogOptions
+  /**
+   * Words what the operator reads (a refused start, the plan preview's reasons). Absent:
+   * English. What goes to the model or the ledger is English either way.
+   */
+  t?: TFunction
 }
 
 export interface OpsSession {
@@ -189,11 +195,15 @@ export const DEFAULT_FILE_TITLES: Partial<Record<OpsToolName, string>> = {
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
+const tEn = makeT('en')
+const tOf = (opts: OpsSessionOptions): TFunction => opts.t ?? tEn
+
 /**
  * Load the runbook, check every host answers, and log `run.start`. A refusal comes back
  * as `{ ok: false }`; a host that does not answer is refused before anything is logged.
  */
 export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSessionResult> {
+  const t = tOf(opts)
   try {
     const loaded = await opts.loadRunbook(opts.runbookPath)
     if (!loaded.ok) {
@@ -202,14 +212,14 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
     }
     const runbook = loaded.runbook
     if (runbook.hosts.length === 0) {
-      return { ok: false, error: `No stored SSH host belongs to any host group of runbook ${runbook.ref.name}.` }
+      return { ok: false, error: t('runbook.session.noHosts', { name: runbook.ref.name }) }
     }
     // A locked intervention reaches and records only its host; the others stay known to
     // the gate so a call naming one is refused with the scope's reason, not as unknown.
     const scope = opts.scope
     const inReach = scope?.kind === 'host' ? runbook.hosts.filter((h) => h.host.id === scope.hostId) : runbook.hosts
     if (scope?.kind === 'host' && inReach.length === 0) {
-      return { ok: false, error: `This host is not in any host group of runbook ${runbook.ref.name}; add it to a group in policy.json.` }
+      return { ok: false, error: t('runbook.session.hostNotInRunbook', { name: runbook.ref.name }) }
     }
 
     // Reachability before anything is logged or the model is called. Once, no retry: on a
@@ -224,7 +234,7 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
       })
     )
     const down = reach.find((x) => !x.r.ok)
-    if (down) return { ok: false, error: `${down.h.host.name} is unreachable. Is the VPN connected? ${down.r.message}` }
+    if (down) return { ok: false, error: t('runbook.session.unreachable', { host: down.h.host.name, error: down.r.message }) }
 
     const runId = opts.runId ?? randomUUID()
     const log: OpsRunContext['log'] = async (event) => {
@@ -257,7 +267,7 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
       ...(opts.client?.trim() ? { client: opts.client.trim() } : {}),
       ...(scope ? { scope } : {})
     })
-    if (!started.ok) return { ok: false, error: `The ops ledger is unavailable, so the run did not start: ${started.error}` }
+    if (!started.ok) return { ok: false, error: t('runbook.session.ledgerUnavailable', { error: started.error }) }
 
     const ctx: OpsRunContext = {
       runId,
@@ -291,7 +301,7 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
       tools: createOpsToolHandlers(ctx)
     }
   } catch (e) {
-    return { ok: false, error: `Could not start the ops run: ${message(e)}` }
+    return { ok: false, error: t('runbook.session.startFailed', { error: message(e) }) }
   }
 }
 
@@ -637,6 +647,7 @@ async function decidePlan(
     steps,
     ctx.runbook.policy,
     ctx.hosts.byId,
+    tOf(opts),
     ctx.scope ? { scope: ctx.scope, approvedHosts: ctx.approvedHosts, deniedHosts: ctx.deniedHosts } : undefined
   )
 

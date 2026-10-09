@@ -11,6 +11,7 @@ import type { ExecResult, OpsListResult, OpsReadResult, OpsWriteResult } from '.
 import { canonicalCommand, classify, parseSimpleCommand } from './ops-gate-pure'
 import { hostDeniedReason, outOfScopeReason, scopeVerdict } from './ops-scope-pure'
 import type { OpsAuditEvent, OpsGateResult, OpsHostRef, OpsPolicy, OpsScope, OpsToolInput, OpsToolName } from './ops-types'
+import type { TFunction } from '../shared/i18n'
 
 // ─── Hosts ────────────────────────────────────────────────────────────────────────
 
@@ -193,12 +194,15 @@ function planHost(hostsById: Map<string, HostEntry>, hostId: string | undefined)
 /**
  * What the gate would decide for each step of a plan, before anything runs: a preview
  * for the review sheet. Nothing here executes or logs, and the real gate still runs on
- * every later call, so a step approved here can still be refused there.
+ * every later call, so a step approved here can still be refused there. `t` words the
+ * reasons this function writes itself (a step with no host or no command); the gate's
+ * reasons stay as the gate gives them.
  */
 export function classifyPlanSteps(
   steps: PlanStepInput[],
   policy: OpsPolicy,
   hostsById: Map<string, HostEntry>,
+  t: TFunction,
   /** The intervention's scope: a step on a host it excludes is shown as denied. */
   scope?: { scope: OpsScope; approvedHosts?: ReadonlySet<string>; deniedHosts?: ReadonlySet<string> }
 ): ClassifiedPlan {
@@ -218,10 +222,10 @@ export function classifyPlanSteps(
     if (!entry || !hasWork) {
       const commands = [...step.commands.map(canonicalLine), ...(step.script ? [scriptLine(step.script.name, step.script.args)] : [])]
       const reason = !hasWork
-        ? 'the step names no command, so the gate cannot judge it yet'
+        ? t('runbook.plan.noCommand')
         : step.hostId === undefined || step.hostId === ''
-          ? 'the step names no host'
-          : `host '${step.hostId}' is not in this runbook`
+          ? t('runbook.plan.noHost')
+          : t('runbook.plan.unknownHost', { host: step.hostId })
       out.push({ title: step.title, ...(entry ? { hostName: entry.host.name } : {}), commands, verdict: 'unknown', reason })
       continue
     }

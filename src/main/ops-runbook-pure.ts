@@ -10,6 +10,7 @@ import * as path from 'path'
 import { sha256Hex } from './ops-audit-pure'
 import { parsePolicy, resolveHostGroups } from './ops-policy-pure'
 import type { OpsHostRef, OpsPolicy, OpsRunbookRef } from './ops-types'
+import type { TFunction } from '../shared/i18n'
 
 /** RUNBOOK.md and policy.json are text someone reviews; anything bigger is a mistake. */
 export const OPS_MAX_RUNBOOK_FILE_BYTES = 256 * 1024
@@ -63,11 +64,8 @@ export function runbookForbiddenEntries(entryNames: string[]): string[] {
   return entryNames.filter((n) => RUNBOOK_FORBIDDEN_ENTRIES.includes(n.toLowerCase()))
 }
 
-export function runbookForbiddenError(found: string[]): string {
-  return (
-    `The runbook folder carries CLI configuration (${found.join(', ')}), which the ops ` +
-    'terminal would honour as hooks or injected instructions. Remove it from the runbook.'
-  )
+export function runbookForbiddenError(found: string[], t: TFunction): string {
+  return t('runbook.load.forbiddenEntries', { found: found.join(', ') })
 }
 
 export interface RunbookFiles {
@@ -80,26 +78,35 @@ export interface RunbookFiles {
   hosts: OpsHostRef[]
 }
 
-/** Validate and assemble. Hashes are over the bytes as read, BOM and all. */
-export function assembleRunbook(files: RunbookFiles): LoadRunbookResult {
+/**
+ * Validate and assemble. Hashes are over the bytes as read, BOM and all. `t` words the
+ * refusals and the policy diagnostics for the screen.
+ */
+export function assembleRunbook(files: RunbookFiles, t: TFunction): LoadRunbookResult {
   const name = runbookName(files.dir)
-  if (!name) return { ok: false, error: `Runbook folder name must match ${NAME.source}: ${files.dir}` }
+  if (!name) return { ok: false, error: t('runbook.load.nameMustMatch', { pattern: NAME.source, dir: files.dir }) }
   if (files.runbookMd.length > OPS_MAX_RUNBOOK_FILE_BYTES) {
-    return { ok: false, error: `RUNBOOK.md is ${files.runbookMd.length} bytes; the limit is ${OPS_MAX_RUNBOOK_FILE_BYTES}.` }
+    return {
+      ok: false,
+      error: t('runbook.load.fileTooLarge', { file: 'RUNBOOK.md', size: files.runbookMd.length, max: OPS_MAX_RUNBOOK_FILE_BYTES })
+    }
   }
   if (files.policyJson.length > OPS_MAX_RUNBOOK_FILE_BYTES) {
-    return { ok: false, error: `policy.json is ${files.policyJson.length} bytes; the limit is ${OPS_MAX_RUNBOOK_FILE_BYTES}.` }
+    return {
+      ok: false,
+      error: t('runbook.load.fileTooLarge', { file: 'policy.json', size: files.policyJson.length, max: OPS_MAX_RUNBOOK_FILE_BYTES })
+    }
   }
 
   let raw: unknown
   try {
     raw = JSON.parse(stripBom(files.policyJson.toString('utf-8')))
   } catch (e) {
-    return { ok: false, error: `policy.json is not valid JSON: ${(e as Error).message}` }
+    return { ok: false, error: t('runbook.load.invalidJson', { error: (e as Error).message }) }
   }
-  const parsed = parsePolicy(raw, files.scriptHashes, files.hosts)
+  const parsed = parsePolicy(raw, files.scriptHashes, files.hosts, t)
   if (!parsed.ok) {
-    return { ok: false, error: `policy.json has ${parsed.errors.length} error(s).`, errors: parsed.errors }
+    return { ok: false, error: t('runbook.load.policyErrors', { n: parsed.errors.length }), errors: parsed.errors }
   }
   const policy = parsed.policy
 
@@ -129,6 +136,7 @@ export function assembleRunbook(files: RunbookFiles): LoadRunbookResult {
 /**
  * The call-time half of "sha256 matches at load time and again at call time": null when
  * the script is pinned and the bytes on disk still match, else the refusal to show.
+ * English on purpose: the refusal is also written to the ops ledger and sent to the model.
  */
 export function scriptPinError(policy: OpsPolicy, name: string, actualSha256: string): string | null {
   const rule = policy.scripts.find((s) => s.name === name)

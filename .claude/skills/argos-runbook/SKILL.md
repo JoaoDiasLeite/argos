@@ -108,11 +108,12 @@ import { readFileSync } from 'fs'
 import { assembleRunbook } from 'C:/<repo>/src/main/ops-runbook-pure'
 import { classify } from 'C:/<repo>/src/main/ops-gate-pure'
 import { resolveHostGroups } from 'C:/<repo>/src/main/ops-policy-pure'
+import { makeT } from 'C:/<repo>/src/shared/i18n'
 
 const dir = 'C:/<path to the runbook folder>'
 const host = { id: 'x', name: '<a name the host glob matches>', host: '10.0.0.5' }
 // scriptHashes: { 'name.sh': '<sha256 of its bytes>' } for every file in scripts/, else {}
-const r = assembleRunbook({ dir, runbookMd: readFileSync(dir + '/RUNBOOK.md'), policyJson: readFileSync(dir + '/policy.json'), scriptHashes: {}, hosts: [host] })
+const r = assembleRunbook({ dir, runbookMd: readFileSync(dir + '/RUNBOOK.md'), policyJson: readFileSync(dir + '/policy.json'), scriptHashes: {}, hosts: [host] }, makeT('en'))
 if (!r.ok) { console.log(JSON.stringify(r, null, 1)); process.exit(1) }
 console.log('warnings:', r.runbook.warnings)
 const groups = resolveHostGroups(r.runbook.policy, host)
