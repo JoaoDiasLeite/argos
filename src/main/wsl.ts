@@ -23,7 +23,11 @@ export function listDistros(): Promise<WslDistro[]> {
       ['--list', '--verbose'],
       { encoding: 'buffer', windowsHide: true },
       (err, stdoutBuf) => {
-        if (err && !stdoutBuf?.length) return resolve([])
+        // A non-zero exit means there is no distro list to parse: on a machine where the
+        // WSL feature is not enabled, wsl.exe prints its usage text (to stdout, UTF-16LE)
+        // and exits 1 — every line of that help once rendered as a distro named "Usage:",
+        // "Arguments:", "--install"… so never parse output from a failed call.
+        if (err || !stdoutBuf?.length) return resolve([])
         // Output is UTF-16LE. Decode it (keeping real spaces, which separate the
         // NAME / STATE / VERSION columns) and parse the name from each data row.
         const text = Buffer.from(stdoutBuf).toString('utf16le')
@@ -34,11 +38,16 @@ export function listDistros(): Promise<WslDistro[]> {
           const raw = lines[i]
           const isDefault = raw.startsWith('*')
           const withoutStar = isDefault ? raw.slice(1).trim() : raw
-          const [name, state] = withoutStar.split(/\s+/)
+          const cols = withoutStar.split(/\s+/)
+          // A data row is exactly NAME STATE VERSION, with VERSION a single digit (1 or 2).
+          // Column labels and the STATE word are localized, the shape is not — anything
+          // else (usage text, "no distributions" notices, error lines) is skipped.
+          if (cols.length !== 3 || !/^[12]$/.test(cols[2])) continue
+          const [name, state] = cols
           // STATE comes free with `--verbose`; RemoteView shows it as a live dot. Note it
           // means "the VM is up right now", NOT "reachable" — a Stopped distro is perfectly
           // usable, WSL just boots it on connect, so don't render it as an error.
-          if (name) distros.push({ name, isDefault, running: state === 'Running' })
+          distros.push({ name, isDefault, running: state === 'Running' })
         }
         resolve(distros)
       }
