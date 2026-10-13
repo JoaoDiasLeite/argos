@@ -51,7 +51,7 @@ const chat: Record<keyof typeof en, string> = {
   'config.gitStatus': 'Em {branch} · {changes}',
   'config.filesChanged.one': '1 ficheiro alterado',
   'config.filesChanged.other': '{n} ficheiros alterados',
-  'config.noFolder': 'Nenhuma pasta escolhida: inicia na tua pasta pessoal.',
+  'config.noFolder': 'Nenhuma pasta escolhida: inicia na pasta argos dentro da tua pasta pessoal.',
   'config.cliStartsHere': 'A CLI inicia nesta pasta.',
   'pane.defaultName': 'Chat',
   'pane.alreadyOpen': 'Já aberto',

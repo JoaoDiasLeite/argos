@@ -49,7 +49,7 @@ export default {
   'config.gitStatus': 'On {branch} · {changes}',
   'config.filesChanged.one': '1 file changed',
   'config.filesChanged.other': '{n} files changed',
-  'config.noFolder': 'No folder chosen: it starts in your home folder.',
+  'config.noFolder': 'No folder chosen: it starts in the argos folder in your home folder.',
   'config.cliStartsHere': 'The CLI starts in this folder.',
   'pane.defaultName': 'Chat',
   'pane.alreadyOpen': 'Already open',

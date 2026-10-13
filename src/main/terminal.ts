@@ -313,6 +313,24 @@ function resolveWindowsExe(name: string): string {
   return name
 }
 
+/**
+ * Where a local chat with no folder of its own starts: `~/argos`, made on first use.
+ *
+ * Not the home folder itself, on purpose. Claude Code never saves trust for the home
+ * directory ("trust lasts for this run only"), so a chat started there met the trust
+ * dialog every single time. A folder one level down is trusted once and remembered.
+ * Falls back to home if the folder cannot be made — a prompt beats no terminal.
+ */
+function defaultChatDir(): string {
+  const dir = path.join(os.homedir(), 'argos')
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+    return dir
+  } catch {
+    return os.homedir()
+  }
+}
+
 function pickShell(): { shell: string; kind: ShellKind } {
   if (process.platform === 'win32') {
     if (hasPwsh()) return { shell: 'pwsh.exe', kind: 'pwsh' }
@@ -449,7 +467,7 @@ export function createTerminal(
       const picked = pickShell()
       shell = picked.shell
       kind = picked.kind
-      spawnCwd = opts.cwd && fs.existsSync(opts.cwd) ? opts.cwd : os.homedir()
+      spawnCwd = opts.cwd && fs.existsSync(opts.cwd) ? opts.cwd : defaultChatDir()
       const provider = opts.provider ?? 'claude'
       if (provider === 'claude') {
         const configDir = accountConfigDir(opts.accountId)
