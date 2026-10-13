@@ -440,7 +440,9 @@ export function createTerminal(
       // Windows CLAUDE_CONFIG_DIR/CLAUDE_BIN are meaningless in WSL, so leave them unset.
       shell = 'wsl.exe'
       shellArgs = ['-d', wslDistro]
-      if (wslCwd) shellArgs.push('--cd', wslCwd)
+      // No folder of its own (a remote session's shell): start in the distro user's
+      // home, as a login would — wsl.exe would otherwise put it on /mnt/c/Users/<you>.
+      shellArgs.push('--cd', wslCwd ?? '~')
       kind = 'wsl'
       spawnCwd = os.homedir()
     } else {

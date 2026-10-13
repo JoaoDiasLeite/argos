@@ -9,6 +9,7 @@ import { TERMINAL_THEME } from './terminal-theme'
 import TerminalContextMenu, { terminalMenuItems } from './TerminalContextMenu'
 import { TerminalAccelContext } from './terminal-accel'
 import { registerOsc52Copy } from '../lib/osc52'
+import { registerCwdReports } from '../lib/terminal-cwd'
 import { imagePasteRoute } from '../lib/terminal-image-paste'
 import { registerTerminalLinks } from '../lib/terminal-links'
 import { terminalPathsText } from '../lib/terminal-file-paths'
@@ -81,6 +82,9 @@ interface Props {
    *  this launch, forwarded into `terminalCreate` as-is. Read when the pty is created, like
    *  everything else here; a new launch is a remount. */
   ops?: OpsTerminalLaunch
+  /** The shell's working directory, as its prompt reports it (lib/terminal-cwd.ts) — the
+   *  path may still start with `~`. Lets the file pane beside a session follow a `cd`. */
+  onCwdChange?: (path: string) => void
 }
 
 // The embedded terminal's palette lives in terminal-theme.ts, shared with
@@ -140,8 +144,11 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onPopOut, onPopIn, onActive, initialPrompt, onInitialPromptSent, accelerated, ops }: Props) {
+export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onPopOut, onPopIn, onActive, initialPrompt, onInitialPromptSent, accelerated, ops, onCwdChange }: Props) {
   const t = useT()
+  // Read from the one-shot setup effect, which cannot close over a prop.
+  const onCwdRef = useRef(onCwdChange)
+  onCwdRef.current = onCwdChange
   // Read from inside the long-lived terminal effects, which must not restart on a language change.
   const tRef = useRef(t)
   tRef.current = t
@@ -356,6 +363,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     // lib/osc52.ts.
     registerOsc52Copy(term)
     registerTerminalLinks(term)
+    registerCwdReports(term, (p) => onCwdRef.current?.(p))
 
     // Copy-on-select (like most native terminals), plus explicit Ctrl/Cmd+C when there's a
     // selection — xterm only forwards raw keystrokes as PTY input by default.

@@ -6,6 +6,7 @@ import SftpBrowser from '../components/SftpBrowser'
 import LocalBrowser from '../components/LocalBrowser'
 import FileEditor from '../components/FileEditor'
 import { readLocalFile, writeLocalFile } from '../lib/local-file-io'
+import { expandHome } from '../lib/terminal-cwd'
 import { useT } from '../i18n'
 import type { MessageKey } from '../../../shared/i18n'
 import './views.css'
@@ -100,6 +101,9 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
   )
   const [statusError, setStatusError] = useState<string | null>(null)
   const [cwd, setCwd] = useState(isSsh ? target.host.remotePath || '/' : '/home')
+  // The login user's home on the box — what the shell starts in and what its prompt's
+  // `~` stands for. A ref: read by the terminal's cwd reports, not rendered.
+  const homeRef = useRef<string | null>(null)
   const [pathInput, setPathInput] = useState(cwd)
   const [panel, setPanel] = useState<'files' | 'history'>('files')
   const [openFile, setOpenFile] = useState<string | null>(null)
@@ -125,7 +129,9 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
       setStatusError(null)
       setCwd('/home')
       window.electronAPI.wslHome(target.distro).then((home) => {
-        if (!cancelled && home) setCwd(home)
+        if (cancelled || !home) return
+        homeRef.current = home
+        setCwd(home)
       })
       return () => {
         cancelled = true
@@ -138,7 +144,9 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
       if (cancelled) return
       if (res.ok) {
         setStatus('connected')
-        setCwd(target.host.remotePath || res.home || '/')
+        homeRef.current = res.home ?? null
+        // Where the login shell starts, so the two panes agree from the first prompt.
+        setCwd(res.home || target.host.remotePath || '/')
       } else {
         setStatus('error')
         setStatusError(res.error || t('remote.session.couldNotConnect'))
@@ -194,6 +202,13 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     setQuickRun('')
   }
 
+  // The shell's prompt reported where it is: the file pane follows a `cd`. One way —
+  // browsing the pane never cd's the shell (that is the row's explicit terminal button).
+  const followShell = (path: string) => {
+    const abs = expandHome(path, homeRef.current)
+    if (abs) setCwd(abs.replace(/\/+$/, '') || '/')
+  }
+
   const navigatePath = (raw: string) => {
     const trimmed = raw.trim()
     if (!trimmed.startsWith('/')) return
@@ -207,7 +222,8 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     window.electronAPI.sftpConnect(target.host.id).then((res) => {
       if (res.ok) {
         setStatus('connected')
-        setCwd(target.host.remotePath || res.home || '/')
+        homeRef.current = res.home ?? null
+        setCwd(res.home || target.host.remotePath || '/')
       } else {
         setStatus('error')
         setStatusError(res.error || t('remote.session.couldNotConnect'))
@@ -350,7 +366,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
             "close" that only went back to the targets list read as if it had. */}
         <div className="remote-session-right">
           {isSsh ? (
-            <RemoteTerminal terminalId={terminalId} hostId={target.host.id} active={active} closable={false} />
+            <RemoteTerminal terminalId={terminalId} hostId={target.host.id} active={active} closable={false} onCwdChange={followShell} />
           ) : (
             <ChatTerminal
               terminalId={terminalId}
@@ -359,7 +375,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
               autoLaunchCli={false}
               active={active}
               closable={false}
-             
+              onCwdChange={followShell}
             />
           )}
         </div>

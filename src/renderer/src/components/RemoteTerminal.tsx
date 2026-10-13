@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css'
 import { TERMINAL_THEME } from './terminal-theme'
 import TerminalContextMenu, { terminalMenuItems } from './TerminalContextMenu'
 import { registerOsc52Copy } from '../lib/osc52'
+import { registerCwdReports } from '../lib/terminal-cwd'
 import { registerTerminalLinks } from '../lib/terminal-links'
 import { useT } from '../i18n'
 import './ChatTerminal.css'
@@ -23,6 +24,9 @@ interface Props {
    *  the session's tab is what closes it, so a close here would only mislead. */
   closable?: boolean
   onClose?: () => void
+  /** The shell's working directory, as its prompt reports it (lib/terminal-cwd.ts) — the
+   *  path may still start with `~`. Lets the file pane beside it follow a `cd`. */
+  onCwdChange?: (path: string) => void
 }
 
 /**
@@ -59,8 +63,11 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function RemoteTerminal({ terminalId, hostId, active, closable = true, onClose }: Props) {
+export default function RemoteTerminal({ terminalId, hostId, active, closable = true, onClose, onCwdChange }: Props) {
   const t = useT()
+  // Read from the one-shot setup effect, which cannot close over a prop.
+  const onCwdRef = useRef(onCwdChange)
+  onCwdRef.current = onCwdChange
   // The shell effect writes translated notes into the terminal; it must not re-run (and
   // reconnect) when the language changes, so it reads the translator through a ref.
   const tRef = useRef(t)
@@ -98,6 +105,7 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
     // Windows interop, or anything over SSH) asks the terminal to copy for it. See
     // lib/osc52.ts.
     registerOsc52Copy(term)
+    registerCwdReports(term, (p) => onCwdRef.current?.(p))
     registerTerminalLinks(term)
 
     // Copy-on-select (like most native terminals), plus explicit Ctrl/Cmd+C when there's a
