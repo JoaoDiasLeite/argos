@@ -6,7 +6,9 @@ import { sessionProvider } from '../lib/account-scope'
 import { CLI_PROVIDERS } from '../lib/cli-providers'
 import { useT } from '../i18n'
 import { rich } from '../lib/t-rich'
-import { isUnnamedChat } from '../lib/chat-name'
+import { chatDisplayName } from '../lib/chat-name'
+import type { PaneHead } from '../lib/pane-head'
+import ChatHead from './ChatHead'
 import './Chat.css'
 
 // ChatTerminal pulls in @xterm/xterm + its addons (~300 kB), and nothing on screen needs
@@ -39,11 +41,9 @@ export interface Props {
   onCloseTerminal: () => void
   /** Open this chat in a window of its own (the pane leaves the layout while it is out). */
   onPopOut?: () => void
-  /** True when a split-view pane header is already drawing this chat's name (see
-   *  `PaneGrid`'s `pane-head`) — so this component must not draw it a second time. The
-   *  rest of the title block (remote host / resumed marker) still renders, since the
-   *  pane header has no room for it. */
-  titleInHeader?: boolean
+  /** What a split view adds to this chat's header: the drag handle and the pane close.
+   *  Absent in a single pane, where the header only names the chat. */
+  head?: PaneHead
 }
 
 /**
@@ -61,7 +61,7 @@ export default function Chat({
   onPatchSession,
   onCloseTerminal,
   onPopOut,
-  titleInHeader = false
+  head
 }: Props) {
   // The pty is created on the same render that mounts ChatTerminal, so where it runs has
   // to be settled BEFORE that — a CLI already launched in the wrong folder has no undo. A
@@ -156,20 +156,18 @@ export default function Chat({
     if (!active || active === document.body) setupRef.current?.focus({ preventScroll: true })
   }, [needsTerminalSetup, session?.id])
 
+  const displayName = chatDisplayName(session?.name, t)
+  // The name lives in the header now; only the line the header has no room for stays here.
   const hasTitleMeta = !!(session?.remoteHostName || session?.claudeSessionId)
-  const showTitleName = !titleInHeader && !!session?.name && !isUnnamedChat(session.name)
-  const titleBlock = session && (showTitleName || hasTitleMeta) && (
+  const titleBlock = session && hasTitleMeta && (
     <div className="chat-title-block">
-      {showTitleName && <div className="chat-title-name">{session.name}</div>}
-      {hasTitleMeta && (
-        <div className="chat-title-meta">
-          {session.remoteHostName && <span title={t('chat.title.runsWhere')}>{session.remoteHostName}</span>}
-          {session.remoteHostName && session.claudeSessionId && (
-            <span className="chat-title-sep" aria-hidden="true">·</span>
-          )}
-          {session.claudeSessionId && <span title={t('chat.title.resumedTitle')}>{t('chat.title.resumed')}</span>}
-        </div>
-      )}
+      <div className="chat-title-meta">
+        {session.remoteHostName && <span title={t('chat.title.runsWhere')}>{session.remoteHostName}</span>}
+        {session.remoteHostName && session.claudeSessionId && (
+          <span className="chat-title-sep" aria-hidden="true">·</span>
+        )}
+        {session.claudeSessionId && <span title={t('chat.title.resumedTitle')}>{t('chat.title.resumed')}</span>}
+      </div>
     </div>
   )
 
@@ -193,6 +191,29 @@ export default function Chat({
             </svg>
           </button>
         </div>
+      )}
+
+      {session && needsTerminalSetup && (
+        /* The setup screen gets the same header the terminal draws, so a split pane that has
+           not started yet can still be dragged and closed like the others. */
+        <ChatHead
+          title={displayName}
+          dragProps={head?.dragProps}
+          actions={
+            head ? (
+              <button
+                className="chat-head-btn"
+                onClick={head.onClosePane}
+                title={t('chat.pane.close')}
+                aria-label={t('chat.pane.closeAria', { name: displayName })}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            ) : undefined
+          }
+        />
       )}
 
       {session && needsTerminalSetup && (
@@ -253,6 +274,9 @@ export default function Chat({
             pinSessionId={session.terminalSessionId}
             initialPrompt={initialTerminalPrompt}
             onInitialPromptSent={onInitialTerminalPromptSent}
+            title={displayName}
+            headProps={head?.dragProps}
+            onClosePane={head?.onClosePane}
             onClose={onCloseTerminal}
             onPopOut={onPopOut}
             onActive={() => {

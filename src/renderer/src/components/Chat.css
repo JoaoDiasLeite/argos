@@ -6,16 +6,9 @@
   position: relative;
 }
 
-/* The chat's own name above the setup pane's title, when it has one. */
+/* Where the chat runs and whether it is resumed, above the setup pane's title. The name
+   itself is in the header (ChatHead). */
 .chat-title-block { width: 100%; }
-
-.chat-title-name {
-  font-size: 15px;
-  font-weight: 650;
-  color: var(--text-0);
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
 
 /* One quiet line: where it runs, and whether it is a resumed conversation. */
 .chat-title-meta {
@@ -23,7 +16,6 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 6px;
-  margin-top: 3px;
   font-size: 11.5px;
   color: var(--text-2);
 }

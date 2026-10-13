@@ -1,0 +1,75 @@
+/* Tight on purpose: this head steals height from a terminal, where rows are the scarce
+   resource. */
+.chat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+  font-size: 12.5px;
+}
+
+/* In a split the header is the pane's drag handle (see PaneGrid). */
+.chat-head[draggable='true'] { cursor: grab; }
+.chat-head[draggable='true']:active { cursor: grabbing; }
+
+.chat-head-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text-1);
+}
+/* The focused pane's name reads a step brighter — the hook PaneGrid's `.pane.focused` gives. */
+.pane.focused .chat-head-name {
+  color: var(--text-0);
+}
+
+/* The folder the CLI started in: it only labels, so a 3 px chip in mono. */
+.chat-head-cwd {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-2);
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+}
+
+/* Pushed to the far edge whatever the title's length. */
+.chat-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Icon-only 24 px buttons (the ⋯ trigger, the ×): quiet until hovered. Styled here, not
+   by ChatTerminal.css, because the setup screen draws this header before the lazily
+   loaded terminal (and its stylesheet) exists. */
+.chat-head-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-1);
+  cursor: pointer;
+}
+.chat-head-btn:hover:not(:disabled) { background: var(--bg-2); color: var(--text-0); border-color: var(--border-light); }
+.chat-head-btn:disabled { opacity: 0.4; cursor: default; }

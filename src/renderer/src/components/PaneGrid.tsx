@@ -17,6 +17,7 @@ import {
 import type { SessionPaneApi } from '../hooks/useSessionPane'
 import { setChatDragImage } from '../lib/drag-ghost'
 import { chatDisplayName } from '../lib/chat-name'
+import type { PaneHead } from '../lib/pane-head'
 import './PaneGrid.css'
 
 /**
@@ -277,8 +278,8 @@ export default function PaneGrid({
     })
   }
 
-  // One pane is the app as it has always been: no per-pane chrome at all, so nothing shifts
-  // by a pixel for someone who never splits. Neither the header nor the focus ring means
+  // Every pane has a header (ChatHead, drawn by Chat), split or not. What only a split adds
+  // to it is the drag handle and the pane close, plus the focus ring: none of those means
   // anything until there are two panes and "which one am I looking at" becomes a question.
   const showHeads = panes.length > 1
 
@@ -364,6 +365,36 @@ export default function PaneGrid({
                   ? { kind: over.kind, label: dropLabel(over.kind, t, moving) }
                   : null
           const box = zone ? highlightRect(zone.kind) : null
+          const head: PaneHead | undefined = showHeads
+            ? {
+                name,
+                dragProps: {
+                  /* The header is the handle that moves the pane: drop it on another pane's
+                     edge to put it there, or on its centre to swap the two. It carries the
+                     same session type as a sidebar drag plus PANE_DRAG_TYPE, so the grid's
+                     zones and drop path serve both, and planDrop tells them apart. */
+                  draggable: true,
+                  onDragStart: (e) => {
+                    e.dataTransfer.setData(SESSION_DRAG_TYPE, pane.sessionId)
+                    e.dataTransfer.setData(PANE_DRAG_TYPE, '1')
+                    e.dataTransfer.effectAllowed = 'move'
+                    setChatDragImage(e, name, t)
+                    setMovingPane(pane.sessionId)
+                    onPaneDrag(pane.sessionId)
+                  },
+                  onDragEnd: () => {
+                    setMovingPane(null)
+                    onPaneDrag(null)
+                    resetDrag()
+                  },
+                  title: t('chat.pane.drag')
+                },
+                /* Removes the pane, nothing else: the CLI keeps running and the chat keeps
+                   existing. Ending a terminal is the ⋯ menu's "Close terminal", which is a
+                   different and deliberately more destructive thing. */
+                onClosePane: () => onClose(pane.sessionId)
+              }
+            : undefined
           return (
             /* Keyed by sessionId, and placed by explicit grid lines rather than by document
                order, so a pane inserted in the middle is reconciled into its new slot instead
@@ -422,51 +453,7 @@ export default function PaneGrid({
                 )
               }}
             >
-              {showHeads && (
-                <div
-                  className="pane-head"
-                  /* The header is the handle that moves the pane: drop it on another pane's
-                     edge to put it there, or on its centre to swap the two. It carries the
-                     same session type as a sidebar drag plus PANE_DRAG_TYPE, so the grid's
-                     zones and drop path serve both, and planDrop tells them apart. */
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData(SESSION_DRAG_TYPE, pane.sessionId)
-                    e.dataTransfer.setData(PANE_DRAG_TYPE, '1')
-                    e.dataTransfer.effectAllowed = 'move'
-                    setChatDragImage(e, name, t)
-                    setMovingPane(pane.sessionId)
-                    onPaneDrag(pane.sessionId)
-                  }}
-                  onDragEnd={() => {
-                    setMovingPane(null)
-                    onPaneDrag(null)
-                    resetDrag()
-                  }}
-                  title={t('chat.pane.drag')}
-                >
-                  <span className="pane-head-name" title={name}>
-                    {name}
-                  </span>
-                  <button
-                    className="pane-head-close"
-                    /* Removes the pane, nothing else: the CLI keeps running and the chat keeps
-                       existing. Ending a terminal is the close button inside Chat, which is a
-                       different and deliberately more destructive thing. */
-                    onClick={() => onClose(pane.sessionId)}
-                    title={t('chat.pane.close')}
-                    aria-label={t('chat.pane.closeAria', { name })}
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                      <path d="M6 6l12 12M18 6L6 18" />
-                    </svg>
-                  </button>
-                </div>
-              )}
-              {/* `showHeads` is exactly "more than one pane on screen" — the same condition
-                  that draws `.pane-head` below, so the two never disagree about whether the
-                  name is already on screen once. */}
-              <ChatPane sessionId={pane.sessionId} api={api} titleInHeader={showHeads} />
+              <ChatPane sessionId={pane.sessionId} api={api} head={head} />
               {zone && box && (
                 /* `pointer-events: none` is load-bearing: the overlay sits over the pane it is
                    describing, and a hit-testable overlay would steal the very `dragover` that

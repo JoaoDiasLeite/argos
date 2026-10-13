@@ -6,6 +6,8 @@
   background: var(--bg-1);
 }
 
+/* The bar, label, buttons and text-size controls below are RemoteTerminal's now:
+   ChatTerminal's header is ChatHead. They stay here because RemoteTerminal imports it. */
 .chat-terminal-bar {
   display: flex;
   align-items: center;
@@ -26,25 +28,13 @@
   color: var(--text-1);
 }
 
-/* The folder the CLI started in: it only labels, so a 3 px chip in mono. */
-.chat-terminal-cwd {
-  font-family: var(--font-mono);
-  font-weight: 400;
-  font-size: 11px;
-  color: var(--text-2);
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-}
-
 .chat-terminal-actions {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-/* Icon-only 24 px buttons (text size, close): quiet until hovered. */
+/* Icon-only 24 px buttons in RemoteTerminal's bar: quiet until hovered. */
 .chat-terminal-btn {
   display: inline-flex;
   align-items: center;

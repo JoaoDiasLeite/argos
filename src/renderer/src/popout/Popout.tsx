@@ -3,6 +3,7 @@ import ChatTerminal from '../components/ChatTerminal'
 import { applyTheme, zoomFor } from '../lib/theme'
 import type { ChatPopoutSpec } from '../types'
 import { useT } from '../i18n'
+import { chatDisplayName } from '../lib/chat-name'
 
 /**
  * A chat popped out of the main window (src/main/chat-popout.ts): its terminal alone,
@@ -45,6 +46,8 @@ export default function Popout() {
       <div className="popout-term">
         <ChatTerminal
           terminalId={spec.terminalId}
+          // The raw stored name: an unnamed chat carries the untranslated sentinel.
+          title={chatDisplayName(spec.name, t)}
           cwd={spec.cwd}
           accountId={spec.accountId}
           provider={spec.provider}

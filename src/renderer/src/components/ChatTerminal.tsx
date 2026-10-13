@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState, type HTMLAttributes } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -15,6 +15,8 @@ import { registerTerminalLinks } from '../lib/terminal-links'
 import { terminalPathsText } from '../lib/terminal-file-paths'
 import { isTerminalReport } from '../lib/terminal-reports'
 import type { OpsTerminalLaunch } from '../lib/ops-terminal'
+import ChatHead from './ChatHead'
+import Menu, { type MenuItem } from './Menu'
 import './ChatTerminal.css'
 
 interface Props {
@@ -51,7 +53,14 @@ interface Props {
    *  to close back to, so a close button would only strand the user. */
   closable?: boolean
   onClose?: () => void
-  /** Shows a button that opens this chat in its own window (see src/main/chat-popout.ts). */
+  /** The header's name — the chat's, wherever there is one. Falls back to "Terminal". */
+  title?: string
+  /** Spread on the header: a split pane makes it the handle that drags the pane. */
+  headProps?: HTMLAttributes<HTMLDivElement>
+  /** Given only in a split: the header's × then closes the pane (the CLI keeps running),
+   *  and closing the terminal itself moves into the ⋯ menu. */
+  onClosePane?: () => void
+  /** Shows a menu item that opens this chat in its own window (see src/main/chat-popout.ts). */
   onPopOut?: () => void
   /** The inverse, shown inside a pop-out window: hand the chat back to the main window's
    *  panes. Closing the window does the same; this is the discoverable way. */
@@ -148,7 +157,7 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onPopOut, onPopIn, onActive, initialPrompt, onInitialPromptSent, accelerated, ops, onCwdChange }: Props) {
+export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onClosePane, title, headProps, onPopOut, onPopIn, onActive, initialPrompt, onInitialPromptSent, accelerated, ops, onCwdChange }: Props) {
   const t = useT()
   // Read from the one-shot setup effect, which cannot close over a prop.
   const onCwdRef = useRef(onCwdChange)
@@ -856,74 +865,120 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
 
   const providerLabel = provider === 'codex' ? 'Codex' : provider === 'gemini' ? 'Antigravity' : 'Claude'
 
+  const restart = () => {
+    // Immediate, not deferred: Restart must force a genuinely fresh pty, not
+    // reuse the live one.
+    window.electronAPI.terminalKill(terminalId)
+    setReloadKey((k) => k + 1)
+  }
+
+  const textSizeGroup = t('chat.terminal.textSize', { size: fontSize })
+  const menuItems: MenuItem[] = [
+    {
+      label: t('chat.terminal.restart'),
+      icon: (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" />
+        </svg>
+      ),
+      onClick: restart
+    },
+    {
+      label: t('chat.terminal.smaller'),
+      group: textSizeGroup,
+      icon: (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      ),
+      disabled: fontSize <= MIN_FONT_SIZE,
+      onClick: () => setFontSize((s) => Math.max(MIN_FONT_SIZE, s - 1))
+    },
+    {
+      label: t('chat.terminal.larger'),
+      group: textSizeGroup,
+      icon: (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      ),
+      disabled: fontSize >= MAX_FONT_SIZE,
+      onClick: () => setFontSize((s) => Math.min(MAX_FONT_SIZE, s + 1))
+    },
+    ...(onPopOut
+      ? [{
+          label: t('chat.terminal.popOut'),
+          icon: (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M14 4h6v6M20 4l-9 9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
+            </svg>
+          ),
+          onClick: onPopOut
+        }]
+      : []),
+    ...(onPopIn
+      ? [{
+          label: t('chat.terminal.popIn'),
+          icon: (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M20 10h-6V4M14 10l9-9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
+            </svg>
+          ),
+          onClick: onPopIn
+        }]
+      : []),
+    // In a split the header's × closes the pane, which leaves the CLI running; ending the
+    // terminal is the more destructive act, so it moves in here rather than vanishing.
+    ...(onClosePane && closable && onClose
+      ? [{
+          label: t('chat.terminal.close'),
+          icon: <CloseIcon />,
+          danger: true,
+          onClick: onClose
+        }]
+      : [])
+  ]
+
+  // One × per header: a pane close when the pane grid asked for one, otherwise the
+  // terminal's own close where the host lets it be closed at all.
+  const closeButton = onClosePane ? (
+    <button
+      className="chat-head-btn"
+      onClick={onClosePane}
+      title={t('chat.pane.close')}
+      aria-label={t('chat.pane.closeAria', { name: title ?? t('chat.terminal.label') })}
+    >
+      <CloseIcon />
+    </button>
+  ) : closable ? (
+    <button className="chat-head-btn" onClick={onClose} title={t('chat.terminal.close')} aria-label={t('chat.terminal.close')}>
+      <CloseIcon />
+    </button>
+  ) : null
+
   return (
     <div className="chat-terminal">
-      <div className="chat-terminal-bar">
-        <span className="chat-terminal-label">
-          {t('chat.terminal.label')}
-          {cwd && <span className="chat-terminal-cwd" title={cwd}>{cwd.split(/[\\/]/).filter(Boolean).pop()}</span>}
-        </span>
-        <div className="chat-terminal-actions">
-          <div className="chat-terminal-fontsize">
-            <button
-              className="chat-terminal-btn"
-              onClick={() => setFontSize((s) => Math.max(MIN_FONT_SIZE, s - 1))}
-              title={t('chat.terminal.smaller')}
-              aria-label={t('chat.terminal.smaller')}
-              disabled={fontSize <= MIN_FONT_SIZE}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </button>
-            <span className="chat-terminal-fontsize-value">{fontSize}</span>
-            <button
-              className="chat-terminal-btn"
-              onClick={() => setFontSize((s) => Math.min(MAX_FONT_SIZE, s + 1))}
-              title={t('chat.terminal.larger')}
-              aria-label={t('chat.terminal.larger')}
-              disabled={fontSize >= MAX_FONT_SIZE}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </button>
-          </div>
-          {onPopOut && (
-            <button className="chat-terminal-btn" onClick={onPopOut} title={t('chat.terminal.popOut')} aria-label={t('chat.terminal.popOut')}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M14 4h6v6M20 4l-9 9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
-              </svg>
-            </button>
-          )}
-          {onPopIn && (
-            <button className="chat-terminal-btn" onClick={onPopIn} title={t('chat.terminal.popIn')} aria-label={t('chat.terminal.popIn')}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M20 10h-6V4M14 10l9-9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
-              </svg>
-            </button>
-          )}
-          <button
-            className="btn-ghost small"
-            onClick={() => {
-              // Immediate, not deferred: Restart must force a genuinely fresh pty, not
-              // reuse the live one.
-              window.electronAPI.terminalKill(terminalId)
-              setReloadKey((k) => k + 1)
-            }}
-            title={t('chat.terminal.restartTitle')}
-          >
-            {t('chat.terminal.restart')}
-          </button>
-          {closable && (
-            <button className="chat-terminal-btn" onClick={onClose} title={t('chat.terminal.close')} aria-label={t('chat.terminal.close')}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          )}
-        </div>
-      </div>
+      <ChatHead
+        title={title ?? t('chat.terminal.label')}
+        cwd={cwd}
+        dragProps={headProps}
+        actions={
+          <>
+            <Menu
+              triggerClass="chat-head-btn"
+              triggerContent={
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
+                </svg>
+              }
+              triggerTitle={t('chat.terminal.menu')}
+              ariaLabel={t('chat.terminal.menu')}
+              items={menuItems}
+            />
+            {closeButton}
+          </>
+        }
+      />
       <div className="chat-terminal-host-wrap">
         <div ref={hostRef} className="chat-terminal-host" />
         {starting && !exited && (
@@ -956,5 +1011,13 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         )}
       </div>
     </div>
+  )
+}
+
+function CloseIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
   )
 }
