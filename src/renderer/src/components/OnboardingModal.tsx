@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AuthStatus, AuthMode } from '../types'
 import { useModalA11y } from '../hooks/useModalA11y'
 import { useT } from '../i18n'
+import ArgosMark from './ArgosMark'
 import './OnboardingModal.css'
 
 interface Props {
@@ -58,10 +59,7 @@ export default function OnboardingModal({ onFinish }: Props) {
         {step === 0 && (
           <div className="ob-step ob-welcome">
             <div className="ob-logo">
-              <svg width="56" height="56" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" stroke="var(--accent)" strokeWidth="1.4" />
-                <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" />
-              </svg>
+              <ArgosMark size={56} style={{ color: 'var(--accent)' }} />
             </div>
             <h2 id="onboarding-modal-title">{t('onboarding.welcome.title')}</h2>
             <p>{t('onboarding.welcome.body')}</p>

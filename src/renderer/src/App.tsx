@@ -17,6 +17,7 @@ import {
 } from './types'
 import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
+import ArgosMark from './components/ArgosMark'
 import ResizeHandles from './components/ResizeHandles'
 import PaneGrid from './components/PaneGrid'
 import { SessionPaneApi } from './hooks/useSessionPane'
@@ -2696,10 +2697,7 @@ export default function App() {
                   if (id) openInFocused(id)
                 }}
               >
-                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <circle cx="12" cy="12" r="10" stroke="var(--accent)" strokeWidth="1.5" />
-                  <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
+                <ArgosMark size={44} style={{ color: 'var(--accent)' }} />
                 <h2>{t('app.welcome.title')}</h2>
                 <p>{t('app.welcome.body')}</p>
                 <div className="welcome-actions">
