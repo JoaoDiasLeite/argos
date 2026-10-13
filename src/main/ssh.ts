@@ -126,6 +126,12 @@ export function buildConnectConfig(h: SshHost): ConnectConfig {
     port: h.port || 22,
     username: h.username,
     readyTimeout: 120000,
+    // A session left idle (its tab in the background while you work in a chat) is what a
+    // VPN gateway or a NAT drops first, and the shell channels and every process under
+    // them go with it. ssh2 sends nothing on its own; this is `ServerAliveInterval 15` /
+    // `ServerAliveCountMax 4` for the ssh CLI — one minute of silence before giving up.
+    keepaliveInterval: 15000,
+    keepaliveCountMax: 4,
     hostVerifier: (key: Buffer, callback: (valid: boolean) => void) => {
       verifyHostKey(h.host, h.port || 22, key).then(callback, () => callback(false))
     }
