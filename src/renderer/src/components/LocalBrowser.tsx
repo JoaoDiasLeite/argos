@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { FileNode } from '../types'
 import { FbIcon } from './SftpBrowser'
 import { useT } from '../i18n'
@@ -8,6 +8,12 @@ interface Props {
   /** Directory being browsed, as a real Windows path (a WSL distro's UNC share,
    *  \\wsl.localhost\<distro>\…, for the WSL "Connect" view). Owned by the parent view. */
   dir: string
+  /** What opens the pane's bar, before the toolbar's icons: the session's Files / History
+   *  switch. The bar is the browser's so the icons and the switch share one 37 px line. */
+  barSlot?: ReactNode
+  /** The parent's editable path field, on its own line under the bar. Without it the
+   *  line just prints `dir`. */
+  pathSlot?: ReactNode
   onNavigate: (dir: string) => void
   onOpenFile: (entry: FileNode) => void
   /** "cd terminal here" — a one-way affordance, not a two-way sync with the terminal. */
@@ -18,12 +24,25 @@ function winJoin(dir: string, name: string): string {
   return dir.endsWith('\\') ? `${dir}${name}` : `${dir}\\${name}`
 }
 
+/** The folder above `dir`, or null at a root: a drive (`C:\`) or a UNC share
+ *  (`\\wsl.localhost\<distro>`), which has nothing listable above it. */
+export function winParent(dir: string): string | null {
+  const clean = dir.replace(/\\+$/, '')
+  const i = clean.lastIndexOf('\\')
+  if (i <= 0) return null
+  const parent = clean.slice(0, i)
+  if (/^\\\\[^\\]*$/.test(parent)) return null
+  if (/^[A-Za-z]:$/.test(parent)) return `${parent}\\`
+  return parent
+}
+
 /** Local/WSL-share file browser used by the WSL "Connect" session view — mirrors
  *  SftpBrowser's toolbar/actions (refresh, new folder, open→edit, rename, delete) over
  *  the local-fs IPC instead of SFTP. Upload/download are omitted for v1 (see plan notes) —
  *  a WSL share is already a plain Windows folder, reachable from Explorer directly. */
-export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal }: Props) {
+export default function LocalBrowser({ dir, barSlot, pathSlot, onNavigate, onOpenFile, onCdTerminal }: Props) {
   const t = useT()
+  const parent = winParent(dir)
   const [entries, setEntries] = useState<FileNode[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -129,12 +148,24 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
   return (
     <div className="fb">
       <div className="fb-toolbar">
-        <button type="button" className="btn-ghost small fb-icon-btn" onClick={load} title={t('remote.sftp.refresh')} aria-label={t('remote.sftp.refresh')} disabled={loading}>
+        {barSlot}
+        <span className="fb-toolbar-spacer" />
+        <button
+          type="button"
+          className="fb-icon-btn"
+          onClick={() => parent && onNavigate(parent)}
+          title={t('remote.sftp.up')}
+          aria-label={t('remote.sftp.up')}
+          disabled={!parent}
+        >
+          <FbIcon.up />
+        </button>
+        <button type="button" className="fb-icon-btn" onClick={load} title={t('remote.sftp.refresh')} aria-label={t('remote.sftp.refresh')} disabled={loading}>
           <FbIcon.refresh />
         </button>
         <button
           type="button"
-          className="btn-ghost small fb-icon-btn"
+          className="fb-icon-btn"
           onClick={() => {
             setCreatingFolder(true)
             setCreatingFile(false)
@@ -146,7 +177,7 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
         </button>
         <button
           type="button"
-          className="btn-ghost small fb-icon-btn"
+          className="fb-icon-btn"
           onClick={() => {
             setCreatingFile(true)
             setCreatingFolder(false)
@@ -156,8 +187,8 @@ export default function LocalBrowser({ dir, onNavigate, onOpenFile, onCdTerminal
         >
           <FbIcon.newFile />
         </button>
-        <span className="fb-path" title={dir}>{dir}</span>
       </div>
+      <div className="fb-pathrow">{pathSlot ?? <span className="fb-path" title={dir}>{dir}</span>}</div>
 
       {creatingFolder && (
         <div className="fb-form">

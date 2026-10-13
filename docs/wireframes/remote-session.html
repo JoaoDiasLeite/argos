@@ -1,0 +1,280 @@
+<title>Remote Session Wireframes</title>
+<style>
+/* Layout: one review page; each wireframe is a fixed 1400x860 frame scaled to fit the reader's width.
+   Tokens are copied from src/renderer/src/styles/global.css (Warm Rust, dark first) so the frames show the real
+   palette. `--r` is the button radius under review: the picker at the top sets it on every frame at once. */
+:root{
+  --bg-0:#141312;--bg-1:#1c1b19;--bg-2:#252320;--bg-3:#302d29;--bg-hover:#3a3530;--border:#302c28;--border-light:#48423a;
+  --text-0:#efece8;--text-1:#b3ada4;--text-2:#7c766e;--accent:#df7a52;--success:#5cb37e;--warn:#d9a83c;--error:#e36460;
+  --term:#17140f;--term-fg:#e8e2d6;
+  --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;--font-mono:Menlo,Monaco,Consolas,"Courier New",monospace;
+  --r:8px;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --bg-0:#f7f5f1;--bg-1:#f1eee7;--bg-2:#eae6de;--bg-3:#e2ddd3;--bg-hover:#dcd6cb;--border:#e0dad0;--border-light:#cec7ba;
+  --text-0:#2a2622;--text-1:#5d574f;--text-2:#8a847a;--accent:#bd5d44;--success:#3a9c63;--warn:#a8720f;--error:#cf3b3b;color-scheme:light}}
+:root[data-theme="light"]{
+  --bg-0:#f7f5f1;--bg-1:#f1eee7;--bg-2:#eae6de;--bg-3:#e2ddd3;--bg-hover:#dcd6cb;--border:#e0dad0;--border-light:#cec7ba;
+  --text-0:#2a2622;--text-1:#5d574f;--text-2:#8a847a;--accent:#bd5d44;--success:#3a9c63;--warn:#a8720f;--error:#cf3b3b;color-scheme:light}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg-0);color:var(--text-0);font-family:var(--font-sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1480px;margin:0 auto;padding-block:32px 64px;padding-inline:16px}
+h1{font-size:26px;font-weight:650;letter-spacing:-.01em;margin:0 0 6px;text-wrap:balance}
+h2{font-size:20px;font-weight:650;letter-spacing:-.01em;margin:48px 0 4px;padding-top:24px;border-top:1px solid var(--border);text-wrap:balance}
+h3{font-size:15px;font-weight:650;margin:28px 0 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+p{max-width:72ch;color:var(--text-1);margin:0 0 10px}
+code{font-family:var(--font-mono);font-size:12.5px;color:var(--text-0)}
+.rec{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--bg-0);background:var(--accent);padding:2px 7px;border-radius:3px}
+.alt{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-2);border:1px solid var(--border-light);padding:1px 7px;border-radius:3px}
+.note{font-size:12.5px;color:var(--text-2);max-width:80ch;margin:8px 0 0}
+.note b{color:var(--text-1);font-weight:600}
+.toolbar{display:flex;gap:8px;align-items:center;margin:16px 0 0;flex-wrap:wrap}
+.toolbar .lbl{font-size:12px;color:var(--text-2);margin-right:2px}
+.toolbar .sep{width:1px;height:20px;background:var(--border);margin:0 6px}
+.toolbar button{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--border-light);background:transparent;color:var(--text-1);font:inherit;font-size:12.5px;cursor:pointer}
+.toolbar button[aria-pressed="true"]{background:var(--bg-2);color:var(--text-0)}
+.toolbar button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.legend{display:flex;flex-wrap:wrap;gap:10px 22px;margin:14px 0 0;font-size:12.5px;color:var(--text-1)}
+.legend span{display:inline-flex;align-items:center;gap:8px}
+
+/* frame scaler */
+.fw{width:100%;overflow:hidden;border:1px solid var(--border);border-radius:4px;background:var(--bg-0)}
+.fw.real{overflow-x:auto}
+.fs{transform-origin:0 0;width:1400px}
+@media (prefers-reduced-motion: no-preference){.fs{transition:transform .15s}}
+
+/* ───────── wireframe primitives (the system itself, radius from --r) ───────── */
+.frame{position:relative;width:1400px;height:860px;background:var(--bg-0);color:var(--text-0);display:flex;overflow:hidden;font-size:13px;line-height:1.5}
+.frame *{min-width:0}
+.rail{width:68px;flex:none;background:var(--bg-1);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:2px}
+.rail i{display:flex;flex-direction:column;align-items:center;gap:3px;width:52px;padding:8px 0;border-radius:var(--r);font-size:10px;color:var(--text-2);font-style:normal}
+.rail i.on{background:var(--bg-2);color:var(--accent)}
+.rail .sp{flex:1}
+.i{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.i.lg{width:16px;height:16px}
+.i.xs{width:12px;height:12px}
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.page{flex:1;display:flex;min-height:0}
+.grow{flex:1}
+.sub{font-size:12px;color:var(--text-2)}
+.muted{color:var(--text-2)}
+.mono{font-family:var(--font-mono);font-size:12.5px}
+.mono.s{font-size:12px}
+.btn{height:32px;padding:0 12px;border-radius:var(--r);border:1px solid var(--border-light);background:transparent;color:var(--text-1);font-size:12.5px;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;flex:none}
+.btn.sm{height:28px;padding:0 10px;font-size:12px}
+.btn.ic{width:32px;padding:0}
+.btn.ic.sm{width:28px}
+.btn.off{opacity:.45}
+/* icon button without a border: the bar-of-the-terminal pattern (.chat-terminal-btn, .fb-row-btn) */
+.ib{width:28px;height:28px;border-radius:var(--r);border:1px solid transparent;display:inline-flex;align-items:center;justify-content:center;color:var(--text-1);flex:none}
+.ib.xs{width:24px;height:24px}
+.ib.hov{background:var(--bg-2);color:var(--text-0);border-color:var(--border-light)}
+.ib.off{opacity:.45}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:var(--r);padding:2px;gap:2px;flex:none;background:var(--bg-0)}
+.seg span{padding:4px 10px;border-radius:calc(var(--r) - 2px);font-size:12px;color:var(--text-2);white-space:nowrap;display:inline-flex;gap:6px;align-items:center}
+.seg span.on{background:var(--bg-2);color:var(--text-0);font-weight:600}
+.input{height:28px;border-radius:4px;background:var(--bg-1);border:1px solid var(--border);padding:0 12px;display:flex;align-items:center;gap:8px;color:var(--text-0);font-size:12.5px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--text-2);flex:none}
+.dot.ok{background:var(--success)}.dot.e{background:var(--error)}
+.row{display:flex;align-items:center;gap:10px;min-height:32px;padding:4px 8px;border-radius:4px;color:var(--text-1)}
+.row.hov{background:var(--bg-1)}
+.row .n{color:var(--text-0);font-family:var(--font-mono);font-size:12px}
+.row .r{margin-left:auto;display:flex;align-items:center;gap:2px;flex:none}
+.row .r.meta{font-size:11.5px;color:var(--text-2);font-variant-numeric:tabular-nums}
+.tabs{display:flex;align-items:center;gap:6px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg-1)}
+.tab{height:28px;padding:0 6px 0 10px;border-radius:var(--r);border:1px solid transparent;display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--text-1)}
+.tab.on{background:var(--bg-2);color:var(--text-0)}
+.head{display:flex;align-items:center;gap:10px;height:44px;padding:0 14px;border-bottom:1px solid var(--border)}
+.head .name{font-size:15px;font-weight:650;letter-spacing:-.01em}
+.left{width:440px;flex:none;border-right:1px solid var(--border);display:flex;flex-direction:column}
+.right{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg-1)}
+.bar{height:37px;display:flex;align-items:center;gap:6px;padding:0 8px 0 12px;border-bottom:1px solid var(--border);background:var(--bg-0);flex:none}
+.bar .t{font-size:12px;font-weight:600;color:var(--text-1)}
+.bar .fs-v{font-family:var(--font-mono);font-size:12px;color:var(--text-1);min-width:2em;text-align:center}
+.fbt{display:flex;align-items:center;gap:4px;padding:8px 12px 4px}
+.list{display:flex;flex-direction:column;gap:2px;margin:4px 8px 12px;padding:0 4px}
+.term{flex:1;background:var(--term);color:var(--term-fg);padding:8px 10px;font-family:var(--font-mono);font-size:13px;line-height:1.5;white-space:pre}
+.term .g{color:#8fd18f}.term .b{color:#7eb6e0}
+.cur{display:inline-block;width:8px;height:15px;background:var(--term-fg);vertical-align:-2px}
+.err{margin:12px 12px 0;padding:12px 14px;border-radius:4px;border:1px solid color-mix(in srgb,var(--error) 45%,transparent);background:color-mix(in srgb,var(--error) 6%,var(--bg-2));display:flex;flex-direction:column;gap:8px}
+.err .et{font-size:12.5px;font-weight:650;color:var(--error)}
+
+/* radius samples */
+.samples{display:flex;gap:28px;flex-wrap:wrap;margin:16px 0 0}
+.sample{display:flex;flex-direction:column;gap:10px;padding:14px 16px;border:1px solid var(--border);border-radius:4px;background:var(--bg-1);min-width:0}
+.sample .cap{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-2);font-weight:600}
+.sample .ctrls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sample.r8{--r:8px}.sample.r6{--r:6px}.sample.r4{--r:4px}
+</style>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="chevl" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v10H3z"/></symbol>
+  <symbol id="chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+  <symbol id="folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z"/></symbol>
+  <symbol id="newfolder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3zM12 11v5M9.5 13.5h5"/></symbol>
+  <symbol id="newfile" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM12 11v6M9 14h6"/></symbol>
+  <symbol id="cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+  <symbol id="bars" viewBox="0 0 24 24"><path d="M5 20V10M12 20V4M19 20v-7"/></symbol>
+  <symbol id="srv" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/></symbol>
+  <symbol id="gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></symbol>
+  <symbol id="pen" viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/></symbol>
+  <symbol id="trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-3-6.2M20 4v5h-5"/></symbol>
+  <symbol id="up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+  <symbol id="file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/></symbol>
+  <symbol id="term" viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8"/></symbol>
+</svg>
+
+<div class="wrap">
+<h1>Sessão remota: o que ainda parece redondo</h1>
+<p>O ecrã já usa os tokens do <code>SYSTEM-DESIGN.md</code> (botões 8 px, superfícies 4 px), os mesmos da lista <i>Remote &amp; WSL</i> e dos wireframes das intervenções. O que fica redondo demais são os quatro botões de ícone da toolbar: 8 px num quadrado de 28 px é quase um círculo, e quatro seguidos parecem bolhas. Abaixo, a mesma sessão (Ubuntu-DevOps, home do <code>jdl</code>) em duas versões da toolbar, e um selector para ver o raio dos botões em toda a app a 8, 6 ou 4 px.</p>
+<div class="toolbar">
+  <button type="button" id="fit" aria-pressed="true">Ajustar à largura</button>
+  <button type="button" id="real" aria-pressed="false">Tamanho real (1400 px)</button>
+  <button type="button" id="theme">Alternar tema</button>
+  <span class="sep"></span>
+  <span class="lbl">Raio dos botões</span>
+  <button type="button" class="rad" data-r="8" aria-pressed="true">8 px · regra atual</button>
+  <button type="button" class="rad" data-r="6" aria-pressed="false">6 px</button>
+  <button type="button" class="rad" data-r="4" aria-pressed="false">4 px · igual às superfícies</button>
+</div>
+<div class="legend">
+  <span><i class="dot ok"></i> ligado</span>
+  <span><i class="btn sm" style="height:22px">botão 8 px</i> carrega-se</span>
+  <span><i class="input" style="height:22px;font-size:11px">input 4 px</i> superfície</span>
+</div>
+
+<!-- ═══════════════════════ A ═══════════════════════ -->
+<h3 id="a">A · Toolbar com borda (o que está hoje em main) <span class="alt">Referência</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i class="on"><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="main">
+    <div class="tabs"><span class="tab on"><i class="dot ok"></i>Ubuntu-DevOps<svg class="i xs muted"><use href="#x"/></svg></span></div>
+    <div class="head"><svg class="i lg muted"><use href="#chevl"/></svg><i class="dot ok"></i><span class="name">Ubuntu-DevOps</span><span class="mono s muted">wsl -d Ubuntu-DevOps</span></div>
+    <div class="page">
+      <div class="left">
+        <div class="bar"><span class="seg"><span class="on">Files</span><span>History</span></span></div>
+        <div class="fbt">
+          <span class="btn sm ic"><svg class="i"><use href="#up"/></svg></span><span class="btn sm ic"><svg class="i"><use href="#refresh"/></svg></span><span class="btn sm ic"><svg class="i"><use href="#newfolder"/></svg></span><span class="btn sm ic"><svg class="i"><use href="#newfile"/></svg></span>
+          <span class="input mono" style="flex:1;margin-left:6px">/home/jdl</span>
+        </div>
+        <div class="list">
+          <div class="row"><svg class="i muted"><use href="#folder"/></svg><span class="n">backup</span></div>
+          <div class="row"><svg class="i muted"><use href="#folder"/></svg><span class="n">data</span></div>
+          <div class="row hov"><svg class="i muted"><use href="#folder"/></svg><span class="n">dev</span><span class="r"><span class="ib xs"><svg class="i"><use href="#term"/></svg></span><span class="ib xs"><svg class="i"><use href="#pen"/></svg></span><span class="ib xs"><svg class="i"><use href="#trash"/></svg></span></span></div>
+          <div class="row"><svg class="i muted"><use href="#folder"/></svg><span class="n">scripts</span></div>
+          <div class="row"><svg class="i muted"><use href="#folder"/></svg><span class="n">secops</span></div>
+          <div class="row"><svg class="i muted"><use href="#folder"/></svg><span class="n">snap</span></div>
+          <div class="row"><svg class="i muted"><use href="#file"/></svg><span class="n">chat.code-workspace</span></div>
+          <div class="row"><svg class="i muted"><use href="#file"/></svg><span class="n">open_code.sh</span></div>
+          <div class="row"><svg class="i muted"><use href="#file"/></svg><span class="n">rvm.sh</span></div>
+          <div class="row"><svg class="i muted"><use href="#file"/></svg><span class="n">setup.sh</span></div>
+          <div class="row"><svg class="i muted"><use href="#file"/></svg><span class="n">wmproject_production.sql</span></div>
+        </div>
+      </div>
+      <div class="right">
+        <div class="bar"><span class="t">Terminal</span><span class="grow"></span><span class="ib xs"><svg class="i xs"><use href="#minus"/></svg></span><span class="fs-v">13</span><span class="ib xs"><svg class="i xs"><use href="#plus"/></svg></span><span class="btn sm">Restart</span></div>
+        <div class="term">Agent pid 992142
+Identity added: /home/jdl/.ssh/id_ed25519 (joao.leite@wiremaze.com)
+<span class="g">jdl@wm-devops</span>:<span class="b">~</span>$ cd dev/wm-project
+<span class="g">jdl@wm-devops</span>:<span class="b">~/dev/wm-project</span>$ <span class="cur"></span></div>
+      </div>
+    </div>
+  </div>
+</div></div></div>
+<p class="note"><b>O que vês:</b> quatro botões de 28 px com borda, lado a lado. Com o raio a 8 px lêem-se como pastilhas; muda o raio lá em cima para ver a diferença.</p>
+
+<!-- ═══════════════════════ B ═══════════════════════ -->
+<h3 id="b">B · Toolbar sem borda, como a barra do terminal <span class="rec">Proposta</span></h3>
+<div class="fw"><div class="fs"><div class="frame">
+  <div class="rail"><i><svg class="i lg"><use href="#home"/></svg>Home</i><i><svg class="i lg"><use href="#chat"/></svg>Chat</i><i><svg class="i lg"><use href="#folder"/></svg>Projects</i><i><svg class="i lg"><use href="#cal"/></svg>Planner</i><i><svg class="i lg"><use href="#bars"/></svg>Usage</i><i class="on"><svg class="i lg"><use href="#srv"/></svg>Servers</i><span class="sp"></span><i><svg class="i lg"><use href="#gear"/></svg>Settings</i></div>
+  <div class="main">
+    <div class="tabs"><span class="tab on"><i class="dot ok"></i>Ubuntu-DevOps<svg class="i xs muted"><use href="#x"/></svg></span></div>
+    <div class="head"><svg class="i lg muted"><use href="#chevl"/></svg><i class="dot ok"></i><span class="name">Ubuntu-DevOps</span><span class="mono s muted">wsl -d Ubuntu-DevOps</span></div>
+    <div class="page">
+      <div class="left">
+        <div class="bar"><span class="seg"><span class="on">Files</span><span>History</span></span><span class="grow"></span><span class="ib"><svg class="i"><use href="#up"/></svg></span><span class="ib"><svg class="i"><use href="#refresh"/></svg></span><span class="ib hov"><svg class="i"><use href="#newfolder"/></svg></span><span class="ib"><svg class="i"><use href="#newfile"/></svg></span></div>
+        <div class="fbt" style="padding:8px 12px 4px">
+          <span class="input mono" style="flex:1">/home/jdl/dev/wm-project</span>
+        </div>
+        <div class="list">
+          <div class="row"><svg class="i muted"><use href="#folder"/></svg><span class="n">app</span></div>
+          <div class="row"><svg class="i muted"><use href="#folder"/></svg><span class="n">bin</span></div>
+          <div class="row hov"><svg class="i muted"><use href="#folder"/></svg><span class="n">config</span><span class="r"><span class="ib xs"><svg class="i"><use href="#term"/></svg></span><span class="ib xs"><svg class="i"><use href="#pen"/></svg></span><span class="ib xs"><svg class="i"><use href="#trash"/></svg></span></span></div>
+          <div class="row"><svg class="i muted"><use href="#folder"/></svg><span class="n">db</span></div>
+          <div class="row"><svg class="i muted"><use href="#folder"/></svg><span class="n">deploy</span></div>
+          <div class="row"><svg class="i muted"><use href="#folder"/></svg><span class="n">lib</span></div>
+          <div class="row"><svg class="i muted"><use href="#folder"/></svg><span class="n">public</span></div>
+          <div class="row"><svg class="i muted"><use href="#file"/></svg><span class="n">CHANGELOG.md</span></div>
+          <div class="row"><svg class="i muted"><use href="#file"/></svg><span class="n">CLAUDE.md</span></div>
+          <div class="row"><svg class="i muted"><use href="#file"/></svg><span class="n">Gemfile.lock</span></div>
+          <div class="row"><svg class="i muted"><use href="#file"/></svg><span class="n">config.ru</span></div>
+        </div>
+      </div>
+      <div class="right">
+        <div class="bar"><span class="t">Terminal</span><span class="grow"></span><span class="ib xs"><svg class="i xs"><use href="#minus"/></svg></span><span class="fs-v">13</span><span class="ib xs"><svg class="i xs"><use href="#plus"/></svg></span><span class="btn sm">Restart</span></div>
+        <div class="term">Agent pid 992142
+Identity added: /home/jdl/.ssh/id_ed25519 (joao.leite@wiremaze.com)
+<span class="g">jdl@wm-devops</span>:<span class="b">~</span>$ cd dev/wm-project
+<span class="g">jdl@wm-devops</span>:<span class="b">~/dev/wm-project</span>$ <span class="cur"></span></div>
+      </div>
+    </div>
+  </div>
+</div></div></div>
+<p class="note"><b>O que muda:</b> os quatro ícones sobem para a barra do painel, à direita do seletor Files / History, sem borda e com fundo só no hover (o mesmo padrão dos <code>− 13 +</code> na barra do terminal, do outro lado da divisória, e das ações de cada linha). As duas barras ficam à mesma altura com o mesmo conteúdo: um controlo à esquerda, ícones à direita. O caminho fica sozinho na linha seguinte, a toda a largura, e segue o <code>cd</code> da shell. <b>O que fica igual:</b> o raio de 8 px nos botões com texto (Restart, o seletor), onde funciona.</p>
+
+<!-- ═══════════════════════ raio ═══════════════════════ -->
+<h2 id="raio">O raio, lado a lado</h2>
+<p>Os mesmos controlos da sessão nas três hipóteses. A regra escrita é 8 px em tudo o que se carrega e 4 px nas superfícies; a 4 px o botão e o input ficam com a mesma forma, e a leitura "arredondado é clicável" perde-se. A 6 px mantém-se a distinção e perde-se o ar de pastilha.</p>
+<div class="samples">
+  <div class="sample r8"><span class="cap">8 px · regra atual</span>
+    <div class="ctrls"><span class="btn sm ic"><svg class="i"><use href="#up"/></svg></span><span class="btn sm ic"><svg class="i"><use href="#refresh"/></svg></span><span class="ib hov"><svg class="i"><use href="#newfolder"/></svg></span><span class="btn sm">Restart</span><span class="seg"><span class="on">Files</span><span>History</span></span></div>
+    <div class="ctrls"><span class="input mono" style="width:180px">/home/jdl</span><span class="tab on"><i class="dot ok"></i>Ubuntu-DevOps<svg class="i xs muted"><use href="#x"/></svg></span></div>
+  </div>
+  <div class="sample r6"><span class="cap">6 px</span>
+    <div class="ctrls"><span class="btn sm ic"><svg class="i"><use href="#up"/></svg></span><span class="btn sm ic"><svg class="i"><use href="#refresh"/></svg></span><span class="ib hov"><svg class="i"><use href="#newfolder"/></svg></span><span class="btn sm">Restart</span><span class="seg"><span class="on">Files</span><span>History</span></span></div>
+    <div class="ctrls"><span class="input mono" style="width:180px">/home/jdl</span><span class="tab on"><i class="dot ok"></i>Ubuntu-DevOps<svg class="i xs muted"><use href="#x"/></svg></span></div>
+  </div>
+  <div class="sample r4"><span class="cap">4 px · igual às superfícies</span>
+    <div class="ctrls"><span class="btn sm ic"><svg class="i"><use href="#up"/></svg></span><span class="btn sm ic"><svg class="i"><use href="#refresh"/></svg></span><span class="ib hov"><svg class="i"><use href="#newfolder"/></svg></span><span class="btn sm">Restart</span><span class="seg"><span class="on">Files</span><span>History</span></span></div>
+    <div class="ctrls"><span class="input mono" style="width:180px">/home/jdl</span><span class="tab on"><i class="dot ok"></i>Ubuntu-DevOps<svg class="i xs muted"><use href="#x"/></svg></span></div>
+  </div>
+</div>
+<p class="note" style="margin-top:14px"><b>Custo:</b> B é CSS e uma mudança de sítio dos quatro botões (<code>SftpBrowser</code>, <code>LocalBrowser</code>, <code>RemoteSessionView</code>). Mudar o raio é uma linha em <code>global.css</code> (<code>--radius</code>) e uma linha no <code>SYSTEM-DESIGN.md</code> §1, e muda todos os ecrãs de uma vez. As duas são independentes.</p>
+</div>
+
+<script>
+(function(){
+  var fit=true;
+  var fitBtn=document.getElementById('fit'),realBtn=document.getElementById('real'),themeBtn=document.getElementById('theme');
+  function layout(){
+    document.querySelectorAll('.fw').forEach(function(w){
+      var s=w.querySelector('.fs');
+      if(fit){var z=Math.min(1,w.clientWidth/1400);s.style.transform='scale('+z+')';w.style.height=Math.round(860*z)+'px';w.classList.remove('real');}
+      else{s.style.transform='none';w.style.height='862px';w.classList.add('real');}
+    });
+    fitBtn.setAttribute('aria-pressed',fit);realBtn.setAttribute('aria-pressed',!fit);
+  }
+  fitBtn.addEventListener('click',function(){fit=true;layout();});
+  realBtn.addEventListener('click',function(){fit=false;layout();});
+  themeBtn.addEventListener('click',function(){
+    var r=document.documentElement,cur=r.getAttribute('data-theme');
+    var dark=cur?cur==='dark':!window.matchMedia('(prefers-color-scheme: light)').matches;
+    r.setAttribute('data-theme',dark?'light':'dark');
+  });
+  var rads=document.querySelectorAll('.rad');
+  rads.forEach(function(b){b.addEventListener('click',function(){
+    document.documentElement.style.setProperty('--r',b.getAttribute('data-r')+'px');
+    rads.forEach(function(o){o.setAttribute('aria-pressed',o===b);});
+  });});
+  window.addEventListener('resize',layout);
+  layout();
+})();
+</script>

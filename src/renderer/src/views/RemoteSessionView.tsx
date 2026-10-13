@@ -112,18 +112,25 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
   // Connect on mount. SSH only — the connection is per-host, cached in main. WSL has
   // nothing to "connect": the terminal (ChatTerminal, wsl.exe) and the file browser
   // (LocalBrowser, over the distro's share) are ready as soon as the distro itself is.
+  // It still asks the distro for $HOME, so the browser opens where the shell does
+  // instead of on /home with a single folder in it.
   //
   // Note there's deliberately no disconnect in the cleanup: that ssh2 client is shared by
   // every session on the host, so tearing it down here would kill a sibling session's
   // terminal. App.tsx's closeServerSession drops it once the last one is gone.
   useEffect(() => {
+    let cancelled = false
     if (!isSsh) {
       setStatus('connected')
       setStatusError(null)
       setCwd('/home')
-      return
+      window.electronAPI.wslHome(target.distro).then((home) => {
+        if (!cancelled && home) setCwd(home)
+      })
+      return () => {
+        cancelled = true
+      }
     }
-    let cancelled = false
     const hostId = target.host.id
     setStatus('connecting')
     setStatusError(null)
@@ -208,6 +215,32 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     })
   }
 
+  // The pane's switch. On the files side it opens the browser's own bar (the browser
+  // takes it as a slot, so the switch and the toolbar icons share one line); on the
+  // history side the view draws the same bar around it.
+  const paneSwitch = (
+    <div className="seg-control remote-session-toggle">
+      <button type="button" className={panel === 'files' ? 'on' : ''} onClick={() => setPanel('files')}>{t('remote.session.files')}</button>
+      <button type="button" className={panel === 'history' ? 'on' : ''} onClick={openHistoryPanel}>{t('remote.session.history')}</button>
+    </div>
+  )
+
+  // The folder the browser is on, typed: its own line under the bar, full width.
+  const pathField = (
+    <input
+      className="text-input mono remote-session-path"
+      value={pathInput}
+      aria-label={t('remote.session.folder')}
+      onChange={(e) => setPathInput(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') navigatePath(pathInput)
+        if (e.key === 'Escape') setPathInput(cwd)
+      }}
+      onBlur={() => setPathInput(cwd)}
+      spellCheck={false}
+    />
+  )
+
   return (
     <div className="view remote-session-view">
       <div className="remote-session-header">
@@ -223,27 +256,12 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
             {isSsh ? `${target.host.username}@${target.host.host}` : `wsl -d ${target.distro}`}
           </span>
         </div>
-        <input
-          className="text-input mono remote-session-path"
-          value={pathInput}
-          aria-label={t('remote.session.folder')}
-          onChange={(e) => setPathInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') navigatePath(pathInput)
-            if (e.key === 'Escape') setPathInput(cwd)
-          }}
-          onBlur={() => setPathInput(cwd)}
-          spellCheck={false}
-        />
-        <div className="seg-control remote-session-toggle">
-          <button type="button" className={panel === 'files' ? 'on' : ''} onClick={() => setPanel('files')}>{t('remote.session.files')}</button>
-          <button type="button" className={panel === 'history' ? 'on' : ''} onClick={openHistoryPanel}>{t('remote.session.history')}</button>
-        </div>
         <span className="remote-session-spacer" />
       </div>
 
       <div className="remote-session-body">
         <div className="remote-session-left">
+          {panel === 'history' && <div className="remote-session-pane-bar">{paneSwitch}</div>}
           {/* The connection's failure lives in the pane it is about. The terminal rides the
               same SSH connection as the file browser (sftp.ts getRemoteClient), so when this
               fails neither has anything to show. */}
@@ -268,6 +286,8 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
               <SftpBrowser
                 hostId={target.host.id}
                 cwd={cwd}
+                barSlot={paneSwitch}
+                pathSlot={pathField}
                 onNavigate={setCwd}
                 onOpenFile={(entry) => setOpenFile(entry.path)}
                 onCdTerminal={(dir) => sendToTerminal(`cd ${shQuote(dir)}`)}
@@ -275,6 +295,8 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
             ) : (
               <LocalBrowser
                 dir={wslUncPath(target.distro, cwd)}
+                barSlot={paneSwitch}
+                pathSlot={pathField}
                 onNavigate={(dir) => setCwd(uncToPosixPath(target.distro, dir))}
                 onOpenFile={(entry) => setOpenFile(entry.path)}
                 onCdTerminal={(dir) => sendToTerminal(`cd ${shQuote(uncToPosixPath(target.distro, dir))}`)}
@@ -324,9 +346,11 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
           )}
         </div>
 
+        {/* No close button on the terminal: the session's tab is what closes it, and a
+            "close" that only went back to the targets list read as if it had. */}
         <div className="remote-session-right">
           {isSsh ? (
-            <RemoteTerminal terminalId={terminalId} hostId={target.host.id} active={active} onClose={onBack} />
+            <RemoteTerminal terminalId={terminalId} hostId={target.host.id} active={active} closable={false} />
           ) : (
             <ChatTerminal
               terminalId={terminalId}
@@ -334,7 +358,8 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
               provider="claude"
               autoLaunchCli={false}
               active={active}
-              onClose={onBack}
+              closable={false}
+             
             />
           )}
         </div>

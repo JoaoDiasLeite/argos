@@ -370,6 +370,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   wslHidden: () => ipcRenderer.invoke('wsl:hidden'),
   wslSetHidden: (distro: string, hidden: boolean) => ipcRenderer.invoke('wsl:set-hidden', distro, hidden),
   wslHistory: (distro: string) => ipcRenderer.invoke('wsl:history', distro),
+  wslHome: (distro: string) => ipcRenderer.invoke('wsl:home', distro),
   wslDriveMap: () => ipcRenderer.invoke('wsl:drive-map'),
   wslClipboardImageCapable: (distro: string) =>
     ipcRenderer.invoke('wsl:clipboard-image-capable', distro),

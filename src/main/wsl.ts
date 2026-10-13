@@ -90,7 +90,7 @@ const SKIP_DISTROS = new Set(['docker-desktop', 'docker-desktop-data'])
  * no sudo, no noise — so this stays fast and reliable regardless of what a given distro's
  * shell init does.
  */
-function wslHome(distro: string): Promise<string | null> {
+export function wslHome(distro: string): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(
       'wsl.exe',

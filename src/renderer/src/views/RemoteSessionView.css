@@ -1,7 +1,9 @@
 /* ── RemoteSessionView.css ───────────────────────────────────────────────────
-   One remote session (wireframe 1C): a one-line header, the files / history pane on
-   the left (440 px) and the terminal on the right. A connection error is the one
-   tinted block, inside the pane it is about. ─────────────────────────────────── */
+   One remote session (wireframe 1C): a one-line header naming the target, the files /
+   history pane on the left (440 px) and the terminal on the right. Each column opens
+   with a 36 px bar — the pane's Files / History switch, the terminal's own bar — so
+   the two line up. A connection error is the one tinted block, inside the pane it is
+   about. ─────────────────────────────────────────────────────────────────────── */
 
 .remote-session-view { padding: 0; }
 
@@ -9,7 +11,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 18px;
+  height: 44px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
   -webkit-app-region: drag;
@@ -72,15 +75,6 @@
   white-space: nowrap;
 }
 
-.remote-session-path {
-  flex: 1 1 auto;
-  min-width: 120px;
-  max-width: 520px;
-  height: 30px;
-}
-
-.remote-session-toggle { flex-shrink: 0; }
-
 .remote-session-body {
   flex: 1;
   min-height: 0;
@@ -94,6 +88,27 @@
   flex-direction: column;
   min-height: 0;
   border-right: 1px solid var(--border);
+}
+
+/* The left column's bar on the history side (on the files side the browser's own
+   .fb-toolbar is this bar): the Files / History switch, sized like .chat-terminal-bar
+   across the divider (28 px control in 4 px of padding, one rule under it). */
+.remote-session-pane-bar {
+  display: flex;
+  align-items: center;
+  height: 37px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-0);
+  flex: 0 0 auto;
+}
+.remote-session-toggle { flex-shrink: 0; }
+
+/* The folder being browsed, typed: its own line under the bar, full width. */
+.remote-session-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
 }
 
 .remote-session-right {

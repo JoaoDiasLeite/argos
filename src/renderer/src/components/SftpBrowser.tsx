@@ -9,6 +9,12 @@ interface Props {
    *  its breadcrumb/path input stays in sync — this component only ever reports navigation
    *  intents up via `onNavigate`, it never holds its own notion of "current dir". */
   cwd: string
+  /** What opens the pane's bar, before the toolbar's icons: the session's Files / History
+   *  switch. The bar is the browser's so the icons and the switch share one 37 px line. */
+  barSlot?: ReactNode
+  /** The parent's editable path field, on its own line under the bar. Without it the
+   *  line just prints `cwd`. */
+  pathSlot?: ReactNode
   onNavigate: (dir: string) => void
   onOpenFile: (entry: RemoteEntry) => void
   /** "cd terminal here" — a one-way affordance, not a two-way sync with the terminal. */
@@ -86,7 +92,7 @@ export const FbIcon = {
 /** A symlink (or anything else) draws as a file, in the same --text-2 as every icon: no colour. */
 const entryIcon = (type: RemoteEntry['type']) => (type === 'directory' ? <FbIcon.folder /> : <FbIcon.file />)
 
-export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdTerminal }: Props) {
+export default function SftpBrowser({ hostId, cwd, barSlot, pathSlot, onNavigate, onOpenFile, onCdTerminal }: Props) {
   const t = useT()
   const { locale } = useLanguage()
   const [entries, setEntries] = useState<RemoteEntry[]>([])
@@ -247,9 +253,11 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
   return (
     <div className="fb">
       <div className="fb-toolbar">
+        {barSlot}
+        <span className="fb-toolbar-spacer" />
         <button
           type="button"
-          className={`btn-ghost small fb-icon-btn ${parent && dropTarget === parent ? 'drop-target' : ''}`}
+          className={`fb-icon-btn ${parent && dropTarget === parent ? 'drop-target' : ''}`}
           onClick={() => parent && onNavigate(parent)}
           onDragOver={(e) => parent && dragOver(e, parent)}
           onDragLeave={() => setDropTarget(null)}
@@ -260,12 +268,12 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
         >
           <FbIcon.up />
         </button>
-        <button type="button" className="btn-ghost small fb-icon-btn" onClick={load} title={t('remote.sftp.refresh')} aria-label={t('remote.sftp.refresh')} disabled={loading}>
+        <button type="button" className="fb-icon-btn" onClick={load} title={t('remote.sftp.refresh')} aria-label={t('remote.sftp.refresh')} disabled={loading}>
           <FbIcon.refresh />
         </button>
         <button
           type="button"
-          className="btn-ghost small fb-icon-btn"
+          className="fb-icon-btn"
           onClick={() => {
             setCreatingFolder(true)
             setCreatingFile(false)
@@ -277,7 +285,7 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
         </button>
         <button
           type="button"
-          className="btn-ghost small fb-icon-btn"
+          className="fb-icon-btn"
           onClick={() => {
             setCreatingFile(true)
             setCreatingFolder(false)
@@ -287,11 +295,11 @@ export default function SftpBrowser({ hostId, cwd, onNavigate, onOpenFile, onCdT
         >
           <FbIcon.newFile />
         </button>
-        <button type="button" className="btn-ghost small fb-icon-btn" onClick={doUpload} title={t('remote.sftp.uploadTitle')} aria-label={t('remote.sftp.upload')}>
+        <button type="button" className="fb-icon-btn" onClick={doUpload} title={t('remote.sftp.uploadTitle')} aria-label={t('remote.sftp.upload')}>
           <FbIcon.upload />
         </button>
-        <span className="fb-path" title={cwd}>{cwd}</span>
       </div>
+      <div className="fb-pathrow">{pathSlot ?? <span className="fb-path" title={cwd}>{cwd}</span>}</div>
 
       {creatingFolder && (
         <div className="fb-form">

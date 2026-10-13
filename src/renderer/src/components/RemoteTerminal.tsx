@@ -19,7 +19,10 @@ interface Props {
    *  stays mounted in the background regardless — a `display: none` pane has zero size, so
    *  a re-fit is needed when it becomes visible again or xterm renders stale/blank. */
   active?: boolean
-  onClose: () => void
+  /** Hidden when the host owns this pane outright (a remote session's terminal column):
+   *  the session's tab is what closes it, so a close here would only mislead. */
+  closable?: boolean
+  onClose?: () => void
 }
 
 /**
@@ -56,7 +59,7 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function RemoteTerminal({ terminalId, hostId, active, onClose }: Props) {
+export default function RemoteTerminal({ terminalId, hostId, active, closable = true, onClose }: Props) {
   const t = useT()
   // The shell effect writes translated notes into the terminal; it must not re-run (and
   // reconnect) when the language changes, so it reads the translator through a ref.
@@ -364,11 +367,13 @@ export default function RemoteTerminal({ terminalId, hostId, active, onClose }: 
           >
             {t('remote.terminal.restart')}
           </button>
-          <button className="chat-terminal-btn" onClick={onClose} title={t('remote.terminal.close')} aria-label={t('remote.terminal.close')}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+          {closable && (
+            <button className="chat-terminal-btn" onClick={onClose} title={t('remote.terminal.close')} aria-label={t('remote.terminal.close')}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
       <div className="chat-terminal-host-wrap">

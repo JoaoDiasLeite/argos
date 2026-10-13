@@ -45,7 +45,7 @@ export const TERMINAL_THEME: ITheme = {
 /**
  * The theme's background/foreground, pulled out for the few places that need the raw color
  * outside an xterm instance. TERMINAL_BG in particular must stay in sync with
- * `.chat-terminal-loading`'s background in ChatTerminal.css — the loader overlay sits on top
+ * `.chat-terminal-host-wrap` and `.chat-terminal-loading` in ChatTerminal.css — the loader overlay sits on top
  * of the terminal and has to be the exact same color or the seam shows. That rule can't read
  * a theme token (they go near-white in light mode), so it hardcodes #17140f; change it here
  * and there together.

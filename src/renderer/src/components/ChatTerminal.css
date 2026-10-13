@@ -76,12 +76,17 @@
   text-align: center;
 }
 
+/* Painted in the terminal's own fixed dark background (TERMINAL_BG in terminal-theme.ts,
+   the same colour the loader below uses), so the padding reads as the terminal's inner
+   margin rather than a light frame around a dark box — and the reveal doesn't swap a
+   dark frame for a light one. */
 .chat-terminal-host-wrap {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
-  padding: 6px 8px;
+  padding: 8px 10px;
   overflow: hidden;
+  background: #17140f;
 }
 
 .chat-terminal-host {

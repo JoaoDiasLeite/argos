@@ -107,7 +107,7 @@ import {
   remoteShellKill,
   remoteShellKillAll
 } from './remote-shell'
-import { listDistros, testDistro, testDistroClaude, runWslOneShot, uncToWslPath, wslHistory, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths, wslShareRoot } from './wsl'
+import { listDistros, testDistro, testDistroClaude, runWslOneShot, uncToWslPath, wslHistory, wslHome, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths, wslShareRoot } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
 import { createLedger, type OpsLedger } from './ops-audit'
 import { createExecutor, createSshBackend, type OpsExecutor } from './ops-exec'
@@ -1468,6 +1468,7 @@ ipcMain.handle('wsl:test-claude', (_, distro: string) => testDistroClaude(distro
 ipcMain.handle('wsl:hidden', () => getHiddenDistros())
 ipcMain.handle('wsl:set-hidden', (_, distro: string, hidden: boolean) => setDistroHidden(distro, hidden))
 ipcMain.handle('wsl:history', (_, distro: string) => wslHistory(distro))
+ipcMain.handle('wsl:home', (_, distro: string) => wslHome(distro))
 ipcMain.handle('wsl:drive-map', () => listWslDriveMap())
 // Asked when a WSL terminal opens, not when something is pasted into it: the probe boots
 // the distro if it is cold, and a paste should never wait on that. See wsl.ts.

@@ -1588,6 +1588,8 @@ declare global {
       wslHidden: () => Promise<string[]>
       wslSetHidden: (distro: string, hidden: boolean) => Promise<string[]>
       wslHistory: (distro: string) => Promise<{ ok: boolean; commands?: string[]; error?: string }>
+      /** The distro's $HOME, or null when it could not be asked. */
+      wslHome: (distro: string) => Promise<string | null>
       /** Drive letters mapped to a WSL distro root: `{ 'z:': 'Ubuntu' }`. */
       wslDriveMap: () => Promise<Record<string, string>>
       /**
