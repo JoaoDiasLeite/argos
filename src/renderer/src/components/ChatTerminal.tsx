@@ -107,6 +107,10 @@ const STARTING_BACKSTOP_MS = 8000
 // xterm paint that frame under the overlay so the reveal doesn't flash a blank frame first.
 const REVEAL_PAINT_GRACE_MS = 120
 
+// An erase-display sequence: ESC [ 2 J (the screen) or ESC [ 3 J (the scrollback too) —
+// what `clear` emits on the shells a wsl/ssh launch is typed into. See awaitingClearRef.
+const CLEAR_SCREEN_RE = /\x1b\[[23]J/
+
 // How long after the reveal a seeded prompt waits before being typed. The CLI has painted
 // by then, but claude and codex both bind their input a frame or two later, and anything
 // sent before that is swallowed with no trace.
@@ -170,8 +174,6 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
   pinRef.current = pinSessionId
   const opsRef = useRef(ops)
   opsRef.current = ops
-  // Auto-launch claude when the terminal opens; skipped for an explicit "Restart".
-  const autoStartRef = useRef(true)
   const [exited, setExited] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [fontSize, setFontSize] = useState(loadFontSize)
@@ -185,6 +187,14 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
   // gates the quiet timer so it only arms for output produced by that launch, not for
   // whatever the shell happened to print beforehand.
   const awaitingRevealRef = useRef(false)
+  // True while a launch typed into an interactive shell (wsl/ssh) has not yet cleared the
+  // screen. The shell echoes the launch line itself — `clear; claude --resume …` — and
+  // that echo is "visible content" as far as the reveal gate is concerned, so without
+  // this the shell, the echoed command and whatever a failed --resume printed all showed
+  // through until the CLI's own paint caught up. The `clear` in front of every launch
+  // command (see claudeLaunchCommand in main) is the signal: nothing painted before it
+  // counts, the first thing painted after it is the CLI.
+  const awaitingClearRef = useRef(false)
   // Debounced "output went quiet" timer, (re)armed by every data chunk while awaiting
   // reveal; fires setStarting(false) once REVEAL_QUIET_MS passes with no further output.
   const quietTimerRef = useRef<ReturnType<typeof setTimeout>>()
@@ -642,11 +652,10 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
 
     idRef.current = terminalId
     setExited(false)
-    // Only cover the terminal with the loader when we're about to auto-launch the CLI. An
-    // explicit Restart (autoStartRef false) intentionally drops to a bare shell, which
-    // never enters the alt screen — showing the loader over it would just stall on the
-    // backstop timeout.
-    setStarting(autoStartRef.current)
+    // Cover the terminal until whatever is about to run in it has painted — the CLI on a
+    // first open and on a Restart alike (a Restart relaunches the CLI the same way the
+    // first open did), or the shell itself when nothing is auto-launched.
+    setStarting(true)
     term.reset()
 
     let cols = term.cols
@@ -674,6 +683,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       clearTimeout(backstopTimer)
       clearTimeout(quietTimerRef.current)
       awaitingRevealRef.current = false
+      awaitingClearRef.current = false
       termRef.current?.focus()
       sendInitialPrompt()
     }
@@ -697,7 +707,9 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     }
 
     const writeChunk = (data: string): void => {
-      term.write(data)
+      // A typed launch starts with `clear`: until its erase-display sequence has gone by,
+      // what is on screen is the shell and the echo of the command, not the CLI.
+      if (awaitingClearRef.current && CLEAR_SCREEN_RE.test(data)) awaitingClearRef.current = false
       // Reveal as soon as the CLI has actually drawn something. `awaitingRevealRef` is a
       // one-shot gate (flipped off here the moment content first appears) so a CLI that keeps
       // streaming — codex spinning on "model: Loading" — reveals immediately instead of the
@@ -705,11 +717,15 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       // revealing a blank screen during a cold-start gap; the short grace lets xterm paint
       // that first frame under the overlay so there's no blank flash on reveal. The backstop
       // above still fires if a CLI never paints anything, so the loader can't wedge.
-      if (awaitingRevealRef.current && hasVisibleContent(term)) {
-        awaitingRevealRef.current = false
-        clearTimeout(quietTimerRef.current)
-        quietTimerRef.current = setTimeout(reveal, REVEAL_PAINT_GRACE_MS)
-      }
+      // Checked once xterm has parsed the chunk (its write is asynchronous), so the buffer
+      // the check reads is the one this chunk produced.
+      term.write(data, () => {
+        if (awaitingRevealRef.current && !awaitingClearRef.current && hasVisibleContent(term)) {
+          awaitingRevealRef.current = false
+          clearTimeout(quietTimerRef.current)
+          quietTimerRef.current = setTimeout(reveal, REVEAL_PAINT_GRACE_MS)
+        }
+      })
     }
 
     replayedRef.current = false
@@ -782,18 +798,15 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
             window.electronAPI.terminalResize(terminalId, cols, rows)
             termRef.current?.focus()
           }, 60)
-          autoStartRef.current = true
           return
         }
-        // Note: focus is NOT taken here — it's deferred to reveal() so the loader isn't
-        // marred by xterm's native input caret (see reveal). The one exception is the
-        // bare-shell case below, which shows no loader and so should focus immediately.
+        // Note: focus is NOT taken here — it is deferred to reveal() so the loader is not
+        // marred by xterm's native input caret (see reveal).
         if (res.cliLaunched) {
           // Local shell: main already spawned the provider CLI directly (non-interactive,
           // no banner/echo) as part of createTerminal — there's nothing left to type in, so
           // just arm the reveal gate. The CLI's own first output starts the quiet timer above.
-          // Restart also goes through this path (autoStartRef doesn't gate it), so make sure
-          // the loader is up for it too — it was only pre-armed for the auto-start case.
+          // Restart also goes through this path, so make sure the loader is up for it too.
           setStarting(true)
           awaitingRevealRef.current = true
         } else if (!autoLaunchCli) {
@@ -802,13 +815,15 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
           // gate so the loader lifts once the shell paints its own prompt.
           setStarting(true)
           awaitingRevealRef.current = true
-        } else if (autoStartRef.current) {
+        } else {
           // wsl/ssh (or anything else that didn't already launch the CLI): auto-launch by
           // typing the launch command into the interactive remote shell, resuming this
-          // chat's session (claude only). A short delay lets the shell print its prompt first.
+          // chat's session (claude only). A short delay lets the shell print its prompt
+          // first. A Restart comes through here too — it is the first open all over again.
           autoStartTimer = setTimeout(() => {
-            // Arm the reveal gate right as we launch — the very next data chunk (the
-            // launch command's own shell echo) starts the quiet timer above.
+            // Arm the reveal gate right as we launch — and hold it until the launch's
+            // own `clear` has wiped the shell and the echoed command off the screen.
+            awaitingClearRef.current = true
             awaitingRevealRef.current = true
             window.electronAPI.terminalStartCli(
               terminalId,
@@ -817,12 +832,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
               pinRef.current
             )
           }, 600)
-        } else {
-          // Bare shell (an explicit Restart on wsl/ssh): no loader is shown, so focus now
-          // instead of waiting for a reveal that only the 8s backstop would ever trigger.
-          term.focus()
         }
-        autoStartRef.current = true
       })
 
     return () => {
@@ -832,6 +842,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       clearTimeout(backstopTimer)
       clearTimeout(quietTimerRef.current)
       awaitingRevealRef.current = false
+      awaitingClearRef.current = false
       offData()
       offExit()
       // The pty is deliberately left running. Unmounting happens for reasons that have nothing
@@ -895,7 +906,6 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
           <button
             className="btn-ghost small"
             onClick={() => {
-              autoStartRef.current = false
               // Immediate, not deferred: Restart must force a genuinely fresh pty, not
               // reuse the live one.
               window.electronAPI.terminalKill(terminalId)
