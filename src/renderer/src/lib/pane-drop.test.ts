@@ -108,19 +108,25 @@ describe('highlightRect', () => {
 
 describe('dropLabel', () => {
   it('says what will happen before the drop', () => {
-    expect(dropLabel('left', t)).toBe('Open in split view')
-    expect(dropLabel('right', t)).toBe('Open in split view')
-    expect(dropLabel('center', t)).toBe('Open here')
+    expect(dropLabel('left', t, 2)).toBe('Open in split view')
+    expect(dropLabel('right', t, 2)).toBe('Open in split view')
+    expect(dropLabel('center', t, 2)).toBe('Open here')
   })
 
   it('names the grid, which costs height, instead of calling it a split', () => {
-    expect(dropLabel('top', t)).toBe('Open in grid')
-    expect(dropLabel('bottom', t)).toBe('Open in grid')
+    expect(dropLabel('top', t, 2)).toBe('Open in grid')
+    expect(dropLabel('bottom', t, 3)).toBe('Open in grid')
+  })
+
+  it('calls stacking a lone pane a split: two panes are not a grid', () => {
+    expect(dropLabel('top', t, 1)).toBe('Open in split view')
+    expect(dropLabel('bottom', t, 1)).toBe('Open in split view')
   })
 })
 
 describe('planDrop', () => {
-  const base = { sessionId: 'x', maxPanes: 3 }
+  // `layout` only changes the answer for a rows-2 stack; everything else plans the same.
+  const base = { sessionId: 'x', maxPanes: 3, layout: 'cols-2' as const }
 
   it('opens the first pane when nothing is open', () => {
     expect(planDrop({ ...base, paneIds: [], targetIndex: 0, kind: 'center' })).toEqual({
@@ -198,7 +204,7 @@ describe('planDrop', () => {
   })
 
   // ── The vertical zones ──────────────────────────────────────────────────────
-  const grid = { sessionId: 'x', maxPanes: 4 }
+  const grid = { sessionId: 'x', maxPanes: 4, layout: 'cols-2' as const }
 
   it('turns two panes into main-side, the big pane first', () => {
     // Dropped on the top of pane 1: the new pane goes before it, so 'a' keeps
@@ -241,13 +247,52 @@ describe('planDrop', () => {
     })
   })
 
-  it('degrades to a pair of columns when a single pane is stacked onto', () => {
-    // Two panes have no vertical shape in this app; losing the drop would be worse
-    // than giving the split, and you never fall into the grid by accident this way.
-    expect(planDrop({ ...grid, paneIds: ['a'], targetIndex: 0, kind: 'bottom' })).toEqual({
+  it('stacks a single pane into rows-2, above or below it', () => {
+    const single = { ...grid, layout: 'single' as const }
+    expect(planDrop({ ...single, paneIds: ['a'], targetIndex: 0, kind: 'top' })).toEqual({
+      type: 'insert',
+      index: 0,
+      layout: 'rows-2'
+    })
+    expect(planDrop({ ...single, paneIds: ['a'], targetIndex: 0, kind: 'bottom' })).toEqual({
       type: 'insert',
       index: 1,
-      layout: 'cols-2'
+      layout: 'rows-2'
+    })
+  })
+
+  // ── Beside and onto a rows-2 stack ──────────────────────────────────────────
+  const stack = { ...grid, layout: 'rows-2' as const }
+
+  it('puts a left drop beside a stack first, as the big pane of main-side', () => {
+    // Whichever stacked pane was aimed at, the whole stack becomes the side column.
+    for (const targetIndex of [0, 1]) {
+      expect(planDrop({ ...stack, paneIds: ['a', 'b'], targetIndex, kind: 'left' })).toEqual({
+        type: 'insert',
+        index: 0,
+        layout: 'main-side'
+      })
+    }
+  })
+
+  it('puts a right drop beside a stack last, as the big pane of side-main', () => {
+    for (const targetIndex of [0, 1]) {
+      expect(planDrop({ ...stack, paneIds: ['a', 'b'], targetIndex, kind: 'right' })).toEqual({
+        type: 'insert',
+        index: 2,
+        layout: 'side-main'
+      })
+    }
+  })
+
+  it('replaces on a vertical drop onto a full stack: three stacked panes is no layout', () => {
+    expect(planDrop({ ...stack, paneIds: ['a', 'b'], targetIndex: 0, kind: 'top' })).toEqual({
+      type: 'replace',
+      index: 0
+    })
+    expect(planDrop({ ...stack, paneIds: ['a', 'b'], targetIndex: 1, kind: 'bottom' })).toEqual({
+      type: 'replace',
+      index: 1
     })
   })
 
@@ -287,8 +332,14 @@ describe('planDrop', () => {
 })
 
 describe('planDrop: moving a pane by its header', () => {
-  const move = (paneIds: string[], sessionId: string, targetIndex: number, kind: Parameters<typeof planDrop>[0]['kind']) =>
-    planDrop({ paneIds, targetIndex, sessionId, kind, maxPanes: 4, fromPane: true })
+  type Args = Parameters<typeof planDrop>[0]
+  const move = (
+    paneIds: string[],
+    sessionId: string,
+    targetIndex: number,
+    kind: Args['kind'],
+    layout: Args['layout'] = 'cols-3'
+  ) => planDrop({ paneIds, targetIndex, sessionId, kind, maxPanes: 4, layout, fromPane: true })
 
   it('does nothing on itself and swaps on another pane’s centre', () => {
     expect(move(['a', 'b'], 'a', 0, 'left')).toEqual({ type: 'none' })
@@ -312,9 +363,21 @@ describe('planDrop: moving a pane by its header', () => {
     expect(move(['a', 'b', 'c', 'd'], 'a', 3, 'top')).toEqual({ type: 'move', sessionId: 'a', index: 2, layout: 'grid-2x2' })
   })
 
+  it('stacks two columns, and keeps a stack a stack when reordered vertically', () => {
+    expect(move(['a', 'b'], 'b', 0, 'top', 'cols-2')).toEqual({ type: 'move', sessionId: 'b', index: 0, layout: 'rows-2' })
+    expect(move(['a', 'b'], 'a', 1, 'bottom', 'rows-2')).toEqual({ type: 'move', sessionId: 'a', index: 1, layout: 'rows-2' })
+  })
+
+  it('turns a stack into columns on a side move', () => {
+    expect(move(['a', 'b'], 'a', 1, 'right', 'rows-2')).toEqual({ type: 'move', sessionId: 'a', index: 1, layout: 'cols-2' })
+    expect(move(['a', 'b'], 'b', 0, 'left', 'rows-2')).toEqual({ type: 'move', sessionId: 'b', index: 0, layout: 'cols-2' })
+  })
+
   it('names the move in the label', () => {
-    expect(dropLabel('center', t, true)).toBe('Swap')
-    expect(dropLabel('left', t, true)).toBe('Move here')
-    expect(dropLabel('bottom', t, true)).toBe('Move into grid')
+    expect(dropLabel('center', t, 3, true)).toBe('Swap')
+    expect(dropLabel('left', t, 3, true)).toBe('Move here')
+    expect(dropLabel('bottom', t, 3, true)).toBe('Move into grid')
+    // Two panes moved vertically make a stack, not a grid.
+    expect(dropLabel('bottom', t, 2, true)).toBe('Move here')
   })
 })

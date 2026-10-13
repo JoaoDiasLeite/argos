@@ -52,6 +52,7 @@ type Axis = 'cols' | 'rows'
  */
 function trackCounts(layout: LayoutId, visible: number): Record<Axis, number> {
   if (visible <= 0) return { cols: 0, rows: 0 }
+  if (layout === 'rows-2') return { cols: 1, rows: visible }
   if (layout === 'grid-2x2') {
     // Row-major, so the third pane is the one that opens the second row.
     return { cols: Math.min(visible, 2), rows: Math.ceil(visible / 2) }
@@ -76,6 +77,7 @@ function line(t: number): number {
 
 /** Where pane `i` sits, in explicit grid lines. */
 function panePlacement(layout: LayoutId, visible: number, i: number): CSSProperties {
+  if (layout === 'rows-2') return { gridColumn: `${line(1)} / span 1`, gridRow: `${line(i + 1)} / span 1` }
   if (layout === 'grid-2x2') {
     const col = (i % 2) + 1
     const row = Math.floor(i / 2) + 1
@@ -122,9 +124,10 @@ function splitterSpecs(layout: LayoutId, visible: number): SplitterSpec[] {
   const { cols, rows } = trackCounts(layout, visible)
   const specs: SplitterSpec[] = []
 
-  if (layout === 'grid-2x2' || layout === 'main-side' || layout === 'side-main') {
-    // The grid family has at most one boundary per axis (both are 2×2 at the widest), so
-    // each axis gets one divider rather than a loop.
+  if (layout === 'rows-2' || layout === 'grid-2x2' || layout === 'main-side' || layout === 'side-main') {
+    // The grid family (and the two-pane stack) has at most one boundary per axis — all are
+    // 2×2 at the widest — so each axis gets one divider rather than a loop. A stack has a
+    // single column, so only its row divider ever appears, across the full width.
     if (cols >= 2) {
       // In a three-pane 2×2 the bottom row is one full-width pane, so the column divider
       // has to stop above it instead of cutting it in half.
@@ -318,21 +321,13 @@ export default function PaneGrid({
   // a zone preview we point at the pane where it already lives.
   const alreadyOpenIndex = draggingSessionId && !moving ? paneIds.indexOf(draggingSessionId) : -1
 
-  // `clientY` — and with it the whole vertical axis of `dropKindAt` — is withheld while a
-  // single pane is open, on purpose. The rule in `planDrop` degrades a vertical drop on one
-  // pane to `cols-2`, so that a misaimed drag is never simply lost; but the zone would have
-  // said "Open in grid" and then handed over a side-by-side split. Promising one thing and
-  // delivering another is worse than not offering it, so with one pane the gesture stays
-  // exactly what it has always been: left third, right third, centre.
+  // `clientY` — and with it the whole vertical axis of `dropKindAt` — is withheld on a full
+  // two-pane stack when opening a chat: a third stacked pane is not a shape this grid draws,
+  // and `planDrop` would turn the drop into a replacement, so the zone would promise a split
+  // it cannot deliver. A move keeps the count, so a stack can still be reordered vertically.
+  const canStack = moving || layout !== 'rows-2' || paneIds.length < 2
   const kindAt = (e: DragEvent, el: HTMLElement): DropKind =>
-    dropKindAt(
-      e.clientX,
-      el.getBoundingClientRect(),
-      canSplit,
-      // A move keeps the count, and two panes have no stacked shape to move into: with two,
-      // the vertical zones would promise a grid and deliver a reordered pair of columns.
-      panes.length >= (moving ? 3 : 2) ? e.clientY : undefined
-    )
+    dropKindAt(e.clientX, el.getBoundingClientRect(), canSplit, canStack ? e.clientY : undefined)
 
   return (
     /* The workspace panes, and only they, render their terminals on the GPU. They are the
@@ -362,7 +357,7 @@ export default function PaneGrid({
               : moving && pane.sessionId === draggingSessionId
                 ? null
                 : over?.index === i
-                  ? { kind: over.kind, label: dropLabel(over.kind, t, moving) }
+                  ? { kind: over.kind, label: dropLabel(over.kind, t, paneIds.length, moving) }
                   : null
           const box = zone ? highlightRect(zone.kind) : null
           const head: PaneHead | undefined = showHeads
@@ -448,7 +443,7 @@ export default function PaneGrid({
                 const fromPane = Array.from(e.dataTransfer.types).includes(PANE_DRAG_TYPE)
                 setMovingPane(null)
                 onDropSession(
-                  planDrop({ paneIds, targetIndex: i, sessionId, kind, maxPanes, fromPane }),
+                  planDrop({ paneIds, targetIndex: i, sessionId, kind, maxPanes, layout, fromPane }),
                   sessionId
                 )
               }}

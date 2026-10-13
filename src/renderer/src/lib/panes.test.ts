@@ -20,6 +20,7 @@ describe('capacity', () => {
     expect(capacity('single')).toBe(1)
     expect(capacity('cols-2')).toBe(2)
     expect(capacity('cols-3')).toBe(3)
+    expect(capacity('rows-2')).toBe(2)
     expect(capacity('grid-2x2')).toBe(4)
     expect(capacity('main-side')).toBe(3)
   })
@@ -264,6 +265,32 @@ describe('closePane', () => {
   it('is a no-op for a session that is not open', () => {
     const state: PaneState = { v: 1, layout: 'cols-2', panes: [{ sessionId: 'a' }], focused: 'a' }
     expect(closePane(state, 'z')).toEqual(state)
+  })
+
+  const three = (layout: 'main-side' | 'side-main'): PaneState => ({
+    v: 1,
+    layout,
+    panes: [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }],
+    focused: 'b',
+    sizes: { cols: [0.7, 0.3], rows: [0.4, 0.6] }
+  })
+
+  it('keeps the remaining two stacked when the big pane of main-side closes', () => {
+    const result = closePane(three('main-side'), 'a')
+    expect(result.layout).toBe('rows-2')
+    expect(result.panes.map((p) => p.sessionId)).toEqual(['b', 'c'])
+    expect(result.sizes).toBeUndefined()
+  })
+
+  it('keeps the remaining two stacked when the big pane of side-main closes', () => {
+    const result = closePane(three('side-main'), 'c')
+    expect(result.layout).toBe('rows-2')
+    expect(result.panes.map((p) => p.sessionId)).toEqual(['a', 'b'])
+  })
+
+  it('keeps main-side/side-main when a stacked pane closes', () => {
+    expect(closePane(three('main-side'), 'b').layout).toBe('main-side')
+    expect(closePane(three('side-main'), 'a').layout).toBe('side-main')
   })
 })
 
@@ -664,6 +691,31 @@ describe('movePane / swapPanes', () => {
     const sized = { ...three, sizes: { cols: [0.5, 0.25, 0.25] } }
     expect(movePane(sized, 'c', 0, 'cols-3').sizes).toEqual({ cols: [0.5, 0.25, 0.25] })
     expect(movePane(sized, 'c', 1, 'side-main').sizes).toBeUndefined()
+  })
+
+  it('stacks a lone pane into rows-2 and restores the stack’s row sizes', () => {
+    const one: PaneState = { v: 1, layout: 'single', panes: [{ sessionId: 'a' }], focused: 'a' }
+    const next = insertPane(one, 'x', 0, 'rows-2')
+    expect(next.layout).toBe('rows-2')
+    expect(next.panes.map((p) => p.sessionId)).toEqual(['x', 'a'])
+    const restored = normalize({ ...next, sizes: { rows: [1, 3], cols: [1, 1] } }, ['a', 'x'])
+    expect(restored.sizes).toEqual({ rows: [0.25, 0.75] })
+  })
+
+  it('reorders within a rows-2 stack and keeps its row sizes', () => {
+    const stack: PaneState = {
+      v: 1,
+      layout: 'rows-2',
+      panes: [{ sessionId: 'a' }, { sessionId: 'b' }],
+      focused: 'a',
+      sizes: { rows: [0.3, 0.7] }
+    }
+    const next = movePane(stack, 'a', 1, 'rows-2')
+    expect(next.panes.map((p) => p.sessionId)).toEqual(['b', 'a'])
+    expect(next.layout).toBe('rows-2')
+    expect(next.sizes).toEqual({ rows: [0.3, 0.7] })
+    // Into columns, the row axis no longer exists.
+    expect(movePane(stack, 'a', 1, 'cols-2').sizes).toBeUndefined()
   })
 
   it('ignores a pane that is not open or a layout too small for the panes', () => {

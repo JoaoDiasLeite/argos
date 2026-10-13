@@ -47,7 +47,7 @@ export type DropPlan =
    * "Open in split view": new pane at position `index`, in `layout`.
    *
    * The layout travels with the plan because the gesture is what chooses it — a
-   * side zone means columns and a vertical one means the grid family, and neither
+   * side zone means columns and a vertical one means stacking, and neither
    * can be inferred afterwards from the pane count alone (three panes are either
    * `cols-3` or `main-side`). `insertPane` in `lib/panes.ts` applies both.
    */
@@ -102,7 +102,8 @@ const MAX_COLUMN_PANES = COLUMN_LAYOUTS.length
  *
  * `clientY` is optional because a caller that only deals in columns can leave it
  * out and never see a vertical zone; without it (or without a height) the pane is
- * read as one horizontal band, exactly as before.
+ * read as one horizontal band, exactly as before. `PaneGrid` uses that to stop offering the
+ * vertical zones on a full `rows-2` stack: a third stacked pane is not a shape it draws.
  *
  * `canSplit` false (no more capacity for panes) collapses everything into the
  * center — vertical zones included: better a whole pane lit up saying "Open here"
@@ -157,15 +158,23 @@ export function highlightRect(kind: DropKind): {
   return { left: 0, width: 1, top: 0, height: 1 }
 }
 
-export function dropLabel(kind: DropKind, t: TFunction, moving = false): string {
+/**
+ * `paneCount` is how many panes are open before the drop. A vertical zone only means the
+ * grid once the result has three or more panes; below that it makes a two-pane stack
+ * (`rows-2`), which is a split like any other and is named as one.
+ */
+export function dropLabel(kind: DropKind, t: TFunction, paneCount: number, moving = false): string {
+  const vertical = kind === 'top' || kind === 'bottom'
+  // A move keeps the count; an open adds a pane.
+  const grid = vertical && (moving ? paneCount : paneCount + 1) >= 3
   if (moving) {
     if (kind === 'center') return t('chat.drop.swap')
-    return kind === 'top' || kind === 'bottom' ? t('chat.drop.moveIntoGrid') : t('chat.drop.moveHere')
+    return grid ? t('chat.drop.moveIntoGrid') : t('chat.drop.moveHere')
   }
   if (kind === 'center') return t('chat.drop.openHere')
-  // The vertical zones get a label of their own: the grid is the layout that
-  // spends height, so it is worth naming before the drop instead of after it.
-  if (kind === 'top' || kind === 'bottom') return t('chat.drop.openInGrid')
+  // The grid gets a label of its own: it is the layout that spends height, so it is
+  // worth naming before the drop instead of after it.
+  if (grid) return t('chat.drop.openInGrid')
   return t('chat.drop.openInSplit')
 }
 
@@ -173,21 +182,26 @@ export function dropLabel(kind: DropKind, t: TFunction, moving = false): string 
  * Which layout an insert produces, from the zone it came from and the number of
  * panes that will be on screen afterwards.
  *
- * Sides always mean columns. Vertical zones mean the grid family, whose shape is
- * decided by how many panes are left over: three is `main-side` (one big pane plus
- * two stacked beside it), four is `grid-2x2`. Below three there is no vertical
- * shape to give — a two-pane stack is not a layout this app draws — so the gesture
- * degrades to the pair of columns rather than refusing the drop and losing it. It
- * is the benign direction of the two: you aim at the grid and get a split, never
- * the reverse, and the rationale for the split (the grid is never fallen into by
- * accident) is preserved.
+ * Vertical zones mean stacking, whose shape is decided by how many panes are left
+ * over: two is `rows-2` (a lone pane split in half), three is `main-side`/`side-main`
+ * (one big pane plus two stacked beside it), four is `grid-2x2`.
+ *
+ * Sides mean columns, with one exception: beside a full `rows-2` stack the third pane
+ * becomes the big full-height one, so the stack survives as the side column instead of
+ * being flattened into three columns. Left puts it first (`main-side`), right last
+ * (`side-main`) — `planDrop` places the index to match.
  */
-function insertLayout(kind: DropKind, nextCount: number, targetIndex: number): LayoutId {
-  if ((kind === 'top' || kind === 'bottom') && nextCount >= 3) {
+function insertLayout(kind: DropKind, nextCount: number, targetIndex: number, current: LayoutId): LayoutId {
+  if (kind === 'top' || kind === 'bottom') {
+    if (nextCount <= 1) return 'single'
+    if (nextCount === 2) return 'rows-2'
     if (nextCount >= 4) return 'grid-2x2'
     // The stack goes on the side of the pane that was split: the left pane of two
     // becomes the left stack (side-main), the right one the right stack (main-side).
     return targetIndex === 0 ? 'side-main' : 'main-side'
+  }
+  if (current === 'rows-2' && nextCount === 3 && (kind === 'left' || kind === 'right')) {
+    return kind === 'left' ? 'main-side' : 'side-main'
   }
   return COLUMN_LAYOUTS[Math.min(nextCount, MAX_COLUMN_PANES) - 1]
 }
@@ -200,7 +214,8 @@ function insertLayout(kind: DropKind, nextCount: number, targetIndex: number): L
  * own. A drop with no room falls back to 'replace' instead of getting lost: the UI
  * no longer offers it (see `dropKindAt`), but the rule can't depend on the UI getting it right.
  * A side drop onto three panes falls back the same way even when `maxPanes` is 4,
- * because a fourth column is not a layout that exists.
+ * because a fourth column is not a layout that exists. A vertical drop onto a full
+ * `rows-2` stack falls back too: a third stacked pane is not a layout either.
  */
 export function planDrop(args: {
   /** The panes' sessions, in on-screen order. */
@@ -211,11 +226,13 @@ export function planDrop(args: {
   sessionId: string
   kind: DropKind
   maxPanes: number
+  /** The layout on screen now: beside a stack, a side drop adds a big pane, not a column. */
+  layout: LayoutId
   /** The drag started on the pane's own header (`PANE_DRAG_TYPE`): a move, not an open. */
   fromPane?: boolean
 }): DropPlan {
-  const { paneIds, targetIndex, sessionId, kind, maxPanes, fromPane } = args
-  if (fromPane) return planMove(paneIds, targetIndex, sessionId, kind, maxPanes)
+  const { paneIds, targetIndex, sessionId, kind, maxPanes, layout, fromPane } = args
+  if (fromPane) return planMove(paneIds, targetIndex, sessionId, kind, maxPanes, layout)
 
   if (paneIds.length === 0) {
     // Empty state (welcome pane): nothing to replace, and no zone to speak of.
@@ -235,11 +252,20 @@ export function planDrop(args: {
     return { type: 'replace', index: targetIndex }
   }
 
+  if (layout === 'rows-2' && paneIds.length >= 2) {
+    if (vertical) return { type: 'replace', index: targetIndex }
+    // The new pane is the big one beside the whole stack, so where it goes depends only on
+    // the side, not on which of the two stacked panes was aimed at: first for main-side,
+    // last for side-main (the pane order `lib/panes.ts` documents for both).
+    const index = kind === 'left' ? 0 : paneIds.length
+    return { type: 'insert', index, layout: insertLayout(kind, paneIds.length + 1, targetIndex, layout) }
+  }
+
   // 'top' and 'left' both mean "before this pane", 'bottom' and 'right' "after it".
   // In the grid layouts that reads as the pane order being row-major, which is the
   // convention `lib/panes.ts` documents for `grid-2x2` and `main-side`.
   const index = kind === 'left' || kind === 'top' ? targetIndex : targetIndex + 1
-  return { type: 'insert', index, layout: insertLayout(kind, paneIds.length + 1, targetIndex) }
+  return { type: 'insert', index, layout: insertLayout(kind, paneIds.length + 1, targetIndex, layout) }
 }
 
 /**
@@ -248,8 +274,16 @@ export function planDrop(args: {
  * pane count never changes and the layout is the one an insert would give that many
  * panes. A side drop with four panes open has no column shape to land in (there is no
  * fourth column), so it swaps instead, as a full grid's insert falls back to a replace.
+ * Two panes moved onto each other's top or bottom make (or keep) a `rows-2` stack.
  */
-function planMove(paneIds: string[], targetIndex: number, sessionId: string, kind: DropKind, maxPanes: number): DropPlan {
+function planMove(
+  paneIds: string[],
+  targetIndex: number,
+  sessionId: string,
+  kind: DropKind,
+  maxPanes: number,
+  layout: LayoutId
+): DropPlan {
   const from = paneIds.indexOf(sessionId)
   const target = paneIds[targetIndex]
   if (from === -1 || target === undefined || from === targetIndex) return { type: 'none' }
@@ -261,5 +295,5 @@ function planMove(paneIds: string[], targetIndex: number, sessionId: string, kin
   const rest = paneIds.filter((id) => id !== sessionId)
   const t = rest.indexOf(target)
   const index = kind === 'left' || kind === 'top' ? t : t + 1
-  return { type: 'move', sessionId, index, layout: insertLayout(kind, paneIds.length, t) }
+  return { type: 'move', sessionId, index, layout: insertLayout(kind, paneIds.length, t, layout) }
 }

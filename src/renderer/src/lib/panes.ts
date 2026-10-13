@@ -4,7 +4,14 @@
 // wires it to the UI lives in another file (the `usePanes` hook, still to be
 // written), so this module can be tested and reasoned about without mounting anything.
 
-export type LayoutId = 'single' | 'cols-2' | 'cols-3' | 'grid-2x2' | 'main-side' | 'side-main'
+export type LayoutId =
+  | 'single'
+  | 'cols-2'
+  | 'cols-3'
+  | 'rows-2'
+  | 'grid-2x2'
+  | 'main-side'
+  | 'side-main'
 
 export interface Pane {
   sessionId: string
@@ -41,11 +48,16 @@ export interface PaneState {
 // the top or bottom of the left pane of two splits that pane, as its highlight promises,
 // instead of making the new chat the big pane or sending it to the right.
 //
+// `rows-2` is one column of two stacked panes, 0 above 1: the vertical twin of `cols-2`.
+// It is reached by a drop on the top or bottom of a lone pane, or by closing the big pane
+// of a three-pane `main-side`/`side-main`, which leaves exactly such a stack behind.
+//
 // `grid-2x2` is row-major: 0 1 / 2 3.
 const CAPACITY: Record<LayoutId, number> = {
   single: 1,
   'cols-2': 2,
   'cols-3': 3,
+  'rows-2': 2,
   'grid-2x2': 4,
   'main-side': 3,
   'side-main': 3
@@ -54,6 +66,7 @@ const CAPACITY: Record<LayoutId, number> = {
 // Steps openInNewPane climbs on its own when it runs out of space. main-side is
 // not among them: it also fits 3 panes like cols-3, but it's a layout with a shape
 // of its own (one big pane + a side column) that only makes sense as an explicit choice.
+// rows-2 is left out for the same reason: a stack spends height, so it is only ever aimed at.
 const AUTO_GROW: LayoutId[] = ['single', 'cols-2', 'cols-3', 'grid-2x2']
 
 export function capacity(layout: LayoutId): number {
@@ -135,7 +148,7 @@ export function openInNewPane(state: PaneState, sessionId: string): PaneState {
  * A drop does say it — which edge of which pane was aimed at — so the gesture
  * brings its own position and its own target layout (see `planDrop` in
  * `lib/pane-drop.ts`), and this function only applies them. That is the only way
- * `main-side` and `grid-2x2` are reachable: they are deliberately off the ladder.
+ * `rows-2`, `main-side` and `grid-2x2` are reachable: they are deliberately off the ladder.
  *
  * Invariants of the module are kept: a session never lives in two panes (an
  * already-open one is merely focused), and `sizes` is discarded on the axes the
@@ -208,6 +221,11 @@ export function closePane(state: PaneState, sessionId: string): PaneState {
 
   const before = shape(state)
   const panes = state.panes.filter((_, i) => i !== index)
+  // Closing the big pane of a three-pane main-side/side-main leaves the two panes that were
+  // stacked beside it. Keeping the layout would draw them as two columns — the pair would
+  // turn sideways under the user — so they stay what they were on screen: a stack.
+  const bigPane = state.layout === 'main-side' ? 0 : state.layout === 'side-main' ? 2 : -1
+  const layout: LayoutId = state.panes.length === 3 && index === bigPane ? 'rows-2' : state.layout
 
   if (panes.length === 0) {
     // Back to single: no panes left to justify a bigger layout.
@@ -217,12 +235,12 @@ export function closePane(state: PaneState, sessionId: string): PaneState {
   if (state.focused !== sessionId) {
     // The focus wasn't here, so there's nothing to recompute — but the pane count
     // still changed, and with it the number of tracks on both axes.
-    return dropStaleSizes(before, { ...state, panes })
+    return dropStaleSizes(before, { ...state, layout, panes })
   }
 
   // The adjacent pane is the one before the removed one, or the first if it was index 0.
   const adjacentIndex = index === 0 ? 0 : index - 1
-  return dropStaleSizes(before, { ...state, panes, focused: panes[adjacentIndex].sessionId })
+  return dropStaleSizes(before, { ...state, layout, panes, focused: panes[adjacentIndex].sessionId })
 }
 
 export function setFocus(state: PaneState, sessionId: string): PaneState {
@@ -276,13 +294,15 @@ function shape(state: PaneState): { layout: LayoutId; paneCount: number } {
 /**
  * How many tracks a layout has on each axis, for a given pane count.
  *
- * Column layouts are one column per pane and a single row; the grid family folds
- * the panes into two columns and grows downwards. This exists only to answer
+ * Column layouts are one column per pane and a single row, `rows-2` is their transpose
+ * (one column, one row per pane); the grid family folds the panes into two columns and
+ * grows downwards. This exists only to answer
  * "did this transition change the number of tracks on this axis?" — nothing is
  * drawn from it.
  */
 function tracks(layout: LayoutId, paneCount: number): Record<Axis, number> {
   if (paneCount <= 0) return { cols: 0, rows: 0 }
+  if (layout === 'rows-2') return { cols: 1, rows: paneCount }
   if (layout === 'grid-2x2') {
     // Row-major, so the third pane is the one that opens the second row.
     return { cols: Math.min(paneCount, 2), rows: Math.ceil(paneCount / 2) }
