@@ -19,13 +19,25 @@ interface Entry {
 const CHANGELOG: Entry[] = [
   {
     version: '2.6.0',
-    date: '2026-10-09',
-    tag: 'new',
+    date: '2026-10-13',
+    tag: 'latest',
     sections: [
       {
         title: 'Changes',
         items: [
+          'A server session’s file pane follows the shell: cd in the terminal and the pane moves to that folder, on SSH and WSL alike, with nothing installed on the server (it reads the folder the shell already reports in its prompt). Browsing the pane still never moves the shell; the terminal button on a folder row does that.',
+          'Both halves of a session start in the login user’s home. The WSL shell used to open on the Windows side (/mnt/c/Users/…) and the file pane on /home; the SSH file pane used to open on the host’s configured working folder.',
+          'The session screen is tidier: the header names the target only, the Files / History switch and the browser’s buttons share one bar that mirrors the terminal’s, and the folder you are on is typed on its own line. The WSL browser gains the up-to-parent button the SSH one had, and the terminal’s close button, which only went back to the list while the session stayed open, is gone.',
           'The floating status pill is gone. It popped up over every other app whenever a terminal was working and Argos was hidden or minimized, and the taskbar progress bar and the success badge already say the same thing. The tray, the taskbar and the approval toast carry on as before.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'Leaving a server session for another screen and coming back no longer wipes its terminal. The hidden terminal was being shrunk to a few rows and grown back on return, and that round trip threw the scrollback away; a hidden terminal is now left exactly as it was. Chats in the background were exposed to the same thing.',
+          'SSH connections now send keepalives (every 15 s, giving up after a minute of silence), so a session left idle in the background is no longer the first thing a VPN gateway or a NAT drops, taking whatever was running in it down.',
+          'The browser’s toolbar icons were squeezed to 6 px wide by the button’s own padding; they are readable again.',
+          'On a machine without the WSL feature enabled, the Remote & WSL list no longer shows wsl.exe’s help text as a set of distros.'
         ]
       }
     ]
@@ -33,7 +45,6 @@ const CHANGELOG: Entry[] = [
   {
     version: '2.5.0',
     date: '2026-10-09',
-    tag: 'latest',
     sections: [
       {
         title: 'Features',
