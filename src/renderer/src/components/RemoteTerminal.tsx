@@ -205,11 +205,16 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
     fitRef.current = fit
 
     const doFit = () => {
+      // A hidden pane has no size, and the fit addon measures computed style rather than
+      // the box, so fitting it shrank the shell to a handful of rows and grew it back on
+      // return — a resize round trip that cost the scrollback (see ChatTerminal's doFit).
+      // Left alone; the `active` effect refits once the pane is shown.
+      if (host.clientWidth === 0 || host.clientHeight === 0) return
       try {
         fit.fit()
         if (idRef.current) window.electronAPI.remoteShellResize(idRef.current, term.cols, term.rows)
       } catch {
-        // container mid-layout / zero-sized — ignore
+        // container mid-layout — ignore
       }
     }
     const ro = new ResizeObserver(() => doFit())

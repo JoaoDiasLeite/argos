@@ -536,11 +536,19 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     fitRef.current = fit
 
     const doFit = () => {
+      // A hidden pane (a backgrounded session, `display: none` up the tree) has no size,
+      // and the observer below does fire for that collapse. The fit addon does not read
+      // the box; it reads computed style, and on the hidden element that gave a 6-row
+      // terminal. Shrinking the pty to that and growing it back on return goes through
+      // ConPTY, which repaints the screen on every resize and drops the scrollback with
+      // it — so a hidden terminal is left exactly as it was. The `active` effect refits
+      // it once it is shown again.
+      if (host.clientWidth === 0 || host.clientHeight === 0) return
       try {
         fit.fit()
         if (idRef.current) window.electronAPI.terminalResize(idRef.current, term.cols, term.rows)
       } catch {
-        // container mid-layout / zero-sized — ignore
+        // container mid-layout — ignore
       }
     }
     // Debounced trailing, and ONLY for this observer callback — with 2-3 terminals on
@@ -608,11 +616,11 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
   }, [fontSize])
 
   // Re-fit when this pane goes from hidden to visible (e.g. switching back to a Remote
-  // Session tab). A `display: none` pane has zero size, so a backgrounded terminal is
-  // stale/zero-sized until shown again — the ResizeObserver above never fires for a display
-  // toggle (the element doesn't actually resize while hidden), so this explicit refit on
-  // `active` flipping true is the reliable trigger. Deliberately does NOT touch `reloadKey` /
-  // depend on anything that would respawn the PTY — only fit() + a resize message.
+  // Session tab). A `display: none` pane has zero size, and `doFit` above deliberately
+  // leaves a sizeless terminal alone, so a backgrounded terminal keeps its last real size
+  // until shown again — this explicit refit on `active` flipping true is what catches it
+  // up. Deliberately does NOT touch `reloadKey` / depend on anything that would respawn
+  // the PTY — only fit() + a resize message.
   useEffect(() => {
     if (!active) return
     const term = termRef.current
