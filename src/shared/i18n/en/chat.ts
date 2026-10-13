@@ -7,7 +7,7 @@ export default {
   'terminal.restart': 'Restart',
   'terminal.close': 'Close terminal',
   'terminal.menu': 'More actions',
-  'terminal.textSize': 'Text size · {size}',
+  'terminal.textSize': 'Text size',
   'terminal.starting': 'Starting {provider}…',
   'terminal.connecting': 'Connecting…',
   'terminal.exited': 'The shell exited.',

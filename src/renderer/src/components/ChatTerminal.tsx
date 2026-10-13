@@ -872,7 +872,6 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     setReloadKey((k) => k + 1)
   }
 
-  const textSizeGroup = t('chat.terminal.textSize', { size: fontSize })
   const menuItems: MenuItem[] = [
     {
       label: t('chat.terminal.restart'),
@@ -884,26 +883,42 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       onClick: restart
     },
     {
-      label: t('chat.terminal.smaller'),
-      group: textSizeGroup,
-      icon: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-      ),
-      disabled: fontSize <= MIN_FONT_SIZE,
-      onClick: () => setFontSize((s) => Math.max(MIN_FONT_SIZE, s - 1))
-    },
-    {
-      label: t('chat.terminal.larger'),
-      group: textSizeGroup,
-      icon: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-          <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-      ),
-      disabled: fontSize >= MAX_FONT_SIZE,
-      onClick: () => setFontSize((s) => Math.min(MAX_FONT_SIZE, s + 1))
+      // One row, VS Code style: the size is something you nudge a few times while
+      // watching the terminal, so the menu has to stay open across the clicks.
+      label: t('chat.terminal.textSize'),
+      onClick: () => {},
+      custom: (
+        <>
+          <span>{t('chat.terminal.textSize')}</span>
+          <span className="ui-menu-stepper">
+            <button
+              type="button"
+              className="ui-menu-stepper-btn"
+              onClick={() => setFontSize((s) => Math.max(MIN_FONT_SIZE, s - 1))}
+              disabled={fontSize <= MIN_FONT_SIZE}
+              title={t('chat.terminal.smaller')}
+              aria-label={t('chat.terminal.smaller')}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+            <span className="ui-menu-stepper-value">{fontSize}</span>
+            <button
+              type="button"
+              className="ui-menu-stepper-btn"
+              onClick={() => setFontSize((s) => Math.min(MAX_FONT_SIZE, s + 1))}
+              disabled={fontSize >= MAX_FONT_SIZE}
+              title={t('chat.terminal.larger')}
+              aria-label={t('chat.terminal.larger')}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          </span>
+        </>
+      )
     },
     ...(onPopOut
       ? [{

@@ -11,6 +11,9 @@ export interface MenuItem {
   active?: boolean
   /** Optional section label — rendered once above the first item of each run. */
   group?: string
+  /** A row of the caller's own controls (a stepper, say) in place of the button. Clicks
+   *  inside it leave the menu open: it exists for actions you repeat while looking. */
+  custom?: JSX.Element
 }
 
 interface MenuProps {
@@ -61,17 +64,21 @@ export default function Menu({ triggerClass, triggerContent, triggerTitle, ariaL
               {it.group && it.group !== items[i - 1]?.group && (
                 <span className="eyebrow ui-menu-group">{it.group}</span>
               )}
-              <button
-                className={`ui-menu-item ${it.danger ? 'danger' : ''} ${it.active ? 'active' : ''}`}
-                disabled={it.disabled}
-                onClick={() => {
-                  setOpen(false)
-                  it.onClick()
-                }}
-              >
-                {it.icon}
-                <span>{it.label}</span>
-              </button>
+              {it.custom ? (
+                <div className="ui-menu-custom">{it.custom}</div>
+              ) : (
+                <button
+                  className={`ui-menu-item ${it.danger ? 'danger' : ''} ${it.active ? 'active' : ''}`}
+                  disabled={it.disabled}
+                  onClick={() => {
+                    setOpen(false)
+                    it.onClick()
+                  }}
+                >
+                  {it.icon}
+                  <span>{it.label}</span>
+                </button>
+              )}
             </div>
           ))}
         </div>

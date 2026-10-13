@@ -9,7 +9,7 @@ const chat: Record<keyof typeof en, string> = {
   'terminal.restart': 'Reiniciar',
   'terminal.close': 'Fechar terminal',
   'terminal.menu': 'Mais ações',
-  'terminal.textSize': 'Tamanho do texto · {size}',
+  'terminal.textSize': 'Tamanho do texto',
   'terminal.starting': 'A iniciar o {provider}…',
   'terminal.connecting': 'A ligar…',
   'terminal.exited': 'A shell terminou.',

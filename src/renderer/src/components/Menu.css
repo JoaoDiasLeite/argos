@@ -61,3 +61,42 @@
 }
 .ui-menu-group { padding: 8px 10px 4px; }
 .ui-menu-row:first-child .ui-menu-group { padding-top: 4px; }
+
+/* A caller-drawn row (see MenuItem.custom): the item's padding and type, no hover of its
+   own — its controls carry their own. */
+.ui-menu-custom {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+.ui-menu-custom > span:first-child { flex: 1; }
+.ui-menu-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.ui-menu-stepper-value {
+  min-width: 2em;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.ui-menu-stepper-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-1);
+  cursor: pointer;
+}
+.ui-menu-stepper-btn:hover:not(:disabled) { background: var(--bg-2); color: var(--text-0); border-color: var(--border-light); }
+.ui-menu-stepper-btn:disabled { opacity: 0.4; cursor: default; }
