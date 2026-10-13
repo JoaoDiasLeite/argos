@@ -866,7 +866,11 @@ ipcMain.handle('dev:is-dev', () => isDevInstance)
 // it in memory, then reloads the window so the renderer reads it all again.
 ipcMain.handle('dev:sync-from-prod', () => {
   const result = syncDevFromProd()
-  if (!result.migrated) return { ok: false, error: result.detail ?? 'nothing was copied' }
+  if (!result.migrated) {
+    const error = result.detail ?? 'nothing was copied'
+    console.error(`[dev-sync] ${error}`)
+    return { ok: false, error }
+  }
   loadAuthState()
   loadAccounts()
   loadProviderAccounts()

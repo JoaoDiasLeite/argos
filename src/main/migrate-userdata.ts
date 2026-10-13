@@ -117,6 +117,10 @@ export interface MigrationOptions {
   /** Top-level entries left in the old directory and used from there: not copied, and
    *  paths pointing into them are not rewritten. */
   shared?: string[]
+  /** Import on top of a directory that is already in use. Only a resync may say so: it
+   *  has just emptied the directory itself, and a running app may already have written a
+   *  fresh config or session back into it before the import starts. */
+  clobber?: boolean
 }
 
 /**
@@ -141,7 +145,7 @@ export function resyncUserDataDir(
     }
     fs.rmSync(path.join(newDir, MARKER), { force: true })
     // Runtime state stays out of a resync even when the first import carried it.
-    return migrateUserDataDir(oldDir, newDir, { ...options, carry: [] })
+    return migrateUserDataDir(oldDir, newDir, { ...options, carry: [], clobber: true })
   } catch (e) {
     return { migrated: false, detail: e instanceof Error ? e.message : String(e) }
   }
@@ -161,7 +165,7 @@ export function migrateUserDataDir(
     if (fs.existsSync(path.join(newDir, MARKER))) return { migrated: false }
     // Already carrying data (a fresh install that's been used, or a seeded test instance):
     // importing on top of it would overwrite real state.
-    if (fs.existsSync(newDir) && IN_USE_MARKERS.some((m) => fs.existsSync(path.join(newDir, m)))) {
+    if (!options.clobber && fs.existsSync(newDir) && IN_USE_MARKERS.some((m) => fs.existsSync(path.join(newDir, m)))) {
       return { migrated: false, detail: `${newDir} already has data; skipped import` }
     }
 

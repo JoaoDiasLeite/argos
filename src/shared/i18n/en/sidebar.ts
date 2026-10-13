@@ -4,6 +4,7 @@ export default {
   'titleBar.devSyncConfirm': 'Overwrite dev data?',
   'titleBar.devSyncing': 'Syncing…',
   'titleBar.devSyncFailed': 'Sync failed',
+  'titleBar.devSyncFailedWhy': 'Sync failed: {error}',
   'titleBar.devSync': 'Sync with Argos',
   'titleBar.installUpdate': 'Install Argos v{version} and relaunch',
   'titleBar.restartToUpdate': 'Restart to update',

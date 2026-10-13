@@ -5,6 +5,7 @@ const sidebar: Record<keyof typeof en, string> = {
   'titleBar.devSyncConfirm': 'Substituir os dados de desenvolvimento?',
   'titleBar.devSyncing': 'A sincronizar…',
   'titleBar.devSyncFailed': 'A sincronização falhou',
+  'titleBar.devSyncFailedWhy': 'A sincronização falhou: {error}',
   'titleBar.devSync': 'Sincronizar com o Argos',
   'titleBar.installUpdate': 'Instalar o Argos v{version} e reiniciar',
   'titleBar.restartToUpdate': 'Reiniciar para atualizar',

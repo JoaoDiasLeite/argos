@@ -42,12 +42,16 @@ export default function TitleBar({ maximized, runningCount = 0 }: Props) {
   // snapshot from the first dev launch. Two clicks, since it discards dev's own changes.
   const [isDev, setIsDev] = useState(false)
   const [sync, setSync] = useState<'idle' | 'confirm' | 'syncing' | 'failed'>('idle')
+  // Why the last sync failed, for the button's tooltip: the console is the wrong place
+  // for a dev-only button whose whole point is to be clicked without opening devtools.
+  const [syncError, setSyncError] = useState<string | null>(null)
   useEffect(() => {
     window.electronAPI.devIsDev().then(setIsDev)
   }, [])
   useEffect(() => {
     if (sync !== 'confirm' && sync !== 'failed') return
-    const timer = setTimeout(() => setSync('idle'), 4000)
+    // A failure stays on screen long enough to hover for its reason.
+    const timer = setTimeout(() => setSync('idle'), sync === 'failed' ? 15000 : 4000)
     return () => clearTimeout(timer)
   }, [sync])
   const onSync = async () => {
@@ -58,6 +62,7 @@ export default function TitleBar({ maximized, runningCount = 0 }: Props) {
     const r = await window.electronAPI.devSyncFromProd()
     if (!r.ok) {
       console.error('[dev-sync]', r.error)
+      setSyncError(r.error ?? null)
       setSync('failed')
     }
   }
@@ -76,7 +81,11 @@ export default function TitleBar({ maximized, runningCount = 0 }: Props) {
             onClick={onSync}
             onDoubleClick={(e) => e.stopPropagation()}
             disabled={sync === 'syncing'}
-            title={t('sidebar.titleBar.devSyncTitle')}
+            title={
+              sync === 'failed' && syncError
+                ? t('sidebar.titleBar.devSyncFailedWhy', { error: syncError })
+                : t('sidebar.titleBar.devSyncTitle')
+            }
           >
             <svg
               className={sync === 'syncing' ? 'spinning' : undefined}
