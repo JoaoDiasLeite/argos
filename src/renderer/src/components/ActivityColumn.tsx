@@ -647,7 +647,6 @@ export default function ActivityColumn({ terminalId, runbookPath, current, earli
                     calls: plural(t, 'sessions.activity.calls', r.calls.length)
                   })}
                 </span>
-                <span className="ac-muted">${(r.ended?.costUsd ?? 0).toFixed(2)}</span>
                 <button type="button" className="ac-link" onClick={() => setReportRunId(r.runId)}>
                   {t('sessions.activity.report')}
                 </button>

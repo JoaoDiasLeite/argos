@@ -268,7 +268,7 @@
 }
 .ac-earlier {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   padding: 8px 6px;
@@ -276,7 +276,6 @@
   color: var(--text-1);
   flex-shrink: 0;
 }
-.ac-muted { color: var(--text-2); }
 .ac-link {
   padding: 0;
   border: none;
