@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useMemo, ReactNode, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { ProviderId } from '../types'
+import { GitFile, ProviderId } from '../types'
 import { VISIBLE_CLI_PROVIDERS } from '../lib/cli-providers'
 import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
+import ChangesViewer, { ChangeFileRow } from '../components/ChangesViewer'
 import './views.css'
 import './HomeView.css'
 
@@ -44,6 +45,9 @@ export interface HomeRepo {
   fileCount: number
   loading?: boolean
   error?: string
+  /** The folder gitStatus ran in: the changes viewer asks for diffs there. */
+  path: string
+  files?: GitFile[]
 }
 
 /** A recently used project, dirty or not — the left side's "Recent projects". */
@@ -114,7 +118,12 @@ interface Props {
   onOpenServer: (id: string) => void
   onOpenIntervention: (id: string) => void
   onOpenRepo: (key: string) => void
+  /** Picks the changes viewer's frame: a modal when comfortable, a side panel when compact. */
+  density: 'comfortable' | 'compact'
 }
+
+/** How many files an expanded Uncommitted work row lists before the rest fold. */
+const REPO_FILES_SHOWN = 6
 
 /** How many "Pick up where you left off" rows show before the rest fold. */
 const RECENT_SHOWN = 6
@@ -417,12 +426,20 @@ export default function HomeView({
   onOpenSession,
   onOpenServer,
   onOpenIntervention,
-  onOpenRepo
+  onOpenRepo,
+  density
 }: Props) {
   const t = useT()
   const { locale } = useLanguage()
   const [prompt, setPrompt] = useState('')
   const [recentOpen, setRecentOpen] = useState(false)
+  // One repo open at a time: two expanded file lists in a 460 px column would push
+  // everything under them off screen.
+  const [expandedRepo, setExpandedRepo] = useState<string | null>(null)
+  const [repoShowAll, setRepoShowAll] = useState(false)
+  const [viewer, setViewer] = useState<{ key: string } | null>(null)
+  // Looked up by key, not kept as a copy, so the viewer follows a refreshed status.
+  const viewerRepo = viewer ? repos.find((r) => r.key === viewer.key) : undefined
 
   // Local choice, seeded from `start`. Each field tracks whether the user has
   // touched it (`touchedRef`): an untouched field keeps following `start` as it
@@ -522,7 +539,7 @@ export default function HomeView({
   const hiddenRecent = recent.length - shownRecent.length
 
   return (
-    <div className="view">
+    <div className="view home-view">
       <div className="home-page">
         <div className="home-main">
           <header className="home-head">
@@ -737,24 +754,59 @@ export default function HomeView({
           {!nothing && repos.length > 0 && (
             <section className="home-sec" aria-label={t('home.repos.label')}>
               <h2 className="eyebrow">{t('home.repos.title', { n: repos.length })}</h2>
-              {repos.map((r) => (
-                <div key={r.key} className="home-row home-live static">
-                  <span className="home-name">{r.name}</span>
-                  {r.branch && <span className="home-branch">{r.branch}</span>}
-                  <span className="home-grow" />
-                  {r.loading ? (
-                    <span className="view-spinner small" aria-label={t('home.repos.counting')} />
-                  ) : r.error ? (
-                    <span className="home-error" role="alert">
-                      {r.error}
-                    </span>
-                  ) : (
-                    <button className="btn-ghost small" onClick={() => onOpenRepo(r.key)}>
-                      {plural(t, 'home.repos.files', r.fileCount)}
-                    </button>
-                  )}
-                </div>
-              ))}
+              {repos.map((r) => {
+                const files = r.files ?? []
+                const shownFiles = repoShowAll ? files : files.slice(0, REPO_FILES_SHOWN)
+                return (
+                  <div key={r.key}>
+                    <div className="home-row home-live static">
+                      <span className="home-name">{r.name}</span>
+                      {r.branch && <span className="home-branch">{r.branch}</span>}
+                      <span className="home-grow" />
+                      {r.loading ? (
+                        <span className="view-spinner small" aria-label={t('home.repos.counting')} />
+                      ) : r.error ? (
+                        <span className="home-error" role="alert">
+                          {r.error}
+                        </span>
+                      ) : (
+                        <button
+                          className="btn-ghost small"
+                          aria-expanded={expandedRepo === r.key}
+                          onClick={() => {
+                            setExpandedRepo((cur) => (cur === r.key ? null : r.key))
+                            setRepoShowAll(false)
+                          }}
+                        >
+                          {plural(t, 'home.repos.files', r.fileCount)}
+                        </button>
+                      )}
+                    </div>
+                    {expandedRepo === r.key && !r.loading && !r.error && (
+                      <div className="changes-expanded">
+                        <div className="changes-list">
+                          {shownFiles.map((f) => (
+                            <ChangeFileRow key={f.path} file={f} />
+                          ))}
+                        </div>
+                        {files.length > shownFiles.length && (
+                          <button type="button" className="changes-more" onClick={() => setRepoShowAll(true)}>
+                            {t('home.repos.showMore', { n: files.length - shownFiles.length })}
+                          </button>
+                        )}
+                        <div className="changes-actions">
+                          <button className="btn-primary small" onClick={() => setViewer({ key: r.key })}>
+                            {t('home.repos.seeChanges')}
+                          </button>
+                          <button className="btn-ghost small" onClick={() => onOpenRepo(r.key)}>
+                            {t('home.repos.openTerminal')}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </section>
           )}
 
@@ -763,6 +815,16 @@ export default function HomeView({
               for it without new IPC. */}
         </aside>
       </div>
+      {viewerRepo && (
+        <ChangesViewer
+          key={viewerRepo.key}
+          mode={density === 'compact' ? 'panel' : 'modal'}
+          repo={viewerRepo}
+          cwd={viewerRepo.path}
+          onClose={() => setViewer(null)}
+          onOpenRepo={onOpenRepo}
+        />
+      )}
     </div>
   )
 }

@@ -13,7 +13,8 @@ import {
   PlanUsageReport,
   CcSessionTarget,
   LiveSession,
-  OpsIntervention
+  OpsIntervention,
+  GitFile
 } from './types'
 import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
@@ -1894,7 +1895,10 @@ export default function App() {
   // should only re-run when the entries themselves change, not every time a repo name
   // or rename arrives, or it would restart every row's spinner mid-flight.
   const [homeRepoStatus, setHomeRepoStatus] = useState<
-    Record<string, { branch?: string; fileCount: number; loading?: boolean; error?: string; noGit?: boolean }>
+    Record<
+      string,
+      { branch?: string; fileCount: number; files?: GitFile[]; loading?: boolean; error?: string; noGit?: boolean }
+    >
   >({})
   useEffect(() => {
     if (view !== 'home') return
@@ -1912,7 +1916,12 @@ export default function App() {
           if (cancelled) return
           setHomeRepoStatus((prev) => ({
             ...prev,
-            [entry.key]: { branch: status.branch, fileCount: status.files.length, noGit: !status.isRepo }
+            [entry.key]: {
+              branch: status.branch,
+              fileCount: status.files.length,
+              files: status.files,
+              noGit: !status.isRepo
+            }
           }))
         })
         .catch(() => {
@@ -1950,7 +1959,9 @@ export default function App() {
           name,
           branch: status?.branch,
           fileCount: status?.fileCount ?? 0,
-          error: status?.error
+          error: status?.error,
+          path: e.path,
+          files: status?.files
         })
       }
       recentProjects.push({
@@ -2755,6 +2766,7 @@ export default function App() {
               setProjectFocus({ key, at: Date.now() })
               setView('projects')
             }}
+            density={ui?.density ?? 'comfortable'}
           />
         </Suspense>
       )}

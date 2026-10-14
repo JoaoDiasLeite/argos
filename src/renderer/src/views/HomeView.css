@@ -206,3 +206,6 @@
 }
 .home-needs-text { overflow-wrap: anywhere; }
 .home-error { font-size: 12px; color: var(--error); }
+
+/* The changes panel (compact density) is positioned against this, over the main column. */
+.home-view { position: relative; }

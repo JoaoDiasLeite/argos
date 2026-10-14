@@ -68,7 +68,21 @@ const home: Record<keyof typeof en, string> = {
   'repos.clean': 'Todos os repositórios recentes estão limpos.',
   'repos.counting': 'A contar alterações',
   'repos.files.one': '{n} ficheiro',
-  'repos.files.other': '{n} ficheiros'
+  'repos.files.other': '{n} ficheiros',
+  'repos.seeChanges': 'Ver alterações',
+  'repos.openTerminal': 'Abrir terminal aqui',
+  'repos.showMore': 'Mostrar mais {n}',
+  'repos.binary': 'binário',
+  'changes.title': 'Alterações por commit',
+  'changes.files': 'Ficheiros · {n}',
+  'changes.close': 'Fechar',
+  'changes.openTerminal': 'Abrir terminal neste repositório',
+  'changes.copyDiff': 'Copiar diff',
+  'changes.copied': 'Copiado',
+  'changes.binaryFile': 'Ficheiro binário',
+  'changes.tooLarge': 'Ficheiro demasiado grande para mostrar',
+  'changes.loadError': 'Não foi possível carregar o diff deste ficheiro',
+  'changes.loading': 'A carregar…'
 }
 
 export default home

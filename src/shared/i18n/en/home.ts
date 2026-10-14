@@ -67,5 +67,19 @@ export default {
   'repos.clean': 'All recent repos are clean.',
   'repos.counting': 'Counting changes',
   'repos.files.one': '{n} file',
-  'repos.files.other': '{n} files'
+  'repos.files.other': '{n} files',
+  'repos.seeChanges': 'See changes',
+  'repos.openTerminal': 'Open terminal here',
+  'repos.showMore': 'Show {n} more',
+  'repos.binary': 'binary',
+  'changes.title': 'Uncommitted changes',
+  'changes.files': 'Files · {n}',
+  'changes.close': 'Close',
+  'changes.openTerminal': 'Open terminal in this repo',
+  'changes.copyDiff': 'Copy diff',
+  'changes.copied': 'Copied',
+  'changes.binaryFile': 'Binary file',
+  'changes.tooLarge': 'File too large to show',
+  'changes.loadError': "Could not load this file's diff",
+  'changes.loading': 'Loading…'
 } satisfies Record<string, string>
