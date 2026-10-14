@@ -143,6 +143,21 @@ function hasVisibleContent(term: Terminal): boolean {
   return false
 }
 
+// The folder-trust question Claude Code ("Yes, I trust this folder") and Codex ("Do you
+// trust the files in this folder?") ask on a folder they have not seen. A seeded prompt
+// typed into it is lost, and its Enter answers the question with the default — "No,
+// exit" — so a run in a fresh runbook folder died with code 1 before the user saw why.
+const TRUST_PROMPT_RE = /trust this folder|trust the files in this folder/i
+
+function viewportShows(term: Terminal, re: RegExp): boolean {
+  const buf = term.buffer.active
+  for (let i = 0; i < term.rows; i++) {
+    const line = buf.getLine(buf.viewportY + i)
+    if (line && re.test(line.translateToString(true))) return true
+  }
+  return false
+}
+
 /**
  * Whether a local pty on this platform swallows bracketed-paste markers instead of
  * consuming them. True on Windows, where a local terminal is ConPTY.
@@ -215,6 +230,8 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
   onPromptSentRef.current = onInitialPromptSent
   const sentPromptRef = useRef(false)
   const promptTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  // The seeded prompt is waiting for a folder-trust question to be answered (TRUST_PROMPT_RE).
+  const holdingPromptRef = useRef(false)
   // A pty outlives this component (see the effect cleanup below), so remounting reattaches to
   // a live one and replays its buffered scrollback. Live chunks that land before that replay
   // is written have to wait in `queuedData`, or they'd paint ahead of the history they follow.
@@ -706,13 +723,24 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       const text = promptRef.current
       if (!text || sentPromptRef.current) return
       sentPromptRef.current = true
+      promptTimerRef.current = setTimeout(typeInitialPrompt, INITIAL_PROMPT_DELAY_MS)
+    }
+
+    // A trust question on screen holds the prompt until the user has answered it; writeChunk
+    // re-arms this once the question is gone. Answered "No", the CLI exits and nothing is sent.
+    function typeInitialPrompt(): void {
+      const text = promptRef.current
+      if (!text) return
+      if (termRef.current && viewportShows(termRef.current, TRUST_PROMPT_RE)) {
+        holdingPromptRef.current = true
+        return
+      }
+      holdingPromptRef.current = false
+      window.electronAPI.terminalWrite(terminalId, text)
       promptTimerRef.current = setTimeout(() => {
-        window.electronAPI.terminalWrite(terminalId, text)
-        promptTimerRef.current = setTimeout(() => {
-          window.electronAPI.terminalWrite(terminalId, '\r')
-          onPromptSentRef.current?.()
-        }, PROMPT_SUBMIT_DELAY_MS)
-      }, INITIAL_PROMPT_DELAY_MS)
+        window.electronAPI.terminalWrite(terminalId, '\r')
+        onPromptSentRef.current?.()
+      }, PROMPT_SUBMIT_DELAY_MS)
     }
 
     const writeChunk = (data: string): void => {
@@ -733,6 +761,13 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
           awaitingRevealRef.current = false
           clearTimeout(quietTimerRef.current)
           quietTimerRef.current = setTimeout(reveal, REVEAL_PAINT_GRACE_MS)
+        }
+        // The trust question has been answered: give the CLI that follows it the same beat
+        // to bind its input as a first launch gets.
+        if (holdingPromptRef.current && !viewportShows(term, TRUST_PROMPT_RE)) {
+          holdingPromptRef.current = false
+          clearTimeout(promptTimerRef.current)
+          promptTimerRef.current = setTimeout(typeInitialPrompt, INITIAL_PROMPT_DELAY_MS)
         }
       })
     }
@@ -755,6 +790,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       // so surfacing it as an "exited" state is just noise (and can race a live reuse).
       if (e.exitCode === -1073741510 || e.exitCode === 3221225786) return
       setExited(true)
+      holdingPromptRef.current = false
       const note = e.exitCode
         ? tRef.current('chat.terminal.processExitedCode', { code: e.exitCode })
         : tRef.current('chat.terminal.processExited')
