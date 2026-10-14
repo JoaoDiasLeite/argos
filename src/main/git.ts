@@ -1,5 +1,6 @@
 import { execFile } from 'child_process'
 import * as fs from 'fs'
+import * as path from 'path'
 
 function git(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise((resolve) => {
@@ -19,6 +20,10 @@ export interface GitFile {
   worktree: string
   staged: boolean
   untracked: boolean
+  /** Lines added vs HEAD (the whole file for an untracked one). Undefined when unknown. */
+  added?: number
+  deleted?: number
+  binary?: boolean
 }
 
 export interface GitStatus {
@@ -54,6 +59,8 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
     })
   }
 
+  await addLineCounts(cwd, files)
+
   let ahead = 0
   let behind = 0
   const ab = await git(cwd, ['rev-list', '--left-right', '--count', '@{u}...HEAD'])
@@ -64,6 +71,190 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
   }
 
   return { isRepo: true, branch, files, ahead, behind }
+}
+
+export interface NumstatEntry {
+  added: number
+  deleted: number
+  binary: boolean
+}
+
+/**
+ * `git diff --numstat` output keyed by path. A rename is printed as `old => new` or with
+ * braces (`src/{a => b}/x.ts`); it is keyed by the new path, since that is the one the
+ * porcelain status names. Binaries print `-` for both counts.
+ */
+export function parseNumstat(stdout: string): Map<string, NumstatEntry> {
+  const out = new Map<string, NumstatEntry>()
+  for (const line of stdout.split('\n')) {
+    const m = /^(-|\d+)\t(-|\d+)\t(.+)$/.exec(line.replace(/\r$/, ''))
+    if (!m) continue
+    const binary = m[1] === '-' && m[2] === '-'
+    out.set(renameTarget(m[3]), {
+      added: binary ? 0 : Number(m[1]),
+      deleted: binary ? 0 : Number(m[2]),
+      binary
+    })
+  }
+  return out
+}
+
+function renameTarget(p: string): string {
+  const braced = /^(.*)\{(.*) => (.*)\}(.*)$/.exec(p)
+  // "{a => }/x" or "{ => b}/x" leave a doubled slash once the empty side is dropped.
+  if (braced) return (braced[1] + braced[3] + braced[4]).replace(/\/\//g, '/')
+  const plain = p.indexOf(' => ')
+  return plain >= 0 ? p.slice(plain + 4) : p
+}
+
+/** Untracked files are read whole to count them; past this they are left as "binary"
+ *  rather than pulling a large artefact into memory just for a number. */
+const UNTRACKED_COUNT_CAP = 2 * 1024 * 1024
+/** Above this a side of a diff is not sent to the renderer at all. */
+const DIFF_SIDE_CAP = 1024 * 1024
+
+function looksBinary(buf: Buffer): boolean {
+  return buf.subarray(0, 8192).includes(0)
+}
+
+function countLines(text: string): number {
+  if (!text) return 0
+  const n = text.split('\n').length
+  return text.endsWith('\n') ? n - 1 : n
+}
+
+async function addLineCounts(cwd: string, files: GitFile[]): Promise<void> {
+  if (files.length === 0) return
+  const head = await git(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD'])
+  let counts: Map<string, NumstatEntry>
+  if (head.code === 0) {
+    counts = parseNumstat((await git(cwd, ['diff', '--numstat', 'HEAD'])).stdout)
+  } else {
+    // No commits yet, so nothing to diff against: staged and unstaged are summed instead.
+    const cached = parseNumstat((await git(cwd, ['diff', '--numstat', '--cached'])).stdout)
+    const worktree = parseNumstat((await git(cwd, ['diff', '--numstat'])).stdout)
+    counts = new Map(cached)
+    for (const [p, w] of worktree) {
+      const c = counts.get(p)
+      counts.set(
+        p,
+        c ? { added: c.added + w.added, deleted: c.deleted + w.deleted, binary: c.binary || w.binary } : w
+      )
+    }
+  }
+
+  for (const f of files) {
+    if (f.untracked) {
+      try {
+        const full = resolveInRepo(cwd, f.path)
+        const stat = fs.statSync(full)
+        if (stat.size > UNTRACKED_COUNT_CAP) {
+          f.binary = true
+          continue
+        }
+        const buf = fs.readFileSync(full)
+        if (looksBinary(buf)) f.binary = true
+        else {
+          f.added = countLines(buf.toString('utf-8'))
+          f.deleted = 0
+        }
+      } catch {
+        // Gone between status and the read, or a directory: no count rather than a wrong one.
+      }
+      continue
+    }
+    // Porcelain shows a rename as "old -> new"; numstat is keyed by the new path.
+    const arrow = f.path.indexOf(' -> ')
+    const c = counts.get(arrow >= 0 ? f.path.slice(arrow + 4) : f.path)
+    if (!c) continue
+    if (c.binary) f.binary = true
+    else {
+      f.added = c.added
+      f.deleted = c.deleted
+    }
+  }
+}
+
+/**
+ * A repo-relative path resolved inside `cwd`, refusing anything that could step outside
+ * it: the path comes from the renderer, and the caller reads whatever file it names.
+ */
+function resolveInRepo(cwd: string, filePath: string): string {
+  const norm = filePath.replace(/\\/g, '/')
+  if (!norm || path.isAbsolute(filePath) || /^[a-zA-Z]:/.test(norm) || norm.startsWith('/') || norm.split('/').includes('..')) {
+    throw new Error('bad path')
+  }
+  return path.join(cwd, norm)
+}
+
+export interface GitFileDiff {
+  path: string
+  oldText: string
+  newText: string
+  binary: boolean
+  tooLarge: boolean
+  /** Unified diff text, for copying; synthesised for an untracked file. */
+  patch: string
+}
+
+/**
+ * One file's change vs HEAD, staged and unstaged together: both sides whole (the
+ * renderer's DiffView computes its own rows) plus git's patch for "Copy diff". Throws on
+ * a path that is absolute or climbs out of the repo.
+ */
+export async function getFileDiff(cwd: string, filePath: string): Promise<GitFileDiff> {
+  // Porcelain names a rename "old -> new"; the worktree side is the new path.
+  const arrow = filePath.indexOf(' -> ')
+  const oldPath = arrow >= 0 ? filePath.slice(0, arrow) : filePath
+  const newPath = arrow >= 0 ? filePath.slice(arrow + 4) : filePath
+  resolveInRepo(cwd, oldPath)
+  const full = resolveInRepo(cwd, newPath)
+  const result: GitFileDiff = { path: filePath, oldText: '', newText: '', binary: false, tooLarge: false, patch: '' }
+
+  const oldBuf = await gitShowBuffer(cwd, `HEAD:${oldPath.replace(/\\/g, '/')}`)
+  let newBuf: Buffer = Buffer.alloc(0)
+  try {
+    const stat = fs.statSync(full)
+    if (stat.isFile()) {
+      if (stat.size > DIFF_SIDE_CAP) result.tooLarge = true
+      else newBuf = fs.readFileSync(full)
+    }
+  } catch {
+    // Deleted in the worktree: the new side stays empty.
+  }
+  if (oldBuf.length > DIFF_SIDE_CAP) result.tooLarge = true
+  if (result.tooLarge) return result
+  if (looksBinary(oldBuf) || looksBinary(newBuf)) {
+    result.binary = true
+    return result
+  }
+  result.oldText = oldBuf.toString('utf-8')
+  result.newText = newBuf.toString('utf-8')
+
+  const tracked = await git(cwd, ['ls-files', '--error-unmatch', '--', newPath])
+  if (tracked.code === 0 || arrow >= 0) {
+    const args = ['diff', 'HEAD', '--']
+    if (arrow >= 0) args.push(oldPath)
+    args.push(newPath)
+    result.patch = (await git(cwd, args)).stdout
+  }
+  if (!result.patch && result.newText && !result.oldText) {
+    // Untracked: `git diff --no-index /dev/null` misbehaves on Windows, and the patch of
+    // a new file is only every line added.
+    const lines = result.newText.replace(/\n$/, '').split('\n')
+    result.patch = `--- /dev/null\n+++ b/${newPath.replace(/\\/g, '/')}\n` + lines.map((l) => `+${l}`).join('\n') + '\n'
+  }
+  return result
+}
+
+/** `git show <rev>:<path>` as raw bytes; empty on any failure (new file, no HEAD). The
+ *  buffer is generous so an oversized blob still arrives and is caught as tooLarge. */
+function gitShowBuffer(cwd: string, spec: string): Promise<Buffer> {
+  return new Promise((resolve) => {
+    execFile('git', ['show', spec], { cwd, encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 }, (err, stdout) =>
+      resolve(err ? Buffer.alloc(0) : stdout)
+    )
+  })
 }
 
 export interface RepoName {

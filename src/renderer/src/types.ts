@@ -623,6 +623,21 @@ export interface GitFile {
   worktree: string
   staged: boolean
   untracked: boolean
+  /** Lines added vs HEAD (the whole file for an untracked one). Undefined when unknown. */
+  added?: number
+  deleted?: number
+  binary?: boolean
+}
+
+/** One file's change vs HEAD, as git.ts getFileDiff returns it. */
+export interface GitFileDiff {
+  path: string
+  oldText: string
+  newText: string
+  binary: boolean
+  tooLarge: boolean
+  /** Unified diff text, for copying; synthesised for an untracked file. */
+  patch: string
 }
 
 export interface GitStatus {
@@ -1608,6 +1623,8 @@ declare global {
 
       // Git
       gitStatus: (cwd: string) => Promise<GitStatus>
+      /** Rejects on a path that is absolute or climbs out of the repo. */
+      gitFileDiff: (cwd: string, filePath: string) => Promise<GitFileDiff>
       gitRepoName: (cwd: string) => Promise<RepoName>
 
       // File system
