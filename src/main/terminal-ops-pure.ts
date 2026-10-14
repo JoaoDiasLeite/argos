@@ -24,10 +24,10 @@ export interface OpsTerminalLaunch {
  */
 export const OPS_DISALLOWED_TOOLS = [
   'Bash',
+  // Not MultiEdit: current CLIs no longer have it and warn on every launch that the rule
+  // "matches no known tool". On an older CLI that still does, a deny on Edit covers every
+  // built-in tool that edits files, MultiEdit included.
   'Edit',
-  // Older CLIs had MultiEdit as its own tool beside Edit; naming it costs nothing on a
-  // CLI that no longer has it and closes local file writes on one that still does.
-  'MultiEdit',
   'Write',
   'NotebookEdit',
   'WebFetch',
