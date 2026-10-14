@@ -18,9 +18,38 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '2.7.0',
+    date: '2026-10-14',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Home shows what is waiting to be committed. The "{n} files" chip under Uncommitted work now expands the file list in place, with each file’s status, path and added/removed line counts. See changes opens every file’s diff: in a dialog in comfortable density, or in a panel beside the column in compact density, with Copy diff and a button to open a terminal in that repo.',
+          'Two chats can be stacked one above the other. Drop a chat on the top or bottom of a lone pane and it becomes a vertical split; drop another beside the stack and it takes the full-height column. Closing the big pane of a three-pane layout leaves the stack.'
+        ]
+      },
+      {
+        title: 'Changes',
+        items: [
+          'Every chat pane has one header: the chat’s name (cut at 25 characters, full name on hover), its folder, a ⋯ menu and one close button. Restart, the text size, pop out and Close terminal live in the menu; the text size is a single − 13 + row that keeps the menu open while you nudge it. In a split the × closes the pane and Close terminal moves into the menu, so a split no longer shows two close buttons.',
+          'A terminal started without a folder now opens in an "argos" folder inside your home folder, created on first use. Claude Code never remembers trust for the home folder itself, so a chat started there met the trust question on every launch; a folder one level down is trusted once.',
+          'The welcome screen and the onboarding dialog show the Argos mark instead of a generic plus sign.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'Restart on a WSL or SSH chat relaunches the CLI with its conversation, behind the same loader as the first open, instead of dropping to a bare shell.',
+          'The loader no longer lifts on the shell’s echo of the launch command, so you no longer watch "claude --resume …" scroll past before the CLI paints.',
+          'Development builds: the Sync with Argos button says why a sync failed, in its tooltip and in the log, and a resync is no longer refused because the running app had already written a fresh config back.'
+        ]
+      }
+    ]
+  },
+  {
     version: '2.6.0',
     date: '2026-10-13',
-    tag: 'latest',
     sections: [
       {
         title: 'Changes',
