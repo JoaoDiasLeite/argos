@@ -10,6 +10,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--bg-1);
   border-left: 1px solid var(--border);
 }
@@ -298,7 +299,8 @@
 }
 
 /* ── Scripts list: folded, one line each ── */
-.ac-scripts { display: flex; flex-direction: column; gap: 2px; margin: 10px 12px 0; flex-shrink: 0; }
+/* Shrinks (and scrolls) before the run list does, so the list keeps room to scroll. */
+.ac-scripts { display: flex; flex-direction: column; gap: 2px; margin: 10px 12px 0; flex: 0 1 auto; min-height: 0; overflow-y: auto; }
 .ac-scripts-head {
   display: flex; align-items: center; gap: 6px; padding: 4px 6px; border: none; background: transparent;
   color: var(--text-2); font: inherit; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; cursor: pointer; text-align: left;
