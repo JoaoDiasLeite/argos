@@ -432,6 +432,17 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         }
         return false
       }
+      // Ctrl+Z is undo in the prompt, not job control: the CLI reads it as "suspend", which
+      // on Windows leaves a zombified CLI with no `fg` to bring it back. Ctrl+_ (\x1f) is the
+      // CLI's own undo key, so that is what gets sent. A plain shell keeps Ctrl+Z as is.
+      const ctrlZ = e.key.toLowerCase() === 'z' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey
+      if (ctrlZ && autoLaunchCli) {
+        if (e.type === 'keydown') {
+          e.preventDefault()
+          window.electronAPI.terminalWrite(idRef.current, '\x1f')
+        }
+        return false
+      }
       if (e.type !== 'keydown') return true
       const mod = e.ctrlKey || e.metaKey
       if (mod && e.key.toLowerCase() === 'c' && term.hasSelection()) {
