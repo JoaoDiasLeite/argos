@@ -24,6 +24,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Dev instance (npm run dev)
   devIsDev: () => ipcRenderer.invoke('dev:is-dev'),
   devSyncFromProd: () => ipcRenderer.invoke('dev:sync-from-prod'),
+
+  // Profile export / import (Settings)
+  profileExportCandidates: () => ipcRenderer.invoke('profile:export-candidates'),
+  profileExport: (req: unknown) => ipcRenderer.invoke('profile:export', req),
+  profileImportPreview: () => ipcRenderer.invoke('profile:import-preview'),
+  profileImport: (req: unknown) => ipcRenderer.invoke('profile:import', req),
+  profileShowFile: (filePath: string) => ipcRenderer.invoke('profile:show-file', filePath),
+  profileRelaunch: () => ipcRenderer.invoke('profile:relaunch'),
   onUpdaterEvent: (cb: (data: unknown) => void) => {
     const fn = (_: unknown, data: unknown) => cb(data)
     ipcRenderer.on('updater:event', fn)

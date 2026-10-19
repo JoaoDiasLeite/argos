@@ -1,4 +1,12 @@
 import type { Language } from '../../shared/i18n'
+import type {
+  ExportCandidates,
+  ExportRequest,
+  ExportResult,
+  ImportPreviewResult,
+  ImportRequest,
+  ImportResult
+} from '../../shared/profile-transfer'
 
 export interface ToolCall {
   id: string
@@ -1210,6 +1218,16 @@ declare global {
       // Dev instance (npm run dev)
       devIsDev: () => Promise<boolean>
       devSyncFromProd: () => Promise<{ ok: boolean; error?: string }>
+
+      // Profile export / import (Settings). Main shows the save/open dialogs itself; a
+      // successful import relaunches the app right after replying.
+      profileExportCandidates: () => Promise<ExportCandidates>
+      profileExport: (req: ExportRequest) => Promise<ExportResult>
+      profileImportPreview: () => Promise<ImportPreviewResult>
+      profileImport: (req: ImportRequest) => Promise<ImportResult>
+      profileShowFile: (path: string) => Promise<void>
+      /** After an import that skipped something: the same clean relaunch. */
+      profileRelaunch: () => Promise<void>
       onUpdaterEvent: (cb: (data: UpdaterState) => void) => () => void
 
       // Tray / quick-launcher overlay — events received by the MAIN window

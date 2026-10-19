@@ -175,7 +175,22 @@ const main: Record<keyof typeof en, string> = {
   'projects.move.alreadyExists': 'já existe: {path}',
   'updater.readyTitle': 'Atualização pronta',
   'updater.readyBody': 'O Argos {version} será instalado no próximo reinício.',
-  'jumplist.newTerminal': 'Novo terminal'
+  'jumplist.newTerminal': 'Novo terminal',
+
+  'profile.exportTitle': 'Exportar perfil do Argos',
+  'profile.importTitle': 'Importar perfil do Argos',
+  'profile.fileFilter': 'Perfil do Argos',
+  'profile.error.read': 'Não foi possível ler {path}: {error}',
+  'profile.error.notArgos': 'Este ficheiro não é um perfil do Argos.',
+  'profile.error.corrupt': 'O ficheiro do perfil está danificado e não pôde ser lido.',
+  'profile.error.version': 'Este perfil usa o formato {version}, que esta versão do Argos não consegue ler. Atualiza o Argos e tenta de novo.',
+  'profile.error.write': 'Não foi possível guardar o perfil: {error}',
+  'profile.error.import': 'A importação falhou: {error}',
+  'profile.error.importPartial': 'A importação parou a meio: {error}. O teu perfil anterior está guardado em {backup}.',
+  'profile.error.hostsUnreadable': 'Não foi possível ler os servidores guardados nesta máquina, por isso nada foi importado: {error}',
+  'profile.error.notPreviewed': 'Escolhe primeiro o ficheiro em Importar…',
+  'profile.skip.tooLong': 'O nome da pasta teria mais de {max} caracteres, o que o Windows não permite.',
+  'profile.skip.files': '{count} ficheiros não puderam ser escritos: {error}'
 }
 
 export default main

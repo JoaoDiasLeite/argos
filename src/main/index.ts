@@ -1,5 +1,7 @@
 // First, before anything reads userData: dev moves it aside. See dev-instance.ts.
 import { isDevInstance, syncDevFromProd } from './dev-instance'
+import { listExportCandidates, exportProfile, previewImport, applyImport } from './profile-transfer'
+import type { ExportRequest, ImportRequest } from '../shared/profile-transfer'
 import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions, clipboard, nativeTheme, nativeImage, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -880,6 +882,36 @@ ipcMain.handle('dev:sync-from-prod', () => {
   if (result.detail) console.log(`[dev-userdata] ${result.detail}`)
   setTimeout(() => mainWindow?.webContents.reload(), 50)
   return { ok: true }
+})
+
+// ─── Profile export / import ────────────────────────────────────────────────
+
+// One `.argos` file with the profile and the chosen projects' chats (see
+// profile-transfer.ts). Both dialogs are shown from here, so a path never comes from
+// the renderer except the one the import preview itself handed back.
+ipcMain.handle('profile:export-candidates', () => listExportCandidates())
+ipcMain.handle('profile:export', (_, req: ExportRequest) => exportProfile(mainWindow, req))
+ipcMain.handle('profile:import-preview', () => previewImport(mainWindow))
+// Relaunch on the merged profile, through the same clean quit as the tray's Quit:
+// terminals, ops runs and ssh sessions are closed by before-quit. The delay lets the
+// IPC reply reach the renderer first.
+function relaunchAfterImport(): void {
+  setTimeout(() => {
+    app.relaunch()
+    isQuitting = true
+    app.quit()
+  }, 300)
+}
+ipcMain.handle('profile:import', async (_, req: ImportRequest) => {
+  const result = await applyImport(req)
+  // With skips the app stays up so the renderer can list them; it relaunches through
+  // profile:relaunch once the user has read them.
+  if (result.ok && result.skipped.length === 0) relaunchAfterImport()
+  return result
+})
+ipcMain.handle('profile:relaunch', () => relaunchAfterImport())
+ipcMain.handle('profile:show-file', (_, filePath: string) => {
+  if (typeof filePath === 'string' && filePath && fs.existsSync(filePath)) shell.showItemInFolder(filePath)
 })
 
 // ─── Auth IPC ───────────────────────────────────────────────────────────────

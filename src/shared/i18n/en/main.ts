@@ -171,5 +171,20 @@ export default {
   'projects.move.alreadyExists': 'already exists: {path}',
   'updater.readyTitle': 'Update ready',
   'updater.readyBody': 'Argos {version} will install on next restart.',
-  'jumplist.newTerminal': 'New terminal'
+  'jumplist.newTerminal': 'New terminal',
+
+  'profile.exportTitle': 'Export Argos profile',
+  'profile.importTitle': 'Import Argos profile',
+  'profile.fileFilter': 'Argos profile',
+  'profile.error.read': 'Could not read {path}: {error}',
+  'profile.error.notArgos': 'This file is not an Argos profile.',
+  'profile.error.corrupt': 'The profile file is damaged and could not be read.',
+  'profile.error.version': 'This profile uses format {version}, which this version of Argos cannot read. Update Argos and try again.',
+  'profile.error.write': 'Could not save the profile: {error}',
+  'profile.error.import': 'The import failed: {error}',
+  'profile.error.importPartial': 'The import stopped partway: {error}. Your previous profile is saved in {backup}.',
+  'profile.error.hostsUnreadable': 'The servers saved on this machine could not be read, so nothing was imported: {error}',
+  'profile.error.notPreviewed': 'Choose the file with Import… first.',
+  'profile.skip.tooLong': 'The folder name would be longer than {max} characters, which Windows does not allow.',
+  'profile.skip.files': '{count} files could not be written: {error}'
 } satisfies Record<string, string>

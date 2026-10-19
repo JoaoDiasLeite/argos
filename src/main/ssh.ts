@@ -149,6 +149,18 @@ export function buildConnectConfig(h: SshHost): ConnectConfig {
   return conf
 }
 
+/** Every saved host with its secrets, for a profile export. A failed read is an error, not
+ *  an empty list (see readHosts). */
+export function readHostsWithSecrets(): HostsRead<SshHost> {
+  return readHosts()
+}
+
+/** Replace the saved hosts through `mutate`, re-encrypted for this machine. Fail-closed,
+ *  like every other write here. For a profile import. */
+export function updateHostsWith(mutate: (hosts: SshHost[]) => SshHost[]): HostsWriteResult {
+  return updateHosts(mutate)
+}
+
 export function getHost(id: string): SshHost | null {
   return readHostsOrEmpty().find((h) => h.id === id) ?? null
 }
