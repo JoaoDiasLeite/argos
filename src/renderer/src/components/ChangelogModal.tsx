@@ -18,6 +18,28 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '2.8.0',
+    date: '2026-10-19',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Changes',
+        items: [
+          'The list of earlier runs in the ops activity column no longer shows each run’s cost.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'Ctrl+Z in a chat terminal undoes the last edit in Claude Code’s prompt instead of suspending the CLI.',
+          'An ops run in a runbook folder Claude Code had not seen before no longer dies on the folder trust question: the prompt waits until the question is answered.',
+          'Ops runs no longer deny MultiEdit, which current Claude Code warned about on every run.',
+          'The ops activity column scrolls when a run’s scripts crowd it, instead of pushing the rest off screen.'
+        ]
+      }
+    ]
+  },
+  {
     version: '2.7.0',
     date: '2026-10-14',
     tag: 'latest',
