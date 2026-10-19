@@ -23,6 +23,12 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'Features',
+        items: [
+          'Settings → System → Move to another machine exports your profile and chats to one .argos file and imports it on another machine. You pick which projects’ chats travel; preferences, accounts, sprints, servers and the ops history always come along. Account logins never travel, so you log in again on the new machine, and server passwords and the API key travel only when you set a passphrase, encrypted with it. Importing keeps the chats already on the machine, replaces the preferences after backing up the current profile, and restarts Argos.'
+        ]
+      },
+      {
         title: 'Changes',
         items: [
           'The list of earlier runs in the ops activity column no longer shows each run’s cost.'

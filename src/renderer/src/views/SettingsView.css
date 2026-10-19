@@ -130,6 +130,8 @@
 .srow > .btn-primary,
 .srow > .text-input { flex-shrink: 0; }
 
+.settings-btn-pair { display: flex; gap: 8px; flex-shrink: 0; }
+
 .settings-select { width: 220px; }
 .settings-date { width: 160px; }
 

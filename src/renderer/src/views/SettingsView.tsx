@@ -27,6 +27,9 @@ import PermissionsModal from '../components/PermissionsModal'
 import HooksModal from '../components/HooksModal'
 import NotifyHookModal from '../components/NotifyHookModal'
 import ChangelogModal from '../components/ChangelogModal'
+import ExportProfileModal from '../components/ExportProfileModal'
+import ImportProfileModal from '../components/ImportProfileModal'
+import type { ImportPreview } from '../../../shared/profile-transfer'
 import AppearanceSettings from '../components/AppearanceSettings'
 import './views.css'
 import './SettingsView.css'
@@ -208,6 +211,26 @@ export default function SettingsView({
       .then((info) => setArchivedChats(info.state?.exported ?? 0))
       .catch(() => {})
   }, [])
+
+  // ── Move to another machine ──
+  const [showExport, setShowExport] = useState(false)
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null)
+  const [importBusy, setImportBusy] = useState(false)
+  const [importError, setImportError] = useState('')
+
+  const startImport = async () => {
+    setImportBusy(true)
+    setImportError('')
+    try {
+      const res = await window.electronAPI.profileImportPreview()
+      if (res.ok) setImportPreview(res.preview)
+      else if (!res.canceled) setImportError(t('settings.import.previewFailed', { error: res.error }))
+    } catch (e) {
+      setImportError(t('settings.import.previewFailed', { error: e instanceof Error ? e.message : String(e) }))
+    } finally {
+      setImportBusy(false)
+    }
+  }
 
   // ── System integration ──
   // These prefs live in config.ts alongside `ui`, but App.tsx has never fetched them;
@@ -586,6 +609,23 @@ export default function SettingsView({
               ) : (
                 <p className="help">{t('settings.system.loading')}</p>
               )}
+
+              <div className="eyebrow settings-eyebrow">{t('settings.transfer.eyebrow')}</div>
+              <div className="srow">
+                <div className="srow-text">
+                  <span className="srow-label">{t('settings.transfer.label')}</span>
+                  <span className="help">{t('settings.transfer.hint')}</span>
+                  {importError && <span className="help settings-error">{importError}</span>}
+                </div>
+                <div className="settings-btn-pair">
+                  <button type="button" className="btn-ghost" onClick={() => setShowExport(true)}>
+                    {t('settings.transfer.export')}
+                  </button>
+                  <button type="button" className="btn-ghost" disabled={importBusy} onClick={startImport}>
+                    {t('settings.transfer.import')}
+                  </button>
+                </div>
+              </div>
             </>
           )}
 
@@ -703,6 +743,8 @@ export default function SettingsView({
       {showPerms && <PermissionsModal onClose={closeSheet(() => setShowPerms(false))} />}
       {showHooks && <HooksModal onClose={closeSheet(() => setShowHooks(false))} />}
       {showChangelog && <ChangelogModal onClose={closeSheet(() => setShowChangelog(false))} />}
+      {showExport && <ExportProfileModal onClose={() => setShowExport(false)} />}
+      {importPreview && <ImportProfileModal preview={importPreview} onClose={() => setImportPreview(null)} />}
       {showNotifyHook && <NotifyHookModal onClose={closeSheet(() => setShowNotifyHook(false))} />}
     </div>
   )
