@@ -469,6 +469,7 @@ describe('summarizePolicy', () => {
       mutates: 3,
       scripts: 2,
       readPaths: ['^/etc/nginx/.*$', '^/var/log/nginx/.*$'],
+      readDeny: [],
       guidelinesHead: 'Check the config, then reload.'
     })
   })
@@ -488,6 +489,7 @@ describe('summarizePolicy', () => {
       mutates: 0,
       scripts: 0,
       readPaths: [],
+      readDeny: [],
       guidelinesHead: ''
     })
   })
@@ -509,5 +511,44 @@ describe('guidelinesHead', () => {
     const head = guidelinesHead(long)
     expect(head.length).toBeLessThanOrEqual(GUIDELINES_HEAD_MAX)
     expect(head.endsWith('word…')).toBe(true)
+  })
+})
+
+describe('parsePolicy — read.deny', () => {
+  const withDeny = (deny: unknown): Record<string, unknown> => fixture({ read: { paths: ['^/etc/nginx/.*$'], deny } })
+
+  it('accepts unanchored patterns and carries them into the policy', () => {
+    const deny = ['(^|/)database\\.yml$', '\\.env$', '/proc/[0-9]+/environ']
+    expect(ok(withDeny(deny)).policy.read).toEqual({ paths: ['^/etc/nginx/.*$'], deny })
+  })
+
+  it('rejects a deny that is not an array', () => {
+    expect(errorsOf(withDeny('\\.env$'))).toEqual(['read.deny must be an array of path patterns.'])
+  })
+
+  it('rejects an empty or non-string pattern', () => {
+    expect(errorsOf(withDeny(['\\.env$', '', 3]))).toEqual([
+      'read.deny[1] must be a non-empty string.',
+      'read.deny[2] must be a non-empty string.'
+    ])
+  })
+
+  it('rejects a pattern that does not compile', () => {
+    expect(errorsOf(withDeny(['(']))).toEqual([expect.stringContaining('read.deny[0] does not compile')])
+  })
+
+  it('rejects more than 64 patterns', () => {
+    expect(errorsOf(withDeny(Array.from({ length: 65 }, (_, i) => `x${i}`)))).toEqual([
+      'read.deny has 65 patterns; the limit is 64.'
+    ])
+  })
+
+  it('still rejects an unknown key in the read block', () => {
+    expect(errorsOf(fixture({ read: { paths: [], denny: [] } }))).toEqual(['read has an unknown key "denny".'])
+  })
+
+  it('appears in the summary', () => {
+    const policy = ok(withDeny(['\\.env$'])).policy
+    expect(summarizePolicy(policy, '').readDeny).toEqual(['\\.env$'])
   })
 })

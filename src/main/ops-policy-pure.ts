@@ -53,6 +53,7 @@ export const OPS_DEFAULT_CONCURRENT_PER_HOST = 1
 export const OPS_MAX_PATTERN_LENGTH = 512
 export const OPS_MAX_SCRIPT_NAME_LENGTH = 128
 export const OPS_MAX_SCRIPT_ARGS = 16
+export const OPS_MAX_DENY_PATTERNS = 64
 
 export const OPS_MAX_PLATFORM_LENGTH = 120
 
@@ -60,7 +61,7 @@ const TOP_KEYS = ['version', 'strict', 'platform', 'hosts', 'allow', 'scripts', 
 const ALLOW_KEYS = ['hosts', 'cmd', 'class', 'approval', 'title']
 const SCRIPT_KEYS = ['name', 'sha256', 'hosts', 'class', 'approval', 'title', 'args']
 const ARGS_KEYS = ['max', 'pattern']
-const READ_KEYS = ['paths', 'maxBytes']
+const READ_KEYS = ['paths', 'deny', 'maxBytes']
 const WRITE_KEYS = ['paths', 'approval', 'backup']
 const LIMIT_KEYS = ['timeoutMs', 'maxOutputBytes', 'concurrentPerHost']
 
@@ -266,6 +267,41 @@ function checkPaths(v: unknown, where: string, errors: string[], t: TFunction): 
 }
 
 /**
+ * read.deny: paths no tool may reach. Unlike `paths` and `allow`, these need not be
+ * anchored — a deny that matches more than meant refuses more, which is the safe way to
+ * be wrong — but each must still compile, since the gate reads one that does not as
+ * "deny everything".
+ */
+function checkDeny(v: unknown, errors: string[], t: TFunction): void {
+  if (v === undefined) return
+  if (!Array.isArray(v)) {
+    errors.push(t('runbook.policy.deny.notArray'))
+    return
+  }
+  if (v.length > OPS_MAX_DENY_PATTERNS) {
+    errors.push(t('runbook.policy.deny.tooMany', { count: v.length, max: OPS_MAX_DENY_PATTERNS }))
+  }
+  v.forEach((p, i) => {
+    const where = `read.deny[${i}]`
+    if (typeof p !== 'string' || p === '') {
+      errors.push(t('runbook.policy.deny.empty', { where }))
+      return
+    }
+    if (p.length >= OPS_MAX_PATTERN_LENGTH) {
+      errors.push(t('runbook.policy.pattern.tooLong', { where, length: p.length, max: OPS_MAX_PATTERN_LENGTH }))
+    }
+    if (/[\n\r]/.test(p) || p.includes(LINE_SEP) || p.includes(PARA_SEP)) {
+      errors.push(t('runbook.policy.pattern.newline', { where }))
+    }
+    try {
+      new RegExp(p)
+    } catch (e) {
+      errors.push(t('runbook.policy.pattern.notRegex', { where, error: (e as Error).message }))
+    }
+  })
+}
+
+/**
  * Parse and validate a raw policy.json value. `scriptHashes` maps each file actually in
  * scripts/ to its sha256 hex; `hosts` are the stored SSH hosts, used only for warnings.
  * `t` words the errors and warnings in the operator's language.
@@ -407,6 +443,7 @@ export function parsePolicy(
     } else {
       checkKeys(raw.read, READ_KEYS, 'read', errors, t)
       checkPaths(raw.read.paths, 'read.paths', errors, t)
+      checkDeny(raw.read.deny, errors, t)
       checkLimit(raw.read.maxBytes, OPS_MAX_READ_BYTES, 'read.maxBytes', errors, warnings, t)
     }
   }
@@ -475,6 +512,7 @@ export function parsePolicy(
   if (typeof raw.platform === 'string') policy.platform = raw.platform.trim()
   if (isObject(raw.read)) {
     policy.read = { paths: [...(raw.read.paths as string[])] }
+    if (raw.read.deny !== undefined) policy.read.deny = [...(raw.read.deny as string[])]
     if (raw.read.maxBytes !== undefined) policy.read.maxBytes = raw.read.maxBytes as number
   }
   if (isObject(raw.write)) {
@@ -505,6 +543,8 @@ export interface OpsPolicySummary {
   scripts: number
   /** The read block's path patterns, as written. */
   readPaths: string[]
+  /** The read block's deny patterns, as written: paths no tool may reach. */
+  readDeny: string[]
   /** The first paragraph of RUNBOOK.md after its title, whitespace collapsed. */
   guidelinesHead: string
 }
@@ -549,6 +589,7 @@ export function summarizePolicy(policy: OpsPolicy, guidelines: string): OpsPolic
       (policy.write ? 1 : 0),
     scripts: policy.scripts.length,
     readPaths: [...(policy.read?.paths ?? [])],
+    readDeny: [...(policy.read?.deny ?? [])],
     guidelinesHead: guidelinesHead(guidelines)
   }
 }

@@ -856,6 +856,8 @@ export interface OpsPolicySummary {
   scripts: number
   /** The read block's path patterns, as written. */
   readPaths: string[]
+  /** The read block's deny patterns, as written: paths no tool may reach. */
+  readDeny: string[]
   /** The first paragraph of RUNBOOK.md after its title, ≤ 300 chars, whitespace collapsed. */
   guidelinesHead: string
 }

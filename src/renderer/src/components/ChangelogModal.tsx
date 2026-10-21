@@ -21,7 +21,14 @@ const CHANGELOG: Entry[] = [
     version: '2.9.0',
     date: '2026-10-21',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'A runbook’s policy.json can list read.deny paths that no read, list, command or script argument may reach, whatever its read paths and allow rules say. Use it to keep secrets such as .env files, database.yml and keys out of a runbook that otherwise reads an application folder.'
+        ]
+      }
+    ]
   },
   {
     version: '2.8.0',

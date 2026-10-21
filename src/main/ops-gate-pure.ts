@@ -576,6 +576,38 @@ function checkPath(p: unknown): { ok: true; path: string } | { ok: false; reason
   return { ok: true, path: n }
 }
 
+/**
+ * The read.deny source this path matches, or null. Tested on the string as given and
+ * normalised. Deny patterns are unanchored on purpose (matching more refuses more), and
+ * one that does not compile matches everything: the policy module refuses such a file, so
+ * reaching here with one means something skipped it, and a deny list that silently
+ * stopped denying is the failure that must not happen.
+ */
+function deniedPath(policy: OpsPolicy, p: string): string | null {
+  const list = policy.read && Array.isArray(policy.read.deny) ? policy.read.deny : []
+  const forms = p.includes('/') ? [p, path.posix.normalize(p)] : [p]
+  for (const src of list) {
+    const re = src === '' ? null : compile(src)
+    if (!re || forms.some((f) => re.test(f))) return String(src)
+  }
+  return null
+}
+
+/** The first argv word (after sudo, command word excluded) that names a denied path. */
+function deniedArg(policy: OpsPolicy, args: string[]): { arg: string; pattern: string } | null {
+  for (const a of args) {
+    const cands = pathCandidates(a)
+    // `-f/etc/shadow` attached to a short cluster.
+    const m = /^-[A-Za-z0-9]+?(\/.*)$/.exec(a)
+    if (m) cands.push(m[1])
+    for (const c of cands) {
+      const pattern = deniedPath(policy, c)
+      if (pattern !== null) return { arg: a, pattern }
+    }
+  }
+  return null
+}
+
 function utf8Bytes(s: string): number {
   return new TextEncoder().encode(s).length
 }
@@ -628,6 +660,9 @@ function classifyRun(cmd: unknown, policy: OpsPolicy, strict: boolean, groups: s
   const argv = parsed.argv
   const hit = matchDenylist(argv)
   if (hit) return deny(`denylisted: ${hit} — no runbook can allow this`, 'mutate', { denylist: hit, argv })
+  // read.deny reaches commands too: `tail .env` must not do what `read .env` may not.
+  const named = deniedArg(policy, stripSudo(argv).slice(1))
+  if (named) return deny(`'${named.arg}' names a path in this runbook's read.deny (${named.pattern})`, 'mutate', { argv })
 
   const canonical = canonicalCommand(argv)
   const rules = Array.isArray(policy.allow) ? policy.allow : []
@@ -678,6 +713,8 @@ function classifyScript(name: unknown, args: unknown, policy: OpsPolicy, strict:
     if (a.length > OPS_MAX_COMMAND_LENGTH) return deny(`script argument is ${a.length} characters; the limit is ${OPS_MAX_COMMAND_LENGTH}`, cls)
     const bad = badCharReason(a, 'script argument')
     if (bad) return deny(bad, cls)
+    const named = deniedArg(policy, [a])
+    if (named) return deny(`script argument '${a}' names a path in this runbook's read.deny (${named.pattern})`, cls)
     if (!fullMatch(entry.args?.pattern, a)) return deny(`script argument '${a}' does not match the script's pattern`, cls)
   }
   const decision = decide(cls, entry.approval, strict)
@@ -706,6 +743,10 @@ function classifyFile(
   // reach sudoers, shadow or authorized_keys.
   if (isWrite && mentionsSensitive([p])) {
     return deny('denylisted: sensitive-file-write — no runbook can allow this', cls, { path: p, denylist: 'sensitive-file-write' })
+  }
+  if (!isWrite) {
+    const pattern = deniedPath(policy, p)
+    if (pattern !== null) return deny(`path ${p} is in this runbook's read.deny (${pattern})`, 'read', { path: p })
   }
   const section = isWrite ? policy.write : policy.read
   const patterns = section && Array.isArray(section.paths) ? section.paths : []

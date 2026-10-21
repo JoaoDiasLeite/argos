@@ -730,3 +730,69 @@ describe('classify — never throws', () => {
     }
   })
 })
+
+describe('classify — read.deny', () => {
+  const APP = '/home/w/www/app'
+  const deny = ['(^|/)database\\.yml$', '\\.env$', '^/etc/shadow$', '^/home/[^/]+/www/app/secrets(/|$)']
+  const policy = (over: Partial<OpsPolicy> = {}): OpsPolicy =>
+    fixture({
+      allow: [
+        { hosts: ['web'], cmd: '^tail -n [0-9]{1,4} /home/[^ ]+$', class: 'read' },
+        { hosts: ['web'], cmd: '^grep -m [0-9]+ [A-Za-z_]+ /home/[^ ]+$', class: 'read' },
+        { hosts: ['web'], cmd: '^cat .+$', class: 'read' },
+        { hosts: ['web'], cmd: '^sudo -u w tail -n [0-9]+ /home/[^ ]+$', class: 'read' }
+      ],
+      read: { paths: ['^/home/[^/]+/www/'], deny },
+      ...over
+    })
+  const file = (tool: 'read' | 'list', p: string): OpsToolInput => ({ tool, hostId: WEB.id, path: p })
+
+  it('denies a read of a denied file under a read path, and allows its neighbour', () => {
+    expect(classify(file('read', `${APP}/config/database.yml`), policy(), WEB, ['web'])).toMatchObject({
+      decision: 'deny',
+      class: 'read',
+      path: `${APP}/config/database.yml`,
+      reason: expect.stringContaining('read.deny ((^|/)database\\.yml$)')
+    })
+    expect(classify(file('read', `${APP}/config/puma.rb`), policy(), WEB, ['web']).decision).toBe('allow')
+  })
+  it('tests the normalised path', () => {
+    expect(classify(file('read', `${APP}//config/./database.yml`), policy(), WEB, ['web']).decision).toBe('deny')
+  })
+  it('denies a list of a denied directory', () => {
+    expect(classify(file('list', `${APP}/secrets`), policy(), WEB, ['web'])).toMatchObject({ decision: 'deny', class: 'read' })
+    expect(classify(file('list', `${APP}/secrets/`), policy(), WEB, ['web']).decision).toBe('deny')
+  })
+  it('denies a run naming a denied path even though an allow rule matches it', () => {
+    expect(classify(run(`tail -n 50 ${APP}/.env`), fixture({ allow: policy().allow }), WEB, ['web']).decision).toBe('allow')
+    expect(classify(run(`tail -n 50 ${APP}/.env`), policy(), WEB, ['web'])).toMatchObject({
+      decision: 'deny',
+      reason: expect.stringContaining('read.deny')
+    })
+    expect(classify(run('grep -m 5 WMCP_Path /home/w/wmcp.env'), policy(), WEB, ['web']).decision).toBe('deny')
+  })
+  it('denies a denied path given as an option value', () => {
+    expect(classify(run('cat --file=/etc/shadow'), policy(), WEB, ['web']).decision).toBe('deny')
+    expect(classify(run('cat -f/etc/shadow'), policy(), WEB, ['web']).decision).toBe('deny')
+    expect(classify(run('cat --file=/etc/hosts'), policy(), WEB, ['web']).decision).toBe('allow')
+  })
+  it('denies a sudo command naming a denied path', () => {
+    expect(classify(run(`sudo -u w tail -n 5 ${APP}/.env`), policy(), WEB, ['web']).decision).toBe('deny')
+    expect(classify(run(`sudo -u w tail -n 5 ${APP}/log/puma.log`), policy(), WEB, ['web']).decision).toBe('allow')
+  })
+  it('denies a script argument naming a denied path', () => {
+    const s = (a: string): OpsToolInput => ({ tool: 'script', hostId: WEB.id, name: 'reload.sh', args: [a] })
+    expect(classify(s('app.env'), policy(), WEB, ['web'])).toMatchObject({ decision: 'deny', reason: expect.stringContaining('read.deny') })
+    expect(classify(s('app.conf'), policy(), WEB, ['web']).decision).toBe('ask')
+  })
+  it('a deny pattern that does not compile denies every path', () => {
+    const p = policy({ read: { paths: ['^/home/[^/]+/www/'], deny: ['('] } })
+    expect(classify(file('read', `${APP}/config/puma.rb`), p, WEB, ['web']).reason).toContain('read.deny')
+    expect(classify(run(`tail -n 5 ${APP}/log/puma.log`), p, WEB, ['web']).decision).toBe('deny')
+  })
+  it('without a read block nothing is denied by it', () => {
+    const p = policy({ read: undefined })
+    expect(classify(run(`tail -n 50 ${APP}/.env`), p, WEB, ['web']).decision).toBe('allow')
+    expect(classify(run('cat --file=/etc/shadow'), p, WEB, ['web']).decision).toBe('allow')
+  })
+})

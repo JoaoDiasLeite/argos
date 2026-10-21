@@ -49,7 +49,9 @@ export interface OpsPolicy {
   hosts: Record<string, string[]>
   allow: OpsAllowRule[]
   scripts: OpsScriptRule[]
-  read?: { paths: string[]; maxBytes?: number }
+  /** `deny`: regex sources; a path matching any is out of reach of every tool, whatever
+      `paths` or the allow rules say. */
+  read?: { paths: string[]; deny?: string[]; maxBytes?: number }
   write?: { paths: string[]; approval?: OpsApproval; backup?: boolean }
   limits?: { timeoutMs?: number; maxOutputBytes?: number; concurrentPerHost?: number }
 }
