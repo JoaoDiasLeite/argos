@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { BusyTracker, BUSY_IDLE_MS, BUSY_ECHO_GRACE_MS, isMouseClick, isTerminalReport } from './terminal-busy-pure'
+import {
+  BusyTracker,
+  BUSY_IDLE_MS,
+  BUSY_ECHO_GRACE_MS,
+  BUSY_PROMPT_MS,
+  BUSY_SUSTAIN_MS,
+  isMouseClick,
+  isTerminalReport
+} from './terminal-busy-pure'
 
 /**
  * The state machine behind the sidebar's running dot for terminal-driven chats.
@@ -18,6 +26,13 @@ function watched(): { tracker: BusyTracker; events: [string, boolean][] } {
   return { tracker, events }
 }
 
+/** Type something into the pty and let its echo pass, so the output that follows is the
+ *  CLI answering it — which counts from its first chunk. */
+function prompt(tracker: BusyTracker, id = 't1'): void {
+  tracker.noteWrite(id)
+  vi.advanceTimersByTime(BUSY_ECHO_GRACE_MS + 1)
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
 })
@@ -26,8 +41,9 @@ afterEach(() => {
 })
 
 describe('BusyTracker', () => {
-  it('reports busy on the first chunk and idle once the pty goes quiet', () => {
+  it('reports busy on the first chunk of an answer and idle once the pty goes quiet', () => {
     const { tracker, events } = watched()
+    prompt(tracker)
     tracker.noteOutput('t1')
     expect(events).toEqual([['t1', true]])
     expect(tracker.busyIds()).toEqual(['t1'])
@@ -93,9 +109,41 @@ describe('BusyTracker', () => {
 
   it('treats a pty that has never been written to as capable of being busy', () => {
     const { tracker, events } = watched()
-    // The CLI's own start-up banner arrives before any keystroke. A zero default for
-    // "last written at" would be fine here, but an epoch-relative one would not be — the
-    // guard has to key off "never", not off a timestamp that happens to be small.
+    // A zero default for "last written at" would be fine here, but an epoch-relative one
+    // would not be — the guards have to key off "never", not off a timestamp that happens
+    // to be small.
+    tracker.noteOutput('t1')
+    vi.advanceTimersByTime(BUSY_SUSTAIN_MS)
+    tracker.noteOutput('t1')
+    expect(events).toEqual([['t1', true]])
+  })
+
+  it('ignores a lone repaint long after the last keystroke', () => {
+    const { tracker, events } = watched()
+    prompt(tracker)
+    vi.advanceTimersByTime(BUSY_PROMPT_MS)
+    // A status line with a refreshInterval repaints whenever its text changes — a reset
+    // countdown, once a minute. Read as a turn, every chat you had typed into was flagged
+    // as finished again every minute, however often you read it.
+    for (let i = 0; i < 5; i++) {
+      tracker.noteOutput('t1')
+      vi.advanceTimersByTime(60_000)
+    }
+    expect(events).toEqual([])
+    expect(tracker.busyIds()).toEqual([])
+  })
+
+  it('reports busy for output nobody asked for once it has kept going', () => {
+    const { tracker, events } = watched()
+    prompt(tracker)
+    vi.advanceTimersByTime(BUSY_PROMPT_MS)
+    // A turn that starts on its own (a scheduled wake-up, a background task finishing)
+    // keeps its spinner going, so it still registers — just not on its first frame.
+    tracker.noteOutput('t1')
+    vi.advanceTimersByTime(BUSY_SUSTAIN_MS - 100)
+    tracker.noteOutput('t1')
+    expect(events).toEqual([])
+    vi.advanceTimersByTime(100)
     tracker.noteOutput('t1')
     expect(events).toEqual([['t1', true]])
   })
@@ -122,6 +170,7 @@ describe('BusyTracker', () => {
     // WSL or SSH hop takes as long as it takes. Once it has, the next turn is a real one.
     vi.advanceTimersByTime(BUSY_IDLE_MS + 1)
     expect(events).toEqual([])
+    prompt(tracker)
     tracker.noteOutput('t1')
     expect(events).toEqual([['t1', true]])
   })
@@ -132,12 +181,14 @@ describe('BusyTracker', () => {
     // Without the timer armed by noteRedraw itself, the next real turn would be swallowed.
     tracker.noteRedraw('t1')
     vi.advanceTimersByTime(BUSY_IDLE_MS + 1)
+    prompt(tracker)
     tracker.noteOutput('t1')
     expect(events).toEqual([['t1', true]])
   })
 
   it('keeps a working pty busy across a redraw', () => {
     const { tracker, events } = watched()
+    prompt(tracker)
     tracker.noteOutput('t1')
     // Resizing a pane mid-turn (a splitter drag, a font-size change) must not read as the
     // turn ending — that would announce a finished run while the CLI is still going.
@@ -221,6 +272,7 @@ describe('BusyTracker', () => {
 
   it('announces idle when a pty is forgotten mid-burst', () => {
     const { tracker, events } = watched()
+    prompt(tracker)
     tracker.noteOutput('t1')
     tracker.forget('t1')
     // A chat killed while its CLI was working would otherwise keep its dot forever.
@@ -239,6 +291,7 @@ describe('BusyTracker', () => {
 
   it('fires no pending timer after a pty is forgotten', () => {
     const { tracker, events } = watched()
+    prompt(tracker)
     tracker.noteOutput('t1')
     tracker.forget('t1')
     vi.advanceTimersByTime(BUSY_IDLE_MS * 2)
@@ -256,6 +309,9 @@ describe('BusyTracker', () => {
     const record = (id: string, isBusy: boolean) => events.push([id, isBusy])
     tracker.watch('a', record)
     tracker.watch('b', record)
+    tracker.noteWrite('a')
+    tracker.noteWrite('b')
+    vi.advanceTimersByTime(BUSY_ECHO_GRACE_MS + 1)
 
     tracker.noteOutput('a')
     vi.advanceTimersByTime(600)
@@ -279,6 +335,7 @@ describe('BusyTracker', () => {
     const tracker = new BusyTracker()
     // A pty from the standalone terminal grid is tracked the same way, but nothing has
     // registered a callback for it. The absent notify must not be an error.
+    prompt(tracker, 'loose')
     expect(() => tracker.noteOutput('loose')).not.toThrow()
     expect(tracker.busyIds()).toEqual(['loose'])
   })

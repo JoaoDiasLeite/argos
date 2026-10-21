@@ -27,6 +27,12 @@ const CHANGELOG: Entry[] = [
         items: [
           'A runbook’s policy.json can list read.deny paths that no read, list, command or script argument may reach, whatever its read paths and allow rules say. Use it to keep secrets such as .env files, database.yml and keys out of a runbook that otherwise reads an application folder.'
         ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'A chat you had already read no longer gets its unread dot back every minute. A Claude Code status line that refreshes on a timer repaints the terminal whenever its text changes, and each repaint was taken for a turn that had just finished. Output that starts on its own now has to keep going before it counts as work.'
+        ]
       }
     ]
   },

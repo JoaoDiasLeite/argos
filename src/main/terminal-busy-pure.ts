@@ -22,6 +22,14 @@
  * `noteRedraw` is how terminal.ts declares such a burst ours, and `noteLaunch` covers the
  * one case a burst cannot be bounded by time at all — a CLI that has just been started.
  *
+ * "Silent at its prompt" also stops holding once a CLI paints on a clock of its own. A
+ * Claude Code status line with a `refreshInterval` repaints whenever its text changes — a
+ * countdown to a usage reset changes every minute — and each repaint is one short chunk,
+ * which used to flag every chat you had typed into as having finished a turn, once a
+ * minute, however often you read it. So a burst that starts long after the last keystroke
+ * only counts once it has lasted BUSY_SUSTAIN_MS: a turn keeps a spinner going for as long
+ * as it runs, a repaint is over in a single write.
+ *
  * Split out from terminal.ts so the state machine can be tested without a real pty: this
  * file holds every decision, and terminal.ts only feeds it events. Timers and the clock
  * are the ambient ones on purpose — the test drives them with vitest's fake timers rather
@@ -36,6 +44,13 @@ export const BUSY_IDLE_MS = 1200
  *  working. Without it, typing a long prompt into an idle chat would flicker the running
  *  dot on for as long as it took to type. */
 export const BUSY_ECHO_GRACE_MS = 350
+
+/** A burst that starts this soon after a keystroke is the CLI answering it, and counts as
+ *  work from its first chunk. */
+export const BUSY_PROMPT_MS = 5000
+
+/** How long a burst nobody asked for has to keep going before it counts as work. */
+export const BUSY_SUSTAIN_MS = 800
 
 /**
  * One report xterm writes to a pty on its own account rather than because a key was
@@ -109,6 +124,8 @@ export class BusyTracker {
   private readonly redrawing = new Set<string>()
   /** Ptys running a CLI that has not been typed into yet — see noteLaunch. */
   private readonly unprompted = new Set<string>()
+  /** When the current burst began, for one not yet announced — see noteOutput. */
+  private readonly burstStart = new Map<string, number>()
 
   /**
    * Start tracking a pty, and say how its transitions are reported.
@@ -185,14 +202,22 @@ export class BusyTracker {
   }
 
   /** A chunk came out of this pty. Marks it busy (announcing the change, if it is one) and
-   *  re-arms the quiet timer that will mark it idle again. */
+   *  re-arms the quiet timer that will mark it idle again.
+   *
+   *  A burst answering a keystroke is work from its first chunk. One that starts on its
+   *  own is only work once it has lasted BUSY_SUSTAIN_MS — see the file comment. */
   noteOutput(id: string, at: number = Date.now()): void {
     if (at - (this.lastWriteAt.get(id) ?? -Infinity) < BUSY_ECHO_GRACE_MS) return
     // Nothing to end and no timer to arm: this one is ended by a keystroke, not by time.
     if (this.unprompted.has(id)) return
     if (!this.busy.has(id) && !this.redrawing.has(id)) {
-      this.busy.add(id)
-      this.notify.get(id)?.(id, true)
+      const start = this.burstStart.get(id) ?? at
+      this.burstStart.set(id, start)
+      const prompted = start - (this.lastWriteAt.get(id) ?? -Infinity) < BUSY_PROMPT_MS
+      if (prompted || at - start >= BUSY_SUSTAIN_MS) {
+        this.busy.add(id)
+        this.notify.get(id)?.(id, true)
+      }
     }
     this.arm(id)
   }
@@ -207,6 +232,7 @@ export class BusyTracker {
       setTimeout(() => {
         this.timers.delete(id)
         this.redrawing.delete(id)
+        this.burstStart.delete(id)
         if (this.busy.delete(id)) this.notify.get(id)?.(id, false)
       }, BUSY_IDLE_MS)
     )
@@ -221,6 +247,7 @@ export class BusyTracker {
     this.lastWriteAt.delete(id)
     this.redrawing.delete(id)
     this.unprompted.delete(id)
+    this.burstStart.delete(id)
     if (this.busy.delete(id)) this.notify.get(id)?.(id, false)
     this.notify.delete(id)
   }
