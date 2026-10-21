@@ -85,6 +85,47 @@ export interface OpsRun {
   /** Every approved plan, in order, with the call count at its approval: a run that
    *  proposes a second plan midway keeps the first one's steps for its earlier calls. */
   plans?: { steps: OpsPlanStepRow[]; callIndex: number }[]
+  /** false: a read-only runbook, whose calls did not wait for a plan (run.start). */
+  planRequired?: false
+  /** The model's hypotheses (`note` kind hypothesis), in order of first appearance, each
+   *  with its latest text, status and evidence. Empty on runs from before notes. */
+  hypotheses: OpsHypothesis[]
+  /** Its findings and the server's timeline events, in ledger order. */
+  findings: OpsNoteItem[]
+  events: OpsNoteItem[]
+  /** Commands the model handed the operator (ask_operator), in ledger order. */
+  asks: OpsOperatorAsk[]
+}
+
+export interface OpsHypothesis {
+  id: string
+  text: string
+  status: 'open' | 'confirmed' | 'ruled_out'
+  evidence?: string
+}
+
+export interface OpsNoteItem {
+  text: string
+  evidence?: string
+  /** event only: when it happened on the server, as the model wrote it. */
+  at?: string
+}
+
+export interface OpsOperatorAsk {
+  askId: string
+  cmd: string
+  why: string
+  hostId?: string
+  /** The host's name, from the ledger line or the run's hosts. */
+  host?: string
+  expect?: string
+  state: 'pending' | 'answered' | 'declined'
+  output?: string
+  truncated?: boolean
+  /** ISO time of operator.asked. */
+  at: string
+  /** How many calls the run had when the model asked, to place the row among them. */
+  beforeCall: number
 }
 
 export interface OpsHostAnswer {
@@ -132,7 +173,7 @@ export function foldOpsEvents(events: OpsLiveEvent[]): OpsRun[] {
   const runFor = (runId: string, at: string): OpsRun => {
     let run = runs.get(runId)
     if (!run) {
-      run = { runId, startedAt: at, runbook: '', hosts: [], calls: [], hostAnswers: [] }
+      run = { runId, startedAt: at, runbook: '', hosts: [], calls: [], hostAnswers: [], hypotheses: [], findings: [], events: [], asks: [] }
       runs.set(runId, run)
       rows.set(runId, new Map())
     }
@@ -180,6 +221,59 @@ export function foldOpsEvents(events: OpsLiveEvent[]): OpsRun[] {
         if (plan) {
           run.planText = plan
           startPlans.add(runId)
+        }
+        if (e.planRequired === false) run.planRequired = false
+        break
+      }
+      case 'note': {
+        const n = e.note as Record<string, unknown> | undefined
+        const text = str(n?.text)
+        if (!n || !text) break
+        const evidence = str(n.evidence) || undefined
+        if (n.kind === 'hypothesis') {
+          const id = str(n.id)
+          if (!id) break
+          const status = n.status === 'confirmed' || n.status === 'ruled_out' ? n.status : 'open'
+          const known = run.hypotheses.find((h) => h.id === id)
+          // A later note with the same id updates it in place, so the list keeps its order.
+          if (known) Object.assign(known, { text, status, evidence: evidence ?? known.evidence })
+          else run.hypotheses.push({ id, text, status, ...(evidence ? { evidence } : {}) })
+        } else if (n.kind === 'finding') {
+          run.findings.push({ text, ...(evidence ? { evidence } : {}) })
+        } else if (n.kind === 'event') {
+          const when = str(n.at) || undefined
+          run.events.push({ text, ...(evidence ? { evidence } : {}), ...(when ? { at: when } : {}) })
+        }
+        break
+      }
+      case 'operator.asked': {
+        const askId = str(e.askId)
+        const cmd = str(e.cmd)
+        if (!askId || !cmd || run.asks.some((a) => a.askId === askId)) break
+        const hostId = str(e.hostId)
+        const host = str(e.host) ?? run.hostNames?.[hostId ?? '']
+        const expect = str(e.expect) || undefined
+        run.asks.push({
+          askId,
+          cmd,
+          why: str(e.why) ?? '',
+          ...(hostId ? { hostId } : {}),
+          ...(host ? { host } : {}),
+          ...(expect ? { expect } : {}),
+          state: 'pending',
+          at: ev.line.at,
+          beforeCall: run.calls.length
+        })
+        break
+      }
+      case 'operator.answered': {
+        const ask = run.asks.find((a) => a.askId === str(e.askId))
+        if (!ask) break
+        if (e.declined === true) ask.state = 'declined'
+        else {
+          ask.state = 'answered'
+          ask.output = str(e.output) ?? ''
+          if (e.truncated === true) ask.truncated = true
         }
         break
       }

@@ -213,6 +213,7 @@ const ops: Record<keyof typeof en, string> = {
   'start.earlier': 'Intervenções anteriores',
   'start.title': 'Nova intervenção',
   'start.sub': 'Um servidor, um runbook, uma tarefa. Nada é executado até aprovares o plano.',
+  'start.subDespiste': 'Um servidor e o que está errado. Só leitura: não há plano para aprovar, e o que precisar de alteração fica para correres tu.',
   'start.server': 'Servidor',
   'start.mode': 'Modo',
   'start.mode.despiste': 'Despiste',

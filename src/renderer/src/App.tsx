@@ -14,6 +14,7 @@ import {
   CcSessionTarget,
   LiveSession,
   OpsIntervention,
+  OpsOperatorRequest,
   GitFile
 } from './types'
 import Sidebar from './components/Sidebar'
@@ -402,6 +403,27 @@ export default function App() {
     void window.electronAPI.respondOpsSecret({ requestId, value })
     setSecretQueue((q) => q.filter((r) => r.requestId !== requestId))
   }
+  // The model's ask_operator requests: a command for the operator to run in their own
+  // session, answered on a card in that terminal's activity column. Held here, like the
+  // approvals, so one that arrives while its workspace is not on screen waits for it. A
+  // request goes when the operator answers it, or when the ledger shows its answer (a
+  // stopped run answers it as declined).
+  const [operatorRequests, setOperatorRequests] = useState<OpsOperatorRequest[]>([])
+  useEffect(() => window.electronAPI.onOpsOperatorRequest((req) => setOperatorRequests((q) => [...q, req])), [])
+  useEffect(
+    () =>
+      window.electronAPI.onOpsEvent((data) => {
+        const e = data?.line?.event
+        if (e?.kind !== 'operator.answered' || typeof e.askId !== 'string') return
+        const done = (r: OpsOperatorRequest) => r.askId === e.askId && r.runId === e.runId
+        setOperatorRequests((q) => (q.some(done) ? q.filter((r) => !done(r)) : q))
+      }),
+    []
+  )
+  const answerOperator = useCallback((requestId: string, output: string | null) => {
+    void window.electronAPI.opsOperatorResponse({ requestId, output })
+    setOperatorRequests((q) => q.filter((r) => r.requestId !== requestId))
+  }, [])
   // When each approvalId entered the queue, for Home's "since" — ApprovalRequest itself
   // carries no timestamp, and reading Date.now() at render time would restart the count
   // on every re-render instead of showing how long it has actually been pending.
@@ -2252,7 +2274,9 @@ export default function App() {
     .filter((iv) => opsRunning.has(opsTerminalIdFor(iv)) || opsTerminalIdFor(iv) === opsOnScreenId)
     .map((iv) => ({
       intervention: iv,
-      waiting: approvalQueue.some((r) => r.ops && r.appSessionId === opsTerminalIdFor(iv)),
+      waiting:
+        approvalQueue.some((r) => r.ops && r.appSessionId === opsTerminalIdFor(iv)) ||
+        operatorRequests.some((r) => r.appSessionId === opsTerminalIdFor(iv)),
       ended: !opsRunning.has(opsTerminalIdFor(iv))
     }))
   // Home's Running list beyond the chats: each server with a live session (one row per
@@ -2902,6 +2926,8 @@ export default function App() {
             onDecide={workspaceApproval ? (allow, skipSteps) => respondApprovalById(workspaceApproval.approvalId, allow, skipSteps) : undefined}
             onStop={workspaceApproval ? () => respondApprovalStopById(workspaceApproval.approvalId) : undefined}
             onEnded={endOpsWorkspace}
+            operatorRequests={operatorRequests.filter((r) => r.appSessionId === opsTerminalIdFor(opsWorkspace))}
+            onOperatorAnswer={answerOperator}
             tabs={<OpsTabs strip items={opsTabs} activeId={opsTerminalIdFor(opsWorkspace)} onSelect={selectOpsTab} onClose={(iv) => void closeOpsTab(iv)} />}
           />
         </Suspense>

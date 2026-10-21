@@ -26,6 +26,9 @@ const CHANGELOG: Entry[] = [
         title: 'Features',
         items: [
           'New interventions start in Diagnosis mode: a read-only runbook built into Argos, so looking into a server no longer needs a runbook written for the case. It runs system, process, service, log, network, app and PostgreSQL checks, nine read-only scripts among them, on any stored server; it never restarts, kills or writes, and keeps secrets out of reach. Runbook intervention is the other mode, as before. Reports of a diagnosis are saved to ~/argos/reports.',
+          'A read-only runbook, the built-in Diagnosis among them, no longer waits for an approved plan: every call is still checked against the policy and logged.',
+          'During a run the activity column lists the hypotheses the model is testing, each marked open, confirmed or ruled out with its evidence, and the findings so far.',
+          'When the model needs a command it may not run, a "Para correres tu" card shows it with the reason: copy it, run it in your own SSH session and paste the output back, or decline. The run waits for your answer, and both the command and the output go into the ops history.',
           'A runbook’s policy.json can list read.deny paths that no read, list, command or script argument may reach, whatever its read paths and allow rules say. Use it to keep secrets such as .env files, database.yml and keys out of a runbook that otherwise reads an application folder.'
         ]
       },

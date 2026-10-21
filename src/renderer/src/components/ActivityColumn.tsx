@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import { rich } from '../lib/t-rich'
-import type { ApprovalOpsContext, ApprovalRequest } from '../types'
+import type { ApprovalOpsContext, ApprovalRequest, OpsOperatorRequest } from '../types'
 import { describeOpsRequest, displayArgv } from '../lib/ops-approval'
 import { splitSections, type OpsOutputSection } from '../lib/ops-sections'
 import {
@@ -10,6 +10,8 @@ import {
   rowLabel,
   rowTone,
   type OpsHostAnswer,
+  type OpsHypothesis,
+  type OpsOperatorAsk,
   type OpsRow,
   type OpsRowTone,
   type OpsRun,
@@ -41,6 +43,10 @@ interface Props {
   onStop?: () => void
   /** The CLI is still up, so there is something for onStop to end even after the run has. */
   cliAlive?: boolean
+  /** The model's ask_operator requests still open on this terminal (App owns them). */
+  operatorRequests?: OpsOperatorRequest[]
+  /** Answer one with the pasted output; null declines. */
+  onOperatorAnswer?: (requestId: string, output: string | null) => void
 }
 
 interface ScriptInfo {
@@ -452,6 +458,155 @@ function HostLine({ answer }: { answer: OpsHostAnswer }) {
   )
 }
 
+const HYP_MARK: Record<OpsHypothesis['status'], string> = { open: '●', confirmed: '✓', ruled_out: '✕' }
+
+/** The model's hypotheses with their status, then its findings; nothing when it noted none. */
+function NotesSection({ run }: { run: OpsRun }) {
+  const t = useT()
+  if (run.hypotheses.length === 0 && run.findings.length === 0) return null
+  const statusText = (s: OpsHypothesis['status']): string =>
+    s === 'confirmed' ? t('sessions.activity.notes.confirmed') : s === 'ruled_out' ? t('sessions.activity.notes.ruledOut') : t('sessions.activity.notes.open')
+  return (
+    <div className="ac-notes">
+      {run.hypotheses.length > 0 && (
+        <>
+          <span className="ac-notes-title">{t('sessions.activity.notes.hypotheses')}</span>
+          {run.hypotheses.map((h) => (
+            <div key={h.id} className={`ac-hyp ${h.status}`}>
+              <span className="ac-hyp-mark" role="img" aria-label={statusText(h.status)} title={statusText(h.status)}>
+                {HYP_MARK[h.status]}
+              </span>
+              <span className="ac-hyp-text">
+                {h.text}
+                {h.evidence && <small>{h.evidence}</small>}
+              </span>
+            </div>
+          ))}
+        </>
+      )}
+      {run.findings.length > 0 && (
+        <>
+          <span className="ac-notes-title">{t('sessions.activity.notes.findings')}</span>
+          <ul className="ac-findings">
+            {run.findings.map((f, i) => (
+              <li key={i}>
+                {f.text}
+                {f.evidence && <small>{f.evidence}</small>}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  )
+}
+
+/** A command the model handed the operator, as a line among the calls: run (with the
+ *  pasted output behind a click), declined, or still waiting. */
+function AskRow({ ask }: { ask: OpsOperatorAsk }) {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const tone: OpsRowTone = ask.state === 'answered' ? 'ok' : ask.state === 'declined' ? 'bad' : 'warn'
+  const label =
+    ask.state === 'answered'
+      ? `✓ ${t('sessions.activity.ask.ran')}`
+      : ask.state === 'declined'
+        ? t('sessions.activity.ask.declined')
+        : t('sessions.activity.ask.waiting')
+  const output = ask.state === 'answered' && ask.output ? ask.output + (ask.truncated ? `\n${t('sessions.activity.ask.truncated')}` : '') : ''
+  const cls = `ac-row ac-askrow${open ? ' open' : ''}${output ? ' has-output' : ''}`
+  const inner = (
+    <>
+      <span className={`ac-dot ${tone}`} aria-hidden="true" />
+      <span className="ac-cmd" title={[ask.cmd, ask.why, ask.host].filter(Boolean).join('\n')}>
+        {ask.cmd}
+      </span>
+      <span className={`ac-label ${tone === 'ok' ? 'ran' : tone}`}>{label}</span>
+    </>
+  )
+  return (
+    <>
+      {output ? (
+        <button type="button" className={cls} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          {inner}
+        </button>
+      ) : (
+        <div className={cls}>{inner}</div>
+      )}
+      {open && output && <pre className="ac-output">{output}</pre>}
+    </>
+  )
+}
+
+// What the operator has typed into a card, kept across a tab switch until it is sent.
+const askDrafts = new Map<string, string>()
+
+/**
+ * "For you to run": a command the model may not run itself, waiting for the operator to run
+ * it in their own SSH session and paste the output back, or to decline. The model's tool
+ * call is blocked until then.
+ */
+function OperatorCard({ req, onAnswer }: { req: OpsOperatorRequest; onAnswer: (requestId: string, output: string | null) => void }) {
+  const t = useT()
+  const [text, setText] = useState(() => askDrafts.get(req.requestId) ?? '')
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const id = setTimeout(() => setCopied(false), 1500)
+    return () => clearTimeout(id)
+  }, [copied])
+  const copy = (): void => {
+    // The main process's clipboard when the renderer's is refused (no focus, no permission).
+    navigator.clipboard
+      .writeText(req.cmd)
+      .catch(() => window.electronAPI.clipboardWrite(req.cmd))
+      .then(
+        () => setCopied(true),
+        () => {}
+      )
+  }
+  const edit = (v: string): void => {
+    setText(v)
+    askDrafts.set(req.requestId, v)
+  }
+  const answer = (output: string | null): void => {
+    askDrafts.delete(req.requestId)
+    onAnswer(req.requestId, output)
+  }
+  return (
+    <div className="ac-op" role="group" aria-label={t('sessions.activity.ask.eyebrow')}>
+      <div className="ac-wait-head">
+        <span className="ac-wait-eyebrow">{t('sessions.activity.ask.eyebrow')}</span>
+        {req.hostName && <span className="ac-wait-tag">{t('sessions.activity.ask.on', { host: req.hostName })}</span>}
+      </div>
+      <div className="ac-wait-title">{req.why}</div>
+      <div className="ac-op-cmd">
+        <code>{req.cmd}</code>
+        <button type="button" className="ac-btn" onClick={copy}>
+          {copied ? t('sessions.activity.ask.copied') : t('sessions.activity.ask.copy')}
+        </button>
+      </div>
+      {req.expect && <div className="ac-wait-reason">{t('sessions.activity.ask.expect', { expect: req.expect })}</div>}
+      <textarea
+        className="ac-op-paste"
+        placeholder={t('sessions.activity.ask.paste')}
+        aria-label={t('sessions.activity.ask.paste')}
+        spellCheck={false}
+        value={text}
+        onChange={(e) => edit(e.target.value)}
+      />
+      <div className="ac-wait-actions">
+        <button type="button" className="ac-allow" disabled={!text.trim()} onClick={() => answer(text)}>
+          {t('sessions.activity.ask.send')}
+        </button>
+        <button type="button" className="ac-deny" onClick={() => answer(null)}>
+          {t('sessions.activity.ask.decline')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /** The call or host variant of the waiting block. */
 function WaitingCall({ ops, onDecide }: { ops: ApprovalOpsContext; onDecide: (allow: boolean) => void }) {
   const t = useT()
@@ -517,7 +672,20 @@ function WaitingCall({ ops, onDecide }: { ops: ApprovalOpsContext; onDecide: (al
  * run header, whatever waits for the operator as the only highlighted block, one line per
  * call, and the earlier runs of this intervention folded to a line each.
  */
-export default function ActivityColumn({ terminalId, runbookPath, current, earlier, loading, waiting, onDecide, onDenyStop, onStop, cliAlive }: Props) {
+export default function ActivityColumn({
+  terminalId,
+  runbookPath,
+  current,
+  earlier,
+  loading,
+  waiting,
+  onDecide,
+  onDenyStop,
+  onStop,
+  cliAlive,
+  operatorRequests,
+  onOperatorAnswer
+}: Props) {
   const t = useT()
   const { locale } = useLanguage()
   const [reportRunId, setReportRunId] = useState<string | null>(null)
@@ -544,15 +712,30 @@ export default function ActivityColumn({ terminalId, runbookPath, current, earli
       return next
     })
 
-  // Host lines sit among the rows at the point the answer came.
-  const answers = current ? [...current.hostAnswers] : []
+  // The operator's open requests, until the ledger shows their answer (App drops them then
+  // too; this covers the moment between).
+  const settledAsks = new Set(
+    [current, ...earlier].flatMap((r) => (r ? r.asks.filter((a) => a.state !== 'pending').map((a) => `${r.runId}:${a.askId}`) : []))
+  )
+  const cards = onOperatorAnswer
+    ? (operatorRequests ?? []).filter((r) => r.appSessionId === terminalId && !settledAsks.has(`${r.runId}:${r.askId}`))
+    : []
+  const carded = new Set(cards.filter((r) => r.runId === current?.runId).map((r) => r.askId))
+
+  // Host lines and the operator's commands sit among the rows at the point they came; a
+  // command still on its card is not listed twice.
+  const lines: { beforeCall: number; at: string; el: ReactElement }[] = current
+    ? [
+        ...current.hostAnswers.map((a: OpsHostAnswer) => ({ beforeCall: a.beforeCall, at: a.at, el: <HostLine key={`h:${a.hostId}:${a.at}`} answer={a} /> })),
+        ...current.asks
+          .filter((a) => !carded.has(a.askId))
+          .map((a) => ({ beforeCall: a.beforeCall, at: a.at, el: <AskRow key={`a:${a.askId}`} ask={a} /> }))
+      ].sort((a, b) => a.beforeCall - b.beforeCall || (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+    : []
   const rowsOf = (rows: OpsRow[], firstCall: number): ReactElement[] => {
     const out: ReactElement[] = []
     rows.forEach((row, j) => {
-      while (answers.length && answers[0].beforeCall <= firstCall + j) {
-        const a = answers.shift() as OpsHostAnswer
-        out.push(<HostLine key={`h:${a.hostId}:${a.at}`} answer={a} />)
-      }
+      while (lines.length && lines[0].beforeCall <= firstCall + j) out.push(lines.shift()!.el)
       out.push(<CallRow key={row.callId} row={row} />)
     })
     return out
@@ -569,7 +752,7 @@ export default function ActivityColumn({ terminalId, runbookPath, current, earli
         </StepGroup>
       )
     }
-  for (const a of answers) rows.push(<HostLine key={`h:${a.hostId}:${a.at}`} answer={a} />)
+  for (const l of lines) rows.push(l.el)
 
   return (
     <aside className="ac" aria-label={t('sessions.activity.label')}>
@@ -625,9 +808,19 @@ export default function ActivityColumn({ terminalId, runbookPath, current, earli
         </div>
       )}
 
-      <ScriptsList terminalId={terminalId} runId={current?.runId} disabled={!!current?.ended || !!waiting} />
+      {cards.length > 0 && onOperatorAnswer && (
+        <div className="ac-op-wrap">
+          {cards.map((r) => (
+            <OperatorCard key={r.requestId} req={r} onAnswer={onOperatorAnswer} />
+          ))}
+        </div>
+      )}
+
+      {/* The model's tool call is blocked on a card: a script prompt would only queue behind it. */}
+      <ScriptsList terminalId={terminalId} runId={current?.runId} disabled={!!current?.ended || !!waiting || cards.length > 0} />
 
       <div className="ac-list">
+        {current && <NotesSection run={current} />}
         {current && rows.length === 0 && <p className="ac-empty">{t('sessions.activity.noCalls')}</p>}
         {rows}
 

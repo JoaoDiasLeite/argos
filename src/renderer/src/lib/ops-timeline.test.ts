@@ -411,3 +411,67 @@ describe('calls by plan step', () => {
     expect(groupCallsBySteps(run, t).map((g) => g.key)).toEqual(['pre'])
   })
 })
+
+describe('notes and operator asks', () => {
+  const note = (n: Record<string, unknown>) => ev({ kind: 'note', note: n })
+
+  it('has none on a run from before them', () => {
+    const [run] = foldOpsEvents([start, decided('c1', 'allow')])
+    expect(run).toMatchObject({ hypotheses: [], findings: [], events: [], asks: [] })
+    expect(run.planRequired).toBeUndefined()
+  })
+
+  it('reads planRequired false from run.start', () => {
+    const [run] = foldOpsEvents([ev({ kind: 'run.start', runbook: { name: 'despiste' }, hosts: [], planRequired: false })])
+    expect(run.planRequired).toBe(false)
+  })
+
+  it('folds hypotheses by id in order of first appearance, with the latest status and evidence', () => {
+    const [run] = foldOpsEvents([
+      start,
+      note({ kind: 'hypothesis', id: 'disk', text: 'Disk full', status: 'open' }),
+      note({ kind: 'hypothesis', id: 'puma', text: 'Puma orphaned', status: 'open', evidence: 'pid file stale' }),
+      note({ kind: 'hypothesis', id: 'disk', text: 'Disk full on /var', status: 'ruled_out', evidence: 'df: 41%' }),
+      note({ kind: 'hypothesis', id: 'puma', text: 'Puma orphaned', status: 'confirmed' }),
+      note({ kind: 'hypothesis', text: 'no id, dropped', status: 'open' })
+    ])
+    expect(run.hypotheses).toEqual([
+      { id: 'disk', text: 'Disk full on /var', status: 'ruled_out', evidence: 'df: 41%' },
+      { id: 'puma', text: 'Puma orphaned', status: 'confirmed', evidence: 'pid file stale' }
+    ])
+  })
+
+  it('keeps findings and timeline events in ledger order, and skips malformed notes', () => {
+    const [run] = foldOpsEvents([
+      start,
+      note({ kind: 'finding', text: 'OOM killer at 03:12', evidence: 'dmesg' }),
+      note({ kind: 'event', text: 'Reboot', at: '2026-10-20 03:15' }),
+      note({ kind: 'finding', text: '' }),
+      ev({ kind: 'note' }),
+      note({ kind: 'finding', text: 'Swap off' })
+    ])
+    expect(run.findings).toEqual([{ text: 'OOM killer at 03:12', evidence: 'dmesg' }, { text: 'Swap off' }])
+    expect(run.events).toEqual([{ text: 'Reboot', at: '2026-10-20 03:15' }])
+  })
+
+  it('folds operator asks: pending, answered with output, declined', () => {
+    const [run] = foldOpsEvents([
+      start,
+      decided('c1', 'allow'),
+      ev({ kind: 'operator.asked', askId: 'a1', cmd: 'sudo systemctl status puma', why: 'needs root', hostId: 'h1', expect: 'active' }),
+      ev({ kind: 'operator.asked', askId: 'a2', cmd: 'sudo cat /var/log/secure', why: 'auth log' }),
+      ev({ kind: 'operator.asked', askId: 'a3', cmd: 'sudo journalctl -u puma', why: 'journal', host: 'web1' }),
+      ev({ kind: 'operator.answered', askId: 'a1', output: 'active (running)', truncated: true }),
+      ev({ kind: 'operator.answered', askId: 'a2', declined: true }),
+      ev({ kind: 'operator.answered', askId: 'zz', declined: true })
+    ])
+    expect(run.asks.map((a) => [a.askId, a.state])).toEqual([
+      ['a1', 'answered'],
+      ['a2', 'declined'],
+      ['a3', 'pending']
+    ])
+    expect(run.asks[0]).toMatchObject({ host: 'web1', hostId: 'h1', expect: 'active', output: 'active (running)', truncated: true, beforeCall: 1 })
+    expect(run.asks[1].output).toBeUndefined()
+    expect(run.asks[2].host).toBe('web1')
+  })
+})

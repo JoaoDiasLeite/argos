@@ -607,7 +607,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
           <div className="ivs-form">
             <div className="ivs-head">
               <h1 className="ivs-title">{t('ops.start.title')}</h1>
-              <p className="ivs-sub">{t('ops.start.sub')}</p>
+              <p className="ivs-sub">{mode === 'despiste' ? t('ops.start.subDespiste') : t('ops.start.sub')}</p>
             </div>
 
             <div className="ivs-field">

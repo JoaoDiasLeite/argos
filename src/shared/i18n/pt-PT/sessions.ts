@@ -116,7 +116,26 @@ const sessions: Record<keyof typeof en, string> = {
   'activity.wait.read': 'leitura',
   'activity.wait.queued.one': 'Em fila atrás de {n} chamada em {host}.',
   'activity.wait.queued.other': 'Em fila atrás de {n} chamadas em {host}.',
-  'activity.wait.denyStop': 'Recusar e parar'
+  'activity.wait.denyStop': 'Recusar e parar',
+
+  'activity.notes.hypotheses': 'Hipóteses',
+  'activity.notes.findings': 'Achados',
+  'activity.notes.open': 'em aberto',
+  'activity.notes.confirmed': 'confirmada',
+  'activity.notes.ruledOut': 'afastada',
+
+  'activity.ask.eyebrow': 'Para correres tu',
+  'activity.ask.on': 'em {host}',
+  'activity.ask.copy': 'Copiar',
+  'activity.ask.copied': 'Copiado',
+  'activity.ask.expect': 'Procura: {expect}',
+  'activity.ask.paste': 'Cola aqui o resultado',
+  'activity.ask.send': 'Enviar resultado',
+  'activity.ask.decline': 'Não vou correr',
+  'activity.ask.ran': 'corrido por ti',
+  'activity.ask.declined': 'recusado por ti',
+  'activity.ask.waiting': 'à tua espera',
+  'activity.ask.truncated': '(resultado cortado)'
 }
 
 export default sessions

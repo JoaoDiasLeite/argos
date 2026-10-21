@@ -113,5 +113,24 @@ export default {
   'activity.wait.read': 'read',
   'activity.wait.queued.one': 'Queued behind {n} call on {host}.',
   'activity.wait.queued.other': 'Queued behind {n} calls on {host}.',
-  'activity.wait.denyStop': 'Deny and stop'
+  'activity.wait.denyStop': 'Deny and stop',
+
+  'activity.notes.hypotheses': 'Hypotheses',
+  'activity.notes.findings': 'Findings',
+  'activity.notes.open': 'open',
+  'activity.notes.confirmed': 'confirmed',
+  'activity.notes.ruledOut': 'ruled out',
+
+  'activity.ask.eyebrow': 'For you to run',
+  'activity.ask.on': 'on {host}',
+  'activity.ask.copy': 'Copy',
+  'activity.ask.copied': 'Copied',
+  'activity.ask.expect': 'Look for: {expect}',
+  'activity.ask.paste': 'Paste the output here',
+  'activity.ask.send': 'Send output',
+  'activity.ask.decline': "I won't run it",
+  'activity.ask.ran': 'run by you',
+  'activity.ask.declined': 'declined by you',
+  'activity.ask.waiting': 'waiting for you',
+  'activity.ask.truncated': '(output cut)'
 } satisfies Record<string, string>

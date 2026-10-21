@@ -212,6 +212,7 @@ export default {
   'start.earlier': 'Earlier interventions',
   'start.title': 'New intervention',
   'start.sub': 'One server, one runbook, one task. Nothing runs until you approve the plan.',
+  'start.subDespiste': 'One server and what is wrong with it. Read only: there is no plan to approve, and anything that needs changing is left for you to run.',
   'start.server': 'Server',
   'start.mode': 'Mode',
   'start.mode.despiste': 'Diagnosis',

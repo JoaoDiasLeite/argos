@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { ApprovalRequest, OpsIntervention, OpsRunbookInfo } from '../types'
+import type { ApprovalRequest, OpsIntervention, OpsOperatorRequest, OpsRunbookInfo } from '../types'
 import ChatTerminal from '../components/ChatTerminal'
 import ActivityColumn from '../components/ActivityColumn'
 import { useOpsEvents } from '../hooks/useOpsEvents'
@@ -70,9 +70,25 @@ interface Props {
   onEnded?: (terminalId: string, leave: boolean) => void
   /** The tabs of the running interventions, at the top like the Remote/WSL sessions'. */
   tabs?: ReactNode
+  /** The model's open ask_operator requests (App owns them, like the approvals, so one
+   *  that arrives while this workspace is not mounted waits for it). */
+  operatorRequests?: OpsOperatorRequest[]
+  onOperatorAnswer?: (requestId: string, output: string | null) => void
 }
 
-export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, onRunning, waiting, onDecide, onStop, onEnded, tabs }: Props) {
+export default function OpsWorkspace({
+  intervention,
+  onBack,
+  onTerminalVisible,
+  onRunning,
+  waiting,
+  onDecide,
+  onStop,
+  onEnded,
+  tabs,
+  operatorRequests,
+  onOperatorAnswer
+}: Props) {
   const t = useT()
   const { runbookPath, scope } = intervention
   const [info, setInfo] = useState<OpsRunbookInfo | null>(null)
@@ -316,6 +332,8 @@ export default function OpsWorkspace({ intervention, onBack, onTerminalVisible, 
           onDenyStop={onStop ? () => void endIntervention(false, onStop) : undefined}
           onStop={onEnded ? () => void endIntervention(false) : undefined}
           cliAlive={term.kind === 'ready'}
+          operatorRequests={operatorRequests}
+          onOperatorAnswer={onOperatorAnswer}
         />
       </div>
     </div>
