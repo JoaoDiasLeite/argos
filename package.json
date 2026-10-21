@@ -16,6 +16,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "icon": "node scripts/gen-icon.mjs",
+    "pin:despiste": "node scripts/pin-runbook.mjs resources/runbooks/despiste",
     "test": "vitest run",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "typecheck:node": "tsc -p tsconfig.node.json --noEmit",

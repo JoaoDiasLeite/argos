@@ -1,0 +1,512 @@
+{
+  "version": 1,
+  "strict": true,
+  "hosts": {
+    "todos": [
+      "*"
+    ]
+  },
+  "allow": [
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^(uptime|nproc|uname( -[rasmnvo]+)?|lscpu|id|whoami|groups|hostname|date)$",
+      "class": "read",
+      "title": "Consulta da carga, do tempo de atividade e das características do servidor"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^free( -[hmgkbtwl]+)*$",
+      "class": "read",
+      "title": "Consulta da memória e da swap"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^df( -[hTiklP]+| -x [a-z0-9]+)*( /[A-Za-z0-9_./-]*)?$",
+      "class": "read",
+      "title": "Consulta da ocupação dos discos e dos inodes"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^vmstat( -[watd]+)*( [1-5] ([1-9]|10))?$",
+      "class": "read",
+      "title": "Medição da utilização de CPU, memória e IO"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^iostat( -[xzktmNyc]+| -p ALL)*( [1-5] ([1-9]|10))?$",
+      "class": "read",
+      "title": "Medição da utilização dos discos"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^sar( (-[urqSbBdWwvHFhpA]+|-n (DEV|EDEV|SOCK|TCP|ETCP|IP)|-P (ALL|[0-9]{1,3})|-f /var/log/sa/sa[0-9]{2,8}|-[se] [0-9]{2}:[0-9]{2}(:[0-9]{2})?|-i [0-9]{1,4}|[1-5] ([1-9]|10)))*$",
+      "class": "read",
+      "title": "Consulta do histórico de utilização de recursos (sar)"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^last( -x| -F| -w| -i| -n [0-9]{1,3}| reboot| shutdown)*$",
+      "class": "read",
+      "title": "Consulta dos reinícios e encerramentos do servidor"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^(w( -[hsif]+)?|who( -[abHuq]+)?)$",
+      "class": "read",
+      "title": "Consulta das sessões abertas no servidor"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^ps( -e| -e?o (pid|ppid|pgid|sid|tty|user|uid|%cpu|%mem|etimes?|lstart|stat|rss|vsz|nlwp|wchan(:[0-9]{1,2})?|cmd|args|comm)(,(pid|ppid|pgid|sid|tty|user|uid|%cpu|%mem|etimes?|lstart|stat|rss|vsz|nlwp|wchan(:[0-9]{1,2})?|cmd|args|comm))*| -p [0-9]{1,7}(,[0-9]{1,7})*| --ppid [0-9]{1,7}(,[0-9]{1,7})*| --sort=[-+]?%?[a-z]+| -H| --forest| -ww| -L| -T| -u [a-z_][a-z0-9_.-]*| -C [A-Za-z0-9_.:-]+)+$",
+      "class": "read",
+      "title": "Consulta dos processos em execução"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^ps (-ef|-efH|-efww|-eLf|aux|auxf|auxww|axjf)( --sort=[-+]?(pid|ppid|pgid|sid|tty|user|uid|%cpu|%mem|etimes?|lstart|stat|rss|vsz|nlwp|wchan(:[0-9]{1,2})?|cmd|args|comm))?$",
+      "class": "read",
+      "title": "Consulta da lista completa de processos"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^pgrep( -[aflxnoi]+| -u [a-z_][a-z0-9_.-]*| -P [0-9]{1,7})* ([A-Za-z0-9_.:=@%+,/][A-Za-z0-9_./:=@%+,-]*|'[^'-][^']{0,99}')$",
+      "class": "read",
+      "title": "Pesquisa de processos pelo nome"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^pstree( -[apnlsTgAuU]+)*( [0-9]{1,7}| [a-z_][a-z0-9_.-]*)?$",
+      "class": "read",
+      "title": "Consulta da árvore de processos"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^lsof(?=.* -(p|i))( -[nPal]+| -p [0-9]{1,7}(,[0-9]{1,7})*| -i| -i(TCP|UDP|4|6)?:[0-9]{1,5}| -iTCP| -sTCP:(LISTEN|ESTABLISHED)| -U)+$",
+      "class": "read",
+      "title": "Consulta dos ficheiros e ligações abertos por um processo"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^readlink( -[fe])? /proc/[0-9]{1,7}/(cwd|exe|root|fd/[0-9]{1,6})$",
+      "class": "read",
+      "title": "Consulta do destino dos descritores e do diretório de um processo"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^systemctl( --failed| list-units| list-unit-files| list-timers| list-sockets| --type=(service|timer|socket|mount|target)| --state=[a-z,-]+| --all| -a| --no-pager| --no-legend| --plain| --full| -l)+$",
+      "class": "read",
+      "title": "Consulta do estado geral dos serviços"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^systemctl (status|is-active|is-enabled|is-failed|cat|list-dependencies)( [A-Za-z0-9_][A-Za-z0-9_.@:-]*| --no-pager| -l| --full| -n [0-9]{1,3}| --lines=[0-9]{1,3})*$",
+      "class": "read",
+      "title": "Consulta do estado de um serviço"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^systemctl show [A-Za-z0-9_][A-Za-z0-9_.@:-]*( [A-Za-z0-9_][A-Za-z0-9_.@:-]*)*( --no-pager)?( (-p |--property=)(MainPID|ExecMainPID|ExecMainStatus|ExecMainCode|ExecMainStartTimestamp|ActiveState|SubState|LoadState|UnitFileState|Result|NRestarts|ActiveEnterTimestamp|InactiveEnterTimestamp|StateChangeTimestamp|MemoryCurrent|TasksCurrent|FragmentPath|Restart|RestartUSec|TimeoutStartUSec|TimeoutStopUSec|KillMode|User|Group|WorkingDirectory)(,[A-Za-z]+)*)+$",
+      "class": "read",
+      "title": "Consulta das propriedades de um serviço"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^journalctl(?=.* (-b|-k|-n|--since|-u|-t)( |$))( (-b|-b -?[0-9]{1,2}|-k|-p [0-7a-z.]{1,16}|--no-pager|-n ([1-9][0-9]{0,2}|1[0-9]{3}|2000)|-[tu] [A-Za-z0-9_][A-Za-z0-9_.@:-]*|--(since|until) ('[0-9]{4}-[0-9: -]{6,15}'|[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9:]{5,8}|today|yesterday|now|-[0-9]{1,3}(min|h|d))|-o (short|short-iso|short-precise|json|cat|verbose|with-unit)|-r|--utc|-q|--no-hostname|-g [A-Za-z0-9_.:=@%+,/][A-Za-z0-9_./:=@%+,-]*))+$",
+      "class": "read",
+      "title": "Consulta do registo do sistema (journal)"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^journalctl (--list-boots|--disk-usage)( --no-pager)?$",
+      "class": "read",
+      "title": "Consulta dos arranques registados no journal"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^sudo -n journalctl(?=.* (-b|-k|-n|--since|-u|-t)( |$))( (-b|-b -?[0-9]{1,2}|-k|-p [0-7a-z.]{1,16}|--no-pager|-n ([1-9][0-9]{0,2}|1[0-9]{3}|2000)|-[tu] [A-Za-z0-9_][A-Za-z0-9_.@:-]*|--(since|until) ('[0-9]{4}-[0-9: -]{6,15}'|[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9:]{5,8}|today|yesterday|now|-[0-9]{1,3}(min|h|d))|-o (short|short-iso|short-precise|json|cat|verbose|with-unit)|-r|--utc|-q|--no-hostname|-g [A-Za-z0-9_.:=@%+,/][A-Za-z0-9_./:=@%+,-]*))+$",
+      "class": "read",
+      "title": "Consulta do registo completo do sistema com privilégios"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^sudo -n monit (summary|status( [A-Za-z0-9_][A-Za-z0-9_.@:-]*)?|report( [a-z]+)?|-V)$",
+      "class": "read",
+      "title": "Consulta do estado dos serviços no monit"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^monit (summary|status( [A-Za-z0-9_][A-Za-z0-9_.@:-]*)?|-V)$",
+      "class": "read",
+      "title": "Consulta do estado dos serviços no monit sem privilégios"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^crontab -l$",
+      "class": "read",
+      "title": "Consulta das tarefas agendadas do utilizador"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^ss( -[tuxwlnpsaeoimHO046]+| state (established|listening|time-wait|close-wait|syn-sent|syn-recv|fin-wait-1|fin-wait-2|connected)| [sd]port = :[0-9]{1,5})*$",
+      "class": "read",
+      "title": "Consulta das portas à escuta e das ligações de rede"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^ip( -br| -brief| -4| -6| -s| -d| -o)* (a|addr|address|r|route|l|link|n|neigh|rule)( show| list)?( dev [A-Za-z0-9_.@-]+)?$",
+      "class": "read",
+      "title": "Consulta das interfaces e rotas de rede"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^curl( (-[sSkIiv]+|-o /dev/null|-w '(%\\{[a-z_]+\\}|[ A-Za-z0-9_:,=().\\\\/-])+'|-m [0-9]{1,2}|--max-time [0-9]{1,2}|--connect-timeout [0-9]{1,2}|-H 'Host: [A-Za-z0-9.-]+'|--unix-socket /home/[a-z_][a-z0-9_.-]*/www/[A-Za-z0-9_.-]+/tmp/sockets/[A-Za-z0-9_.-]+|--http1\\.1|-4))* https?://(127\\.0\\.0\\.1|localhost)(:(80|443|3[0-9]{3}|8[0-9]{3}))?(/[A-Za-z0-9_./:=@%+,-]*)?$",
+      "class": "read",
+      "title": "Verificação da resposta HTTP da aplicação no próprio servidor"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^curl( (-[sSkIiv]+|-o /dev/null|-w '(%\\{[a-z_]+\\}|[ A-Za-z0-9_:,=().\\\\/-])+'|-m [0-9]{1,2}|--max-time [0-9]{1,2}|--connect-timeout [0-9]{1,2}))* --resolve (?<h>[A-Za-z0-9][A-Za-z0-9.-]*):443:127\\.0\\.0\\.1( (-[sSkIiv]+|-o /dev/null|-w '(%\\{[a-z_]+\\}|[ A-Za-z0-9_:,=().\\\\/-])+'|-m [0-9]{1,2}|--max-time [0-9]{1,2}|--connect-timeout [0-9]{1,2}))* https://\\k<h>(/[A-Za-z0-9_./:=@%+,-]*)?$",
+      "class": "read",
+      "title": "Verificação da resposta HTTP de um domínio servido pelo próprio servidor"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^getent (hosts|ahosts|ahostsv4|ahostsv6) [A-Za-z0-9.-]+$",
+      "class": "read",
+      "title": "Verificação da resolução de nomes"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^sudo -n nginx -[tT]$",
+      "class": "read",
+      "title": "Consulta da configuração efetiva do nginx"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^nginx -[vV]$",
+      "class": "read",
+      "title": "Consulta da versão do nginx"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^tail( -n ([1-9][0-9]{0,2}|1[0-9]{3}|2000))?( (/(var/log|etc/nginx|etc/monit\\.d|etc/systemd/system|usr/lib/systemd/system|etc/cron\\.d|etc/logrotate\\.d|home/[a-z_][a-z0-9_.-]*/www|var/lib/pgsql(/[0-9.]+)?/data/(log|pg_log))(/[A-Za-z0-9_.:@+,=-]+)*|/etc/(monitrc|os-release|redhat-release|hosts|crontab|logrotate\\.conf)))+$",
+      "class": "read",
+      "title": "Consulta do fim de um registo"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^head( -n ([1-9][0-9]{0,2}|1[0-9]{3}|2000))?( (/(var/log|etc/nginx|etc/monit\\.d|etc/systemd/system|usr/lib/systemd/system|etc/cron\\.d|etc/logrotate\\.d|home/[a-z_][a-z0-9_.-]*/www|var/lib/pgsql(/[0-9.]+)?/data/(log|pg_log))(/[A-Za-z0-9_.:@+,=-]+)*|/etc/(monitrc|os-release|redhat-release|hosts|crontab|logrotate\\.conf)))+$",
+      "class": "read",
+      "title": "Consulta do início de um registo"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^(grep|zgrep)(?=.* (-m [0-9]|-[A-Za-z]*[cl][A-Za-z]* ))( (-[ncilFhHvwosaEx]+|-m ([1-9][0-9]?|[1-4][0-9]{2}|500)|-[ABC] ([0-9]|[1-4][0-9]|50)|--color=never))+ ([A-Za-z0-9_.:=@%+,/][A-Za-z0-9_./:=@%+,-]*|'[^'-][^']{0,199}')( (/(var/log|etc/nginx|etc/monit\\.d|etc/systemd/system|usr/lib/systemd/system|etc/cron\\.d|etc/logrotate\\.d|home/[a-z_][a-z0-9_.-]*/www|var/lib/pgsql(/[0-9.]+)?/data/(log|pg_log))(/[A-Za-z0-9_.:@+,=-]+)*|/etc/(monitrc|os-release|redhat-release|hosts|crontab|logrotate\\.conf)))+$",
+      "class": "read",
+      "title": "Pesquisa num registo"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^wc( -[lcwm]+)?( (/(var/log|etc/nginx|etc/monit\\.d|etc/systemd/system|usr/lib/systemd/system|etc/cron\\.d|etc/logrotate\\.d|home/[a-z_][a-z0-9_.-]*/www|var/lib/pgsql(/[0-9.]+)?/data/(log|pg_log))(/[A-Za-z0-9_.:@+,=-]+)*|/etc/(monitrc|os-release|redhat-release|hosts|crontab|logrotate\\.conf)))+$",
+      "class": "read",
+      "title": "Contagem de linhas de um ficheiro"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^stat( -L)?( ((/(var/log|etc/nginx|etc/monit\\.d|etc/systemd/system|usr/lib/systemd/system|etc/cron\\.d|etc/logrotate\\.d|home/[a-z_][a-z0-9_.-]*/www|var/lib/pgsql(/[0-9.]+)?/data/(log|pg_log))(/[A-Za-z0-9_.:@+,=-]+)*|/etc/(monitrc|os-release|redhat-release|hosts|crontab|logrotate\\.conf))|/proc/[0-9]{1,7}(/(fd|cwd|exe))?))+$",
+      "class": "read",
+      "title": "Consulta das datas, do tamanho e das permissões de um ficheiro"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^ls( -[lahtrdSin1F]+)*( ((/(var/log|etc/nginx|etc/monit\\.d|etc/systemd/system|usr/lib/systemd/system|etc/cron\\.d|etc/logrotate\\.d|home/[a-z_][a-z0-9_.-]*/www|var/lib/pgsql(/[0-9.]+)?/data/(log|pg_log))(/[A-Za-z0-9_.:@+,=-]+)*|/etc/(monitrc|os-release|redhat-release|hosts|crontab|logrotate\\.conf))|/home(/[a-z_][a-z0-9_.-]*)?|/proc/[0-9]{1,7}(/(fd|fdinfo|task))?))+$",
+      "class": "read",
+      "title": "Listagem de uma pasta"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^find (/(var/log|etc/nginx|etc/monit\\.d|etc/systemd/system|usr/lib/systemd/system|etc/cron\\.d|etc/logrotate\\.d|home/[a-z_][a-z0-9_.-]*/www|var/lib/pgsql(/[0-9.]+)?/data/(log|pg_log))(/[A-Za-z0-9_.:@+,=-]+)*|/etc/(monitrc|os-release|redhat-release|hosts|crontab|logrotate\\.conf)) -maxdepth [1-3]( (-mindepth [0-3]|-i?name ([A-Za-z0-9_.:@+,=-]+|'[^'/]{1,100}')|-type [fdl]|-m(min|time) [-+]?[0-9]{1,5}|-newermt ([0-9-]{10}|'[0-9: -]{16,19}')|-size [-+]?[0-9]{1,6}[ckMG]?|-ls|-print))*$",
+      "class": "read",
+      "title": "Pesquisa de ficheiros recentes"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^du(?=.* (-[xhc]*s|-d [12]|--max-depth=[12]))( -[xhsc]+| -d [12]| --max-depth=[12])+ ((/(var/log|etc/nginx|etc/monit\\.d|etc/systemd/system|usr/lib/systemd/system|etc/cron\\.d|etc/logrotate\\.d|home/[a-z_][a-z0-9_.-]*/www|var/lib/pgsql(/[0-9.]+)?/data/(log|pg_log))(/[A-Za-z0-9_.:@+,=-]+)*|/etc/(monitrc|os-release|redhat-release|hosts|crontab|logrotate\\.conf))|/home(/[a-z_][a-z0-9_.-]*)?|/var(/lib(/pgsql)?)?|/opt|/srv|/tmp)$",
+      "class": "read",
+      "title": "Consulta do espaço ocupado por pasta"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^diff( -u| -q| --brief| -U [0-9]{1,2})*( (/(var/log|etc/nginx|etc/monit\\.d|etc/systemd/system|usr/lib/systemd/system|etc/cron\\.d|etc/logrotate\\.d|home/[a-z_][a-z0-9_.-]*/www|var/lib/pgsql(/[0-9.]+)?/data/(log|pg_log))(/[A-Za-z0-9_.:@+,=-]+)*|/etc/(monitrc|os-release|redhat-release|hosts|crontab|logrotate\\.conf))){2}$",
+      "class": "read",
+      "title": "Comparação de um ficheiro com a sua cópia"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^sudo -n tail( -n ([1-9][0-9]{0,2}|1[0-9]{3}|2000))? /var/log/messages(-[0-9]{8})?(\\.gz)?$",
+      "class": "read",
+      "title": "Consulta do fim do registo do sistema com privilégios"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^sudo -n (grep|zgrep)(?=.* (-m [0-9]|-[A-Za-z]*[cl][A-Za-z]* ))( (-[ncilFhHvwosaEx]+|-m ([1-9][0-9]?|[1-4][0-9]{2}|500)|-[ABC] ([0-9]|[1-4][0-9]|50)|--color=never))+ ([A-Za-z0-9_.:=@%+,/][A-Za-z0-9_./:=@%+,-]*|'[^'-][^']{0,199}')( /var/log/messages(-[0-9]{8})?(\\.gz)?)+$",
+      "class": "read",
+      "title": "Pesquisa no registo do sistema com privilégios"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^/usr/local/sbin/jarvis (version|--version)$",
+      "class": "read",
+      "title": "Consulta da versão do Jarvis"
+    },
+    {
+      "hosts": [
+        "todos"
+      ],
+      "cmd": "^redis-cli( -h (127\\.0\\.0\\.1|localhost)| -p [0-9]{4,5}| -n [0-9]{1,2}| -s /[A-Za-z0-9_./-]+\\.sock)* (ping|info( [a-z]+)?|dbsize|llen queue:[A-Za-z0-9_.:-]+|zcard (retry|schedule|dead)|scard queues|smembers queues|slowlog get( [0-9]{1,2})?|config get maxmemory(-policy)?)$",
+      "class": "read",
+      "title": "Consulta do estado do Redis e das filas do Sidekiq"
+    }
+  ],
+  "scripts": [
+    {
+      "name": "snapshot.sh",
+      "sha256": "4af6bffa09a151518ddd7ee380b0d8c46542214c31f49fea8768c9541946a4bb",
+      "hosts": [
+        "todos"
+      ],
+      "class": "read",
+      "title": "Recolha do estado geral do servidor"
+    },
+    {
+      "name": "proc-inspect.sh",
+      "sha256": "e7ba782e7190894990b425b22378cce80fe836bc4765c444cc1642c9de8a97fa",
+      "hosts": [
+        "todos"
+      ],
+      "class": "read",
+      "title": "Inspeção de um processo e da sessão a que pertence",
+      "args": {
+        "max": 1,
+        "pattern": "^([0-9]{1,7}|[A-Za-z0-9_][A-Za-z0-9_.:@-]{0,63})$"
+      }
+    },
+    {
+      "name": "app-status.sh",
+      "sha256": "4a0a8b94b9f76a7b5340f491b6d237a2534ecdce1ff717dd65a3ee616479590e",
+      "hosts": [
+        "todos"
+      ],
+      "class": "read",
+      "title": "Verificação do estado da aplicação",
+      "args": {
+        "max": 1,
+        "pattern": "^(?!.*\\.\\.)/home/[a-z_][a-z0-9_.-]{0,31}/www/[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}/?$"
+      }
+    },
+    {
+      "name": "log-window.sh",
+      "sha256": "33804c345d36a190212c0bca6bdeb65b2dcffd2ec636ec5a8b567600178ef916",
+      "hosts": [
+        "todos"
+      ],
+      "class": "read",
+      "title": "Consulta de um registo num intervalo de tempo",
+      "args": {
+        "max": 4,
+        "pattern": "^((?!.*\\.\\.)/(var/log|home/[a-z_][a-z0-9_.-]*/www|var/lib/pgsql(/[0-9.]+)?/data/(log|pg_log))(/[A-Za-z0-9_.:@+,=-]+)+|[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}|[^/][^']{0,199})$"
+      }
+    },
+    {
+      "name": "log-rate.sh",
+      "sha256": "b47bf501820a3013e07b6fd9daf71c9ae73be41d1a1f7861875455d63d53bf80",
+      "hosts": [
+        "todos"
+      ],
+      "class": "read",
+      "title": "Contagem de pedidos por minuto e por código de estado",
+      "args": {
+        "max": 3,
+        "pattern": "^((?!.*\\.\\.)/(var/log|home/[a-z_][a-z0-9_.-]*/www)(/[A-Za-z0-9_.:@+,=-]+)+|[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2})$"
+      }
+    },
+    {
+      "name": "pg-health.sh",
+      "sha256": "e7d9cda1f51e6674e40d34f067dc682bdb746f1ecd80b2eb24e5eec8d92a6f71",
+      "hosts": [
+        "todos"
+      ],
+      "class": "read",
+      "title": "Verificação do estado da base de dados",
+      "args": {
+        "max": 1,
+        "pattern": "^[A-Za-z_][A-Za-z0-9_-]{0,62}$"
+      }
+    },
+    {
+      "name": "pg-query.sh",
+      "sha256": "c4404ac178a39d4babd77d54e11d6a33e0e4123d0a4cb811bc25f997bb254b6e",
+      "hosts": [
+        "todos"
+      ],
+      "class": "read",
+      "title": "Consulta de leitura à base de dados",
+      "args": {
+        "max": 2,
+        "pattern": "^([A-Za-z_][A-Za-z0-9_-]{0,62}|(?![^;]*(pg_terminate|pg_cancel|pg_sleep|pg_reload|set_config|dblink|lo_import|lo_export|pg_advisory))[ ]*([Ss][Ee][Ll][Ee][Cc][Tt]|[Ww][Ii][Tt][Hh]|[Ss][Hh][Oo][Ww]|[Ee][Xx][Pp][Ll][Aa][Ii][Nn](?![^;]*[Aa][Nn][Aa][Ll][Yy][SsZz][Ee]))[ (][^;\\\\]{0,3990};?[ ]*)$"
+      }
+    },
+    {
+      "name": "env-get.sh",
+      "sha256": "a4d37bf2c5d107098b63c36c157fa54ff8a5a1ec706c34614542cd8fe1bca633",
+      "hosts": [
+        "todos"
+      ],
+      "class": "read",
+      "title": "Consulta de uma variável de configuração da plataforma",
+      "args": {
+        "max": 2,
+        "pattern": "^((?!.*\\.\\.)[a-z_][a-z0-9_.-]{0,31}|WMCP_[A-Za-z0-9_]{1,64})$"
+      }
+    },
+    {
+      "name": "tls-check.sh",
+      "sha256": "eaaf3d60f5780037aeb5a7833b6e0671d15f04ff3525783865a4617281e631bc",
+      "hosts": [
+        "todos"
+      ],
+      "class": "read",
+      "title": "Verificação do certificado TLS",
+      "args": {
+        "max": 2,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]{0,252}(:[0-9]{1,5})?$"
+      }
+    }
+  ],
+  "read": {
+    "paths": [
+      "^/var/log(/[^/]+)*$",
+      "^/etc/nginx(/[^/]+)*$",
+      "^/etc/monit\\.d(/[^/]+)*$",
+      "^/etc/monitrc$",
+      "^/etc/systemd/system(/[^/]+)*$",
+      "^/usr/lib/systemd/system(/[^/]+)*$",
+      "^/etc/(os-release|redhat-release|hosts|crontab|logrotate\\.conf)$",
+      "^/etc/cron\\.d(/[^/]+)*$",
+      "^/etc/logrotate\\.d(/[^/]+)*$",
+      "^/proc/[0-9]+(/(status|wchan|cmdline|limits|stat|statm|io|cgroup|oom_score|oom_score_adj|comm|sessionid|loginuid|mountinfo|fd|fdinfo|fdinfo/[0-9]+|task|net/tcp|net/tcp6|net/unix))?$",
+      "^/proc/(loadavg|meminfo|uptime|cpuinfo|mounts|swaps|vmstat|pressure/(cpu|memory|io)|sys/fs/file-nr|sys/fs/file-max|sys/kernel/pid_max|sys/vm/overcommit_memory|sys/vm/swappiness)$",
+      "^/home/[a-z_][a-z0-9_.-]*/www(/[^/]+)*$",
+      "^/var/lib/pgsql(/[0-9.]+)?/data/(log|pg_log)(/[^/]+)*$"
+    ],
+    "deny": [
+      "/proc/.+/(environ|mem)$",
+      "(^|/)[^/]*\\.env(\\.[^/]*)?$",
+      "(^|/)database\\.yml",
+      "(^|/)secrets[^/]*\\.yml",
+      "(^|/)credentials[^/]*$",
+      "(^|/)master\\.key",
+      "\\.(key|pem|p12|pfx|jks|keystore)$",
+      "(^|/)id_[^/]*$",
+      "(^|/)\\.pgpass",
+      "(^|/)\\.netrc",
+      "(^|/)\\.git-credentials",
+      "^/etc/(g?shadow|sudoers)",
+      "(^|/)\\.ssh(/|$)",
+      "authorized_keys",
+      "(^|/)\\.[a-z]*_history$",
+      "(^|/)\\.git/config$",
+      "/(ssl|tls)/private(/|$)"
+    ],
+    "maxBytes": 1000000
+  },
+  "limits": {
+    "timeoutMs": 120000,
+    "maxOutputBytes": 1048576,
+    "concurrentPerHost": 2
+  }
+}
