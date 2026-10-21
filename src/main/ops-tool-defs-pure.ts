@@ -122,14 +122,19 @@ export function opsToolDefs(z: typeof ZodNs, hosts: OpsToolHost[], opts: { planR
         '(kind hypothesis, a short id, status open), and note it again with the same id when evidence confirms it ' +
         '(confirmed) or rules it out (ruled_out). Record notable findings (kind finding) and events on the server ' +
         "timeline (kind event, with at: when it happened on the server), each with its evidence: the reading that " +
-        'shows it, or the call it came from. The operator\'s handover report is built from these notes.',
+        'shows it, or the call it came from. Finish a diagnosis with one summary note (kind summary: what ' +
+        'happened and why, up to 1500 characters; a later summary replaces it) and one action note per ' +
+        'recommendation (kind action, with when: now for what to do right away, later for the lasting fix). ' +
+        "The operator's handover report is built from these notes, in European Portuguese: write their text in it.",
       shape: {
-        kind: z.enum(['hypothesis', 'finding', 'event']),
-        text: z.string().min(1).max(500),
+        kind: z.enum(['hypothesis', 'finding', 'event', 'summary', 'action']),
+        // 500 for every kind but summary; main's noteFrom holds each kind to its own limit.
+        text: z.string().min(1).max(1500),
         id: z.string().regex(/^[a-z0-9-]{1,40}$/).optional(),
         status: z.enum(['open', 'confirmed', 'ruled_out']).optional(),
         evidence: z.string().max(300).optional(),
-        at: z.string().max(40).optional()
+        at: z.string().max(40).optional(),
+        when: z.enum(['now', 'later']).optional()
       }
     },
     {

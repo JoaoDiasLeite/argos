@@ -126,12 +126,14 @@ export interface OpsRunbookRef {
 }
 
 /**
- * One `note` of the model's diagnosis: a hypothesis and its status, a finding, or an
- * event on the server's timeline. A later hypothesis note with the same id replaces that
- * hypothesis's status; main only logs them, the readers fold.
+ * One `note` of the model's diagnosis: a hypothesis and its status, a finding, an event
+ * on the server's timeline, the diagnosis's summary, or a recommended action. A later
+ * hypothesis note with the same id replaces that hypothesis's status, and a later summary
+ * replaces the earlier one; main only logs them, the readers fold.
  */
 export interface OpsNote {
-  kind: 'hypothesis' | 'finding' | 'event'
+  kind: 'hypothesis' | 'finding' | 'event' | 'summary' | 'action'
+  /** At most 500 characters; 1500 on a summary. */
   text: string
   /** hypothesis only: its key, `[a-z0-9-]{1,40}`. */
   id?: string
@@ -141,6 +143,8 @@ export interface OpsNote {
   evidence?: string
   /** event only: when it happened on the server, free text. */
   at?: string
+  /** action only, and always set on one: do it right away, or later (the lasting fix). */
+  when?: 'now' | 'later'
 }
 
 /** One step of a plan, as logged with the user's decision on it. */

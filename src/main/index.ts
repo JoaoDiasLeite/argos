@@ -25,7 +25,7 @@ import {
   buildSubprocessEnv,
   AuthMode
 } from './auth'
-import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, reresolveUiPrefs, setSystemPrefs, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, UsageLimits, UiPrefs, UiPrefsPatch, SystemPrefs } from './config'
+import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, reresolveUiPrefs, setSystemPrefs, setOpsPrefs, opsDir, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, UsageLimits, UiPrefs, UiPrefsPatch, SystemPrefs } from './config'
 import { buildModelsCatalog } from './models-catalog'
 import {
   getAllProjects,
@@ -112,11 +112,12 @@ import {
 } from './remote-shell'
 import { listDistros, testDistro, testDistroClaude, runWslOneShot, uncToWslPath, wslHistory, wslHome, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths, wslShareRoot } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
-import { createLedger, type OpsLedger } from './ops-audit'
+import { createLedger, type OpsLedger, type OpsReportKind } from './ops-audit'
+import { handoverFileName } from './ops-handover-pure'
 import { createExecutor, createSshBackend, type OpsExecutor } from './ops-exec'
 import { createFakeBackend } from './ops-backend-fake'
 import { loadRunbook, readScript } from './ops-runbook'
-import { builtinRunbookDir, isBuiltinRunbook } from './ops-builtin'
+import { builtinRunbookDir } from './ops-builtin'
 import { summarizePolicy } from './ops-policy-pure'
 import { interventionPrompt } from './ops-scope-pure'
 import type { OpsScope } from './ops-types'
@@ -1056,9 +1057,11 @@ ipcMain.handle('ops:runs', async (_, opts?: { hostId?: string; limit?: number })
   })
 })
 
-ipcMain.handle('ops:report', async (_, runId: string, kind: 'internal' | 'client', runbookPath?: string) => {
+const isReportKind = (k: unknown): k is OpsReportKind => k === 'internal' || k === 'client' || k === 'handover'
+
+ipcMain.handle('ops:report', async (_, runId: string, kind: OpsReportKind, runbookPath?: string) => {
   if (typeof runId !== 'string' || runId === '') return { ok: false, error: t('main.ipc.ops.noRunId') }
-  if (kind !== 'internal' && kind !== 'client') return { ok: false, error: t('main.ipc.ops.unknownReportKind', { kind: String(kind) }) }
+  if (!isReportKind(kind)) return { ok: false, error: t('main.ipc.ops.unknownReportKind', { kind: String(kind) }) }
   // The ledger has no policy, so the host roles of the client report ("servidor de base
   // de dados") come from the runbook when the caller names it.
   const extraWarnings: string[] = []
@@ -1066,20 +1069,22 @@ ipcMain.handle('ops:report', async (_, runId: string, kind: 'internal' | 'client
   if (typeof runbookPath === 'string' && runbookPath !== '') {
     const rb = await loadRunbook(runbookPath)
     if (rb.ok) opts = { hostGroups: rb.runbook.policy.hosts, hosts: opsHostRefs() }
-    else extraWarnings.push(t('main.ipc.ops.reportHostsAnonymised', { error: rb.error }))
+    else if (kind === 'client') extraWarnings.push(t('main.ipc.ops.reportHostsAnonymised', { error: rb.error }))
   }
   const r = await getOpsLedger().report(runId, kind, opts)
   return r.ok ? { ...r, warnings: [...extraWarnings, ...r.warnings] } : r
 })
 
-// Saves a rendered report as `<runbook>/reports/<YYYY-MM-DD>-<runId>[-cliente].md`. This is
-// the ONE place Argos writes under a runbook folder (docs/OPS_AGENT_PLAN.md §8), and it
-// only ever creates a new file: `wx` refuses an existing one rather than editing it.
-// The built-in despiste runbook lives inside the app and is never written to: its reports
-// go to `~/argos/reports` instead, under the same file name.
-ipcMain.handle('ops:save-report', async (_, runId: string, kind: 'internal' | 'client', runbookPath: string) => {
+// Saves a rendered report as a new file in the configured folders (Settings, `config.ops`):
+// the internal and client reports in the reports folder (default `~/argos/reports`) as
+// `<YYYY-MM-DD>-<runId>[-cliente].md`, the handover in the interventions folder (default
+// `~/argos/interventions`) as `INC-<YYYY-MM-DD>-<cliente>-<tema>.md`, like the operator's
+// own files. Argos never writes under a runbook folder, the built-in one or any other.
+// It only ever creates a file: `wx` refuses an existing one rather than editing it, and a
+// taken handover name gets `-2`, `-3`… instead.
+ipcMain.handle('ops:save-report', async (_, runId: string, kind: OpsReportKind, runbookPath: string) => {
   if (typeof runId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(runId)) return { ok: false, error: t('main.ipc.ops.invalidRunId') }
-  if (kind !== 'internal' && kind !== 'client') return { ok: false, error: t('main.ipc.ops.unknownReportKind', { kind: String(kind) }) }
+  if (!isReportKind(kind)) return { ok: false, error: t('main.ipc.ops.unknownReportKind', { kind: String(kind) }) }
   if (typeof runbookPath !== 'string' || runbookPath === '') return { ok: false, error: t('main.ipc.ops.noRunbookFolder') }
   const rb = await loadRunbook(runbookPath)
   if (!rb.ok) return { ok: false, error: t('main.ipc.ops.saveRunbookUnloadable', { error: rb.error }) }
@@ -1088,19 +1093,54 @@ ipcMain.handle('ops:save-report', async (_, runId: string, kind: 'internal' | 'c
   if (!r.ok) return r
   // Date the file by the run's start, so a report saved days later still sorts by the run.
   const lines = await ledger.readRun(runId)
-  const startAt = lines.ok ? lines.lines.find((l) => l.event.kind === 'run.start')?.at : undefined
+  const start = lines.ok ? lines.lines.find((l) => l.event.kind === 'run.start') : undefined
+  const startAt = start?.at
   const date = (startAt && /^\d{4}-\d{2}-\d{2}/.test(startAt) ? startAt : new Date().toISOString()).slice(0, 10)
-  // `~/argos/reports` is the default reports folder; a later phase makes it a setting.
-  const dir = isBuiltinRunbook(runbookPath) ? path.join(os.homedir(), 'argos', 'reports') : path.join(runbookPath, 'reports')
-  const file = path.join(dir, `${date}-${runId}${kind === 'client' ? '-cliente' : ''}.md`)
+  const dir = opsDir(kind === 'handover' ? 'handoversDir' : 'reportsDir')
+  let names: string[]
+  if (kind === 'handover') {
+    const ev = start?.event.kind === 'run.start' ? start.event : undefined
+    const base = handoverFileName({
+      startedAt: startAt ?? new Date().toISOString(),
+      runbook: ev?.runbook.name ?? '',
+      ...(ev?.client !== undefined ? { client: ev.client } : {}),
+      ...(ev?.task !== undefined ? { task: ev.task } : {})
+    }).replace(/\.md$/, '')
+    names = [`${base}.md`, ...Array.from({ length: 98 }, (_, i) => `${base}-${i + 2}.md`)]
+  } else {
+    names = [`${date}-${runId}${kind === 'client' ? '-cliente' : ''}.md`]
+  }
   try {
     await fs.promises.mkdir(dir, { recursive: true })
-    await fs.promises.writeFile(file, r.markdown, { encoding: 'utf-8', flag: 'wx' })
   } catch (e) {
-    if ((e as NodeJS.ErrnoException)?.code === 'EEXIST') return { ok: false, error: t('main.ipc.ops.reportExists', { file }) }
     return { ok: false, error: t('main.ipc.ops.reportSaveFailed', { error: e instanceof Error ? e.message : String(e) }) }
   }
-  return { ok: true, path: file }
+  let file = ''
+  for (const name of names) {
+    file = path.join(dir, name)
+    try {
+      await fs.promises.writeFile(file, r.markdown, { encoding: 'utf-8', flag: 'wx' })
+      return { ok: true, path: file }
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException)?.code === 'EEXIST') continue
+      return { ok: false, error: t('main.ipc.ops.reportSaveFailed', { error: e instanceof Error ? e.message : String(e) }) }
+    }
+  }
+  return { ok: false, error: t('main.ipc.ops.reportExists', { file }) }
+})
+
+// "Abrir pasta" for the two ops folders of Settings: only those, by name, so this cannot
+// open an arbitrary path. The folder is created first, so a fresh install can open it.
+ipcMain.handle('ops:open-folder', async (_, which: string) => {
+  if (which !== 'reports' && which !== 'handovers') return { ok: false, error: t('main.ipc.ops.unknownFolder', { which: String(which) }) }
+  const dir = opsDir(which === 'reports' ? 'reportsDir' : 'handoversDir')
+  try {
+    await fs.promises.mkdir(dir, { recursive: true })
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+  const error = await shell.openPath(dir)
+  return error ? { ok: false, error } : { ok: true, path: dir }
 })
 
 ipcMain.handle('ops:verify', (_, date: string) => getOpsLedger().verify(date))
@@ -1645,6 +1685,13 @@ ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
 
   return { system, registeredShortcut: overlayShortcut() }
 })
+// The ops folders (reports, handovers): null or '' resets one to its default. Returns the
+// stored prefs and the effective folders, so Settings can show the default it fell back to.
+ipcMain.handle('config:set-ops', (_, patch: { reportsDir?: string | null; handoversDir?: string | null }) => {
+  const r = setOpsPrefs(patch)
+  return r.ok ? { ...r, dirs: { reportsDir: opsDir('reportsDir'), handoversDir: opsDir('handoversDir') } } : r
+})
+ipcMain.handle('config:ops-dirs', () => ({ reportsDir: opsDir('reportsDir'), handoversDir: opsDir('handoversDir') }))
 ipcMain.handle('config:get-permissions', () => getClaudePermissions())
 ipcMain.handle('config:set-permissions', (_, perms: unknown) => setClaudePermissions(perms))
 /**

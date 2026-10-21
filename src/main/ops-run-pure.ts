@@ -764,9 +764,12 @@ export function callPlanLine(input: OpsToolInput, gate: OpsGateResult): string |
 export const OPS_NOTE_TOOL = 'mcp__ops__note'
 export const OPS_ASK_OPERATOR_TOOL = 'mcp__ops__ask_operator'
 
-export const NOTE_KINDS = ['hypothesis', 'finding', 'event'] as const
+export const NOTE_KINDS = ['hypothesis', 'finding', 'event', 'summary', 'action'] as const
 export const NOTE_STATUSES = ['open', 'confirmed', 'ruled_out'] as const
+export const NOTE_WHENS = ['now', 'later'] as const
 export const NOTE_TEXT_MAX = 500
+/** A summary is the handover's resumo: a few paragraphs, so it gets more room. */
+export const NOTE_SUMMARY_MAX = 1500
 export const NOTE_EVIDENCE_MAX = 300
 export const NOTE_AT_MAX = 40
 export const NOTE_ID_RE = /^[a-z0-9-]{1,40}$/
@@ -778,16 +781,17 @@ const optString = (v: unknown): v is string | undefined => v === undefined || ty
  * A `note` call, checked: the zod schema already shaped it in the relay, but main does
  * not trust the relay's checks. Each field belongs to one kind; one sent on another kind
  * is a refusal, so the ledger never holds a finding with a status. A hypothesis without
- * a status is open.
+ * a status is open; an action without a `when` is for now.
  */
 export function noteFrom(input: Record<string, unknown>): OpsNote | { error: string } {
   if (!input || typeof input !== 'object') return { error: 'note input is not an object' }
-  const { kind, text, id, status, evidence, at } = input
+  const { kind, text, id, status, evidence, at, when } = input
   if (typeof kind !== 'string' || !(NOTE_KINDS as readonly string[]).includes(kind)) {
     return { error: `kind must be one of ${NOTE_KINDS.join(', ')}` }
   }
-  if (typeof text !== 'string' || text.trim() === '' || text.length > NOTE_TEXT_MAX) {
-    return { error: `text must be 1 to ${NOTE_TEXT_MAX} characters` }
+  const textMax = kind === 'summary' ? NOTE_SUMMARY_MAX : NOTE_TEXT_MAX
+  if (typeof text !== 'string' || text.trim() === '' || text.length > textMax) {
+    return { error: `text must be 1 to ${textMax} characters` }
   }
   if (!optString(evidence) || (evidence !== undefined && evidence.length > NOTE_EVIDENCE_MAX)) {
     return { error: `evidence must be at most ${NOTE_EVIDENCE_MAX} characters` }
@@ -796,6 +800,7 @@ export function noteFrom(input: Record<string, unknown>): OpsNote | { error: str
   if (kind !== 'hypothesis' && id !== undefined) return { error: 'id is only for a hypothesis' }
   if (kind !== 'hypothesis' && status !== undefined) return { error: 'status is only for a hypothesis' }
   if (kind !== 'event' && at !== undefined) return { error: 'at is only for an event' }
+  if (kind !== 'action' && when !== undefined) return { error: 'when is only for an action' }
   const ev = evidence?.trim() ? { evidence: evidence.trim() } : {}
   if (kind === 'hypothesis') {
     if (typeof id !== 'string' || !NOTE_ID_RE.test(id)) return { error: 'a hypothesis needs an id of 1 to 40 characters from a-z, 0-9 and -' }
@@ -803,6 +808,12 @@ export function noteFrom(input: Record<string, unknown>): OpsNote | { error: str
       return { error: `status must be one of ${NOTE_STATUSES.join(', ')}` }
     }
     return { kind, text: text.trim(), id, status: (status as OpsNote['status']) ?? 'open', ...ev }
+  }
+  if (kind === 'action') {
+    if (when !== undefined && (typeof when !== 'string' || !(NOTE_WHENS as readonly string[]).includes(when))) {
+      return { error: `when must be one of ${NOTE_WHENS.join(', ')}` }
+    }
+    return { kind, text: text.trim(), ...ev, when: (when as OpsNote['when']) ?? 'now' }
   }
   return { kind: kind as OpsNote['kind'], text: text.trim(), ...ev, ...(at?.trim() ? { at: at.trim() } : {}) }
 }

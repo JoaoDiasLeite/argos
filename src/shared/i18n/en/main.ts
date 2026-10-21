@@ -60,6 +60,7 @@ export default {
   'ipc.ops.saveRunbookUnloadable': 'The runbook could not be loaded, so nothing was saved: {error}',
   'ipc.ops.reportExists': 'A report already exists at {file}; it was not overwritten.',
   'ipc.ops.reportSaveFailed': 'Could not save the report: {error}',
+  'ipc.ops.unknownFolder': 'Not an ops folder: {which}',
   'ipc.ops.noSessionId': 'No session id given.',
   'ipc.ops.noIntervention': 'No intervention given.',
   'ipc.ops.interventionNoServer': 'The intervention names no server.',
@@ -83,6 +84,7 @@ export default {
   'config.settingsUnparsable':
     '~/.claude/settings.json exists but could not be parsed (it may contain comments or be malformed). Please fix it manually before saving from this UI.',
   'config.settingsWriteFailed': 'Could not write settings.json: {error}',
+  'config.opsDirNotAbsolute': 'The folder must be an absolute path: {path}',
   'config.permissions.notObject': 'Permissions must be an object',
   'config.permissions.notArray': 'permissions.{key} must be an array',
   'config.permissions.itemNotString': 'permissions.{key}[{i}] must be a string',

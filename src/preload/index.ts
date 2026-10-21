@@ -173,6 +173,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('config:ui', fn)
   },
   setSystemPrefs: (prefs: unknown) => ipcRenderer.invoke('config:set-system', prefs),
+  setOpsPrefs: (patch: unknown) => ipcRenderer.invoke('config:set-ops', patch),
+  opsDirs: () => ipcRenderer.invoke('config:ops-dirs'),
 
   // Claude Code data
   ccSources: () => ipcRenderer.invoke('cc:sources'),
@@ -325,10 +327,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // live ledger lines of a run for the timeline. The renderer never writes the ledger.
   opsLoadRunbook: (dir: string) => ipcRenderer.invoke('ops:load-runbook', dir),
   opsBuiltinRunbook: () => ipcRenderer.invoke('ops:builtin-runbook'),
-  opsReport: (runId: string, kind: 'internal' | 'client', runbookPath?: string) =>
+  opsReport: (runId: string, kind: 'internal' | 'client' | 'handover', runbookPath?: string) =>
     ipcRenderer.invoke('ops:report', runId, kind, runbookPath),
-  opsSaveReport: (runId: string, kind: 'internal' | 'client', runbookPath: string) =>
+  opsSaveReport: (runId: string, kind: 'internal' | 'client' | 'handover', runbookPath: string) =>
     ipcRenderer.invoke('ops:save-report', runId, kind, runbookPath),
+  opsOpenFolder: (which: 'reports' | 'handovers') => ipcRenderer.invoke('ops:open-folder', which),
   opsVerify: (date: string) => ipcRenderer.invoke('ops:verify', date),
   opsLedgerInfo: () => ipcRenderer.invoke('ops:ledger-info'),
   onOpsEvent: (cb: (data: unknown) => void) => {

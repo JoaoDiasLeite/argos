@@ -175,6 +175,13 @@ describe('ops ledger on disk', () => {
     expect(client.markdown).not.toContain('10.20.0.11')
     expect(client.markdown).not.toContain('web-01')
 
+    // The handover is ours: commands and all, in Portuguese.
+    const handover = await ledger.report('run-1', 'handover')
+    expect(handover.ok).toBe(true)
+    if (!handover.ok) return
+    expect(handover.markdown).toMatch(/^# Incidente: /)
+    expect(handover.markdown).toContain('systemctl status nginx-frontend')
+
     expect(await ledger.report('missing', 'internal')).toMatchObject({ ok: false })
   })
 

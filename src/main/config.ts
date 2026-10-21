@@ -94,11 +94,22 @@ export interface SystemPrefs {
   explorerContextMenu: boolean
 }
 
+/**
+ * Where the reports and handovers of ops runs are saved. Absent = the default under the
+ * home folder (`~/argos/reports`, `~/argos/interventions`), resolved when used, so a
+ * profile moved to another machine follows that machine's home.
+ */
+export interface OpsPrefs {
+  reportsDir?: string
+  handoversDir?: string
+}
+
 interface AppConfig {
   defaultModel: string
   limits: UsageLimits
   ui: UiPrefs
   system: SystemPrefs
+  ops: OpsPrefs
 }
 
 const configPath = path.join(app.getPath('userData'), 'config.json')
@@ -120,7 +131,8 @@ let config: AppConfig = {
     // in by migrateUiPrefs from theme/palette, which is the same path a config written
     // by an older build takes. One code path, exercised on every launch.
   },
-  system: { openAtLogin: false, startMinimized: false, closeToTray: true, overlayShortcut: '', explorerContextMenu: false }
+  system: { openAtLogin: false, startMinimized: false, closeToTray: true, overlayShortcut: '', explorerContextMenu: false },
+  ops: {}
 }
 
 /**
@@ -148,7 +160,8 @@ export function loadConfig(): void {
         limits: { ...config.limits, ...(loaded.limits ?? {}) },
         ui: loadUiPrefs(config.ui, loaded.ui),
         // Backfill for configs saved by older versions that predate `system`.
-        system: { ...config.system, ...(loaded.system ?? {}) }
+        system: { ...config.system, ...(loaded.system ?? {}) },
+        ops: cleanOpsPrefs(loaded.ops)
       }
       return
     }
@@ -206,6 +219,54 @@ export function setSystemPrefs(prefs: Partial<SystemPrefs>): SystemPrefs {
   config.system = { ...config.system, ...prefs }
   saveConfig()
   return config.system
+}
+
+// ─── Ops folders ──────────────────────────────────────────────────────────────
+
+/** Only absolute folder paths survive; anything else (a hand-edited file, an empty field) is the default. */
+function cleanOpsPrefs(raw: unknown): OpsPrefs {
+  const r = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+  const dir = (v: unknown): string | undefined =>
+    typeof v === 'string' && v.trim() !== '' && path.isAbsolute(v.trim()) ? v.trim() : undefined
+  const out: OpsPrefs = {}
+  const reportsDir = dir(r.reportsDir)
+  const handoversDir = dir(r.handoversDir)
+  if (reportsDir) out.reportsDir = reportsDir
+  if (handoversDir) out.handoversDir = handoversDir
+  return out
+}
+
+export type OpsDirKey = keyof OpsPrefs
+
+/**
+ * Set or clear the ops folders. A key given as null or '' goes back to the default, a
+ * key left out keeps its value, and a path that is not absolute is refused, not stored.
+ */
+export function setOpsPrefs(
+  patch: Partial<Record<OpsDirKey, string | null>>
+): { ok: true; ops: OpsPrefs } | { ok: false; error: string } {
+  const p: Record<string, unknown> = patch && typeof patch === 'object' ? patch : {}
+  const next: Record<string, unknown> = { ...config.ops }
+  for (const key of ['reportsDir', 'handoversDir'] as const) {
+    if (!(key in p)) continue
+    const v = p[key]
+    if (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) delete next[key]
+    else if (typeof v !== 'string' || !path.isAbsolute(v.trim())) return { ok: false, error: t('main.config.opsDirNotAbsolute', { path: String(v) }) }
+    else next[key] = v.trim()
+  }
+  config.ops = cleanOpsPrefs(next)
+  saveConfig()
+  return { ok: true, ops: config.ops }
+}
+
+const OPS_DEFAULT_DIRS: Record<OpsDirKey, string[]> = {
+  reportsDir: ['argos', 'reports'],
+  handoversDir: ['argos', 'interventions']
+}
+
+/** The effective folder for reports (`reportsDir`) or handovers (`handoversDir`): the setting, or its default under home. */
+export function opsDir(which: OpsDirKey): string {
+  return config.ops?.[which] ?? path.join(os.homedir(), ...OPS_DEFAULT_DIRS[which])
 }
 
 // ─── Claude Code's own settings.json (effort, model) ──────────────────────────

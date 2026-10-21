@@ -20,9 +20,13 @@ import {
   verifyChain,
   type OpsRunListItem
 } from './ops-audit-pure'
+import { renderHandover } from './ops-handover-pure'
 import { clientReportWarnings, hostSyslogWarnings, renderClientReport, renderInternalReport } from './ops-report-pure'
 import type { OpsAuditEvent, OpsAuditLine, OpsHostRef } from './ops-types'
 import { makeT, type TFunction } from '../shared/i18n'
+
+/** internal: ours, in English; client: the sanitised Relatório Técnico; handover: our pt-PT incident file. */
+export type OpsReportKind = 'internal' | 'client' | 'handover'
 
 export interface OpsLedger {
   append(event: OpsAuditEvent, at?: Date): Promise<{ ok: true; raw: string } | { ok: false; error: string }>
@@ -44,7 +48,7 @@ export interface OpsLedger {
   listRuns(opts?: { hostId?: string; limit?: number }): Promise<{ ok: true; runs: OpsRunListItem[] } | { ok: false; error: string }>
   report(
     runId: string,
-    kind: 'internal' | 'client',
+    kind: OpsReportKind,
     opts?: { hostGroups: Record<string, string[]>; hosts: OpsHostRef[] }
   ): Promise<{ ok: true; markdown: string; warnings: string[] } | { ok: false; error: string }>
   verify(date: string): Promise<{ ok: true; lines: number } | { ok: false; brokenAt?: number; reason: string }>
@@ -259,6 +263,8 @@ export function createLedger(dir: string, t: TFunction = makeT('en')): OpsLedger
       if (!summary) return { ok: false, error: t('runbook.audit.noRunStart', { runId }) }
       const warnings = [...hostSyslogWarnings(summary), ...clientReportWarnings(summary)]
       if (kind === 'internal') return { ok: true, markdown: renderInternalReport(summary), warnings }
+      // The handover is ours, not the client's: only the syslog warnings concern it.
+      if (kind === 'handover') return { ok: true, markdown: renderHandover(summary, r.lines, opts), warnings: hostSyslogWarnings(summary) }
       // Without the policy's groups the hosts still get sanitised, as plain "[servidor]".
       const clientOpts = opts ?? { hostGroups: {}, hosts: summary.hosts }
       return { ok: true, markdown: renderClientReport(summary, clientOpts), warnings }

@@ -659,6 +659,17 @@ describe('noteFrom', () => {
     })
   })
 
+  it('takes a summary up to 1500 characters and an action, now unless said later', () => {
+    expect(noteFrom({ kind: 'summary', text: ' o puma parou ', evidence: 'puma.log' })).toEqual({
+      kind: 'summary',
+      text: 'o puma parou',
+      evidence: 'puma.log'
+    })
+    expect(noteFrom({ kind: 'summary', text: 's'.repeat(1500) })).toHaveProperty('kind', 'summary')
+    expect(noteFrom({ kind: 'action', text: 'matar os órfãos' })).toEqual({ kind: 'action', text: 'matar os órfãos', when: 'now' })
+    expect(noteFrom({ kind: 'action', text: 'usar setsid', when: 'later' })).toEqual({ kind: 'action', text: 'usar setsid', when: 'later' })
+  })
+
   it('refuses a malformed note, and a field sent on the wrong kind', () => {
     const refused = (input: Record<string, unknown>) => expect(noteFrom(input)).toHaveProperty('error')
     refused({ kind: 'guess', text: 'x' })
@@ -675,6 +686,13 @@ describe('noteFrom', () => {
     refused({ kind: 'finding', text: 'x', status: 'open' })
     refused({ kind: 'finding', text: 'x', at: 'yesterday' })
     refused({ kind: 'finding', text: 'x', evidence: 3 })
+    refused({ kind: 'summary', text: 's'.repeat(1501) })
+    refused({ kind: 'finding', text: 'x'.repeat(1000) })
+    refused({ kind: 'action', text: 'x'.repeat(501) })
+    refused({ kind: 'action', text: 'x', when: 'soon' })
+    refused({ kind: 'finding', text: 'x', when: 'now' })
+    refused({ kind: 'summary', text: 'x', status: 'open' })
+    refused({ kind: 'action', text: 'x', at: 'today' })
   })
 })
 

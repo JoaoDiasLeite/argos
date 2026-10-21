@@ -219,11 +219,21 @@ export interface SystemPrefs {
   explorerContextMenu: boolean
 }
 
+/**
+ * Where ops reports and handovers are saved. Absent = the default under home
+ * (`~/argos/reports`, `~/argos/interventions`); `opsDirs()` gives the effective folders.
+ */
+export interface OpsPrefs {
+  reportsDir?: string
+  handoversDir?: string
+}
+
 export interface AppConfig {
   defaultModel: string
   limits: UsageLimits
   ui: UiPrefs
   system: SystemPrefs
+  ops: OpsPrefs
   claudeSettings: Record<string, unknown>
 }
 
@@ -921,6 +931,9 @@ export interface OpsLiveEvent {
   line: { at: string; prev: string; event: { kind: string; runId: string; callId?: string } & Record<string, unknown> }
 }
 
+/** internal: ours, in English; client: the sanitised Relatório Técnico; handover: the pt-PT incident file. */
+export type OpsReportKind = 'internal' | 'client' | 'handover'
+
 /**
  * The model's ask_operator, waiting for the operator (`ops:operator-request`). `askId` is
  * the ledger's id for it: the `operator.asked` / `operator.answered` lines carry the same
@@ -1349,6 +1362,16 @@ declare global {
       setSystemPrefs: (
         prefs: Partial<SystemPrefs>
       ) => Promise<{ system: SystemPrefs; registeredShortcut: string }>
+      /** Set the ops folders: a key left out keeps its value, null or '' resets it to the default,
+       *  a relative path is refused. `dirs` are the effective folders after the change. */
+      setOpsPrefs: (
+        patch: { reportsDir?: string | null; handoversDir?: string | null }
+      ) => Promise<
+        | { ok: true; ops: OpsPrefs; dirs: { reportsDir: string; handoversDir: string } }
+        | { ok: false; error: string }
+      >
+      /** The effective ops folders: the setting, or its default resolved under home. */
+      opsDirs: () => Promise<{ reportsDir: string; handoversDir: string }>
 
       // Claude Code data
       ccSources: () => Promise<SourceInfo[]>
@@ -1557,20 +1580,24 @@ declare global {
 
       // Ops runs
       opsLoadRunbook: (dir: string) => Promise<OpsRunbookInfo>
-      /** The read-only despiste runbook shipped with Argos; reports of its runs go to `~/argos/reports`. */
+      /** The read-only despiste runbook shipped with Argos. */
       opsBuiltinRunbook: () => Promise<{ path: string }>
+      /** internal: English, everything; client: the sanitised Relatório Técnico; handover: the pt-PT incident file. */
       opsReport: (
         runId: string,
-        kind: 'internal' | 'client',
+        kind: OpsReportKind,
         runbookPath?: string
       ) => Promise<{ ok: true; markdown: string; warnings: string[] } | { ok: false; error: string }>
-      /** Writes the report as a new file under `<runbookPath>/reports/` (`~/argos/reports` for the
-       *  built-in runbook); never overwrites. */
+      /** Writes the report as a new file: internal and client in the reports folder, the handover
+       *  in the interventions folder as `INC-<date>-<cliente>-<tema>[-N].md`; never overwrites.
+       *  `runbookPath` only supplies the host roles: nothing is written under it. */
       opsSaveReport: (
         runId: string,
-        kind: 'internal' | 'client',
+        kind: OpsReportKind,
         runbookPath: string
       ) => Promise<{ ok: true; path: string } | { ok: false; error: string }>
+      /** Open one of the two ops folders in the file manager (created when missing). */
+      opsOpenFolder: (which: 'reports' | 'handovers') => Promise<{ ok: true; path: string } | { ok: false; error: string }>
       opsVerify: (
         date: string
       ) => Promise<{ ok: true; lines: number } | { ok: false; brokenAt?: number; reason: string }>

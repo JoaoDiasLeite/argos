@@ -62,6 +62,7 @@ const main: Record<keyof typeof en, string> = {
   'ipc.ops.saveRunbookUnloadable': 'Não foi possível carregar o runbook, por isso nada foi guardado: {error}',
   'ipc.ops.reportExists': 'Já existe um relatório em {file}; não foi substituído.',
   'ipc.ops.reportSaveFailed': 'Não foi possível guardar o relatório: {error}',
+  'ipc.ops.unknownFolder': 'Não é uma pasta de ops: {which}',
   'ipc.ops.noSessionId': 'Não foi indicado nenhum id de sessão.',
   'ipc.ops.noIntervention': 'Não foi indicada nenhuma intervenção.',
   'ipc.ops.interventionNoServer': 'A intervenção não indica nenhum servidor.',
@@ -85,6 +86,7 @@ const main: Record<keyof typeof en, string> = {
   'config.settingsUnparsable':
     'O ~/.claude/settings.json existe, mas não foi possível interpretá-lo (pode ter comentários ou estar mal formado). Corrige-o manualmente antes de guardar a partir daqui.',
   'config.settingsWriteFailed': 'Não foi possível escrever o settings.json: {error}',
+  'config.opsDirNotAbsolute': 'A pasta tem de ser um caminho absoluto: {path}',
   'config.permissions.notObject': 'As permissões têm de ser um objeto',
   'config.permissions.notArray': 'permissions.{key} tem de ser uma lista',
   'config.permissions.itemNotString': 'permissions.{key}[{i}] tem de ser texto',

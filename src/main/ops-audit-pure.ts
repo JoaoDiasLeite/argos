@@ -354,7 +354,7 @@ export interface OpsRunListItem {
 }
 
 /** The ids of the hosts a run was about, in the sense of OpsRunListItem.hostNames. */
-function runHostIds(s: OpsRunSummary): string[] {
+export function runHostIds(s: OpsRunSummary): string[] {
   if (s.scope?.kind === 'host') return [s.scope.hostId]
   if (s.scope?.kind === 'open') {
     const ids = [...s.calls.map((c) => c.hostId), ...(s.hostAnswers ?? []).filter((a) => a.answer === 'approved').map((a) => a.hostId)]
