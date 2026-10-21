@@ -9,6 +9,7 @@ const settings: Record<keyof typeof en, string> = {
   'section.general': 'Geral',
   'section.connection': 'Ligação',
   'section.system': 'Sistema',
+  'section.interventions': 'Intervenções',
   'section.ops': 'Auditoria de ops',
   'section.about': 'Acerca',
 
@@ -112,6 +113,14 @@ const settings: Record<keyof typeof en, string> = {
   'system.shortcut.registered': 'Registado: {shortcut}',
   'system.shortcut.failed': 'Não foi possível registar um atalho para o lançador rápido. Pode estar a ser utilizado por outra aplicação.',
   'system.shortcut.auto': 'Automático (Alt+Space)',
+
+  // Interventions
+  'interventions.lead': 'Os relatórios Interno e Cliente vão para a pasta de relatórios; os handovers do despiste vão para a pasta de handovers. Cada gravação cria um ficheiro novo.',
+  'interventions.reports': 'Pasta de relatórios',
+  'interventions.handovers': 'Pasta de handovers',
+  'interventions.change': 'Mudar',
+  'interventions.open': 'Abrir',
+  'interventions.reset': 'Repor',
 
   // Ops audit
   'ops.lead': 'O registo de auditoria só aceita acréscimos, é escrito apenas pelo Argos e nunca é eliminado por ele.',

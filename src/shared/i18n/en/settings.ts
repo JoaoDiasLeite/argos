@@ -9,6 +9,7 @@ export default {
   'section.general': 'General',
   'section.connection': 'Connection',
   'section.system': 'System',
+  'section.interventions': 'Interventions',
   'section.ops': 'Ops audit',
   'section.about': 'About',
 
@@ -112,6 +113,14 @@ export default {
   'system.shortcut.registered': 'Registered: {shortcut}',
   'system.shortcut.failed': 'Could not register a quick-launcher shortcut. It may be in use by another app.',
   'system.shortcut.auto': 'Auto (Alt+Space)',
+
+  // Interventions
+  'interventions.lead': 'Internal and Client reports go to the reports folder; the handovers of a diagnosis go to the handovers folder. Each save writes a new file.',
+  'interventions.reports': 'Reports folder',
+  'interventions.handovers': 'Handovers folder',
+  'interventions.change': 'Change',
+  'interventions.open': 'Open',
+  'interventions.reset': 'Reset',
 
   // Ops audit
   'ops.lead': 'The audit log is append-only, written by Argos only, and never deleted by it.',

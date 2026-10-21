@@ -16,6 +16,7 @@ import {
   ClaudeHooks,
   ClaudePermissions,
   ModelInfo,
+  OpsPrefs,
   ProviderAccountStatus,
   SystemPrefs,
   UiPrefs,
@@ -37,7 +38,7 @@ import Select from '../components/Select'
 import { useT } from '../i18n'
 import { LANGUAGES, isLanguage, plural, type MessageKey } from '../../../shared/i18n'
 
-type SectionId = 'appearance' | 'general' | 'connection' | 'system' | 'ops' | 'about'
+type SectionId = 'appearance' | 'general' | 'connection' | 'system' | 'interventions' | 'ops' | 'about'
 
 interface Props {
   models: ModelInfo[]
@@ -95,6 +96,11 @@ const SECTIONS: { id: SectionId; labelKey: MessageKey; icon: JSX.Element }[] = [
         <line x1="12" y1="17" x2="12" y2="21" />
       </>
     )
+  },
+  {
+    id: 'interventions',
+    labelKey: 'settings.section.interventions',
+    icon: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
   },
   {
     id: 'ops',
@@ -172,6 +178,83 @@ export default function SettingsView({
       cancelled = true
     }
   }, [section])
+
+  // ── Interventions: where reports and handovers are saved ──
+  // `opsPrefs` holds only the custom values (Reset shows when one is set); `opsDirs` the
+  // effective folders, defaults resolved by main.
+  const [opsPrefs, setOpsPrefsState] = useState<OpsPrefs>({})
+  const [opsDirs, setOpsDirs] = useState<{ reportsDir: string; handoversDir: string } | null>(null)
+  const [opsDirError, setOpsDirError] = useState<{ key: keyof OpsPrefs; error: string } | null>(null)
+
+  useEffect(() => {
+    if (section !== 'interventions') return
+    let cancelled = false
+    Promise.all([window.electronAPI.getConfig(), window.electronAPI.opsDirs()])
+      .then(([config, dirs]) => {
+        if (cancelled) return
+        setOpsPrefsState(config.ops ?? {})
+        setOpsDirs(dirs)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [section])
+
+  const setOpsDir = async (key: keyof OpsPrefs, value: string | null) => {
+    setOpsDirError(null)
+    try {
+      const r = await window.electronAPI.setOpsPrefs({ [key]: value })
+      if (r.ok) {
+        setOpsPrefsState(r.ops)
+        setOpsDirs(r.dirs)
+      } else setOpsDirError({ key, error: r.error })
+    } catch (e) {
+      setOpsDirError({ key, error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
+  const pickOpsDir = async (key: keyof OpsPrefs) => {
+    const dir = await window.electronAPI.openFolder(opsDirs?.[key])
+    if (dir) await setOpsDir(key, dir)
+  }
+
+  const openOpsDir = async (key: keyof OpsPrefs) => {
+    setOpsDirError(null)
+    try {
+      const r = await window.electronAPI.opsOpenFolder(key === 'reportsDir' ? 'reports' : 'handovers')
+      if (!r.ok) setOpsDirError({ key, error: r.error })
+    } catch (e) {
+      setOpsDirError({ key, error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
+  const opsDirRow = (key: keyof OpsPrefs, label: string) => (
+    <div className="srow" key={key}>
+      <div className="srow-text">
+        <span className="srow-label">{label}</span>
+        <code className="settings-path">{opsDirs?.[key] ?? ''}</code>
+        {opsDirError?.key === key && (
+          <span className="help settings-error" role="alert">
+            {opsDirError.error}
+          </span>
+        )}
+      </div>
+      <div className="settings-btn-pair">
+        <button type="button" className="btn-ghost small" onClick={() => void pickOpsDir(key)}>
+          {t('settings.interventions.change')}
+        </button>
+        <button type="button" className="btn-ghost small" onClick={() => void openOpsDir(key)}>
+          {t('settings.interventions.open')}
+        </button>
+        {opsPrefs[key] && (
+          <button type="button" className="btn-ghost small" onClick={() => void setOpsDir(key, null)}>
+            {t('settings.interventions.reset')}
+          </button>
+        )}
+      </div>
+    </div>
+  )
 
   const verifyLedger = async () => {
     setVerifying(true)
@@ -626,6 +709,21 @@ export default function SettingsView({
                   </button>
                 </div>
               </div>
+            </>
+          )}
+
+          {section === 'interventions' && (
+            <>
+              <h1 className="settings-title">{t('settings.section.interventions')}</h1>
+              <p className="help settings-lead">{t('settings.interventions.lead')}</p>
+              {opsDirs ? (
+                <>
+                  {opsDirRow('reportsDir', t('settings.interventions.reports'))}
+                  {opsDirRow('handoversDir', t('settings.interventions.handovers'))}
+                </>
+              ) : (
+                <p className="help">{t('common.loading')}</p>
+              )}
             </>
           )}
 

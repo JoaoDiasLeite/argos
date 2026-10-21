@@ -15,7 +15,10 @@ Diagnóstico só de leitura de um servidor: recolhe o estado do sistema, dos ser
 2. Regista com a ferramenta `note` o estado do diagnóstico, que é a base do relatório de passagem:
    - cada hipótese, quando a formas: `kind` hypothesis, um `id` curto (por exemplo `puma-orfao`) e `status` open;
    - a mesma hipótese, com o mesmo `id`, quando a evidência a confirma (confirmed) ou a afasta (ruled_out), com a linha de output que o mostra em `evidence`;
-   - os achados (`kind` finding) e os acontecimentos na linha do tempo do servidor (`kind` event, com `at`: quando aconteceram no servidor).
+   - os achados (`kind` finding) e os acontecimentos na linha do tempo do servidor (`kind` event, com `at`: quando aconteceram no servidor);
+   - no fim, uma nota `kind` summary com o resumo (o que aconteceu, o impacto e a causa) e uma nota `kind` action por cada ação recomendada, com `when` now (fazer já) ou later (fazer depois).
+
+   Escreve as notas em português europeu, porque passam tal e qual para o handover.
 3. Mantém a lista de hipóteses curta.
 4. Prefere os scripts a muitos comandos soltos, porque cada execução custa cerca de 2 segundos:
    - `proc-inspect.sh <pid|nome>`: árvore, sessão, `wchan`, descritores, sockets e limites de um processo.

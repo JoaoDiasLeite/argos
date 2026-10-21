@@ -1594,7 +1594,7 @@ declare global {
       opsSaveReport: (
         runId: string,
         kind: OpsReportKind,
-        runbookPath: string
+        runbookPath?: string
       ) => Promise<{ ok: true; path: string } | { ok: false; error: string }>
       /** Open one of the two ops folders in the file manager (created when missing). */
       opsOpenFolder: (which: 'reports' | 'handovers') => Promise<{ ok: true; path: string } | { ok: false; error: string }>

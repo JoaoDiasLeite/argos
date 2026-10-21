@@ -1082,14 +1082,19 @@ ipcMain.handle('ops:report', async (_, runId: string, kind: OpsReportKind, runbo
 // own files. Argos never writes under a runbook folder, the built-in one or any other.
 // It only ever creates a file: `wx` refuses an existing one rather than editing it, and a
 // taken handover name gets `-2`, `-3`… instead.
-ipcMain.handle('ops:save-report', async (_, runId: string, kind: OpsReportKind, runbookPath: string) => {
+ipcMain.handle('ops:save-report', async (_, runId: string, kind: OpsReportKind, runbookPath?: string) => {
   if (typeof runId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(runId)) return { ok: false, error: t('main.ipc.ops.invalidRunId') }
   if (!isReportKind(kind)) return { ok: false, error: t('main.ipc.ops.unknownReportKind', { kind: String(kind) }) }
-  if (typeof runbookPath !== 'string' || runbookPath === '') return { ok: false, error: t('main.ipc.ops.noRunbookFolder') }
-  const rb = await loadRunbook(runbookPath)
-  if (!rb.ok) return { ok: false, error: t('main.ipc.ops.saveRunbookUnloadable', { error: rb.error }) }
+  // The runbook only supplies the host roles; nothing is written under it. Without one the
+  // report is saved as rendered (the client report then shows hosts as [servidor]).
+  let opts: { hostGroups: Record<string, string[]>; hosts: { id: string; name: string; host: string }[] } | undefined
+  if (typeof runbookPath === 'string' && runbookPath !== '') {
+    const rb = await loadRunbook(runbookPath)
+    if (!rb.ok) return { ok: false, error: t('main.ipc.ops.saveRunbookUnloadable', { error: rb.error }) }
+    opts = { hostGroups: rb.runbook.policy.hosts, hosts: opsHostRefs() }
+  }
   const ledger = getOpsLedger()
-  const r = await ledger.report(runId, kind, { hostGroups: rb.runbook.policy.hosts, hosts: opsHostRefs() })
+  const r = await ledger.report(runId, kind, opts)
   if (!r.ok) return r
   // Date the file by the run's start, so a report saved days later still sorts by the run.
   const lines = await ledger.readRun(runId)

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useOpsEvents } from '../hooks/useOpsEvents'
 import { displayArgv } from '../lib/ops-approval'
 import type { TFunction } from '../../../shared/i18n'
@@ -6,7 +6,7 @@ import { useLanguage, useT } from '../i18n'
 import { foldOpsEvents, rowLabel, rowTone, runCounts, touchedHosts, type OpsRow, type OpsRun } from '../lib/ops-timeline'
 import Markdown from './Markdown'
 import Sheet from './Sheet'
-import { samePath, useBuiltinRunbook } from '../lib/builtin-runbook'
+import type { OpsReportKind } from '../types'
 import './OpsReportSheet.css'
 
 interface Props {
@@ -14,14 +14,13 @@ interface Props {
   /** The run's ops session (its terminal id). Without it the sheet shows only the
    *  rendered report, not the tiles, plan and calls read from the ledger. */
   appSessionId?: string
-  /** The runbook folder; without it the client report shows hosts as [servidor] and
-   *  "Save beside runbook" is unavailable. For the built-in runbook the save goes to
-   *  ~/argos/reports instead. */
+  /** The runbook folder, for the host roles only; without it the client report shows
+   *  hosts as [servidor]. Nothing is written under it: saves go to the settings folders. */
   runbookPath?: string
   onClose: () => void
 }
 
-type Kind = 'internal' | 'client'
+type Kind = OpsReportKind
 type Verified = { ok: true } | { ok: false; brokenAt?: number; reason: string } | null
 
 const clock = (iso?: string, seconds = false, locale?: string): string => {
@@ -65,8 +64,8 @@ function resultOf(c: OpsRow, t: TFunction): { text: string; tone: string } {
 
 /**
  * The run report as a document (docs/INTERVENTIONS_PLAN.md §4, board E2): a sheet from the
- * right over the terminal, Internal / Client toggle, Copy, and a save that writes a new
- * file beside the runbook. The internal view leads with what the ledger says (tiles, plan,
+ * right over the terminal, Internal / Client / Handover toggle, Copy, and a save that writes
+ * a new file in the reports folder (the handovers folder for a handover), both set in Settings. The internal view leads with what the ledger says (tiles, plan,
  * calls), the full rendered report one toggle below; the client view is that report's
  * client rendering as it would be sent. Nothing here is sent anywhere.
  */
@@ -83,13 +82,29 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
   const [saved, setSaved] = useState<{ ok: true; path: string } | { ok: false; error: string } | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [verified, setVerified] = useState<Verified>(null)
-  /** The built-in despiste runbook is never written to; its reports go to ~/argos/reports. */
-  const builtinDir = useBuiltinRunbook()
-  const builtin = samePath(runbookPath, builtinDir)
+  const [dirs, setDirs] = useState<{ reportsDir: string; handoversDir: string } | null>(null)
+  const kindChosen = useRef(false)
 
   const { events } = useOpsEvents(appSessionId)
   const run = useMemo(() => foldOpsEvents(events).find((r) => r.runId === runId), [events, runId])
   const ledgerDay = run?.startedAt.slice(0, 10)
+  const diagnosis = run?.planRequired === false
+
+  // A diagnosis (a read-only run, no plan) opens on its handover, unless a tab was chosen.
+  useEffect(() => {
+    if (diagnosis && !kindChosen.current) setKind('handover')
+  }, [diagnosis])
+
+  useEffect(() => {
+    let cancelled = false
+    window.electronAPI
+      .opsDirs()
+      .then((d) => !cancelled && setDirs(d))
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -144,7 +159,6 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
   }
 
   const save = async () => {
-    if (!runbookPath) return
     setSaving(true)
     try {
       setSaved(await window.electronAPI.opsSaveReport(runId, kind, runbookPath))
@@ -168,9 +182,18 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
   const headerExtra = (
     <>
       <div className="ops-rs-toggle" role="group" aria-label={t('ops.report.kindAria')}>
-        {(['internal', 'client'] as const).map((k) => (
-          <button key={k} type="button" className={kind === k ? 'active' : ''} aria-pressed={kind === k} onClick={() => setKind(k)}>
-            {k === 'internal' ? t('ops.report.internal') : t('ops.report.client')}
+        {(['internal', 'client', 'handover'] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            className={kind === k ? 'active' : ''}
+            aria-pressed={kind === k}
+            onClick={() => {
+              kindChosen.current = true
+              setKind(k)
+            }}
+          >
+            {t(`ops.report.${k}`)}
           </button>
         ))}
       </div>
@@ -181,10 +204,10 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
         type="button"
         className="ops-rs-btn primary"
         onClick={save}
-        disabled={!runbookPath || loading || !markdown || saving}
-        title={!runbookPath ? t('ops.report.saveUnknown') : builtin ? t('ops.report.saveBuiltinTitle') : t('ops.report.saveTitle', { path: runbookPath })}
+        disabled={loading || !markdown || saving}
+        title={dirs ? t('ops.report.saveTitle', { path: kind === 'handover' ? dirs.handoversDir : dirs.reportsDir }) : undefined}
       >
-        {saving ? t('ops.report.saving') : builtin ? t('ops.report.saveBuiltin') : t('ops.report.save')}
+        {saving ? t('ops.report.saving') : t('ops.report.save')}
       </button>
     </>
   )
@@ -197,6 +220,18 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
             {saved && (
               <p className={`ops-rs-saved${saved.ok ? '' : ' error'}`} role="status">
                 {saved.ok ? t('ops.report.savedTo', { path: saved.path }) : saved.error}
+                {saved.ok && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      className="ops-rs-link"
+                      onClick={() => void window.electronAPI.opsOpenFolder(kind === 'handover' ? 'handovers' : 'reports')}
+                    >
+                      {t('ops.report.openFolder')}
+                    </button>
+                  </>
+                )}
               </p>
             )}
             {warnings.length > 0 && (
@@ -230,7 +265,7 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
           </div>
         )}
 
-        {kind === 'client' || !run ? (
+        {kind !== 'internal' || !run ? (
           <div className="ops-rs-md">{rendered}</div>
         ) : (
           <InternalBody run={run} showAll={showAll} onToggleAll={() => setShowAll((v) => !v)} rendered={rendered} />

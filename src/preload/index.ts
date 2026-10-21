@@ -329,7 +329,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   opsBuiltinRunbook: () => ipcRenderer.invoke('ops:builtin-runbook'),
   opsReport: (runId: string, kind: 'internal' | 'client' | 'handover', runbookPath?: string) =>
     ipcRenderer.invoke('ops:report', runId, kind, runbookPath),
-  opsSaveReport: (runId: string, kind: 'internal' | 'client' | 'handover', runbookPath: string) =>
+  opsSaveReport: (runId: string, kind: 'internal' | 'client' | 'handover', runbookPath?: string) =>
     ipcRenderer.invoke('ops:save-report', runId, kind, runbookPath),
   opsOpenFolder: (which: 'reports' | 'handovers') => ipcRenderer.invoke('ops:open-folder', which),
   opsVerify: (date: string) => ipcRenderer.invoke('ops:verify', date),

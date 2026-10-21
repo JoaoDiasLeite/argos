@@ -29,6 +29,8 @@ const CHANGELOG: Entry[] = [
           'A read-only runbook, the built-in Diagnosis among them, no longer waits for an approved plan: every call is still checked against the policy and logged.',
           'During a run the activity column lists the hypotheses the model is testing, each marked open, confirmed or ruled out with its evidence, and the findings so far.',
           'When the model needs a command it may not run, a "Para correres tu" card shows it with the reason: copy it, run it in your own SSH session and paste the output back, or decline. The run waits for your answer, and both the command and the output go into the ops history.',
+          'Run reports have a third kind, Handover, laid out like an incident handover: summary, timeline, root cause, what was ruled out, findings, recommended actions, open points and the exact commands run, by Argos and by you. It is the default for a diagnosis and is saved as INC-<date>-<client>-<topic>.md.',
+          'Settings → Interventions chooses where reports and handovers are saved (by default ~/argos/reports and ~/argos/interventions) and opens either folder. Reports are no longer saved inside the runbook folder.',
           'A runbook’s policy.json can list read.deny paths that no read, list, command or script argument may reach, whatever its read paths and allow rules say. Use it to keep secrets such as .env files, database.yml and keys out of a runbook that otherwise reads an application folder.'
         ]
       },
