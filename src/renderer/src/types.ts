@@ -222,10 +222,23 @@ export interface SystemPrefs {
 /**
  * Where ops reports and handovers are saved. Absent = the default under home
  * (`~/argos/reports`, `~/argos/interventions`); `opsDirs()` gives the effective folders.
+ * And where the runbooks are, by reference only: `runbooksDir`, a folder whose direct
+ * subfolders are each a runbook, and `runbookFolders`, single runbooks. `runbookFolders`
+ * absent means the old localStorage recents have not been moved in yet.
  */
 export interface OpsPrefs {
   reportsDir?: string
   handoversDir?: string
+  runbooksDir?: string
+  runbookFolders?: string[]
+}
+
+/** The ops folders as main resolves them (`opsDirs`). `runbookFolders` null = never set. */
+export interface OpsDirs {
+  reportsDir: string
+  handoversDir: string
+  runbooksDir: string | null
+  runbookFolders: string[] | null
 }
 
 export interface AppConfig {
@@ -1362,16 +1375,17 @@ declare global {
       setSystemPrefs: (
         prefs: Partial<SystemPrefs>
       ) => Promise<{ system: SystemPrefs; registeredShortcut: string }>
-      /** Set the ops folders: a key left out keeps its value, null or '' resets it to the default,
-       *  a relative path is refused. `dirs` are the effective folders after the change. */
-      setOpsPrefs: (
-        patch: { reportsDir?: string | null; handoversDir?: string | null }
-      ) => Promise<
-        | { ok: true; ops: OpsPrefs; dirs: { reportsDir: string; handoversDir: string } }
-        | { ok: false; error: string }
-      >
+      /** Set the ops folders: a key left out keeps its value, null or '' resets it to the default
+       *  (no runbooks folder), a relative path is refused. `runbookFolders` replaces the whole
+       *  list (null empties it). `dirs` are the effective folders after the change. */
+      setOpsPrefs: (patch: {
+        reportsDir?: string | null
+        handoversDir?: string | null
+        runbooksDir?: string | null
+        runbookFolders?: string[] | null
+      }) => Promise<{ ok: true; ops: OpsPrefs; dirs: OpsDirs } | { ok: false; error: string }>
       /** The effective ops folders: the setting, or its default resolved under home. */
-      opsDirs: () => Promise<{ reportsDir: string; handoversDir: string }>
+      opsDirs: () => Promise<OpsDirs>
 
       // Claude Code data
       ccSources: () => Promise<SourceInfo[]>
@@ -1580,6 +1594,11 @@ declare global {
 
       // Ops runs
       opsLoadRunbook: (dir: string) => Promise<OpsRunbookInfo>
+      /** The runbooks folder of Settings, listed (not validated): its direct subfolders with
+       *  RUNBOOK.md or policy.json, by name. No folder set = `dir: null` and no entries. */
+      opsScanRunbooks: () => Promise<
+        { ok: true; dir: string | null; entries: { path: string; name: string }[] } | { ok: false; error: string }
+      >
       /** The read-only despiste runbook shipped with Argos. */
       opsBuiltinRunbook: () => Promise<{ path: string }>
       /** internal: English, everything; client: the sanitised Relatório Técnico; handover: the pt-PT incident file. */
@@ -1596,8 +1615,9 @@ declare global {
         kind: OpsReportKind,
         runbookPath?: string
       ) => Promise<{ ok: true; path: string } | { ok: false; error: string }>
-      /** Open one of the two ops folders in the file manager (created when missing). */
-      opsOpenFolder: (which: 'reports' | 'handovers') => Promise<{ ok: true; path: string } | { ok: false; error: string }>
+      /** Open one of the ops folders in the file manager: reports and handovers are created when
+       *  missing; the runbooks folder only opens when one is set. */
+      opsOpenFolder: (which: 'reports' | 'handovers' | 'runbooks') => Promise<{ ok: true; path: string } | { ok: false; error: string }>
       opsVerify: (
         date: string
       ) => Promise<{ ok: true; lines: number } | { ok: false; brokenAt?: number; reason: string }>

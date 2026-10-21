@@ -14,7 +14,7 @@ import {
 import Menu, { MoreIcon } from '../components/Menu'
 import Sheet from '../components/Sheet'
 import OpsReportSheet from '../components/OpsReportSheet'
-import { readRecentRunbooks } from '../lib/recent-runbooks'
+import { allRunbookPaths, readRunbookSources } from '../lib/runbook-library'
 import './views.css'
 import './RemoteView.css'
 import Select from '../components/Select'
@@ -24,7 +24,7 @@ import { useLanguage, useT } from '../i18n'
 interface Props {
   onConnect: (host: SshHostPublic) => void
   /** Opens the Ops start screen for this host. Offered only for a host that one of the
-   *  recently opened runbooks (Servers → Ops) knows. */
+   *  runbooks (the runbooks folder or a loose one, Servers → Ops) knows. */
   onOps?: (host: SshHostPublic) => void
   onConnectWsl: (distro: string, cwd?: string) => void
   /** Opens the full Remote Session workspace (SFTP browser + terminal + history) for a host.
@@ -216,7 +216,7 @@ export default function RemoteView({
   /** Why the last host save/delete wrote nothing (e.g. an unreadable hosts file). */
   const [writeError, setWriteError] = useState<string | null>(null)
 
-  // Ops: the recently opened runbooks (Servers → Ops) and the selected host's runs.
+  // Ops: the runbooks (Servers → Ops, Settings → Intervenções) and the selected host's runs.
   const [runbooks, setRunbooks] = useState<Extract<OpsRunbookInfo, { ok: true }>[]>([])
   const [runs, setRuns] = useState<OpsRunListItem[]>([])
   const [reportFor, setReportFor] = useState<{ runId: string; runbookPath?: string; appSessionId?: string } | null>(null)
@@ -267,11 +267,18 @@ export default function RemoteView({
   useEffect(() => {
     load()
     let cancelled = false
-    Promise.all(
-      readRecentRunbooks().map((dir) => window.electronAPI.opsLoadRunbook(dir).catch((): OpsRunbookInfo => ({ ok: false, error: '' })))
-    ).then((infos) => {
-      if (!cancelled) setRunbooks(infos.filter((i): i is Extract<OpsRunbookInfo, { ok: true }> => i.ok))
-    })
+    readRunbookSources()
+      .then((sources) =>
+        Promise.all(
+          allRunbookPaths(sources).map((dir) =>
+            window.electronAPI.opsLoadRunbook(dir).catch((): OpsRunbookInfo => ({ ok: false, error: '' }))
+          )
+        )
+      )
+      .then((infos) => {
+        if (!cancelled) setRunbooks(infos.filter((i): i is Extract<OpsRunbookInfo, { ok: true }> => i.ok))
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
@@ -427,7 +434,7 @@ export default function RemoteView({
     return wasLiveSsh.includes(h.id) ? 'ok' : 'idle'
   }
 
-  /** The runbooks among the recent ones that place this host in a group. */
+  /** The runbooks that place this host in a group. */
   const runbooksFor = (hostId: string) =>
     runbooks.filter((r) => r.hosts.some((h) => h.id === hostId && h.groups.length > 0))
 

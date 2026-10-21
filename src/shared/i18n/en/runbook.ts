@@ -60,6 +60,7 @@ export default {
   'load.invalidJson': 'policy.json is not valid JSON: {error}',
   'load.policyErrors': 'policy.json has {n} error(s).',
   'load.failed': 'Could not load runbook: {error}',
+  'library.listFailed': 'Could not list the runbooks folder {dir}: {error}',
 
   'session.noHosts': 'No stored SSH host belongs to any host group of runbook {name}.',
   'session.hostNotInRunbook': 'This host is not in any host group of runbook {name}; add it to a group in policy.json.',

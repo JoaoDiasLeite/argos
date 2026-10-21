@@ -115,7 +115,13 @@ export default {
   'system.shortcut.auto': 'Auto (Alt+Space)',
 
   // Interventions
-  'interventions.lead': 'Internal and Client reports go to the reports folder; the handovers of a diagnosis go to the handovers folder. Each save writes a new file.',
+  'interventions.lead': 'Where runbooks are read from and reports are saved. Internal and Client reports go to the reports folder; the handovers of a diagnosis go to the handovers folder. Each save writes a new file.',
+  'interventions.runbooksDir': 'Runbooks folder',
+  'interventions.noRunbooksDir': 'None',
+  'interventions.runbooksDirHelp': 'Each subfolder with RUNBOOK.md and policy.json is a runbook. Runbooks stay where they are; Argos only reads them.',
+  'interventions.runbookFolders': 'Single runbooks',
+  'interventions.noRunbookFolders': 'None',
+  'interventions.remove': 'Remove',
   'interventions.reports': 'Reports folder',
   'interventions.handovers': 'Handovers folder',
   'interventions.change': 'Change',

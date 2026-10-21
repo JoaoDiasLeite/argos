@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import * as path from 'path'
 import { sha256Hex } from './ops-audit-pure'
-import { assembleRunbook, OPS_MAX_RUNBOOK_FILE_BYTES, runbookForbiddenEntries, runbookForbiddenError, runbookName, scriptPinError, type RunbookFiles } from './ops-runbook-pure'
+import { assembleRunbook, OPS_MAX_RUNBOOK_FILE_BYTES, runbookForbiddenEntries, runbookForbiddenError, runbookLibraryEntries, runbookName, scriptPinError, type RunbookFiles } from './ops-runbook-pure'
 import { makeT } from '../shared/i18n'
 
 const t = makeT('en')
@@ -129,5 +130,35 @@ describe('runbookForbiddenEntries', () => {
     const err = runbookForbiddenError(['.claude', 'CLAUDE.md'], t)
     expect(err).toContain('.claude')
     expect(err).toContain('CLAUDE.md')
+  })
+})
+
+describe('runbookLibraryEntries', () => {
+  const child = (name: string, entries: string[], isDir = true) => ({ name, isDir, entries })
+
+  it('lists the subfolders with RUNBOOK.md or policy.json, sorted by name', () => {
+    const r = runbookLibraryEntries(path.join('/repo', 'runbooks'), [
+      child('update-wmcp', ['RUNBOOK.md', 'policy.json', 'scripts']),
+      child('pg-tls-check', ['policy.json']),
+      child('Diagnose-rails', ['RUNBOOK.md']),
+      child('notes', ['README.md'])
+    ])
+    expect(r.map((e) => e.name)).toEqual(['Diagnose-rails', 'pg-tls-check', 'update-wmcp'])
+    expect(r[1].path).toBe(path.join('/repo', 'runbooks', 'pg-tls-check'))
+  })
+
+  it('leaves out dot-folders, files and empty folders', () => {
+    const r = runbookLibraryEntries('/repo', [
+      child('.git', ['RUNBOOK.md']),
+      child('RUNBOOK.md', [], false),
+      child('policy.json', ['policy.json'], false),
+      child('empty', [])
+    ])
+    expect(r).toEqual([])
+  })
+
+  it('sorts numbers by value', () => {
+    const r = runbookLibraryEntries('/r', [child('step-10', ['RUNBOOK.md']), child('step-2', ['RUNBOOK.md'])])
+    expect(r.map((e) => e.name)).toEqual(['step-2', 'step-10'])
   })
 })

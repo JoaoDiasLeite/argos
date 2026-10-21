@@ -98,11 +98,22 @@ export interface SystemPrefs {
  * Where the reports and handovers of ops runs are saved. Absent = the default under the
  * home folder (`~/argos/reports`, `~/argos/interventions`), resolved when used, so a
  * profile moved to another machine follows that machine's home.
+ *
+ * And where the runbooks are: `runbooksDir`, a parent folder whose direct subfolders are
+ * each a runbook, and `runbookFolders`, single runbooks picked one by one. Both are only
+ * references: Argos reads the folders where they are and never copies or writes them.
+ * `runbookFolders` absent (as opposed to empty) means the renderer has not yet moved its
+ * old localStorage recents in.
  */
 export interface OpsPrefs {
   reportsDir?: string
   handoversDir?: string
+  runbooksDir?: string
+  runbookFolders?: string[]
 }
+
+/** A hand-edited config cannot grow the loose runbook list without bound. */
+export const OPS_MAX_RUNBOOK_FOLDERS = 100
 
 interface AppConfig {
   defaultModel: string
@@ -223,31 +234,74 @@ export function setSystemPrefs(prefs: Partial<SystemPrefs>): SystemPrefs {
 
 // ─── Ops folders ──────────────────────────────────────────────────────────────
 
-/** Only absolute folder paths survive; anything else (a hand-edited file, an empty field) is the default. */
-function cleanOpsPrefs(raw: unknown): OpsPrefs {
-  const r = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
-  const dir = (v: unknown): string | undefined =>
-    typeof v === 'string' && v.trim() !== '' && path.isAbsolute(v.trim()) ? v.trim() : undefined
-  const out: OpsPrefs = {}
-  const reportsDir = dir(r.reportsDir)
-  const handoversDir = dir(r.handoversDir)
-  if (reportsDir) out.reportsDir = reportsDir
-  if (handoversDir) out.handoversDir = handoversDir
+const absDir = (v: unknown): string | undefined =>
+  typeof v === 'string' && v.trim() !== '' && path.isAbsolute(v.trim()) ? v.trim() : undefined
+
+/** Same folder, ignoring a trailing separator and, on Windows, case and slash direction. */
+const folderKey = (p: string): string => {
+  const r = path.resolve(p)
+  return process.platform === 'win32' ? r.toLowerCase() : r
+}
+
+/** Absolute paths only, first occurrence kept, capped. */
+function cleanRunbookFolders(v: unknown[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of v) {
+    const d = absDir(item)
+    if (!d || seen.has(folderKey(d))) continue
+    seen.add(folderKey(d))
+    out.push(d)
+    if (out.length >= OPS_MAX_RUNBOOK_FOLDERS) break
+  }
   return out
 }
 
-export type OpsDirKey = keyof OpsPrefs
+/** Only absolute folder paths survive; anything else (a hand-edited file, an empty field) is the default. */
+function cleanOpsPrefs(raw: unknown): OpsPrefs {
+  const r = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+  const out: OpsPrefs = {}
+  const reportsDir = absDir(r.reportsDir)
+  const handoversDir = absDir(r.handoversDir)
+  const runbooksDir = absDir(r.runbooksDir)
+  if (reportsDir) out.reportsDir = reportsDir
+  if (handoversDir) out.handoversDir = handoversDir
+  if (runbooksDir) out.runbooksDir = runbooksDir
+  // Kept even when empty: an empty list is "moved in, then emptied", not "never set".
+  if (Array.isArray(r.runbookFolders)) out.runbookFolders = cleanRunbookFolders(r.runbookFolders)
+  return out
+}
+
+/** The ops folders that have a default under home. */
+export type OpsDirKey = 'reportsDir' | 'handoversDir'
+
+export interface OpsPrefsPatch {
+  reportsDir?: string | null
+  handoversDir?: string | null
+  runbooksDir?: string | null
+  runbookFolders?: string[] | null
+}
 
 /**
- * Set or clear the ops folders. A key given as null or '' goes back to the default, a
- * key left out keeps its value, and a path that is not absolute is refused, not stored.
+ * Set or clear the ops folders. A key given as null or '' goes back to the default (for
+ * `runbooksDir`, none), a key left out keeps its value, and a path that is not absolute is
+ * refused, not stored. `runbookFolders` replaces the whole list (null empties it); it is
+ * deduplicated and capped, and one relative path in it refuses the patch.
  */
-export function setOpsPrefs(
-  patch: Partial<Record<OpsDirKey, string | null>>
-): { ok: true; ops: OpsPrefs } | { ok: false; error: string } {
-  const p: Record<string, unknown> = patch && typeof patch === 'object' ? patch : {}
+export function setOpsPrefs(patch: OpsPrefsPatch): { ok: true; ops: OpsPrefs } | { ok: false; error: string } {
+  const p: Record<string, unknown> = patch && typeof patch === 'object' ? (patch as Record<string, unknown>) : {}
   const next: Record<string, unknown> = { ...config.ops }
-  for (const key of ['reportsDir', 'handoversDir'] as const) {
+  if ('runbookFolders' in p) {
+    const v = p.runbookFolders
+    if (v === null || v === undefined) next.runbookFolders = []
+    else if (!Array.isArray(v)) return { ok: false, error: t('main.config.opsDirNotAbsolute', { path: String(v) }) }
+    else {
+      const bad = v.find((d) => !absDir(d))
+      if (bad !== undefined) return { ok: false, error: t('main.config.opsDirNotAbsolute', { path: String(bad) }) }
+      next.runbookFolders = v
+    }
+  }
+  for (const key of ['reportsDir', 'handoversDir', 'runbooksDir'] as const) {
     if (!(key in p)) continue
     const v = p[key]
     if (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) delete next[key]
@@ -267,6 +321,25 @@ const OPS_DEFAULT_DIRS: Record<OpsDirKey, string[]> = {
 /** The effective folder for reports (`reportsDir`) or handovers (`handoversDir`): the setting, or its default under home. */
 export function opsDir(which: OpsDirKey): string {
   return config.ops?.[which] ?? path.join(os.homedir(), ...OPS_DEFAULT_DIRS[which])
+}
+
+/**
+ * The ops folders as the renderer shows them: the effective reports and handovers folders,
+ * the runbooks folder (null when none) and the loose runbooks (null when never set, which
+ * is what tells the renderer to move its old recents in).
+ */
+export function opsDirsView(): {
+  reportsDir: string
+  handoversDir: string
+  runbooksDir: string | null
+  runbookFolders: string[] | null
+} {
+  return {
+    reportsDir: opsDir('reportsDir'),
+    handoversDir: opsDir('handoversDir'),
+    runbooksDir: config.ops?.runbooksDir ?? null,
+    runbookFolders: config.ops?.runbookFolders ? [...config.ops.runbookFolders] : null
+  }
 }
 
 // ─── Claude Code's own settings.json (effort, model) ──────────────────────────

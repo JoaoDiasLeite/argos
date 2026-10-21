@@ -323,6 +323,60 @@
   font-size: 12px;
   color: var(--text-2);
 }
+.ivs-dd-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 6px 2px 10px;
+  font-size: 11px;
+  color: var(--text-2);
+  cursor: default;
+}
+.ivs-dd-header-label {
+  flex-shrink: 0;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ivs-dd-header-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.ivs-dd-refresh,
+.ivs-dd-forget {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-surface);
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.ivs-dd-refresh {
+  margin-left: auto;
+}
+.ivs-dd-refresh:hover:not(:disabled),
+.ivs-dd-forget:hover {
+  background: var(--bg-3);
+  color: var(--text-0);
+}
+.ivs-dd-refresh:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ivs-dd-action-meta {
+  margin-left: auto;
+}
 
 .ivs-error-block {
   padding: 10px 12px;

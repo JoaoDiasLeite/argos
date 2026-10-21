@@ -115,7 +115,13 @@ const settings: Record<keyof typeof en, string> = {
   'system.shortcut.auto': 'Automático (Alt+Space)',
 
   // Interventions
-  'interventions.lead': 'Os relatórios Interno e Cliente vão para a pasta de relatórios; os handovers do despiste vão para a pasta de handovers. Cada gravação cria um ficheiro novo.',
+  'interventions.lead': 'De onde os runbooks são lidos e onde os relatórios são gravados. Os relatórios Interno e Cliente vão para a pasta de relatórios; os handovers do despiste vão para a pasta de handovers. Cada gravação cria um ficheiro novo.',
+  'interventions.runbooksDir': 'Pasta de runbooks',
+  'interventions.noRunbooksDir': 'Nenhuma',
+  'interventions.runbooksDirHelp': 'Cada subpasta com RUNBOOK.md e policy.json é um runbook. Os runbooks ficam onde estão; o Argos só os lê.',
+  'interventions.runbookFolders': 'Runbooks avulsos',
+  'interventions.noRunbookFolders': 'Nenhum',
+  'interventions.remove': 'Remover',
   'interventions.reports': 'Pasta de relatórios',
   'interventions.handovers': 'Pasta de handovers',
   'interventions.change': 'Mudar',

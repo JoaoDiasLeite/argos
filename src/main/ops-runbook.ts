@@ -13,9 +13,11 @@ import {
   OPS_MAX_SCRIPT_BYTES,
   runbookForbiddenEntries,
   runbookForbiddenError,
+  runbookLibraryEntries,
   runbookName,
   scriptPinError,
   type LoadedRunbook,
+  type RunbookLibraryChild,
   type LoadRunbookResult
 } from './ops-runbook-pure'
 import type { OpsHostRef } from './ops-types'
@@ -138,4 +140,30 @@ export async function readScript(
   } catch (e) {
     return { ok: false, error: `Could not read script ${name}: ${message(e)}` }
   }
+}
+
+/**
+ * The runbooks folder of Settings: its direct subfolders that look like runbooks (see
+ * runbookLibraryEntries). Only listed, never validated or written; a symlink or junction
+ * to a folder counts as a folder, as loadRunbook follows it too.
+ */
+export async function scanRunbookLibrary(dir: string): Promise<{ ok: true; entries: { path: string; name: string }[] } | { ok: false; error: string }> {
+  let dirents
+  try {
+    dirents = await fsp.readdir(dir, { withFileTypes: true })
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT' || (e as NodeJS.ErrnoException).code === 'ENOTDIR') {
+      return { ok: false, error: t('runbook.load.notFolder', { dir }) }
+    }
+    return { ok: false, error: t('runbook.library.listFailed', { dir, error: message(e) }) }
+  }
+  const children: RunbookLibraryChild[] = await Promise.all(
+    dirents
+      .filter((d) => !d.name.startsWith('.') && (d.isDirectory() || d.isSymbolicLink()))
+      .map(async (d) => {
+        const entries = await fsp.readdir(path.join(dir, d.name)).catch(() => null)
+        return { name: d.name, isDir: entries !== null, entries: entries ?? [] }
+      })
+  )
+  return { ok: true, entries: runbookLibraryEntries(dir, children) }
 }

@@ -63,6 +63,7 @@ const main: Record<keyof typeof en, string> = {
   'ipc.ops.reportExists': 'Já existe um relatório em {file}; não foi substituído.',
   'ipc.ops.reportSaveFailed': 'Não foi possível guardar o relatório: {error}',
   'ipc.ops.unknownFolder': 'Não é uma pasta de ops: {which}',
+  'ipc.ops.noRunbooksFolder': 'Não há nenhuma pasta de runbooks definida.',
   'ipc.ops.noSessionId': 'Não foi indicado nenhum id de sessão.',
   'ipc.ops.noIntervention': 'Não foi indicada nenhuma intervenção.',
   'ipc.ops.interventionNoServer': 'A intervenção não indica nenhum servidor.',

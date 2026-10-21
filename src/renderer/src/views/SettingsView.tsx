@@ -16,6 +16,7 @@ import {
   ClaudeHooks,
   ClaudePermissions,
   ModelInfo,
+  OpsDirs,
   OpsPrefs,
   ProviderAccountStatus,
   SystemPrefs,
@@ -35,6 +36,7 @@ import AppearanceSettings from '../components/AppearanceSettings'
 import './views.css'
 import './SettingsView.css'
 import Select from '../components/Select'
+import { migrateRecentRunbooks } from '../lib/runbook-library'
 import { useT } from '../i18n'
 import { LANGUAGES, isLanguage, plural, type MessageKey } from '../../../shared/i18n'
 
@@ -179,17 +181,20 @@ export default function SettingsView({
     }
   }, [section])
 
-  // ── Interventions: where reports and handovers are saved ──
+  // ── Interventions: where the runbooks are read from, and reports and handovers saved ──
   // `opsPrefs` holds only the custom values (Reset shows when one is set); `opsDirs` the
   // effective folders, defaults resolved by main.
   const [opsPrefs, setOpsPrefsState] = useState<OpsPrefs>({})
-  const [opsDirs, setOpsDirs] = useState<{ reportsDir: string; handoversDir: string } | null>(null)
+  const [opsDirs, setOpsDirs] = useState<OpsDirs | null>(null)
   const [opsDirError, setOpsDirError] = useState<{ key: keyof OpsPrefs; error: string } | null>(null)
 
   useEffect(() => {
     if (section !== 'interventions') return
     let cancelled = false
-    Promise.all([window.electronAPI.getConfig(), window.electronAPI.opsDirs()])
+    // The old start-screen recents become the loose runbooks first, so this list is not
+    // empty only because the start screen has not been opened since.
+    migrateRecentRunbooks()
+      .then(() => Promise.all([window.electronAPI.getConfig(), window.electronAPI.opsDirs()]))
       .then(([config, dirs]) => {
         if (cancelled) return
         setOpsPrefsState(config.ops ?? {})
@@ -201,10 +206,10 @@ export default function SettingsView({
     }
   }, [section])
 
-  const setOpsDir = async (key: keyof OpsPrefs, value: string | null) => {
+  const patchOpsPrefs = async (key: keyof OpsPrefs, patch: Parameters<typeof window.electronAPI.setOpsPrefs>[0]) => {
     setOpsDirError(null)
     try {
-      const r = await window.electronAPI.setOpsPrefs({ [key]: value })
+      const r = await window.electronAPI.setOpsPrefs(patch)
       if (r.ok) {
         setOpsPrefsState(r.ops)
         setOpsDirs(r.dirs)
@@ -214,31 +219,44 @@ export default function SettingsView({
     }
   }
 
-  const pickOpsDir = async (key: keyof OpsPrefs) => {
-    const dir = await window.electronAPI.openFolder(opsDirs?.[key])
-    if (dir) await setOpsDir(key, dir)
+  type OpsFolderKey = 'reportsDir' | 'handoversDir' | 'runbooksDir'
+  const OPS_FOLDER: Record<OpsFolderKey, 'reports' | 'handovers' | 'runbooks'> = {
+    reportsDir: 'reports',
+    handoversDir: 'handovers',
+    runbooksDir: 'runbooks'
   }
 
-  const openOpsDir = async (key: keyof OpsPrefs) => {
+  const pickOpsDir = async (key: OpsFolderKey) => {
+    const dir = await window.electronAPI.openFolder(opsDirs?.[key] ?? undefined)
+    if (dir) await patchOpsPrefs(key, { [key]: dir })
+  }
+
+  const openOpsDir = async (key: OpsFolderKey) => {
     setOpsDirError(null)
     try {
-      const r = await window.electronAPI.opsOpenFolder(key === 'reportsDir' ? 'reports' : 'handovers')
+      const r = await window.electronAPI.opsOpenFolder(OPS_FOLDER[key])
       if (!r.ok) setOpsDirError({ key, error: r.error })
     } catch (e) {
       setOpsDirError({ key, error: e instanceof Error ? e.message : String(e) })
     }
   }
 
-  const opsDirRow = (key: keyof OpsPrefs, label: string) => (
+  const removeRunbookFolder = (dir: string) =>
+    patchOpsPrefs('runbookFolders', { runbookFolders: (opsDirs?.runbookFolders ?? []).filter((p) => p !== dir) })
+
+  const opsErrorLine = (key: keyof OpsPrefs) =>
+    opsDirError?.key === key && (
+      <span className="help settings-error" role="alert">
+        {opsDirError.error}
+      </span>
+    )
+
+  const opsDirRow = (key: 'reportsDir' | 'handoversDir', label: string) => (
     <div className="srow" key={key}>
       <div className="srow-text">
         <span className="srow-label">{label}</span>
         <code className="settings-path">{opsDirs?.[key] ?? ''}</code>
-        {opsDirError?.key === key && (
-          <span className="help settings-error" role="alert">
-            {opsDirError.error}
-          </span>
-        )}
+        {opsErrorLine(key)}
       </div>
       <div className="settings-btn-pair">
         <button type="button" className="btn-ghost small" onClick={() => void pickOpsDir(key)}>
@@ -248,13 +266,69 @@ export default function SettingsView({
           {t('settings.interventions.open')}
         </button>
         {opsPrefs[key] && (
-          <button type="button" className="btn-ghost small" onClick={() => void setOpsDir(key, null)}>
+          <button type="button" className="btn-ghost small" onClick={() => void patchOpsPrefs(key, { [key]: null })}>
             {t('settings.interventions.reset')}
           </button>
         )}
       </div>
     </div>
   )
+
+  const runbooksDirRow = () => (
+    <div className="srow">
+      <div className="srow-text">
+        <span className="srow-label">{t('settings.interventions.runbooksDir')}</span>
+        {opsDirs?.runbooksDir ? (
+          <code className="settings-path">{opsDirs.runbooksDir}</code>
+        ) : (
+          <span className="help">{t('settings.interventions.noRunbooksDir')}</span>
+        )}
+        <span className="help">{t('settings.interventions.runbooksDirHelp')}</span>
+        {opsErrorLine('runbooksDir')}
+      </div>
+      <div className="settings-btn-pair">
+        <button type="button" className="btn-ghost small" onClick={() => void pickOpsDir('runbooksDir')}>
+          {t('settings.interventions.change')}
+        </button>
+        {opsDirs?.runbooksDir && (
+          <>
+            <button type="button" className="btn-ghost small" onClick={() => void openOpsDir('runbooksDir')}>
+              {t('settings.interventions.open')}
+            </button>
+            <button type="button" className="btn-ghost small" onClick={() => void patchOpsPrefs('runbooksDir', { runbooksDir: null })}>
+              {t('settings.interventions.remove')}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+
+  const runbookFoldersRow = () => {
+    const folders = opsDirs?.runbookFolders ?? []
+    return (
+      <div className="srow">
+        <div className="srow-text">
+          <span className="srow-label">{t('settings.interventions.runbookFolders')}</span>
+          {folders.length === 0 ? (
+            <span className="help">{t('settings.interventions.noRunbookFolders')}</span>
+          ) : (
+            <ul className="settings-runbook-list">
+              {folders.map((dir) => (
+                <li key={dir}>
+                  <code className="settings-path">{dir}</code>
+                  <button type="button" className="btn-ghost small" onClick={() => void removeRunbookFolder(dir)}>
+                    {t('settings.interventions.remove')}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {opsErrorLine('runbookFolders')}
+        </div>
+      </div>
+    )
+  }
 
   const verifyLedger = async () => {
     setVerifying(true)
@@ -718,6 +792,8 @@ export default function SettingsView({
               <p className="help settings-lead">{t('settings.interventions.lead')}</p>
               {opsDirs ? (
                 <>
+                  {runbooksDirRow()}
+                  {runbookFoldersRow()}
                   {opsDirRow('reportsDir', t('settings.interventions.reports'))}
                   {opsDirRow('handoversDir', t('settings.interventions.handovers'))}
                 </>

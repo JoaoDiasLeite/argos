@@ -25,7 +25,7 @@ import {
   buildSubprocessEnv,
   AuthMode
 } from './auth'
-import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, reresolveUiPrefs, setSystemPrefs, setOpsPrefs, opsDir, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, UsageLimits, UiPrefs, UiPrefsPatch, SystemPrefs } from './config'
+import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, reresolveUiPrefs, setSystemPrefs, setOpsPrefs, opsDir, opsDirsView, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, UsageLimits, UiPrefs, UiPrefsPatch, SystemPrefs, OpsPrefsPatch } from './config'
 import { buildModelsCatalog } from './models-catalog'
 import {
   getAllProjects,
@@ -116,7 +116,7 @@ import { createLedger, type OpsLedger, type OpsReportKind } from './ops-audit'
 import { handoverFileName } from './ops-handover-pure'
 import { createExecutor, createSshBackend, type OpsExecutor } from './ops-exec'
 import { createFakeBackend } from './ops-backend-fake'
-import { loadRunbook, readScript } from './ops-runbook'
+import { loadRunbook, readScript, scanRunbookLibrary } from './ops-runbook'
 import { builtinRunbookDir } from './ops-builtin'
 import { summarizePolicy } from './ops-policy-pure'
 import { interventionPrompt } from './ops-scope-pure'
@@ -1039,6 +1039,15 @@ ipcMain.handle('ops:load-runbook', async (_, dir: string) => {
 
 // "Open RUNBOOK.md" / "Open policy.json" on the start screen. Only a folder that loads as
 // a runbook, and only those two names, so this cannot be pointed at an arbitrary file.
+// The runbooks folder of Settings, listed: its direct subfolders that look like runbooks,
+// each then loaded by the renderer with ops:load-runbook. No folder set is an empty list.
+ipcMain.handle('ops:scan-runbooks', async () => {
+  const dir = opsDirsView().runbooksDir
+  if (!dir) return { ok: true, dir: null, entries: [] }
+  const r = await scanRunbookLibrary(dir)
+  return r.ok ? { ok: true, dir, entries: r.entries } : r
+})
+
 ipcMain.handle('ops:open-runbook-file', async (_, dir: string, which: string) => {
   if (typeof dir !== 'string' || dir.trim() === '') return { ok: false, error: t('main.ipc.ops.noRunbookFolder') }
   if (which !== 'RUNBOOK.md' && which !== 'policy.json') return { ok: false, error: t('main.ipc.ops.notRunbookFile', { name: String(which) }) }
@@ -1134,9 +1143,16 @@ ipcMain.handle('ops:save-report', async (_, runId: string, kind: OpsReportKind, 
   return { ok: false, error: t('main.ipc.ops.reportExists', { file }) }
 })
 
-// "Abrir pasta" for the two ops folders of Settings: only those, by name, so this cannot
-// open an arbitrary path. The folder is created first, so a fresh install can open it.
+// "Abrir pasta" for the ops folders of Settings: only those, by name, so this cannot
+// open an arbitrary path. The reports and handovers folders are created first, so a fresh
+// install can open them; the runbooks folder is someone's repo, opened only when set.
 ipcMain.handle('ops:open-folder', async (_, which: string) => {
+  if (which === 'runbooks') {
+    const dir = opsDirsView().runbooksDir
+    if (!dir) return { ok: false, error: t('main.ipc.ops.noRunbooksFolder') }
+    const error = await shell.openPath(dir)
+    return error ? { ok: false, error } : { ok: true, path: dir }
+  }
   if (which !== 'reports' && which !== 'handovers') return { ok: false, error: t('main.ipc.ops.unknownFolder', { which: String(which) }) }
   const dir = opsDir(which === 'reports' ? 'reportsDir' : 'handoversDir')
   try {
@@ -1690,13 +1706,14 @@ ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
 
   return { system, registeredShortcut: overlayShortcut() }
 })
-// The ops folders (reports, handovers): null or '' resets one to its default. Returns the
+// The ops folders (reports, handovers, runbooks) and the loose runbooks: null or '' resets
+// a folder to its default (no runbooks folder), null empties the loose list. Returns the
 // stored prefs and the effective folders, so Settings can show the default it fell back to.
-ipcMain.handle('config:set-ops', (_, patch: { reportsDir?: string | null; handoversDir?: string | null }) => {
+ipcMain.handle('config:set-ops', (_, patch: OpsPrefsPatch) => {
   const r = setOpsPrefs(patch)
-  return r.ok ? { ...r, dirs: { reportsDir: opsDir('reportsDir'), handoversDir: opsDir('handoversDir') } } : r
+  return r.ok ? { ...r, dirs: opsDirsView() } : r
 })
-ipcMain.handle('config:ops-dirs', () => ({ reportsDir: opsDir('reportsDir'), handoversDir: opsDir('handoversDir') }))
+ipcMain.handle('config:ops-dirs', () => opsDirsView())
 ipcMain.handle('config:get-permissions', () => getClaudePermissions())
 ipcMain.handle('config:set-permissions', (_, perms: unknown) => setClaudePermissions(perms))
 /**

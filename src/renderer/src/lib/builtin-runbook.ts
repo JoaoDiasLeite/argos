@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 
 /**
  * The read-only despiste runbook shipped with Argos. Its path comes from the main process
- * once per window (it never changes while the app runs). It is never a recent runbook, and
- * reports of its runs are saved to `~/argos/reports` rather than beside it.
+ * once per window (it never changes while the app runs). It is never a loose runbook, and
+ * reports of its runs, like any other, go to the folders of Settings.
  */
 
 let pending: Promise<string | null> | null = null

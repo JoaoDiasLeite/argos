@@ -57,6 +57,7 @@ const runbook: Record<keyof typeof en, string> = {
   'load.invalidJson': 'O policy.json não é JSON válido: {error}',
   'load.policyErrors': 'O policy.json tem {n} erro(s).',
   'load.failed': 'Não foi possível carregar o runbook: {error}',
+  'library.listFailed': 'Não foi possível listar a pasta de runbooks {dir}: {error}',
 
   'session.noHosts': 'Nenhum anfitrião SSH guardado pertence a um grupo de anfitriões do runbook {name}.',
   'session.hostNotInRunbook': 'Este anfitrião não está em nenhum grupo de anfitriões do runbook {name}; adiciona-o a um grupo no policy.json.',

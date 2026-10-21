@@ -61,6 +61,7 @@ export default {
   'ipc.ops.reportExists': 'A report already exists at {file}; it was not overwritten.',
   'ipc.ops.reportSaveFailed': 'Could not save the report: {error}',
   'ipc.ops.unknownFolder': 'Not an ops folder: {which}',
+  'ipc.ops.noRunbooksFolder': 'No runbooks folder is set.',
   'ipc.ops.noSessionId': 'No session id given.',
   'ipc.ops.noIntervention': 'No intervention given.',
   'ipc.ops.interventionNoServer': 'The intervention names no server.',

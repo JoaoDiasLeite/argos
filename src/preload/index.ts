@@ -326,12 +326,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Ops runs (docs/OPS_AGENT_PLAN.md): runbook preview, reports, ledger checks, and the
   // live ledger lines of a run for the timeline. The renderer never writes the ledger.
   opsLoadRunbook: (dir: string) => ipcRenderer.invoke('ops:load-runbook', dir),
+  opsScanRunbooks: () => ipcRenderer.invoke('ops:scan-runbooks'),
   opsBuiltinRunbook: () => ipcRenderer.invoke('ops:builtin-runbook'),
   opsReport: (runId: string, kind: 'internal' | 'client' | 'handover', runbookPath?: string) =>
     ipcRenderer.invoke('ops:report', runId, kind, runbookPath),
   opsSaveReport: (runId: string, kind: 'internal' | 'client' | 'handover', runbookPath?: string) =>
     ipcRenderer.invoke('ops:save-report', runId, kind, runbookPath),
-  opsOpenFolder: (which: 'reports' | 'handovers') => ipcRenderer.invoke('ops:open-folder', which),
+  opsOpenFolder: (which: 'reports' | 'handovers' | 'runbooks') => ipcRenderer.invoke('ops:open-folder', which),
   opsVerify: (date: string) => ipcRenderer.invoke('ops:verify', date),
   opsLedgerInfo: () => ipcRenderer.invoke('ops:ledger-info'),
   onOpsEvent: (cb: (data: unknown) => void) => {

@@ -185,3 +185,20 @@
   .srow > .btn-primary { align-self: flex-start; }
   .settings-select, .settings-date { width: 100%; }
 }
+
+/* The loose runbooks of Settings → Intervenções: one path and its Remove per line. */
+.settings-runbook-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.settings-runbook-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.settings-runbook-list .settings-path { flex: 1; min-width: 0; }
+.settings-runbook-list .btn-ghost { flex-shrink: 0; }

@@ -146,3 +146,24 @@ export function scriptPinError(policy: OpsPolicy, name: string, actualSha256: st
   }
   return null
 }
+
+/** A direct child of a runbooks folder, as the scanner saw it. */
+export interface RunbookLibraryChild {
+  name: string
+  isDir: boolean
+  /** The names directly inside it (only RUNBOOK.md and policy.json matter). */
+  entries: string[]
+}
+
+/**
+ * The runbooks of a runbooks folder: its direct subfolders that carry RUNBOOK.md or
+ * policy.json, sorted by name. One of the two is enough, so a half-broken runbook is
+ * listed (and shown unusable when it loads) instead of vanishing. Dot-folders and
+ * anything else are left out. Nothing is validated here: each one is loaded on its own.
+ */
+export function runbookLibraryEntries(dir: string, children: RunbookLibraryChild[]): { path: string; name: string }[] {
+  return children
+    .filter((c) => c.isDir && !c.name.startsWith('.') && c.entries.some((e) => e === 'RUNBOOK.md' || e === 'policy.json'))
+    .map((c) => ({ path: path.join(dir, c.name), name: c.name }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true, sensitivity: 'base' }))
+}
