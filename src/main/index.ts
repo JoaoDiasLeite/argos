@@ -1251,6 +1251,7 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
       return { allow: d.allow, ...(d.stop ? { stop: true } : {}), ...(d.skipSteps?.length ? { skipSteps: d.skipSteps } : {}) }
     },
     askSecret: (req) => requestOpsSecret(terminalId, req, abort.signal),
+    askOperator: (req) => requestOpsOperator(terminalId, req, abort.signal),
     onEvent: (line) => send('ops:event', { appSessionId: terminalId, runId: line.event.runId, line })
   })
   if (!opened.ok) return { ok: false, error: opened.error }
@@ -1269,7 +1270,7 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
       runId: ctx.runId,
       runbookPath,
       interventionKey,
-      initialPrompt: interventionPrompt(task),
+      initialPrompt: interventionPrompt(task, { planRequired: ctx.planRequired }),
       provider,
       token,
       endpoint,
@@ -1474,6 +1475,51 @@ function requestOpsSecret(
 ipcMain.handle('ops:secret-response', (_, payload: { requestId: string; value: string | null }) => {
   const resolver = payload && typeof payload.requestId === 'string' ? pendingSecrets.get(payload.requestId) : undefined
   if (resolver) resolver(typeof payload.value === 'string' ? payload.value : null)
+  return { ok: true }
+})
+
+// Pending ask_operator requests of ops runs: a command the model may not run, waiting
+// for the operator to run it in their own session and paste the output. Keyed by a
+// request id; `askId` is the ledger's id for the same ask. Main window only: the answer
+// is a paste. A stopped run or a closed terminal resolves it as declined.
+const pendingOperatorAsks = new Map<string, (output: string | null) => void>()
+let operatorAskSeq = 0
+
+function requestOpsOperator(
+  appSessionId: string,
+  req: { runId: string; askId: string; cmd: string; why: string; hostId?: string; hostName?: string; expect?: string },
+  signal: AbortSignal
+): Promise<string | null> {
+  if (signal.aborted) return Promise.resolve(null)
+  operatorAskSeq += 1
+  const requestId = `operator_${operatorAskSeq}_${Date.now().toString(36)}`
+  return new Promise((resolve) => {
+    const finish = (output: string | null) => {
+      signal.removeEventListener('abort', onAbort)
+      pendingOperatorAsks.delete(requestId)
+      resolve(output)
+    }
+    const onAbort = () => finish(null)
+    pendingOperatorAsks.set(requestId, finish)
+    signal.addEventListener('abort', onAbort, { once: true })
+    send('ops:operator-request', {
+      appSessionId,
+      runId: req.runId,
+      requestId,
+      askId: req.askId,
+      cmd: req.cmd,
+      why: req.why,
+      ...(req.hostId !== undefined ? { hostId: req.hostId } : {}),
+      ...(req.hostName !== undefined ? { hostName: req.hostName } : {}),
+      ...(req.expect !== undefined ? { expect: req.expect } : {})
+    })
+    flagAttention('approval')
+  })
+}
+
+ipcMain.handle('ops:operator-response', (_, payload: { requestId: string; output: string | null }) => {
+  const resolver = payload && typeof payload.requestId === 'string' ? pendingOperatorAsks.get(payload.requestId) : undefined
+  if (resolver) resolver(typeof payload.output === 'string' ? payload.output : null)
   return { ok: true }
 })
 

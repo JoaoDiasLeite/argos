@@ -125,6 +125,24 @@ export interface OpsRunbookRef {
   platform?: OpsPolicy['platform']
 }
 
+/**
+ * One `note` of the model's diagnosis: a hypothesis and its status, a finding, or an
+ * event on the server's timeline. A later hypothesis note with the same id replaces that
+ * hypothesis's status; main only logs them, the readers fold.
+ */
+export interface OpsNote {
+  kind: 'hypothesis' | 'finding' | 'event'
+  text: string
+  /** hypothesis only: its key, `[a-z0-9-]{1,40}`. */
+  id?: string
+  /** hypothesis only, and always set on one. */
+  status?: 'open' | 'confirmed' | 'ruled_out'
+  /** What backs it: a reading, or a reference to the call that showed it. */
+  evidence?: string
+  /** event only: when it happened on the server, free text. */
+  at?: string
+}
+
 /** One step of a plan, as logged with the user's decision on it. */
 export interface OpsLoggedPlanStep {
   title: string
@@ -151,6 +169,9 @@ export type OpsAuditEvent =
       client?: string
       /** Absent on runs from before interventions, when every runbook host was in reach. */
       scope?: OpsScope
+      /** false: a read-only runbook, whose calls do not wait for an approved plan. Absent:
+       *  a plan was required (every run from before this field). */
+      planRequired?: false
     }
   | {
       /** The operator's answer to the first touch of a host in an open intervention. */
@@ -225,6 +246,30 @@ export type OpsAuditEvent =
       afterSha256: string
     }
   | { kind: 'sudo.password-supplied'; runId: string; hostId: string }
+  | { kind: 'note'; runId: string; note: OpsNote }
+  | {
+      /** The model asked the operator to run a command it may not run itself (ask_operator). */
+      kind: 'operator.asked'
+      runId: string
+      askId: string
+      cmd: string
+      why: string
+      hostId?: string
+      host?: string
+      /** What the operator should look for in the output. */
+      expect?: string
+    }
+  | {
+      /** The answer to an `operator.asked`: the output the operator pasted, or a decline
+       *  (also written when the run stops while the request is open). */
+      kind: 'operator.answered'
+      runId: string
+      askId: string
+      /** Verbatim, cut at OPS_OPERATOR_OUTPUT_BYTES. */
+      output?: string
+      truncated?: true
+      declined?: true
+    }
   | {
       /** The host's syslog could not take Argos's lines (logger missing or failing); once per host per run. */
       kind: 'host.syslog-unavailable'

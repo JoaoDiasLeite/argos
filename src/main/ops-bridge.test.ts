@@ -166,7 +166,8 @@ describe('ops bridge', () => {
     expect(JSON.parse((hello.result as { text: string }).text)).toEqual({
       runbook: 'nginx-check',
       hosts: [{ id: 'h1', name: 'web-01', groups: ['web'] }],
-      tools: ['propose_plan', 'run', 'script', 'read', 'list', 'write']
+      tools: ['propose_plan', 'run', 'script', 'read', 'list', 'write', 'note', 'ask_operator'],
+      planRequired: true
     })
 
     // Plan first: a read before the plan is refused, and logged.
@@ -324,7 +325,7 @@ describe('ops relay', () => {
     expect(logged).toHaveLength(1)
   })
 
-  it('lists the six tools, relays a call through the gate, and exits 0 when the bridge goes away', async () => {
+  it('lists the eight tools, relays a call through the gate, and exits 0 when the bridge goes away', async () => {
     const fake = createFakeBackend({ files: { '/etc/nginx/nginx.conf': 'events {}\n' } })
     const { session } = await openSession(async () => ({ allow: true }), fake)
     const { endpoint } = await startOpsBridge({ socketDir: os.tmpdir() })
@@ -358,7 +359,8 @@ describe('ops relay', () => {
 
     const list = await mcp.request('tools/list')
     const tools = (list.result as { tools: { name: string; description: string }[] }).tools
-    expect(tools.map((t) => t.name)).toEqual(['propose_plan', 'run', 'script', 'read', 'list', 'write'])
+    expect(tools.map((t) => t.name)).toEqual(['propose_plan', 'run', 'script', 'read', 'list', 'write', 'note', 'ask_operator'])
+    expect(tools.find((t) => t.name === 'propose_plan')?.description).toMatch(/^Call this once, before any other ops tool/)
     expect(tools.find((t) => t.name === 'run')?.description).toMatch(/hostId: h1/)
 
     // Both step shapes pass the relay's zod schema: a bare string and a structured step.

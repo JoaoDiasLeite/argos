@@ -39,6 +39,8 @@ export interface OpsBridgeHello {
   runbook: string
   hosts: { id: string; name: string; groups: string[] }[]
   tools: string[]
+  /** false: a read-only runbook, whose propose_plan is optional. Absent: required. */
+  planRequired?: boolean
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)

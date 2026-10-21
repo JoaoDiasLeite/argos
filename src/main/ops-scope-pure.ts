@@ -49,10 +49,12 @@ export function hostApprovalContext(host: { name: string }, hostAddress: string,
 /**
  * The CLI's first message: fixed text, then the operator's task on one line (a terminal
  * takes one line at a time; a newline would submit half of it). Without a task the model
- * reads the runbook and waits for the operator.
+ * reads the runbook and waits for the operator. A read-only runbook needs no plan, so its
+ * lead does not mention one.
  */
-export function interventionPrompt(task: string): string {
+export function interventionPrompt(task: string, opts: { planRequired?: boolean } = {}): string {
   const line = task.replace(/\s+/g, ' ').trim()
-  const lead = 'Read RUNBOOK.md in this folder before proposing a plan'
+  const lead =
+    opts.planRequired === false ? 'Read RUNBOOK.md in this folder before you start' : 'Read RUNBOOK.md in this folder before proposing a plan'
   return line ? `${lead}, then: ${line}` : `${lead}, then wait for instructions.`
 }

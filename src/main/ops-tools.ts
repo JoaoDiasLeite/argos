@@ -1,6 +1,7 @@
 /**
  * The handlers of the `ops` tools (docs/OPS_AGENT_PLAN.md §1.2): propose_plan, run, script,
- * read, list and write, the model's only reach to a server. A terminal CLI reaches them
+ * read, list and write, the model's only reach to a server, plus note and ask_operator,
+ * which only write to the ledger and ask the operator. A terminal CLI reaches them
  * through the stdio relay (ops-relay.ts) and the bridge (ops-bridge.ts → callOpsTool). The gate's decision was
  * already taken and logged in canUseTool (ops-session.ts); each handler here runs the same
  * deterministic classify again and refuses a deny, so a call that somehow skipped
@@ -23,13 +24,22 @@ import {
   listResultText,
   mcpInputToOpsInput,
   callKey,
+  NOTE_ACK,
+  noteFrom,
+  OPERATOR_NO_CHANNEL,
+  operatorAnswerText,
+  operatorAskFrom,
+  operatorOutput,
   planApprovedText,
   PLAN_FIRST_REASON,
   readResultText,
   refusedFinishedEvent,
+  SUDO_ASK_OPERATOR_NOTE,
   SUDO_DECLINED_NOTE,
   SUDO_PASSWORD_NOTE,
   sudoNeedsPassword,
+  sudoNonInteractive,
+  sudoNonInteractiveRefused,
   toolResultText,
   withSudoStdin,
   writeResultText
@@ -60,8 +70,14 @@ export interface OpsToolResult {
 
 type OpsHandler = (args: Record<string, unknown>) => Promise<OpsToolResult>
 
-/** The five gated tools, plus propose_plan, which canUseTool alone decides. */
-export type OpsToolHandlers = Record<OpsToolName, OpsHandler> & { propose_plan: OpsHandler; operatorScript: OpsHandler }
+/** The five gated tools, plus propose_plan, which canUseTool alone decides, and note and
+ *  ask_operator, which never reach a host. */
+export type OpsToolHandlers = Record<OpsToolName, OpsHandler> & {
+  propose_plan: OpsHandler
+  operatorScript: OpsHandler
+  note: OpsHandler
+  ask_operator: OpsHandler
+}
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
@@ -200,7 +216,7 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
         await ctx.log(refusedFinishedEvent(runId, callId, `refused at execution: ${gate.reason}`))
         return text(`Refused: ${gate.reason}.`, true)
       }
-      if (!ctx.planApproved && !operator) {
+      if (ctx.planRequired && !ctx.planApproved && !operator) {
         // Decided under a plan the operator has since rejected.
         await ctx.log(refusedFinishedEvent(runId, callId, `refused at execution: ${PLAN_FIRST_REASON}`))
         return text(`Refused: ${PLAN_FIRST_REASON}.`, true)
@@ -235,6 +251,14 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
     const backend = ctx.executor.backend
     // The gate's argv, not the -S form: the password goes on stdin and never into a line.
     const call = syslogCall(input, gate, callId)
+    if (sudoNonInteractive(argv)) {
+      // `sudo -n` runs as sent, never with a password: one that sudo refuses goes to the
+      // operator's own session through ask_operator instead.
+      const r = await loggedExec(input.hostId, hostName, call, () => backend.exec(input.hostId, argv, opts))
+      await ctx.log(finishedEventFrom(r, runId, callId))
+      const note = sudoNonInteractiveRefused(argv, r) ? `\n${SUDO_ASK_OPERATOR_NOTE}` : ''
+      return text(toolResultText(r) + note, execIsError(r))
+    }
     const known = ctx.sudoPasswords.get(input.hostId)
     if (known !== undefined) {
       const r = await loggedExec(input.hostId, hostName, call, () =>
@@ -441,7 +465,71 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
     }
   }
 
+  /** `note`: one line of the diagnosis in the ledger. An invalid note is refused and not logged. */
+  async function note(args: Record<string, unknown>): Promise<OpsToolResult> {
+    try {
+      const n = noteFrom(args)
+      if ('error' in n) return text(`Refused: ${n.error}.`, true)
+      if (ctx.abort.signal.aborted) return text('Refused: the run was stopped.', true)
+      const logged = await ctx.log({ kind: 'note', runId, note: n })
+      return logged.ok ? text(NOTE_ACK) : text('Refused: the ops ledger is unavailable, so the note was not kept.', true)
+    } catch (e) {
+      return text(`The ops tool failed: ${message(e)}`, true)
+    }
+  }
+
+  let askSeq = 0
+
+  /**
+   * `ask_operator`: the operator runs the command in their own session and pastes the
+   * output back, while this call waits. The ask is logged before the operator sees it,
+   * and the answer (or the decline, or the stop that ends the wait) after.
+   */
+  async function askOperator(args: Record<string, unknown>): Promise<OpsToolResult> {
+    try {
+      const a = operatorAskFrom(args)
+      if ('error' in a) return text(`Refused: ${a.error}.`, true)
+      const entry = a.hostId !== undefined ? ctx.hosts.byId.get(a.hostId) : undefined
+      if (a.hostId !== undefined && !entry) return text(`Refused: unknown hostId ${a.hostId}.`, true)
+      if (!ctx.askOperator) return text(OPERATOR_NO_CHANNEL, true)
+      if (ctx.abort.signal.aborted) return text('Refused: the run was stopped.', true)
+
+      askSeq += 1
+      const askId = `${runId}-ask-${askSeq}`
+      const host = entry?.host.name
+      const asked = await ctx.log({
+        kind: 'operator.asked',
+        runId,
+        askId,
+        cmd: a.cmd,
+        why: a.why,
+        ...(a.hostId !== undefined ? { hostId: a.hostId } : {}),
+        ...(host !== undefined ? { host } : {}),
+        ...(a.expect !== undefined ? { expect: a.expect } : {})
+      })
+      if (!asked.ok) return text('Refused: the ops ledger is unavailable, so the operator was not asked.', true)
+
+      const raw = await ctx.askOperator({
+        runId,
+        askId,
+        cmd: a.cmd,
+        why: a.why,
+        ...(a.hostId !== undefined ? { hostId: a.hostId } : {}),
+        ...(host !== undefined ? { hostName: host } : {}),
+        ...(a.expect !== undefined ? { expect: a.expect } : {})
+      })
+      // An answer that lands after a stop is not taken.
+      const answer = raw === null || ctx.abort.signal.aborted ? null : operatorOutput(raw)
+      await ctx.log({ kind: 'operator.answered', runId, askId, ...(answer ?? { declined: true as const }) })
+      return text(operatorAnswerText(answer), answer === null)
+    } catch (e) {
+      return text(`The ops tool failed: ${message(e)}`, true)
+    }
+  }
+
   return {
+    note,
+    ask_operator: askOperator,
     run: (a) => handle('run', a),
     script: (a) => handle('script', a),
     operatorScript: (a) => handle('script', a, true),

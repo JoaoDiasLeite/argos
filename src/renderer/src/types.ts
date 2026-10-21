@@ -913,12 +913,30 @@ export interface OpsRunListItem {
 /**
  * One ledger line of a live ops run, as main wrote it (`ops:event`). `line.event.kind`
  * is run.start, call.decided, call.asked, call.answered, call.started, call.finished,
- * write.backup or run.end; the full field list is OpsAuditEvent in src/main/ops-types.ts.
+ * write.backup, note, operator.asked, operator.answered or run.end (among others); the full field list is OpsAuditEvent in src/main/ops-types.ts.
  */
 export interface OpsLiveEvent {
   appSessionId: string
   runId: string
   line: { at: string; prev: string; event: { kind: string; runId: string; callId?: string } & Record<string, unknown> }
+}
+
+/**
+ * The model's ask_operator, waiting for the operator (`ops:operator-request`). `askId` is
+ * the ledger's id for it: the `operator.asked` / `operator.answered` lines carry the same
+ * one, so a card can close when its answer lands (a stop answers it as declined).
+ */
+export interface OpsOperatorRequest {
+  appSessionId: string
+  runId: string
+  requestId: string
+  askId: string
+  cmd: string
+  why: string
+  hostId?: string
+  hostName?: string
+  /** What the operator should look for in the output. */
+  expect?: string
 }
 
 // ─── Planner ──────────────────────────────────────────────────────────────────
@@ -1568,6 +1586,10 @@ declare global {
       ) => () => void
       /** Answer a secret request; `value: null` declines. */
       respondOpsSecret: (payload: { requestId: string; value: string | null }) => Promise<{ ok: true }>
+      /** The model's ask_operator: a command for the operator to run in their own session and paste back. */
+      onOpsOperatorRequest: (cb: (data: OpsOperatorRequest) => void) => () => void
+      /** Answer an operator request with the pasted output; `output: null` declines. */
+      opsOperatorResponse: (payload: { requestId: string; output: string | null }) => Promise<{ ok: true }>
       /**
        * Open the ops run of a terminal (one run per CLI launch; run.end when the pty exits
        * or the terminal is closed). Idempotent while that run is open: the same terminal id

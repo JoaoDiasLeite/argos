@@ -19,8 +19,11 @@ import {
   localToolVerdict,
   makeCallBook,
   mcpInputToOpsInput,
+  OPS_ASK_OPERATOR_TOOL,
+  OPS_NOTE_TOOL,
   OPS_PLAN_TOOL,
   opsHostsFor,
+  planRequired,
   opsToolFromSdkName,
   PLAN_FIRST_REASON,
   PLAN_REJECTED_MESSAGE,
@@ -73,6 +76,20 @@ export type OpsAskFn = (req: {
 /** Ask the operator for a secret (the sudo password of a host). null = declined or stopped. */
 export type OpsAskSecretFn = (req: { hostId: string; hostName: string; prompt: string }) => Promise<string | null>
 
+/**
+ * Ask the operator to run a command in their own SSH session and paste its output
+ * (ask_operator). Resolves with the output, or null when declined or the run stops.
+ */
+export type OpsAskOperatorFn = (req: {
+  runId: string
+  askId: string
+  cmd: string
+  why: string
+  hostId?: string
+  hostName?: string
+  expect?: string
+}) => Promise<string | null>
+
 /** Who runs the intervention and as whom it reaches each host, for the host's syslog lines. */
 export interface OpsSyslogOptions {
   /** The operator at the Argos machine. */
@@ -104,9 +121,16 @@ export interface OpsRunContext {
   sudoPasswords: Map<string, string>
   /** The masked prompt for a sudo password. Absent → a sudo that wants one tells the model to stop. */
   askSecret?: OpsAskSecretFn
+  /** The operator's own terminal for a command the model may not run. Absent → the model is told to list it in its reply. */
+  askOperator?: OpsAskOperatorFn
+  /**
+   * false for a read-only runbook (planRequired in ops-run-pure.ts): its calls do not wait
+   * for a plan, though a propose_plan still goes to the operator the same way.
+   */
+  planRequired: boolean
   /**
    * Set once the operator approves a `propose_plan` (plan §1.7). Until then every other
-   * ops call is refused; a rejected later plan clears it again.
+   * ops call is refused when a plan is required; a rejected later plan clears it again.
    */
   planApproved: boolean
   /** The last approved plan's steps, one per line. */
@@ -160,6 +184,8 @@ export interface OpsSessionOptions {
   ask?: OpsAskFn
   /** The masked prompt for a host's sudo password. Absent → never asked. */
   askSecret?: OpsAskSecretFn
+  /** The "run this for me" card of ask_operator. Absent → no operator channel. */
+  askOperator?: OpsAskOperatorFn
   /** `user@host:port` for the modal header. Default: the host's address. */
   hostAddress?: (hostId: string) => string
   /** Every ledger line written for this run, for the live `ops:event` timeline. */
@@ -237,6 +263,7 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
     if (down) return { ok: false, error: t('runbook.session.unreachable', { host: down.h.host.name, error: down.r.message }) }
 
     const runId = opts.runId ?? randomUUID()
+    const needsPlan = planRequired(runbook.policy)
     const log: OpsRunContext['log'] = async (event) => {
       try {
         const r = await opts.ledger.append(event)
@@ -265,7 +292,8 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
       ...(opts.task?.trim() ? { task: opts.task.trim() } : {}),
       ...(opts.ticket?.trim() ? { ticket: opts.ticket.trim() } : {}),
       ...(opts.client?.trim() ? { client: opts.client.trim() } : {}),
-      ...(scope ? { scope } : {})
+      ...(scope ? { scope } : {}),
+      ...(needsPlan ? {} : { planRequired: false as const })
     })
     if (!started.ok) return { ok: false, error: t('runbook.session.ledgerUnavailable', { error: started.error }) }
 
@@ -279,6 +307,8 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
       abort: opts.abort,
       sudoPasswords: new Map(),
       ...(opts.askSecret ? { askSecret: opts.askSecret } : {}),
+      ...(opts.askOperator ? { askOperator: opts.askOperator } : {}),
+      planRequired: needsPlan,
       planApproved: false,
       skippedSteps: [],
       skippedCommands: new Set(),
@@ -384,11 +414,16 @@ export async function runOperatorScript(
  * describe the tools) and the call pipeline.
  */
 export function bridgeSessionFor(session: OpsSession): {
-  hello(): { runbook: string; hosts: { id: string; name: string; groups: string[] }[]; tools: string[] }
+  hello(): { runbook: string; hosts: { id: string; name: string; groups: string[] }[]; tools: string[]; planRequired: boolean }
   call(tool: string, args: Record<string, unknown> | undefined): Promise<{ text: string; isError: boolean }>
 } {
   return {
-    hello: () => ({ runbook: session.ctx.runbook.ref.name, hosts: opsToolHosts(session.ctx), tools: [...OPS_BRIDGE_TOOLS] }),
+    hello: () => ({
+      runbook: session.ctx.runbook.ref.name,
+      hosts: opsToolHosts(session.ctx),
+      tools: [...OPS_BRIDGE_TOOLS],
+      planRequired: session.ctx.planRequired
+    }),
     call: (tool, args) => callOpsTool(session, tool, args)
   }
 }
@@ -405,6 +440,11 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions, operator
   return async (toolName, input) => {
     try {
       if (toolName === OPS_PLAN_TOOL) return await decidePlan(ctx, opts, toolName, input)
+      // Neither reaches a host: no gate, no plan, no scope. Their handlers check the input
+      // and write their own ledger lines.
+      if (toolName === OPS_NOTE_TOOL || toolName === OPS_ASK_OPERATOR_TOOL) {
+        return operator ? deny(`${toolName} is not an operator action.`) : { behavior: 'allow' as const, updatedInput: input }
+      }
 
       const tool = opsToolFromSdkName(toolName)
       if (!tool) {
@@ -453,9 +493,10 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions, operator
       }
       const gate = classify(parsed, ctx.runbook.policy, entry?.host ?? null, entry?.groups ?? [])
 
-      if (!ctx.planApproved && !operator) {
+      if (ctx.planRequired && !ctx.planApproved && !operator) {
         // Plan first (§1.7): nothing reaches a host before the operator has seen the
-        // whole plan. Logged like any deny, with what the gate would have run.
+        // whole plan. Logged like any deny, with what the gate would have run. A read-only
+        // runbook skips this: every call is still gated and logged on its own.
         await ctx.log({
           kind: 'call.decided',
           runId,

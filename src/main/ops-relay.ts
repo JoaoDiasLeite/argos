@@ -193,7 +193,7 @@ export async function runOpsRelay(override: Partial<OpsRelayIo> = {}): Promise<v
   const server = new McpServer({ name: 'ops', version: '1.0.0' }, { instructions: opsServerInstructions(info.runbook, hosts) })
   const offered = new Set(Array.isArray(info.tools) ? info.tools : [])
 
-  for (const def of opsToolDefs(z, hosts)) {
+  for (const def of opsToolDefs(z, hosts, { planRequired: info.planRequired !== false })) {
     if (!offered.has(def.name)) continue
     // The SDK's generic over the shape is not worth spelling here: the shape is a zod raw
     // shape from the same zod the SDK resolves, and the handler takes plain JSON.

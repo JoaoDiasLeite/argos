@@ -51,6 +51,14 @@ describe('interventionPrompt', () => {
     expect(interventionPrompt('')).toBe(waits)
     expect(interventionPrompt(' \n ')).toBe(waits)
   })
+
+  it('a read-only runbook needs no plan, so the lead does not mention one', () => {
+    expect(interventionPrompt('puma slow since 17h', { planRequired: false })).toBe(
+      'Read RUNBOOK.md in this folder before you start, then: puma slow since 17h'
+    )
+    expect(interventionPrompt('', { planRequired: false })).toBe('Read RUNBOOK.md in this folder before you start, then wait for instructions.')
+    expect(interventionPrompt('x', { planRequired: true })).toBe(interventionPrompt('x'))
+  })
 })
 
 describe('classifyPlanSteps with a scope', () => {
