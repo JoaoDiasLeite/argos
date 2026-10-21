@@ -46,6 +46,12 @@
       "build/icon.png",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "resources/runbooks",
+        "to": "runbooks"
+      }
+    ],
     "asarUnpack": [
       "build/icon.png",
       "node_modules/@anthropic-ai/claude-agent-sdk/**",

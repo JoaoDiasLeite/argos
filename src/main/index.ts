@@ -116,6 +116,7 @@ import { createLedger, type OpsLedger } from './ops-audit'
 import { createExecutor, createSshBackend, type OpsExecutor } from './ops-exec'
 import { createFakeBackend } from './ops-backend-fake'
 import { loadRunbook, readScript } from './ops-runbook'
+import { builtinRunbookDir, isBuiltinRunbook } from './ops-builtin'
 import { summarizePolicy } from './ops-policy-pure'
 import { interventionPrompt } from './ops-scope-pure'
 import type { OpsScope } from './ops-types'
@@ -1015,6 +1016,9 @@ function opsHostAddress(hostId: string): string {
   return h ? `${h.username}@${h.host}:${h.port}` : hostId
 }
 
+// The read-only despiste runbook shipped with Argos, the default way to start an intervention.
+ipcMain.handle('ops:builtin-runbook', () => ({ path: builtinRunbookDir() }))
+
 ipcMain.handle('ops:load-runbook', async (_, dir: string) => {
   if (typeof dir !== 'string' || dir.trim() === '') return { ok: false, error: t('main.ipc.ops.noRunbookFolder') }
   const r = await loadRunbook(dir)
@@ -1071,6 +1075,8 @@ ipcMain.handle('ops:report', async (_, runId: string, kind: 'internal' | 'client
 // Saves a rendered report as `<runbook>/reports/<YYYY-MM-DD>-<runId>[-cliente].md`. This is
 // the ONE place Argos writes under a runbook folder (docs/OPS_AGENT_PLAN.md §8), and it
 // only ever creates a new file: `wx` refuses an existing one rather than editing it.
+// The built-in despiste runbook lives inside the app and is never written to: its reports
+// go to `~/argos/reports` instead, under the same file name.
 ipcMain.handle('ops:save-report', async (_, runId: string, kind: 'internal' | 'client', runbookPath: string) => {
   if (typeof runId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(runId)) return { ok: false, error: t('main.ipc.ops.invalidRunId') }
   if (kind !== 'internal' && kind !== 'client') return { ok: false, error: t('main.ipc.ops.unknownReportKind', { kind: String(kind) }) }
@@ -1084,7 +1090,8 @@ ipcMain.handle('ops:save-report', async (_, runId: string, kind: 'internal' | 'c
   const lines = await ledger.readRun(runId)
   const startAt = lines.ok ? lines.lines.find((l) => l.event.kind === 'run.start')?.at : undefined
   const date = (startAt && /^\d{4}-\d{2}-\d{2}/.test(startAt) ? startAt : new Date().toISOString()).slice(0, 10)
-  const dir = path.join(runbookPath, 'reports')
+  // `~/argos/reports` is the default reports folder; a later phase makes it a setting.
+  const dir = isBuiltinRunbook(runbookPath) ? path.join(os.homedir(), 'argos', 'reports') : path.join(runbookPath, 'reports')
   const file = path.join(dir, `${date}-${runId}${kind === 'client' ? '-cliente' : ''}.md`)
   try {
     await fs.promises.mkdir(dir, { recursive: true })

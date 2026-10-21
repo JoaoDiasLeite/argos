@@ -123,6 +123,53 @@
   color: var(--text-2);
 }
 
+/* ── Mode: two radio options side by side, each a title over a sub-line ── */
+
+.ivs-seg {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+.ivs-seg button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 9px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.ivs-seg button + button {
+  border-left: 1px solid var(--border);
+}
+.ivs-seg button:hover:not(.on) {
+  background: var(--bg-2);
+}
+.ivs-seg button.on {
+  background: var(--accent-dim);
+  color: var(--text-0);
+}
+.ivs-seg button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.ivs-seg-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.ivs-seg-sub {
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
 .ivs-pair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -391,6 +438,7 @@
   font-size: 12.5px;
   line-height: 1.55;
   color: var(--text-1);
+  overflow-wrap: anywhere;
 }
 
 .ivs-stats {

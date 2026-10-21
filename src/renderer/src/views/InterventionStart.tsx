@@ -3,6 +3,7 @@ import { rich } from '../lib/t-rich'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import type { OpsIntervention, OpsRunbookInfo, OpsRunListItem, OpsScope, SshHostPublic } from '../types'
 import { forgetRecentRunbook, pushRecentRunbook, readRecentRunbooks } from '../lib/recent-runbooks'
+import { samePath, useBuiltinRunbook } from '../lib/builtin-runbook'
 import OpsReportSheet from '../components/OpsReportSheet'
 import { plural, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
@@ -16,6 +17,9 @@ import './InterventionStart.css'
  *
  * Runbooks are the recents in `ops.recentRunbooks`, re-read on mount: a runbook is a folder
  * someone edits, and a policy that stopped validating is exactly what must show here.
+ *
+ * The mode comes first: despiste (the read-only runbook shipped with Argos) is always the
+ * default and is not remembered; an intervention with a runbook is chosen on purpose.
  */
 
 const LAST_CLIENT_KEY = 'ops.lastClient'
@@ -25,8 +29,12 @@ type DotState = 'checking' | 'ok' | 'error'
 type InfoState = OpsRunbookInfo | 'loading'
 /** `null` until chosen; `'open'` is "Any server this runbook allows". */
 type ServerChoice = string | 'open' | null
+type Mode = 'despiste' | 'runbook'
 
 const OPEN = 'open' as const
+const MODES: Mode[] = ['despiste', 'runbook']
+/** The built-in runbook's folder name, which is also the name its runs carry in the ledger. */
+const BUILTIN_NAME = 'despiste'
 
 const baseName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 const hostAddress = (h: SshHostPublic) => `${h.username}@${h.host}${h.port === 22 ? '' : `:${h.port}`}`
@@ -253,6 +261,44 @@ function IvsDropdown({
   )
 }
 
+// ── Mode ─────────────────────────────────────────────────────────────────────
+
+/** Two radio options side by side; arrow keys move the choice, only the chosen one is a tab stop. */
+function ModeControl({ labelledBy, mode, onChange }: { labelledBy: string; mode: Mode; onChange: (m: Mode) => void }) {
+  const t = useT()
+  const refs = useRef<(HTMLButtonElement | null)[]>([])
+  const onKey = (e: ReactKeyboardEvent, i: number) => {
+    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0
+    if (!step) return
+    e.preventDefault()
+    const next = (i + step + MODES.length) % MODES.length
+    onChange(MODES[next])
+    refs.current[next]?.focus()
+  }
+  return (
+    <div className="ivs-seg" role="radiogroup" aria-labelledby={labelledBy}>
+      {MODES.map((m, i) => (
+        <button
+          key={m}
+          ref={(el) => {
+            refs.current[i] = el
+          }}
+          type="button"
+          role="radio"
+          aria-checked={mode === m}
+          tabIndex={mode === m ? 0 : -1}
+          className={mode === m ? 'on' : ''}
+          onClick={() => onChange(m)}
+          onKeyDown={(e) => onKey(e, i)}
+        >
+          <span className="ivs-seg-title">{m === 'despiste' ? t('ops.start.mode.despiste') : t('ops.start.mode.runbook')}</span>
+          <span className="ivs-seg-sub">{m === 'despiste' ? t('ops.start.mode.despisteSub') : t('ops.start.mode.runbookSub')}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ── The screen ───────────────────────────────────────────────────────────────
 
 interface Props {
@@ -268,11 +314,18 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
   const [dots, setDots] = useState<Record<string, DotState>>({})
   const [server, setServer] = useState<ServerChoice>(initialHostId ?? null)
 
+  /** Despiste on every mount, by decision: an intervention with a runbook is picked on purpose. */
+  const [mode, setMode] = useState<Mode>('despiste')
+  const builtin = useBuiltinRunbook()
+
   const [recents, setRecents] = useState<string[]>(readRecentRunbooks)
   const [infos, setInfos] = useState<Record<string, InfoState>>({})
+  /** The runbook-mode choice. It survives a detour through despiste, and never holds the built-in path. */
   const [runbookPath, setRunbookPath] = useState<string | null>(null)
   /** Once the operator picks a runbook, the automatic default stops second-guessing it. */
   const runbookChosen = useRef(false)
+  /** What the intervention starts with: the built-in runbook in despiste mode. */
+  const activePath = mode === 'despiste' ? builtin : runbookPath
 
   const [task, setTask] = useState('')
   const [ticket, setTicket] = useState('')
@@ -282,6 +335,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
   const [reportFor, setReportFor] = useState<{ runId: string; runbookPath?: string; appSessionId?: string } | null>(null)
 
   const serverLabelId = useId()
+  const modeLabelId = useId()
   const runbookLabelId = useId()
   const taskId = useId()
   const ticketId = useId()
@@ -324,10 +378,15 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
     for (const dir of readRecentRunbooks()) void loadRunbook(dir)
   }, [loadRunbook])
 
-  // Default runbook: once the recents have loaded, the most recent usable one that knows
-  // the chosen host (any usable one when no host is chosen or none knows it).
   useEffect(() => {
-    if (runbookChosen.current || runbookPath || recents.length === 0) return
+    if (builtin) void loadRunbook(builtin)
+  }, [builtin, loadRunbook])
+
+  // Default runbook (runbook mode only): once the recents have loaded, the most recent
+  // usable one that knows the chosen host (any usable one when no host is chosen or none
+  // knows it).
+  useEffect(() => {
+    if (mode !== 'runbook' || runbookChosen.current || runbookPath || recents.length === 0) return
     if (recents.some((d) => !infos[d] || infos[d] === 'loading')) return
     const usable = recents.filter((d) => {
       const i = infos[d]
@@ -339,7 +398,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
     }
     const pick = usable.find(knows) ?? usable[0]
     if (pick) setRunbookPath(pick)
-  }, [infos, recents, runbookPath, server])
+  }, [infos, mode, recents, runbookPath, server])
 
   const scope: OpsScope | null =
     server === null ? null : server === OPEN ? { kind: 'open' } : { kind: 'host', hostId: server }
@@ -359,7 +418,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
   }, [hostId])
 
   const selectedHost = hostId ? hosts?.find((h) => h.id === hostId) : undefined
-  const info: InfoState | undefined = runbookPath ? infos[runbookPath] : undefined
+  const info: InfoState | undefined = activePath ? infos[activePath] : undefined
   const loaded = info && info !== 'loading' ? info : undefined
   const okInfo = loaded?.ok ? loaded : undefined
   const summary = okInfo?.summary
@@ -378,9 +437,10 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
 
   const missing = [
     !scope && t('ops.start.needServer'),
-    !runbookPath && t('ops.start.needRunbook')
+    mode === 'runbook' && !runbookPath && t('ops.start.needRunbook')
   ].filter((m): m is string => !!m)
-  const blocked = !!hostProblem || (!!loaded && !loaded.ok) || info === 'loading'
+  // In despiste mode the built-in path arrives on its own; until it has loaded, it is loading.
+  const blocked = !!hostProblem || (!!loaded && !loaded.ok) || info === 'loading' || (mode === 'despiste' && !info)
   const canStart = missing.length === 0 && !blocked
 
   const startHint = canStart
@@ -391,19 +451,20 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
             ? missing[0]
             : t('ops.start.listAnd', { head: missing.slice(0, -1).join(', '), last: missing[missing.length - 1] })
         })
-      : info === 'loading'
+      : info === 'loading' || !info
         ? t('ops.start.hintLoading')
         : t('ops.start.hintFix')
 
   const start = () => {
-    if (!canStart || !scope || !runbookPath) {
+    if (!canStart || !scope || !activePath) {
       return
     }
     const c = client.trim()
     const tk = ticket.trim()
     writeLastClient(c)
-    setRecents(pushRecentRunbook(runbookPath))
-    onStart({ runbookPath, scope, task: task.trim(), ...(tk ? { ticket: tk } : {}), ...(c ? { client: c } : {}) })
+    // The built-in runbook is not a recent: it is always one click away as the mode.
+    if (mode === 'runbook' && !samePath(activePath, builtin)) setRecents(pushRecentRunbook(activePath))
+    onStart({ runbookPath: activePath, scope, task: task.trim(), ...(tk ? { ticket: tk } : {}), ...(c ? { client: c } : {}) })
   }
 
   const chooseFolder = async () => {
@@ -412,7 +473,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
     runbookChosen.current = true
     setRunbookPath(dir)
     const res = await loadRunbook(dir)
-    if (res.ok) setRecents(pushRecentRunbook(dir))
+    if (res.ok && !samePath(dir, builtin)) setRecents(pushRecentRunbook(dir))
   }
 
   const forget = (dir: string) => {
@@ -520,12 +581,17 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
 
   // ── Right column ───────────────────────────────────────────────────────────
   const openFile = (file: 'RUNBOOK.md' | 'policy.json') => {
-    if (runbookPath) void window.electronAPI.opsOpenRunbookFile(runbookPath, file)
+    if (activePath) void window.electronAPI.opsOpenRunbookFile(activePath, file)
   }
 
-  /** The recent folder a past run belongs to, so its report can be saved beside it. */
+  /**
+   * The folder a past run belongs to, so its report can be saved beside it: a recent one,
+   * or the built-in runbook (whose reports go to ~/argos/reports). A bare `despiste` name is
+   * the built-in one unless a recent folder carries that name too.
+   */
   const runbookDirFor = (r: OpsRunListItem): string | undefined => {
-    if (/[\\/]/.test(r.runbook)) return r.runbook
+    if (/[\\/]/.test(r.runbook)) return builtin && samePath(r.runbook, builtin) ? builtin : r.runbook
+    if (r.runbook === BUILTIN_NAME && builtin && !recents.some((d) => baseName(d) === BUILTIN_NAME)) return builtin
     return recents.find((d) => {
       const i = infos[d]
       return i && i !== 'loading' && i.ok && i.name === r.runbook
@@ -559,46 +625,63 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
             </div>
 
             <div className="ivs-field">
-              <span className="ivs-label" id={runbookLabelId}>
-                {t('ops.start.runbook')}
+              <span className="ivs-label" id={modeLabelId}>
+                {t('ops.start.mode')}
               </span>
-              <IvsDropdown
-                labelledBy={runbookLabelId}
-                trigger={runbookPath ? runbookRow(runbookPath, false) : <span className="ivs-placeholder">{t('ops.start.chooseRunbook')}</span>}
-                items={runbookItems}
-                invalid={!!loaded && !loaded.ok}
-              />
-              {loaded && !loaded.ok && runbookPath && (
-                <div className="ivs-error-block" role="alert">
-                  <div>
-                    <strong>{t('ops.start.notUsable')}</strong> {loaded.error}
-                  </div>
-                  {loaded.errors && loaded.errors.length > 0 && (
-                    <ul>
-                      {loaded.errors.map((e, i) => (
-                        <li key={i}>{e}</li>
-                      ))}
-                    </ul>
-                  )}
-                  <div className="ivs-error-actions">
-                    <span className="ivs-mono">{runbookPath}</span>
-                    {recents.includes(runbookPath) && (
-                      <button type="button" className="ivs-link" onClick={() => forget(runbookPath)}>
-                        {t('ops.start.forget')}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-              {recents.length === 0 && !runbookPath && (
-                <span className="ivs-help">
-                  {rich(t('ops.start.runbookExplainer'), {
-                    runbook: <span className="ivs-mono">RUNBOOK.md</span>,
-                    policy: <span className="ivs-mono">policy.json</span>
-                  })}
-                </span>
-              )}
+              <ModeControl labelledBy={modeLabelId} mode={mode} onChange={setMode} />
+              {mode === 'despiste' &&
+                (loaded && !loaded.ok ? (
+                  <span className="ivs-error" role="alert">
+                    <strong>{t('ops.start.despisteUnusable')}</strong> {loaded.error}
+                  </span>
+                ) : (
+                  <span className="ivs-help">{t('ops.start.despisteHelp')}</span>
+                ))}
             </div>
+
+            {mode === 'runbook' && (
+              <div className="ivs-field">
+                <span className="ivs-label" id={runbookLabelId}>
+                  {t('ops.start.runbook')}
+                </span>
+                <IvsDropdown
+                  labelledBy={runbookLabelId}
+                  trigger={runbookPath ? runbookRow(runbookPath, false) : <span className="ivs-placeholder">{t('ops.start.chooseRunbook')}</span>}
+                  items={runbookItems}
+                  invalid={!!loaded && !loaded.ok}
+                />
+                {loaded && !loaded.ok && runbookPath && (
+                  <div className="ivs-error-block" role="alert">
+                    <div>
+                      <strong>{t('ops.start.notUsable')}</strong> {loaded.error}
+                    </div>
+                    {loaded.errors && loaded.errors.length > 0 && (
+                      <ul>
+                        {loaded.errors.map((e, i) => (
+                          <li key={i}>{e}</li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="ivs-error-actions">
+                      <span className="ivs-mono">{runbookPath}</span>
+                      {recents.includes(runbookPath) && (
+                        <button type="button" className="ivs-link" onClick={() => forget(runbookPath)}>
+                          {t('ops.start.forget')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {recents.length === 0 && !runbookPath && (
+                  <span className="ivs-help">
+                    {rich(t('ops.start.runbookExplainer'), {
+                      runbook: <span className="ivs-mono">RUNBOOK.md</span>,
+                      policy: <span className="ivs-mono">policy.json</span>
+                    })}
+                  </span>
+                )}
+              </div>
+            )}
 
             <div className="ivs-field">
               <label className="ivs-label" htmlFor={taskId}>
@@ -648,7 +731,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
             <div className="ivs-actions">
               <button type="button" className="ivs-start" disabled={!canStart} onClick={start}>
                 <PlayIcon />
-                {t('ops.start.startButton')}
+                {mode === 'despiste' ? t('ops.start.startDespiste') : t('ops.start.startButton')}
               </button>
               <span className="ivs-help">{startHint}</span>
             </div>
@@ -657,10 +740,10 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
           <div className="ivs-side">
             <section className="ivs-panel" aria-labelledby={`${runbookLabelId}-allows`}>
               <h2 className="ivs-eyebrow" id={`${runbookLabelId}-allows`}>
-                {t('ops.start.allowsTitle')}
+                {mode === 'despiste' ? t('ops.start.despisteAllowsTitle') : t('ops.start.allowsTitle')}
               </h2>
-              {!runbookPath ? (
-                <p className="ivs-panel-text">{t('ops.start.allowsChoose')}</p>
+              {!activePath ? (
+                <p className="ivs-panel-text">{mode === 'despiste' ? t('common.loading') : t('ops.start.allowsChoose')}</p>
               ) : info === 'loading' || !info ? (
                 <p className="ivs-panel-text">{t('common.loading')}</p>
               ) : !okInfo ? (
@@ -699,7 +782,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
                       <>{rich(t('ops.start.noGuidelines'), { file: <span className="ivs-mono">RUNBOOK.md</span> })}</>
                     )}{' '}
                     {summary.scripts === 0 ? t('ops.start.noScripts') : plural(t, 'ops.start.scripts', summary.scripts)}
-                    {summary.readPaths.length > 0 && (
+                    {mode !== 'despiste' && summary.readPaths.length > 0 && (
                       <>
                         {' '}
                         {rich(t('ops.start.readsAllowed'), {
@@ -717,6 +800,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
                   </p>
                 </>
               )}
+              {mode === 'despiste' && okInfo && <p className="ivs-panel-text">{t('ops.start.despisteLeftOut')}</p>}
               {okInfo && (
                 <div className="ivs-file-buttons">
                   <button type="button" className="ivs-btn" onClick={() => openFile('RUNBOOK.md')}>

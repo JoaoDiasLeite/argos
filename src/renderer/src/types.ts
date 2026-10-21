@@ -1539,12 +1539,15 @@ declare global {
 
       // Ops runs
       opsLoadRunbook: (dir: string) => Promise<OpsRunbookInfo>
+      /** The read-only despiste runbook shipped with Argos; reports of its runs go to `~/argos/reports`. */
+      opsBuiltinRunbook: () => Promise<{ path: string }>
       opsReport: (
         runId: string,
         kind: 'internal' | 'client',
         runbookPath?: string
       ) => Promise<{ ok: true; markdown: string; warnings: string[] } | { ok: false; error: string }>
-      /** Writes the report as a new file under `<runbookPath>/reports/`; never overwrites. */
+      /** Writes the report as a new file under `<runbookPath>/reports/` (`~/argos/reports` for the
+       *  built-in runbook); never overwrites. */
       opsSaveReport: (
         runId: string,
         kind: 'internal' | 'client',

@@ -6,6 +6,7 @@ import { useLanguage, useT } from '../i18n'
 import { foldOpsEvents, rowLabel, rowTone, runCounts, touchedHosts, type OpsRow, type OpsRun } from '../lib/ops-timeline'
 import Markdown from './Markdown'
 import Sheet from './Sheet'
+import { samePath, useBuiltinRunbook } from '../lib/builtin-runbook'
 import './OpsReportSheet.css'
 
 interface Props {
@@ -14,7 +15,8 @@ interface Props {
    *  rendered report, not the tiles, plan and calls read from the ledger. */
   appSessionId?: string
   /** The runbook folder; without it the client report shows hosts as [servidor] and
-   *  "Save beside runbook" is unavailable. */
+   *  "Save beside runbook" is unavailable. For the built-in runbook the save goes to
+   *  ~/argos/reports instead. */
   runbookPath?: string
   onClose: () => void
 }
@@ -81,6 +83,9 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
   const [saved, setSaved] = useState<{ ok: true; path: string } | { ok: false; error: string } | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [verified, setVerified] = useState<Verified>(null)
+  /** The built-in despiste runbook is never written to; its reports go to ~/argos/reports. */
+  const builtinDir = useBuiltinRunbook()
+  const builtin = samePath(runbookPath, builtinDir)
 
   const { events } = useOpsEvents(appSessionId)
   const run = useMemo(() => foldOpsEvents(events).find((r) => r.runId === runId), [events, runId])
@@ -177,9 +182,9 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
         className="ops-rs-btn primary"
         onClick={save}
         disabled={!runbookPath || loading || !markdown || saving}
-        title={runbookPath ? t('ops.report.saveTitle', { path: runbookPath }) : t('ops.report.saveUnknown')}
+        title={!runbookPath ? t('ops.report.saveUnknown') : builtin ? t('ops.report.saveBuiltinTitle') : t('ops.report.saveTitle', { path: runbookPath })}
       >
-        {saving ? t('ops.report.saving') : t('ops.report.save')}
+        {saving ? t('ops.report.saving') : builtin ? t('ops.report.saveBuiltin') : t('ops.report.save')}
       </button>
     </>
   )
