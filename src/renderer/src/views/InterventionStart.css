@@ -566,7 +566,14 @@
   white-space: nowrap;
 }
 .ivs-run-what {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
   color: var(--text-0);
+}
+.ivs-run-what-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

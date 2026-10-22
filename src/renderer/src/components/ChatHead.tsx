@@ -17,11 +17,14 @@ function shortTitle(title: string): string {
 export default function ChatHead({
   title,
   cwd,
+  cwdLabel,
   dragProps,
   actions
 }: {
   title: string
   cwd?: string
+  /** The chip's words in place of the cwd's last segment; the cwd stays its tooltip. */
+  cwdLabel?: string
   dragProps?: HTMLAttributes<HTMLDivElement>
   actions?: ReactNode
 }) {
@@ -32,7 +35,7 @@ export default function ChatHead({
       </span>
       {cwd && (
         <span className="chat-head-cwd" title={cwd}>
-          {cwd.split(/[\\/]/).filter(Boolean).pop()}
+          {cwdLabel ?? cwd.split(/[\\/]/).filter(Boolean).pop()}
         </span>
       )}
       {actions && <div className="chat-head-actions">{actions}</div>}

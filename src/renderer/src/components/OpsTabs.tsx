@@ -1,6 +1,8 @@
 import type { OpsIntervention } from '../types'
 import { opsTerminalIdFor } from '../lib/ops-terminal'
+import type { InterventionLabel } from '../lib/intervention-label'
 import { useT } from '../i18n'
+import InterventionTag from './InterventionTag'
 
 export interface OpsTabItem {
   intervention: OpsIntervention
@@ -8,6 +10,9 @@ export interface OpsTabItem {
   waiting: boolean
   /** Stopped, but still on screen: its tab stays, greyed, until the operator leaves. */
   ended?: boolean
+  /** Its server and mode (lib/intervention-label), the title already told apart from the
+   *  other tabs'. */
+  label: InterventionLabel
 }
 
 interface Props {
@@ -21,8 +26,6 @@ interface Props {
    *  session tabs, rather than chips inline in the Servers sub-nav. */
   strip?: boolean
 }
-
-const baseName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 
 const CloseIcon = ({ size }: { size: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -39,10 +42,10 @@ export default function OpsTabs({ items, activeId, onSelect, onClose, strip }: P
   if (items.length === 0) return null
   return (
     <div className={strip ? 'server-tabs' : 'ops-tabs'} role="tablist" aria-label={t('ops.tabs.aria')}>
-      {items.map(({ intervention, waiting, ended }) => {
+      {items.map(({ intervention, waiting, ended, label }) => {
         const id = opsTerminalIdFor(intervention)
         const on = id === activeId
-        const name = baseName(intervention.runbookPath)
+        const name = label.title
         const select = () => {
           if (!on) onSelect(intervention)
         }
@@ -55,7 +58,7 @@ export default function OpsTabs({ items, activeId, onSelect, onClose, strip }: P
             className={strip ? `server-tab${on ? ' active' : ''}` : `ops-running-chip${on ? ' on' : ''}`}
             onClick={select}
             onKeyDown={(e) => e.key === 'Enter' && select()}
-            title={`${name}${intervention.task ? `: ${intervention.task}` : ''}${ended ? t('ops.tabs.stopped') : waiting ? t('ops.tabs.waiting') : ''}`}
+            title={label.tooltip}
           >
             {strip ? (
               <span className={`server-tab-dot${ended ? '' : waiting ? ' connecting' : ' connected'}`} aria-hidden="true" />
@@ -63,6 +66,7 @@ export default function OpsTabs({ items, activeId, onSelect, onClose, strip }: P
               <span className={`ops-running-dot${waiting ? ' warn' : ''}`} aria-hidden="true" />
             )}
             <span className={strip ? 'server-tab-title' : 'ops-running-chip-name'}>{name}</span>
+            <InterventionTag label={label} />
             {!strip && intervention.task && <span className="ops-running-chip-task">{intervention.task}</span>}
             <button
               type="button"

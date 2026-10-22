@@ -55,6 +55,9 @@ interface Props {
   onClose?: () => void
   /** The header's name — the chat's, wherever there is one. Falls back to "Terminal". */
   title?: string
+  /** Shown in the header's folder chip instead of the cwd's last segment (an ops terminal
+   *  names its server there, not the runbook folder it runs in). */
+  place?: string
   /** Spread on the header: a split pane makes it the handle that drags the pane. */
   headProps?: HTMLAttributes<HTMLDivElement>
   /** Given only in a split: the header's × then closes the pane (the CLI keeps running),
@@ -189,7 +192,7 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onClosePane, title, headProps, onPopOut, onPopIn, onActive, initialPrompt, onInitialPromptSent, accelerated, ops, onCwdChange }: Props) {
+export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onClosePane, title, place, headProps, onPopOut, onPopIn, onActive, initialPrompt, onInitialPromptSent, accelerated, ops, onCwdChange }: Props) {
   const t = useT()
   // Read from the one-shot setup effect, which cannot close over a prop.
   const onCwdRef = useRef(onCwdChange)
@@ -1051,6 +1054,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       <ChatHead
         title={title ?? t('chat.terminal.label')}
         cwd={cwd}
+        cwdLabel={place}
         dragProps={headProps}
         actions={
           <>

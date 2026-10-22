@@ -34,28 +34,55 @@
 }
 .ops-ws-back:hover { color: var(--text-0); background: var(--bg-hover); }
 
+/* The server, its mode, client and ticket on one row; the task, muted, under it. */
+.ops-ws-ident {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.ops-ws-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .ops-ws-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-size: 15px;
   font-weight: 650;
   color: var(--text-0);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   min-width: 0;
 }
+.ops-ws-name-text { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
-.ops-ws-host {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
+.ops-ws-chip {
+  flex-shrink: 0;
+  max-width: 160px;
+  padding: 0 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 16px;
   color: var(--text-1);
   white-space: nowrap;
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ops-ws-touched { color: var(--text-2); }
+
+.ops-ws-task {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
 
 .ops-ws-dot {
   width: 7px;

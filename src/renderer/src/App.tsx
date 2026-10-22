@@ -29,6 +29,9 @@ import ApprovalModal from './components/ApprovalModal'
 import SecretPrompt from './components/SecretPrompt'
 import { opsTerminalIdFor } from './lib/ops-terminal'
 import OpsTabs, { type OpsTabItem } from './components/OpsTabs'
+import { distinctTitles, interventionLabel, type OpsLabelInfo } from './lib/intervention-label'
+import { samePath, useBuiltinRunbook } from './lib/builtin-runbook'
+import { useSshHostNames } from './lib/ssh-host-names'
 import { markOpsEnded, markOpsRunning, summarizeOpsRunning, type OpsRunningSet } from './lib/ops-running'
 import { CLI_PROVIDERS, isProviderHidden } from './lib/cli-providers'
 import PendingRuns, { PendingRun } from './components/PendingRuns'
@@ -2270,15 +2273,50 @@ export default function App() {
   // The tabs: every running intervention, plus the one on screen even once it has ended
   // (Stop keeps it there, greyed); it drops out when the operator leaves it.
   const opsOnScreenId = view === 'ops-workspace' && opsWorkspace ? opsTerminalIdFor(opsWorkspace) : null
-  const opsTabs: OpsTabItem[] = opsOpen
+  // Named by server and mode (lib/intervention-label): the server's name comes from the
+  // saved hosts, and what only the workspace learns (the hosts an open one reached, whether
+  // its runbook changes servers) is reported up by it, so a tab keeps it once left.
+  const builtinRunbook = useBuiltinRunbook()
+  const [opsLabelInfo, setOpsLabelInfo] = useState<Record<string, OpsLabelInfo>>({})
+  const reportOpsLabelInfo = useCallback(
+    (id: string, info: OpsLabelInfo) =>
+      setOpsLabelInfo((prev) => {
+        const old = prev[id]
+        if (old && old.mutates === info.mutates && old.reached.join('\n') === info.reached.join('\n')) return prev
+        return { ...prev, [id]: info }
+      }),
+    []
+  )
+  const opsHostNames = useSshHostNames(opsOpen.flatMap((iv) => (iv.scope.kind === 'host' ? [iv.scope.hostId] : [])))
+  const opsTabsRaw = opsOpen
     .filter((iv) => opsRunning.has(opsTerminalIdFor(iv)) || opsTerminalIdFor(iv) === opsOnScreenId)
-    .map((iv) => ({
-      intervention: iv,
-      waiting:
-        approvalQueue.some((r) => r.ops && r.appSessionId === opsTerminalIdFor(iv)) ||
-        operatorRequests.some((r) => r.appSessionId === opsTerminalIdFor(iv)),
-      ended: !opsRunning.has(opsTerminalIdFor(iv))
-    }))
+    .map((iv) => {
+      const id = opsTerminalIdFor(iv)
+      const waiting =
+        approvalQueue.some((r) => r.ops && r.appSessionId === id) || operatorRequests.some((r) => r.appSessionId === id)
+      const ended = !opsRunning.has(id)
+      const extra = opsLabelInfo[id]
+      const label = interventionLabel(
+        {
+          runbook: iv.runbookPath,
+          builtin: samePath(iv.runbookPath, builtinRunbook),
+          server:
+            iv.scope.kind === 'host'
+              ? { kind: 'host', name: opsHostNames[iv.scope.hostId] }
+              : { kind: 'open', reached: extra?.reached },
+          mutates: extra?.mutates,
+          task: iv.task,
+          ticket: iv.ticket,
+          client: iv.client,
+          ended,
+          waiting
+        },
+        t
+      )
+      return { intervention: iv, waiting, ended, label }
+    })
+  const opsTabTitles = distinctTitles(opsTabsRaw.map((it) => ({ label: it.label, ticket: it.intervention.ticket })))
+  const opsTabs: OpsTabItem[] = opsTabsRaw.map((it, i) => ({ ...it, label: { ...it.label, title: opsTabTitles[i] } }))
   // Home's Running list beyond the chats: each server with a live session (one row per
   // target, opening its latest session) and each intervention still running.
   const liveServerGroups = new Map<string, { latestId: string; title: string; count: number }>()
@@ -2295,17 +2333,16 @@ export default function App() {
   }))
   const homeInterventionsRunning: HomeRunning[] = opsTabs
     .filter((t) => !t.ended)
-    .map(({ intervention: iv, waiting }) => {
-      // The runbook's folder name, as its tab shows it; the task can run to a paragraph.
-      const runbook = iv.runbookPath.split(/[\\/]/).filter(Boolean).pop() ?? iv.runbookPath
-      return {
-        kind: 'intervention',
-        id: opsTerminalIdFor(iv),
-        name: runbook,
-        detail: waiting ? 'waiting for you' : undefined,
-        waiting
-      }
-    })
+    .map(({ intervention: iv, waiting, label }) => ({
+      // Server and mode, as its tab shows them; the task can run to a paragraph.
+      kind: 'intervention',
+      id: opsTerminalIdFor(iv),
+      name: label.title,
+      tag: label,
+      tooltip: label.tooltip,
+      detail: waiting ? 'waiting for you' : undefined,
+      waiting
+    }))
   // Forget an ended intervention once it is off screen: there is no tab left to reach it.
   useEffect(() => {
     setOpsOpen((prev) => {
@@ -2929,6 +2966,7 @@ export default function App() {
             operatorRequests={operatorRequests.filter((r) => r.appSessionId === opsTerminalIdFor(opsWorkspace))}
             onOperatorAnswer={answerOperator}
             onHandover={openOpsWorkspace}
+            onLabelInfo={reportOpsLabelInfo}
             tabs={<OpsTabs strip items={opsTabs} activeId={opsTerminalIdFor(opsWorkspace)} onSelect={selectOpsTab} onClose={(iv) => void closeOpsTab(iv)} />}
           />
         </Suspense>

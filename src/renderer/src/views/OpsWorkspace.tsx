@@ -6,6 +6,10 @@ import OpsHandoverDialog from '../components/OpsHandoverDialog'
 import { useOpsEvents } from '../hooks/useOpsEvents'
 import { foldOpsEvents, splitRuns, touchedHosts } from '../lib/ops-timeline'
 import { opsTerminalIdFor, type OpsTerminalProvider, type OpsTerminalSessionResult } from '../lib/ops-terminal'
+import { interventionLabel, type OpsLabelInfo } from '../lib/intervention-label'
+import { samePath, useBuiltinRunbook } from '../lib/builtin-runbook'
+import { useSshHostNames } from '../lib/ssh-host-names'
+import InterventionTag from '../components/InterventionTag'
 import { plural } from '../../../shared/i18n'
 import { useT } from '../i18n'
 import './OpsWorkspace.css'
@@ -78,6 +82,9 @@ interface Props {
   /** "Hand over to a runbook": the diagnosis on screen has ended and this intervention,
    *  whose run is already open, follows it; App opens it in its own tab. */
   onHandover?: (next: OpsIntervention) => void
+  /** What the tab's name needs and only this workspace learns: the hosts an open
+   *  intervention reached, and whether its runbook changes servers. */
+  onLabelInfo?: (terminalId: string, info: OpsLabelInfo) => void
 }
 
 export default function OpsWorkspace({
@@ -92,7 +99,8 @@ export default function OpsWorkspace({
   tabs,
   operatorRequests,
   onOperatorAnswer,
-  onHandover
+  onHandover,
+  onLabelInfo
 }: Props) {
   const t = useT()
   const { runbookPath, scope } = intervention
@@ -256,13 +264,37 @@ export default function OpsWorkspace({
   const okInfo = info?.ok ? info : undefined
   const name = okInfo?.name ?? baseName(runbookPath)
   const lockedHost = lockedHostId ? okInfo?.hosts.find((h) => h.id === lockedHostId) : undefined
+  const sshNames = useSshHostNames(lockedHostId ? [lockedHostId] : [])
   const touched = current ? touchedHosts(current) : []
-  const policyLine = okInfo
-    ? t('ops.workspace.policyLine', {
-        access: okInfo.summary.mutates === 0 ? t('ops.workspace.readOnly') : t('ops.workspace.canChange'),
-        strict: okInfo.strict ? t('ops.workspace.strict') : t('ops.workspace.notStrict')
-      })
-    : ''
+  const builtin = samePath(runbookPath, useBuiltinRunbook())
+  const mutates = okInfo ? okInfo.summary.mutates > 0 : undefined
+  // Named by its server, with the mode as a tag, the same way as its tab.
+  const label = interventionLabel(
+    {
+      runbook: name,
+      builtin,
+      server:
+        scope.kind === 'host'
+          ? { kind: 'host', name: (lockedHostId ? sshNames[lockedHostId] : undefined) ?? lockedHost?.name }
+          : { kind: 'open', reached: touched },
+      mutates,
+      task: intervention.task,
+      ticket: intervention.ticket,
+      client: intervention.client
+    },
+    t
+  )
+  const touchedKey = touched.join('\n')
+  useEffect(() => {
+    onLabelInfo?.(terminalId, { reached: touchedKey ? touchedKey.split('\n') : [], ...(mutates === undefined ? {} : { mutates }) })
+  }, [onLabelInfo, terminalId, touchedKey, mutates])
+  const policyLine =
+    okInfo && !builtin
+      ? t('ops.workspace.policyLine', {
+          access: okInfo.summary.mutates === 0 ? t('ops.workspace.readOnly') : t('ops.workspace.canChange'),
+          strict: okInfo.strict ? t('ops.workspace.strict') : t('ops.workspace.notStrict')
+        })
+      : ''
 
   return (
     <div className="view ops-ws">
@@ -273,32 +305,44 @@ export default function OpsWorkspace({
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
-        <span className="ops-ws-name" title={runbookPath}>
-          {name}
-        </span>
-        {scope.kind === 'host' ? (
-          <span className="ops-ws-host" title={lockedHost?.host}>
-            <span className={`ops-ws-dot ${hostDot}`} aria-hidden="true" />
-            {lockedHost?.name ?? (info === null ? '…' : t('ops.workspace.unknownHost'))}
-          </span>
-        ) : (
-          <span className="ops-ws-host" title={touched.length ? t('ops.workspace.reached', { hosts: touched.join(', ') }) : undefined}>
-            <span className="ops-ws-dot open" aria-hidden="true" />
-            {t('ops.report.anyServer')}
-            {touched.length > 0 && <span className="ops-ws-touched"> · {touched.join(', ')}</span>}
-          </span>
-        )}
-        {policyLine && <span className="ops-ws-meta">{policyLine}</span>}
-        {info && !info.ok && (
-          <span className="ops-ws-bad" title={(info.errors ?? []).join('\n')}>
-            {info.error}
-          </span>
-        )}
-        {okInfo && okInfo.warnings.length > 0 && (
-          <span className="ops-ws-warn" title={okInfo.warnings.join('\n')}>
-            {plural(t, 'ops.workspace.warnings', okInfo.warnings.length)}
-          </span>
-        )}
+        <div className="ops-ws-ident">
+          <div className="ops-ws-title-row">
+            {scope.kind === 'host' ? (
+              <span className="ops-ws-name" title={label.tooltip}>
+                <span className={`ops-ws-dot ${hostDot}`} aria-hidden="true" />
+                <span className="ops-ws-name-text">{label.title}</span>
+              </span>
+            ) : (
+              <span className="ops-ws-name" title={touched.length ? t('ops.workspace.reached', { hosts: touched.join(', ') }) : t('ops.report.anyServer')}>
+                <span className="ops-ws-dot open" aria-hidden="true" />
+                <span className="ops-ws-name-text">{label.title}</span>
+              </span>
+            )}
+            <InterventionTag
+              label={label}
+              text={builtin ? `${label.tag} · ${t('ops.label.readOnly')}` : label.tag}
+              title={runbookPath}
+            />
+            {intervention.client && <span className="ops-ws-chip" title={t('ops.label.tipClient', { name: intervention.client })}>{intervention.client}</span>}
+            {intervention.ticket && <span className="ops-ws-chip" title={t('ops.label.tipTicket', { ticket: intervention.ticket })}>{intervention.ticket}</span>}
+            {policyLine && <span className="ops-ws-meta">{policyLine}</span>}
+            {info && !info.ok && (
+              <span className="ops-ws-bad" title={(info.errors ?? []).join('\n')}>
+                {info.error}
+              </span>
+            )}
+            {okInfo && okInfo.warnings.length > 0 && (
+              <span className="ops-ws-warn" title={okInfo.warnings.join('\n')}>
+                {plural(t, 'ops.workspace.warnings', okInfo.warnings.length)}
+              </span>
+            )}
+          </div>
+          {intervention.task && (
+            <div className="ops-ws-task" title={intervention.task}>
+              {intervention.task}
+            </div>
+          )}
+        </div>
         <div className="ops-ws-spacer" />
         <span className="ops-ws-meta" title={t('ops.workspace.gatedHint')}>
           {t('ops.workspace.gated')}
@@ -352,6 +396,7 @@ export default function OpsWorkspace({
               autoLaunchCli
               active
               ops={{ env: term.launch.env, mcpConfigPath: term.launch.mcpConfigPath }}
+              place={label.title}
               initialPrompt={term.kind === 'ready' ? term.prompt : undefined}
               onClose={() => void endIntervention(true)}
             />

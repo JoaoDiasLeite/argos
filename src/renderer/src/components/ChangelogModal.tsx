@@ -37,8 +37,15 @@ const CHANGELOG: Entry[] = [
         ]
       },
       {
+        title: 'Changes',
+        items: [
+          'Interventions are named by their server, with a tag for the mode: Diagnosis for the built-in runbook, the runbook’s name otherwise, in amber when it changes the server. The header adds the client, the ticket and the start of the task, and two tabs on the same server are told apart by ticket or number.'
+        ]
+      },
+      {
         title: 'Fixes',
         items: [
+          'An intervention’s first message is submitted again when Claude Code leaves it in its input box instead of sending it.',
           'A chat you had already read no longer gets its unread dot back every minute. A Claude Code status line that refreshes on a timer repaints the terminal whenever its text changes, and each repaint was taken for a turn that had just finished. Output that starts on its own now has to keep going before it counts as work.'
         ]
       }

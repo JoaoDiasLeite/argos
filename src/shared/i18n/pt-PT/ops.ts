@@ -80,6 +80,16 @@ const ops: Record<keyof typeof en, string> = {
   'tabs.waiting': ' (à tua espera)',
   'tabs.close': 'Terminar esta intervenção: a execução é parada e a CLI fechada',
   'tabs.closeAria': 'Terminar a intervenção {name}',
+  // lib/intervention-label
+  'label.severalServers': 'Vários servidores',
+  'label.readOnly': 'só leitura',
+  'label.tipServer': 'Servidor: {name}',
+  'label.tipServers': 'Servidores acedidos: {names}',
+  'label.tipMode': 'Modo: {mode}',
+  'label.tipRunbook': 'Runbook: {name}',
+  'label.tipClient': 'Cliente: {name}',
+  'label.tipTicket': 'Ticket: {ticket}',
+  'label.tipTask': 'Tarefa: {task}',
   // components/PendingRuns
   'pending.onAccount': 'em {account}',
   'pending.done': 'terminou, ainda não lido',

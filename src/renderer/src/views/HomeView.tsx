@@ -5,6 +5,8 @@ import { VISIBLE_CLI_PROVIDERS } from '../lib/cli-providers'
 import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
 import ChangesViewer, { ChangeFileRow } from '../components/ChangesViewer'
+import InterventionTag from '../components/InterventionTag'
+import type { InterventionLabel } from '../lib/intervention-label'
 import './views.css'
 import './HomeView.css'
 
@@ -24,6 +26,10 @@ export interface HomeRunning {
   /** chat/cli list under Chats, server under Servers, intervention under Interventions. */
   kind: 'chat' | 'cli' | 'server' | 'intervention'
   name: string
+  /** An intervention's mode, beside its server name. */
+  tag?: Pick<InterventionLabel, 'tag' | 'tagTone'>
+  /** The row's tooltip. */
+  tooltip?: string
   detail?: string
   startedAt?: number
   attention?: boolean
@@ -733,9 +739,11 @@ export default function HomeView({
                         key={r.id}
                         className={`home-row home-live ${open ? '' : 'static'}`}
                         {...(open ? rowProps(open) : {})}
+                        title={r.tooltip}
                       >
                         <span className={`home-dot ${r.waiting ? 'warn' : 'ok'}`} aria-hidden="true" />
                         <span className="home-name">{r.name}</span>
+                        {r.tag && <InterventionTag label={r.tag} />}
                         <span className="home-right">{right}</span>
                       </div>
                     )

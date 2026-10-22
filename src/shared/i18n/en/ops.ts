@@ -79,6 +79,16 @@ export default {
   'tabs.waiting': ' (waiting for you)',
   'tabs.close': 'End this intervention: its run is stopped and its CLI closed',
   'tabs.closeAria': 'End the {name} intervention',
+  // lib/intervention-label
+  'label.severalServers': 'Several servers',
+  'label.readOnly': 'read-only',
+  'label.tipServer': 'Server: {name}',
+  'label.tipServers': 'Servers reached: {names}',
+  'label.tipMode': 'Mode: {mode}',
+  'label.tipRunbook': 'Runbook: {name}',
+  'label.tipClient': 'Client: {name}',
+  'label.tipTicket': 'Ticket: {ticket}',
+  'label.tipTask': 'Task: {task}',
   // components/PendingRuns
   'pending.onAccount': 'on {account}',
   'pending.done': 'finished, not read yet',

@@ -5,6 +5,8 @@ import type { OpsIntervention, OpsRunListItem, OpsScope, SshHostPublic } from '.
 import { writeLastRunbook } from '../lib/runbook-library'
 import { samePath, useBuiltinRunbook } from '../lib/builtin-runbook'
 import OpsReportSheet from '../components/OpsReportSheet'
+import InterventionTag from '../components/InterventionTag'
+import { interventionLabel } from '../lib/intervention-label'
 import { IvsDropdown, RunbookField, runbookHostProblem, useRunbookPicker, type DropItem, type InfoState } from '../components/RunbookPicker'
 import { plural, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
@@ -533,22 +535,31 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
                 <div className="ivs-runs">
                   {runs.runs.map((r) => {
                     const st = runStatus(r, t)
+                    const dir = runbookDirFor(r)
+                    const label = interventionLabel(
+                      {
+                        runbook: r.runbook,
+                        builtin: samePath(dir, builtin),
+                        server:
+                          r.hostNames.length === 1 ? { kind: 'host', name: r.hostNames[0] } : { kind: 'open', reached: r.hostNames },
+                        task: r.task
+                      },
+                      t
+                    )
                     return (
                       <div key={r.runId} className="ivs-run" role="group">
                         <span className="ivs-run-when" title={new Date(r.startedAt).toLocaleString(locale)}>
                           {runWhen(r.startedAt, t, locale)}
                         </span>
-                        <span
-                          className="ivs-run-what"
-                          title={[r.task ?? r.runbook, r.hostNames.join(', ')].filter(Boolean).join(' · ')}
-                        >
-                          {r.task || r.runbook}
+                        <span className="ivs-run-what" title={label.tooltip}>
+                          <span className="ivs-run-what-text">{r.task || label.title}</span>
+                          <InterventionTag label={label} />
                         </span>
                         <span className={`ivs-run-status ${st.tone}`}>{st.label}</span>
                         <button
                           type="button"
                           className="ivs-btn small"
-                          onClick={() => setReportFor({ runId: r.runId, runbookPath: runbookDirFor(r), appSessionId: r.appSessionId })}
+                          onClick={() => setReportFor({ runId: r.runId, runbookPath: dir, appSessionId: r.appSessionId })}
                         >
                           {t('ops.start.report')}
                         </button>
