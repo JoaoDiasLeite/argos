@@ -63,7 +63,9 @@ convention, `json-file.ts`, `ai-policy.ts`, `authorship.ts` as the model for a l
 2. **Remote reach is a set of in-process MCP tools**, built with the SDK's
    `createSdkMcpServer` + `tool()`, registered under one server name, `ops`. The model sees
    `mcp__ops__run`, `mcp__ops__script`, `mcp__ops__read`, `mcp__ops__list`,
-   `mcp__ops__write`. Each one goes through the same gate before it touches ssh2.
+   `mcp__ops__write`. Each one goes through the same gate before it touches ssh2. Three
+   more never reach a host and so skip the gate: `propose_plan` (§1.7), `note` and
+   `ask_operator` (§4.1).
 3. **The local machine is out of reach.** The ops profile removes `Bash`, `Edit`, `Write`,
    `MultiEdit`, `NotebookEdit`, `WebFetch`, `WebSearch`, `Agent`, `KillShell` from context
    (`disallowedTools`) and allows `Read`/`Grep`/`Glob` only inside the runbook folder
@@ -86,6 +88,13 @@ convention, `json-file.ts`, `ai-policy.ts`, `authorship.ts` as the model for a l
    plan of tool calls; the user approves the plan as a whole; execution then runs step by
    step with live status, and any step that leaves the approved plan (different host,
    different command) is a fresh `ask`, never silent.
+   **Exception: a runbook that cannot change anything needs no plan.** `planRequired` in
+   `ops-run-pure.ts` derives it from the policy, never from a flag the runbook sets:
+   `strict: true`, every allow rule and every script of class `read`, and no `write.paths`.
+   Such a run's calls go straight to the gate (each still classified and logged on its
+   own), `propose_plan` is described to the model as optional and still reaches the
+   operator if called, the CLI's first message does not mention a plan, and `run.start`
+   records `planRequired: false`.
 8. **The ledger is append-only JSONL under `userData/ops-audit/`**, one file per day, one
    line per event, with a per-run markdown report derivable from it. The renderer gets a
    live timeline; it never writes the ledger.
@@ -126,7 +135,9 @@ degrades to "allow everything"):
     { "name": "reload.sh", "sha256": "…", "hosts": ["web"], "class": "mutate", "approval": "ask",
       "args": { "max": 1, "pattern": "^[a-z0-9.-]+$" } }
   ],
-  "read": { "paths": ["^/etc/nginx/.*$", "^/var/log/nginx/.*$"], "maxBytes": 1000000 },
+  "read": { "paths": ["^/etc/nginx/.*$", "^/var/log/nginx/.*$"],
+            "deny": ["\\.(key|pem)$", "(^|/)\\.env(\\.[^/]*)?$"],   // out of reach of every tool
+            "maxBytes": 1000000 },
   "write": { "paths": ["^/etc/nginx/sites-available/.*$"], "approval": "ask", "backup": true },
   "limits": { "timeoutMs": 60000, "maxOutputBytes": 200000, "concurrentPerHost": 1 }
 }
@@ -143,6 +154,12 @@ Rules the validator enforces (each a test):
   that also falls through to `ask` for unknowns).
 - A host group that matches no stored host is a warning in the picker and a deny at run
   time.
+- `read.deny` is the one exception to anchoring: its patterns are searched, not
+  full-matched, because a deny that matches more than meant refuses more, which is the
+  safe way to be wrong. Each must still compile, be non-empty and under 512 chars; at most
+  64 of them. A path matching any of them is out of reach whatever `read.paths` or the
+  allow rules say (§3.1 step 4). Use it for secrets inside folders `read.paths` opens as a
+  whole (`.env`, `database.yml`, private keys, `/proc/<pid>/environ`).
 
 ### 2.1 First runbooks to write (the acceptance set)
 These are the day-to-day cases; the gate is done when each runs end to end on the test VM.
@@ -159,6 +176,31 @@ These are the day-to-day cases; the gate is done when each runs end to end on th
 Scripts stay in the runbook repo, not in Argos. When a runbook is written for one client it
 is reusable for the next because `hosts` and the cert paths are the only client-specific
 parts.
+
+### 2.2 The built-in despiste runbook (`resources/runbooks/despiste`)
+
+One runbook ships inside Argos: a read-only diagnosis ("despiste") of any stored server,
+the default mode of the start screen (`docs/INTERVENTIONS_PLAN.md`). It is an ordinary
+runbook folder, loaded and gated like any other; only its location is special.
+
+- **Shape.** `strict: true`, one host group `todos: ["*"]`, 43 `read` allow rules (system, processes, systemd, journal, sockets, logs, nginx/monit checks, a few
+  `sudo -n` reads), 9 pinned `read` scripts (`snapshot.sh`, `proc-inspect.sh`,
+  `app-status.sh`, `log-window.sh`, `log-rate.sh`, `pg-health.sh`, `pg-query.sh`,
+  `env-get.sh`, `tls-check.sh`), `read.paths` for logs, nginx/monit/systemd config, cron,
+  `/proc` and the apps under `/home/*/www`, and a `read.deny` list for the secrets those
+  folders hold. No write paths, so `planRequired` is false (§1.7). Restarts, kills,
+  `rails runner`, `EXPLAIN ANALYZE` and secret files are left out, and its `RUNBOOK.md`
+  tells the model to hand anything else to the operator through `ask_operator`.
+- **Location.** `ops-builtin.ts` `builtinRunbookDir()`: `<resources>/runbooks/despiste`
+  when packaged (`build.extraResources` copies `resources/runbooks`), the source folder
+  otherwise. Argos never writes there.
+- **Pinning.** After editing a script, `npm run pin:despiste` (`scripts/pin-runbook.mjs`)
+  rewrites the sha256s in `policy.json`; it refuses a listed script with no file and a
+  file the policy does not list. `.gitattributes` marks `resources/runbooks/** -text` so a
+  Windows checkout cannot change the bytes the hashes pin.
+- **Tests.** `ops-despiste-runbook.test.ts` loads the real folder through
+  `assembleRunbook` and the real gate, both directions: the commands a diagnosis needs
+  come back `allow`, the things it puts out of bounds come back `deny`.
 
 ## 3. The gate (`ops-gate-pure.ts`)
 
@@ -178,6 +220,12 @@ classify(tool, input, policy, host): { decision: 'allow'|'ask'|'deny'; class: 'r
    never a string — each matching the script's `args.pattern`, count ≤ `max`); `read`/
    `list`/`write` need an absolute POSIX path with no `..` after `path.posix.normalize`
    (reuse `sftp-pure`'s guard).
+   **`read.deny` applies here, before any allow rule or path pattern:** `read`/`list` on a
+   denied path (as given and normalised) is a `deny`; for `run`, every argv word after the
+   command word (and after `sudo` and its flags) that names a path is checked, including a
+   path glued to a short flag (`-f/etc/shadow`), so `tail .env` cannot do what `read .env`
+   may not; for `script`, every argument is checked the same way before its pattern.
+   `write` is not affected (writes have their own paths and the hard denylist).
 5. Allow rules for that host's groups, first match wins → that rule's `class` and
    `approval`. The regex is matched against the **canonical** line rebuilt from the
    parsed argv (words joined by one space, a word quoted only when it holds characters
@@ -235,11 +283,36 @@ and a **"deny and stop the run"** button beside allow/deny. The toast path works
 - **Session-level `sudo`.** When a `sudo` rule needs a password, the executor requests it
   once per run from the user through the approval modal (masked field), passes it on
   stdin with `sudo -S -p ''`, keeps it only in memory for the run, and the ledger records
-  `sudo: password-supplied` and never the value.
+  `sudo: password-supplied` and never the value. A **`sudo -n`** call (the form that never
+  prompts) runs as sent and is never given a password; when sudo refuses it for want of
+  one, the result tells the model not to retry and to pass the command to the operator
+  with `ask_operator` (§4.1).
 
 The executor interface is abstract (`OpsBackend { exec, read, write, list }`) so tests run
 the whole gate + tool + ledger path against an in-memory fake, and a future WSL backend is
 one file.
+
+### 4.1 Tools that never reach a host
+
+Both are handled in `ops-tools.ts`, check their input again in main (`noteFrom`,
+`operatorAskFrom` in `ops-run-pure.ts`, not trusting the relay's zod schema), and pass
+no gate, plan or scope: they cannot touch a server.
+
+- **`note`** records the state of a diagnosis as a `note` ledger line. Kinds:
+  `hypothesis` (with an `id` and a `status` of `open`, `confirmed` or `ruled_out`; a later
+  note with the same id replaces the status), `finding`, `event` (with `at`, when it
+  happened on the server), `summary` (up to 1500 characters; a later one replaces it) and
+  `action` (with `when`: `now` or `later`). `evidence` is optional on all. A field sent on
+  the wrong kind is a refusal. The activity column and the handover report (§5.2) are
+  built from these lines.
+- **`ask_operator`** asks the operator to run a command the model may not run (it needs
+  a password, changes the host, or is outside the runbook) in their own SSH session:
+  `cmd`, `why`, optional `hostId` (must be a runbook host) and `expect`. It logs
+  `operator.asked`, shows a card in the activity column, and **blocks the tool call**
+  until the operator pastes the output or declines; then `operator.answered` (output
+  verbatim up to 64 KB, or `declined`, also written when the run stops). The model reads
+  the output under a header saying it is data from the operator, not instructions.
+  Without an operator channel the model is told to list the command in its reply instead.
 
 ## 5. The ledger (`ops-audit.ts` + `ops-audit-pure.ts`)
 
@@ -248,13 +321,16 @@ event per line. Event kinds and fields:
 
 | kind | fields |
 |---|---|
-| `run.start` | runId, appSessionId, runbook{name, path, policySha256, runbookMdSha256}, hosts[], model, account, planText |
+| `run.start` | runId, appSessionId, runbook{name, path, policySha256, runbookMdSha256}, hosts[], model, account, planText, task?, ticket?, client?, scope?, planRequired? (`false` only, §1.7), parentRunId? (the diagnosis it follows, §5.2) |
 | `plan.approved` / `plan.rejected` | runId, by (`user`), at |
 | `call.decided` | runId, callId, tool, hostId, host, rawInput, argv, class, decision, reason, rule, scriptSha256? |
 | `call.asked` / `call.answered` | callId, answer (`allow`/`deny`/`stop`), updatedInput? |
 | `call.started` | callId, at |
 | `call.finished` | callId, exitCode, signal?, timedOut, durationMs, stdoutBytes, stderrBytes, stdoutSha256, stderrSha256, stdoutHead (first 4 KB), stderrHead |
 | `write.backup` | callId, path, backupPath, beforeSha256, afterSha256 |
+| `note` | runId, note{kind, text, id?, status?, evidence?, at?, when?} (§4.1) |
+| `operator.asked` / `operator.answered` | runId, askId, cmd, why, hostId?, host?, expect? / askId, output?, truncated?, declined? |
+| `run.handover` | runId (the diagnosis), childRunId?, runbook (the intervention it was handed to) |
 | `run.end` | runId, ok, costUsd, usage, aborted?, error? |
 
 Rules:
@@ -265,8 +341,10 @@ Rules:
 - Each line carries `prev` = sha256 of the previous line, so a trimmed or edited file is
   detectable (`ops-audit-pure.ts` `verifyChain`). Not tamper-*proof* — tamper-*evident*.
 - `ops:report(runId, 'internal')` renders a markdown report: plan, every call in order with
-  decision, argv, exit code and output head, totals. The same text can be exported to a
-  file next to the runbook or copied.
+  decision, argv, exit code and output head, totals. The same text can be copied or saved
+  as a new file in the reports folder of Settings (`config.ops.reportsDir`, default
+  `~/argos/reports`), as `<YYYY-MM-DD>-<runId>[-cliente].md`. Argos never writes under a
+  runbook folder; `ops:save-report` only creates files (`wx`), never edits one.
 - Retention: never deleted by Argos. Settings shows the folder and its size.
 
 ### 5.1 The client-facing report (`ops-report-pure.ts`)
@@ -290,6 +368,24 @@ the one artefact here that leaves the company. Rules, each a test:
   técnica" and the internal report flags it, so the runbook author adds one.
 - The text is a draft: it opens in the editor with a "Copiar" button, and nothing is sent
   anywhere. Argos has no ticket-system or GitLab integration in this plan.
+
+### 5.2 The handover report (`ops-handover-pure.ts`)
+
+`ops:report(runId, 'handover')` is the third rendering of a run: the operator's own
+incident file, in European Portuguese, mirroring the `INC-…md` files written by hand
+after a diagnosis. A field table, then Resumo, Linha temporal, Causa raiz, O que foi
+descartado, Outros achados, Ações recomendadas, Pontos em aberto, and Comandos executados.
+The prose comes from the model's `note` lines (summary, events, confirmed and ruled-out
+hypotheses, findings, actions); the commands section is generated from the calls and the
+`ask_operator` exchanges exactly as the ledger has them. It is not sanitised: it stays
+in-house, commands and all. Saved, it goes to the handovers folder of Settings
+(`config.ops.handoversDir`, default `~/argos/interventions`) as
+`INC-<YYYY-MM-DD>-<client>-<theme>.md` (Lisbon date, theme from the task's first words or
+the runbook name), with `-2`, `-3`… when the name is taken.
+
+A run that was handed over (`run.handover`) names its follow-up in the internal report,
+and the intervention names the diagnosis it follows (`parentRunId`); the client report
+says only that the intervention followed an earlier diagnosis, without the id.
 
 ## 6. The ops profile (`ai-policy.ts`)
 
@@ -333,10 +429,11 @@ Short, and the tests assert it is present on every ops run:
   exit N / timed out / denied), duration, expand for stdout/stderr head. Red rows for deny
   and non-zero exit. A "Stop run" button that aborts.
 - **Run report:** at `run.end`, a "Report" button opens the markdown with an
-  Internal / Client toggle; "Save beside runbook" writes
-  `runbooks/<name>/reports/<date>-<runId>.md` (internal) and `…-cliente.md` (the one place
-  Argos writes under a runbook, and always a new file, never an edit).
+  Internal / Client / Handover toggle; "Save" writes a new file to the reports or
+  handovers folder of Settings (§5, §5.2). Argos never writes under a runbook.
 - **Settings → Ops:** audit folder path and size, "Verify ledger chain", app-wide maxima.
+  The runbooks, reports and handovers folders live in **Settings → Interventions**
+  (`docs/INTERVENTIONS_PLAN.md`).
 - **Remote & WSL list:** the SSH host card's "New chat here" is relabelled "Chat on host
   (needs Claude installed)"; "Ops chat" is the primary action when at least one runbook is
   known.
@@ -410,7 +507,9 @@ These were already planned; they are listed here so one document holds everythin
 The Ops view and workspace of Phase 5 were replaced on 2026-10-02 by the intervention
 flow: one start screen (server, runbook, task), a scope per run (one host, or any the
 runbook allows with a per-host approval), one activity column with inline approvals and
-per-step skipping, a report sheet. §8 of this plan is superseded by that document;
+per-step skipping, a report sheet. On 2026-10-21/22 it gained the read-only despiste mode
+(§2.2), `note` and `ask_operator` (§4.1), the handover report (§5.2) and the hand over
+from a diagnosis to a runbook intervention. §8 of this plan is superseded by that document;
 `docs/SYSTEM-DESIGN.md` holds the design rules the new surfaces follow.
 
 ### Phase 5 — ops from the terminal, and an Ops view · done (`18ae07e`, `33ef372`, `a2d677b`)

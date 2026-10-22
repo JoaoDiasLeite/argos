@@ -15,6 +15,14 @@ Outside this repo, in a runbooks folder next to it (`../runbooks/<name>/`), beca
 plan keeps scripts in the runbook repo and Argos only reads them. Ask where the runbooks
 repo is if `../runbooks` does not exist and the user has not said.
 
+Argos finds runbooks through **Settings → Interventions**: the runbooks folder there
+(`config.ops.runbooksDir`) is scanned for direct subfolders holding `RUNBOOK.md` or
+`policy.json` (dot-folders skipped), so with `../runbooks` set as that folder a new
+`../runbooks/<name>/` shows up in the start screen's runbook list on its own, with no
+import step. A runbook elsewhere is added once as a single runbook ("Choose a runbook…").
+Either way Argos reads the folder in place and never writes into it; reports go to the
+reports and handovers folders of the same Settings page.
+
 ```
 <name>/
   RUNBOOK.md     appended verbatim to the system prompt
@@ -31,7 +39,11 @@ letters, digits, `.`, `_`, `-` only (`runbookName` in `src/main/ops-runbook-pure
    no approvals. Anything that changes a host is `mutate`, needs `"strict": true`, and is
    written as a literal allow rule or a pinned script, never a pattern loose enough to
    cover "similar" commands. When unsure, write the read-only runbook and say what the
-   mutating one would need.
+   mutating one would need. A runbook that is `"strict": true` with every allow rule and
+   script of class `read` and no `write` paths **needs no plan**: Argos derives this from
+   the policy (`planRequired` in `src/main/ops-run-pure.ts`), calls go straight to the gate,
+   and the operator can hand the run over to a runbook intervention. One `mutate` rule, a
+   write path or `strict: false` brings the plan back; there is no flag to opt out.
 2. **Write `policy.json`.** Rules below.
 3. **Write `RUNBOOK.md`.** Rules below.
 4. **Validate** with the real parser and gate (recipe below). Fix every error: an invalid
@@ -61,6 +73,15 @@ The validator (`src/main/ops-policy-pure.ts`) rejects, never repairs:
   allowed. Compute the hash from the file's exact bytes
   (`node -e "console.log(require('crypto').createHash('sha256').update(require('fs').readFileSync(process.argv[1])).digest('hex'))" scripts/x.sh`)
   and recompute after every edit.
+- `read` is `{paths, deny?, maxBytes?}`. `read.deny` lists paths no tool may reach, and it
+  is the one place patterns are **not** anchored: they are searched, not full-matched, so
+  `"\\.(key|pem)$"` or `"(^|/)database\\.yml"` hit anywhere in the path (a deny that matches
+  more refuses more). Each must compile and be non-empty; at most 64. A denied path
+  **wins over `read.paths` and over every allow rule**: it refuses `read`/`list` on it,
+  any `run` command whose arguments name it (after the command word and any `sudo`
+  flags, including `-f/path` forms), and any script argument that names it. Use it to
+  carve secrets out of folders `read.paths` opens whole (`.env`, `database.yml`,
+  `secrets*.yml`, `master.key`, private keys, `.ssh/`, `/proc/<pid>/environ`).
 - `limits` are clamped to 10 min, 2 MB output, 4 concurrent per host.
 
 What the gate does regardless of the policy, so do not try to encode it:
@@ -75,7 +96,8 @@ What the gate does regardless of the policy, so do not try to encode it:
 Default to `"strict": true`. Prefer many small literal rules over one clever regex, and
 list services or options in a group (`(a|b|c)`) instead of `[a-z-]+`. Never allow `sudo`
 generically, and never allow reading secrets (`/etc/shadow`, `authorized_keys`, key files,
-`priv/` directories, `.env`); `read.paths` is an allowlist, so what is not listed is refused.
+`priv/` directories, `.env`); `read.paths` is an allowlist, so what is not listed is refused,
+and `read.deny` closes the secrets inside what it does list.
 
 ## RUNBOOK.md rules
 
@@ -133,10 +155,18 @@ procedure names comes back `allow`, and the things it promises to refuse come ba
 Check both directions; a runbook whose own steps are denied is the common failure. Delete the
 scratch files afterwards; nothing goes into `src/`.
 
-## Example
+## Examples
+
+`resources/runbooks/despiste/` in this repo is the read-only runbook shipped with Argos and
+the complete example with scripts: 43 `read` allow rules, 9 pinned scripts with argument
+patterns, `read.paths` plus a `read.deny` list, `limits`, and a `RUNBOOK.md` that uses
+`note` and `ask_operator`. Copy its shape for a read-only runbook with scripts, and
+`src/main/ops-despiste-runbook.test.ts` for a two-direction check. (In this repo, re-pin its scripts
+with `npm run pin:despiste`; the folder is `-text` in `.gitattributes` so hashes survive
+a Windows checkout. A runbook in `../runbooks` is pinned with the `node -e` hash above.)
 
 `../runbooks/proxmox-access/` is a complete read-only runbook (17 literal rules, no scripts).
-Copy its shape for a new read-only runbook. It runs as a non-root user: the commands that
+Copy its shape for a new read-only runbook without scripts. It runs as a non-root user: the commands that
 need privileges are literal `^sudo …$` rules and the rest run without `sudo`. `read.paths`
 only lists files that user can read over SFTP, so root-only paths are reached through a
 `sudo` command rule instead.
