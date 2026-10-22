@@ -1,5 +1,5 @@
 /**
- * The read-only runbook shipped with Argos (resources/runbooks/despiste), loaded from the
+ * The read-only runbook shipped with Argos (resources/runbooks/diagnosis), loaded from the
  * real folder and run through the real gate. Two directions: the commands a despiste
  * actually needs come back `allow`, and everything the plan puts out of bounds comes
  * back `deny`. A runbook whose own steps are denied is as broken as one that lets a
@@ -15,7 +15,7 @@ import { resolveHostGroups } from './ops-policy-pure'
 import type { OpsHostRef, OpsToolInput } from './ops-types'
 import { makeT } from '../shared/i18n'
 
-const DIR = path.resolve(__dirname, '../../resources/runbooks/despiste')
+const DIR = path.resolve(__dirname, '../../resources/runbooks/diagnosis')
 const SCRIPTS = path.join(DIR, 'scripts')
 const HOST: OpsHostRef = { id: 'h1', name: 'cm-tvedras-app', host: '10.0.0.5' }
 

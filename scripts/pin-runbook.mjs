@@ -2,7 +2,7 @@
 /**
  * Recompute the sha256 of every script a runbook's policy.json lists, in place.
  *
- *   node scripts/pin-runbook.mjs resources/runbooks/despiste
+ *   node scripts/pin-runbook.mjs resources/runbooks/diagnosis
  *
  * The hash is over the file's exact bytes, the same way src/main/ops-runbook.ts hashes
  * scripts/ at load time. The file is rewritten as 2-space JSON with a trailing newline

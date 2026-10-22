@@ -36,8 +36,13 @@ type Mode = 'despiste' | 'runbook'
 
 const OPEN = 'open' as const
 const MODES: Mode[] = ['despiste', 'runbook']
-/** The built-in runbook's folder name, which is also the name its runs carry in the ledger. */
-const BUILTIN_NAME = 'despiste'
+/**
+ * The names the built-in runbook's runs carry in the ledger: its folder name, and the one
+ * it had before 2.9.0 shipped (`despiste`), so runs from then still map to it.
+ */
+const BUILTIN_NAMES = ['diagnosis', 'despiste']
+/** A pre-rename path of the built-in runbook, as an older run recorded it. */
+const OLD_BUILTIN_PATH_RE = /[\\/]resources[\\/]runbooks[\\/]despiste[\\/]?$/i
 
 const baseName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 const hostAddress = (h: SshHostPublic) => `${h.username}@${h.host}${h.port === 22 ? '' : `:${h.port}`}`
@@ -327,12 +332,14 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
 
   /**
    * The folder a past run belongs to, so its report can name the host roles: a listed one,
-   * or the built-in runbook. A bare `despiste` name is the built-in one unless a listed
+   * or the built-in runbook. A bare built-in name is the built-in one unless a listed
    * folder carries that name too.
    */
   const runbookDirFor = (r: OpsRunListItem): string | undefined => {
-    if (/[\\/]/.test(r.runbook)) return builtin && samePath(r.runbook, builtin) ? builtin : r.runbook
-    if (r.runbook === BUILTIN_NAME && builtin && !listed.some((d) => baseName(d) === BUILTIN_NAME)) return builtin
+    if (/[\\/]/.test(r.runbook)) {
+      return builtin && (samePath(r.runbook, builtin) || OLD_BUILTIN_PATH_RE.test(r.runbook)) ? builtin : r.runbook
+    }
+    if (BUILTIN_NAMES.includes(r.runbook) && builtin && !listed.some((d) => baseName(d) === r.runbook)) return builtin
     return listed.find((d) => {
       const i = infos[d]
       return i && i !== 'loading' && i.ok && i.name === r.runbook

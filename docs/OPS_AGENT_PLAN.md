@@ -177,7 +177,7 @@ Scripts stay in the runbook repo, not in Argos. When a runbook is written for on
 is reusable for the next because `hosts` and the cert paths are the only client-specific
 parts.
 
-### 2.2 The built-in despiste runbook (`resources/runbooks/despiste`)
+### 2.2 The built-in despiste runbook (`resources/runbooks/diagnosis`)
 
 One runbook ships inside Argos: a read-only diagnosis ("despiste") of any stored server,
 the default mode of the start screen (`docs/INTERVENTIONS_PLAN.md`). It is an ordinary
@@ -191,10 +191,10 @@ runbook folder, loaded and gated like any other; only its location is special.
   folders hold. No write paths, so `planRequired` is false (§1.7). Restarts, kills,
   `rails runner`, `EXPLAIN ANALYZE` and secret files are left out, and its `RUNBOOK.md`
   tells the model to hand anything else to the operator through `ask_operator`.
-- **Location.** `ops-builtin.ts` `builtinRunbookDir()`: `<resources>/runbooks/despiste`
+- **Location.** `ops-builtin.ts` `builtinRunbookDir()`: `<resources>/runbooks/diagnosis`
   when packaged (`build.extraResources` copies `resources/runbooks`), the source folder
   otherwise. Argos never writes there.
-- **Pinning.** After editing a script, `npm run pin:despiste` (`scripts/pin-runbook.mjs`)
+- **Pinning.** After editing a script, `npm run pin:diagnosis` (`scripts/pin-runbook.mjs`)
   rewrites the sha256s in `policy.json`; it refuses a listed script with no file and a
   file the policy does not list. `.gitattributes` marks `resources/runbooks/** -text` so a
   Windows checkout cannot change the bytes the hashes pin.

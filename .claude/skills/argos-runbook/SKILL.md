@@ -157,12 +157,12 @@ scratch files afterwards; nothing goes into `src/`.
 
 ## Examples
 
-`resources/runbooks/despiste/` in this repo is the read-only runbook shipped with Argos and
+`resources/runbooks/diagnosis/` in this repo is the read-only runbook shipped with Argos and
 the complete example with scripts: 43 `read` allow rules, 9 pinned scripts with argument
 patterns, `read.paths` plus a `read.deny` list, `limits`, and a `RUNBOOK.md` that uses
 `note` and `ask_operator`. Copy its shape for a read-only runbook with scripts, and
 `src/main/ops-despiste-runbook.test.ts` for a two-direction check. (In this repo, re-pin its scripts
-with `npm run pin:despiste`; the folder is `-text` in `.gitattributes` so hashes survive
+with `npm run pin:diagnosis`; the folder is `-text` in `.gitattributes` so hashes survive
 a Windows checkout. A runbook in `../runbooks` is pinned with the `node -e` hash above.)
 
 `../runbooks/proxmox-access/` is a complete read-only runbook (17 literal rules, no scripts).
