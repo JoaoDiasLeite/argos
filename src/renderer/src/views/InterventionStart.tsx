@@ -1,17 +1,11 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { rich } from '../lib/t-rich'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
-import type { OpsIntervention, OpsRunbookInfo, OpsRunListItem, OpsScope, SshHostPublic } from '../types'
-import {
-  allRunbookPaths,
-  looseOnly,
-  readLastRunbook,
-  readRunbookSources,
-  writeLastRunbook,
-  type RunbookSources
-} from '../lib/runbook-library'
+import type { OpsIntervention, OpsRunListItem, OpsScope, SshHostPublic } from '../types'
+import { writeLastRunbook } from '../lib/runbook-library'
 import { samePath, useBuiltinRunbook } from '../lib/builtin-runbook'
 import OpsReportSheet from '../components/OpsReportSheet'
+import { IvsDropdown, RunbookField, runbookHostProblem, useRunbookPicker, type DropItem, type InfoState } from '../components/RunbookPicker'
 import { plural, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
 import './InterventionStart.css'
@@ -34,7 +28,6 @@ const LAST_CLIENT_KEY = 'ops.lastClient'
 const HISTORY_LIMIT = 8
 
 type DotState = 'checking' | 'ok' | 'error'
-type InfoState = OpsRunbookInfo | 'loading'
 /** `null` until chosen; `'open'` is "Any server this runbook allows". */
 type ServerChoice = string | 'open' | null
 type Mode = 'despiste' | 'runbook'
@@ -98,11 +91,6 @@ function runStatus(r: OpsRunListItem, t: TFunction): { label: string; tone: 'ok'
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 
-const Chevron = () => (
-  <svg className="ivs-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M6 9l6 6 6-6" />
-  </svg>
-)
 const PlayIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     <path d="M8 5v14l11-7z" />
@@ -119,172 +107,6 @@ const ShieldIcon = () => (
     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
   </svg>
 )
-const RefreshIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-    <path d="M21 3v6h-6" />
-  </svg>
-)
-const CloseIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M18 6L6 18M6 6l12 12" />
-  </svg>
-)
-const FolderIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-  </svg>
-)
-
-// ── Dropdown ─────────────────────────────────────────────────────────────────
-
-type DropItem =
-  | { kind: 'option'; key: string; content: ReactNode; selected?: boolean; onSelect: () => void }
-  | { kind: 'divider'; key: string }
-  | { kind: 'note'; key: string; content: ReactNode }
-  /** A group title: not an option, so the arrow keys pass over it. */
-  | { kind: 'header'; key: string; content: ReactNode }
-
-/**
- * A field-shaped trigger over a listbox, so options can carry a status dot or a chip that
- * a native select cannot draw. Arrow keys move, Enter picks, Escape or a click outside
- * closes. Headers and notes are not options: the keys skip them.
- */
-function IvsDropdown({
-  labelledBy,
-  trigger,
-  items,
-  invalid
-}: {
-  labelledBy: string
-  trigger: ReactNode
-  items: DropItem[]
-  invalid?: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const [active, setActive] = useState(-1)
-  const rootRef = useRef<HTMLDivElement>(null)
-  const listRef = useRef<HTMLDivElement>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const listId = useId()
-  const options = items.flatMap((it, i) => (it.kind === 'option' ? [i] : []))
-
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [open])
-
-  useEffect(() => {
-    if (open) listRef.current?.focus()
-  }, [open])
-
-  const openList = () => {
-    const sel = items.findIndex((it) => it.kind === 'option' && it.selected)
-    setActive(sel >= 0 ? sel : (options[0] ?? -1))
-    setOpen(true)
-  }
-  const close = () => {
-    setOpen(false)
-    triggerRef.current?.focus()
-  }
-  const pick = (i: number) => {
-    const it = items[i]
-    if (it?.kind !== 'option') return
-    close()
-    it.onSelect()
-  }
-
-  const onListKey = (e: ReactKeyboardEvent) => {
-    const pos = options.indexOf(active)
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setActive(options[Math.min(options.length - 1, pos + 1)] ?? active)
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setActive(options[Math.max(0, pos - 1)] ?? active)
-    } else if (e.key === 'Home') {
-      e.preventDefault()
-      setActive(options[0] ?? active)
-    } else if (e.key === 'End') {
-      e.preventDefault()
-      setActive(options[options.length - 1] ?? active)
-    } else if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
-      pick(active)
-    } else if (e.key === 'Escape' || e.key === 'Tab') {
-      e.preventDefault()
-      close()
-    }
-  }
-
-  return (
-    <div className="ivs-dd" ref={rootRef}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className={`ivs-control ivs-dd-trigger${open ? ' open' : ''}${invalid ? ' invalid' : ''}`}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-labelledby={labelledBy}
-        aria-controls={open ? listId : undefined}
-        onClick={() => (open ? close() : openList())}
-        onKeyDown={(e) => {
-          if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-            e.preventDefault()
-            openList()
-          }
-        }}
-      >
-        {trigger}
-        <span className="ivs-flex" />
-        <Chevron />
-      </button>
-      {open && (
-        <div
-          ref={listRef}
-          id={listId}
-          className="ivs-dd-list"
-          role="listbox"
-          tabIndex={-1}
-          aria-labelledby={labelledBy}
-          aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
-          onKeyDown={onListKey}
-        >
-          {items.map((it, i) =>
-            it.kind === 'divider' ? (
-              <div key={it.key} className="ivs-dd-divider" role="separator" />
-            ) : it.kind === 'note' ? (
-              <div key={it.key} className="ivs-dd-note">
-                {it.content}
-              </div>
-            ) : it.kind === 'header' ? (
-              <div key={it.key} className="ivs-dd-header" role="presentation">
-                {it.content}
-              </div>
-            ) : (
-              <div
-                key={it.key}
-                id={`${listId}-${i}`}
-                role="option"
-                aria-selected={!!it.selected}
-                className={`ivs-dd-option${i === active ? ' active' : ''}${it.selected ? ' selected' : ''}`}
-                onMouseEnter={() => setActive(i)}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => pick(i)}
-              >
-                {it.content}
-              </div>
-            )
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
 
 // ── Mode ─────────────────────────────────────────────────────────────────────
 
@@ -343,18 +165,14 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
   const [mode, setMode] = useState<Mode>('despiste')
   const builtin = useBuiltinRunbook()
 
-  /** The runbooks folder and the loose runbooks; null until the first scan has answered. */
-  const [sources, setSources] = useState<RunbookSources | null>(null)
-  const [scanning, setScanning] = useState(false)
-  /** A refused change to the runbook sources (setOpsPrefs). */
-  const [sourcesError, setSourcesError] = useState<string | null>(null)
-  const listed = useMemo(() => (sources ? allRunbookPaths(sources) : []), [sources])
-  const loose = useMemo(() => (sources ? looseOnly(sources) : []), [sources])
-  const [infos, setInfos] = useState<Record<string, InfoState>>({})
-  /** The runbook-mode choice. It survives a detour through despiste, and never holds the built-in path. */
-  const [runbookPath, setRunbookPath] = useState<string | null>(null)
-  /** Once the operator picks a runbook, the automatic default stops second-guessing it. */
-  const runbookChosen = useRef(false)
+  /** The runbooks folder, the loose runbooks and the runbook-mode choice. The choice survives
+   *  a detour through despiste, and never holds the built-in path from a list. */
+  const picker = useRunbookPicker({
+    active: mode === 'runbook',
+    hostId: typeof server === 'string' && server !== OPEN ? server : undefined,
+    builtin
+  })
+  const { listed, infos, runbookPath, loadRunbook } = picker
   /** What the intervention starts with: the built-in runbook in despiste mode. */
   const activePath = mode === 'despiste' ? builtin : runbookPath
 
@@ -394,59 +212,9 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
     }
   }, [])
 
-  const loadRunbook = useCallback((dir: string): Promise<OpsRunbookInfo> => {
-    setInfos((prev) => ({ ...prev, [dir]: 'loading' }))
-    return window.electronAPI
-      .opsLoadRunbook(dir)
-      .catch((e): OpsRunbookInfo => ({ ok: false, error: e instanceof Error ? e.message : String(e) }))
-      .then((info) => {
-        setInfos((prev) => ({ ...prev, [dir]: info }))
-        return info
-      })
-  }, [])
-
-  /** Rescan the runbooks folder and re-read every runbook listed. */
-  const refreshSources = useCallback(async (): Promise<RunbookSources> => {
-    setScanning(true)
-    let next: RunbookSources
-    try {
-      next = await readRunbookSources()
-    } catch (e) {
-      next = { dir: null, library: [], libraryError: e instanceof Error ? e.message : String(e), loose: [] }
-    }
-    setSources(next)
-    setScanning(false)
-    for (const dir of allRunbookPaths(next)) void loadRunbook(dir)
-    return next
-  }, [loadRunbook])
-
-  useEffect(() => {
-    void refreshSources()
-  }, [refreshSources])
-
   useEffect(() => {
     if (builtin) void loadRunbook(builtin)
   }, [builtin, loadRunbook])
-
-  // Default runbook (runbook mode only): once every listed runbook has loaded, the last one
-  // used if it is still listed and knows the chosen host, else the first usable one that
-  // knows it; with no host chosen, or none that knows it, the last used, else the first usable.
-  useEffect(() => {
-    if (mode !== 'runbook' || runbookChosen.current || runbookPath || listed.length === 0) return
-    if (listed.some((d) => !infos[d] || infos[d] === 'loading')) return
-    const usable = listed.filter((d) => {
-      const i = infos[d]
-      return i && i !== 'loading' && i.ok
-    })
-    const knows = (d: string) => {
-      const i = infos[d]
-      return typeof server === 'string' && server !== OPEN && i && i !== 'loading' && i.ok && i.hosts.some((h) => h.id === server)
-    }
-    const lastUsed = readLastRunbook()
-    const last = lastUsed ? usable.find((d) => samePath(d, lastUsed)) : undefined
-    const pick = (last && knows(last) ? last : undefined) ?? usable.find(knows) ?? last ?? usable[0]
-    if (pick) setRunbookPath(pick)
-  }, [infos, listed, mode, runbookPath, server])
 
   const scope: OpsScope | null =
     server === null ? null : server === OPEN ? { kind: 'open' } : { kind: 'host', hostId: server }
@@ -472,16 +240,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
   const summary = okInfo?.summary
 
   // ── Validation (inline) ────────────────────────────────────────────────────
-  const hostProblem = useMemo(() => {
-    if (!okInfo || !scope) return null
-    if (scope.kind === 'open') {
-      return okInfo.hosts.length === 0 ? t('ops.start.noHosts') : null
-    }
-    const known = okInfo.hosts.find((h) => h.id === scope.hostId)
-    if (known && known.groups.length > 0) return null
-    const name = selectedHost?.name ?? known?.name ?? t('ops.start.thisServer')
-    return t('ops.start.unknownToRunbook', { name })
-  }, [okInfo, scope, selectedHost, t])
+  const hostProblem = runbookHostProblem(okInfo, scope, selectedHost?.name, t)
 
   const missing = [
     !scope && t('ops.start.needServer'),
@@ -513,64 +272,6 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
     // The built-in runbook is always one click away as the mode, so it is not remembered.
     if (mode === 'runbook' && !samePath(activePath, builtin)) writeLastRunbook(activePath)
     onStart({ runbookPath: activePath, scope, task: task.trim(), ...(tk ? { ticket: tk } : {}), ...(c ? { client: c } : {}) })
-  }
-
-  /** Stores the loose runbooks; the list shown follows what main kept. */
-  const saveLoose = async (folders: string[]): Promise<boolean> => {
-    setSourcesError(null)
-    try {
-      const r = await window.electronAPI.setOpsPrefs({ runbookFolders: folders })
-      if (!r.ok) {
-        setSourcesError(r.error)
-        return false
-      }
-      setSources((prev) => prev && { ...prev, loose: r.ops.runbookFolders ?? [] })
-      return true
-    } catch (e) {
-      setSourcesError(e instanceof Error ? e.message : String(e))
-      return false
-    }
-  }
-
-  /** "Choose runbooks folder…": every subfolder of it that looks like a runbook is listed. */
-  const chooseLibrary = async () => {
-    const dir = await window.electronAPI.openFolder(sources?.dir ?? undefined)
-    if (!dir) return
-    setSourcesError(null)
-    try {
-      const r = await window.electronAPI.setOpsPrefs({ runbooksDir: dir })
-      if (!r.ok) {
-        setSourcesError(r.error)
-        return
-      }
-    } catch (e) {
-      setSourcesError(e instanceof Error ? e.message : String(e))
-      return
-    }
-    // A default picked from the old folder makes way for one from the new.
-    if (!runbookChosen.current) setRunbookPath(null)
-    await refreshSources()
-  }
-
-  /** "Choose a runbook…": one folder, kept as a loose runbook unless the library has it. */
-  const chooseOne = async () => {
-    const dir = await window.electronAPI.openFolder()
-    if (!dir) return
-    runbookChosen.current = true
-    setRunbookPath(dir)
-    const res = await loadRunbook(dir)
-    if (!res.ok || samePath(dir, builtin) || !sources) return
-    if (sources.loose.some((p) => samePath(p, dir)) || sources.library.some((e) => samePath(e.path, dir))) return
-    await saveLoose([...sources.loose, dir])
-  }
-
-  const forget = async (dir: string) => {
-    if (!sources) return
-    if (!(await saveLoose(sources.loose.filter((p) => !samePath(p, dir))))) return
-    if (runbookPath === dir) {
-      runbookChosen.current = true
-      setRunbookPath(null)
-    }
   }
 
   // ── Server field ───────────────────────────────────────────────────────────
@@ -616,128 +317,6 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
       : server
         ? t('ops.start.helpLocked')
         : t('ops.start.helpNone')
-
-  // ── Runbook field ──────────────────────────────────────────────────────────
-  const runbookRow = (dir: string, withPath: boolean, onForget?: () => void) => {
-    const i = infos[dir]
-    const name = i && i !== 'loading' && i.ok ? i.name : baseName(dir)
-    let chip: ReactNode = null
-    if (!i || i === 'loading') chip = <span className="ivs-meta">{t('common.loading')}</span>
-    else if (!i.ok) chip = <span className="ivs-chip bad">{t('ops.start.unusable')}</span>
-    else {
-      const s = i.summary
-      if (s) chip = <span className={`ivs-chip${s.mutates > 0 ? ' warn' : ''}`}>{s.mutates === 0 ? t('ops.start.readOnly') : t('ops.start.changesServer')}</span>
-    }
-    return (
-      <>
-        <span className="ivs-value">{name}</span>
-        {chip}
-        {withPath && (
-          <span className="ivs-meta ivs-path" title={dir}>
-            {dir}
-          </span>
-        )}
-        {onForget && (
-          <button
-            type="button"
-            className="ivs-dd-forget"
-            tabIndex={-1}
-            title={t('ops.start.forgetRunbook', { name })}
-            aria-label={t('ops.start.forgetRunbook', { name })}
-            onMouseDown={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-            }}
-            onClick={(e) => {
-              e.stopPropagation()
-              onForget()
-            }}
-          >
-            <CloseIcon />
-          </button>
-        )}
-      </>
-    )
-  }
-  const runbookOption = (dir: string, isLoose: boolean): DropItem => ({
-    kind: 'option',
-    key: dir,
-    selected: runbookPath === dir,
-    content: runbookRow(dir, isLoose, isLoose ? () => void forget(dir) : undefined),
-    onSelect: () => {
-      runbookChosen.current = true
-      setRunbookPath(dir)
-      void loadRunbook(dir)
-    }
-  })
-  const actionOption = (key: string, label: string, meta: string, onSelect: () => void): DropItem => ({
-    kind: 'option',
-    key,
-    content: (
-      <>
-        <span className="ivs-option-icon">
-          <FolderIcon />
-        </span>
-        <span className="ivs-value">{label}</span>
-        <span className="ivs-meta ivs-dd-action-meta">{meta}</span>
-      </>
-    ),
-    onSelect
-  })
-  const libraryItems: DropItem[] = sources?.dir
-    ? [
-        {
-          kind: 'header',
-          key: 'library',
-          content: (
-            <>
-              <span className="ivs-dd-header-label">{t('ops.start.libraryHeader')}</span>
-              <span aria-hidden="true">·</span>
-              <span className="ivs-mono ivs-dd-header-path" title={sources.dir}>
-                {sources.dir}
-              </span>
-              {!sources.libraryError && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span>{sources.library.length}</span>
-                </>
-              )}
-              <button
-                type="button"
-                className="ivs-dd-refresh"
-                tabIndex={-1}
-                disabled={scanning}
-                title={t('ops.start.refreshLibrary')}
-                aria-label={t('ops.start.refreshLibrary')}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => void refreshSources()}
-              >
-                <RefreshIcon />
-              </button>
-            </>
-          )
-        },
-        ...(sources.libraryError
-          ? [{ kind: 'note' as const, key: 'library-error', content: <span className="ivs-error">{sources.libraryError}</span> }]
-          : sources.library.length === 0
-            ? [{ kind: 'note' as const, key: 'library-empty', content: t('ops.start.libraryEmpty') }]
-            : sources.library.map((e) => runbookOption(e.path, false)))
-      ]
-    : []
-  const looseItems: DropItem[] =
-    loose.length > 0
-      ? [
-          { kind: 'header', key: 'loose', content: <span className="ivs-dd-header-label">{t('ops.start.looseHeader')}</span> },
-          ...loose.map((dir) => runbookOption(dir, true))
-        ]
-      : []
-  const runbookItems: DropItem[] = [
-    ...libraryItems,
-    ...looseItems,
-    ...(libraryItems.length + looseItems.length > 0 ? [{ kind: 'divider' as const, key: 'div' }] : []),
-    actionOption('choose-library', t('ops.start.chooseLibrary'), t('ops.start.chooseLibraryMeta'), () => void chooseLibrary()),
-    actionOption('choose-one', t('ops.start.chooseOne'), t('ops.start.chooseOneMeta'), () => void chooseOne())
-  ]
 
   // ── Right column ───────────────────────────────────────────────────────────
   const openFile = (file: 'RUNBOOK.md' | 'policy.json') => {
@@ -804,47 +383,7 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
                 <span className="ivs-label" id={runbookLabelId}>
                   {t('ops.start.runbook')}
                 </span>
-                <IvsDropdown
-                  labelledBy={runbookLabelId}
-                  trigger={runbookPath ? runbookRow(runbookPath, false) : <span className="ivs-placeholder">{t('ops.start.chooseRunbook')}</span>}
-                  items={runbookItems}
-                  invalid={!!loaded && !loaded.ok}
-                />
-                {sourcesError && (
-                  <span className="ivs-error" role="alert">
-                    {sourcesError}
-                  </span>
-                )}
-                {loaded && !loaded.ok && runbookPath && (
-                  <div className="ivs-error-block" role="alert">
-                    <div>
-                      <strong>{t('ops.start.notUsable')}</strong> {loaded.error}
-                    </div>
-                    {loaded.errors && loaded.errors.length > 0 && (
-                      <ul>
-                        {loaded.errors.map((e, i) => (
-                          <li key={i}>{e}</li>
-                        ))}
-                      </ul>
-                    )}
-                    <div className="ivs-error-actions">
-                      <span className="ivs-mono">{runbookPath}</span>
-                      {loose.includes(runbookPath) && (
-                        <button type="button" className="ivs-link" onClick={() => void forget(runbookPath)}>
-                          {t('ops.start.forget')}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {listed.length === 0 && !runbookPath && (
-                  <span className="ivs-help">
-                    {rich(t('ops.start.runbookExplainer'), {
-                      runbook: <span className="ivs-mono">RUNBOOK.md</span>,
-                      policy: <span className="ivs-mono">policy.json</span>
-                    })}
-                  </span>
-                )}
+                <RunbookField picker={picker} labelledBy={runbookLabelId} />
               </div>
             )}
 
