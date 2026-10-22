@@ -424,3 +424,25 @@ describe('reports of an intervention (task, ticket, client, scope)', () => {
     expect(renderInternalReport(GOLDEN)).not.toMatch(/- (Task|Ticket|Client|Scope):/)
   })
 })
+
+describe('reports of a handover from a diagnosis to a runbook intervention', () => {
+  it('the diagnosis names its follow-up in the internal report header', () => {
+    const out = renderInternalReport(run([READ_WEB], { handover: { runbook: 'reload-wmcp', childRunId: 'run-77' } }))
+    expect(out).toContain('- Follow-up: intervention reload-wmcp (run `run-77`)\n')
+    const noId = renderInternalReport(run([READ_WEB], { handover: { runbook: 'reload-wmcp' } }))
+    expect(noId).toContain('- Follow-up: intervention reload-wmcp\n')
+  })
+
+  it('the intervention names the diagnosis it follows in the internal report header', () => {
+    const out = renderInternalReport(run([READ_WEB], { parentRunId: 'run-41' }))
+    expect(out).toContain('- Follows diagnosis run `run-41`\n')
+    expect(renderInternalReport(run([READ_WEB]))).not.toContain('Follows diagnosis')
+  })
+
+  it('the client report of the intervention says it followed a diagnosis, without any id', () => {
+    const out = renderClientReport(run([READ_WEB], { parentRunId: 'run-41' }), OPTS)
+    expect(out).toContain('Esta intervenção deu seguimento a um diagnóstico prévio ao servidor.')
+    expect(out).not.toContain('run-41')
+    expect(renderClientReport(run([READ_WEB]), OPTS)).not.toContain('diagnóstico prévio')
+  })
+})

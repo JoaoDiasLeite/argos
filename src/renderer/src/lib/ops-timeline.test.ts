@@ -4,6 +4,7 @@ import {
   exitMeaning,
   foldOpsEvents,
   groupCallsBySteps,
+  handoverTask,
   planProgress,
   rowLabel,
   rowTone,
@@ -473,5 +474,33 @@ describe('notes and operator asks', () => {
     expect(run.asks[0]).toMatchObject({ host: 'web1', hostId: 'h1', expect: 'active', output: 'active (running)', truncated: true, beforeCall: 1 })
     expect(run.asks[1].output).toBeUndefined()
     expect(run.asks[2].host).toBe('web1')
+  })
+})
+
+describe('handoverTask', () => {
+  const note = (n: Record<string, unknown>) => ev({ kind: 'note', note: n })
+  const despiste = ev({ kind: 'run.start', runbook: { name: 'despiste' }, hosts: [], planRequired: false })
+
+  it('puts the latest summary, the confirmed cause and the actions to do now in one paragraph', () => {
+    const [run] = foldOpsEvents([
+      despiste,
+      note({ kind: 'summary', text: 'Early draft' }),
+      note({ kind: 'hypothesis', id: 'oom', text: 'OOM killer', status: 'ruled_out' }),
+      note({ kind: 'hypothesis', id: 'tty', text: 'nginx.sh waits on a TTY', status: 'confirmed' }),
+      note({ kind: 'hypothesis', id: 'cfg', text: 'Stale global.conf.', status: 'confirmed' }),
+      note({ kind: 'action', text: 'Reload WMCP', when: 'now' }),
+      note({ kind: 'action', text: 'Fix the monit start script', when: 'later' }),
+      note({ kind: 'summary', text: 'Puma does not start\nunder monit' })
+    ])
+    expect(run.summary).toBe('Puma does not start\nunder monit')
+    expect(handoverTask(run, t)).toBe('Puma does not start under monit. Cause: nginx.sh waits on a TTY; Stale global.conf. Actions: Reload WMCP.')
+    expect(handoverTask(run, makeT('pt-PT'))).toContain(' Causa: nginx.sh waits on a TTY; Stale global.conf. Ações: Reload WMCP.')
+  })
+
+  it('leaves out what the run has not noted, and is empty with no notes', () => {
+    const [only] = foldOpsEvents([despiste, note({ kind: 'action', text: 'Restart puma.' })])
+    expect(handoverTask(only, t)).toBe('Actions: Restart puma.')
+    const [none] = foldOpsEvents([despiste])
+    expect(handoverTask(none, t)).toBe('')
   })
 })

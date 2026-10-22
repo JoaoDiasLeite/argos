@@ -1,0 +1,17 @@
+/* ── OpsHandoverDialog.css ───────────────────────────────────────────────────
+   "Hand over to a runbook" over the ops workspace (board C of the despiste plan).
+   The fields are the start screen's (`ivs-`); only the dialog's own pieces live
+   here. Classes are prefixed `ohd-`. ────────────────────────────────────────── */
+
+/* The runbook list drops below its field rather than scrolling inside the body. */
+.ohd .modal-body {
+  overflow: visible;
+  gap: 16px;
+}
+
+.ohd-sub {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-1);
+}

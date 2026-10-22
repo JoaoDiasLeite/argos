@@ -105,6 +105,11 @@ export function renderInternalReport(summary: OpsRunSummary): string {
   if (s.ticket) out.push(`- Ticket: ${oneLine(s.ticket)}`)
   if (s.client) out.push(`- Client: ${oneLine(s.client)}`)
   if (s.scope) out.push(`- Scope: ${scopeLine(s)}`)
+  if (s.parentRunId) out.push(`- Follows diagnosis run \`${s.parentRunId}\``)
+  if (s.handover) {
+    const child = s.handover.childRunId ? ` (run \`${s.handover.childRunId}\`)` : ''
+    out.push(`- Follow-up: intervention ${s.handover.runbook}${child}`)
+  }
   out.push(`- Runbook: \`${s.runbook.path}\` (policy sha256 \`${s.runbook.policySha256}\`)`)
   if (s.runbook.platform) out.push(`- Platform: ${s.runbook.platform}`)
   out.push(`- Started: ${s.startedAt}`)
@@ -356,6 +361,8 @@ export function renderClientReport(summary: OpsRunSummary, opts: ClientReportOpt
   // The runbook's own spelling of the product, emphasis included: the report has no list
   // of products to look it up in.
   if (s.runbook.platform) desc.push(`A intervenção incidiu sobre a plataforma ${s.runbook.platform}.`)
+  // The diagnosis it follows is named without its id: the client has no use for one.
+  if (s.parentRunId) desc.push('Esta intervenção deu seguimento a um diagnóstico prévio ao servidor.')
 
   // Titles are the runbook author's client-facing words, so they are sanitised only for
   // host names and addresses, not for argv words: on the first real run "Verificação da

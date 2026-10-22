@@ -1223,6 +1223,8 @@ interface OpsIntervention {
   task: string
   ticket?: string
   client?: string
+  /** "Hand over to a runbook": the diagnosis run this intervention follows. */
+  parentRunId?: string
 }
 
 function parseIntervention(v: unknown): OpsIntervention | { error: string } {
@@ -1239,12 +1241,15 @@ function parseIntervention(v: unknown): OpsIntervention | { error: string } {
     typeof x === 'string' && x.trim() !== '' ? x.trim().slice(0, max) : undefined
   const ticket = text(o.ticket, 200)
   const client = text(o.client, 200)
+  // A run id is a UUID; anything else is not one Argos wrote.
+  const parentRunId = typeof o.parentRunId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(o.parentRunId) ? o.parentRunId : undefined
   return {
     runbookPath: o.runbookPath,
     scope,
     task: o.task.trim().slice(0, 4000),
     ...(ticket ? { ticket } : {}),
-    ...(client ? { client } : {})
+    ...(client ? { client } : {}),
+    ...(parentRunId ? { parentRunId } : {})
   }
 }
 
@@ -1277,11 +1282,42 @@ function endAllTerminalOps(reason: string): void {
   for (const id of [...terminalOps.keys()]) void endTerminalOps(id, { ok: false, aborted: true, error: reason })
 }
 
+/**
+ * "Hand over to a runbook": log run.handover in the diagnosis an intervention follows, then
+ * end that diagnosis as finished (run.end ok, not aborted like a Stop). Called once the
+ * intervention's run has opened, so the line names it, and before its CLI starts. A
+ * diagnosis still live in a terminal logs through its own session (its timeline sees the
+ * line) and the renderer closes its CLI after; one already ended gets the line appended
+ * to the ledger after its run.end, which readers fold by run id like any other line. A
+ * diagnosis already handed over (a Restart of the intervention) is left as it is.
+ */
+async function handOverParent(parentRunId: string, childRunId: string, runbook: string, childTerminalId: string): Promise<void> {
+  const event = { kind: 'run.handover' as const, runId: parentRunId, childRunId, runbook }
+  const live = [...terminalOps.entries()].find(([id, s]) => id !== childTerminalId && s.runId === parentRunId && !s.ctx.ended)
+  if (live) {
+    await live[1].ctx.log(event)
+    await endTerminalOps(live[0], { ok: true })
+    return
+  }
+  const ledger = getOpsLedger()
+  const lines = await ledger.readRun(parentRunId)
+  if (!lines.ok) return
+  const start = lines.lines.find((l) => l.event.kind === 'run.start')
+  if (start?.event.kind !== 'run.start' || lines.lines.some((l) => l.event.kind === 'run.handover')) return
+  const r = await ledger.append(event)
+  if (!r.ok) return
+  try {
+    send('ops:event', { appSessionId: start.event.appSessionId, runId: parentRunId, line: JSON.parse(r.raw) })
+  } catch {
+    // The timeline is a view; the ledger line is already on disk.
+  }
+}
+
 async function openTerminalOps(terminalId: string, intervention: OpsIntervention): Promise<TerminalOpsResult> {
   // Claude Code only (39badc7): the one CLI whose own shell and file tools can be switched off.
   const provider: OpsCli = 'claude'
-  const { runbookPath, scope, task, ticket, client } = intervention
-  const interventionKey = JSON.stringify([runbookPath, scope, task, ticket ?? '', client ?? ''])
+  const { runbookPath, scope, task, ticket, client, parentRunId } = intervention
+  const interventionKey = JSON.stringify([runbookPath, scope, task, ticket ?? '', client ?? '', parentRunId ?? ''])
   const existing = terminalOps.get(terminalId)
   if (existing && !existing.ctx.ended) {
     // A remount reattaches to the same live pty, whose CLI holds this token: hand back the
@@ -1298,6 +1334,7 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
     task,
     ...(ticket ? { ticket } : {}),
     ...(client ? { client } : {}),
+    ...(parentRunId ? { parentRunId } : {}),
     model: `${provider} CLI (terminal)`,
     ledger: getOpsLedger(),
     executor: getOpsExecutor(),
@@ -1343,6 +1380,8 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
       abort
     }
     terminalOps.set(terminalId, s)
+    // Only now is the intervention's run known to start, so the diagnosis's line can name it.
+    if (parentRunId) await handOverParent(parentRunId, ctx.runId, ctx.runbook.ref.name, terminalId)
     return terminalOpsReply(s)
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)

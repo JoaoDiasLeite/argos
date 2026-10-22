@@ -2928,6 +2928,7 @@ export default function App() {
             onEnded={endOpsWorkspace}
             operatorRequests={operatorRequests.filter((r) => r.appSessionId === opsTerminalIdFor(opsWorkspace))}
             onOperatorAnswer={answerOperator}
+            onHandover={openOpsWorkspace}
             tabs={<OpsTabs strip items={opsTabs} activeId={opsTerminalIdFor(opsWorkspace)} onSelect={selectOpsTab} onClose={(iv) => void closeOpsTab(iv)} />}
           />
         </Suspense>

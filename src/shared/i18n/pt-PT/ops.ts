@@ -178,6 +178,15 @@ const ops: Record<keyof typeof en, string> = {
   'workspace.exitedCode': 'A CLI terminou · código {code}',
   'workspace.exited': 'A CLI terminou',
   'workspace.relaunch': 'Relançar',
+  'workspace.handover': 'Passar a intervenção…',
+  'workspace.handoverTitle': 'Terminar este despiste e seguir com uma intervenção com runbook no mesmo servidor',
+  // views/OpsHandoverDialog
+  'handover.title': 'Passar a intervenção',
+  'handover.sub': 'O despiste termina e fica ligado à intervenção; os relatórios referem-se um ao outro.',
+  'handover.cause': 'Causa: {text}',
+  'handover.actions': 'Ações: {text}',
+  'handover.builtin': 'O runbook de despiste não dá seguimento a um despiste; escolhe o runbook com o procedimento.',
+  'handover.starting': 'A iniciar…',
   // views/InterventionStart
   'start.and': ' e ',
   'start.today': 'Hoje {time}',

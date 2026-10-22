@@ -172,6 +172,8 @@ export interface OpsSessionOptions {
   task?: string
   ticket?: string
   client?: string
+  /** The diagnosis run this intervention follows (a handover); logged on run.start. */
+  parentRunId?: string
   /** The CLI that runs the session (the ledger's `run.start.model`). */
   model: string
   account?: string
@@ -293,7 +295,8 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
       ...(opts.ticket?.trim() ? { ticket: opts.ticket.trim() } : {}),
       ...(opts.client?.trim() ? { client: opts.client.trim() } : {}),
       ...(scope ? { scope } : {}),
-      ...(needsPlan ? {} : { planRequired: false as const })
+      ...(needsPlan ? {} : { planRequired: false as const }),
+      ...(opts.parentRunId ? { parentRunId: opts.parentRunId } : {})
     })
     if (!started.ok) return { ok: false, error: t('runbook.session.ledgerUnavailable', { error: started.error }) }
 

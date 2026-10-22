@@ -358,7 +358,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   opsOperatorResponse: (payload: { requestId: string; output: string | null }) =>
     ipcRenderer.invoke('ops:operator-response', payload),
   // An ops terminal (plan §9 Phase 5): opens the run and returns the env + MCP config to launch the CLI with.
-  // One intervention (docs/INTERVENTIONS_PLAN.md §2): runbook, scope, task, ticket, client.
+  // One intervention (docs/INTERVENTIONS_PLAN.md §2): runbook, scope, task, ticket, client, and
+  // the diagnosis it follows when it was handed over from one.
   opsTerminalSession: (
     terminalId: string,
     intervention: {
@@ -367,6 +368,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       task: string
       ticket?: string
       client?: string
+      parentRunId?: string
     }
   ) => ipcRenderer.invoke('ops:terminal-session', terminalId, intervention),
   // The start screen's history: run summaries from the ledger, newest first.

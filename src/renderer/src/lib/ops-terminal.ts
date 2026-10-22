@@ -34,8 +34,11 @@ export function hashId(s: string): string {
 export const OPS_TERMINAL_PREFIX = 'opsterm_'
 
 /** The terminal of one intervention: the same runbook, scope, task, ticket and client give
- *  the same terminal (and so its earlier runs); anything else is another one. */
+ *  the same terminal (and so its earlier runs); anything else is another one. A handed-over
+ *  intervention adds the diagnosis it follows, so it never shares a terminal with one
+ *  started on its own (and every id from before handovers stays as it was). */
 export function opsTerminalIdFor(iv: OpsIntervention): string {
   const scope = iv.scope.kind === 'host' ? `host:${iv.scope.hostId}` : 'open'
-  return `${OPS_TERMINAL_PREFIX}${hashId([iv.runbookPath, scope, iv.task, iv.ticket ?? '', iv.client ?? ''].join('\n'))}`
+  const parts = [iv.runbookPath, scope, iv.task, iv.ticket ?? '', iv.client ?? '', ...(iv.parentRunId ? [iv.parentRunId] : [])]
+  return `${OPS_TERMINAL_PREFIX}${hashId(parts.join('\n'))}`
 }

@@ -120,7 +120,7 @@ async function start(
   ask?: OpsAskFn,
   extra: { plan?: boolean; askSecret?: OpsAskSecretFn } & Pick<
     OpsSessionOptions,
-    'scope' | 'task' | 'ticket' | 'client' | 'syslog' | 'askOperator'
+    'scope' | 'task' | 'ticket' | 'client' | 'parentRunId' | 'syslog' | 'askOperator'
   > = {}
 ): Promise<{
   fake: FakeBackend
@@ -143,6 +143,7 @@ async function start(
     ...(extra.task !== undefined ? { task: extra.task } : {}),
     ...(extra.ticket !== undefined ? { ticket: extra.ticket } : {}),
     ...(extra.client !== undefined ? { client: extra.client } : {}),
+    ...(extra.parentRunId !== undefined ? { parentRunId: extra.parentRunId } : {}),
     ...(extra.syslog ? { syslog: extra.syslog } : {}),
     ...(extra.askOperator ? { askOperator: extra.askOperator } : {})
   })
@@ -686,6 +687,12 @@ describe('intervention scope', () => {
       scope: { kind: 'host', hostId: 'h1' }
     })
     expect(startEv).not.toHaveProperty('client')
+    expect(startEv).not.toHaveProperty('parentRunId')
+  })
+
+  it('a handed-over intervention names the diagnosis it follows on run.start, and others do not', async () => {
+    await start({}, undefined, { scope: { kind: 'host', hostId: 'h1' }, parentRunId: 'run-0' })
+    expect((await lines())[0].event).toMatchObject({ kind: 'run.start', parentRunId: 'run-0' })
   })
 
   it('an empty task is left out of run.start', async () => {

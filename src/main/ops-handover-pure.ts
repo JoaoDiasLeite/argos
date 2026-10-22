@@ -252,6 +252,13 @@ export function renderHandover(summary: OpsRunSummary, lines: OpsAuditLine[], op
   rows.push(['Estado', open || s.ok !== true ? 'Em aberto' : 'Por fechar'])
   out.push('| Campo | Valor |', '|---|---|', ...rows.map(([k, v]) => `| ${k} | ${cell(v)} |`), '')
 
+  // The other half of a handover to a runbook intervention, either way round.
+  if (s.parentRunId) out.push(`Na sequência do despiste ${code(s.parentRunId)}.`, '')
+  if (s.handover) {
+    const child = s.handover.childRunId ? ` (execução ${code(s.handover.childRunId)})` : ''
+    out.push(`Seguimento: intervenção ${s.handover.runbook}${child}.`, '')
+  }
+
   out.push('## Resumo', '', f.summary ? f.summary.trim() : '_Por preencher._', '')
 
   if (f.events.length) {

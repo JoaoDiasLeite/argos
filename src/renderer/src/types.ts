@@ -914,6 +914,9 @@ export interface OpsIntervention {
   task: string
   ticket?: string
   client?: string
+  /** "Hand over to a runbook": the diagnosis run this intervention follows. Main logs the
+   *  handover in that run and ends it when this one opens. */
+  parentRunId?: string
 }
 
 /** One run in the history list (`ops:runs`), newest first. */

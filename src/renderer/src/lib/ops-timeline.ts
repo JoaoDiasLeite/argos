@@ -95,6 +95,10 @@ export interface OpsRun {
   events: OpsNoteItem[]
   /** Commands the model handed the operator (ask_operator), in ledger order. */
   asks: OpsOperatorAsk[]
+  /** The model's latest summary note, if any. */
+  summary?: string
+  /** Its recommended actions (`note` kind action), in ledger order. */
+  actions?: { text: string; when: 'now' | 'later' }[]
 }
 
 export interface OpsHypothesis {
@@ -243,6 +247,11 @@ export function foldOpsEvents(events: OpsLiveEvent[]): OpsRun[] {
         } else if (n.kind === 'event') {
           const when = str(n.at) || undefined
           run.events.push({ text, ...(evidence ? { evidence } : {}), ...(when ? { at: when } : {}) })
+        } else if (n.kind === 'summary') {
+          // A later summary replaces the earlier one.
+          run.summary = text
+        } else if (n.kind === 'action') {
+          ;(run.actions ??= []).push({ text, when: n.when === 'later' ? 'later' : 'now' })
         }
         break
       }
@@ -666,4 +675,28 @@ export function currentStepKey(run: OpsRun, groups: OpsStepGroup[]): string | nu
     if (g.rows.length && g.firstCall <= last && last < g.firstCall + g.rows.length) return g.key
   }
   return null
+}
+
+
+// ── Hand over to a runbook ──
+
+/**
+ * The task a diagnosis hands to the runbook intervention that follows it, from its notes:
+ * the latest summary, then the confirmed hypotheses as the cause, then the actions to do
+ * now. One paragraph, since the task reaches the CLI flattened onto one line. Empty when
+ * the run has none of them.
+ */
+export function handoverTask(run: OpsRun, t: TFunction): string {
+  const sentence = (x: string): string => {
+    const s = x.replace(/\s+/g, ' ').trim()
+    return !s || /[.!?…]$/.test(s) ? s : `${s}.`
+  }
+  const list = (items: string[]): string => sentence(items.map((x) => x.replace(/\s+/g, ' ').trim().replace(/[.;]+$/, '')).join('; '))
+  const parts: string[] = []
+  if (run.summary?.trim()) parts.push(sentence(run.summary))
+  const cause = run.hypotheses.filter((h) => h.status === 'confirmed').map((h) => h.text)
+  if (cause.length) parts.push(t('ops.handover.cause', { text: list(cause) }))
+  const now = (run.actions ?? []).filter((a) => a.when === 'now').map((a) => a.text)
+  if (now.length) parts.push(t('ops.handover.actions', { text: list(now) }))
+  return parts.join(' ')
 }

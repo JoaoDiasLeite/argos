@@ -192,6 +192,10 @@ export interface OpsRunSummary {
   ticket?: string
   client?: string
   scope?: OpsScope
+  /** The diagnosis this intervention follows (run.start.parentRunId). */
+  parentRunId?: string
+  /** This diagnosis was handed over to a runbook intervention (run.handover). */
+  handover?: { runbook: string; childRunId?: string }
   /** Open scope: the operator's answer per host, in the order given. */
   hostAnswers?: { hostId: string; host: string; answer: 'approved' | 'denied' }[]
   /** Hosts whose syslog could not take Argos's lines, once each, with why. */
@@ -248,6 +252,7 @@ export function summarizeRun(lines: OpsAuditLine[], runId: string): OpsRunSummar
   if (start.event.ticket !== undefined) s.ticket = start.event.ticket
   if (start.event.client !== undefined) s.client = start.event.client
   if (start.event.scope !== undefined) s.scope = start.event.scope
+  if (start.event.parentRunId !== undefined) s.parentRunId = start.event.parentRunId
   const calls = new Map<string, OpsCallSummary>()
   const callFor = (callId: string): OpsCallSummary => {
     let c = calls.get(callId)
@@ -320,6 +325,9 @@ export function summarizeRun(lines: OpsAuditLine[], runId: string): OpsRunSummar
       case 'host.approved':
       case 'host.denied':
         ;(s.hostAnswers ??= []).push({ hostId: e.hostId, host: e.host, answer: e.kind === 'host.approved' ? 'approved' : 'denied' })
+        break
+      case 'run.handover':
+        s.handover = { runbook: e.runbook, ...(e.childRunId !== undefined ? { childRunId: e.childRunId } : {}) }
         break
       case 'run.end':
         s.endedAt = at

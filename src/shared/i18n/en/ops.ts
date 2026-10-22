@@ -177,6 +177,15 @@ export default {
   'workspace.exitedCode': 'CLI exited · code {code}',
   'workspace.exited': 'CLI exited',
   'workspace.relaunch': 'Relaunch',
+  'workspace.handover': 'Hand over to a runbook…',
+  'workspace.handoverTitle': 'End this diagnosis and carry on with a runbook intervention on the same server',
+  // views/OpsHandoverDialog
+  'handover.title': 'Hand over to a runbook',
+  'handover.sub': 'The diagnosis ends and is linked to the intervention; the reports refer to each other.',
+  'handover.cause': 'Cause: {text}',
+  'handover.actions': 'Actions: {text}',
+  'handover.builtin': 'The diagnosis runbook cannot follow a diagnosis; choose the runbook with the procedure.',
+  'handover.starting': 'Starting…',
   // views/InterventionStart
   'start.and': ' and ',
   'start.today': 'Today {time}',

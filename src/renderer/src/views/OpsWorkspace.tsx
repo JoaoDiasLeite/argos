@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { ApprovalRequest, OpsIntervention, OpsOperatorRequest, OpsRunbookInfo } from '../types'
 import ChatTerminal from '../components/ChatTerminal'
 import ActivityColumn from '../components/ActivityColumn'
+import OpsHandoverDialog from '../components/OpsHandoverDialog'
 import { useOpsEvents } from '../hooks/useOpsEvents'
 import { foldOpsEvents, splitRuns, touchedHosts } from '../lib/ops-timeline'
 import { opsTerminalIdFor, type OpsTerminalProvider, type OpsTerminalSessionResult } from '../lib/ops-terminal'
@@ -74,6 +75,9 @@ interface Props {
    *  that arrives while this workspace is not mounted waits for it). */
   operatorRequests?: OpsOperatorRequest[]
   onOperatorAnswer?: (requestId: string, output: string | null) => void
+  /** "Hand over to a runbook": the diagnosis on screen has ended and this intervention,
+   *  whose run is already open, follows it; App opens it in its own tab. */
+  onHandover?: (next: OpsIntervention) => void
 }
 
 export default function OpsWorkspace({
@@ -87,13 +91,15 @@ export default function OpsWorkspace({
   onEnded,
   tabs,
   operatorRequests,
-  onOperatorAnswer
+  onOperatorAnswer,
+  onHandover
 }: Props) {
   const t = useT()
   const { runbookPath, scope } = intervention
   const [info, setInfo] = useState<OpsRunbookInfo | null>(null)
   const [hostDot, setHostDot] = useState<HostDot>('checking')
   const [term, setTerm] = useState<TermState>({ kind: 'starting' })
+  const [handoverOpen, setHandoverOpen] = useState(false)
 
   const terminalId = opsTerminalIdFor(intervention)
   const keyRef = useRef(0)
@@ -210,6 +216,25 @@ export default function OpsWorkspace({
     onEnded?.(terminalId, leave)
   }
 
+  /**
+   * "Hand over to a runbook", confirmed. Opening the intervention's run is what logs
+   * run.handover in this diagnosis and ends it as finished (main, handOverParent), so it
+   * comes first: a refusal (a runbook that does not load, a host that does not answer)
+   * leaves the diagnosis running and is shown in the dialog. Then this CLI is closed the
+   * way Stop closes it, and the intervention's workspace reattaches to the run just opened.
+   */
+  const handOver = async (next: OpsIntervention): Promise<string | null> => {
+    const res = await window.electronAPI.opsTerminalSession(opsTerminalIdFor(next), next)
+    if (!res.ok) return res.error
+    startSeqRef.current++
+    launches.delete(terminalId)
+    await window.electronAPI.terminalKill(terminalId).catch(() => undefined)
+    setHandoverOpen(false)
+    onEnded?.(terminalId, false)
+    onHandover?.(next)
+    return null
+  }
+
   // Approvals for this terminal's run are answered in the activity column.
   useEffect(() => {
     if (!onTerminalVisible) return
@@ -278,6 +303,17 @@ export default function OpsWorkspace({
         <span className="ops-ws-meta" title={t('ops.workspace.gatedHint')}>
           {t('ops.workspace.gated')}
         </span>
+        {/* A diagnosis only (its run.start skipped the plan): the runbook it hands over to does the fix. */}
+        {onHandover && current?.planRequired === false && (
+          <button
+            className="ops-ws-btn"
+            onClick={() => setHandoverOpen(true)}
+            disabled={term.kind === 'starting'}
+            title={t('ops.workspace.handoverTitle')}
+          >
+            {t('ops.workspace.handover')}
+          </button>
+        )}
         <button
           className="ops-ws-btn"
           onClick={() => void start(true)}
@@ -336,6 +372,16 @@ export default function OpsWorkspace({
           onOperatorAnswer={onOperatorAnswer}
         />
       </div>
+
+      {handoverOpen && current && (
+        <OpsHandoverDialog
+          intervention={intervention}
+          run={current}
+          hostName={lockedHost?.name}
+          onCancel={() => setHandoverOpen(false)}
+          onConfirm={handOver}
+        />
+      )}
     </div>
   )
 }

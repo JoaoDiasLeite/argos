@@ -176,6 +176,9 @@ export type OpsAuditEvent =
       /** false: a read-only runbook, whose calls do not wait for an approved plan. Absent:
        *  a plan was required (every run from before this field). */
       planRequired?: false
+      /** The diagnosis this intervention follows ("Hand over to a runbook"): that run's id.
+       *  Absent on a run started on its own. */
+      parentRunId?: string
     }
   | {
       /** The operator's answer to the first touch of a host in an open intervention. */
@@ -281,6 +284,16 @@ export type OpsAuditEvent =
       hostId: string
       host: string
       reason: string
+    }
+  | {
+      /** A diagnosis handed over to a runbook intervention, logged in the diagnosis's run
+       *  just before it ends. The intervention's run.start names this run as parentRunId. */
+      kind: 'run.handover'
+      runId: string
+      /** The intervention's run; absent when it was not known at the time. */
+      childRunId?: string
+      /** The intervention's runbook name. */
+      runbook: string
     }
   | {
       kind: 'run.end'

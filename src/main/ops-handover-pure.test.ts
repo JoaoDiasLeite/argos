@@ -205,3 +205,28 @@ describe('handover file name', () => {
     expect(lisbonDate('2026-12-14T23:30:00Z')).toBe('2026-12-14')
   })
 })
+
+describe('handover to a runbook intervention', () => {
+  it('folds run.handover and run.start.parentRunId into the summary', () => {
+    const lines = ledger([start(), { kind: 'run.handover', runId: RUN, childRunId: 'run-2', runbook: 'reload-wmcp' }])
+    expect(summarizeRun(lines, RUN)?.handover).toEqual({ runbook: 'reload-wmcp', childRunId: 'run-2' })
+    expect(summarizeRun(ledger([start({ parentRunId: 'run-0' })]), RUN)?.parentRunId).toBe('run-0')
+    expect(summarizeRun(ledger([start()]), RUN)).not.toHaveProperty('handover')
+  })
+
+  it('the diagnosis handover names the intervention that followed it', () => {
+    const out = render([
+      start(),
+      { kind: 'run.handover', runId: RUN, childRunId: 'run-2', runbook: 'reload-wmcp' },
+      { kind: 'run.end', runId: RUN, ok: true, costUsd: 0 }
+    ])
+    expect(out).toContain('Seguimento: intervenção reload-wmcp (execução `run-2`).')
+    expect(out.indexOf('Seguimento:')).toBeLessThan(out.indexOf('## Resumo'))
+  })
+
+  it('the intervention handover names the diagnosis it follows', () => {
+    const out = render([start({ parentRunId: 'run-0', runbook: { name: 'reload-wmcp', path: '/rb/reload-wmcp', policySha256: 'p', runbookMdSha256: 'r' } })])
+    expect(out).toContain('Na sequência do despiste `run-0`.')
+    expect(render([start()])).not.toContain('Na sequência')
+  })
+})
