@@ -80,8 +80,6 @@
   white-space: nowrap;
 }
 .changes-diff { flex: 1; min-height: 0; overflow: auto; }
-/* DiffView caps itself for inline use; here the pane is the frame and does the scrolling. */
-.changes-diff .diff-view { max-height: none; overflow: visible; border: 0; border-radius: 0; min-height: 100%; }
 .changes-note { padding: 16px; font-size: 13px; color: var(--text-2); }
 .changes-note.error { color: var(--error); }
 

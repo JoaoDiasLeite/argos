@@ -50,6 +50,11 @@ interface Props {
   newText: string
   /** Optional file path used to infer syntax highlighting language. */
   filePath?: string
+  /**
+   * Drop the inline frame and height cap, for a host pane that is itself the frame and
+   * does the scrolling (the changes viewer).
+   */
+  fill?: boolean
 }
 
 interface Row {
@@ -194,7 +199,7 @@ const HIGHLIGHT_ROW_LIMIT = 2000
 /** Above this character count for either input, skip highlighting entirely. */
 const HIGHLIGHT_CHAR_LIMIT = 200_000
 
-export default function DiffView({ oldText, newText, filePath }: Props) {
+export default function DiffView({ oldText, newText, filePath, fill }: Props) {
   const t = useT()
   const rows = diffLines(oldText.split('\n'), newText.split('\n'))
   const tooLarge =
@@ -203,7 +208,7 @@ export default function DiffView({ oldText, newText, filePath }: Props) {
     newText.length > HIGHLIGHT_CHAR_LIMIT
   const lang = tooLarge ? undefined : langFromPath(filePath)
   return (
-    <div className="diff-view">
+    <div className={fill ? 'diff-view diff-view-fill' : 'diff-view'}>
       {tooLarge && (
         <div className="diff-truncation-notice">
           {t('editor.diff.large')}

@@ -193,7 +193,7 @@ export default function ChangesViewer({ mode, repo, cwd, onClose, onOpenRepo }: 
     )
   else if (entry.diff.tooLarge) diffBody = <div className="changes-note">{t('home.changes.tooLarge')}</div>
   else if (entry.diff.binary) diffBody = <div className="changes-note">{t('home.changes.binaryFile')}</div>
-  else diffBody = <DiffView oldText={entry.diff.oldText} newText={entry.diff.newText} filePath={selected} />
+  else diffBody = <DiffView oldText={entry.diff.oldText} newText={entry.diff.newText} filePath={selected} fill />
 
   const diffPane = (
     <div className="changes-diff-pane">

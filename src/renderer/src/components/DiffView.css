@@ -8,6 +8,14 @@
   overflow: auto;
   max-height: 360px;
 }
+/* For a host pane that is itself the frame and does the scrolling: no cap, no border. */
+.diff-view.diff-view-fill {
+  max-height: none;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  min-height: 100%;
+}
 
 .diff-row {
   display: flex;
