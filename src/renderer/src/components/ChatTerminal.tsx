@@ -128,6 +128,9 @@ const INITIAL_PROMPT_DELAY_MS = 500
 // paste and the trailing \r lands in the input box instead of submitting, which left an
 // intervention's first message sitting there unsent.
 const PROMPT_SUBMIT_DELAY_MS = 200
+// After the Enter, how long to wait before checking it took, and how many more tries.
+const PROMPT_SUBMIT_CHECK_MS = 700
+const PROMPT_SUBMIT_RETRIES = 3
 
 // Whether the terminal's current viewport has any real (non-whitespace) glyphs painted.
 // Escape-only output — cursor hide/show, screen clear, colour resets — leaves every line's
@@ -156,6 +159,20 @@ function viewportShows(term: Terminal, re: RegExp): boolean {
     if (line && re.test(line.translateToString(true))) return true
   }
   return false
+}
+
+/**
+ * Whether the text before the cursor ends with the tail of `text`: the cursor is still at
+ * the end of a prompt typed into the CLI's input box, so it was not submitted. Only the
+ * tail is compared, since a long prompt wraps over several rows.
+ */
+function cursorLineEndsWith(term: Terminal, text: string): boolean {
+  const buf = term.buffer.active
+  const line = buf.getLine(buf.baseY + buf.cursorY)
+  if (!line) return false
+  const before = line.translateToString(false, 0, buf.cursorX).trimEnd()
+  const tail = text.replace(/\s+/g, ' ').trim().slice(-Math.min(20, buf.cursorX))
+  return tail.length >= 4 && before.endsWith(tail)
 }
 
 /**
@@ -748,10 +765,21 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       }
       holdingPromptRef.current = false
       window.electronAPI.terminalWrite(terminalId, text)
+      promptTimerRef.current = setTimeout(() => submitInitialPrompt(text, 0), PROMPT_SUBMIT_DELAY_MS)
+    }
+
+    // The Enter, checked: a CLI can still read it as part of the text burst (Claude Code
+    // 2.1.308 left an intervention's first message sitting in its input box even after the
+    // pause above). The cursor rests at the end of an unsent prompt, so while its line
+    // still ends with the prompt's tail the Enter did not take, and it is sent again.
+    function submitInitialPrompt(text: string, attempt: number): void {
+      window.electronAPI.terminalWrite(terminalId, '\r')
+      if (attempt === 0) onPromptSentRef.current?.()
+      if (attempt >= PROMPT_SUBMIT_RETRIES) return
       promptTimerRef.current = setTimeout(() => {
-        window.electronAPI.terminalWrite(terminalId, '\r')
-        onPromptSentRef.current?.()
-      }, PROMPT_SUBMIT_DELAY_MS)
+        const t = termRef.current
+        if (t && cursorLineEndsWith(t, text)) submitInitialPrompt(text, attempt + 1)
+      }, PROMPT_SUBMIT_CHECK_MS)
     }
 
     const writeChunk = (data: string): void => {
