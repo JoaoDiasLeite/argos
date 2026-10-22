@@ -15,6 +15,8 @@ import { isApprovalNotification, OscScanner } from './terminal-osc-pure'
 import {
   claudeChain,
   claudeOpsFlags,
+  INITIAL_PROMPT_ENV,
+  initialPromptValue,
   isOpsLaunch,
   OPS_LOCAL_ONLY_ERROR,
   opsLaunchRefusal,
@@ -258,6 +260,10 @@ export interface CreateTerminalOptions {
   /** Launch the CLI as an ops client: the gate's env on the pty, and the CLI pointed at
    *  the ops MCP server only. Local shells only in this version — see opsLaunchRefusal. */
   ops?: OpsTerminalLaunch
+  /** The chat's first message. A local Claude terminal that is about to CREATE its
+   *  session puts it on the CLI's command line (see claudeChain) and says so in
+   *  promptOnCommandLine; any other terminal ignores it and the renderer types it in. */
+  initialPrompt?: string
   cols: number
   rows: number
 }
@@ -357,6 +363,7 @@ export function createTerminal(
   reused?: boolean
   buffer?: string
   error?: string
+  promptOnCommandLine?: boolean
 } {
   if (!isSafeId(id)) return { ok: false, error: t('main.terminal.invalidId', { id: String(id) }) }
   // An ops chat must never fall back to an ungated CLI: a malformed launch, or one in a
@@ -417,6 +424,9 @@ export function createTerminal(
         delete env[k]
       }
     }
+    // Set below only when this launch carries a prompt, never inherited from Argos's own env.
+    delete env[INITIAL_PROMPT_ENV]
+    let promptOnCommandLine = false
 
     const cols = Number.isInteger(opts.cols) && opts.cols > 0 ? opts.cols : 80
     const rows = Number.isInteger(opts.rows) && opts.rows > 0 ? opts.rows : 24
@@ -518,7 +528,14 @@ export function createTerminal(
       // which one the caller sent is the only thing that says which way round to try.
       const resumeId = safeResumeId(opts.resumeSessionId) || ''
       const pinId = resumeId ? '' : safeResumeId(opts.pinSessionId) || ''
-      const cliCmd = buildCliInvocation(kind, provider, resumeId || pinId, id, !resumeId && !!pinId, ops)
+      // The first message rides on the command line only when this launch creates the
+      // session: never on a resume, which already has its task. Codex and Gemini type it.
+      const prompt = provider === 'claude' && !resumeId ? initialPromptValue(kind, opts.initialPrompt) : null
+      const cliCmd = buildCliInvocation(kind, provider, resumeId || pinId, id, !resumeId && !!pinId, ops, !!prompt)
+      if (cliCmd && prompt) {
+        env[INITIAL_PROMPT_ENV] = prompt
+        promptOnCommandLine = true
+      }
       if (cliCmd) {
         if (kind === 'pwsh' || kind === 'powershell') {
           shellArgs = ['-NoLogo', '-NoProfile', '-Command', cliCmd]
@@ -614,7 +631,7 @@ export function createTerminal(
       createdAt: Date.now()
     })
 
-    return { ok: true, shell: kind, cliLaunched }
+    return { ok: true, shell: kind, cliLaunched, ...(promptOnCommandLine ? { promptOnCommandLine } : {}) }
   } catch (err) {
     // The spawn failed after the Codex overlay (if any) was made, and no exit will come
     // to remove it — do it here.
@@ -737,7 +754,8 @@ function buildCliInvocation(
   sessionId: string,
   id: string,
   createFirst = false,
-  ops?: OpsTerminalLaunch
+  ops?: OpsTerminalLaunch,
+  withPrompt = false
 ): string | null {
   if (kind !== 'pwsh' && kind !== 'powershell' && kind !== 'cmd' && kind !== 'unix') return null
 
@@ -756,8 +774,13 @@ function buildCliInvocation(
     //
     // An ops launch adds its flags to every step of the chain (claudeChain), so no
     // fallback can start a Claude that has its own shell and not the ops server.
+    //
+    // `withPrompt`: the chat's first message, read from INITIAL_PROMPT_ENV on the pty, goes
+    // to the create step as Claude Code's own positional prompt. The CLI submits it itself
+    // once it is ready (after the folder-trust question, if any), where typing it into the
+    // TUI raced the input box's mount.
     const extra = ops ? quoteArgs(kind, claudeOpsFlags(ops.mcpConfigPath)) : ''
-    return claudeChain(kind, sessionId, createFirst, extra)
+    return claudeChain(kind, sessionId, createFirst, extra, undefined, withPrompt)
   }
 
   if (provider === 'gemini') {

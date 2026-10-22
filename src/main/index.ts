@@ -2051,6 +2051,8 @@ ipcMain.handle(
       pinSessionId?: string
       /** An ops terminal: what ops:terminal-session returned (env + config), forwarded as is. */
       ops?: { env: Record<string, string>; mcpConfigPath: string }
+      /** The chat's first message, for a Claude launch to take on its command line. */
+      initialPrompt?: string
       cols: number
       rows: number
     }

@@ -96,26 +96,72 @@ export function withOpsEnvPrefix(cmd: string, env: Record<string, string>): stri
  * old to know `--session-id`. `extra` (already quoted for `kind`) is appended to every
  * step, so a fallback can never start a Claude without the ops restrictions. `bin` is
  * the claude command for wsl/ssh (the remote path, possibly env-prefixed); the other kinds use their own CLAUDE_BIN reference.
+ *
+ * `withPrompt` hands the chat's first message to the step that CREATES the session, as
+ * Claude Code's positional prompt (see initialPromptArg). Only that step: a --resume must
+ * not be given the task a second time, and the bare fallback also runs after a session
+ * that ended with an error, where it would do the same. It goes straight after the
+ * session flag, ahead of `extra`, because --allowedTools and --disallowedTools are
+ * variadic and would swallow a positional that followed them.
  */
 export function claudeChain(
   kind: ShellKind,
   sessionId: string,
   createFirst: boolean,
   extra = '',
-  bin?: string
+  bin?: string,
+  withPrompt = false
 ): string {
-  const [first, second] = createFirst ? ['--session-id', '--resume'] : ['--resume', '--session-id']
+  const arg = withPrompt ? initialPromptArg(kind) : null
+  const p = arg ? ` ${arg}` : ''
+  const create = `--session-id ${sessionId}${p}`
+  const resume = `--resume ${sessionId}`
+  const [first, second] = createFirst ? [create, resume] : [resume, create]
   const x = extra ? ` ${extra}` : ''
   if (kind === 'pwsh' || kind === 'powershell') {
     const b = '& $env:CLAUDE_BIN'
     return sessionId
-      ? `${b} ${first} ${sessionId}${x}; if ($LASTEXITCODE -ne 0) { ${b} ${second} ${sessionId}${x}; if ($LASTEXITCODE -ne 0) { ${b}${x} } }`
-      : `${b}${x}`
+      ? `${b} ${first}${x}; if ($LASTEXITCODE -ne 0) { ${b} ${second}${x}; if ($LASTEXITCODE -ne 0) { ${b}${x} } }`
+      : `${b}${p}${x}`
   }
   const b = kind === 'cmd' ? '"%CLAUDE_BIN%"' : kind === 'wsl' || kind === 'ssh' ? bin || 'claude' : '"$CLAUDE_BIN"'
-  return sessionId
-    ? `${b} ${first} ${sessionId}${x} || ${b} ${second} ${sessionId}${x} || ${b}${x}`
-    : `${b}${x}`
+  return sessionId ? `${b} ${first}${x} || ${b} ${second}${x} || ${b}${x}` : `${b}${p}${x}`
+}
+
+/** The pty env variable that carries a chat's first message onto Claude Code's command line. */
+export const INITIAL_PROMPT_ENV = 'ARGOS_INITIAL_PROMPT'
+
+/**
+ * How `kind`'s shell spells INITIAL_PROMPT_ENV as one argument, or null where the pty's
+ * env does not reach the CLI (wsl, ssh: the launch is typed into a shell across a hop),
+ * which keep typing the prompt in instead. A variable expansion rather than the text
+ * itself, so free text never has to survive a shell's quoting rules.
+ */
+export function initialPromptArg(kind: ShellKind): string | null {
+  if (kind === 'pwsh' || kind === 'powershell') return `"$env:${INITIAL_PROMPT_ENV}"`
+  if (kind === 'cmd') return `"%${INITIAL_PROMPT_ENV}%"`
+  if (kind === 'unix') return `"$${INITIAL_PROMPT_ENV}"`
+  return null
+}
+
+/**
+ * The value to put in INITIAL_PROMPT_ENV for `kind`, or null when the prompt should be
+ * typed in instead (the shell cannot carry it, or there is nothing to send).
+ *
+ * A POSIX shell passes the value through whole. On Windows the expansion is not the end
+ * of it: CLAUDE_BIN may be npm's claude.cmd, a batch file cmd.exe re-reads, where a line
+ * break ends the command (the rest of the prompt is lost) and an embedded `"` closes the
+ * argument early — and Windows PowerShell 5.1 does not escape one for a native command
+ * either. So there line breaks become spaces and double quotes single ones: the model
+ * reads the same request and the argument stays whole. A prompt that starts with `-`
+ * would be read as a flag, so that one is typed in too.
+ */
+export function initialPromptValue(kind: ShellKind, prompt: string | undefined): string | null {
+  if (!prompt || !initialPromptArg(kind)) return null
+  let v = prompt.trim()
+  if (kind !== 'unix') v = v.replace(/\s*[\r\n]+\s*/g, ' ').replace(/"/g, "'")
+  if (!v || v.startsWith('-')) return null
+  return v
 }
 
 /**

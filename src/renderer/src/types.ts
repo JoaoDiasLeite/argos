@@ -1143,6 +1143,9 @@ export interface TerminalCreateOptions {
   /** The id reserved for a conversation that does not exist yet — launching claude
    *  creates under it (--session-id) instead of failing to resume it. */
   pinSessionId?: string
+  /** The chat's first message. A local Claude launch that creates its session takes it on
+   *  the CLI's command line and answers promptOnCommandLine; otherwise it is ignored. */
+  initialPrompt?: string
   cols: number
   rows: number
 }
@@ -1165,6 +1168,9 @@ export interface TerminalCreateResult {
    *  a bare "Failed to start terminal." leaves nothing to act on (a missing shell, an
    *  unreachable cwd and a deleted SSH host all look identical). */
   error?: string
+  /** True when the CLI was launched with initialPrompt as its own first message — the
+   *  renderer must not type it in as well. */
+  promptOnCommandLine?: boolean
 }
 
 export interface TerminalDataEvent {

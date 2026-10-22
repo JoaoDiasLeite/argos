@@ -69,8 +69,10 @@ interface Props {
   /** The inverse, shown inside a pop-out window: hand the chat back to the main window's
    *  panes. Closing the window does the same; this is the discoverable way. */
   onPopIn?: () => void
-  /** Typed into the CLI, with Enter, once it is up. Sent at most once per mount (see
-   *  sentPromptRef) so a Restart doesn't silently re-run the task. */
+  /** The chat's first message. A local Claude launch that creates its session takes it on
+   *  the CLI's own command line; otherwise it is typed into the CLI, with Enter, once it
+   *  is up. Sent at most once per mount (see sentPromptRef) so a Restart doesn't silently
+   *  re-run the task. */
   initialPrompt?: string
   onInitialPromptSent?: () => void
   /** Fired once the PTY has actually launched, so the host can mark this chat as having
@@ -740,7 +742,9 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       sendInitialPrompt()
     }
 
-    // The prompt Home handed over, typed into the CLI as if you had typed it. Deliberately
+    // The prompt Home handed over, typed into the CLI as if you had typed it — for Codex,
+    // Gemini, wsl/ssh and a resume; a local Claude launch took it on its command line
+    // (promptOnCommandLine) and this finds the one shot already spent. Deliberately
     // after reveal and after a further beat: reveal means "the CLI has painted", not "its
     // input is listening", and a TUI that is still mounting drops what it is sent. One shot
     // per mount, and only once — a Restart relaunches the CLI, and re-running the task
@@ -846,6 +850,13 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         resumeSessionId: resumeRef.current,
         pinSessionId: pinRef.current,
         ...(opsRef.current ? { ops: opsRef.current } : {}),
+        // Claude Code takes a first message on its command line and submits it itself once
+        // it is ready, which typing into its TUI could not be relied on to do. Main decides
+        // whether it can (a local shell, a session being created, not resumed) and says so
+        // in promptOnCommandLine. Not once it has been sent: a Restart comes through here.
+        ...(provider === 'claude' && promptRef.current && !sentPromptRef.current
+          ? { initialPrompt: promptRef.current }
+          : {}),
         cols,
         rows
       })
@@ -862,6 +873,12 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         // arrived in the meantime so everything lands in the order the pty produced it.
         if (res.buffer) term.write(res.buffer)
         replayedRef.current = true
+        if (res.promptOnCommandLine && !sentPromptRef.current) {
+          // The CLI already has its first message: close the one shot here, so reveal()
+          // types nothing, and let the host clear the prompt as if it had been typed.
+          sentPromptRef.current = true
+          onPromptSentRef.current?.()
+        }
         for (const chunk of queuedDataRef.current) writeChunk(chunk)
         queuedDataRef.current = []
         if (res.reused) {

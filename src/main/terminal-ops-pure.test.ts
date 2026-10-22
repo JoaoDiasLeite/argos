@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   claudeChain,
   claudeOpsFlags,
+  initialPromptArg,
+  initialPromptValue,
   isOpsLaunch,
   OPS_LOCAL_ONLY_ERROR,
   opsLaunchRefusal,
@@ -88,6 +90,68 @@ describe('claudeChain', () => {
   it('keeps the flags on a launch with no session id', () => {
     const extra = quoteArgs('unix', claudeOpsFlags(UNIX_PATH))
     expect(claudeChain('unix', '', false, extra)).toBe(`"$CLAUDE_BIN" ${extra}`)
+  })
+})
+
+describe('claudeChain with the first message', () => {
+  const extra = quoteArgs('pwsh', claudeOpsFlags(WIN_PATH))
+
+  it('pwsh: the prompt rides on the create step only, ahead of the ops flags', () => {
+    expect(claudeChain('pwsh', SID, true, extra, undefined, true)).toBe(
+      `& $env:CLAUDE_BIN --session-id ${SID} "$env:ARGOS_INITIAL_PROMPT" ${extra}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN --resume ${SID} ${extra}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN ${extra} } }`
+    )
+    expect(claudeChain('powershell', SID, true, '', undefined, true)).toBe(
+      `& $env:CLAUDE_BIN --session-id ${SID} "$env:ARGOS_INITIAL_PROMPT"; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN --resume ${SID}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN } }`
+    )
+  })
+
+  it('cmd and unix: the exact create lines', () => {
+    expect(claudeChain('cmd', SID, true, '', undefined, true)).toBe(
+      `"%CLAUDE_BIN%" --session-id ${SID} "%ARGOS_INITIAL_PROMPT%" || "%CLAUDE_BIN%" --resume ${SID} || "%CLAUDE_BIN%"`
+    )
+    expect(claudeChain('unix', SID, true, '', undefined, true)).toBe(
+      `"$CLAUDE_BIN" --session-id ${SID} "$ARGOS_INITIAL_PROMPT" || "$CLAUDE_BIN" --resume ${SID} || "$CLAUDE_BIN"`
+    )
+  })
+
+  it('never puts it on a resume or the bare fallback', () => {
+    for (const kind of ['pwsh', 'cmd', 'unix'] as const) {
+      const line = claudeChain(kind, SID, false, '', undefined, true)
+      expect(line.split('ARGOS_INITIAL_PROMPT').length - 1).toBe(1)
+      expect(line).toContain(`--session-id ${SID} ${initialPromptArg(kind)}`)
+      expect(line).not.toContain(`--resume ${SID} ${initialPromptArg(kind)}`)
+    }
+  })
+
+  it('a launch with no session id carries it on its one step', () => {
+    expect(claudeChain('unix', '', false, '', undefined, true)).toBe('"$CLAUDE_BIN" "$ARGOS_INITIAL_PROMPT"')
+    expect(claudeChain('pwsh', '', false, extra, undefined, true)).toBe(`& $env:CLAUDE_BIN "$env:ARGOS_INITIAL_PROMPT" ${extra}`)
+  })
+
+  it('is left off wsl and ssh, where the pty env does not reach the CLI', () => {
+    expect(initialPromptArg('wsl')).toBeNull()
+    expect(initialPromptArg('ssh')).toBeNull()
+    expect(claudeChain('wsl', SID, true, '', undefined, true)).toBe(claudeChain('wsl', SID, true))
+  })
+})
+
+describe('initialPromptValue', () => {
+  it('passes a POSIX shell the text whole', () => {
+    expect(initialPromptValue('unix', ' say "hi"\nthen $stop ')).toBe('say "hi"\nthen $stop')
+  })
+
+  it('on Windows folds line breaks and double quotes, which a .cmd shim would cut at', () => {
+    for (const kind of ['pwsh', 'powershell', 'cmd'] as const) {
+      expect(initialPromptValue(kind, 'fix "the" bug\r\n\r\n  then test it')).toBe("fix 'the' bug then test it")
+    }
+  })
+
+  it('leaves to typing what the command line cannot carry', () => {
+    expect(initialPromptValue('pwsh', undefined)).toBeNull()
+    expect(initialPromptValue('pwsh', '  \n ')).toBeNull()
+    expect(initialPromptValue('unix', '--help me')).toBeNull()
+    expect(initialPromptValue('wsl', 'hello')).toBeNull()
+    expect(initialPromptValue('ssh', 'hello')).toBeNull()
   })
 })
 
