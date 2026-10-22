@@ -1117,7 +1117,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
         )}
         {exited && (
           <div className="block chat-terminal-exited" role="status">
-            <span className="help">{t('chat.terminal.exited')}</span>
+            <span className="help">{autoLaunchCli ? t('chat.terminal.cliExited', { provider: providerLabel }) : t('chat.terminal.exited')}</span>
             <button
               className="btn-ghost"
               onClick={() => {
@@ -1125,7 +1125,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
                 setReloadKey((k) => k + 1)
               }}
             >
-              {t('chat.terminal.reconnect')}
+              {autoLaunchCli ? t('chat.terminal.resume') : t('chat.terminal.reconnect')}
             </button>
           </div>
         )}
