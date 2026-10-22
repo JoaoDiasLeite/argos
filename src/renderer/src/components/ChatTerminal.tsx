@@ -14,6 +14,7 @@ import { imagePasteRoute } from '../lib/terminal-image-paste'
 import { registerTerminalLinks } from '../lib/terminal-links'
 import { terminalPathsText } from '../lib/terminal-file-paths'
 import { isTerminalReport } from '../lib/terminal-reports'
+import { inputBoxHolds } from '../lib/terminal-input-box'
 import type { OpsTerminalLaunch } from '../lib/ops-terminal'
 import ChatHead from './ChatHead'
 import Menu, { type MenuItem } from './Menu'
@@ -155,6 +156,14 @@ function hasVisibleContent(term: Terminal): boolean {
 // exit" — so a run in a fresh runbook folder died with code 1 before the user saw why.
 const TRUST_PROMPT_RE = /trust this folder|trust the files in this folder/i
 
+/** The rows on screen, as text. */
+function viewportLines(term: Terminal): string[] {
+  const buf = term.buffer.active
+  const out: string[] = []
+  for (let i = 0; i < term.rows; i++) out.push(buf.getLine(buf.viewportY + i)?.translateToString(true) ?? '')
+  return out
+}
+
 function viewportShows(term: Terminal, re: RegExp): boolean {
   const buf = term.buffer.active
   for (let i = 0; i < term.rows; i++) {
@@ -162,20 +171,6 @@ function viewportShows(term: Terminal, re: RegExp): boolean {
     if (line && re.test(line.translateToString(true))) return true
   }
   return false
-}
-
-/**
- * Whether the text before the cursor ends with the tail of `text`: the cursor is still at
- * the end of a prompt typed into the CLI's input box, so it was not submitted. Only the
- * tail is compared, since a long prompt wraps over several rows.
- */
-function cursorLineEndsWith(term: Terminal, text: string): boolean {
-  const buf = term.buffer.active
-  const line = buf.getLine(buf.baseY + buf.cursorY)
-  if (!line) return false
-  const before = line.translateToString(false, 0, buf.cursorX).trimEnd()
-  const tail = text.replace(/\s+/g, ' ').trim().slice(-Math.min(20, buf.cursorX))
-  return tail.length >= 4 && before.endsWith(tail)
 }
 
 /**
@@ -773,15 +768,15 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
 
     // The Enter, checked: a CLI can still read it as part of the text burst (Claude Code
     // 2.1.308 left an intervention's first message sitting in its input box even after the
-    // pause above). The cursor rests at the end of an unsent prompt, so while its line
-    // still ends with the prompt's tail the Enter did not take, and it is sent again.
+    // pause above). While the CLI's input box still holds the prompt the Enter did not
+    // take, and it is sent again.
     function submitInitialPrompt(text: string, attempt: number): void {
       window.electronAPI.terminalWrite(terminalId, '\r')
       if (attempt === 0) onPromptSentRef.current?.()
       if (attempt >= PROMPT_SUBMIT_RETRIES) return
       promptTimerRef.current = setTimeout(() => {
         const t = termRef.current
-        if (t && cursorLineEndsWith(t, text)) submitInitialPrompt(text, attempt + 1)
+        if (t && inputBoxHolds(viewportLines(t), text)) submitInitialPrompt(text, attempt + 1)
       }, PROMPT_SUBMIT_CHECK_MS)
     }
 
