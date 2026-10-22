@@ -27,6 +27,7 @@ import {
   quoteCmd,
   quotePwsh,
   quoteUnix,
+  typedLaunchLine,
   withOpsEnvPrefix,
   type OpsTerminalLaunch,
   type ShellKind
@@ -868,9 +869,10 @@ function claudeLaunchCommand(
   // assignments in front of every step. Unreachable in this version — createTerminal
   // refuses ops there, because a WSL distro cannot open a Windows named pipe and the relay
   // never runs on a server — but kept so lifting that refusal cannot drop the token.
+  // Both are typed into an interactive shell, which typedLaunchLine ends with the chain.
   if (kind === 'wsl') {
     const bin = ops ? withOpsEnvPrefix('claude', ops.env) : 'claude'
-    return `clear; ${claudeChain(kind, sessionId, createFirst, extra, bin)}\n`
+    return typedLaunchLine(claudeChain(kind, sessionId, createFirst, extra, bin))
   }
   if (kind === 'ssh') {
     // Remote box has no CLAUDE_BIN — use the host's configured claude path (or bare
@@ -880,10 +882,10 @@ function claudeLaunchCommand(
     const bin = ops ? withOpsEnvPrefix(base, ops.env) : base
     const cd = meta?.remotePath ? `cd ${quoteUnix(meta.remotePath)} && ` : ''
     const chain = claudeChain(kind, sessionId, createFirst, extra, bin)
-    if (!sessionId) return `clear; ${cd}${chain}\n`
+    if (!sessionId) return typedLaunchLine(`${cd}${chain}`)
     // Wrap the whole chain in parens so it runs as a single unit after the one-time cd,
     // rather than re-prefixing cd onto each fallback.
-    return cd ? `clear; ${cd}( ${chain} )\n` : `clear; ${chain}\n`
+    return typedLaunchLine(cd ? `${cd}( ${chain} )` : chain)
   }
   return `clear; ${claudeChain(kind, sessionId, createFirst, extra)}\n`
 }
@@ -935,7 +937,9 @@ export function startCliInTerminal(
       kind === 'pwsh' || kind === 'powershell' ? 'Clear-Host; ' : kind === 'cmd' ? 'cls & ' : 'clear; '
 
     if (provider === 'gemini') {
-      p.write(`${clear}agy${kind === 'pwsh' || kind === 'powershell' || kind === 'cmd' ? '\r' : '\n'}`)
+      // Over a wsl/ssh hop the shell ends with the CLI, as for claude (typedLaunchLine).
+      if (kind === 'wsl' || kind === 'ssh') p.write(typedLaunchLine('agy'))
+      else p.write(`${clear}agy${kind === 'pwsh' || kind === 'powershell' || kind === 'cmd' ? '\r' : '\n'}`)
       return { ok: true }
     }
 
@@ -945,7 +949,7 @@ export function startCliInTerminal(
       // above. The notification flags come along for the same reason they do locally,
       // and are safe against an older CLI over there — codex ignores a config key it
       // does not recognise, and refuses only a bad value for one it does.
-      p.write(`${clear}${[provider, ...CODEX_NOTIFY_ARGS].map(quoteUnix).join(' ')}\n`)
+      p.write(typedLaunchLine([provider, ...CODEX_NOTIFY_ARGS].map(quoteUnix).join(' ')))
       return { ok: true }
     }
 

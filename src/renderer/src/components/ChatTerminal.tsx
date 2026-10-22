@@ -113,6 +113,12 @@ const MAX_FONT_SIZE = 22
 // How long the loading overlay is shown at most, regardless of what the CLI does — a
 // backstop so a non-TUI CLI or unexpected output never leaves the loader stuck forever.
 const STARTING_BACKSTOP_MS = 8000
+// A WSL launch whose `clear` has not gone by yet still has the shell on screen (its prompt
+// and the echoed launch line): a distro starting cold, or a heavy .bashrc, can take longer
+// than the backstop to get there, and lifting the loader then showed a bare shell. So the
+// backstop waits on, up to this, before revealing anyway. Not over ssh, where what is on
+// screen before the shell may be a password or host-key question the user has to answer.
+const STARTING_WSL_CLEAR_CAP_MS = 30000
 
 // claude, codex, and Antigravity all render inline (no alt screen), so there's no single
 // escape sequence that means "the CLI took over". Instead we reveal as soon as the terminal
@@ -725,7 +731,19 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     // Backstop: reveal unconditionally after a while, even if output never goes quiet (a
     // chatty CLI, or one that never starts producing output at all) so the loader can
     // never get stuck hiding a perfectly usable terminal.
-    const backstopTimer = setTimeout(reveal, STARTING_BACKSTOP_MS)
+    // A typed WSL launch that has not cleared the shell yet waits on (STARTING_WSL_CLEAR_CAP_MS).
+    const startedAt = Date.now()
+    let typedWsl = false
+    let backstopTimer = setTimeout(backstop, STARTING_BACKSTOP_MS)
+    function backstop(): void {
+      if (typedWsl && awaitingClearRef.current && Date.now() - startedAt < STARTING_WSL_CLEAR_CAP_MS) {
+        backstopTimer = setTimeout(backstop, STARTING_BACKSTOP_MS)
+        return
+      }
+      reveal()
+    }
+    // The last bytes of the previous chunk, so a `clear` split across two chunks still counts.
+    let clearTail = ''
 
     // Reveal the terminal, clearing both timers — called once the CLI has painted content
     // (see onTerminalData), or by the backstop above as an absolute fallback. Focus is
@@ -787,7 +805,10 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     const writeChunk = (data: string): void => {
       // A typed launch starts with `clear`: until its erase-display sequence has gone by,
       // what is on screen is the shell and the echo of the command, not the CLI.
-      if (awaitingClearRef.current && CLEAR_SCREEN_RE.test(data)) awaitingClearRef.current = false
+      if (awaitingClearRef.current) {
+        if (CLEAR_SCREEN_RE.test(clearTail + data)) awaitingClearRef.current = false
+        clearTail = data.slice(-3)
+      }
       // Reveal as soon as the CLI has actually drawn something. `awaitingRevealRef` is a
       // one-shot gate (flipped off here the moment content first appears) so a CLI that keeps
       // streaming — codex spinning on "model: Loading" — reveals immediately instead of the
@@ -919,6 +940,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
           // typing the launch command into the interactive remote shell, resuming this
           // chat's session (claude only). A short delay lets the shell print its prompt
           // first. A Restart comes through here too — it is the first open all over again.
+          typedWsl = res.shell === 'wsl'
           autoStartTimer = setTimeout(() => {
             // Arm the reveal gate right as we launch — and hold it until the launch's
             // own `clear` has wiped the shell and the echoed command off the screen.

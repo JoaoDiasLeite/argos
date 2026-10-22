@@ -46,6 +46,7 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Fixes',
         items: [
+          'A WSL or SSH chat no longer drops you at the shell when the CLI ends or after a Restart: the shell closes with it and the terminal shows that the CLI exited, with Relaunch, as a local chat does.',
           'An intervention’s first message is submitted again when Claude Code leaves it in its input box instead of sending it.',
           'A chat you had already read no longer gets its unread dot back every minute. A Claude Code status line that refreshes on a timer repaints the terminal whenever its text changes, and each repaint was taken for a turn that had just finished. Output that starts on its own now has to keep going before it counts as work.'
         ]

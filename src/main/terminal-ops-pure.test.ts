@@ -9,6 +9,7 @@ import {
   opsLaunchRefusal,
   opsPluginSettings,
   quoteArgs,
+  typedLaunchLine,
   withOpsEnvPrefix
 } from './terminal-ops-pure'
 
@@ -172,6 +173,21 @@ describe('withOpsEnvPrefix', () => {
     const bin = withOpsEnvPrefix('claude', { ARGOS_OPS_TOKEN: 'tok' })
     const line = claudeChain('wsl', SID, false, '', bin)
     expect(line.split(`ARGOS_OPS_TOKEN='tok' claude`).length - 1).toBe(3)
+  })
+})
+
+describe('typedLaunchLine', () => {
+  it('ends the shell with the chain, keeping its fallbacks', () => {
+    expect(typedLaunchLine(claudeChain('wsl', SID, false))).toBe(
+      `clear; PROMPT_COMMAND='exit $?'; claude --resume ${SID} || claude --session-id ${SID} || claude; exit $?\n`
+    )
+  })
+
+  it('wraps codex, agy and an ssh cd + chain the same way', () => {
+    expect(typedLaunchLine('agy')).toBe(`clear; PROMPT_COMMAND='exit $?'; agy; exit $?\n`)
+    expect(typedLaunchLine(`cd '/srv/app' && ( /opt/claude )`)).toBe(
+      `clear; PROMPT_COMMAND='exit $?'; cd '/srv/app' && ( /opt/claude ); exit $?\n`
+    )
   })
 })
 

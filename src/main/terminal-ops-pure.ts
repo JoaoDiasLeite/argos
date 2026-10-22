@@ -151,6 +151,22 @@ export function claudeChain(
   return sessionId ? `${b} ${first}${x} || ${b} ${second}${x} || ${b}${x}` : `${b}${p}${x}`
 }
 
+/**
+ * The whole line typed into a wsl/ssh chat's interactive shell to start its CLI: clear the
+ * screen, run `body`, and then end the shell with the CLI's own status. A chat terminal is
+ * the CLI and nothing else, so when the CLI ends the pty has to end with it (and the
+ * renderer show its exited state), never fall back to the shell's prompt — which is what
+ * a local terminal does too, where the CLI is the pty's own process.
+ *
+ * `exit $?` alone is not enough: an interactive bash abandons the rest of a command line
+ * when a step in it dies of SIGINT, and would land on its prompt. PROMPT_COMMAND runs
+ * before any prompt is drawn, so that path ends the shell too, with the 130 it got.
+ * `body` keeps its `||` fallbacks: only the line's end is the shell's end.
+ */
+export function typedLaunchLine(body: string): string {
+  return `clear; PROMPT_COMMAND='exit $?'; ${body}; exit $?\n`
+}
+
 /** The pty env variable that carries a chat's first message onto Claude Code's command line. */
 export const INITIAL_PROMPT_ENV = 'ARGOS_INITIAL_PROMPT'
 
