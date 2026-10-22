@@ -39,6 +39,7 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Changes',
         items: [
+          'Interventions run Claude Code with your plugins switched off, so a plugin’s hooks no longer run local commands outside the ops gate or print their errors into every reply. Your own hooks and your status line stay.',
           'Interventions are named by their server, with a tag for the mode: Diagnosis for the built-in runbook, the runbook’s name otherwise, in amber when it changes the server. The header adds the client, the ticket and the start of the task, and two tabs on the same server are told apart by ticket or number.'
         ]
       },

@@ -42,16 +42,39 @@ export const OPS_DISALLOWED_TOOLS = [
  * tools allowed without a CLI prompt (main asks instead), and the local tools gone.
  * Unquoted — quote with quoteArgs for the shell it goes through.
  */
-export function claudeOpsFlags(mcpConfigPath: string): string[] {
+export function claudeOpsFlags(mcpConfigPath: string, settingsPath?: string): string[] {
   return [
     '--mcp-config',
     mcpConfigPath,
     '--strict-mcp-config',
+    // Before the two list flags below, which would take it as one more tool name.
+    ...(settingsPath ? ['--settings', settingsPath] : []),
     '--allowedTools',
     'mcp__ops__*',
     '--disallowedTools',
     OPS_DISALLOWED_TOOLS.join(',')
   ]
+}
+
+/** The extra settings file of an ops terminal, beside its MCP config. */
+export const OPS_SETTINGS_FILE = 'ops-settings.json'
+
+/**
+ * The `--settings` overlay of an ops terminal: every plugin the user's settings enable,
+ * switched off. A plugin's hooks run local commands on every turn, outside the ops gate
+ * (and a broken one prints its error into every reply); its MCP servers are already
+ * left out by --strict-mcp-config. Only plugins: the user's own hooks and status line
+ * stay, since `disableAllHooks` would take the status line and Argos's own Notification
+ * hook with them. `--settings` merges key by key, so naming each plugin is what turns it
+ * off. Null when nothing is enabled, so no overlay is written.
+ */
+export function opsPluginSettings(userSettings: unknown): { enabledPlugins: Record<string, false> } | null {
+  const enabled =
+    userSettings && typeof userSettings === 'object' ? (userSettings as { enabledPlugins?: unknown }).enabledPlugins : undefined
+  if (!enabled || typeof enabled !== 'object') return null
+  const off: Record<string, false> = {}
+  for (const [id, on] of Object.entries(enabled as Record<string, unknown>)) if (on) off[id] = false
+  return Object.keys(off).length ? { enabledPlugins: off } : null
 }
 
 /** One token for a PowerShell command line: single quotes, embedded ones doubled. */

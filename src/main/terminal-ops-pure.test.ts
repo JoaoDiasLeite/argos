@@ -7,6 +7,7 @@ import {
   isOpsLaunch,
   OPS_LOCAL_ONLY_ERROR,
   opsLaunchRefusal,
+  opsPluginSettings,
   quoteArgs,
   withOpsEnvPrefix
 } from './terminal-ops-pure'
@@ -202,5 +203,31 @@ describe('isOpsLaunch', () => {
     expect(isOpsLaunch({ env: { A: 1 }, mcpConfigPath: '/x.json' })).toBe(false)
     expect(isOpsLaunch({ mcpConfigPath: '/x.json' })).toBe(false)
     expect(isOpsLaunch(null)).toBe(false)
+  })
+})
+
+describe('opsPluginSettings', () => {
+  it('switches off every plugin the user enables, and only those', () => {
+    const user = { enabledPlugins: { 'mempalace@mempalace': true, 'wm-hud@wm-devsecops': true, 'old@x': false }, statusLine: {} }
+    expect(opsPluginSettings(user)).toEqual({ enabledPlugins: { 'mempalace@mempalace': false, 'wm-hud@wm-devsecops': false } })
+  })
+
+  it('is null when nothing is enabled or the settings are not an object', () => {
+    expect(opsPluginSettings({})).toBeNull()
+    expect(opsPluginSettings({ enabledPlugins: { a: false } })).toBeNull()
+    expect(opsPluginSettings(null)).toBeNull()
+    expect(opsPluginSettings('x')).toBeNull()
+  })
+})
+
+describe('claudeOpsFlags with a settings overlay', () => {
+  it('puts --settings before the list flags that would swallow it', () => {
+    const f = claudeOpsFlags('/m.json', '/s.json')
+    expect(f.slice(0, 5)).toEqual(['--mcp-config', '/m.json', '--strict-mcp-config', '--settings', '/s.json'])
+    expect(f.indexOf('--settings')).toBeLessThan(f.indexOf('--allowedTools'))
+  })
+
+  it('leaves --settings out without an overlay', () => {
+    expect(claudeOpsFlags('/m.json')).not.toContain('--settings')
   })
 })

@@ -19,6 +19,8 @@ import {
   initialPromptValue,
   isOpsLaunch,
   OPS_LOCAL_ONLY_ERROR,
+  OPS_SETTINGS_FILE,
+  opsPluginSettings,
   opsLaunchRefusal,
   parseWslUnc,
   quoteArgs,
@@ -327,6 +329,34 @@ function resolveWindowsExe(name: string): string {
  * dialog every single time. A folder one level down is trusted once and remembered.
  * Falls back to home if the folder cannot be made — a prompt beats no terminal.
  */
+/** Where an ops terminal's plugin overlay goes: beside its MCP config, removed with it. */
+function opsSettingsPath(ops: OpsTerminalLaunch): string {
+  return path.join(path.dirname(ops.mcpConfigPath), OPS_SETTINGS_FILE)
+}
+
+/**
+ * Write the ops Claude's plugin overlay (opsPluginSettings) from the account's own
+ * settings.json. Best-effort: unreadable settings or a failed write leave no file, and
+ * the launch then goes without `--settings` rather than not at all.
+ */
+function writeOpsSettings(ops: OpsTerminalLaunch, configDir: string | null): void {
+  const target = opsSettingsPath(ops)
+  try {
+    fs.rmSync(target, { force: true })
+    const user = JSON.parse(fs.readFileSync(path.join(configDir ?? path.join(os.homedir(), '.claude'), 'settings.json'), 'utf8').replace(/^﻿/, ''))
+    const overlay = opsPluginSettings(user)
+    if (overlay) fs.writeFileSync(target, JSON.stringify(overlay), { encoding: 'utf-8', mode: 0o600 })
+  } catch {
+    // no settings, or not writable: no overlay
+  }
+}
+
+/** The ops flags for this terminal, with `--settings` only when its overlay was written. */
+function opsFlags(ops: OpsTerminalLaunch): string[] {
+  const settings = opsSettingsPath(ops)
+  return claudeOpsFlags(ops.mcpConfigPath, fs.existsSync(settings) ? settings : undefined)
+}
+
 function defaultChatDir(): string {
   const dir = path.join(os.homedir(), 'argos')
   try {
@@ -516,6 +546,8 @@ export function createTerminal(
           // which shares the Gemini CLI's settings stack; that it honours this override
           // is not verified yet.
           env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = ops.mcpConfigPath
+        } else {
+          writeOpsSettings(ops, accountConfigDir(opts.accountId))
         }
       }
 
@@ -779,7 +811,7 @@ function buildCliInvocation(
     // to the create step as Claude Code's own positional prompt. The CLI submits it itself
     // once it is ready (after the folder-trust question, if any), where typing it into the
     // TUI raced the input box's mount.
-    const extra = ops ? quoteArgs(kind, claudeOpsFlags(ops.mcpConfigPath)) : ''
+    const extra = ops ? quoteArgs(kind, opsFlags(ops)) : ''
     return claudeChain(kind, sessionId, createFirst, extra, undefined, withPrompt)
   }
 
@@ -825,7 +857,7 @@ function claudeLaunchCommand(
   // Same ordering question as buildCliInvocation, for the same reason: whichever step
   // goes first prints its refusal into the terminal when it is the wrong one. The chain
   // itself is claudeChain's, with the ops flags (if any) on every step.
-  const extra = ops ? quoteArgs(kind, claudeOpsFlags(ops.mcpConfigPath)) : ''
+  const extra = ops ? quoteArgs(kind, opsFlags(ops)) : ''
   if (kind === 'pwsh' || kind === 'powershell') {
     return `Clear-Host; ${claudeChain(kind, sessionId, createFirst, extra)}\r`
   }
