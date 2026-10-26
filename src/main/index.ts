@@ -214,6 +214,7 @@ import {
   setExplorerContextMenu,
   removeLegacyExplorerContextMenu,
   extractLaunchAction,
+  hasToggleFlag,
   LaunchAction
 } from './shell-integration'
 import { refreshJumpList } from './jumplist'
@@ -290,6 +291,12 @@ if (!notifyMode && !opsMcpMode) {
       const target = extractDeepLink(commandLine)
       if (target) {
         openSessionTarget(target)
+        return
+      }
+      // `--toggle` (a hotkey launching the exe): a window already in front of you goes
+      // away; one hidden in the tray, minimized or behind another window comes forward.
+      if (hasToggleFlag(commandLine) && mainWindow && !mainWindowInactive()) {
+        mainWindow.minimize()
         return
       }
       showMainWindow()

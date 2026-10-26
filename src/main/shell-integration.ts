@@ -69,6 +69,14 @@ export function extractLaunchAction(argv: string[]): LaunchAction | null {
   return null
 }
 
+/**
+ * Whether an argv array carries `--toggle` (a bare flag, e.g. from a hotkey that
+ * launches the exe). Only a second instance acts on it; a first launch opens as usual.
+ */
+export function hasToggleFlag(argv: string[]): boolean {
+  return argv.includes('--toggle')
+}
+
 /** Add or remove the Explorer folder context-menu entries. Never throws. */
 export async function setExplorerContextMenu(enabled: boolean): Promise<void> {
   try {
