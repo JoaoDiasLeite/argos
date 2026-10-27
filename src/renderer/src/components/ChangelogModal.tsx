@@ -18,9 +18,21 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '2.9.1',
+    date: '2026-10-27',
+    tag: 'latest',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Launching Argos with --toggle shows or hides the main window: a window already in front of you goes away, and one hidden in the tray, minimized or behind another window comes forward. Point a keyboard shortcut at the exe with the flag to summon Argos from anywhere.'
+        ]
+      }
+    ]
+  },
+  {
     version: '2.9.0',
     date: '2026-10-22',
-    tag: 'latest',
     sections: [
       {
         title: 'Features',
