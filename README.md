@@ -10,10 +10,13 @@ its own login, its own `/model` and its own tool prompts. Argos adds the workspa
 ## What it does
 
 - **Home** shows the day: the current plan window, what needs you, what is running and
-  what is uncommitted, plus the chats to pick up and recent projects.
-- **Chats** are CLI terminals. Several can run at once in a split layout (drag a pane by
-  its header to move or swap it), pop out into a window of their own, and keep running
-  in the background while you are elsewhere.
+  what is uncommitted, plus the chats to pick up and recent projects. Each repo's
+  uncommitted files expand in place with their line counts, and every diff opens beside
+  the column.
+- **Chats** are CLI terminals. Several can run at once in a split layout, side by side or
+  stacked (drag a pane by its header to move or swap it), pop out into a window of their
+  own, and keep running in the background while you are elsewhere. When a CLI exits, the
+  terminal says so and offers Resume.
 - **Accounts**: keep several Claude Code and Codex logins side by side (Work and
   Personal, say) and pick which one a chat starts under.
 - **Projects** lists the real sessions on disk, local and in every WSL distro, grouped by
@@ -21,16 +24,33 @@ its own login, its own `/model` and its own tool prompts. Argos adds the workspa
 - **Planner** is a sprint board with progress, burndown and a daily standup.
 - **Usage** shows tokens, estimated cost and plan limits per account.
 - **Servers** holds SSH hosts (password, key or agent, encrypted at rest) and WSL
-  distros, with remote terminals and an SFTP file browser. **MCP** lists and edits the
-  configured MCP servers.
-- **Operations** runs an agent against servers over SSH, with nothing installed on them,
-  under a runbook: a folder with `RUNBOOK.md`, a `policy.json` that says which commands,
-  scripts (pinned by sha256) and paths each host group allows, and the scripts
-  themselves. Every call is checked against the policy, asks for approval where the
-  policy says so, lands in a hash-chained audit ledger and in the server's syslog
-  (`journalctl -t argos`), and the run ends in a report written for the client.
+  distros, with remote terminals and an SFTP file browser that follows the shell's `cd`.
+  **MCP** lists and edits the configured MCP servers.
+- **Interventions** run an agent against servers over SSH, with nothing installed on
+  them, under a runbook: a folder with `RUNBOOK.md`, a `policy.json` that says which
+  commands, scripts (pinned by sha256) and paths each host group allows (and which paths,
+  such as secrets, nothing may reach), and the scripts themselves. Every call is checked
+  against the policy, asks for approval where the policy says so, lands in a hash-chained
+  audit ledger and in the server's syslog (`journalctl -t argos`), and the run ends in a
+  report written for the client. Interventions run the CLI with your plugins switched off.
+  - **Diagnosis** mode needs no runbook: a read-only runbook built into Argos checks the
+    system, processes, services, logs, network, the app and PostgreSQL on any stored
+    server, and never restarts, kills or writes. The activity column tracks the
+    hypotheses being tested, and a command the agent may not run is handed to you to run
+    in your own session and paste back. It ends in a handover report (summary, timeline,
+    root cause, what was ruled out, actions, the exact commands run), and once a fix is
+    found it hands over to a runbook intervention on the same server and ticket.
+  - **Runbook library**: point Argos at a runbooks folder (a git checkout, say) and every
+    runbook in it is listed, read in place on each visit. Report and handover folders are
+    set in Settings → Interventions.
+- **Move to another machine**: export the profile and chats to one `.argos` file and
+  import it elsewhere. Logins never travel; server passwords travel only encrypted with a
+  passphrase.
+- English and European Portuguese, switched live in Settings → General → Language.
 - Command palette (Ctrl/Cmd+K), desktop notifications when a chat needs you, tray icon,
-  light and dark themes, auto-update from GitHub Releases.
+  light and dark themes, auto-update from GitHub Releases. Launching Argos with
+  `--toggle` (from a hotkey, say) hides the window if it is in front and brings it
+  forward otherwise.
 
 ## Install
 
