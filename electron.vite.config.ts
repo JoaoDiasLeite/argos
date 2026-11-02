@@ -35,7 +35,10 @@ export default defineConfig({
           overlay: resolve('src/renderer/overlay.html'),
           toast: resolve('src/renderer/toast.html'),
           // A chat popped out into its own window (src/main/chat-popout.ts).
-          popout: resolve('src/renderer/popout.html')
+          popout: resolve('src/renderer/popout.html'),
+          // The desktop companion's pet and bubble windows, one page told apart by its
+          // hash (src/main/companion-window.ts). Must stay free of markdown imports.
+          companion: resolve('src/renderer/companion.html')
         },
         output: {
           // The `index` entry's main chunk was ~1.7 MB before any splitting (measured
@@ -59,7 +62,7 @@ export default defineConfig({
           // the 500 kB warning threshold and gives the browser/Electron a stable,
           // separately-cacheable vendor file.
           //
-          // This only affects the `index` entry: overlay/toast never import
+          // This only affects the `index` entry: overlay/toast/companion never import
           // Markdown or highlight.js, so `manualChunks` (keyed off module id) simply
           // never assigns any of their modules to this chunk for those builds.
           manualChunks(id) {

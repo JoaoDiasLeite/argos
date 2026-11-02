@@ -1,0 +1,171 @@
+/**
+ * The geometry behind the pet and its bubble (docs/COMPANION_PLAN.md §2.4, §9.1), kept
+ * apart from companion-window.ts so it can be tested without Electron. Everything is in
+ * DIPs of the virtual screen, which is what BrowserWindow bounds, display work areas and
+ * screen.getCursorScreenPoint() all speak.
+ */
+import type { CompanionBubbleAnchor, CompanionRect } from './companion-types'
+
+export interface Point {
+  x: number
+  y: number
+}
+
+export interface Size {
+  width: number
+  height: number
+}
+
+export type Rect = CompanionRect
+
+/** The pet window is square; the dog is drawn in its bottom-centre. */
+export const PET_SIZE = 220
+
+/** Gap between the pet window and the edge of the work area. */
+export const PET_MARGIN = 12
+
+/** Where the dog is drawn inside the pet window: bottom-centre, this big. */
+export const DOG_SIZE: Size = { width: 120, height: 130 }
+
+/** The hit area is a generous rounded rect, not a per-pixel test (plan §9.1). */
+export const HIT_RADIUS = 24
+
+/** How far the bubble reaches over the dog's head on the side it sits. */
+const BUBBLE_OVERLAP = 30
+
+/** Below, the bubble starts this far under the top of the dog: beside the head, not over it. */
+const BUBBLE_BELOW_OFFSET = 24
+
+export const BUBBLE_MIN: Size = { width: 240, height: 60 }
+export const BUBBLE_MAX: Size = { width: 440, height: 420 }
+
+const clamp = (v: number, min: number, max: number): number => Math.min(Math.max(v, min), Math.max(min, max))
+
+/** Bottom-right of the work area, PET_MARGIN in. */
+export function defaultPetPosition(workArea: Rect, size = PET_SIZE, margin = PET_MARGIN): Point {
+  return {
+    x: Math.round(workArea.x + workArea.width - size - margin),
+    y: Math.round(workArea.y + workArea.height - size - margin)
+  }
+}
+
+/** The window at `pos` moved the least it takes to sit wholly inside the work area. */
+export function clampToArea(pos: Point, size: number, workArea: Rect): Point {
+  return {
+    x: Math.round(clamp(pos.x, workArea.x, workArea.x + workArea.width - size)),
+    y: Math.round(clamp(pos.y, workArea.y, workArea.y + workArea.height - size))
+  }
+}
+
+/** True when the whole window at `pos` is inside the work area. */
+export function isInsideArea(pos: Point, size: number, workArea: Rect): boolean {
+  return (
+    pos.x >= workArea.x &&
+    pos.y >= workArea.y &&
+    pos.x + size <= workArea.x + workArea.width &&
+    pos.y + size <= workArea.y + workArea.height
+  )
+}
+
+/**
+ * Where a dropped pet comes to rest: against the nearer left or right edge of the work
+ * area, PET_MARGIN in, keeping its height (clamped inside). Docked, not free-floating.
+ */
+export function snapToEdge(pos: Point, workArea: Rect, size = PET_SIZE, margin = PET_MARGIN): Point {
+  const centre = pos.x + size / 2
+  const left = centre < workArea.x + workArea.width / 2
+  const x = left ? workArea.x + margin : workArea.x + workArea.width - size - margin
+  return clampToArea({ x, y: pos.y }, size, workArea)
+}
+
+/**
+ * Where to show the pet: the position saved for this display while it is still wholly
+ * inside the work area (a resolution change or a moved taskbar can strand it), else the
+ * default corner.
+ */
+export function restoredPetPosition(saved: Point | undefined, workArea: Rect, size = PET_SIZE): Point {
+  if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) && isInsideArea(saved, size, workArea)) {
+    return { x: saved.x, y: saved.y }
+  }
+  return defaultPetPosition(workArea, size)
+}
+
+/** The dog's rect on screen, for a pet window with these bounds. */
+export function dogRect(pet: Rect): Rect {
+  return {
+    x: pet.x + (pet.width - DOG_SIZE.width) / 2,
+    y: pet.y + pet.height - DOG_SIZE.height,
+    width: DOG_SIZE.width,
+    height: DOG_SIZE.height
+  }
+}
+
+/** Inside a rect whose corners are rounded by `radius`. */
+export function inRoundedRect(p: Point, r: Rect, radius = HIT_RADIUS): boolean {
+  if (p.x < r.x || p.y < r.y || p.x > r.x + r.width || p.y > r.y + r.height) return false
+  const rad = Math.min(radius, r.width / 2, r.height / 2)
+  // Distance to the nearest corner's circle centre, only when in a corner square.
+  const cx = p.x < r.x + rad ? r.x + rad : p.x > r.x + r.width - rad ? r.x + r.width - rad : p.x
+  const cy = p.y < r.y + rad ? r.y + rad : p.y > r.y + r.height - rad ? r.y + r.height - rad : p.y
+  return (p.x - cx) ** 2 + (p.y - cy) ** 2 <= rad * rad
+}
+
+/**
+ * Whether the cursor is over something of the pet's that should take the click: the dog,
+ * or the one extra element the renderer reported (in the window's own DIPs). Anywhere
+ * else the window lets clicks through to what is behind it.
+ */
+export function petHitTest(cursor: Point, pet: Rect, extra: Rect | null): boolean {
+  if (inRoundedRect(cursor, dogRect(pet))) return true
+  if (!extra) return false
+  return inRoundedRect(cursor, { ...extra, x: pet.x + extra.x, y: pet.y + extra.y }, 8)
+}
+
+export function clampBubbleSize(size: Size): Size {
+  return {
+    width: Math.round(clamp(size.width, BUBBLE_MIN.width, BUBBLE_MAX.width)),
+    height: Math.round(clamp(size.height, BUBBLE_MIN.height, BUBBLE_MAX.height))
+  }
+}
+
+/**
+ * Where the bubble goes beside the dog's head. It leans away from the nearer screen
+ * corner: above when the pet is in the lower half of its work area, below in the upper;
+ * left when the pet is in the right half, right in the left. A side that has no room
+ * flips to the other, and the result is clamped inside the work area either way.
+ */
+export function bubblePlacement(
+  pet: Rect,
+  bubble: Size,
+  workArea: Rect
+): { x: number; y: number; anchor: CompanionBubbleAnchor } {
+  const dog = dogRect(pet)
+  const areaBottom = workArea.y + workArea.height
+  const areaRight = workArea.x + workArea.width
+
+  const aboveY = dog.y - bubble.height
+  const belowY = dog.y + BUBBLE_BELOW_OFFSET
+  const fitsAbove = aboveY >= workArea.y
+  const fitsBelow = belowY + bubble.height <= areaBottom
+  const lowerHalf = pet.y + pet.height / 2 >= workArea.y + workArea.height / 2
+  let above = lowerHalf ? fitsAbove || !fitsBelow : !fitsBelow && fitsAbove
+  // Neither fits (a tall bubble on a short screen): the side with more room.
+  if (!fitsAbove && !fitsBelow) above = dog.y - workArea.y >= areaBottom - belowY
+
+  // Above, the bubble reaches over the head; below, it sits clear of the dog's body.
+  const leftX = above ? dog.x + BUBBLE_OVERLAP - bubble.width : dog.x - bubble.width
+  const rightX = above ? dog.x + dog.width - BUBBLE_OVERLAP : dog.x + dog.width
+  const fitsLeft = leftX >= workArea.x
+  const fitsRight = rightX + bubble.width <= areaRight
+  const rightHalf = pet.x + pet.width / 2 >= workArea.x + workArea.width / 2
+  let left = rightHalf ? fitsLeft || !fitsRight : !fitsRight && fitsLeft
+  if (!fitsLeft && !fitsRight) left = dog.x - workArea.x >= areaRight - (dog.x + dog.width)
+
+  const x = clamp(left ? leftX : rightX, workArea.x, areaRight - bubble.width)
+  const y = clamp(above ? aboveY : belowY, workArea.y, areaBottom - bubble.height)
+  return {
+    x: Math.round(x),
+    y: Math.round(y),
+    anchor: `${above ? 'above' : 'below'}-${left ? 'left' : 'right'}` as CompanionBubbleAnchor
+  }
+}

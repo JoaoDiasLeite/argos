@@ -7,6 +7,21 @@ import type {
   ImportRequest,
   ImportResult
 } from '../../shared/profile-transfer'
+import type {
+  CompanionBubbleAnchor,
+  CompanionBubblePayload,
+  CompanionCaptureResult,
+  CompanionList,
+  CompanionPetState,
+  CompanionPrefs,
+  CompanionRect,
+  CompanionSnoozeRequest,
+  CompanionStateView,
+  CompanionTodo
+} from '../../shared/companion'
+
+// The companion's model and IPC shapes, one definition for main and renderer.
+export type * from '../../shared/companion'
 
 export interface ToolCall {
   id: string
@@ -247,6 +262,7 @@ export interface AppConfig {
   ui: UiPrefs
   system: SystemPrefs
   ops: OpsPrefs
+  companion: CompanionPrefs
   claudeSettings: Record<string, unknown>
 }
 
@@ -1395,6 +1411,40 @@ declare global {
       }) => Promise<{ ok: true; ops: OpsPrefs; dirs: OpsDirs } | { ok: false; error: string }>
       /** The effective ops folders: the setting, or its default resolved under home. */
       opsDirs: () => Promise<OpsDirs>
+      /** Companion prefs, cleaned in main; `registeredShortcut` is the summon key that won. */
+      setCompanionPrefs: (
+        patch: Partial<CompanionPrefs>
+      ) => Promise<{ companion: CompanionPrefs; registeredShortcut: string }>
+
+      // Desktop companion — the pet and bubble windows and, for the list, the main window
+      companion: {
+        list: () => Promise<CompanionList>
+        /** null when the text was empty or too long. Nothing is saved for query / needs-title. */
+        capture: (text: string, source?: 'text' | 'voice') => Promise<CompanionCaptureResult | null>
+        undo: (id: string, kind: 'todo' | 'note') => Promise<boolean>
+        update: (todo: CompanionTodo) => Promise<CompanionTodo | null>
+        /** A todo or a note, by id. */
+        delete: (id: string) => Promise<boolean>
+        done: (id: string, done: boolean) => Promise<CompanionTodo | null>
+        snooze: (id: string, option: CompanionSnoozeRequest) => Promise<CompanionTodo | null>
+        /** Close the reminder bubble for this todo; it stays fired. */
+        dismiss: (id: string) => Promise<boolean>
+        /** Mute until this instant; null lifts it. Resolves to the stored value. */
+        dnd: (untilMs: number | null) => Promise<number | null>
+        state: () => Promise<CompanionStateView>
+        bubbleSize: (width: number, height: number) => void
+        bubbleClose: () => void
+        dragStart: () => void
+        dragEnd: () => void
+        /** An extra element of the pet that should take clicks, in window DIPs; null clears. */
+        hitRect: (rect: CompanionRect | null) => void
+        openMain: () => void
+        onShown: (cb: () => void) => () => void
+        onBubbleMode: (cb: (bubble: CompanionBubblePayload) => void) => () => void
+        onBubbleAnchor: (cb: (anchor: CompanionBubbleAnchor) => void) => () => void
+        onPetState: (cb: (state: CompanionPetState) => void) => () => void
+        onChanged: (cb: (list: CompanionList) => void) => () => void
+      }
 
       // Claude Code data
       ccSources: () => Promise<SourceInfo[]>

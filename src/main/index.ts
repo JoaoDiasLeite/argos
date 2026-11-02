@@ -15,6 +15,7 @@ import { buildPrompt } from './headless-prompt'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { randomUUID } from 'crypto'
 import {
   loadAuthState,
   setMode,
@@ -25,7 +26,7 @@ import {
   buildSubprocessEnv,
   AuthMode
 } from './auth'
-import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, reresolveUiPrefs, setSystemPrefs, setOpsPrefs, opsDir, opsDirsView, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, UsageLimits, UiPrefs, UiPrefsPatch, SystemPrefs, OpsPrefsPatch } from './config'
+import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, reresolveUiPrefs, setSystemPrefs, setOpsPrefs, setCompanionPrefs, opsDir, opsDirsView, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, UsageLimits, UiPrefs, UiPrefsPatch, SystemPrefs, OpsPrefsPatch } from './config'
 import { buildModelsCatalog } from './models-catalog'
 import {
   getAllProjects,
@@ -206,8 +207,32 @@ import {
 import { noteTerminalBusy } from './run-indicators-pure'
 import { successBadge, errorBadge, approvalBadge } from './badges'
 import { createTray, refreshTrayMenu, updateTrayShortcutLabel } from './tray'
-import { companionStore } from './companion-store'
+import { companionStore, normalizeTodo } from './companion-store'
 import { startCompanionScheduler, type CompanionScheduler } from './companion-scheduler'
+import { snooze, type DueReminder, type SnoozeOption } from './companion-schedule-pure'
+import { parseCapture } from './companion-nlu-pure'
+import { listForView, planCapture } from './companion-capture-pure'
+import {
+  applyCompanionPrefs,
+  closeBubble,
+  companionShortcut,
+  currentBubble,
+  currentPetState,
+  endPetDrag,
+  isCompanionVisible,
+  openBubble,
+  registerCompanionShortcut,
+  reregisterCompanionShortcut,
+  sendToBubble,
+  setBubbleSize,
+  setCompanionWindowHooks,
+  setPetHitRect,
+  setPetState,
+  showCompanion,
+  startPetDrag,
+  toggleCompanion
+} from './companion-window'
+import type { CompanionList, CompanionRect, CompanionStateView } from './companion-types'
 import { currentLanguage, t } from './i18n'
 import { initUpdater, getUpdaterState, checkNow, quitAndInstall } from './updater'
 import { getPlanUsageForIpc, startPlanUsageWatcher } from './plan-usage'
@@ -683,6 +708,8 @@ app.whenReady().then(async () => {
         sendToMainWindow('app:new-chat')
       },
       onToggleOverlay: toggleOverlay,
+      onToggleCompanion: toggleCompanion,
+      isCompanionVisible,
       onQuit: () => {
         isQuitting = true
         app.quit()
@@ -700,21 +727,15 @@ app.whenReady().then(async () => {
       sendToMainWindow('app:open-view', 'usage')
     }
   })
-  // Companion reminders. Until the pet window lands (batch C) they go out as plain
-  // Windows notifications; the two callbacks below are what it will replace.
+  // The companion: its windows are created on first show; the summon shortcut and the
+  // reminder timer start now, and "stay on screen" puts the pet up straight away.
+  setCompanionWindowHooks({ onVisibilityChanged: refreshTrayMenu, onBubbleClosed: showNextCompanionAlert })
+  registerCompanionShortcut(getConfig().companion.shortcut)
+  if (getConfig().companion.stayOnScreen) showCompanion()
   companionScheduler = startCompanionScheduler({
     store: companionStore(),
-    deliver: (items) => {
-      for (const r of items) notifyCompanion(r.title, r.late ? `Atrasado ${lateText(r.lateMinutes)}` : 'Agora')
-    },
-    deliverCatchUp: (items, reason) => {
-      const n = items.length
-      const head = n === 1 ? '1 lembrete passou' : `${n} lembretes passaram`
-      notifyCompanion(
-        `${head} ${reason === 'dnd' ? 'enquanto estavas em silêncio' : 'enquanto o Argos esteve fechado'}`,
-        items.slice(0, 3).map((r) => r.title).join(' · ')
-      )
-    }
+    deliver: (items) => queueCompanionAlerts(items.map((reminder) => ({ mode: 'reminder', reminder }))),
+    deliverCatchUp: (reminders, reason) => queueCompanionAlerts([{ mode: 'catchup', reminders, reason }])
   })
   // Keep the "run at login" entry (Windows registry, or the XDG autostart file on
   // Linux) in sync with config on every startup (covers the case where it was
@@ -848,6 +869,200 @@ ipcMain.on('overlay:open-session', (_, sessionId: string) => {
   sendToMainWindow('app:open-session', sessionId)
 })
 
+// ─── Companion IPC (companion-window.ts) ────────────────────────────────────────
+
+/** What the pet has to say, one bubble at a time; a bubble already open is never cut off. */
+type CompanionAlert =
+  | { mode: 'reminder'; reminder: DueReminder }
+  | { mode: 'catchup'; reminders: DueReminder[]; reason: 'launch' | 'dnd' }
+const companionAlerts: CompanionAlert[] = []
+/** The todo whose reminder bubble is up, so done/snooze/dismiss on it moves the queue on. */
+let companionReminderId: string | null = null
+
+function queueCompanionAlerts(alerts: CompanionAlert[]): void {
+  companionAlerts.push(...alerts)
+  try {
+    showNextCompanionAlert()
+  } catch (e) {
+    // No pet window (it failed to create): fall back to plain notifications.
+    console.error('[companion] could not show the bubble:', e)
+    for (const a of companionAlerts.splice(0)) {
+      for (const r of a.mode === 'reminder' ? [a.reminder] : a.reminders) notifyCompanion(r.title, '')
+    }
+  }
+}
+
+/** Put up the next queued alert, if the bubble is free. Also the bubble-closed hook. */
+function showNextCompanionAlert(): void {
+  companionReminderId = null
+  if (currentBubble()) return
+  const next = companionAlerts.shift()
+  if (!next) return
+  setPetState('alert')
+  if (next.mode === 'reminder') {
+    companionReminderId = next.reminder.todoId
+    const queued = companionAlerts.filter((a) => a.mode === 'reminder').length
+    openBubble({ mode: 'reminder', payload: { reminder: next.reminder, queued } })
+  } else {
+    openBubble({ mode: 'catchup', payload: { reminders: next.reminders, reason: next.reason } })
+  }
+}
+
+/** A todo was answered or removed: drop its queued reminders and, if it is up, move on. */
+function settleCompanionReminder(todoId: string): void {
+  for (let i = companionAlerts.length - 1; i >= 0; i--) {
+    const a = companionAlerts[i]
+    if (a.mode === 'reminder' && a.reminder.todoId === todoId) companionAlerts.splice(i, 1)
+  }
+  if (companionReminderId === todoId && currentBubble()?.mode === 'reminder') closeBubble()
+}
+
+function companionList(): CompanionList {
+  const store = companionStore()
+  return listForView(store.listTodos(), store.listNotes(), Date.now())
+}
+
+/** After any change: the main window's panel and the bubble refresh from this. */
+function companionChanged(): void {
+  const list = companionList()
+  sendToMainWindow('companion:changed', list)
+  sendToBubble('companion:changed', list)
+}
+
+const isId = (v: unknown): v is string => typeof v === 'string' && v !== '' && v.length <= 200
+const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+const asRect = (v: unknown): CompanionRect | null => {
+  const r = v as Partial<CompanionRect> | null
+  if (!r || !isFiniteNumber(r.x) || !isFiniteNumber(r.y) || !isFiniteNumber(r.width) || !isFiniteNumber(r.height)) return null
+  return r.width > 0 && r.height > 0 ? { x: r.x, y: r.y, width: r.width, height: r.height } : null
+}
+
+ipcMain.handle('companion:list', () => companionList())
+ipcMain.handle('companion:capture', (_, payload: unknown) => {
+  const p = payload as { text?: unknown; source?: unknown } | null
+  if (!p || typeof p.text !== 'string' || !p.text.trim() || p.text.length > 2000) return null
+  const source = p.source === 'voice' ? 'voice' : 'text'
+  const prefs = getConfig().companion
+  const now = Date.now()
+  const parsed = parseCapture(p.text, { now, leadMinutes: prefs.leadMinutes, morningHour: prefs.morningHour })
+  const store = companionStore()
+  const plan = planCapture({ text: p.text, source, parsed, todos: store.listTodos(), now, newId: randomUUID })
+  if (plan.kind === 'note') store.saveNote(plan.note)
+  if (plan.kind === 'todo') {
+    store.saveTodo(plan.todo)
+    companionScheduler?.poke()
+  }
+  if (plan.kind === 'note' || plan.kind === 'todo') companionChanged()
+  return plan
+})
+// Ctrl+Z on the receipt card (plan §5.4): the capture never happened.
+ipcMain.handle('companion:undo', (_, id: unknown, kind: unknown) => {
+  if (!isId(id) || (kind !== 'todo' && kind !== 'note')) return false
+  const store = companionStore()
+  const removed = kind === 'todo' ? store.deleteTodo(id) : store.deleteNote(id)
+  if (removed) {
+    if (kind === 'todo') {
+      settleCompanionReminder(id)
+      companionScheduler?.poke()
+    }
+    companionChanged()
+  }
+  return removed
+})
+ipcMain.handle('companion:update', (_, raw: unknown) => {
+  const todo = normalizeTodo(raw)
+  if (!todo || !isId(todo.id)) return null
+  companionStore().saveTodo(todo)
+  companionScheduler?.poke()
+  companionChanged()
+  return todo
+})
+ipcMain.handle('companion:delete', (_, id: unknown) => {
+  if (!isId(id)) return false
+  const store = companionStore()
+  const removed = store.deleteTodo(id) || store.deleteNote(id)
+  if (removed) {
+    settleCompanionReminder(id)
+    companionScheduler?.poke()
+    companionChanged()
+  }
+  return removed
+})
+ipcMain.handle('companion:done', (_, id: unknown, done: unknown) => {
+  if (!isId(id) || typeof done !== 'boolean') return null
+  const store = companionStore()
+  const todo = store.listTodos().find((t) => t.id === id)
+  if (!todo) return null
+  const next = { ...todo, done, doneAt: done ? Date.now() : null }
+  store.saveTodo(next)
+  companionScheduler?.poke()
+  if (done) {
+    setPetState('happy')
+    settleCompanionReminder(id)
+  }
+  companionChanged()
+  return next
+})
+ipcMain.handle('companion:snooze', (_, id: unknown, option: unknown) => {
+  if (!isId(id)) return null
+  const o = option as { minutes?: unknown; tomorrowMorning?: unknown; at?: unknown } | null
+  let snoozeOption: SnoozeOption | null = null
+  if (o && isFiniteNumber(o.minutes) && o.minutes > 0 && o.minutes <= 7 * 24 * 60) {
+    snoozeOption = { minutes: o.minutes }
+  } else if (o && o.tomorrowMorning === true) {
+    snoozeOption = { tomorrowMorning: true, morningHour: getConfig().companion.morningHour }
+  } else if (o && isFiniteNumber(o.at) && o.at > Date.now()) {
+    snoozeOption = { at: o.at }
+  }
+  if (!snoozeOption) return null
+  const store = companionStore()
+  const todo = store.listTodos().find((t) => t.id === id)
+  if (!todo) return null
+  const next = snooze(todo, Date.now(), snoozeOption)
+  store.saveTodo(next)
+  companionScheduler?.poke()
+  settleCompanionReminder(id)
+  companionChanged()
+  return next
+})
+// The reminder bubble's close: it stays fired, the next one comes up.
+ipcMain.handle('companion:dismiss', (_, id: unknown) => {
+  if (!isId(id)) return false
+  settleCompanionReminder(id)
+  return true
+})
+ipcMain.handle('companion:dnd', (_, untilMs: unknown) => {
+  if (untilMs !== null && !isFiniteNumber(untilMs)) return null
+  const dndUntil = untilMs !== null && untilMs > Date.now() ? untilMs : null
+  companionStore().setState({ dndUntil })
+  companionScheduler?.poke()
+  setPetState(dndUntil ? 'shh' : 'idle')
+  companionChanged()
+  return dndUntil
+})
+ipcMain.handle('companion:state', (): CompanionStateView => ({
+  dndUntil: companionStore().getState().dndUntil ?? null,
+  shortcut: companionShortcut(),
+  prefs: getConfig().companion,
+  petState: currentPetState(),
+  bubble: currentBubble()
+}))
+ipcMain.on('companion:bubble-size', (_, size: unknown) => {
+  const s = size as { width?: unknown; height?: unknown } | null
+  if (s && isFiniteNumber(s.width) && isFiniteNumber(s.height)) setBubbleSize({ width: s.width, height: s.height })
+})
+ipcMain.on('companion:bubble-close', () => closeBubble())
+ipcMain.on('companion:drag-start', () => startPetDrag())
+ipcMain.on('companion:drag-end', () => endPetDrag())
+ipcMain.on('companion:hit-rect', (_, rect: unknown) => setPetHitRect(asRect(rect)))
+// "Abrir": the list in the main window. The view itself lands with the panel; until
+// then App.tsx ignores a view name it does not know.
+ipcMain.on('companion:open-main', () => {
+  closeBubble()
+  showMainWindow()
+  sendToMainWindow('app:open-view', 'companion')
+})
+
 // ─── Notifications ────────────────────────────────────────────────────────────
 
 // ─── Window controls (custom frameless title bar) ─────────────────────────────
@@ -886,21 +1101,12 @@ ipcMain.handle('app:notify', (_, payload: { title: string; body: string }) => {
   return { shown: true }
 })
 
-// Interim delivery for companion reminders (see startCompanionScheduler above).
-// TODO(companion C): i18n — these strings are pt-PT only until the pet window replaces them.
+// Companion reminders when the pet window could not be created (see queueCompanionAlerts).
 function notifyCompanion(title: string, body: string): void {
   if (!Notification.isSupported()) return
   const n = new Notification({ title, body, silent: false })
   n.on('click', () => showMainWindow())
   n.show()
-}
-
-/** "5 min", "2 h", "2 h 15 min" for how late a reminder is. */
-function lateText(minutes: number): string {
-  if (minutes < 60) return `${minutes} min`
-  const h = Math.floor(minutes / 60)
-  const m = minutes % 60
-  return m === 0 ? `${h} h` : `${h} h ${m} min`
 }
 
 // ─── Auto-update ────────────────────────────────────────────────────────────
@@ -1789,6 +1995,15 @@ ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
   }
 
   return { system, registeredShortcut: overlayShortcut() }
+})
+// The companion's prefs: cleaned in config.ts, applied to the live windows, and the
+// summon shortcut re-registered when it changed. Returns the accelerator that won.
+ipcMain.handle('config:set-companion', (_, patch: unknown) => {
+  const prevShortcut = getConfig().companion.shortcut
+  const companion = setCompanionPrefs(patch)
+  applyCompanionPrefs(companion)
+  if (companion.shortcut !== prevShortcut) reregisterCompanionShortcut(companion.shortcut)
+  return { companion, registeredShortcut: companionShortcut() }
 })
 // The ops folders (reports, handovers, runbooks) and the loose runbooks: null or '' resets
 // a folder to its default (no runbooks folder), null empties the loose list. Returns the

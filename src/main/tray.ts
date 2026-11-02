@@ -3,7 +3,8 @@ import { appIconPath } from './app-icon'
 import { t } from './i18n'
 
 // System tray: keeps the app alive when the window is closed,
-// and gives quick access to the main window, a new chat, and the quick launcher.
+// and gives quick access to the main window, a new chat, the quick launcher and the
+// companion.
 
 let tray: Tray | null = null
 // Kept so the context menu can be rebuilt later (e.g. when the shortcut label or the
@@ -15,6 +16,9 @@ export interface TrayActions {
   onShowMain: () => void
   onNewChat: () => void
   onToggleOverlay: () => void
+  onToggleCompanion: () => void
+  /** Read each time the menu is built, for the companion entry's check mark. */
+  isCompanionVisible: () => boolean
   onQuit: () => void
 }
 
@@ -27,6 +31,12 @@ function buildMenu(actions: TrayActions, overlayShortcut: string): Menu {
         ? t('main.tray.quickLauncherWithShortcut', { shortcut: overlayShortcut })
         : t('main.tray.quickLauncher'),
       click: actions.onToggleOverlay
+    },
+    {
+      label: t('main.tray.companion'),
+      type: 'checkbox',
+      checked: actions.isCompanionVisible(),
+      click: actions.onToggleCompanion
     },
     { type: 'separator' },
     { label: t('main.tray.quit'), click: actions.onQuit }
@@ -56,7 +66,8 @@ export function updateTrayShortcutLabel(shortcut: string): void {
   tray.setContextMenu(buildMenu(trayActions, shortcut))
 }
 
-/** Rebuild the context menu in the current language. No-op if no tray exists. */
+/** Rebuild the context menu in the current language, or after the companion was shown
+ *  or hidden (its check mark is read at build time). No-op if no tray exists. */
 export function refreshTrayMenu(): void {
   if (!tray || !trayActions) return
   tray.setContextMenu(buildMenu(trayActions, trayShortcut))

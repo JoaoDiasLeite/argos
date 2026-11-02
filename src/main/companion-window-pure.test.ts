@@ -1,0 +1,182 @@
+import { describe, it, expect } from 'vitest'
+import {
+  PET_MARGIN,
+  PET_SIZE,
+  bubblePlacement,
+  clampBubbleSize,
+  clampToArea,
+  defaultPetPosition,
+  dogRect,
+  inRoundedRect,
+  petHitTest,
+  restoredPetPosition,
+  snapToEdge,
+  type Rect
+} from './companion-window-pure'
+
+// A 1920x1080 display with a 40 px taskbar at the bottom.
+const area: Rect = { x: 0, y: 0, width: 1920, height: 1040 }
+// A second display to the left, with a negative origin.
+const left: Rect = { x: -1280, y: 100, width: 1280, height: 984 }
+
+const pet = (x: number, y: number): Rect => ({ x, y, width: PET_SIZE, height: PET_SIZE })
+const bubble = { width: 320, height: 120 }
+
+describe('defaultPetPosition', () => {
+  it('is the bottom-right corner, a margin in', () => {
+    expect(defaultPetPosition(area)).toEqual({ x: 1920 - 220 - 12, y: 1040 - 220 - 12 })
+  })
+
+  it('follows a display with a negative origin', () => {
+    expect(defaultPetPosition(left)).toEqual({ x: -220 - PET_MARGIN, y: 100 + 984 - 220 - PET_MARGIN })
+  })
+})
+
+describe('snapToEdge', () => {
+  it('goes to the left edge when dropped in the left half, keeping its height', () => {
+    expect(snapToEdge({ x: 500, y: 300 }, area)).toEqual({ x: 12, y: 300 })
+  })
+
+  it('goes to the right edge when dropped in the right half', () => {
+    expect(snapToEdge({ x: 1200, y: 300 }, area)).toEqual({ x: 1920 - 220 - 12, y: 300 })
+  })
+
+  it('clamps a drop half off the bottom back inside', () => {
+    expect(snapToEdge({ x: 1500, y: 1000 }, area)).toEqual({ x: 1688, y: 1040 - 220 })
+  })
+
+  it('clamps a drop above the top back inside', () => {
+    expect(snapToEdge({ x: 10, y: -80 }, area).y).toBe(0)
+  })
+
+  it('snaps on a display with a negative origin', () => {
+    expect(snapToEdge({ x: -1200, y: 400 }, left)).toEqual({ x: -1280 + 12, y: 400 })
+    expect(snapToEdge({ x: -300, y: 400 }, left)).toEqual({ x: -220 - 12, y: 400 })
+  })
+})
+
+describe('clampToArea', () => {
+  it('leaves a position that fits alone', () => {
+    expect(clampToArea({ x: 100, y: 100 }, PET_SIZE, area)).toEqual({ x: 100, y: 100 })
+  })
+
+  it('pulls every side back inside', () => {
+    expect(clampToArea({ x: -50, y: 5000 }, PET_SIZE, area)).toEqual({ x: 0, y: 820 })
+    expect(clampToArea({ x: 5000, y: -50 }, PET_SIZE, area)).toEqual({ x: 1700, y: 0 })
+  })
+})
+
+describe('restoredPetPosition', () => {
+  it('uses the saved position while it is still on the display', () => {
+    expect(restoredPetPosition({ x: 12, y: 400 }, area)).toEqual({ x: 12, y: 400 })
+  })
+
+  it('rejects a saved position that is now off-screen (smaller resolution)', () => {
+    expect(restoredPetPosition({ x: 2400, y: 400 }, area)).toEqual(defaultPetPosition(area))
+  })
+
+  it('rejects one that only partly fits (the taskbar moved over it)', () => {
+    expect(restoredPetPosition({ x: 12, y: 900 }, area)).toEqual(defaultPetPosition(area))
+  })
+
+  it('falls back to the default with nothing saved, or garbage', () => {
+    expect(restoredPetPosition(undefined, area)).toEqual(defaultPetPosition(area))
+    expect(restoredPetPosition({ x: NaN, y: 0 }, area)).toEqual(defaultPetPosition(area))
+  })
+})
+
+describe('hit test', () => {
+  const p = pet(1000, 500)
+
+  it('puts the dog bottom-centre, 120x130', () => {
+    expect(dogRect(p)).toEqual({ x: 1050, y: 590, width: 120, height: 130 })
+  })
+
+  it('takes the click over the dog', () => {
+    expect(petHitTest({ x: 1110, y: 650 }, p, null)).toBe(true)
+  })
+
+  it('lets clicks through on the transparent part of the window', () => {
+    expect(petHitTest({ x: 1010, y: 510 }, p, null)).toBe(false)
+    expect(petHitTest({ x: 1110, y: 560 }, p, null)).toBe(false)
+  })
+
+  it('lets a click through at the very corner of the rounded rect', () => {
+    expect(inRoundedRect({ x: 1051, y: 591 }, dogRect(p))).toBe(false)
+    expect(inRoundedRect({ x: 1074, y: 591 }, dogRect(p))).toBe(true)
+  })
+
+  it('also takes clicks on the extra element the renderer reported, in window DIPs', () => {
+    const extra = { x: 10, y: 10, width: 60, height: 30 }
+    expect(petHitTest({ x: 1030, y: 520 }, p, extra)).toBe(true)
+    expect(petHitTest({ x: 1030, y: 560 }, p, extra)).toBe(false)
+  })
+
+  it('is false off the window entirely', () => {
+    expect(petHitTest({ x: 0, y: 0 }, p, null)).toBe(false)
+  })
+})
+
+describe('bubblePlacement', () => {
+  it('bottom-right pet: above-left of the head', () => {
+    const r = bubblePlacement(pet(1688, 808), bubble, area)
+    expect(r.anchor).toBe('above-left')
+    const dog = dogRect(pet(1688, 808))
+    expect(r.y + bubble.height).toBe(dog.y)
+    expect(r.x + bubble.width).toBeLessThanOrEqual(dog.x + dog.width)
+  })
+
+  it('bottom-left pet: above-right', () => {
+    expect(bubblePlacement(pet(12, 808), bubble, area).anchor).toBe('above-right')
+  })
+
+  it('top-right pet: below-left', () => {
+    expect(bubblePlacement(pet(1688, 12), bubble, area).anchor).toBe('below-left')
+  })
+
+  it('top-left pet: below-right', () => {
+    expect(bubblePlacement(pet(12, 12), bubble, area).anchor).toBe('below-right')
+  })
+
+  it('flips below when a lower-half pet has no room above (a tall bubble)', () => {
+    const tall = { width: 320, height: 420 }
+    // Lower half of a short display, with the dog's top only 300 px down.
+    const short: Rect = { x: 0, y: 0, width: 1920, height: 900 }
+    const r = bubblePlacement(pet(1688, 210), tall, short)
+    expect(r.anchor).toBe('below-left')
+  })
+
+  it('with no room on either side, takes the roomier one and stays inside', () => {
+    // 400 px wide: the bubble fits neither left nor right of the dog.
+    const narrow: Rect = { x: 0, y: 0, width: 400, height: 1040 }
+    const r = bubblePlacement(pet(170, 808), bubble, narrow)
+    expect(r.anchor).toBe('above-left')
+    expect(r.x).toBe(0)
+    expect(bubblePlacement(pet(10, 808), bubble, narrow).anchor).toBe('above-right')
+  })
+
+  it('always lands inside the work area', () => {
+    for (const p of [pet(0, 0), pet(1700, 0), pet(0, 820), pet(1700, 820), pet(850, 400)]) {
+      const r = bubblePlacement(p, { width: 440, height: 420 }, area)
+      expect(r.x).toBeGreaterThanOrEqual(area.x)
+      expect(r.y).toBeGreaterThanOrEqual(area.y)
+      expect(r.x + 440).toBeLessThanOrEqual(area.x + area.width)
+      expect(r.y + 420).toBeLessThanOrEqual(area.y + area.height)
+    }
+  })
+
+  it('works on a display with a negative origin', () => {
+    const p = pet(...(Object.values(defaultPetPosition(left)) as [number, number]))
+    const r = bubblePlacement(p, bubble, left)
+    expect(r.anchor).toBe('above-left')
+    expect(r.x).toBeGreaterThanOrEqual(left.x)
+  })
+})
+
+describe('clampBubbleSize', () => {
+  it('keeps the bubble between 240x60 and 440x420', () => {
+    expect(clampBubbleSize({ width: 10, height: 10 })).toEqual({ width: 240, height: 60 })
+    expect(clampBubbleSize({ width: 9999, height: 9999 })).toEqual({ width: 440, height: 420 })
+    expect(clampBubbleSize({ width: 300.4, height: 100.6 })).toEqual({ width: 300, height: 101 })
+  })
+})

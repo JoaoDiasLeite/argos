@@ -5,6 +5,7 @@ const main: Record<keyof typeof en, string> = {
   'tray.newTerminal': 'Novo terminal',
   'tray.quickLauncher': 'Lançador rápido',
   'tray.quickLauncherWithShortcut': 'Lançador rápido ({shortcut})',
+  'tray.companion': 'Companheiro',
   'tray.quit': 'Sair do Argos',
 
   'menu.view': 'Ver',

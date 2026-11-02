@@ -4,6 +4,7 @@ export default {
   'tray.newTerminal': 'New terminal',
   'tray.quickLauncher': 'Quick launcher',
   'tray.quickLauncherWithShortcut': 'Quick launcher ({shortcut})',
+  'tray.companion': 'Companion',
   'tray.quit': 'Quit Argos',
 
   'menu.view': 'View',

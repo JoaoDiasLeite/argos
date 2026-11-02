@@ -4,6 +4,7 @@ import * as path from 'path'
 import * as os from 'os'
 import { readJsonFile } from './json-file'
 import { UiPrefs, UiPrefsPatch, applyUiPatch, migrateUiPrefs, resolveUiPrefs } from './ui-prefs-pure'
+import type { CompanionPrefs } from './companion-types'
 // i18n.ts reads getConfig() from here: a cycle, but both sides only call each other at
 // run time, never while the modules load.
 import { t } from './i18n'
@@ -112,6 +113,8 @@ export interface OpsPrefs {
   runbookFolders?: string[]
 }
 
+export type { CompanionPrefs } from './companion-types'
+
 /** A hand-edited config cannot grow the loose runbook list without bound. */
 export const OPS_MAX_RUNBOOK_FOLDERS = 100
 
@@ -121,6 +124,15 @@ interface AppConfig {
   ui: UiPrefs
   system: SystemPrefs
   ops: OpsPrefs
+  companion: CompanionPrefs
+}
+
+const COMPANION_DEFAULTS: CompanionPrefs = {
+  stayOnScreen: false,
+  shortcut: '',
+  leadMinutes: 10,
+  morningHour: 9,
+  hideFromCapture: true
 }
 
 const configPath = path.join(app.getPath('userData'), 'config.json')
@@ -143,7 +155,8 @@ let config: AppConfig = {
     // by an older build takes. One code path, exercised on every launch.
   },
   system: { openAtLogin: false, startMinimized: false, closeToTray: true, overlayShortcut: '', explorerContextMenu: false },
-  ops: {}
+  ops: {},
+  companion: { ...COMPANION_DEFAULTS }
 }
 
 /**
@@ -172,7 +185,8 @@ export function loadConfig(): void {
         ui: loadUiPrefs(config.ui, loaded.ui),
         // Backfill for configs saved by older versions that predate `system`.
         system: { ...config.system, ...(loaded.system ?? {}) },
-        ops: cleanOpsPrefs(loaded.ops)
+        ops: cleanOpsPrefs(loaded.ops),
+        companion: cleanCompanionPrefs(COMPANION_DEFAULTS, loaded.companion)
       }
       return
     }
@@ -230,6 +244,32 @@ export function setSystemPrefs(prefs: Partial<SystemPrefs>): SystemPrefs {
   config.system = { ...config.system, ...prefs }
   saveConfig()
   return config.system
+}
+
+// ─── Companion ────────────────────────────────────────────────────────────────
+
+/**
+ * `patch` laid over `base`, a key at a time, keeping `base`'s value for anything of the
+ * wrong type or out of range — the same function cleans a hand-edited config on load and
+ * a Settings save, so neither can hand the window code a NaN lead or an hour of 25.
+ */
+function cleanCompanionPrefs(base: CompanionPrefs, patch: unknown): CompanionPrefs {
+  const p = (typeof patch === 'object' && patch !== null ? patch : {}) as Record<string, unknown>
+  const int = (v: unknown, min: number, max: number, fallback: number): number =>
+    typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : fallback
+  return {
+    stayOnScreen: typeof p.stayOnScreen === 'boolean' ? p.stayOnScreen : base.stayOnScreen,
+    shortcut: typeof p.shortcut === 'string' ? p.shortcut.trim() : base.shortcut,
+    leadMinutes: int(p.leadMinutes, 0, 24 * 60, base.leadMinutes),
+    morningHour: int(p.morningHour, 0, 23, base.morningHour),
+    hideFromCapture: typeof p.hideFromCapture === 'boolean' ? p.hideFromCapture : base.hideFromCapture
+  }
+}
+
+export function setCompanionPrefs(patch: unknown): CompanionPrefs {
+  config.companion = cleanCompanionPrefs(config.companion, patch)
+  saveConfig()
+  return config.companion
 }
 
 // ─── Ops folders ──────────────────────────────────────────────────────────────

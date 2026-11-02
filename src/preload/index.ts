@@ -175,6 +175,53 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setSystemPrefs: (prefs: unknown) => ipcRenderer.invoke('config:set-system', prefs),
   setOpsPrefs: (patch: unknown) => ipcRenderer.invoke('config:set-ops', patch),
   opsDirs: () => ipcRenderer.invoke('config:ops-dirs'),
+  setCompanionPrefs: (patch: unknown) => ipcRenderer.invoke('config:set-companion', patch),
+
+  // Desktop companion — calls made by the PET and BUBBLE windows (and the main window's list)
+  companion: {
+    list: () => ipcRenderer.invoke('companion:list'),
+    capture: (text: string, source: 'text' | 'voice' = 'text') =>
+      ipcRenderer.invoke('companion:capture', { text, source }),
+    undo: (id: string, kind: 'todo' | 'note') => ipcRenderer.invoke('companion:undo', id, kind),
+    update: (todo: unknown) => ipcRenderer.invoke('companion:update', todo),
+    delete: (id: string) => ipcRenderer.invoke('companion:delete', id),
+    done: (id: string, done: boolean) => ipcRenderer.invoke('companion:done', id, done),
+    snooze: (id: string, option: unknown) => ipcRenderer.invoke('companion:snooze', id, option),
+    dismiss: (id: string) => ipcRenderer.invoke('companion:dismiss', id),
+    dnd: (untilMs: number | null) => ipcRenderer.invoke('companion:dnd', untilMs),
+    state: () => ipcRenderer.invoke('companion:state'),
+    bubbleSize: (width: number, height: number) => ipcRenderer.send('companion:bubble-size', { width, height }),
+    bubbleClose: () => ipcRenderer.send('companion:bubble-close'),
+    dragStart: () => ipcRenderer.send('companion:drag-start'),
+    dragEnd: () => ipcRenderer.send('companion:drag-end'),
+    hitRect: (rect: unknown) => ipcRenderer.send('companion:hit-rect', rect),
+    openMain: () => ipcRenderer.send('companion:open-main'),
+    onShown: (cb: () => void) => {
+      const fn = () => cb()
+      ipcRenderer.on('companion:shown', fn)
+      return () => ipcRenderer.removeListener('companion:shown', fn)
+    },
+    onBubbleMode: (cb: (bubble: unknown) => void) => {
+      const fn = (_: unknown, bubble: unknown) => cb(bubble)
+      ipcRenderer.on('companion:bubble-mode', fn)
+      return () => ipcRenderer.removeListener('companion:bubble-mode', fn)
+    },
+    onBubbleAnchor: (cb: (anchor: unknown) => void) => {
+      const fn = (_: unknown, anchor: unknown) => cb(anchor)
+      ipcRenderer.on('companion:bubble-anchor', fn)
+      return () => ipcRenderer.removeListener('companion:bubble-anchor', fn)
+    },
+    onPetState: (cb: (state: unknown) => void) => {
+      const fn = (_: unknown, state: unknown) => cb(state)
+      ipcRenderer.on('companion:pet-state', fn)
+      return () => ipcRenderer.removeListener('companion:pet-state', fn)
+    },
+    onChanged: (cb: (list: unknown) => void) => {
+      const fn = (_: unknown, list: unknown) => cb(list)
+      ipcRenderer.on('companion:changed', fn)
+      return () => ipcRenderer.removeListener('companion:changed', fn)
+    }
+  },
 
   // Claude Code data
   ccSources: () => ipcRenderer.invoke('cc:sources'),
