@@ -63,24 +63,6 @@ html, body, #root { background: transparent; }
   40% { transform: translateY(-9px); }
 }
 
-/* listening: a thin accent ring pulsing behind the dog. */
-.pet-ring {
-  position: absolute;
-  left: 54px;
-  top: 104px;
-  width: 112px;
-  height: 108px;
-  border-radius: 50%;
-  border: 2px solid var(--accent);
-  opacity: 0.55;
-  animation: pet-ring 1.4s ease-in-out infinite;
-  pointer-events: none;
-}
-@keyframes pet-ring {
-  0%, 100% { transform: scale(0.94); opacity: 0.6; }
-  50% { transform: scale(1.03); opacity: 0.25; }
-}
-
 /* ── Badges over the head ── */
 
 .pet-badge { position: absolute; pointer-events: none; }

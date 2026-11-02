@@ -152,7 +152,6 @@ export default function Pet() {
 
   return (
     <div className={`pet pet-${shown}`}>
-      {shown === 'listening' && <span className="pet-ring" aria-hidden="true" />}
       <div
         className="pet-body"
         role="button"
