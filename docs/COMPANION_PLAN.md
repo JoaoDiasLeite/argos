@@ -730,6 +730,12 @@ Order: A, B, C, D, E, H, then F, G, I, J, K.
 | **I** | `feat(companion): quiet mode and screen-share invisibility` | `companion-window.ts` (`setContentProtection`), dnd in store + tray + bubble command | pure dnd window test |
 | **J** | `feat(companion): export notes to the obsidian vault` | `companion-obsidian-pure.ts` (slug, frontmatter, collision), `companion-store.ts` | `companion-obsidian-pure.test.ts` |
 | **K** | `docs: companion` | `CHANGELOG` entry in `ChangelogModal.tsx`, `README`, this file's status line | — |
+| **L** | `feat(companion): let argos walk along the screen edge` | `companion-walk-pure.ts` (when to walk, target x, turn at corners), `companion-window.ts` (move the pet window along its edge), `src/shared/companion.ts` (`walking` state + facing), `Pet.tsx` (walk sheet, mirrored when facing left), prefs + Settings toggle "Passear pelo ecrã" | `companion-walk-pure.test.ts` — never while the bubble is open, a reminder shows, dnd is on, the cursor is over the pet, a drag is under way or reduced motion is set; stays inside the work area; turns at the corners |
+
+**Batch L, as agreed with João (2026-11-02), after H:** only with "Ficar no ecrã" on and the
+pet idle; every 3–8 min at random it stands, walks 150–400 px along its edge at ~60 px/s
+using `sprites/walk.png` (4 frames), facing the way it goes (mirrored for left), turns at
+the corners and sits again. Settings toggle "Passear pelo ecrã", on by default.
 
 A and B are disjoint and can run in parallel. C depends on A+B's types; D depends on C's
 IPC; E depends on C. F–J are independent of each other once E has landed. Spikes to run
