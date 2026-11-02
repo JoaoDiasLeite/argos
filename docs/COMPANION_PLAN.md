@@ -547,6 +547,25 @@ stays tiny, click-through and non-focusable forever, and the bubble is a focusab
 positioned relative to it — the toast already proves that a small, positioned, acrylic
 flyout works well here. Decide after the `setFocusable` spike.
 
+**Spike results (2026-11-02, Electron 42.5.2, Windows 11, scale 1):**
+
+- **`forward: true` delivered no `mousemove` to the renderer** of a transparent window
+  under ignore, with or without `focusable: false`, for injected mouse input
+  (`mouse_event` moves). It may work with a physical mouse, but the pattern above cannot
+  be relied on. **Decision: main polls `screen.getCursorScreenPoint()` every 50 ms while
+  the pet is visible** and calls `setIgnoreMouseEvents(!inside, { forward: true })` when
+  the cursor crosses the pet's hit area. With that, a click on the transparent area reached
+  the window behind, a click on the pet reached the pet, and the pet never took focus. Stop
+  the interval when the pet hides (and on `closed`: an interval touching a destroyed
+  window throws "Object has been destroyed").
+- **`setContentProtection(true)` works:** a `desktopCapturer` screen grab read the pet's
+  magenta pixel without it and the window behind with it. The same
+  `WDA_EXCLUDEFROMCAPTURE` path is what Teams' screen capture goes through, so the pet
+  should be invisible in a share; confirm once in a real call.
+- **Bubble: a second, focusable window** (decided without the `setFocusable` spike): it
+  keeps the pet window non-focusable and click-through forever and separates text entry
+  from hit-testing.
+
 ### 9.2 Renderer entries
 
 Add `companion` to `electron.vite.config.ts` → `renderer.build.rollupOptions.input`
