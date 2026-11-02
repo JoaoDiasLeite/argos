@@ -4,9 +4,12 @@ The companion's pet (see `COMPANION_PLAN.md` §2) needs eight poses. This file h
 prompts to produce them with an image-generation AI, and what to do with the output so it
 fits the app.
 
+**Direction (João, 2026-11-02):** a cartoon, chibi-style dog in Argos's colours, orange
+and white. Big head, small round body, short legs, big shiny eyes. Cute is the point.
+
 ## Read this first: what format the app needs
 
-- **The app animates the pet itself.** The blink, the ear twitch, the tail wag and the
+- **The app animates the pet itself.** The blink, the ear flop, the tail wag and the
   breathing are CSS transforms on parts of an SVG. So the deliverable is **one static SVG
   per pose**, not GIFs.
 - **Do not use GIF.** GIF transparency is 1-bit, so the edges look jagged over the
@@ -19,42 +22,48 @@ fits the app.
   1. Best: a tool with native vector output, such as Recraft (Vector illustration mode,
      with the character sheet saved as a style).
   2. Otherwise: generate PNG on a transparent or flat background, then vectorise with
-     vectorizer.ai, Illustrator Image Trace or Inkscape Trace Bitmap, with 3 to 4 colours.
+     vectorizer.ai, Illustrator Image Trace or Inkscape Trace Bitmap, with 5 to 6 colours.
 - **Parts for animation:** after vectorising, split each pose in Figma or Inkscape into
-  named groups: `body`, `head`, `ear-left`, `ear-right`, `eyelid`, `tail`, `collar-tag`.
-  Image AIs do not produce clean layers on their own.
-- **Colours:** replace the fills with the four colours below after vectorising, so the app
-  can recolour the pet from theme tokens later.
+  named groups: `body`, `head`, `ear-left`, `ear-right`, `eyes`, `eyelids`, `tail`,
+  `collar-tag`. Image AIs do not produce clean layers on their own.
+- **Colours:** snap the fills to the palette below after vectorising, so the app can
+  recolour the pet from theme tokens later.
 
 | Role | Hex | Token in the app |
 |---|---|---|
-| Fur | `#E9DCC8` | `--pet-fill` |
-| Fur shade (ears, haunch) | `#C9B79C` | `--pet-shade` |
-| Outline, eyes, nose | `#3B332B` | `--pet-line` |
-| Collar and tag | `#DF7A52` | `--accent` |
+| Orange fur (head top, back, ears, tail) | `#DF7A52` | `--pet-fur` (Argos accent) |
+| Darker orange (ear insides, shading patches) | `#C2603B` | `--pet-fur-shade` |
+| White fur (muzzle, chest, belly, paws, tail tip) | `#FFFFFF` | `--pet-white` |
+| Outline, eyes, nose | `#2A2622` | `--pet-line` |
+| Cheek blush, tongue | `#F4A08A` | `--pet-blush` |
+| Collar | `#2A2622` with a gold tag `#D9A83C` | `--pet-collar` |
 
 ## Prompt 1: character sheet (run first)
 
 ```
-Character design sheet of an original mascot: "Argos", a loyal medium-sized hound dog,
-inspired by Odysseus' faithful dog from Greek myth. Flat vector illustration, minimal and
-geometric, like a modern app icon set. Uniform 2px dark-brown outline (#3B332B) with round
-line caps and joins, flat fills only: warm cream fur (#E9DCC8), slightly darker tan for
-the floppy ears and the haunch (#C9B79C). A thin terracotta-orange collar (#DF7A52) with a
-small round tag. Small round dark eyes, a simple rounded snout with a dark nose, no
-eyebrows, no mouth line unless talking. Friendly and calm, not cartoonishly cute, no big
-anime eyes. Side three-quarter view facing right.
-Show the same dog in a turnaround: sitting (side), sitting (three-quarter), standing
-(side), plus a close-up of the head. Consistent proportions across all views.
-Pure white background, no shadows, no gradients, no texture, no text, no watermark.
+Character design sheet of an original cute mascot: "Argos", a chibi cartoon puppy.
+Chibi proportions: a big round head about as large as the body, a small round body,
+short stubby legs, small round paws, a fluffy curled tail.
+Fur colours: bright orange (#DF7A52) on the head, back, ears and tail, white (#FFFFFF)
+on the muzzle, chest, belly, paws and the tip of the tail, like a two-tone shiba or corgi
+pattern. Big soft floppy ears, orange outside and darker orange (#C2603B) inside.
+Big round shiny dark eyes with one white highlight each, small pink blush on the cheeks
+(#F4A08A), a tiny dark nose, a small happy mouth.
+A dark collar with a small round gold tag (#D9A83C).
+Clean cartoon vector style: smooth thick dark outline (#2A2622), flat colours with at most
+one soft shade, rounded shapes everywhere, sticker-like, app-mascot quality.
+Show the same puppy in a turnaround: sitting (front), sitting (three-quarter, facing
+right), standing (side), plus a close-up of the face with three expressions (happy,
+curious, sleepy). Consistent proportions and markings across all views.
+Pure white background, no scenery, no text, no watermark.
 ```
 
 **Negative prompt** (when the tool has one):
 
 ```
-paperclip, Clippy, realistic fur, gradients, 3D render, shading, drop shadow, texture,
-photo, text, letters, watermark, busy background, multiple dogs of different designs,
-anime eyes, chibi
+paperclip, Clippy, realistic, realistic fur, photo, 3D render, heavy shading, gradients,
+texture, scary, angry, long thin legs, adult dog proportions, text, letters, watermark,
+busy background, several different dogs
 ```
 
 ## Prompt 2: one pose at a time
@@ -63,43 +72,45 @@ Attach the chosen character-sheet image as the reference or style. Then use this
 swap in one pose line from the table:
 
 ```
-The same dog "Argos" as in the reference image, identical design, colours, line weight
-and proportions. Flat vector illustration, 2px dark-brown outline, flat fills, no
-gradients, no shadows. Single character, centred, full body visible with some margin,
-facing right in three-quarter view. Pure white background (or transparent), no text.
+The same chibi puppy "Argos" as in the reference image, identical design, markings,
+colours and outline. Orange and white fur, big head, short legs, big shiny eyes.
+Clean cartoon vector style, thick dark outline, flat colours. Single character, centred,
+full body visible with some margin, three-quarter view facing right.
+Pure white background (or transparent), no text.
 Pose: <POSE>
 ```
 
 | State in the app | `<POSE>` |
 |---|---|
-| `idle` | sitting upright, head level, ears relaxed and floppy, tail resting on the ground, eyes open, calm |
-| `dozing` | curled up asleep in a round ball, chin resting on front paws, eyes closed (curved lines), tail wrapped around the body |
-| `listening` | sitting upright, both ears raised and alert, head slightly lifted, eyes wide open, attentive |
-| `thinking` | sitting, head tilted about 15 degrees to the side, one ear up and one down, curious expression |
-| `talking` | sitting, mouth slightly open as if speaking, head turned a little towards the viewer |
-| `alert` | standing on all four legs, ears up and forward, tail raised, looking ahead, ready to announce something |
-| `happy` | sitting, tail raised mid-wag, eyes closed in a smile (upturned curves), mouth open in a soft smile |
-| `shh` | lying down flat, head resting on the front paws, eyes closed, calm; a small crescent-moon badge on the collar tag |
+| `idle` | sitting, looking at the viewer, ears relaxed, tail curled beside it, small smile |
+| `dozing` | curled up asleep in a round ball, eyes closed (curved lines), a tiny "z" bubble, tail wrapped around the body |
+| `listening` | sitting, both ears perked up, head slightly lifted, eyes wide and sparkling, attentive |
+| `thinking` | sitting, head tilted to one side, one ear up and one flopped down, a paw raised to the chin, curious |
+| `talking` | sitting, mouth open as if speaking, one paw slightly raised, friendly |
+| `alert` | standing on all four legs, ears up, tail high, mouth open in a little bark, an exclamation mark above the head |
+| `happy` | sitting, eyes closed in happy upturned curves, big open smile with tongue, tail mid-wag with motion lines |
+| `shh` | lying flat, chin on its front paws, eyes closed, a small crescent moon on the collar tag |
 
 ## Prompt 3 (optional): animation frames for preview
 
 Only for a WebP or APNG preview. In the app, the animation comes from CSS.
 
 ```
-Sprite sheet, 4 frames in one horizontal row, equal spacing, of the same dog "Argos" from
-the reference image, identical design. Flat vector style, 2px outline, flat fills, white
-background, no text. Animation: <ANIMATION>, small differences between frames only, the
-body stays in the same place.
+Sprite sheet, 4 frames in one horizontal row, equal spacing, of the same chibi puppy
+"Argos" from the reference image, identical design and colours. Clean cartoon vector
+style, thick outline, flat colours, white background, no text. Animation: <ANIMATION>,
+small differences between frames only, the body stays in the same place.
 ```
 
 `<ANIMATION>` examples: `tail wagging left to right while sitting`, `slow sleepy breathing
-while curled up`, `ears rising from relaxed to alert`.
+while curled up`, `ears perking up from relaxed to alert`, `blinking`.
 
 ## Checklist before the art goes in the app
 
 - [ ] All eight poses share one canvas size (square, e.g. 512×512) and the same baseline
-      for the feet, so swapping poses does not make the pet jump.
-- [ ] Fills reduced to the four colours above.
+      for the paws, so swapping poses does not make the pet jump.
+- [ ] Fills snapped to the palette above.
 - [ ] Parts grouped and named for animation.
-- [ ] Each SVG under ~8 kB after SVGO.
-- [ ] Reads clearly at 72–96 px tall over both a light and a dark wallpaper.
+- [ ] Each SVG under ~12 kB after SVGO.
+- [ ] Reads clearly at 72–96 px tall over both a light and a dark wallpaper: the white
+      fur needs the dark outline to stand out on a light wallpaper.

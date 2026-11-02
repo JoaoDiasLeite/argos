@@ -603,7 +603,8 @@ One `Pet.tsx` with a `state` prop, one `pet.css` holding the keyframes, every po
 
 These close the open questions below and override the defaults where they differ.
 
-1. **Character:** the dog, named **Argos** (not "Argo"), like Odysseus' hound. The art
+1. **Character:** the dog, named **Argos** (not "Argo"), like Odysseus' hound, drawn as a
+   **chibi cartoon puppy in orange and white** (this replaces the flat, calm look of §2.1). The art
    will be produced with an image-generation AI from `docs/COMPANION_ART_PROMPT.md`, then
    vectorised; the inline-SVG placeholder in the wireframes stands in until then.
 2. **Voice is in the MVP.** Batch H (push-to-talk, local whisper) joins the MVP cut, right
