@@ -225,6 +225,10 @@ html, body, #root { background: transparent; }
   overflow: hidden;
 }
 .bq-undone { font-size: 13.5px; color: var(--text-1); padding: 2px 0; }
+/* Quiet mode's receipt: one line, the crescent the pet wears beside it. */
+.bq-quiet { gap: 6px; }
+.bq-quiet-line { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.bq-quiet-line svg { color: var(--text-2); flex: none; }
 
 .bq-drain {
   height: 2px;

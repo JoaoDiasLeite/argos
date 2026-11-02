@@ -17,7 +17,7 @@ import type {
 } from '../types'
 import { useLanguage, useT } from '../i18n'
 import { useLingering } from '../hooks/useLingering'
-import { chipLabel, rowWhen, toLocalInputValue, whenPhrase } from '../companion/format'
+import { chipLabel, rowWhen, toLocalInputValue, untilPhrase, whenPhrase } from '../companion/format'
 import {
   GROUP_ORDER,
   defaultNewReminder,
@@ -268,6 +268,15 @@ export default function CompanionView({ onOpenSprint }: { onOpenSprint?: () => v
         {shortcut !== null && (
           <p className="cmp-sub">
             {shortcut ? t('companion.panel.sub', { shortcut }) : t('companion.panel.subNoShortcut')}
+          </p>
+        )}
+        {list?.dndUntil != null && list.dndUntil > now && (
+          <p className="cmp-sub cmp-quiet">
+            {t('companion.panel.quiet', { when: untilPhrase(list.dndUntil, now, locale, t) })}
+            {' · '}
+            <button type="button" className="btn-text" onClick={() => void api.dnd(null)}>
+              {t('companion.panel.quietOff')}
+            </button>
           </p>
         )}
       </div>

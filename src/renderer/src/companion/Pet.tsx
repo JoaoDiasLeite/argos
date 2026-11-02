@@ -160,6 +160,10 @@ export default function Pet() {
         onPointerDown={onPointerDown}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          api.petMenu()
+        }}
       >
         {/* The mirror is on a wrapper so the sprite's own steps() animation keeps running. */}
         <div className={`pet-facing${mirrored ? ' pet-facing-left' : ''}`}>

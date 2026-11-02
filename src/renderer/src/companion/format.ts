@@ -87,6 +87,11 @@ export function whenPhrase(
   return precision === 'day' ? day : t('companion.when.dayAt', { day, time: formatTime(at, locale) })
 }
 
+/** When a mute ends: "15:30" today, else "amanhã às 09:00". */
+export function untilPhrase(at: number, now: number, locale: string | undefined, t: TFunction): string {
+  return dayOffset(at, now) === 0 ? formatTime(at, locale) : whenPhrase(at, 'minute', now, locale, t)
+}
+
 /** A row's time column: the time today, else the day word ("Ontem", "Ter 3 nov"). */
 export function rowWhen(at: number, now: number, locale: string | undefined, t: TFunction): string {
   return dayOffset(at, now) === 0 ? formatTime(at, locale) : dayWord(at, now, locale, t)

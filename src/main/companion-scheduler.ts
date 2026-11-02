@@ -21,6 +21,8 @@ export interface CompanionSchedulerDeps {
   deliver: (items: DueReminder[]) => void
   /** Reminders to show as one line; `reason` says whether the app was closed or muted. */
   deliverCatchUp: (items: DueReminder[], reason: 'launch' | 'dnd') => void
+  /** Quiet mode ran out (or was switched off) and was cleared, just before what it held back is delivered. */
+  onDndLifted?: () => void
 }
 
 export interface CompanionScheduler {
@@ -69,7 +71,14 @@ export function startCompanionScheduler(deps: CompanionSchedulerDeps): Companion
       })
 
       const dndUntil = state.dndUntil ?? null
-      if (dndUntil !== null && dndUntil <= t) store.setState({ dndUntil: null })
+      if (dndUntil !== null && dndUntil <= t) {
+        store.setState({ dndUntil: null })
+        try {
+          deps.onDndLifted?.()
+        } catch (e) {
+          console.error('[companion] dnd-lifted hook failed:', e)
+        }
+      }
 
       if (plan.deliver.length > 0) deps.deliver(plan.deliver)
       if (plan.catchUp && plan.catchUpReason) {

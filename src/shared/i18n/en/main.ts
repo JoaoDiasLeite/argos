@@ -7,6 +7,16 @@ export default {
   'tray.companion': 'Companion',
   'tray.quit': 'Quit Argos',
 
+  // The companion's entries in the tray and in the right-click menu on the pet.
+  'companion.today': 'What do I have today',
+  'companion.quietHour': 'Quiet for 1 hour',
+  'companion.quietTomorrow': 'Quiet until tomorrow',
+  'companion.quietOff': 'Turn quiet off (until {until})',
+  'companion.quiet.tomorrowAt': 'tomorrow, {time}',
+  'companion.openPanel': 'Open the panel',
+  'companion.hide': 'Hide Argos',
+  'companion.settings': 'Settings',
+
   'menu.view': 'View',
   'menu.window': 'Window',
   'menu.reload': 'Reload',

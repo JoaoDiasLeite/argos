@@ -167,7 +167,8 @@ export interface CompanionReminder {
 
 /** The payload of `companion:bubble-mode`, per mode. */
 export type CompanionBubblePayload =
-  | { mode: 'input'; payload: null }
+  /** Typing; with `query` it opens already answering one ("O que tenho hoje" from the tray or the pet's menu). */
+  | { mode: 'input'; payload: null | { query: CompanionCaptureResult } }
   | { mode: 'reminder'; payload: { reminder: CompanionReminder; queued: number } }
   | { mode: 'catchup'; payload: { reminders: CompanionReminder[]; reason: 'launch' | 'dnd' } }
   | { mode: 'confirm'; payload: CompanionCaptureResult }
@@ -179,6 +180,8 @@ export interface CompanionList {
   sprintLinks?: Record<string, CompanionSprintLink>
   /** Where "Promover para o sprint" would put a todo now; null when no sprint is active. */
   activeSprint?: CompanionActiveSprint | null
+  /** Quiet mode's end (state.json `dndUntil`), so the panel can say so; null when off. */
+  dndUntil?: number | null
 }
 
 /** A promoted todo's sprint item as the panel shows it. 'missing': its sprint or item was deleted. */
@@ -204,13 +207,16 @@ export type CompanionPromoteResult =
 
 /**
  * What `companion:capture` did with a line of input. Nothing is saved for query and
- * needs-title, nor for 'cancelled' (Esc while the model was reading the date).
+ * needs-title, nor for 'cancelled' (Esc while the model was reading the date). 'quiet'
+ * is a `shh` command (plan §3.3): quiet mode was set, nothing else.
  */
 export interface CompanionCaptureResult {
-  kind: 'todo' | 'note' | 'query' | 'needs-title' | 'cancelled'
+  kind: 'todo' | 'note' | 'query' | 'needs-title' | 'cancelled' | 'quiet'
   todo?: CompanionTodo
   note?: CompanionNote
   results?: CompanionTodo[]
+  /** For 'quiet': muted until this instant, or null when it was switched off. */
+  quietUntil?: number | null
   parsed: ParsedCapture
 }
 

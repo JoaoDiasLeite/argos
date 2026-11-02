@@ -57,6 +57,8 @@ interface Props {
   codexAccounts?: ProviderAccountStatus[]
   /** Back to whatever view this screen displaced — App.tsx remembers which. */
   onBack: () => void
+  /** Open on this section (a deep link, e.g. the companion's "Definições"); `n` changes per request. */
+  target?: { section: string; n: number } | null
 }
 
 const SECTIONS: { id: SectionId; labelKey: MessageKey; icon: JSX.Element }[] = [
@@ -153,6 +155,11 @@ function humanBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
+/** A deep-linked section name, if it is one of ours. */
+function sectionOf(name: string | undefined): SectionId | null {
+  return SECTIONS.some((s) => s.id === name) ? (name as SectionId) : null
+}
+
 // Ledger files are named by UTC day, so "today" must be the UTC date, not the local one.
 const utcToday = () => new Date().toISOString().slice(0, 10)
 
@@ -166,10 +173,16 @@ export default function SettingsView({
   accounts,
   defaultAccountId,
   codexAccounts,
-  onBack
+  onBack,
+  target
 }: Props) {
   const t = useT()
-  const [section, setSection] = useState<SectionId>('appearance')
+  const [section, setSection] = useState<SectionId>(() => sectionOf(target?.section) ?? 'appearance')
+
+  useEffect(() => {
+    const id = sectionOf(target?.section)
+    if (id) setSection(id)
+  }, [target])
   const pane = useRef<HTMLDivElement>(null)
 
   // Switching section is a page change, not a scroll — landing halfway down System

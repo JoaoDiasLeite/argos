@@ -206,13 +206,14 @@ import {
 } from './chat-popout'
 import { noteTerminalBusy } from './run-indicators-pure'
 import { successBadge, errorBadge, approvalBadge } from './badges'
-import { createTray, refreshTrayMenu, updateTrayShortcutLabel } from './tray'
+import { createTray, quietUntilLabel, refreshTrayMenu, updateTrayShortcutLabel } from './tray'
 import { companionStore, normalizeTodo } from './companion-store'
 import { startCompanionScheduler, type CompanionScheduler } from './companion-scheduler'
 import { snooze, type DueReminder, type SnoozeOption } from './companion-schedule-pure'
 import { parseCapture } from './companion-nlu-pure'
 import { buildWhenPrompt, MODEL_TIMEOUT_MS, needsModel, parsedFromModel } from './companion-nlu-gate-pure'
-import { listForView, planCapture } from './companion-capture-pure'
+import { listForView, planCapture, todayQuery } from './companion-capture-pure'
+import { isQuiet, parseQuietCommand, tomorrowAt } from './companion-quiet-pure'
 import { activeSprint, activeSprintView, linkedItem, promote, sprintLinks, unlink, withSprintDone } from './companion-promote-pure'
 import {
   applyCompanionPrefs,
@@ -223,9 +224,11 @@ import {
   currentPetFacing,
   currentPetState,
   endPetDrag,
+  hideCompanion,
   isCompanionBubble,
   isCompanionVisible,
   openBubble,
+  popupPetMenu,
   registerCompanionShortcut,
   registerVoiceShortcut,
   reregisterCompanionShortcut,
@@ -720,6 +723,9 @@ app.whenReady().then(async () => {
       onToggleOverlay: toggleOverlay,
       onToggleCompanion: toggleCompanion,
       isCompanionVisible,
+      onCompanionToday: showCompanionToday,
+      onCompanionQuiet: setCompanionQuiet,
+      companionQuietUntil,
       onQuit: () => {
         isQuitting = true
         app.quit()
@@ -747,11 +753,21 @@ app.whenReady().then(async () => {
   registerCompanionShortcut(getConfig().companion.shortcut)
   registerVoiceShortcut(getConfig().companion.voice, getConfig().companion.voiceShortcut)
   installMicrophonePermission()
+  // Still muted from before the restart: he comes up with the crescent.
+  if (companionQuietUntil() !== null) setPetState('shh')
   if (getConfig().companion.stayOnScreen) showCompanion()
   companionScheduler = startCompanionScheduler({
     store: companionStore(),
     deliver: (items) => queueCompanionAlerts(items.map((reminder) => ({ mode: 'reminder', reminder }))),
-    deliverCatchUp: (reminders, reason) => queueCompanionAlerts([{ mode: 'catchup', reminders, reason }])
+    deliverCatchUp: (reminders, reason) => queueCompanionAlerts([{ mode: 'catchup', reminders, reason }]),
+    // Ran out (or was switched off): he sits up, and the tray and panel stop saying "quiet".
+    // What it held back is delivered right after, in the same tick.
+    onDndLifted: () => {
+      if (currentPetState() === 'shh') setPetState('idle')
+      refreshTrayMenu()
+      companionChanged()
+      showNextCompanionAlert()
+    }
   })
   // Keep the "run at login" entry (Windows registry, or the XDG autostart file on
   // Linux) in sync with config on every startup (covers the case where it was
@@ -909,10 +925,14 @@ function queueCompanionAlerts(alerts: CompanionAlert[]): void {
   }
 }
 
-/** Put up the next queued alert, if the bubble is free. Also the bubble-closed hook. */
+/**
+ * Put up the next queued alert, if the bubble is free. Also the bubble-closed hook. While
+ * quiet, what was already queued waits too (the scheduler holds back anything newer), and
+ * comes out when it lifts.
+ */
 function showNextCompanionAlert(): void {
   companionReminderId = null
-  if (currentBubble()) return
+  if (currentBubble() || companionQuietUntil() !== null) return
   const next = companionAlerts.shift()
   if (!next) return
   setPetState('alert')
@@ -941,7 +961,99 @@ function companionList(): CompanionList {
   const todos = store.listTodos()
   // A promoted todo reads `done` through from its sprint item (plan §6.1).
   const view = listForView(withSprintDone(todos, sprints, now), store.listNotes(), now)
-  return { ...view, sprintLinks: sprintLinks(todos, sprints), activeSprint: activeSprintView(activeSprint(sprints, now)) }
+  return {
+    ...view,
+    sprintLinks: sprintLinks(todos, sprints),
+    activeSprint: activeSprintView(activeSprint(sprints, now)),
+    dndUntil: companionQuietUntil()
+  }
+}
+
+/** When quiet mode ends, or null when it is off (or already ran out). */
+function companionQuietUntil(): number | null {
+  try {
+    const until = companionStore().getState().dndUntil
+    return isQuiet(until, Date.now()) ? until! : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Quiet mode on until `untilMs`, or off with null (plan §3.3): the one path for the
+ * bubble's `shh`, the tray, the pet's menu and `companion:dnd`. On: the scheduler holds
+ * reminders back and he lies down with the crescent. Off: the end is set to now and the
+ * scheduler lifts it on the poke, so whatever waited comes out the same way as when it
+ * runs out on its own (one catch-up for two or more); its onDndLifted sits him up.
+ */
+function setCompanionQuiet(untilMs: number | null): number | null {
+  const now = Date.now()
+  const dndUntil = untilMs !== null && untilMs > now ? untilMs : null
+  const store = companionStore()
+  const wasOn = isQuiet(store.getState().dndUntil, now)
+  if (dndUntil !== null) {
+    store.setState({ dndUntil })
+    setPetState('shh')
+  } else if (wasOn && companionScheduler) {
+    store.setState({ dndUntil: now })
+  } else {
+    store.setState({ dndUntil: null })
+    if (currentPetState() === 'shh') setPetState('idle')
+  }
+  companionScheduler?.poke()
+  refreshTrayMenu()
+  companionChanged()
+  return dndUntil
+}
+
+/** "O que tenho hoje" (tray, pet menu): the pet up, its bubble answering for today, ready to type. */
+function showCompanionToday(): void {
+  // A reminder or catch-up that is up stays until it is answered.
+  const open = currentBubble()
+  if (open && open.mode !== 'input' && open.mode !== 'confirm') {
+    showCompanion()
+    return
+  }
+  openBubble({ mode: 'input', payload: { query: todayQuery(companionStore().listTodos(), Date.now()) } })
+}
+
+/** The right-click menu on the dog (plan §3.3), built fresh each time. */
+function companionPetMenuTemplate(): MenuItemConstructorOptions[] {
+  const until = companionQuietUntil()
+  const quietItems: MenuItemConstructorOptions[] =
+    until !== null
+      ? [{ label: t('main.companion.quietOff', { until: quietUntilLabel(until) }), click: () => setCompanionQuiet(null) }]
+      : [
+          { label: t('main.companion.quietHour'), click: () => setCompanionQuiet(Date.now() + 60 * 60_000) },
+          {
+            label: t('main.companion.quietTomorrow'),
+            click: () => setCompanionQuiet(tomorrowAt(Date.now(), getConfig().companion.morningHour))
+          }
+        ]
+  return [
+    { label: t('main.companion.today'), click: showCompanionToday },
+    { type: 'separator' },
+    ...quietItems,
+    { type: 'separator' },
+    { label: t('main.companion.openPanel'), click: openCompanionPanel },
+    // With "stay on screen" on, until the next summon or reminder brings him back.
+    { label: t('main.companion.hide'), click: hideCompanion },
+    { label: t('main.companion.settings'), click: openCompanionSettings }
+  ]
+}
+
+/** "Abrir" / "Ver todos" / the pet's menu: the list in the main window (CompanionView). */
+function openCompanionPanel(): void {
+  closeBubble()
+  showMainWindow()
+  sendToMainWindow('app:open-view', 'companion')
+}
+
+/** Settings, on its Companheiro section, in the main window. */
+function openCompanionSettings(): void {
+  closeBubble()
+  showMainWindow()
+  sendToMainWindow('app:open-view', 'settings/companion')
 }
 
 /** A sprint changed: promoted todos read their status through it, and the active sprint may differ. */
@@ -983,6 +1095,16 @@ ipcMain.handle('companion:capture', async (e, payload: unknown): Promise<Compani
   const text = p.text
   const source = p.source === 'voice' ? 'voice' : 'text'
   const prefs = getConfig().companion
+  // "shh 1h", "silêncio até amanhã", "acorda": the whole line is a quiet command (plan §3.3).
+  const quiet = parseQuietCommand(text, { now: Date.now(), morningHour: prefs.morningHour })
+  if (quiet) {
+    const quietUntil = setCompanionQuiet('off' in quiet ? null : quiet.untilMs)
+    return {
+      kind: 'quiet',
+      quietUntil,
+      parsed: { intent: 'todo', title: '', when: null, remindAt: [], isExplicitReminder: false, confidence: 1, matchedSpan: null }
+    }
+  }
   let parsed = parseCapture(text, { now: Date.now(), leadMinutes: prefs.leadMinutes, morningHour: prefs.morningHour })
   // Layer 2 (plan §5.1): the grammar is unsure, so this one line goes to the model — only
   // with "Perguntar ao modelo" on. Never longer than MODEL_TIMEOUT_MS; any failure keeps
@@ -1152,12 +1274,7 @@ ipcMain.handle('companion:dismiss', (_, id: unknown) => {
 })
 ipcMain.handle('companion:dnd', (_, untilMs: unknown) => {
   if (untilMs !== null && !isFiniteNumber(untilMs)) return null
-  const dndUntil = untilMs !== null && untilMs > Date.now() ? untilMs : null
-  companionStore().setState({ dndUntil })
-  companionScheduler?.poke()
-  setPetState(dndUntil ? 'shh' : 'idle')
-  companionChanged()
-  return dndUntil
+  return setCompanionQuiet(untilMs)
 })
 ipcMain.handle('companion:state', (): CompanionStateView => ({
   dndUntil: companionStore().getState().dndUntil ?? null,
@@ -1183,12 +1300,9 @@ ipcMain.on('companion:summon', () => {
   if (!open) showCompanion({ focusInput: true })
   else if (open.mode === 'input') closeBubble()
 })
-// "Abrir" / "Ver todos": the list in the main window (CompanionView).
-ipcMain.on('companion:open-main', () => {
-  closeBubble()
-  showMainWindow()
-  sendToMainWindow('app:open-view', 'companion')
-})
+ipcMain.on('companion:open-main', () => openCompanionPanel())
+// A right-click on the dog: the native menu at the cursor (the pet window never takes focus).
+ipcMain.on('companion:pet-menu', () => popupPetMenu(Menu.buildFromTemplate(companionPetMenuTemplate())))
 
 // ─── Companion dictation (companion-voice.ts, plan §4.2) ────────────────────────
 

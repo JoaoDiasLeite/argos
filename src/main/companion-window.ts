@@ -1,4 +1,4 @@
-import { BrowserWindow, globalShortcut, screen, systemPreferences, type WebContents } from 'electron'
+import { BrowserWindow, globalShortcut, screen, systemPreferences, type Menu, type WebContents } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
@@ -17,6 +17,7 @@ import {
 } from './companion-window-pure'
 import { voiceShortcutCandidates } from './companion-voice-pure'
 import { canWalk, nextWalkDelay, planWalk, stepToward, type WalkPlan } from './companion-walk-pure'
+import { restingPetState } from './companion-quiet-pure'
 import { VOICE_SHORTCUT_DEFAULTS } from './companion-types'
 import type {
   CompanionBubbleAnchor,
@@ -311,11 +312,15 @@ function reducedMotion(): boolean {
 }
 
 function dndOn(): boolean {
+  return restingState() === 'shh'
+}
+
+/** What he sits back to after a bubble, a walk or the happy beat: the crescent while muted (plan §3.3). */
+function restingState(): CompanionPetState {
   try {
-    const until = companionStore().getState().dndUntil
-    return typeof until === 'number' && until > Date.now()
+    return restingPetState(companionStore().getState().dndUntil, Date.now())
   } catch {
-    return false
+    return 'idle'
   }
 }
 
@@ -378,7 +383,7 @@ function stopWalk(): void {
   if (!walk) return
   walk = null
   if (pollTimer && !drag) startPolling(POLL_MS)
-  if (petState === 'walking') setPetState('idle')
+  if (petState === 'walking') setPetState(restingState())
   if (alive(petWindow)) {
     const b = petWindow.getBounds()
     const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
@@ -447,11 +452,15 @@ export function setPetState(state: CompanionPetState): void {
   if (happyTimer) clearTimeout(happyTimer)
   happyTimer = null
   // The renderer sits him down after its beat on its own; main follows, so he can walk again.
+  // Muted, he goes back to the crescent rather than sitting idle: told a little after the
+  // renderer's own return to idle, so this arrives last.
   if (state === 'happy') {
     happyTimer = setTimeout(() => {
       happyTimer = null
-      if (petState === 'happy') petState = 'idle'
-    }, HAPPY_MS)
+      if (petState !== 'happy') return
+      petState = restingState()
+      if (petState !== 'idle') sendToPet('companion:pet-state', petState)
+    }, HAPPY_MS + 100)
   }
   sendToPet('companion:pet-state', state)
 }
@@ -472,6 +481,17 @@ export function isCompanionVisible(): boolean {
 export function showCompanion(opts: { focusInput?: boolean } = {}): void {
   showPet()
   if (opts.focusInput) openBubble({ mode: 'input', payload: null })
+}
+
+/**
+ * The right-click menu on the dog (plan §3.3). The pet window never takes focus, so the
+ * menu is not tied to it: Menu.popup on an unfocusable owner opens at the cursor all the
+ * same (popup's default position), and a click elsewhere dismisses it.
+ */
+export function popupPetMenu(menu: Menu): void {
+  if (!alive(petWindow) || !petWindow.isVisible()) return
+  stopWalk()
+  menu.popup({ window: petWindow })
 }
 
 /** Down, bubble and all, whatever "stay on screen" says. */
@@ -555,7 +575,7 @@ export function closeBubble(): void {
   hideBubbleWindow()
   // The hook may have opened the next reminder.
   if (bubble) return
-  if (petState !== 'happy' && petState !== 'shh') setPetState('idle')
+  if (petState !== 'happy') setPetState(restingState())
   if (!prefs().stayOnScreen && isCompanionVisible()) {
     cancelIdleHide()
     hideTimer = setTimeout(() => {
@@ -641,14 +661,14 @@ export function setVoicePhase(phase: CompanionVoicePhase): void {
   if (phase === 'recording') setPetState('listening')
   else if (phase === 'transcribing') setPetState('thinking')
   // Done: back to listening while the bubble waits for Enter, idle once it has gone.
-  else if (petState === 'listening' || petState === 'thinking') setPetState(bubble?.mode === 'input' ? 'listening' : 'idle')
+  else if (petState === 'listening' || petState === 'thinking') setPetState(bubble?.mode === 'input' ? 'listening' : restingState())
 }
 
 /** The model is reading a capture's date: the pet thinks, and the bubble stays up through a blur. */
 export function setCaptureThinking(on: boolean): void {
   captureThinking = on
   if (on) setPetState('thinking')
-  else if (petState === 'thinking') setPetState(bubble?.mode === 'input' ? 'listening' : 'idle')
+  else if (petState === 'thinking') setPetState(bubble?.mode === 'input' ? 'listening' : restingState())
 }
 
 /**

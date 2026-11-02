@@ -19,6 +19,7 @@ import {
   lateSpan,
   rowWhen,
   toLocalInputValue,
+  untilPhrase,
   whenPhrase
 } from './format'
 import { DictationPanel, MicButton, useDictation, type Dictation } from './dictation'
@@ -34,6 +35,8 @@ const api = window.electronAPI.companion
 
 /** The receipt stays this long, then the bubble closes on its own (plan §5.4). */
 const RECEIPT_MS = 2500
+/** The quiet receipt ("Silêncio até 15:30" / "Voltei") is short: there is nothing to undo. */
+const QUIET_RECEIPT_MS = 1600
 /** "Desfeito" stays this long before the bubble closes. */
 const UNDONE_MS = 900
 /** Enter is ignored this long after a reminder appears (SYSTEM-DESIGN §6). */
@@ -106,15 +109,12 @@ export default function Bubble() {
       setView(b)
       setSession((n) => n + 1)
     })
+    // A summon ('companion:shown') always follows its 'input' bubble-mode, which already
+    // reset the view; resetting again here would drop the query "O que tenho hoje" opens with.
     const offAnchor = api.onBubbleAnchor(acceptAnchor)
-    const offShown = api.onShown(() => {
-      setView({ mode: 'input', payload: null })
-      setSession((n) => n + 1)
-    })
     return () => {
       offMode()
       offAnchor()
-      offShown()
     }
   }, [])
 
@@ -135,13 +135,18 @@ export default function Bubble() {
         return (
           <InputView
             key={session}
+            initialQuery={view.payload?.query ?? null}
             dictation={voiceOn ? dictation : null}
             textSink={textSink}
             onReceipt={(r) => setView({ mode: 'confirm', payload: r })}
           />
         )
       case 'confirm':
-        return <Receipt key={session} result={view.payload} />
+        return view.payload.kind === 'quiet' ? (
+          <QuietReceipt key={session} until={view.payload.quietUntil ?? null} />
+        ) : (
+          <Receipt key={session} result={view.payload} />
+        )
       case 'reminder':
         return <ReminderView key={view.payload.reminder.todoId + session} reminder={view.payload.reminder} queued={view.payload.queued} />
       case 'catchup':
@@ -167,10 +172,13 @@ interface Pending {
 
 function InputView({
   onReceipt,
+  initialQuery,
   dictation,
   textSink
 }: {
   onReceipt: (r: CompanionCaptureResult) => void
+  /** Opened already answering a question ("O que tenho hoje" from the tray or the pet's menu). */
+  initialQuery: CompanionCaptureResult | null
   /** null with dictation off: no mic button, no voice keys. */
   dictation: Dictation | null
   textSink: { current: ((text: string) => void) | null }
@@ -179,7 +187,7 @@ function InputView({
   const { locale } = useLanguage()
   const [text, setText] = useState('')
   const [pending, setPending] = useState<Pending | null>(null)
-  const [query, setQuery] = useState<CompanionCaptureResult | null>(null)
+  const [query, setQuery] = useState<CompanionCaptureResult | null>(initialQuery)
   /** Main is asking the model for this capture's date (plan §5.1, layer 2). */
   const [thinking, setThinking] = useState(false)
   /** The capture in flight, so main's "thinking" and Esc's cancel name the right one. */
@@ -256,7 +264,7 @@ function InputView({
         api.bubbleClose()
         return
       }
-      if (r.kind === 'todo' || r.kind === 'note') {
+      if (r.kind === 'todo' || r.kind === 'note' || r.kind === 'quiet') {
         onReceipt(r)
         return
       }
@@ -492,6 +500,42 @@ function Receipt({ result }: { result: CompanionCaptureResult }) {
   )
 }
 
+// ─── Quiet receipt (plan §3.3) ─────────────────────────────────────────────────
+
+/** After "shh 1h" / "acorda": one line saying so, then the bubble closes on its own. */
+function QuietReceipt({ until }: { until: number | null }) {
+  const t = useT()
+  const { locale } = useLanguage()
+
+  useEffect(() => {
+    const timer = setTimeout(() => api.bubbleClose(), QUIET_RECEIPT_MS)
+    return () => clearTimeout(timer)
+  }, [])
+
+  useWindowKey((e) => {
+    if (e.key === 'Escape' || e.key === 'Enter') api.bubbleClose()
+  })
+
+  return (
+    <div className="bq-receipt bq-quiet" role="status">
+      {until !== null ? (
+        <>
+          <span className="bq-quiet-line">
+            <MoonIcon />
+            {t('companion.quiet.until', { when: untilPhrase(until, Date.now(), locale, t) })}
+          </span>
+          <span className="help">{t('companion.quiet.help')}</span>
+        </>
+      ) : (
+        <span className="bq-quiet-line">{t('companion.quiet.off')}</span>
+      )}
+      <div className="bq-drain" aria-hidden="true">
+        <i style={{ animationDuration: `${QUIET_RECEIPT_MS}ms` }} />
+      </div>
+    </div>
+  )
+}
+
 // ─── Reminder (plan §3.2) ──────────────────────────────────────────────────────
 
 function ReminderView({ reminder, queued }: { reminder: CompanionReminder; queued: number }) {
@@ -697,6 +741,14 @@ function Chevron({ up }: { up?: boolean }) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d={up ? 'M18 15l-6-6-6 6' : 'M6 9l6 6 6-6'} />
+    </svg>
+  )
+}
+
+function MoonIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
     </svg>
   )
 }

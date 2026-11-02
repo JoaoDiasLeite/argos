@@ -31,6 +31,15 @@ function onAt(todo: CompanionTodo): number | null {
   return todo.dueAt ?? todo.remindAt[0] ?? null
 }
 
+/**
+ * The answer to "what do I have" for [from, to): not-done todos in it, soonest first.
+ * A range that holds `now` (today, this week) also brings what is overdue, first:
+ * "o que tenho hoje" that leaves out yesterday's unfinished call is the wrong answer.
+ */
+export function todosFor(todos: CompanionTodo[], from: number, to: number, now: number): CompanionTodo[] {
+  return todosInRange(todos, from <= now && now < to ? -Infinity : from, to)
+}
+
 /** Not-done todos that fall in [from, to), soonest first. */
 export function todosInRange(todos: CompanionTodo[], from: number, to: number): CompanionTodo[] {
   return todos
@@ -39,6 +48,30 @@ export function todosInRange(todos: CompanionTodo[], from: number, to: number): 
       return !t.done && at !== null && at >= from && at < to
     })
     .sort((a, b) => (onAt(a) ?? 0) - (onAt(b) ?? 0))
+}
+
+/**
+ * "O que tenho hoje" from the tray or the pet's menu: the same answer as typing the
+ * question into the bubble, without the typing — today's and overdue open todos.
+ */
+export function todayQuery(todos: CompanionTodo[], now: number): CapturePlan & { kind: 'query' } {
+  const d = new Date(now)
+  const from = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const to = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime()
+  return {
+    kind: 'query',
+    results: todosFor(todos, from, to, now),
+    parsed: {
+      intent: 'query',
+      title: '',
+      when: null,
+      remindAt: [],
+      isExplicitReminder: false,
+      confidence: 1,
+      matchedSpan: null,
+      queryRange: { from, to }
+    }
+  }
 }
 
 /** What to save, if anything, and what to answer. Saving is the caller's job. */
@@ -50,7 +83,7 @@ export function planCapture({ text, source, parsed, todos, now, newId }: Capture
   }
   if (parsed.intent === 'query') {
     const range = parsed.queryRange
-    return { kind: 'query', results: range ? todosInRange(todos, range.from, range.to) : [], parsed }
+    return { kind: 'query', results: range ? todosFor(todos, range.from, range.to, now) : [], parsed }
   }
   const title = parsed.title.trim()
   // A bare date, or nothing the parser could keep: never save an untitled todo.

@@ -8,6 +8,15 @@ const main: Record<keyof typeof en, string> = {
   'tray.companion': 'Companheiro',
   'tray.quit': 'Sair do Argos',
 
+  'companion.today': 'O que tenho hoje',
+  'companion.quietHour': 'Silêncio por 1 hora',
+  'companion.quietTomorrow': 'Silêncio até amanhã',
+  'companion.quietOff': 'Desligar silêncio (até {until})',
+  'companion.quiet.tomorrowAt': 'amanhã, {time}',
+  'companion.openPanel': 'Abrir o painel',
+  'companion.hide': 'Esconder o Argos',
+  'companion.settings': 'Definições',
+
   'menu.view': 'Ver',
   'menu.window': 'Janela',
   'menu.reload': 'Recarregar',

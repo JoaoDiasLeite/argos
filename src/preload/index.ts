@@ -200,6 +200,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     hitRect: (rect: unknown) => ipcRenderer.send('companion:hit-rect', rect),
     openMain: () => ipcRenderer.send('companion:open-main'),
     summon: () => ipcRenderer.send('companion:summon'),
+    petMenu: () => ipcRenderer.send('companion:pet-menu'),
     onShown: (cb: () => void) => {
       const fn = () => cb()
       ipcRenderer.on('companion:shown', fn)

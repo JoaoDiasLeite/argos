@@ -37,6 +37,12 @@ const companion: Record<keyof typeof en, string> = {
   'query.range': '{from} a {to}',
   'query.empty': 'Nada na lista para isso.',
 
+  'quiet.until': 'Silêncio até {when}',
+  'quiet.help': 'Os lembretes ficam à espera até lá.',
+  'quiet.off': 'Voltei',
+  'panel.quiet': 'Em silêncio até {when}',
+  'panel.quietOff': 'Desligar',
+
   'reminder.late': 'atrasado {span}',
   'reminder.done': 'Feito',
   'reminder.snooze10': '+10 min',

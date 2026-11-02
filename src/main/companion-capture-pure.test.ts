@@ -70,6 +70,17 @@ describe('planCapture', () => {
     if (r.kind !== 'query') return
     expect(r.results.map((t) => t.title)).toEqual(['amanhã'])
   })
+
+  it("brings yesterday's unfinished todo into today's answer, not into tomorrow's", () => {
+    const overdue = todo({ title: 'ontem', dueAt: at(1, 16) })
+    const today = todo({ title: 'hoje', dueAt: at(2, 15) })
+    const tomorrow = todo({ title: 'amanhã', dueAt: at(3, 9) })
+    const forToday = plan('o que tenho hoje?', [tomorrow, today, overdue])
+    const forTomorrow = plan('o que tenho amanhã?', [tomorrow, today, overdue])
+    if (forToday.kind !== 'query' || forTomorrow.kind !== 'query') throw new Error('not a query')
+    expect(forToday.results.map((t) => t.title)).toEqual(['ontem', 'hoje'])
+    expect(forTomorrow.results.map((t) => t.title)).toEqual(['amanhã'])
+  })
 })
 
 describe('todosInRange', () => {

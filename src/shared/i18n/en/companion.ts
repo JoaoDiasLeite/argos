@@ -41,6 +41,13 @@ export default {
   'query.range': '{from} to {to}',
   'query.empty': 'Nothing on the list for that.',
 
+  // Quiet mode (plan §3.3): the bubble's receipt after "shh 1h" / "wake up", and the panel's line.
+  'quiet.until': 'Quiet until {when}',
+  'quiet.help': 'Reminders wait until then.',
+  'quiet.off': "I'm back",
+  'panel.quiet': 'Quiet until {when}',
+  'panel.quietOff': 'Turn off',
+
   'reminder.late': 'late {span}',
   'reminder.done': 'Done',
   'reminder.snooze10': '+10 min',

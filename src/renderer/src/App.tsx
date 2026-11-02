@@ -373,6 +373,9 @@ export default function App() {
   // is what a hardcoded fallback would give someone who opened Settings from Usage.
   // A ref rather than state: nothing renders from it, and it must not cause one.
   const preSettingsView = useRef<View>('chat')
+  // A deep link to one Settings section ("settings/companion" from the pet's menu); `n`
+  // makes the same section asked twice count as a new request.
+  const [settingsTarget, setSettingsTarget] = useState<{ section: string; n: number } | null>(null)
   useEffect(() => {
     if (view !== 'settings') preSettingsView.current = view
   }, [view])
@@ -756,6 +759,11 @@ export default function App() {
     // the rail is reachable from a deep link without anyone remembering to add it
     // here too — which is precisely what a second hand-written copy did not manage.
     const offView = window.electronAPI.onOpenView((v) => {
+      if (v.startsWith('settings/')) {
+        setSettingsTarget((prev) => ({ section: v.slice('settings/'.length), n: (prev?.n ?? 0) + 1 }))
+        setView('settings')
+        return
+      }
       if ((ALL_VIEWS as readonly string[]).includes(v)) setView(v as View)
     })
     // Prime the badge without waiting for the watcher's first (~30s) tick.
@@ -2873,6 +2881,7 @@ export default function App() {
             defaultAccountId={defaultAccountId}
             codexAccounts={codexAccounts}
             onBack={() => setView(preSettingsView.current)}
+            target={settingsTarget}
           />
         </Suspense>
       )}

@@ -1456,6 +1456,8 @@ declare global {
         openMain: () => void
         /** A click on the dog: the bubble opens for typing (or closes if it is). */
         summon: () => void
+        /** Right-click on the dog: main pops the native menu at the cursor. */
+        petMenu: () => void
         onShown: (cb: () => void) => () => void
         onBubbleMode: (cb: (bubble: CompanionBubblePayload) => void) => () => void
         onBubbleAnchor: (cb: (anchor: CompanionBubbleAnchor) => void) => () => void
