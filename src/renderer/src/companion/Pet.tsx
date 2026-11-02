@@ -36,7 +36,8 @@ const IDLE: Sprite = { src: SHEETS.idle, frames: 8, fps: 4 }
 
 const SPRITES: Record<CompanionPetState, Sprite> = {
   idle: IDLE,
-  talking: { src: SHEETS.talking, frames: 2, fps: 4 },
+  // Closed, ajar, open, ajar, closed, "oh": reads as speech rather than a flapping jaw.
+  talking: { src: SHEETS.talking, frames: 6, fps: 6 },
   // Tail up, middle, down, middle: two wags in the happy beat.
   happy: { src: SHEETS.wag, frames: 4, fps: 8 },
   alert: { src: SHEETS.alert, frames: 2, fps: 3 },
