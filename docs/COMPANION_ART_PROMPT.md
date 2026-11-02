@@ -16,7 +16,9 @@ The dog is a **Portuguese Podengo** (podengo português), simplified and a littl
   ("beard") and chest, not drawn hair by hair;
 - a **sickle tail** that curls up over the back;
 - a slim, pointed muzzle with a small dark nose;
-- **all warm orange**, optionally with a cream chest and paw tips;
+- **coat colours like a scruffy podengo mix:** warm orange on the head, ears, back and
+  tail; **cream** on the muzzle, the chin beard, the chest and the paw tips; a small
+  messy **tuft of hair on top of the head** and a hint of shaggy eyebrows;
 - few details: a cartoon, not a breed portrait.
 
 Do not imitate an existing mascot (e.g. Datadog's dog, or the Codex pets themselves). Take
@@ -54,7 +56,7 @@ the style from them, not the character.
 | Orange, shadow | `#B4532F` |
 | Orange, base (the Argos accent) | `#DF7A52` |
 | Orange, light | `#F0A070` |
-| Cream (chest, beard, paw tips; optional) | `#F7E6D0` |
+| Cream (muzzle, beard, chest, paw tips) | `#F7E6D0` |
 | Eyes, nose | `#1A1210` |
 | Eye highlight | `#FFFFFF` |
 | Ear inside, blush, tongue | `#F4A08A` |
@@ -68,10 +70,12 @@ Podengo puppy. Big head on a tiny body, short legs. Very large semi-folded ears:
 rise from a wide base and fold forward halfway, the triangular tips flopping down towards
 the eyes, pink inside. Slim pointed muzzle, small dark
 nose, big round dark eyes with one white highlight pixel, small pink blush.
-Wiry scruffy coat suggested by a few jagged pixels on the cheeks, chin beard and chest.
+Wiry scruffy coat suggested by a few jagged pixels on the cheeks, chin beard and chest,
+a small messy tuft of hair on top of the head and shaggy eyebrows.
 A curled sickle tail over the back.
-All warm orange fur (#DF7A52 base, #B4532F shadow, #F0A070 highlight), cream chest and
-paw tips (#F7E6D0), dark brown outline (#2A1A14).
+Warm orange fur on the head, ears, back and tail (#DF7A52 base, #B4532F shadow, #F0A070
+highlight); cream muzzle, chin beard, chest and paw tips (#F7E6D0); dark brown outline
+(#2A1A14).
 Sitting, three-quarter view facing right, friendly and alert.
 Clean pixel art, hard edges, no anti-aliasing, limited palette of 9 colours,
 transparent background, centered, no text, no shadow on the ground.
