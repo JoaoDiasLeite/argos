@@ -287,6 +287,48 @@ that handles intent, title extraction and the pt-PT gaps. If it does not, hand-w
 grammar — it is perhaps 250 lines of regex for a closed set of forms, and it will be more
 predictable than a dependency.
 
+**Spike result (2026-11-02): chrono-node 2 `chrono.pt` cleared 7 of 25 → hand-write the
+grammar, no dependency.** Reference time Mon 2026-11-02 10:00. It got `hoje às 17:30`,
+`na sexta`, `12/11`, `12 de novembro`, `ao meio-dia`, `às 14:30` and the English control
+right. Worse than the misses, several were silently wrong: `daqui a 20 minutos` → 20:00,
+`daqui a 2 horas` → 02:00 next day, `às 2 da tarde` → 02:00 next day, `depois de amanhã`
+→ tomorrow, `segunda que vem` → today. It drops the time after `amanhã` (`amanhã às 14h`
+→ 10:00), uses 12:00 for `de manhã` and 15:00/22:00 for `à tarde`/`à noite`, and finds
+nothing in `dia 12`, `na próxima semana`, `em 15 minutos`, `14h30 reunião` or `dia 5 às
+16h`. These 25 phrases with their expected values become the first fixtures of
+`companion-nlu-pure.test.ts`:
+
+| Phrase | Expected |
+|---|---|
+| ligar à câmara amanhã às 14h | 11-03 14:00 |
+| enviar relatório hoje às 17:30 | 11-02 17:30 |
+| rever logs daqui a 20 minutos | 11-02 10:20 |
+| reiniciar puma daqui a 2 horas | 11-02 12:00 |
+| reunião sexta de manhã | 11-06 09:00 |
+| call com leiria sexta à tarde | 11-06 14:00 |
+| backup na sexta | 11-06 (day) |
+| standup segunda que vem | 11-09 (day) |
+| pagar fatura dia 12 | 11-12 (day) |
+| renovar certificado 12/11 | 11-12 (day) |
+| entregar proposta 12 de novembro | 11-12 (day) |
+| almoço ao meio-dia | 11-02 12:00 |
+| ligar ao joão às 2 da tarde | 11-02 14:00 |
+| deploy às 14:30 | 11-02 14:30 |
+| testar vpn amanhã 9h | 11-03 09:00 |
+| ver isto depois de amanhã | 11-04 (day) |
+| preparar sprint na próxima semana | 11-09 (day) |
+| tenho de fazer isto amanhã até às 14h | 11-03 14:00 (due; remind 13:50) |
+| quinta às 10h30 migração | 11-05 10:30 |
+| lembra-me em 15 minutos de beber água | 11-02 10:15 (remind) |
+| terça à noite atualizar runbook | 11-03 20:00 |
+| amanhã de manhã ver tickets | 11-03 09:00 |
+| 14h30 reunião com cliente | 11-02 14:30 |
+| dia 5 às 16h formação | 11-05 16:00 (see note) |
+| call with team tomorrow at 2pm | 11-03 14:00 |
+
+Note on `dia 5`: on 2 Nov the 5th is still ahead, so it is **11-05**; a day number already
+past this month rolls to next month. The test must pin that rule both ways.
+
 ### 5.2 Intents, ranked by value
 
 **v1:** add todo · add note · set reminder · list today / tomorrow · mark done · snooze.
