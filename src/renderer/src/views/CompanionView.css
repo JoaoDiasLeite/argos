@@ -1,0 +1,318 @@
+/* ── CompanionView.css ───────────────────────────────────────────────────────
+   The companion panel (COMPANION_PLAN.md §12 item 7): a page header, the list on the
+   left and the selected task's column sliding open on the right (.slide-col). Rows flat
+   at 4 px, buttons 8 px, times in the sans font with tabular figures. Classes are
+   prefixed `cmp-`. ──────────────────────────────────────────────────────────── */
+
+/* ── Page header ── */
+.cmp-head {
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+.cmp-head h1 {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+.cmp-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* ── Page body: list | column ── */
+.cmp-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.cmp-list {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 14px 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cmp-num { font-variant-numeric: tabular-nums; }
+
+/* ── Quick add ── */
+.cmp-add { display: flex; flex-direction: column; gap: 6px; }
+.cmp-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+}
+.cmp-add-row:focus-within { border-color: var(--border-light); }
+.cmp-add-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-0);
+  font-size: 13.5px;
+}
+.cmp-add-input::placeholder { color: var(--text-2); }
+.cmp-add-chip {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Sections ── */
+.cmp-sections {
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+.cmp-sect {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.cmp-sect:first-child { border-top: none; padding-top: 0; }
+.cmp-sect > .eyebrow { padding: 0 0 4px; }
+.cmp-empty { padding: 2px 0; }
+.cmp-keys { margin-top: -4px; }
+
+.cmp-done-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 2px 6px 2px 0;
+  border-radius: var(--radius);
+  background: transparent;
+  cursor: pointer;
+}
+.cmp-done-toggle:hover { color: var(--text-1); }
+.cmp-done-toggle svg { transition: transform 120ms ease; }
+.cmp-done-toggle svg.open { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .cmp-done-toggle svg { transition: none; } }
+
+/* ── Row: check, title, time ── */
+.cmp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: var(--radius-surface);
+  font-size: 13px;
+  color: var(--text-1);
+  cursor: pointer;
+  user-select: none;
+}
+.cmp-row:hover:not(.sel) { background: var(--bg-1); }
+.cmp-row.sel { background: var(--bg-2); }
+.cmp-row.sel .cmp-row-title { color: var(--text-0); }
+.cmp-sections:focus-visible .cmp-row.sel { box-shadow: inset 0 0 0 1px var(--border-light); }
+
+.cmp-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmp-row.done .cmp-row-title { color: var(--text-2); text-decoration: line-through; }
+
+.cmp-row-when {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.cmp-row-when.late { color: var(--warn); }
+
+/* A checkbox you press: 8 px would read as a button, so it keeps the 4 px of a box. */
+.cmp-check {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--radius-surface);
+  background: transparent;
+  color: var(--bg-0);
+  cursor: pointer;
+}
+.cmp-check:hover { border-color: var(--text-2); }
+.cmp-check.on { background: var(--text-2); border-color: var(--text-2); }
+
+.cmp-confirm {
+  flex-shrink: 0;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+/* ── Notes ── */
+.cmp-notes { display: flex; flex-direction: column; gap: 2px; }
+.cmp-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 8px 10px;
+  border-radius: var(--radius-surface);
+}
+.cmp-note:hover { background: var(--bg-1); }
+.cmp-note-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cmp-note-side {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+}
+.cmp-icon-btn {
+  width: 26px;
+  height: 26px;
+  margin: -3px -4px -3px 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  opacity: 0;
+  cursor: pointer;
+}
+.cmp-note:hover .cmp-icon-btn, .cmp-icon-btn:focus-visible { opacity: 1; }
+.cmp-icon-btn:hover { background: var(--bg-hover); color: var(--error); }
+
+/* ── Detail column ── */
+.cmp-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+}
+.cmp-detail { display: flex; flex-direction: column; }
+.cmp-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.cmp-sec:last-child { border-bottom: none; }
+
+.cmp-title-row { display: flex; align-items: center; gap: 10px; }
+.cmp-title-input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px;
+  margin-left: -8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-surface);
+  background: transparent;
+  color: var(--text-0);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  outline: none;
+}
+.cmp-title-input:hover { border-color: var(--border); }
+.cmp-title-input:focus { border-color: var(--border-light); background: var(--bg-0); }
+
+.cmp-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cmp-label { font-size: 12px; font-weight: 600; color: var(--text-1); }
+.cmp-optional { font-weight: 400; color: var(--text-2); }
+.cmp-notes-area {
+  min-height: 84px;
+  padding: 8px 12px;
+  resize: vertical;
+  line-height: 1.5;
+  font-size: 13px;
+}
+.cmp-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cmp-col input[type='date'],
+.cmp-col input[type='time'],
+.cmp-col input[type='datetime-local'] {
+  height: 36px;
+  font-variant-numeric: tabular-nums;
+  color-scheme: light dark;
+}
+.cmp-due-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.cmp-due-foot .btn-text { flex-shrink: 0; font-size: 12px; }
+
+.cmp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cmp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--bg-2);
+  font-size: 12px;
+  color: var(--text-1);
+}
+.cmp-chip.fired { background: transparent; color: var(--text-2); }
+.cmp-chip.fired .cmp-num { text-decoration: line-through; }
+.cmp-chip-x {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.cmp-chip-x:hover { background: var(--bg-hover); color: var(--text-0); }
+
+.cmp-add-reminder { display: flex; align-items: center; gap: 8px; }
+.cmp-add-reminder .text-input { flex: 1; min-width: 0; }
+
+.cmp-foot { gap: 10px; align-items: flex-start; }
+.cmp-foot .cmp-confirm { margin-left: 0; min-height: 28px; }
+.cmp-delete { color: var(--error); gap: 6px; }

@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   CCAccountStatus,
+  CompanionPrefs,
   ClaudeHooks,
   ClaudePermissions,
   ModelInfo,
@@ -40,7 +41,7 @@ import { migrateRecentRunbooks } from '../lib/runbook-library'
 import { useT } from '../i18n'
 import { LANGUAGES, isLanguage, plural, type MessageKey } from '../../../shared/i18n'
 
-type SectionId = 'appearance' | 'general' | 'connection' | 'system' | 'interventions' | 'ops' | 'about'
+type SectionId = 'appearance' | 'general' | 'connection' | 'system' | 'companion' | 'interventions' | 'ops' | 'about'
 
 interface Props {
   models: ModelInfo[]
@@ -96,6 +97,20 @@ const SECTIONS: { id: SectionId; labelKey: MessageKey; icon: JSX.Element }[] = [
         <rect x="2" y="4" width="20" height="13" rx="2" />
         <line x1="8" y1="21" x2="16" y2="21" />
         <line x1="12" y1="17" x2="12" y2="21" />
+      </>
+    )
+  },
+  {
+    // Argos the desktop pet: a paw, as on the rail.
+    id: 'companion',
+    labelKey: 'settings.section.companion',
+    icon: (
+      <>
+        <path d="M12 13.5c-2.6 0-5 2.4-5 4.6 0 1.6 1.3 2.4 2.8 2.4.9 0 1.5-.4 2.2-.4s1.3.4 2.2.4c1.5 0 2.8-.8 2.8-2.4 0-2.2-2.4-4.6-5-4.6z" />
+        <ellipse cx="5.5" cy="10.5" rx="1.8" ry="2.3" />
+        <ellipse cx="9.3" cy="5.8" rx="1.8" ry="2.4" />
+        <ellipse cx="14.7" cy="5.8" rx="1.8" ry="2.4" />
+        <ellipse cx="18.5" cy="10.5" rx="1.8" ry="2.3" />
       </>
     )
   },
@@ -421,6 +436,40 @@ export default function SettingsView({
     }
   }
 
+  // ── Companion ──
+  // `config.companion`, written through `config:set-companion`, which answers with the
+  // summon key the OS actually granted ('' when none could be registered).
+  const [companion, setCompanion] = useState<CompanionPrefs | null>(null)
+  const [companionShortcut, setCompanionShortcut] = useState('')
+  const [companionBusy, setCompanionBusy] = useState(false)
+
+  useEffect(() => {
+    if (section !== 'companion') return
+    let cancelled = false
+    window.electronAPI.companion
+      .state()
+      .then((s) => {
+        if (cancelled) return
+        setCompanion(s.prefs)
+        setCompanionShortcut(s.shortcut)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [section])
+
+  const updateCompanion = async (patch: Partial<CompanionPrefs>) => {
+    setCompanionBusy(true)
+    try {
+      const res = await window.electronAPI.setCompanionPrefs(patch)
+      setCompanion(res.companion)
+      setCompanionShortcut(res.registeredShortcut)
+    } finally {
+      setCompanionBusy(false)
+    }
+  }
+
   // ── About / auto-update ──
   // Subscribed for as long as the screen is open, because a check can complete long
   // after it was started — the 4-hourly background one, for instance.
@@ -526,7 +575,13 @@ export default function SettingsView({
   })()
 
   // ── Row builders ──
-  const toggleRow = (label: string, hint: string, checked: boolean, onChange: (next: boolean) => void) => (
+  const toggleRow = (
+    label: string,
+    hint: string,
+    checked: boolean,
+    onChange: (next: boolean) => void,
+    busy = systemBusy
+  ) => (
     <div className="srow">
       <div className="srow-text">
         <span className="srow-label">{label}</span>
@@ -536,7 +591,7 @@ export default function SettingsView({
         <input
           type="checkbox"
           checked={checked}
-          disabled={systemBusy}
+          disabled={busy}
           onChange={(e) => onChange(e.target.checked)}
           aria-label={label}
         />
@@ -783,6 +838,127 @@ export default function SettingsView({
                   </button>
                 </div>
               </div>
+            </>
+          )}
+
+          {section === 'companion' && (
+            <>
+              <h1 className="settings-title">{t('settings.section.companion')}</h1>
+              <p className="help settings-lead">{t('settings.companion.intro')}</p>
+              {companion ? (
+                <>
+                  <div className="srow">
+                    <div className="srow-text">
+                      <span className="srow-label">{t('settings.companion.shortcut.label')}</span>
+                      <span className="help">{t('settings.companion.shortcut.hint')}</span>
+                      {companionShortcut ? (
+                        <span className="help">
+                          {t('settings.companion.shortcut.registered', { shortcut: companionShortcut })}
+                        </span>
+                      ) : (
+                        <span className="help settings-error">{t('settings.companion.shortcut.failed')}</span>
+                      )}
+                    </div>
+                    {/* Never Ctrl+Shift+A: Teams takes it to accept a call (companion-window.ts). */}
+                    <Select
+                      className="settings-select"
+                      value={companion.shortcut}
+                      disabled={companionBusy}
+                      onChange={(e) => updateCompanion({ shortcut: e.target.value })}
+                      aria-label={t('settings.companion.shortcut.label')}
+                    >
+                      <option value="">{t('settings.companion.shortcut.auto')}</option>
+                      <option value="Ctrl+Alt+A">Ctrl+Alt+A</option>
+                      <option value="Ctrl+Shift+Alt+A">Ctrl+Shift+Alt+A</option>
+                      <option value="Ctrl+Alt+Q">Ctrl+Alt+Q</option>
+                      <option value="Ctrl+Alt+J">Ctrl+Alt+J</option>
+                    </Select>
+                  </div>
+                  {toggleRow(
+                    t('settings.companion.stay.label'),
+                    t('settings.companion.stay.hint'),
+                    companion.stayOnScreen,
+                    (stayOnScreen) => updateCompanion({ stayOnScreen }),
+                    companionBusy
+                  )}
+                  <div className="srow">
+                    <div className="srow-text">
+                      <span className="srow-label">{t('settings.companion.leadTime.label')}</span>
+                      <span className="help">{t('settings.companion.leadTime.hint')}</span>
+                    </div>
+                    <Select
+                      className="settings-select"
+                      value={String(companion.leadMinutes)}
+                      disabled={companionBusy}
+                      onChange={(e) => updateCompanion({ leadMinutes: Number(e.target.value) })}
+                      aria-label={t('settings.companion.leadTime.label')}
+                    >
+                      {/* A value set by hand in config.json still shows. */}
+                      {[...new Set([0, 5, 10, 15, 30, 60, companion.leadMinutes])]
+                        .sort((a, b) => a - b)
+                        .map((n) => (
+                          <option key={n} value={n}>
+                            {n === 0
+                              ? t('settings.companion.leadTime.atTime')
+                              : n === 60
+                                ? t('settings.companion.leadTime.hour')
+                                : t('settings.companion.leadTime.minutes', { n })}
+                          </option>
+                        ))}
+                    </Select>
+                  </div>
+                  <div className="srow">
+                    <div className="srow-text">
+                      <span className="srow-label">{t('settings.companion.morning.label')}</span>
+                      <span className="help">{t('settings.companion.morning.hint')}</span>
+                    </div>
+                    <Select
+                      className="settings-select"
+                      value={String(companion.morningHour)}
+                      disabled={companionBusy}
+                      onChange={(e) => updateCompanion({ morningHour: Number(e.target.value) })}
+                      aria-label={t('settings.companion.morning.label')}
+                    >
+                      {[...new Set([7, 8, 9, 10, 11, companion.morningHour])]
+                        .sort((a, b) => a - b)
+                        .map((h) => (
+                          <option key={h} value={h}>
+                            {String(h).padStart(2, '0') + ':00'}
+                          </option>
+                        ))}
+                    </Select>
+                  </div>
+                  {toggleRow(
+                    t('settings.companion.capture.label'),
+                    t('settings.companion.capture.hint'),
+                    companion.hideFromCapture,
+                    (hideFromCapture) => updateCompanion({ hideFromCapture }),
+                    companionBusy
+                  )}
+                  {/* Reminders need the app running (plan §10, decision 8): nudge towards
+                      starting with Windows while that is off, through the System pref. */}
+                  {system && !system.openAtLogin && (
+                    <div className="srow">
+                      <div className="srow-text">
+                        <span className="srow-label">
+                          {isWindows ? t('settings.companion.login.label') : t('settings.companion.login.labelOther')}
+                        </span>
+                        <span className="help">{t('settings.companion.login.hint')}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        disabled={systemBusy}
+                        onClick={() => updateSystem({ openAtLogin: true })}
+                      >
+                        {isWindows ? t('settings.companion.login.action') : t('settings.companion.login.actionOther')}
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="help">{t('settings.companion.loading')}</p>
+              )}
             </>
           )}
 

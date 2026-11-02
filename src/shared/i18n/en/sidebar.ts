@@ -16,6 +16,7 @@ export default {
   'nav.chat': 'Chat',
   'nav.projects': 'Projects',
   'nav.planner': 'Planner',
+  'nav.companion': 'Companion',
   'nav.usage': 'Usage',
   'nav.settings': 'Settings',
   'nav.showChatList': 'Show the chat list',

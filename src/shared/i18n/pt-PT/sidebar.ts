@@ -17,6 +17,7 @@ const sidebar: Record<keyof typeof en, string> = {
   'nav.chat': 'Chat',
   'nav.projects': 'Projetos',
   'nav.planner': 'Planeador',
+  'nav.companion': 'Companheiro',
   'nav.usage': 'Utilização',
   'nav.settings': 'Definições',
   'nav.showChatList': 'Mostrar a lista de chats',

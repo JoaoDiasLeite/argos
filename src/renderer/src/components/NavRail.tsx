@@ -17,6 +17,8 @@ export const ALL_VIEWS = [
   'chat',
   'projects',
   'planner',
+  // The desktop companion's list (CompanionView); the pet's "Abrir" deep-links here.
+  'companion',
   'usage',
   'mcp',
   'remote',
@@ -72,6 +74,16 @@ const ICONS: Record<string, JSX.Element> = {
       <line x1="16" y1="2" x2="16" y2="6" />
       <line x1="8" y1="2" x2="8" y2="6" />
       <path d="M8 14h.01M12 14h4M8 18h4" />
+    </>
+  ),
+  // A paw: one pad and four toes, for Argos the dog.
+  companion: (
+    <>
+      <path d="M12 13.5c-2.6 0-5 2.4-5 4.6 0 1.6 1.3 2.4 2.8 2.4.9 0 1.5-.4 2.2-.4s1.3.4 2.2.4c1.5 0 2.8-.8 2.8-2.4 0-2.2-2.4-4.6-5-4.6z" />
+      <ellipse cx="5.5" cy="10.5" rx="1.8" ry="2.3" />
+      <ellipse cx="9.3" cy="5.8" rx="1.8" ry="2.4" />
+      <ellipse cx="14.7" cy="5.8" rx="1.8" ry="2.4" />
+      <ellipse cx="18.5" cy="10.5" rx="1.8" ry="2.3" />
     </>
   ),
   usage: (
@@ -136,6 +148,7 @@ const RAIL: RailEntry[] = [
   { kind: 'single', view: 'chat', label: 'sidebar.nav.chat' },
   { kind: 'single', view: 'projects', label: 'sidebar.nav.projects' },
   { kind: 'single', view: 'planner', label: 'sidebar.nav.planner' },
+  { kind: 'single', view: 'companion', label: 'sidebar.nav.companion' },
   { kind: 'single', view: 'usage', label: 'sidebar.nav.usage' },
   { kind: 'group', group: VIEW_GROUPS[0] }
 ]

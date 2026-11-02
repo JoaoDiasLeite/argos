@@ -1062,8 +1062,7 @@ ipcMain.on('companion:summon', () => {
   if (!open) showCompanion({ focusInput: true })
   else if (open.mode === 'input') closeBubble()
 })
-// "Abrir": the list in the main window. The view itself lands with the panel; until
-// then App.tsx ignores a view name it does not know.
+// "Abrir" / "Ver todos": the list in the main window (CompanionView).
 ipcMain.on('companion:open-main', () => {
   closeBubble()
   showMainWindow()

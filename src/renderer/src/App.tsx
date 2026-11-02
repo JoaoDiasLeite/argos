@@ -88,6 +88,7 @@ const ProjectsView = lazy(() => import('./views/ProjectsView'))
 const UsageView = lazy(() => import('./views/UsageView'))
 const McpView = lazy(() => import('./views/McpView'))
 const PlannerView = lazy(() => import('./views/PlannerView'))
+const CompanionView = lazy(() => import('./views/CompanionView'))
 const RemoteView = lazy(() => import('./views/RemoteView'))
 const RemoteSessionView = lazy(() => import('./views/RemoteSessionView'))
 const InterventionStart = lazy(() => import('./views/InterventionStart'))
@@ -2507,6 +2508,7 @@ export default function App() {
       { v: 'chat', label: 'sidebar.nav.chat' },
       { v: 'projects', label: 'sidebar.nav.projects' },
       { v: 'planner', label: 'sidebar.nav.planner' },
+      { v: 'companion', label: 'sidebar.nav.companion' },
       { v: 'usage', label: 'sidebar.nav.usage' },
       { v: 'mcp', label: 'app.views.mcp' },
       { v: 'remote', label: 'app.views.remote' },
@@ -2839,6 +2841,11 @@ export default function App() {
       {view === 'usage' && (
         <Suspense fallback={<ViewLoading />}>
           <UsageView />
+        </Suspense>
+      )}
+      {view === 'companion' && (
+        <Suspense fallback={<ViewLoading />}>
+          <CompanionView />
         </Suspense>
       )}
       {/* Owns the whole content area, its own nav column standing in for the chat
