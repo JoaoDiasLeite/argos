@@ -1,116 +1,117 @@
 # Argos the dog: art brief and image-generation prompts
 
-The companion's pet (see `COMPANION_PLAN.md` §2) needs eight poses. This file holds the
-prompts to produce them with an image-generation AI, and what to do with the output so it
-fits the app.
+The companion's pet (see `COMPANION_PLAN.md` §2) needs a small set of animated states.
+This file holds the prompts to produce them with an image-generation AI, and what to do
+with the output so it fits the app.
 
-**Direction (João, 2026-11-02):** a cartoon, chibi-style dog in Argos's colours, orange
-and white. Big head, small round body, short legs, big shiny eyes. Cute is the point.
+**Direction (João, 2026-11-02, second pass):** **pixel art**, chibi, in the spirit of the
+Codex desktop pets (a big head on a tiny body, a handful of colours, readable at 64 px).
+The dog is a **Portuguese Podengo** (podengo português), simplified and a little fictional:
+
+- **big upright triangular ears**, wide at the base: the main feature of the silhouette;
+- a **wiry, scruffy coat**, shown with only a few jagged pixels at the cheeks, chin
+  ("beard") and chest, not drawn hair by hair;
+- a **sickle tail** that curls up over the back;
+- a slim, pointed muzzle with a small dark nose;
+- **all warm orange**, optionally with a cream chest and paw tips;
+- few details: a cartoon, not a breed portrait.
+
+Do not imitate an existing mascot (e.g. Datadog's dog, or the Codex pets themselves). Take
+the style from them, not the character.
 
 ## Read this first: what format the app needs
 
-- **The app animates the pet itself.** The blink, the ear flop, the tail wag and the
-  breathing are CSS transforms on parts of an SVG. So the deliverable is **one static SVG
-  per pose**, not GIFs.
-- **Do not use GIF.** GIF transparency is 1-bit, so the edges look jagged over the
-  transparent pet window and the desktop wallpaper. If you want a raster animation for a
-  preview, export animated WebP or APNG instead.
-- **Generate a character sheet first, then the poses.** Image AIs drift between
-  generations. Lock the design on one sheet, then reuse it as the reference image for each
-  pose.
-- **Getting the SVG:**
-  1. Best: a tool with native vector output, such as Recraft (Vector illustration mode,
-     with the character sheet saved as a style).
-  2. Otherwise: generate PNG on a transparent or flat background, then vectorise with
-     vectorizer.ai, Illustrator Image Trace or Inkscape Trace Bitmap, with 5 to 6 colours.
-- **Parts for animation:** after vectorising, split each pose in Figma or Inkscape into
-  named groups: `body`, `head`, `ear-left`, `ear-right`, `eyes`, `eyelids`, `tail`,
-  `collar-tag`. Image AIs do not produce clean layers on their own.
-- **Colours:** snap the fills to the palette below after vectorising, so the app can
-  recolour the pet from theme tokens later.
+- **Pixel art means a sprite sheet, not an SVG.** Each state is a short row of frames in
+  one PNG. The app plays them with CSS `steps()` and scales them up with
+  `image-rendering: pixelated`, so the pixels stay sharp at any size.
+- **Grid:** each frame **48×48 px** (32×32 if the tool struggles), the dog sitting on the
+  same bottom line in every frame and state, transparent background.
+- **GIF is acceptable here** for previews, because pixel art has no soft edges to lose. In
+  the app, use the PNG sheet: it's smaller and lets the app choose the speed.
+- **No anti-aliasing, no blur, no gradients.** Every pixel is one of the palette's colours.
+- **Generate the character first, then the animations.** Lock one idle sprite you like
+  and give it as the reference for every other state.
 
-| Role | Hex | Token in the app |
-|---|---|---|
-| Orange fur (head top, back, ears, tail) | `#DF7A52` | `--pet-fur` (Argos accent) |
-| Darker orange (ear insides, shading patches) | `#C2603B` | `--pet-fur-shade` |
-| White fur (muzzle, chest, belly, paws, tail tip) | `#FFFFFF` | `--pet-white` |
-| Outline, eyes, nose | `#2A2622` | `--pet-line` |
-| Cheek blush, tongue | `#F4A08A` | `--pet-blush` |
-| Collar | `#2A2622` with a gold tag `#D9A83C` | `--pet-collar` |
+### Tools
 
-## Prompt 1: character sheet (run first)
+1. **PixelLab** (pixellab.ai) or **Retro Diffusion**: pixel-art generators that keep a
+   character consistent and can animate it from a reference. This is the best fit.
+2. **ChatGPT image generation**: good at following this brief in one conversation. The
+   output is pseudo-pixel (soft edges, uneven grid), so it needs a cleanup pass.
+3. **Cleanup and animation by hand:** **Aseprite** (paid, the standard) or **Piskel**
+   (free, in the browser). Import the generated image, snap it to the 48×48 grid and the
+   palette below, then fix or draw the in-between frames. Plan on this step whatever tool
+   generates the first image.
+
+### Palette (keep to these)
+
+| Role | Hex |
+|---|---|
+| Outline | `#2A1A14` |
+| Orange, shadow | `#B4532F` |
+| Orange, base (the Argos accent) | `#DF7A52` |
+| Orange, light | `#F0A070` |
+| Cream (chest, beard, paw tips; optional) | `#F7E6D0` |
+| Eyes, nose | `#1A1210` |
+| Eye highlight | `#FFFFFF` |
+| Ear inside, blush, tongue | `#F4A08A` |
+| Collar tag (optional) | `#D9A83C` |
+
+## Prompt 1: the character (run first)
 
 ```
-Character design sheet of an original cute mascot: "Argos", a chibi cartoon puppy.
-Chibi proportions: a big round head about as large as the body, a small round body,
-short stubby legs, small round paws, a fluffy curled tail.
-Fur colours: bright orange (#DF7A52) on the head, back, ears and tail, white (#FFFFFF)
-on the muzzle, chest, belly, paws and the tip of the tail, like a two-tone shiba or corgi
-pattern. Big soft floppy ears, orange outside and darker orange (#C2603B) inside.
-Big round shiny dark eyes with one white highlight each, small pink blush on the cheeks
-(#F4A08A), a tiny dark nose, a small happy mouth.
-A dark collar with a small round gold tag (#D9A83C).
-Clean cartoon vector style: smooth thick dark outline (#2A2622), flat colours with at most
-one soft shade, rounded shapes everywhere, sticker-like, app-mascot quality.
-Show the same puppy in a turnaround: sitting (front), sitting (three-quarter, facing
-right), standing (side), plus a close-up of the face with three expressions (happy,
-curious, sleepy). Consistent proportions and markings across all views.
-Pure white background, no scenery, no text, no watermark.
+Pixel art character, 48x48 sprite, chibi style: "Argos", a cute cartoon Portuguese
+Podengo puppy. Big head on a tiny body, short legs. Very large upright triangular ears,
+wide at the base and pointed at the tips, pink inside. Slim pointed muzzle, small dark
+nose, big round dark eyes with one white highlight pixel, small pink blush.
+Wiry scruffy coat suggested by a few jagged pixels on the cheeks, chin beard and chest.
+A curled sickle tail over the back.
+All warm orange fur (#DF7A52 base, #B4532F shadow, #F0A070 highlight), cream chest and
+paw tips (#F7E6D0), dark brown outline (#2A1A14).
+Sitting, three-quarter view facing right, friendly and alert.
+Clean pixel art, hard edges, no anti-aliasing, limited palette of 9 colours,
+transparent background, centered, no text, no shadow on the ground.
 ```
 
 **Negative prompt** (when the tool has one):
 
 ```
-paperclip, Clippy, realistic, realistic fur, photo, 3D render, heavy shading, gradients,
-texture, scary, angry, long thin legs, adult dog proportions, text, letters, watermark,
-busy background, several different dogs
+realistic, photo, 3D, smooth shading, gradients, anti-aliasing, blur, floppy ears,
+beagle, corgi, shiba, long body, detailed fur strands, text, watermark, background,
+Datadog logo, existing mascot
 ```
 
-## Prompt 2: one pose at a time
+Make 4 to 8 variations and pick the one whose **ears and tail** read best at the small
+size. That one is the reference for everything below.
 
-Attach the chosen character-sheet image as the reference or style. Then use this base and
-swap in one pose line from the table:
+## Prompt 2: animation sheets, one per state
 
-```
-The same chibi puppy "Argos" as in the reference image, identical design, markings,
-colours and outline. Orange and white fur, big head, short legs, big shiny eyes.
-Clean cartoon vector style, thick dark outline, flat colours. Single character, centred,
-full body visible with some margin, three-quarter view facing right.
-Pure white background (or transparent), no text.
-Pose: <POSE>
-```
-
-| State in the app | `<POSE>` |
-|---|---|
-| `idle` | sitting, looking at the viewer, ears relaxed, tail curled beside it, small smile |
-| `dozing` | curled up asleep in a round ball, eyes closed (curved lines), a tiny "z" bubble, tail wrapped around the body |
-| `listening` | sitting, both ears perked up, head slightly lifted, eyes wide and sparkling, attentive |
-| `thinking` | sitting, head tilted to one side, one ear up and one flopped down, a paw raised to the chin, curious |
-| `talking` | sitting, mouth open as if speaking, one paw slightly raised, friendly |
-| `alert` | standing on all four legs, ears up, tail high, mouth open in a little bark, an exclamation mark above the head |
-| `happy` | sitting, eyes closed in happy upturned curves, big open smile with tongue, tail mid-wag with motion lines |
-| `shh` | lying flat, chin on its front paws, eyes closed, a small crescent moon on the collar tag |
-
-## Prompt 3 (optional): animation frames for preview
-
-Only for a WebP or APNG preview. In the app, the animation comes from CSS.
+Give the chosen sprite as the reference, then:
 
 ```
-Sprite sheet, 4 frames in one horizontal row, equal spacing, of the same chibi puppy
-"Argos" from the reference image, identical design and colours. Clean cartoon vector
-style, thick outline, flat colours, white background, no text. Animation: <ANIMATION>,
-small differences between frames only, the body stays in the same place.
+Pixel art sprite sheet of the same character "Argos" from the reference, identical
+design, palette and proportions. <FRAMES> frames of 48x48 in one horizontal row,
+transparent background, hard edges, no anti-aliasing. The dog stays in the same spot and
+sits on the same bottom line in every frame. Animation: <ANIMATION>
 ```
 
-`<ANIMATION>` examples: `tail wagging left to right while sitting`, `slow sleepy breathing
-while curled up`, `ears perking up from relaxed to alert`, `blinking`.
+| State | `<FRAMES>` | `<ANIMATION>` |
+|---|---|---|
+| `idle` | 4 | sitting, slow breathing (body rises 1 px), one blink on frame 3, tail curled |
+| `dozing` | 4 | curled up in a ball asleep, eyes closed, breathing, small "z" pixels rising |
+| `listening` | 4 | sitting, big ears perk up and twitch, head lifts slightly, eyes wide |
+| `thinking` | 4 | sitting, head tilts to one side, one ear folds a little, eyes look up |
+| `talking` | 4 | sitting, mouth opens and closes, one front paw lifts |
+| `alert` | 4 | standing, ears straight up, tail high, a small bark (mouth open), a "!" above the head on frames 2–3 |
+| `happy` | 6 | small hop with the tail wagging fast, eyes closed in a smile, tongue out |
+| `shh` | 2 | lying down, chin on its paws, eyes closed, a tiny crescent moon above, nearly still |
 
 ## Checklist before the art goes in the app
 
-- [ ] All eight poses share one canvas size (square, e.g. 512×512) and the same baseline
-      for the paws, so swapping poses does not make the pet jump.
-- [ ] Fills snapped to the palette above.
-- [ ] Parts grouped and named for animation.
-- [ ] Each SVG under ~12 kB after SVGO.
-- [ ] Reads clearly at 72–96 px tall over both a light and a dark wallpaper: the white
-      fur needs the dark outline to stand out on a light wallpaper.
+- [ ] Every frame is 48×48 (or every frame 32×32), with the dog on the same bottom line,
+      so switching states does not make it jump.
+- [ ] Only palette colours, no semi-transparent pixels except fully transparent.
+- [ ] One PNG per state, frames left to right, no gaps (or note the gap size).
+- [ ] Reads clearly at 3× (144 px) and 2× (96 px) over a light and a dark wallpaper; the
+      dark outline must go all the way round.
+- [ ] The ears are still obviously podengo ears at 1× (48 px).

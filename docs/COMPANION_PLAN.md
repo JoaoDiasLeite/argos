@@ -607,6 +607,13 @@ All of them go through `src/preload/index.ts` the same way everything else does.
 One `Pet.tsx` with a `state` prop, one `pet.css` holding the keyframes, every pose a
 `<g>` toggled by class. A dozen CSS keyframe blocks beat any runtime.
 
+**Superseded (2026-11-02):** João chose **pixel art** (a chibi Portuguese Podengo in the
+spirit of the Codex desktop pets), so the pet is a **PNG sprite sheet per state**, 48×48
+frames, played with CSS `steps()` and scaled with `image-rendering: pixelated`. The art is
+generated and cleaned up outside the repo (`docs/COMPANION_ART_PROMPT.md`), which removes
+the "needs an animator" objection above. `Pet.tsx` keeps the same `state` prop; until the
+sheets exist it renders the inline-SVG placeholder from the wireframes.
+
 ---
 
 ## 10. Decisions (João, 2026-11-02)
@@ -614,7 +621,8 @@ One `Pet.tsx` with a `state` prop, one `pet.css` holding the keyframes, every po
 These close the open questions below and override the defaults where they differ.
 
 1. **Character:** the dog, named **Argos** (not "Argo"), like Odysseus' hound, drawn as a
-   **chibi cartoon puppy in orange and white** (this replaces the flat, calm look of §2.1). The art
+   **chibi pixel-art Portuguese Podengo, all orange** (upright triangular ears, wiry coat,
+   sickle tail; replaces the flat look of §2.1 and the art tech of §9.5). The art
    will be produced with an image-generation AI from `docs/COMPANION_ART_PROMPT.md`, then
    vectorised; the inline-SVG placeholder in the wireframes stands in until then.
 2. **Voice is in the MVP.** Batch H (push-to-talk, local whisper) joins the MVP cut, right
