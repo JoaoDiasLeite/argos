@@ -201,3 +201,15 @@ export function defaultNewReminder(todo: CompanionTodo, rules: ReminderRules): n
   }
   return defaultPickTime(rules.now)
 }
+
+/** A sprint's range for the promote button's detail: "28 out – 8 nov", from "YYYY-MM-DD" dates. */
+export function sprintRange(startDate: string, endDate: string, locale: string | undefined): string {
+  const fmt = (ymd: string): string => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd)
+    if (!m) return ymd
+    const at = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime()
+    const month = new Intl.DateTimeFormat(locale, { month: 'short' }).format(at).replace(/\.$/, '')
+    return `${Number(m[3])} ${month}`
+  }
+  return `${fmt(startDate)} – ${fmt(endDate)}`
+}

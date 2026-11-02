@@ -186,6 +186,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     update: (todo: unknown) => ipcRenderer.invoke('companion:update', todo),
     delete: (id: string) => ipcRenderer.invoke('companion:delete', id),
     done: (id: string, done: boolean) => ipcRenderer.invoke('companion:done', id, done),
+    promote: (id: string) => ipcRenderer.invoke('companion:promote', id),
+    unlink: (id: string) => ipcRenderer.invoke('companion:unlink', id),
     snooze: (id: string, option: unknown) => ipcRenderer.invoke('companion:snooze', id, option),
     dismiss: (id: string) => ipcRenderer.invoke('companion:dismiss', id),
     dnd: (untilMs: number | null) => ipcRenderer.invoke('companion:dnd', untilMs),

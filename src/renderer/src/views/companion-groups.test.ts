@@ -9,6 +9,7 @@ import {
   isOverdue,
   reminderLabel,
   rowTimeLabel,
+  sprintRange,
   withDue
 } from './companion-groups'
 
@@ -205,5 +206,12 @@ describe('a new reminder', () => {
   it('falls back to the next round hour when that one exists or is past', () => {
     expect(defaultNewReminder(todo({ dueAt: at(3, 14), duePrecision: 'minute', remindAt: [at(3, 13, 50)] }), rules)).toBe(at(2, 12))
     expect(defaultNewReminder(todo({}), rules)).toBe(at(2, 12))
+  })
+})
+
+describe('sprintRange', () => {
+  it('reads day and short month at each end', () => {
+    expect(sprintRange('2026-10-28', '2026-11-08', 'pt-PT')).toBe('28 out – 8 nov')
+    expect(sprintRange('2026-10-28', '2026-11-08', 'en-GB')).toBe('28 Oct – 8 Nov')
   })
 })

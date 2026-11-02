@@ -212,6 +212,7 @@ import { startCompanionScheduler, type CompanionScheduler } from './companion-sc
 import { snooze, type DueReminder, type SnoozeOption } from './companion-schedule-pure'
 import { parseCapture } from './companion-nlu-pure'
 import { listForView, planCapture } from './companion-capture-pure'
+import { activeSprint, activeSprintView, linkedItem, promote, sprintLinks, unlink, withSprintDone } from './companion-promote-pure'
 import {
   applyCompanionPrefs,
   closeBubble,
@@ -237,7 +238,7 @@ import {
   startPetDrag,
   toggleCompanion
 } from './companion-window'
-import type { CompanionList, CompanionRect, CompanionStateView, CompanionVoicePhase } from './companion-types'
+import type { CompanionList, CompanionPromoteResult, CompanionRect, CompanionTodo, CompanionStateView, CompanionVoicePhase } from './companion-types'
 import { MAX_CLIP_BYTES } from './companion-voice-pure'
 import { cancelVoiceInstall, disposeVoice, installVoiceModels, prepareVoice, setVoiceProgressListener, transcribe, voiceStatus } from './companion-voice'
 import { currentLanguage, t } from './i18n'
@@ -933,7 +934,26 @@ function settleCompanionReminder(todoId: string): void {
 
 function companionList(): CompanionList {
   const store = companionStore()
-  return listForView(store.listTodos(), store.listNotes(), Date.now())
+  const now = Date.now()
+  const sprints = listSprints()
+  const todos = store.listTodos()
+  // A promoted todo reads `done` through from its sprint item (plan §6.1).
+  const view = listForView(withSprintDone(todos, sprints, now), store.listNotes(), now)
+  return { ...view, sprintLinks: sprintLinks(todos, sprints), activeSprint: activeSprintView(activeSprint(sprints, now)) }
+}
+
+/** A sprint changed: promoted todos read their status through it, and the active sprint may differ. */
+function companionSprintChanged(): void {
+  try {
+    companionChanged()
+  } catch (e) {
+    console.error('[companion] could not refresh after a sprint change:', e)
+  }
+}
+
+/** A promoted todo still pointing at a live sprint item: the sprint owns its `done`. */
+function isSprintOwned(todo: CompanionTodo): boolean {
+  return !!todo.sprintItemId && linkedItem(todo, listSprints()) !== null
 }
 
 /** After any change: the main window's panel and the bubble refresh from this. */
@@ -984,8 +1004,16 @@ ipcMain.handle('companion:undo', (_, id: unknown, kind: unknown) => {
   return removed
 })
 ipcMain.handle('companion:update', (_, raw: unknown) => {
-  const todo = normalizeTodo(raw)
+  let todo = normalizeTodo(raw)
   if (!todo || !isId(todo.id)) return null
+  const stored = companionStore().listTodos().find((x) => x.id === todo!.id)
+  // The link is only set by promote and cleared by unlink; the list's read-through
+  // `done` of a promoted todo is a view, never written back.
+  if (stored?.sprintItemId) {
+    todo = { ...todo, sprintId: stored.sprintId, sprintItemId: stored.sprintItemId, done: stored.done, doneAt: stored.doneAt ?? null }
+  } else {
+    todo = { ...todo, sprintId: null, sprintItemId: null }
+  }
   companionStore().saveTodo(todo)
   companionScheduler?.poke()
   companionChanged()
@@ -1007,6 +1035,8 @@ ipcMain.handle('companion:done', (_, id: unknown, done: unknown) => {
   const store = companionStore()
   const todo = store.listTodos().find((t) => t.id === id)
   if (!todo) return null
+  // Promoted: the sprint item owns `done`; it is ticked in the Sprint view.
+  if (isSprintOwned(todo)) return null
   const next = { ...todo, done, doneAt: done ? Date.now() : null }
   store.saveTodo(next)
   companionScheduler?.poke()
@@ -1036,6 +1066,48 @@ ipcMain.handle('companion:snooze', (_, id: unknown, option: unknown) => {
   store.saveTodo(next)
   companionScheduler?.poke()
   settleCompanionReminder(id)
+  companionChanged()
+  return next
+})
+// "Promover para o sprint" (plan §6.1): one way, once. The new item goes in through the
+// same saveSprint as `sprint:save`; the Sprint view reads the folder each time it mounts,
+// and it cannot be open while the panel is, so it shows the item on the next visit.
+ipcMain.handle('companion:promote', (_, id: unknown): CompanionPromoteResult => {
+  if (!isId(id)) return { ok: false, reason: 'not-found' }
+  const store = companionStore()
+  const todo = store.listTodos().find((x) => x.id === id)
+  if (!todo) return { ok: false, reason: 'not-found' }
+  const now = Date.now()
+  const sprints = listSprints()
+  if (linkedItem(todo, sprints)) return { ok: false, reason: 'already' }
+  const sprint = activeSprint(sprints, now)
+  if (!sprint) return { ok: false, reason: 'no-active-sprint' }
+  const result = promote(todo, sprint, now, randomUUID, { dueLabel: t('companion.promote.dueLabel') })
+  if (!result.changed) return { ok: false, reason: 'already' }
+  // The sprint first: a todo pointing at an item that was never written would read 'missing'.
+  saveSprint(result.sprint)
+  store.saveTodo(result.todo)
+  // The sprint speaks for it now: no reminder pops for it, queued or showing.
+  settleCompanionReminder(todo.id)
+  for (let i = companionAlerts.length - 1; i >= 0; i--) {
+    const a = companionAlerts[i]
+    if (a.mode !== 'catchup') continue
+    a.reminders = a.reminders.filter((r) => r.todoId !== todo.id)
+    if (a.reminders.length === 0) companionAlerts.splice(i, 1)
+  }
+  companionScheduler?.poke()
+  companionChanged()
+  return { ok: true, sprintId: sprint.id, sprintItemId: result.todo.sprintItemId!, sprintName: sprint.name }
+})
+// "Desligar": the sprint item was deleted, so the todo goes back to being a plain one.
+ipcMain.handle('companion:unlink', (_, id: unknown) => {
+  if (!isId(id)) return null
+  const store = companionStore()
+  const todo = store.listTodos().find((x) => x.id === id)
+  if (!todo || !todo.sprintItemId || isSprintOwned(todo)) return null
+  const next = unlink(todo, Date.now())
+  store.saveTodo(next)
+  companionScheduler?.poke()
   companionChanged()
   return next
 })
@@ -2498,8 +2570,16 @@ ipcMain.handle('planner:delete', (_, weekStart: string) => deleteWeek(weekStart)
 
 ipcMain.handle('sprint:list', () => listSprints())
 ipcMain.handle('sprint:get', (_, id: string) => getSprint(id))
-ipcMain.handle('sprint:save', (_, sprint: Sprint) => saveSprint(sprint))
-ipcMain.handle('sprint:delete', (_, id: string) => deleteSprint(id))
+ipcMain.handle('sprint:save', (_, sprint: Sprint) => {
+  const saved = saveSprint(sprint)
+  companionSprintChanged()
+  return saved
+})
+ipcMain.handle('sprint:delete', (_, id: string) => {
+  const left = deleteSprint(id)
+  companionSprintChanged()
+  return left
+})
 
 type PlannerAssistMode = 'review' | 'draft' | 'reflect' | 'rebalance' | 'import'
 

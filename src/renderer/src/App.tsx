@@ -2845,7 +2845,17 @@ export default function App() {
       )}
       {view === 'companion' && (
         <Suspense fallback={<ViewLoading />}>
-          <CompanionView />
+          <CompanionView
+            onOpenSprint={() => {
+              // A promoted todo lives in the Sprint board now; land on it, not on Week.
+              try {
+                localStorage.setItem('planner.mode', 'sprint')
+              } catch {
+                /* the planner falls back to its own default */
+              }
+              goToView('planner')
+            }}
+          />
         </Suspense>
       )}
       {/* Owns the whole content area, its own nav column standing in for the chat

@@ -15,6 +15,7 @@ import type {
   CompanionPetFacing,
   CompanionPetState,
   CompanionPrefs,
+  CompanionPromoteResult,
   CompanionRect,
   CompanionSnoozeRequest,
   CompanionStateView,
@@ -1430,6 +1431,10 @@ declare global {
         /** A todo or a note, by id. */
         delete: (id: string) => Promise<boolean>
         done: (id: string, done: boolean) => Promise<CompanionTodo | null>
+        /** Hand a todo to the active sprint as a new item (plan §6.1); never twice. */
+        promote: (id: string) => Promise<CompanionPromoteResult>
+        /** Drop a promoted todo's link once its sprint item is gone; it is a plain todo again. */
+        unlink: (id: string) => Promise<CompanionTodo | null>
         snooze: (id: string, option: CompanionSnoozeRequest) => Promise<CompanionTodo | null>
         /** Close the reminder bubble for this todo; it stays fired. */
         dismiss: (id: string) => Promise<boolean>

@@ -168,7 +168,32 @@ export type CompanionBubblePayload =
 export interface CompanionList {
   todos: CompanionTodo[]
   notes: CompanionNote[]
+  /** Per promoted todo id: the sprint item it handed over to (plan §6.1), read-only. */
+  sprintLinks?: Record<string, CompanionSprintLink>
+  /** Where "Promover para o sprint" would put a todo now; null when no sprint is active. */
+  activeSprint?: CompanionActiveSprint | null
 }
+
+/** A promoted todo's sprint item as the panel shows it. 'missing': its sprint or item was deleted. */
+export interface CompanionSprintLink {
+  sprintId: string
+  sprintName: string
+  status: 'todo' | 'in-progress' | 'done' | 'missing'
+}
+
+export interface CompanionActiveSprint {
+  id: string
+  name: string
+  /** "YYYY-MM-DD". */
+  startDate: string
+  /** "YYYY-MM-DD", inclusive. */
+  endDate: string
+}
+
+/** `companion:promote`. */
+export type CompanionPromoteResult =
+  | { ok: true; sprintId: string; sprintItemId: string; sprintName: string }
+  | { ok: false; reason: 'no-active-sprint' | 'not-found' | 'already' }
 
 /** What `companion:capture` did with a line of input. Nothing is saved for query and needs-title. */
 export interface CompanionCaptureResult {
