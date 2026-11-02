@@ -8,7 +8,10 @@ with the output so it fits the app.
 Codex desktop pets (a big head on a tiny body, a handful of colours, readable at 64 px).
 The dog is a **Portuguese Podengo** (podengo português), simplified and a little fictional:
 
-- **big upright triangular ears**, wide at the base: the main feature of the silhouette;
+- **big semi-folded ears**: they stand up from a wide base and fold forward about halfway,
+  the tips dropping towards the eyes (like a young podengo or a jack russell). Not pointed
+  and erect, not long and hanging like a beagle's. They are the main feature of the
+  silhouette;
 - a **wiry, scruffy coat**, shown with only a few jagged pixels at the cheeks, chin
   ("beard") and chest, not drawn hair by hair;
 - a **sickle tail** that curls up over the back;
@@ -61,8 +64,9 @@ the style from them, not the character.
 
 ```
 Pixel art character, 48x48 sprite, chibi style: "Argos", a cute cartoon Portuguese
-Podengo puppy. Big head on a tiny body, short legs. Very large upright triangular ears,
-wide at the base and pointed at the tips, pink inside. Slim pointed muzzle, small dark
+Podengo puppy. Big head on a tiny body, short legs. Very large semi-folded ears: they
+rise from a wide base and fold forward halfway, the triangular tips flopping down towards
+the eyes, pink inside. Slim pointed muzzle, small dark
 nose, big round dark eyes with one white highlight pixel, small pink blush.
 Wiry scruffy coat suggested by a few jagged pixels on the cheeks, chin beard and chest.
 A curled sickle tail over the back.
@@ -76,8 +80,8 @@ transparent background, centered, no text, no shadow on the ground.
 **Negative prompt** (when the tool has one):
 
 ```
-realistic, photo, 3D, smooth shading, gradients, anti-aliasing, blur, floppy ears,
-beagle, corgi, shiba, long body, detailed fur strands, text, watermark, background,
+realistic, photo, 3D, smooth shading, gradients, anti-aliasing, blur, pointed erect ears,
+long hanging ears, beagle, corgi, shiba, long body, detailed fur strands, text, watermark, background,
 Datadog logo, existing mascot
 ```
 
@@ -99,10 +103,10 @@ sits on the same bottom line in every frame. Animation: <ANIMATION>
 |---|---|---|
 | `idle` | 4 | sitting, slow breathing (body rises 1 px), one blink on frame 3, tail curled |
 | `dozing` | 4 | curled up in a ball asleep, eyes closed, breathing, small "z" pixels rising |
-| `listening` | 4 | sitting, big ears perk up and twitch, head lifts slightly, eyes wide |
+| `listening` | 4 | sitting, the folded ear tips lift up and twitch, head lifts slightly, eyes wide |
 | `thinking` | 4 | sitting, head tilts to one side, one ear folds a little, eyes look up |
 | `talking` | 4 | sitting, mouth opens and closes, one front paw lifts |
-| `alert` | 4 | standing, ears straight up, tail high, a small bark (mouth open), a "!" above the head on frames 2–3 |
+| `alert` | 4 | standing, ears raised with the tips still folded, tail high, a small bark (mouth open), a "!" above the head on frames 2–3 |
 | `happy` | 6 | small hop with the tail wagging fast, eyes closed in a smile, tongue out |
 | `shh` | 2 | lying down, chin on its paws, eyes closed, a tiny crescent moon above, nearly still |
 
@@ -114,4 +118,4 @@ sits on the same bottom line in every frame. Animation: <ANIMATION>
 - [ ] One PNG per state, frames left to right, no gaps (or note the gap size).
 - [ ] Reads clearly at 3× (144 px) and 2× (96 px) over a light and a dark wallpaper; the
       dark outline must go all the way round.
-- [ ] The ears are still obviously podengo ears at 1× (48 px).
+- [ ] The ears still read as big folded ears at 1× (48 px): the fold must be visible.

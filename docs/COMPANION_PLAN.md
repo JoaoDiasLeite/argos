@@ -621,7 +621,7 @@ sheets exist it renders the inline-SVG placeholder from the wireframes.
 These close the open questions below and override the defaults where they differ.
 
 1. **Character:** the dog, named **Argos** (not "Argo"), like Odysseus' hound, drawn as a
-   **chibi pixel-art Portuguese Podengo, all orange** (upright triangular ears, wiry coat,
+   **chibi pixel-art Portuguese Podengo, all orange** (big semi-folded ears, wiry coat,
    sickle tail; replaces the flat look of §2.1 and the art tech of §9.5). The art
    will be produced with an image-generation AI from `docs/COMPANION_ART_PROMPT.md`, then
    vectorised; the inline-SVG placeholder in the wireframes stands in until then.
