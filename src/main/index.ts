@@ -206,6 +206,8 @@ import {
 import { noteTerminalBusy } from './run-indicators-pure'
 import { successBadge, errorBadge, approvalBadge } from './badges'
 import { createTray, refreshTrayMenu, updateTrayShortcutLabel } from './tray'
+import { companionStore } from './companion-store'
+import { startCompanionScheduler, type CompanionScheduler } from './companion-scheduler'
 import { currentLanguage, t } from './i18n'
 import { initUpdater, getUpdaterState, checkNow, quitAndInstall } from './updater'
 import { getPlanUsageForIpc, startPlanUsageWatcher } from './plan-usage'
@@ -251,6 +253,8 @@ let isQuitting = false
 // never be stranded running invisibly.
 let hasTray = false
 let trayHintShown = false
+// The companion's reminder timer; started after ready, stopped on will-quit.
+let companionScheduler: CompanionScheduler | null = null
 
 // This process was started by Claude Code's Notification hook, not by a user. It
 // runs a few lines and exits — no windows, no tray — so every startup
@@ -696,6 +700,22 @@ app.whenReady().then(async () => {
       sendToMainWindow('app:open-view', 'usage')
     }
   })
+  // Companion reminders. Until the pet window lands (batch C) they go out as plain
+  // Windows notifications; the two callbacks below are what it will replace.
+  companionScheduler = startCompanionScheduler({
+    store: companionStore(),
+    deliver: (items) => {
+      for (const r of items) notifyCompanion(r.title, r.late ? `Atrasado ${lateText(r.lateMinutes)}` : 'Agora')
+    },
+    deliverCatchUp: (items, reason) => {
+      const n = items.length
+      const head = n === 1 ? '1 lembrete passou' : `${n} lembretes passaram`
+      notifyCompanion(
+        `${head} ${reason === 'dnd' ? 'enquanto estavas em silêncio' : 'enquanto o Argos esteve fechado'}`,
+        items.slice(0, 3).map((r) => r.title).join(' · ')
+      )
+    }
+  })
   // Keep the "run at login" entry (Windows registry, or the XDG autostart file on
   // Linux) in sync with config on every startup (covers the case where it was
   // changed outside this app, or the app was reinstalled or updated to a new
@@ -754,6 +774,7 @@ app.on('before-quit', () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+  companionScheduler?.stop()
 })
 
 // ─── Quick-launcher overlay IPC ────────────────────────────────────────────────
@@ -864,6 +885,23 @@ ipcMain.handle('app:notify', (_, payload: { title: string; body: string }) => {
   n.show()
   return { shown: true }
 })
+
+// Interim delivery for companion reminders (see startCompanionScheduler above).
+// TODO(companion C): i18n — these strings are pt-PT only until the pet window replaces them.
+function notifyCompanion(title: string, body: string): void {
+  if (!Notification.isSupported()) return
+  const n = new Notification({ title, body, silent: false })
+  n.on('click', () => showMainWindow())
+  n.show()
+}
+
+/** "5 min", "2 h", "2 h 15 min" for how late a reminder is. */
+function lateText(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return m === 0 ? `${h} h` : `${h} h ${m} min`
+}
 
 // ─── Auto-update ────────────────────────────────────────────────────────────
 
