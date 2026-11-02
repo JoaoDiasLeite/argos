@@ -1439,6 +1439,8 @@ declare global {
         /** An extra element of the pet that should take clicks, in window DIPs; null clears. */
         hitRect: (rect: CompanionRect | null) => void
         openMain: () => void
+        /** A click on the dog: the bubble opens for typing (or closes if it is). */
+        summon: () => void
         onShown: (cb: () => void) => () => void
         onBubbleMode: (cb: (bubble: CompanionBubblePayload) => void) => () => void
         onBubbleAnchor: (cb: (anchor: CompanionBubbleAnchor) => void) => () => void

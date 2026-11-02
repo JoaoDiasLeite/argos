@@ -1055,6 +1055,13 @@ ipcMain.on('companion:bubble-close', () => closeBubble())
 ipcMain.on('companion:drag-start', () => startPetDrag())
 ipcMain.on('companion:drag-end', () => endPetDrag())
 ipcMain.on('companion:hit-rect', (_, rect: unknown) => setPetHitRect(asRect(rect)))
+// A click on the dog: open the bubble for typing, or close it if it already is. A
+// reminder or catch-up that is up stays until it is answered.
+ipcMain.on('companion:summon', () => {
+  const open = currentBubble()
+  if (!open) showCompanion({ focusInput: true })
+  else if (open.mode === 'input') closeBubble()
+})
 // "Abrir": the list in the main window. The view itself lands with the panel; until
 // then App.tsx ignores a view name it does not know.
 ipcMain.on('companion:open-main', () => {

@@ -1,0 +1,158 @@
+/* The pet window: 220×220, transparent. Main's hit area is the 120×130 rect at the
+   bottom centre (x 50..170, y 90..220); the sprite and every badge stay inside it. */
+html, body, #root { background: transparent; }
+
+.pet {
+  position: absolute;
+  inset: 0;
+  width: 220px;
+  height: 220px;
+  overflow: hidden;
+  user-select: none;
+}
+
+.pet-body {
+  position: absolute;
+  left: 62px;
+  top: 110px;
+  width: 96px;
+  height: 96px;
+  cursor: grab;
+}
+.pet-body:active { cursor: grabbing; }
+
+.pet-sprite {
+  width: 96px;
+  height: 96px;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-size: 96px 96px;
+  image-rendering: pixelated;
+  transform-origin: 50% 100%;
+}
+/* A horizontal sheet of 96×96 frames (Pet.tsx sets the three variables). */
+.pet-sheet {
+  animation: pet-sheet var(--sheet-dur, 1s) steps(var(--sheet-steps, 1)) infinite;
+}
+@keyframes pet-sheet {
+  from { background-position: 0 0; }
+  to { background-position: calc(-1 * var(--sheet-w, 96px)) 0; }
+}
+
+/* ── What the sheets don't draw ── */
+
+/* alert: a short hop on entry; happy: the 600 ms double hop (Pet.tsx then sits him). */
+.pet-alert .pet-body { animation: pet-hop 320ms ease-out 1; }
+.pet-happy .pet-body { animation: pet-hop 300ms ease-out 2; }
+/* dozing: slow breathing, about 2 px at the top while the paws stay put. On the body,
+   not the sprite: the sprite's own animation is the frame sheet. */
+.pet-dozing .pet-body { transform-origin: 50% 100%; animation: pet-breathe 4s ease-in-out infinite; }
+/* shh: the same curl, a little greyer. */
+.pet-shh .pet-sprite { filter: saturate(0.55); }
+/* thinking: the head tilted. */
+.pet-thinking .pet-sprite { transform: rotate(-6deg); }
+
+@keyframes pet-breathe {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.022); }
+}
+@keyframes pet-hop {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-9px); }
+}
+
+/* listening: a thin accent ring pulsing behind the dog. */
+.pet-ring {
+  position: absolute;
+  left: 54px;
+  top: 104px;
+  width: 112px;
+  height: 108px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0.55;
+  animation: pet-ring 1.4s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes pet-ring {
+  0%, 100% { transform: scale(0.94); opacity: 0.6; }
+  50% { transform: scale(1.03); opacity: 0.25; }
+}
+
+/* ── Badges over the head ── */
+
+.pet-badge { position: absolute; pointer-events: none; }
+
+.pet-zs {
+  /* Over the curled dog's head (doze.png lies low in its frame). */
+  left: 140px;
+  top: 118px;
+  width: 30px;
+  height: 26px;
+  font-family: var(--font-mono);
+  color: var(--text-2);
+  font-weight: 650;
+}
+.pet-zs i {
+  position: absolute;
+  font-style: normal;
+  opacity: 0;
+  animation: pet-z 3.6s ease-out infinite;
+}
+.pet-zs i:nth-child(1) { left: 0; bottom: 0; font-size: 10px; }
+.pet-zs i:nth-child(2) { left: 9px; bottom: 7px; font-size: 12px; animation-delay: 1.2s; }
+.pet-zs i:nth-child(3) { left: 18px; bottom: 14px; font-size: 14px; animation-delay: 2.4s; }
+@keyframes pet-z {
+  0% { opacity: 0; transform: translateY(4px); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+
+.pet-dots {
+  left: 50%;
+  top: 96px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 5px;
+}
+.pet-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-1);
+  animation: pet-pulse 1.2s ease-in-out infinite;
+}
+.pet-dots i:nth-child(2) { animation-delay: 0.2s; }
+.pet-dots i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes pet-pulse { 50% { opacity: 0.25; } }
+
+.pet-bang {
+  left: 130px;
+  top: 96px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg-0);
+  font: 700 12px/18px var(--font-sans);
+  text-align: center;
+  animation: pet-hop 320ms ease-out 1;
+}
+
+.pet-moon {
+  left: 140px;
+  top: 124px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  color: var(--text-1);
+  display: grid;
+  place-items: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet *, .pet *::before, .pet *::after { animation: none !important; }
+  .pet-zs i { opacity: 1; }
+}

@@ -1,0 +1,239 @@
+/* The bubble window is transparent and sized by main to .bq-frame, which leaves room
+   for the card's shadow and, on the side facing the dog, its tail. */
+html, body, #root { background: transparent; }
+
+.bq-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  padding: 12px;
+}
+.bq-above-left, .bq-above-right { padding-bottom: 20px; }
+.bq-below-left { padding-right: 20px; }
+.bq-below-right { padding-left: 20px; }
+
+.bq {
+  position: relative;
+  width: 360px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.26);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text-0);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.bq-mode-catchup { width: 380px; }
+.bq:focus-within { border-color: var(--border-light); }
+
+/* The tail: a rotated square with the card's border on its two outer sides. */
+.bq::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--bg-1);
+  border: 0 solid var(--border);
+  transform: rotate(45deg);
+}
+.bq:focus-within::after { border-color: var(--border-light); }
+.bq-above-left .bq::after { right: 22px; bottom: -7px; border-right-width: 1px; border-bottom-width: 1px; }
+.bq-above-right .bq::after { left: 22px; bottom: -7px; border-right-width: 1px; border-bottom-width: 1px; }
+.bq-below-left .bq::after { right: -7px; top: 18px; border-top-width: 1px; border-right-width: 1px; }
+.bq-below-right .bq::after { left: -7px; top: 18px; border-bottom-width: 1px; border-left-width: 1px; }
+
+/* Times in the sans face with aligned digits: --font-mono lands on Courier New on
+   Windows, which reads as a typewriter in a bubble this small. */
+.bq .num, .bq .bq-mono {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.bq .muted { color: var(--text-2); }
+.bq .help { display: block; }
+
+.bq button:focus-visible,
+.bq input[type='datetime-local']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Input ── */
+.bq-input-row { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.bq-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-0);
+  font: inherit;
+  font-size: 13.5px;
+  padding: 2px 0;
+}
+.bq-input::placeholder { color: var(--text-2); }
+
+.bq-chip {
+  flex: none;
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 1px 7px;
+  border-radius: 3px;
+  border: 1px solid var(--border-light);
+  color: var(--text-1);
+  white-space: nowrap;
+}
+.bq-chip.bq-mono { font-size: 11.5px; }
+.bq-warn {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+
+/* ── Rows (query results, catch-up) ── */
+.bq-results { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
+.bq-rows { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.bq-scroll { max-height: 220px; overflow-y: auto; }
+.bq-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+}
+.bq-when { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.bq-row-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bq-row.done .bq-row-title { color: var(--text-2); text-decoration: line-through; }
+
+.bq-check {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  color: var(--bg-0);
+  cursor: pointer;
+  position: relative;
+}
+.bq-check::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1.5px solid var(--border-light);
+  border-radius: 4px;
+}
+.bq-check:hover::before { border-color: var(--text-1); }
+.bq-check[aria-pressed='true']::before { background: var(--success); border-color: var(--success); }
+.bq-check svg { position: relative; }
+
+/* ── Receipt ── */
+.bq-receipt { display: flex; flex-direction: column; gap: 8px; }
+.bq-day { font-size: 13px; color: var(--text-1); }
+.bq-grid {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: baseline;
+}
+.bq-grid-time { font-size: 13px; }
+.bq-grid-time.muted { font-size: 12px; }
+.bq-small { font-size: 12.5px; }
+.bq-title { font-size: 13.5px; overflow-wrap: anywhere; }
+.bq-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.bq-undone { font-size: 13.5px; color: var(--text-1); padding: 2px 0; }
+
+.bq-drain {
+  height: 2px;
+  background: var(--border);
+  border-radius: 1px;
+  overflow: hidden;
+}
+.bq-drain i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: var(--accent);
+  transform-origin: 100% 50%;
+  animation: bq-drain linear forwards;
+}
+.bq-drain i.paused { animation-play-state: paused; }
+@keyframes bq-drain {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+/* ── Actions ── */
+.bq-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bq-end { justify-content: flex-end; gap: 6px; }
+.bq-meta { display: flex; align-items: center; gap: 8px; }
+
+/* "+10 min" and its chevron: one quiet control in two halves. */
+.bq-split { display: inline-flex; }
+.bq-split > button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.bq-split-more {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-left-width: 0 !important;
+  padding: 0 8px !important;
+}
+
+.bq-menu {
+  display: flex;
+  flex-direction: column;
+  align-self: flex-start;
+  width: 200px;
+  padding: 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+}
+.bq-menu button {
+  text-align: left;
+  padding: 5px 9px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-0);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.bq-menu button:hover, .bq-menu button:focus-visible { background: var(--bg-3); }
+
+.bq-pick { display: flex; gap: 8px; align-items: center; }
+.bq-pick .text-input { flex: 1; min-width: 0; color-scheme: dark; }
+:root[data-theme='light'] .bq-pick .text-input { color-scheme: light; }
+
+/* ── Catch-up ── */
+.bq-catch-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  color: var(--text-1);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.bq-catch-head > span { display: flex; flex-direction: column; }
+.bq-catch-title { font-size: 13.5px; font-weight: 600; color: var(--text-0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .bq-drain i { animation: none; }
+}

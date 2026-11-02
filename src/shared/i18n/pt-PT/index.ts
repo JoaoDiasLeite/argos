@@ -27,6 +27,7 @@ import accounts from './accounts'
 import chat from './chat'
 import editor from './editor'
 import runbook from './runbook'
+import companion from './companion'
 
 export const ptPT: Record<MessageKey, string> = {
   ...prefix('common', common),
@@ -48,5 +49,6 @@ export const ptPT: Record<MessageKey, string> = {
   ...prefix('accounts', accounts),
   ...prefix('chat', chat),
   ...prefix('editor', editor),
-  ...prefix('runbook', runbook)
+  ...prefix('runbook', runbook),
+  ...prefix('companion', companion)
 }
