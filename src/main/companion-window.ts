@@ -1,4 +1,4 @@
-import { BrowserWindow, globalShortcut, screen, type WebContents } from 'electron'
+import { BrowserWindow, globalShortcut, screen, systemPreferences, type WebContents } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
@@ -16,10 +16,12 @@ import {
   type Size
 } from './companion-window-pure'
 import { voiceShortcutCandidates } from './companion-voice-pure'
+import { canWalk, nextWalkDelay, planWalk, stepToward, type WalkPlan } from './companion-walk-pure'
 import { VOICE_SHORTCUT_DEFAULTS } from './companion-types'
 import type {
   CompanionBubbleAnchor,
   CompanionBubblePayload,
+  CompanionPetFacing,
   CompanionPetState,
   CompanionPrefs,
   CompanionVoicePhase
@@ -35,6 +37,18 @@ import type {
 /** How often the cursor is read while the pet is up, and while it is being dragged. */
 const POLL_MS = 50
 const DRAG_POLL_MS = 16
+/** While walking the same poll moves the window, at about 30 fps. */
+const WALK_POLL_MS = 33
+
+/**
+ * Test hook for the isolated visual check: ARGOS_COMPANION_WALK_SOON=1 makes every walk
+ * come 3 s after the last instead of 3–8 min. Nothing else changes; unset in normal use.
+ */
+const WALK_SOON = process.env['ARGOS_COMPANION_WALK_SOON'] === '1'
+const WALK_SOON_MS = 3000
+
+/** `happy` is the renderer's 1 s beat (Pet.tsx HAPPY_MS); main counts it as idle after it. */
+const HAPPY_MS = 1000
 
 /** With "stay on screen" off, how long the pet lingers after its bubble closes. */
 const IDLE_HIDE_MS = 4000
@@ -56,6 +70,11 @@ let drag: { cursor: Point; window: Point } | null = null
 let hideTimer: ReturnType<typeof setTimeout> | null = null
 
 let petState: CompanionPetState = 'idle'
+let petFacing: CompanionPetFacing = 'right'
+let happyTimer: ReturnType<typeof setTimeout> | null = null
+/** The walk under way (x kept fractional, the window gets the rounded value), and the next one's timer. */
+let walk: (WalkPlan & { x: number; last: number }) | null = null
+let walkTimer: ReturnType<typeof setTimeout> | null = null
 let bubble: CompanionBubblePayload | null = null
 let bubbleAnchor: CompanionBubbleAnchor = 'above-left'
 let bubbleSize: Size = DEFAULT_BUBBLE_SIZE
@@ -65,6 +84,8 @@ export interface CompanionWindowHooks {
   onVisibilityChanged?: () => void
   /** The bubble closed, for whatever reason: the next queued reminder can go up. */
   onBubbleClosed?: (mode: CompanionBubblePayload['mode']) => void
+  /** A reminder or catch-up is waiting for the bubble (the queue is index.ts's): no walking. */
+  hasPendingAlerts?: () => boolean
 }
 
 let hooks: CompanionWindowHooks = {}
@@ -142,6 +163,8 @@ function createPetWindow(): BrowserWindow {
   win.on('closed', () => {
     stopPolling()
     drag = null
+    walk = null
+    cancelWalkTimer()
     if (petWindow === win) petWindow = null
   })
   hardenWebContents(win)
@@ -211,7 +234,9 @@ function poll(): void {
     setIgnore(false)
     return
   }
-  setIgnore(!petHitTest(cursor, petWindow.getBounds(), extraHitRect))
+  const over = petHitTest(cursor, petWindow.getBounds(), extraHitRect)
+  setIgnore(!over)
+  if (walk) stepWalk(petWindow, over)
 }
 
 function startPolling(ms = POLL_MS): void {
@@ -227,6 +252,7 @@ function stopPolling(): void {
 /** The renderer's mousedown on the dog: follow the cursor until drag-end. */
 export function startPetDrag(): void {
   if (!alive(petWindow) || !petWindow.isVisible()) return
+  stopWalk()
   const [x, y] = petWindow.getPosition()
   drag = { cursor: screen.getCursorScreenPoint(), window: { x, y } }
   startPolling(DRAG_POLL_MS)
@@ -245,12 +271,118 @@ export function endPetDrag(): void {
   const pos = snapToEdge({ x: b.x, y: b.y }, display.workArea)
   petWindow.setPosition(pos.x, pos.y)
   placeBubble()
+  savePetPosition(display.id, pos)
+  scheduleWalk()
+}
+
+/** Remember where the pet is on this display (a drop, or the end of a walk). */
+function savePetPosition(displayId: number, pos: Point): void {
   try {
-    const positions = { ...(companionStore().getState().positions ?? {}), [String(display.id)]: pos }
+    const positions = { ...(companionStore().getState().positions ?? {}), [String(displayId)]: pos }
     companionStore().setState({ positions })
   } catch (e) {
     console.error('[companion] could not save the pet position:', e)
   }
+}
+
+// ─── Walking (plan §11, batch L) ───────────────────────────────────────────────
+
+function cancelWalkTimer(): void {
+  if (walkTimer) clearTimeout(walkTimer)
+  walkTimer = null
+}
+
+/** Re-roll the next walk: after each walk, and after any interaction. Off → no timer. */
+function scheduleWalk(): void {
+  cancelWalkTimer()
+  const p = prefs()
+  if (!p.stayOnScreen || !p.walk || !isCompanionVisible()) return
+  walkTimer = setTimeout(tryWalk, WALK_SOON ? WALK_SOON_MS : nextWalkDelay())
+}
+
+function reducedMotion(): boolean {
+  try {
+    return systemPreferences.getAnimationSettings().prefersReducedMotion
+  } catch {
+    return false
+  }
+}
+
+function dndOn(): boolean {
+  try {
+    const until = companionStore().getState().dndUntil
+    return typeof until === 'number' && until > Date.now()
+  } catch {
+    return false
+  }
+}
+
+/** `withDnd` reads state.json, so only when a walk starts; while walking dnd arrives as `shh`. */
+function walkAllowed(cursorOverPet: boolean, withDnd: boolean): boolean {
+  const p = prefs()
+  return canWalk({
+    stayOnScreen: p.stayOnScreen,
+    walkPref: p.walk,
+    visible: isCompanionVisible(),
+    petState,
+    bubbleOpen: bubble !== null,
+    alertsPending: hooks.hasPendingAlerts?.() ?? false,
+    dnd: withDnd ? dndOn() : false,
+    cursorOverPet,
+    dragging: drag !== null,
+    voiceBusy: voicePhase !== 'idle',
+    reducedMotion: reducedMotion()
+  })
+}
+
+/** The walk timer: stand up and go, if nothing says sit; otherwise try again later. */
+function tryWalk(): void {
+  walkTimer = null
+  if (!alive(petWindow) || walk) return
+  const b = petWindow.getBounds()
+  const over = petHitTest(screen.getCursorScreenPoint(), b, extraHitRect)
+  const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
+  // Not on the floor (docked half way up a side): planWalk says null and he stays put.
+  const plan = walkAllowed(over, true) ? planWalk(b, display.workArea) : null
+  if (!plan) {
+    scheduleWalk()
+    return
+  }
+  walk = { ...plan, x: plan.fromX, last: Date.now() }
+  petFacing = plan.facing
+  sendToPet('companion:pet-facing', plan.facing)
+  setPetState('walking')
+  startPolling(WALK_POLL_MS)
+}
+
+/** One poll tick of a walk: stop if anything says sit, else move on, and sit on arrival. */
+function stepWalk(win: BrowserWindow, cursorOverPet: boolean): void {
+  if (!walk) return
+  if (!walkAllowed(cursorOverPet, false)) {
+    stopWalk()
+    return
+  }
+  const now = Date.now()
+  // A stalled event loop resumes at walking pace instead of jumping.
+  walk.x = stepToward(walk.x, walk.toX, Math.min(now - walk.last, 200))
+  walk.last = now
+  const [, y] = win.getPosition()
+  win.setPosition(Math.round(walk.x), y)
+  if (walk.x === walk.toX) stopWalk()
+}
+
+/** Sit down where he is, remember it for this display, and roll the next walk. */
+function stopWalk(): void {
+  if (!walk) return
+  walk = null
+  if (pollTimer && !drag) startPolling(POLL_MS)
+  if (petState === 'walking') setPetState('idle')
+  if (alive(petWindow)) {
+    const b = petWindow.getBounds()
+    const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
+    savePetPosition(display.id, { x: b.x, y: b.y })
+  }
+  scheduleWalk()
 }
 
 /** The renderer's extra hit area (a menu, a badge), in window DIPs; null clears it. */
@@ -283,12 +415,15 @@ function showPet(): BrowserWindow {
     win.showInactive()
     startPolling()
     hooks.onVisibilityChanged?.()
+    scheduleWalk()
   }
   return win
 }
 
 function hidePet(): void {
   cancelIdleHide()
+  // Sits and saves first, while the window is still up.
+  stopWalk()
   stopPolling()
   drag = null
   // Quietly: nothing queued should pop the pet straight back up.
@@ -297,11 +432,30 @@ function hidePet(): void {
     petWindow.hide()
     hooks.onVisibilityChanged?.()
   }
+  cancelWalkTimer()
 }
 
 export function setPetState(state: CompanionPetState): void {
   petState = state
+  // Anything else the pet is told to do ends a walk (and rolls the next one).
+  if (state !== 'walking') {
+    stopWalk()
+    scheduleWalk()
+  }
+  if (happyTimer) clearTimeout(happyTimer)
+  happyTimer = null
+  // The renderer sits him down after its beat on its own; main follows, so he can walk again.
+  if (state === 'happy') {
+    happyTimer = setTimeout(() => {
+      happyTimer = null
+      if (petState === 'happy') petState = 'idle'
+    }, HAPPY_MS)
+  }
   sendToPet('companion:pet-state', state)
+}
+
+export function currentPetFacing(): CompanionPetFacing {
+  return petFacing
 }
 
 export function currentPetState(): CompanionPetState {
@@ -363,6 +517,8 @@ function positionBubble(win: BrowserWindow): void {
  * anything the pet says on its own shows it without taking focus from what João is in.
  */
 export function openBubble(next: CompanionBubblePayload): void {
+  // Sit down first, so the bubble is placed against where he stopped.
+  stopWalk()
   showPet()
   const win = alive(bubbleWindow) ? bubbleWindow : createBubbleWindow()
   bubble = next
@@ -405,6 +561,7 @@ export function closeBubble(): void {
       if (!bubble && !drag && !prefs().stayOnScreen) hidePet()
     }, IDLE_HIDE_MS)
   }
+  scheduleWalk()
 }
 
 export function currentBubble(): (CompanionBubblePayload & { anchor: CompanionBubbleAnchor }) | null {
@@ -424,11 +581,14 @@ export function applyCompanionPrefs(next: CompanionPrefs): void {
   for (const win of [petWindow, bubbleWindow]) {
     if (alive(win)) win.setContentProtection(next.hideFromCapture)
   }
+  if (!next.walk || !next.stayOnScreen) stopWalk()
   if (next.stayOnScreen) {
     showPet()
   } else if (isCompanionVisible() && !bubble) {
     hidePet()
   }
+  // On → the next walk is rolled; off → the timer goes (scheduleWalk reads the new prefs).
+  scheduleWalk()
 }
 
 /**

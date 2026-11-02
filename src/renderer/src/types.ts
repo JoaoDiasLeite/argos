@@ -12,6 +12,7 @@ import type {
   CompanionBubblePayload,
   CompanionCaptureResult,
   CompanionList,
+  CompanionPetFacing,
   CompanionPetState,
   CompanionPrefs,
   CompanionRect,
@@ -1448,6 +1449,8 @@ declare global {
         onBubbleMode: (cb: (bubble: CompanionBubblePayload) => void) => () => void
         onBubbleAnchor: (cb: (anchor: CompanionBubbleAnchor) => void) => () => void
         onPetState: (cb: (state: CompanionPetState) => void) => () => void
+        /** Which way the walk faces; sent before each `walking` state. */
+        onPetFacing: (cb: (facing: CompanionPetFacing) => void) => () => void
         onChanged: (cb: (list: CompanionList) => void) => () => void
         voiceStatus: () => Promise<CompanionVoiceStatus>
         /** Start the first-use model download; progress arrives on onVoiceProgress. */

@@ -34,7 +34,8 @@ const DEFAULT_PREFS: CompanionPrefs = {
   morningHour: 9,
   hideFromCapture: true,
   voice: false,
-  voiceShortcut: ''
+  voiceShortcut: '',
+  walk: true
 }
 
 /** Text-field saves wait this long after the last keystroke. */

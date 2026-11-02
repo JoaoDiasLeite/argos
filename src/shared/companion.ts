@@ -85,6 +85,8 @@ export interface CompanionPrefs {
   voice: boolean
   /** Preferred dictation accelerator. '' = automatic (Ctrl+Alt+S with a fallback). */
   voiceShortcut: string
+  /** "Passear pelo ecrã": with stayOnScreen on, a short walk along the bottom now and then. */
+  walk: boolean
 }
 
 /**
@@ -128,7 +130,19 @@ export type CompanionVoicePhase = 'idle' | 'recording' | 'transcribing'
 // ---- IPC ---------------------------------------------------------------------------
 
 /** What the pet is doing, which picks its pose (plan §2.3). */
-export type CompanionPetState = 'idle' | 'dozing' | 'listening' | 'thinking' | 'talking' | 'alert' | 'happy' | 'shh'
+export type CompanionPetState =
+  | 'idle'
+  | 'dozing'
+  | 'listening'
+  | 'thinking'
+  | 'talking'
+  | 'alert'
+  | 'happy'
+  | 'shh'
+  | 'walking'
+
+/** Which way the walk sheet faces; it is drawn facing right and mirrored for left. */
+export type CompanionPetFacing = 'left' | 'right'
 
 export type CompanionBubbleMode = 'input' | 'reminder' | 'catchup' | 'confirm'
 
@@ -176,6 +190,8 @@ export interface CompanionStateView {
   voiceShortcut: string
   prefs: CompanionPrefs
   petState: CompanionPetState
+  /** The way the pet faces while walking. */
+  petFacing: CompanionPetFacing
   /** The bubble's current content, for a renderer that mounted after it was sent. */
   bubble: (CompanionBubblePayload & { anchor: CompanionBubbleAnchor }) | null
 }

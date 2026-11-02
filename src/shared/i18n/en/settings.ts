@@ -108,6 +108,8 @@ export default {
   'companion.shortcut.auto': 'Auto (Ctrl+Alt+A)',
   'companion.stay.label': 'Stay on screen',
   'companion.stay.hint': 'Off: Argos hides after you save and comes back only for reminders.',
+  'companion.walk.label': 'Walk around the screen',
+  'companion.walk.hint': 'With Argos on screen, every now and then he takes a few steps along the bottom.',
   'companion.leadTime.label': 'Remind before the time',
   'companion.leadTime.hint': 'For anything with a time, like "tomorrow at 2pm".',
   'companion.leadTime.atTime': 'At the time',

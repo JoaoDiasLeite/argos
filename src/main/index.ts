@@ -218,6 +218,7 @@ import {
   companionShortcut,
   companionVoiceShortcut,
   currentBubble,
+  currentPetFacing,
   currentPetState,
   endPetDrag,
   isCompanionBubble,
@@ -735,7 +736,11 @@ app.whenReady().then(async () => {
   })
   // The companion: its windows are created on first show; the summon shortcut and the
   // reminder timer start now, and "stay on screen" puts the pet up straight away.
-  setCompanionWindowHooks({ onVisibilityChanged: refreshTrayMenu, onBubbleClosed: showNextCompanionAlert })
+  setCompanionWindowHooks({
+    onVisibilityChanged: refreshTrayMenu,
+    onBubbleClosed: showNextCompanionAlert,
+    hasPendingAlerts: () => companionAlerts.length > 0
+  })
   registerCompanionShortcut(getConfig().companion.shortcut)
   registerVoiceShortcut(getConfig().companion.voice, getConfig().companion.voiceShortcut)
   installMicrophonePermission()
@@ -1055,6 +1060,7 @@ ipcMain.handle('companion:state', (): CompanionStateView => ({
   voiceShortcut: companionVoiceShortcut(),
   prefs: getConfig().companion,
   petState: currentPetState(),
+  petFacing: currentPetFacing(),
   bubble: currentBubble()
 }))
 ipcMain.on('companion:bubble-size', (_, size: unknown) => {

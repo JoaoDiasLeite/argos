@@ -217,6 +217,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('companion:pet-state', fn)
       return () => ipcRenderer.removeListener('companion:pet-state', fn)
     },
+    onPetFacing: (cb: (facing: unknown) => void) => {
+      const fn = (_: unknown, facing: unknown) => cb(facing)
+      ipcRenderer.on('companion:pet-facing', fn)
+      return () => ipcRenderer.removeListener('companion:pet-facing', fn)
+    },
     onChanged: (cb: (list: unknown) => void) => {
       const fn = (_: unknown, list: unknown) => cb(list)
       ipcRenderer.on('companion:changed', fn)

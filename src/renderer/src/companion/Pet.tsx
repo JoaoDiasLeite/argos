@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
-import type { CompanionPetState } from '../types'
+import type { CompanionPetFacing, CompanionPetState } from '../types'
 import { useT } from '../i18n'
 import './pet.css'
 
@@ -21,7 +21,8 @@ const SHEETS = {
   doze: new URL('./sprites/doze.png', import.meta.url).href,
   shh: new URL('./sprites/shh.png', import.meta.url).href,
   listen: new URL('./sprites/listen.png', import.meta.url).href,
-  think: new URL('./sprites/think.png', import.meta.url).href
+  think: new URL('./sprites/think.png', import.meta.url).href,
+  walk: new URL('./sprites/walk.png', import.meta.url).href
 }
 
 interface Sprite {
@@ -44,7 +45,9 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   // One ear up, twitching.
   listening: { src: SHEETS.listen, frames: 2, fps: 3 },
   // Looking up for three beats, then a slow half-closed blink.
-  thinking: { src: SHEETS.think, frames: 4, fps: 2 }
+  thinking: { src: SHEETS.think, frames: 4, fps: 2 },
+  // Drawn facing right; mirrored on the wrapper for a walk to the left (main moves the window).
+  walking: { src: SHEETS.walk, frames: 4, fps: 8 }
 }
 
 const FRAME = 96
@@ -55,21 +58,61 @@ const HAPPY_MS = 1000
 /** A pointer that travels further than this between down and up was a drag, not a click. */
 const CLICK_SLOP = 4
 
-const PET_STATES: readonly CompanionPetState[] = ['idle', 'dozing', 'listening', 'thinking', 'talking', 'alert', 'happy', 'shh']
+const PET_STATES: readonly CompanionPetState[] = [
+  'idle',
+  'dozing',
+  'listening',
+  'thinking',
+  'talking',
+  'alert',
+  'happy',
+  'shh',
+  'walking'
+]
+
+const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
+
+/** Live prefers-reduced-motion; main also checks the OS setting before every walk. */
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(() => window.matchMedia(REDUCED_MOTION).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(REDUCED_MOTION)
+    const onChange = (): void => setReduced(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return reduced
+}
 
 const api = window.electronAPI.companion
 
 export default function Pet() {
   const t = useT()
   const [state, setState] = useState<CompanionPetState>('idle')
+  const [facing, setFacing] = useState<CompanionPetFacing>('right')
+  const reducedMotion = useReducedMotion()
   const down = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     const accept = (s: unknown): void => {
       if (PET_STATES.includes(s as CompanionPetState)) setState(s as CompanionPetState)
     }
-    api.state().then((s) => accept(s.petState)).catch(() => {})
-    return api.onPetState(accept)
+    const acceptFacing = (f: unknown): void => {
+      if (f === 'left' || f === 'right') setFacing(f)
+    }
+    api
+      .state()
+      .then((s) => {
+        acceptFacing(s.petFacing)
+        accept(s.petState)
+      })
+      .catch(() => {})
+    const offState = api.onPetState(accept)
+    const offFacing = api.onPetFacing(acceptFacing)
+    return () => {
+      offState()
+      offFacing()
+    }
   }, [])
 
   // Main sets `happy` and moves on; the return to idle is the pet's own.
@@ -79,8 +122,11 @@ export default function Pet() {
     return () => clearTimeout(timer)
   }, [state])
 
-  const sprite = SPRITES[state]
+  // With reduced motion a walk is never shown: he is drawn sitting (main does not walk then either).
+  const shown: CompanionPetState = state === 'walking' && reducedMotion ? 'idle' : state
+  const sprite = SPRITES[shown]
   const animated = sprite.frames > 1
+  const mirrored = shown === 'walking' && facing === 'left'
 
   // Screen coordinates: while main drags the window the dog stays under the cursor, so
   // client coordinates barely move even on a long drag.
@@ -104,8 +150,8 @@ export default function Pet() {
   }
 
   return (
-    <div className={`pet pet-${state}`}>
-      {state === 'listening' && <span className="pet-ring" aria-hidden="true" />}
+    <div className={`pet pet-${shown}`}>
+      {shown === 'listening' && <span className="pet-ring" aria-hidden="true" />}
       <div
         className="pet-body"
         role="button"
@@ -114,22 +160,25 @@ export default function Pet() {
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
       >
-        <div
-          className={`pet-sprite${animated ? ' pet-sheet' : ''}`}
-          style={{
-            backgroundImage: `url("${sprite.src}")`,
-            ...(animated
-              ? {
-                  backgroundSize: `${sprite.frames * FRAME}px ${FRAME}px`,
-                  ['--sheet-w' as string]: `${sprite.frames * FRAME}px`,
-                  ['--sheet-steps' as string]: sprite.frames,
-                  ['--sheet-dur' as string]: `${sprite.frames / sprite.fps}s`
-                }
-              : {})
-          }}
-        />
+        {/* The mirror is on a wrapper so the sprite's own steps() animation keeps running. */}
+        <div className={`pet-facing${mirrored ? ' pet-facing-left' : ''}`}>
+          <div
+            className={`pet-sprite${animated ? ' pet-sheet' : ''}`}
+            style={{
+              backgroundImage: `url("${sprite.src}")`,
+              ...(animated
+                ? {
+                    backgroundSize: `${sprite.frames * FRAME}px ${FRAME}px`,
+                    ['--sheet-w' as string]: `${sprite.frames * FRAME}px`,
+                    ['--sheet-steps' as string]: sprite.frames,
+                    ['--sheet-dur' as string]: `${sprite.frames / sprite.fps}s`
+                  }
+                : {})
+            }}
+          />
+        </div>
       </div>
-      <Badge state={state} />
+      <Badge state={shown} />
     </div>
   )
 }

@@ -30,6 +30,10 @@ html, body, #root { background: transparent; }
   image-rendering: pixelated;
   transform-origin: 50% 100%;
 }
+/* walking: walk.png faces right; a walk to the left mirrors this wrapper, not the
+   sprite, whose own animation is the frame sheet. */
+.pet-facing { width: 96px; height: 96px; }
+.pet-facing-left { transform: scaleX(-1); }
 /* A horizontal sheet of 96×96 frames (Pet.tsx sets the three variables). */
 .pet-sheet {
   animation: pet-sheet var(--sheet-dur, 1s) steps(var(--sheet-steps, 1)) infinite;

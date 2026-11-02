@@ -885,6 +885,15 @@ export default function SettingsView({
                     (stayOnScreen) => updateCompanion({ stayOnScreen }),
                     companionBusy
                   )}
+                  {/* Only with the pet up all day: that is the only time he walks. */}
+                  {companion.stayOnScreen &&
+                    toggleRow(
+                      t('settings.companion.walk.label'),
+                      t('settings.companion.walk.hint'),
+                      companion.walk,
+                      (walk) => updateCompanion({ walk }),
+                      companionBusy
+                    )}
                   <div className="srow">
                     <div className="srow-text">
                       <span className="srow-label">{t('settings.companion.leadTime.label')}</span>
