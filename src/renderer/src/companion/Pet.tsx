@@ -20,7 +20,8 @@ const SHEETS = {
   alert: new URL('./sprites/alert.png', import.meta.url).href,
   doze: new URL('./sprites/doze.png', import.meta.url).href,
   shh: new URL('./sprites/shh.png', import.meta.url).href,
-  sit: new URL('./sprites/argos-idle.png', import.meta.url).href
+  listen: new URL('./sprites/listen.png', import.meta.url).href,
+  think: new URL('./sprites/think.png', import.meta.url).href
 }
 
 interface Sprite {
@@ -31,7 +32,6 @@ interface Sprite {
 }
 
 const IDLE: Sprite = { src: SHEETS.idle, frames: 8, fps: 4 }
-const SIT: Sprite = { src: SHEETS.sit, frames: 1, fps: 1 }
 
 const SPRITES: Record<CompanionPetState, Sprite> = {
   idle: IDLE,
@@ -40,8 +40,10 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   alert: { src: SHEETS.alert, frames: 2, fps: 3 },
   dozing: { src: SHEETS.doze, frames: 2, fps: 1 },
   shh: { src: SHEETS.shh, frames: 1, fps: 1 },
-  listening: SIT,
-  thinking: SIT
+  // One ear up, twitching.
+  listening: { src: SHEETS.listen, frames: 2, fps: 3 },
+  // Looking up for three beats, then a slow half-closed blink.
+  thinking: { src: SHEETS.think, frames: 4, fps: 2 }
 }
 
 const FRAME = 96
