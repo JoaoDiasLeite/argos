@@ -329,6 +329,12 @@ nothing in `dia 12`, `na próxima semana`, `em 15 minutos`, `14h30 reunião` or 
 Note on `dia 5`: on 2 Nov the 5th is still ahead, so it is **11-05**; a day number already
 past this month rolls to next month. The test must pin that rule both ways.
 
+**How João reads them (2026-11-02):** `sexta que vem` / `próxima sexta` is simply the next
+Friday (on Monday 2 Nov → 6 Nov); when the weekday is today it is a week on (`próxima
+quarta` on a Wednesday → the following Wednesday). Only `sexta da próxima semana` means
+next calendar week's. `às 1h`…`às 7h` with no day part read as afternoon, like a bare
+`às 2`; a colon clock (`às 2:00`) stays as written.
+
 ### 5.2 Intents, ranked by value
 
 **v1:** add todo · add note · set reminder · list today / tomorrow · mark done · snooze.
@@ -363,6 +369,10 @@ The card appears for 2.5 s and auto-commits — the item is already saved when i
 the card is a *receipt*, not a question. `✎` opens it for editing, Esc dismisses the card
 (not the item), Ctrl+Z within the 2.5 s undoes. Never block on a confirm dialog for an
 action this small; nothing kills a capture tool faster.
+
+**A date with nothing to do** (`amanhã às 14h` alone parses to an empty title): nothing is
+saved; the bubble keeps the date as a chip and asks `O que é para amanhã às 14:00?` in the
+same input, and Enter saves the two together (decided 2026-11-02, batch D).
 
 ---
 
