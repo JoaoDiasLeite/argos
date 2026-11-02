@@ -1,11 +1,14 @@
 import React, { useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
+// The app's styles first: global.css paints body with --bg-0, and pet.css / bubble.css
+// (imported by the components below) must come after it to make the page transparent
+// again. In the other order the pet sat on a near-white square in the light theme.
+import '../styles/global.css'
+import '../styles/shared.css'
 import { I18nProvider } from '../i18n'
 import { applyTheme } from '../lib/theme'
 import Pet from './Pet'
 import Bubble from './Bubble'
-import '../styles/global.css'
-import '../styles/shared.css'
 
 // The companion's two windows (docs/COMPANION_PLAN.md §9.1–9.2): one page, told apart by
 // the hash main loads it with — '#pet' for Argos, '#bubble' for the bubble beside him.
