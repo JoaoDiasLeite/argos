@@ -235,6 +235,19 @@ pt-PT accuracy not measured: no pt voice is installed to synthesise test audio, 
 judged in real use. Installed voices are en-US only (David, Zira, Mark), so the TTS
 checkbox ships disabled with its reason.
 
+**Engine changed (2026-11-02): sherpa-onnx, as in the team's `meeting-notes` plugin.**
+That plugin (wm-devsecops) already runs Silero VAD + Whisper large-v3-turbo int8 through
+sherpa-onnx, and its models sit in `%LOCALAPPDATA%\meeting-notes\models` on João's PC.
+`sherpa-onnx-node@1.13.8` (N-API, prebuilt win-x64/linux-x64) loads in Electron 42.5.2:
+recognizer load 3.9 s once, then ~1.3 s per 5 s clip at 8 threads, and it got "Rui"
+right where whisper-cli `small` wrote "Ruii". Electron forbids external ArrayBuffers, so
+every sherpa call that takes `enableExternalBuffer` gets `false`. The recognizer lives in
+main (or a worker), loaded on first dictation and freed after 5 min idle; Silero VAD trims
+the clip and an empty result never reaches Whisper. Models: reuse the plugin's folder
+read-only when present, else download `silero_vad.onnx` and the 564 MB
+`sherpa-onnx-whisper-turbo.tar.bz2` once into `userData/companion/models` (int8 files
+only). The whisper-cli plan above is superseded.
+
 **Push-to-talk, as built:** Electron's `globalShortcut` fires on press only — there is no
 key-up — so "hold the shortcut" cannot be done. Dictation instead **toggles**: the
 dictation shortcut (or the mic button in the bubble) starts recording, and it stops on the
