@@ -736,6 +736,9 @@ Order: A, B, C, D, E, H, then F, G, I, J, K.
 pet idle; every 3–8 min at random it stands, walks 150–400 px along its edge at ~60 px/s
 using `sprites/walk.png` (4 frames), facing the way it goes (mirrored for left), turns at
 the corners and sits again. Settings toggle "Passear pelo ecrã", on by default.
+As built: he walks only when the window's bottom is within 40 px of the work area's
+bottom (the default corner counts); docked higher up a side edge he stays put rather than
+float or slide down the wall. The lane is `workArea.x + 12` to `right − 220 − 12`.
 
 A and B are disjoint and can run in parallel. C depends on A+B's types; D depends on C's
 IPC; E depends on C. F–J are independent of each other once E has landed. Spikes to run
