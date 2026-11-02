@@ -38,7 +38,7 @@ type Body =
    * A clock time. `bare` when the hour came with no ":" or "h" ("às 2"), which is what
    * makes it open to the pm guess; `meridiem` from "pm" / "da tarde" / "da manhã".
    */
-  | { kind: 'time'; h: number; m: number; bare: boolean; meridiem: 'am' | 'pm' | null; nextDay?: boolean }
+  | { kind: 'time'; h: number; m: number; bare: boolean; guessPm: boolean; meridiem: 'am' | 'pm' | null; nextDay?: boolean }
   /** A day part on its own: "de manhã", "à tarde", "à noite". */
   | { kind: 'part'; part: Part }
 
@@ -184,7 +184,8 @@ function clock(g: Record<string, string | undefined>, allowBare: boolean): Body[
   else if (g.dp) meridiem = /^(manh|morning)/i.test(g.dp) ? 'am' : 'pm'
   if (bare && !meridiem && !allowBare) return null
   if (m > 59 || h > 23 || (meridiem && (h < 1 || h > 12))) return null
-  return [{ kind: 'time', h, m, bare, meridiem }]
+  // "às 2" and "às 2h" are open to the pm guess; "às 2:00" was written as a clock.
+  return [{ kind: 'time', h, m, bare, guessPm: g.sep !== ':', meridiem }]
 }
 
 const RULES: Rule[] = [
@@ -262,8 +263,10 @@ const RULES: Rule[] = [
     ),
     read: (g, ctx) => {
       const target = WEEKDAYS[key(g.wd!)]
-      const next = g.after || (g.mod && /^(pr|next)/i.test(g.mod))
-      return [{ kind: 'day', date: next ? weekdayNextWeek(target, ctx.today) : nextWeekday(target, ctx.today) }]
+      // "sexta que vem" / "próxima sexta" is simply the next friday, like a bare "sexta";
+      // only "sexta da próxima semana" names next calendar week's.
+      const nextWeek = g.after && /semana/i.test(g.after)
+      return [{ kind: 'day', date: nextWeek ? weekdayNextWeek(target, ctx.today) : nextWeekday(target, ctx.today) }]
     }
   },
   // "na próxima semana", "para a semana", "semana que vem", "next week" → next Monday
@@ -276,12 +279,12 @@ const RULES: Rule[] = [
   // "ao meio-dia", "at noon"
   {
     re: rx(String.raw`${B}(?:(?:ao|até\s+ao|para\s+o|at|by)\s+)?(?:meio[-\s]dia|noon|midday)${E}`),
-    read: () => [{ kind: 'time', h: 12, m: 0, bare: false, meridiem: null }]
+    read: () => [{ kind: 'time', h: 12, m: 0, bare: false, guessPm: false, meridiem: null }]
   },
   // "à meia-noite", "at midnight" — the 00:00 that ends the day
   {
     re: rx(String.raw`${B}(?:(?:à|até\s+à|para\s+a|at|by)\s+)?(?:meia[-\s]noite|midnight)${E}`),
-    read: () => [{ kind: 'time', h: 0, m: 0, bare: false, meridiem: null, nextDay: true }]
+    read: () => [{ kind: 'time', h: 0, m: 0, bare: false, guessPm: false, meridiem: null, nextDay: true }]
   },
   // "às 14h", "às 14:30", "até às 14h", "às 2 da tarde", "at 2pm", "at 14:00", bare "às 2".
   // A bare hour only after "às" / "pelas" / "at": "as 3 propostas" is an article.
@@ -412,7 +415,7 @@ function resolve(comps: Comp[], ctx: Ctx): Resolved {
     nextDay = !!time.nextDay
     if (time.meridiem === 'pm' && h < 12) h += 12
     else if (time.meridiem === 'am' && h === 12) h = 0
-    else if (!time.meridiem && time.bare) {
+    else if (!time.meridiem && time.guessPm) {
       // A day part elsewhere settles a bare hour ("amanhã à tarde às 3"); without one,
       // 1–7 is read as afternoon — nobody books a call at 3 in the morning by typing "às 3".
       if ((part === 'afternoon' || part === 'night') && h < 12) h += 12

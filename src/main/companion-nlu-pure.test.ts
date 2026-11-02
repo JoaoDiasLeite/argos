@@ -111,11 +111,18 @@ describe('weekdays', () => {
     expect(when('ir ao domingo')).toBe('2026-11-08')
   })
 
-  it('reads "que vem" / "próxima" as next calendar week', () => {
-    expect(when('reunião na próxima sexta')).toBe('2026-11-13')
-    expect(when('reunião sexta que vem')).toBe('2026-11-13')
-    // On a Sunday, next week starts tomorrow.
+  it('reads "que vem" / "próxima" as the very next one, a week on when it is today', () => {
+    expect(when('reunião na próxima sexta')).toBe('2026-11-06')
+    expect(when('reunião sexta que vem')).toBe('2026-11-06')
+    // Wednesday 4 Nov: "próxima quarta" is the 11th, "próxima quinta" the 5th.
+    const wed = { now: new Date(2026, 10, 4, 10, 0) }
+    expect(when('próxima quarta rever backups', wed)).toBe('2026-11-11')
+    expect(when('próxima quinta rever backups', wed)).toBe('2026-11-05')
     expect(when('standup segunda que vem', { now: new Date(2026, 10, 8, 10, 0) })).toBe('2026-11-09')
+  })
+
+  it('reads "da próxima semana" as next calendar week', () => {
+    expect(when('reunião sexta da próxima semana')).toBe('2026-11-13')
   })
 
   it('leaves "segunda vez" alone', () => {
@@ -140,6 +147,16 @@ describe('times', () => {
     expect(r.confidence).toBe(0.7)
     expect(parse('ligar às 9').confidence).toBe(1)
     expect(when('ligar às 9')).toBe('2026-11-03 09:00')
+  })
+
+  it('reads 1h–7h with no day part as afternoon too, but not a colon clock', () => {
+    expect(when('ligar às 2h')).toBe('2026-11-02 14:00')
+    expect(when('call às 3h30')).toBe('2026-11-02 15:30')
+    expect(when('ligar às 7h')).toBe('2026-11-02 19:00')
+    expect(when('deploy às 8h')).toBe('2026-11-03 08:00')
+    expect(when('backup às 2:00')).toBe('2026-11-03 02:00')
+    expect(when('acordar às 6h da manhã')).toBe('2026-11-03 06:00')
+    expect(parse('ligar às 2h').confidence).toBe(0.7)
   })
 
   it('lets a day part settle a bare hour', () => {
