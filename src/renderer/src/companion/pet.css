@@ -41,7 +41,7 @@ html, body, #root { background: transparent; }
 
 /* ── What the sheets don't draw ── */
 
-/* alert: a short hop on entry; happy: the 600 ms double hop (Pet.tsx then sits him). */
+/* alert: a short hop on entry; happy: a double hop inside its 1 s beat (Pet.tsx then sits him). */
 .pet-alert .pet-body { animation: pet-hop 320ms ease-out 1; }
 .pet-happy .pet-body { animation: pet-hop 300ms ease-out 2; }
 /* dozing: slow breathing, about 2 px at the top while the paws stay put. On the body,

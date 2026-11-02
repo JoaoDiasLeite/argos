@@ -16,7 +16,7 @@ import './pet.css'
 const SHEETS = {
   idle: new URL('./sprites/idle.png', import.meta.url).href,
   talking: new URL('./sprites/talking.png', import.meta.url).href,
-  happy: new URL('./sprites/happy.png', import.meta.url).href,
+  wag: new URL('./sprites/wag.png', import.meta.url).href,
   alert: new URL('./sprites/alert.png', import.meta.url).href,
   doze: new URL('./sprites/doze.png', import.meta.url).href,
   shh: new URL('./sprites/shh.png', import.meta.url).href,
@@ -36,7 +36,8 @@ const IDLE: Sprite = { src: SHEETS.idle, frames: 8, fps: 4 }
 const SPRITES: Record<CompanionPetState, Sprite> = {
   idle: IDLE,
   talking: { src: SHEETS.talking, frames: 2, fps: 4 },
-  happy: { src: SHEETS.happy, frames: 1, fps: 1 },
+  // Tail up, middle, down, middle: two wags in the happy beat.
+  happy: { src: SHEETS.wag, frames: 4, fps: 8 },
   alert: { src: SHEETS.alert, frames: 2, fps: 3 },
   dozing: { src: SHEETS.doze, frames: 2, fps: 1 },
   shh: { src: SHEETS.shh, frames: 1, fps: 1 },
@@ -48,8 +49,8 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
 
 const FRAME = 96
 
-/** `happy` is a 600 ms beat (two hops); then the pet sits back down. */
-const HAPPY_MS = 600
+/** `happy` is a 1 s beat (two hops, two wags); then the pet sits back down. */
+const HAPPY_MS = 1000
 
 /** A pointer that travels further than this between down and up was a drag, not a click. */
 const CLICK_SLOP = 4
