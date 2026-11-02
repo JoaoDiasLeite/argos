@@ -78,6 +78,58 @@ html, body, #root { background: transparent; }
 }
 .bq-input::placeholder { color: var(--text-2); }
 
+/* ── Dictation (dictation.tsx) ── */
+.bq-mic {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.bq-mic:hover { color: var(--text-0); background: var(--bg-2); }
+.bq-mic.on { color: var(--error); border-color: var(--error); background: transparent; }
+.bq-mic:disabled { opacity: 0.5; cursor: default; }
+
+.bq-voice-rec { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bq-rec-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--error);
+  animation: bq-rec 1.2s ease-in-out infinite;
+}
+@keyframes bq-rec { 50% { opacity: 0.35; } }
+.bq-meter { display: inline-flex; align-items: center; gap: 2px; height: 18px; }
+.bq-meter > i {
+  display: block;
+  width: 3px;
+  min-height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  transition: height 80ms linear;
+}
+.bq-elapsed { font-size: 12px; color: var(--text-1); }
+.bq .bq-voice-help { flex-basis: 100%; }
+/* "A transcrever…" breathes while Whisper reads; the pet thinks beside it. */
+.bq .bq-voice-busy { animation: bq-busy 1.4s ease-in-out infinite; }
+@keyframes bq-busy { 50% { opacity: 0.55; } }
+.bq-err { color: var(--error); }
+.bq-voice-need { display: flex; align-items: center; gap: 10px; }
+.bq-voice-need .help { flex: 1; }
+.bq-progress { display: flex; align-items: center; gap: 10px; }
+.bq-progress-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--bg-3); overflow: hidden; }
+.bq-progress-bar > i { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
+.bq-progress-mb { white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) {
+  .bq-rec-dot, .bq .bq-voice-busy { animation: none; }
+}
+
 .bq-chip {
   flex: none;
   font-size: 11px;

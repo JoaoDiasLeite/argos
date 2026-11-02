@@ -132,7 +132,9 @@ const COMPANION_DEFAULTS: CompanionPrefs = {
   shortcut: '',
   leadMinutes: 10,
   morningHour: 9,
-  hideFromCapture: true
+  hideFromCapture: true,
+  voice: false,
+  voiceShortcut: ''
 }
 
 const configPath = path.join(app.getPath('userData'), 'config.json')
@@ -262,7 +264,9 @@ function cleanCompanionPrefs(base: CompanionPrefs, patch: unknown): CompanionPre
     shortcut: typeof p.shortcut === 'string' ? p.shortcut.trim() : base.shortcut,
     leadMinutes: int(p.leadMinutes, 0, 24 * 60, base.leadMinutes),
     morningHour: int(p.morningHour, 0, 23, base.morningHour),
-    hideFromCapture: typeof p.hideFromCapture === 'boolean' ? p.hideFromCapture : base.hideFromCapture
+    hideFromCapture: typeof p.hideFromCapture === 'boolean' ? p.hideFromCapture : base.hideFromCapture,
+    voice: typeof p.voice === 'boolean' ? p.voice : base.voice,
+    voiceShortcut: typeof p.voiceShortcut === 'string' ? p.voiceShortcut.trim() : base.voiceShortcut
   }
 }
 

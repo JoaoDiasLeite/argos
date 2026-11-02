@@ -21,6 +21,7 @@ import {
   toLocalInputValue,
   whenPhrase
 } from './format'
+import { DictationPanel, MicButton, useDictation, type Dictation } from './dictation'
 import './bubble.css'
 
 // The bubble beside Argos's head (docs/COMPANION_PLAN.md §5.4, §3.2, wireframes 2, 4–6).
@@ -57,6 +58,36 @@ export default function Bubble() {
   // Bumped on every summon, so the input view remounts empty.
   const [session, setSession] = useState(0)
   const frame = useRef<HTMLDivElement>(null)
+  // Dictation lives here, not in InputView: a summon remounts the input, and the shortcut's
+  // "start recording" arrives right behind that summon. The input registers where text goes.
+  const [voiceOn, setVoiceOn] = useState(false)
+  const textSink = useRef<((text: string) => void) | null>(null)
+  const dictation = useDictation(voiceOn, (text) => textSink.current?.(text))
+  const dictationRef = useRef(dictation)
+  dictationRef.current = dictation
+
+  useEffect(() => {
+    const readPrefs = (): void => {
+      api
+        .state()
+        .then((s) => setVoiceOn(!!s.prefs.voice))
+        .catch(() => {})
+    }
+    const offToggle = api.onVoiceToggle(() => {
+      // The shortcut is only registered with dictation on; the prefs may not have arrived yet.
+      setVoiceOn(true)
+      dictationRef.current.toggle()
+    })
+    const offShownPrefs = api.onShown(() => {
+      dictationRef.current.reset()
+      readPrefs()
+    })
+    readPrefs()
+    return () => {
+      offToggle()
+      offShownPrefs()
+    }
+  }, [])
 
   useEffect(() => {
     const acceptAnchor = (a: unknown): void => {
@@ -101,7 +132,14 @@ export default function Bubble() {
   const content = ((): ReactNode => {
     switch (view.mode) {
       case 'input':
-        return <InputView key={session} onReceipt={(r) => setView({ mode: 'confirm', payload: r })} />
+        return (
+          <InputView
+            key={session}
+            dictation={voiceOn ? dictation : null}
+            textSink={textSink}
+            onReceipt={(r) => setView({ mode: 'confirm', payload: r })}
+          />
+        )
       case 'confirm':
         return <Receipt key={session} result={view.payload} />
       case 'reminder':
@@ -127,7 +165,16 @@ interface Pending {
   precision: 'day' | 'minute'
 }
 
-function InputView({ onReceipt }: { onReceipt: (r: CompanionCaptureResult) => void }) {
+function InputView({
+  onReceipt,
+  dictation,
+  textSink
+}: {
+  onReceipt: (r: CompanionCaptureResult) => void
+  /** null with dictation off: no mic button, no voice keys. */
+  dictation: Dictation | null
+  textSink: { current: ((text: string) => void) | null }
+}) {
   const t = useT()
   const { locale } = useLanguage()
   const [text, setText] = useState('')
@@ -135,14 +182,45 @@ function InputView({ onReceipt }: { onReceipt: (r: CompanionCaptureResult) => vo
   const [query, setQuery] = useState<CompanionCaptureResult | null>(null)
   const busy = useRef(false)
   const input = useRef<HTMLInputElement>(null)
+  /** Some of the text came from dictation: the capture is marked 'voice'. */
+  const spoken = useRef(false)
   const now = Date.now()
 
   useEffect(() => {
     input.current?.focus()
   }, [])
 
+  // Dictated text lands in the input, never submitted: João reads it and presses Enter.
+  useEffect(() => {
+    textSink.current = (said) => {
+      spoken.current = true
+      setText((prev) => (prev.trim() ? `${prev.trimEnd()} ${said}` : said))
+      requestAnimationFrame(() => {
+        const el = input.current
+        if (!el) return
+        el.focus()
+        el.setSelectionRange(el.value.length, el.value.length)
+      })
+    }
+    return () => {
+      textSink.current = null
+    }
+  }, [textSink])
+
   useWindowKey((e) => {
-    if (e.key === 'Escape') api.bubbleClose()
+    const kind = dictation?.state.kind
+    if (e.key === 'Escape') {
+      // Esc throws a recording away; the bubble stays for typing.
+      if (kind === 'recording' || kind === 'starting') {
+        e.preventDefault()
+        dictation!.cancel()
+        return
+      }
+      api.bubbleClose()
+    } else if (e.key === 'Enter' && kind === 'recording') {
+      e.preventDefault()
+      dictation!.stop()
+    }
   })
 
   const submit = async (): Promise<void> => {
@@ -151,13 +229,14 @@ function InputView({ onReceipt }: { onReceipt: (r: CompanionCaptureResult) => vo
     busy.current = true
     try {
       // The parser gets the title and the date together: "ligar à Câmara amanhã às 14h".
-      const r = await api.capture(pending ? `${typed} ${pending.text}` : typed, 'text')
+      const r = await api.capture(pending ? `${typed} ${pending.text}` : typed, spoken.current ? 'voice' : 'text')
       if (!r) return
       if (r.kind === 'todo' || r.kind === 'note') {
         onReceipt(r)
         return
       }
       setText('')
+      spoken.current = false
       if (r.kind === 'query') {
         setPending(null)
         setQuery(r)
@@ -187,16 +266,23 @@ function InputView({ onReceipt }: { onReceipt: (r: CompanionCaptureResult) => vo
           value={text}
           maxLength={2000}
           spellCheck={false}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value)
+            if (!e.target.value.trim()) spoken.current = false
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
               e.preventDefault()
+              // While dictating, Enter stops the recording (the window handler), never submits.
+              if (dictation?.busy) return
               void submit()
             }
           }}
         />
+        {dictation && <MicButton dictation={dictation} />}
       </div>
-      <div className="help">{t('companion.input.help')}</div>
+      {dictation && <DictationPanel dictation={dictation} />}
+      {!(dictation?.busy) && <div className="help">{t('companion.input.help')}</div>}
       {query && <QueryResults result={query} now={now} />}
     </>
   )

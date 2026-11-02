@@ -17,7 +17,10 @@ import type {
   CompanionRect,
   CompanionSnoozeRequest,
   CompanionStateView,
-  CompanionTodo
+  CompanionTodo,
+  CompanionVoicePhase,
+  CompanionVoiceResult,
+  CompanionVoiceStatus
 } from '../../shared/companion'
 
 // The companion's model and IPC shapes, one definition for main and renderer.
@@ -1414,7 +1417,7 @@ declare global {
       /** Companion prefs, cleaned in main; `registeredShortcut` is the summon key that won. */
       setCompanionPrefs: (
         patch: Partial<CompanionPrefs>
-      ) => Promise<{ companion: CompanionPrefs; registeredShortcut: string }>
+      ) => Promise<{ companion: CompanionPrefs; registeredShortcut: string; registeredVoiceShortcut: string }>
 
       // Desktop companion — the pet and bubble windows and, for the list, the main window
       companion: {
@@ -1446,6 +1449,20 @@ declare global {
         onBubbleAnchor: (cb: (anchor: CompanionBubbleAnchor) => void) => () => void
         onPetState: (cb: (state: CompanionPetState) => void) => () => void
         onChanged: (cb: (list: CompanionList) => void) => () => void
+        voiceStatus: () => Promise<CompanionVoiceStatus>
+        /** Start the first-use model download; progress arrives on onVoiceProgress. */
+        voiceInstall: () => Promise<CompanionVoiceStatus>
+        voiceCancelInstall: () => Promise<CompanionVoiceStatus>
+        /** A 16 kHz mono 16-bit WAV, at most 30 s. The bubble only. */
+        voiceTranscribe: (wav: ArrayBuffer) => Promise<CompanionVoiceResult>
+        /** Load the recognizer now, while the recording runs. */
+        voicePrepare: () => void
+        voicePhase: (phase: CompanionVoicePhase) => void
+        onVoiceProgress: (cb: (status: CompanionVoiceStatus) => void) => () => void
+        /** The dictation shortcut was pressed: start, or stop, recording. */
+        onVoiceToggle: (cb: () => void) => () => void
+        /** The bubble was hidden mid-recording: drop it. */
+        onBubbleHidden: (cb: () => void) => () => void
       }
 
       // Claude Code data

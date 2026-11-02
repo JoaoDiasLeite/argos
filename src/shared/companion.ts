@@ -81,7 +81,49 @@ export interface CompanionPrefs {
   morningHour: number
   /** Keep the pet and its bubble out of screen shares and captures (plan §2.4). */
   hideFromCapture: boolean
+  /** Push-to-talk dictation with the local Whisper model (plan §4.2). Off by default. */
+  voice: boolean
+  /** Preferred dictation accelerator. '' = automatic (Ctrl+Alt+S with a fallback). */
+  voiceShortcut: string
 }
+
+/**
+ * The dictation accelerators tried after the preferred one, in order. Never one Teams
+ * uses (Ctrl+Shift+M/A/S/E/K/O/D/H/B), nor the summon defaults.
+ */
+export const VOICE_SHORTCUT_DEFAULTS = ['Ctrl+Alt+S', 'Ctrl+Shift+Alt+S'] as const
+
+// ---- voice -------------------------------------------------------------------------
+
+/** Where the speech models were found (plan §4.2): meeting-notes' copy is reused read-only. */
+export type CompanionVoiceModelSource = 'meeting-notes' | 'argos'
+
+/** `companion:voice-status`, also pushed as `companion:voice-progress` while installing. */
+export interface CompanionVoiceStatus {
+  /** The engine loads and the models are present: dictation can run. */
+  available: boolean
+  /** The speech engine (sherpa-onnx) loads on this machine. */
+  platformSupported: boolean
+  modelPresent: boolean
+  modelSource: CompanionVoiceModelSource | null
+  /** The folder the models are read from, for Settings. */
+  modelDir: string | null
+  /** The recognizer is loaded and warm; when false the first dictation takes a few seconds more. */
+  warm: boolean
+  downloading: boolean
+  /** While downloading: bytes so far of the whole download; 'extract' once it is unpacking. */
+  progress: { received: number; total: number; phase: 'download' | 'extract' } | null
+  /** The last install's failure, or why the engine does not load. */
+  error: string | null
+}
+
+/** `companion:voice-transcribe`: the text, or why there is none. */
+export type CompanionVoiceResult =
+  | { ok: true; text: string; ms: number; noSpeech: boolean }
+  | { ok: false; error: 'unavailable' | 'invalid' | 'too-long' | 'busy' | 'failed'; detail?: string }
+
+/** What the bubble is doing with the microphone, so main can keep the bubble up and pose the pet. */
+export type CompanionVoicePhase = 'idle' | 'recording' | 'transcribing'
 
 // ---- IPC ---------------------------------------------------------------------------
 
@@ -130,6 +172,8 @@ export interface CompanionStateView {
   dndUntil: number | null
   /** The summon accelerator that actually got registered ('' if none). */
   shortcut: string
+  /** The dictation accelerator that got registered ('' if none, or voice is off). */
+  voiceShortcut: string
   prefs: CompanionPrefs
   petState: CompanionPetState
   /** The bubble's current content, for a renderer that mounted after it was sent. */

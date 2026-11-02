@@ -109,7 +109,27 @@ const companion: Record<keyof typeof en, string> = {
   'panel.detail.deleteConfirm': 'Apagar esta tarefa?',
   'panel.detail.help': 'Esc fecha · as alterações guardam-se sozinhas',
   'panel.reminder.before': '{n} min antes',
-  'panel.reminder.atDue': 'na hora'
+  'panel.reminder.atDue': 'na hora',
+
+  // Ditado no balão (dictation.tsx)
+  'voice.start': 'Ditar',
+  'voice.stop': 'Parar de ditar',
+  'voice.starting': 'A abrir o microfone…',
+  'voice.recordingHelp': 'Enter ou o atalho param · Esc descarta',
+  'voice.preparing': 'A preparar o ditado…',
+  'voice.transcribing': 'A transcrever…',
+  'voice.noSpeech': 'Não ouvi nada.',
+  'voice.unsupported': 'O ditado não funciona neste computador.',
+  'voice.denied': 'O Windows está a bloquear o microfone: Definições → Privacidade → Microfone → liga "Permitir que as aplicações de ambiente de trabalho acedam ao microfone".',
+  'voice.noDevice': 'Não encontrei um microfone. Liga um, ou vê em Definições → Privacidade → Microfone → "Permitir que as aplicações de ambiente de trabalho acedam ao microfone".',
+  'voice.micFailed': 'O microfone não arrancou. Vê em Definições → Privacidade → Microfone → "Permitir que as aplicações de ambiente de trabalho acedam ao microfone".',
+  'voice.transcribeFailed': 'Não consegui transcrever. Tenta outra vez.',
+  'voice.needsModel': 'O ditado precisa do modelo de voz (564 MB), descarregado uma vez.',
+  'voice.installFailed': 'O download falhou. Tenta outra vez.',
+  'voice.download': 'Descarregar',
+  'voice.cancel': 'Cancelar',
+  'voice.progress': '{received} / {total} MB',
+  'voice.extracting': 'A extrair…'
 }
 
 export default companion

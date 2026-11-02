@@ -34,6 +34,7 @@ import ExportProfileModal from '../components/ExportProfileModal'
 import ImportProfileModal from '../components/ImportProfileModal'
 import type { ImportPreview } from '../../../shared/profile-transfer'
 import AppearanceSettings from '../components/AppearanceSettings'
+import CompanionVoiceSettings from './CompanionVoiceSettings'
 import './views.css'
 import './SettingsView.css'
 import Select from '../components/Select'
@@ -441,6 +442,7 @@ export default function SettingsView({
   // summon key the OS actually granted ('' when none could be registered).
   const [companion, setCompanion] = useState<CompanionPrefs | null>(null)
   const [companionShortcut, setCompanionShortcut] = useState('')
+  const [companionVoiceShortcut, setCompanionVoiceShortcut] = useState('')
   const [companionBusy, setCompanionBusy] = useState(false)
 
   useEffect(() => {
@@ -452,6 +454,7 @@ export default function SettingsView({
         if (cancelled) return
         setCompanion(s.prefs)
         setCompanionShortcut(s.shortcut)
+        setCompanionVoiceShortcut(s.voiceShortcut)
       })
       .catch(() => {})
     return () => {
@@ -465,6 +468,7 @@ export default function SettingsView({
       const res = await window.electronAPI.setCompanionPrefs(patch)
       setCompanion(res.companion)
       setCompanionShortcut(res.registeredShortcut)
+      setCompanionVoiceShortcut(res.registeredVoiceShortcut)
     } finally {
       setCompanionBusy(false)
     }
@@ -934,6 +938,21 @@ export default function SettingsView({
                     companion.hideFromCapture,
                     (hideFromCapture) => updateCompanion({ hideFromCapture }),
                     companionBusy
+                  )}
+                  {toggleRow(
+                    t('settings.companion.voice.label'),
+                    t('settings.companion.voice.hint'),
+                    companion.voice,
+                    (voice) => updateCompanion({ voice }),
+                    companionBusy
+                  )}
+                  {companion.voice && (
+                    <CompanionVoiceSettings
+                      prefs={companion}
+                      busy={companionBusy}
+                      registeredShortcut={companionVoiceShortcut}
+                      onChange={(patch) => void updateCompanion(patch)}
+                    />
                   )}
                   {/* Reminders need the app running (plan §10, decision 8): nudge towards
                       starting with Windows while that is off, through the System pref. */}

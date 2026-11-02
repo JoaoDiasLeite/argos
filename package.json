@@ -56,7 +56,10 @@
       "build/icon.png",
       "node_modules/@anthropic-ai/claude-agent-sdk/**",
       "node_modules/@anthropic-ai/claude-agent-sdk-*/**",
-      "node_modules/node-pty/**"
+      "node_modules/node-pty/**",
+      "node_modules/sherpa-onnx-node/**",
+      "node_modules/sherpa-onnx-*/**",
+      "out/main/companion-voice-worker.js"
     ],
     "win": {
       "target": [
@@ -99,6 +102,7 @@
     "react-markdown": "^9.1.0",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
+    "sherpa-onnx-node": "1.13.8",
     "ssh2": "^1.17.0",
     "zod": "^4.4.3"
   },

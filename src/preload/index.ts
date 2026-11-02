@@ -221,6 +221,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const fn = (_: unknown, list: unknown) => cb(list)
       ipcRenderer.on('companion:changed', fn)
       return () => ipcRenderer.removeListener('companion:changed', fn)
+    },
+    // Dictation (companion-voice.ts): status and first-use install from the bubble and
+    // Settings; recording and transcription from the bubble only (main checks the sender).
+    voiceStatus: () => ipcRenderer.invoke('companion:voice-status'),
+    voiceInstall: () => ipcRenderer.invoke('companion:voice-install'),
+    voiceCancelInstall: () => ipcRenderer.invoke('companion:voice-cancel-install'),
+    voiceTranscribe: (wav: ArrayBuffer) => ipcRenderer.invoke('companion:voice-transcribe', wav),
+    voicePrepare: () => ipcRenderer.send('companion:voice-prepare'),
+    voicePhase: (phase: string) => ipcRenderer.send('companion:voice-phase', phase),
+    onVoiceProgress: (cb: (status: unknown) => void) => {
+      const fn = (_: unknown, status: unknown) => cb(status)
+      ipcRenderer.on('companion:voice-progress', fn)
+      return () => ipcRenderer.removeListener('companion:voice-progress', fn)
+    },
+    onVoiceToggle: (cb: () => void) => {
+      const fn = () => cb()
+      ipcRenderer.on('companion:voice-toggle', fn)
+      return () => ipcRenderer.removeListener('companion:voice-toggle', fn)
+    },
+    onBubbleHidden: (cb: () => void) => {
+      const fn = () => cb()
+      ipcRenderer.on('companion:bubble-hidden', fn)
+      return () => ipcRenderer.removeListener('companion:bubble-hidden', fn)
     }
   },
 

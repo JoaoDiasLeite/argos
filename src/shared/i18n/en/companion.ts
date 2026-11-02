@@ -112,5 +112,25 @@ export default {
   'panel.detail.deleteConfirm': 'Delete this task?',
   'panel.detail.help': 'Esc closes · changes save as you type',
   'panel.reminder.before': '{n} min before',
-  'panel.reminder.atDue': 'at the time'
+  'panel.reminder.atDue': 'at the time',
+
+  // Dictation in the bubble (dictation.tsx)
+  'voice.start': 'Dictate',
+  'voice.stop': 'Stop dictating',
+  'voice.starting': 'Opening the microphone…',
+  'voice.recordingHelp': 'Enter or the shortcut stops · Esc discards',
+  'voice.preparing': 'Getting dictation ready…',
+  'voice.transcribing': 'Transcribing…',
+  'voice.noSpeech': "I didn't hear anything.",
+  'voice.unsupported': "Dictation doesn't run on this computer.",
+  'voice.denied': 'Windows is blocking the microphone: Settings → Privacy → Microphone → turn on "Let desktop apps access your microphone".',
+  'voice.noDevice': 'No microphone found. Plug one in, or check Settings → Privacy → Microphone → "Let desktop apps access your microphone".',
+  'voice.micFailed': 'The microphone did not start. Check Settings → Privacy → Microphone → "Let desktop apps access your microphone".',
+  'voice.transcribeFailed': "Couldn't transcribe that. Try again.",
+  'voice.needsModel': 'Dictation needs the speech model (564 MB), downloaded once.',
+  'voice.installFailed': 'The download failed. Try again.',
+  'voice.download': 'Download',
+  'voice.cancel': 'Cancel',
+  'voice.progress': '{received} / {total} MB',
+  'voice.extracting': 'Extracting…'
 } satisfies Record<string, string>

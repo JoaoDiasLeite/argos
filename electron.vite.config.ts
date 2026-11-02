@@ -11,7 +11,11 @@ export default defineConfig({
           index: resolve('src/main/index.ts'),
           // The ops MCP relay a terminal CLI starts under ELECTRON_RUN_AS_NODE: its own
           // bundle, so it never loads electron or the app (see ops-mcp-config-pure.ts).
-          'ops-relay': resolve('src/main/ops-relay-main.ts')
+          'ops-relay': resolve('src/main/ops-relay-main.ts'),
+          // The companion's speech engine, a worker_threads script (companion-voice-engine.ts).
+          // It imports only sherpa-onnx-node, so no shared chunk: packaged, it runs from
+          // app.asar.unpacked beside the unpacked addon (package.json build.asarUnpack).
+          'companion-voice-worker': resolve('src/main/companion-voice-worker.ts')
         }
       }
     }

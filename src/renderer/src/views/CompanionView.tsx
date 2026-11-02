@@ -27,7 +27,15 @@ import './CompanionView.css'
 
 const api = window.electronAPI.companion
 
-const DEFAULT_PREFS: CompanionPrefs = { stayOnScreen: false, shortcut: '', leadMinutes: 10, morningHour: 9, hideFromCapture: true }
+const DEFAULT_PREFS: CompanionPrefs = {
+  stayOnScreen: false,
+  shortcut: '',
+  leadMinutes: 10,
+  morningHour: 9,
+  hideFromCapture: true,
+  voice: false,
+  voiceShortcut: ''
+}
 
 /** Text-field saves wait this long after the last keystroke. */
 const SAVE_DEBOUNCE_MS = 500

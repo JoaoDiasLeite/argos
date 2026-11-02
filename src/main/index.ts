@@ -2,7 +2,7 @@
 import { isDevInstance, syncDevFromProd } from './dev-instance'
 import { listExportCandidates, exportProfile, previewImport, applyImport } from './profile-transfer'
 import type { ExportRequest, ImportRequest } from '../shared/profile-transfer'
-import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions, clipboard, nativeTheme, nativeImage, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions, clipboard, nativeTheme, nativeImage, session, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { appIconPath } from './app-icon'
@@ -216,23 +216,29 @@ import {
   applyCompanionPrefs,
   closeBubble,
   companionShortcut,
+  companionVoiceShortcut,
   currentBubble,
   currentPetState,
   endPetDrag,
+  isCompanionBubble,
   isCompanionVisible,
   openBubble,
   registerCompanionShortcut,
+  registerVoiceShortcut,
   reregisterCompanionShortcut,
   sendToBubble,
   setBubbleSize,
   setCompanionWindowHooks,
   setPetHitRect,
   setPetState,
+  setVoicePhase,
   showCompanion,
   startPetDrag,
   toggleCompanion
 } from './companion-window'
-import type { CompanionList, CompanionRect, CompanionStateView } from './companion-types'
+import type { CompanionList, CompanionRect, CompanionStateView, CompanionVoicePhase } from './companion-types'
+import { MAX_CLIP_BYTES } from './companion-voice-pure'
+import { cancelVoiceInstall, disposeVoice, installVoiceModels, prepareVoice, setVoiceProgressListener, transcribe, voiceStatus } from './companion-voice'
 import { currentLanguage, t } from './i18n'
 import { initUpdater, getUpdaterState, checkNow, quitAndInstall } from './updater'
 import { getPlanUsageForIpc, startPlanUsageWatcher } from './plan-usage'
@@ -731,6 +737,8 @@ app.whenReady().then(async () => {
   // reminder timer start now, and "stay on screen" puts the pet up straight away.
   setCompanionWindowHooks({ onVisibilityChanged: refreshTrayMenu, onBubbleClosed: showNextCompanionAlert })
   registerCompanionShortcut(getConfig().companion.shortcut)
+  registerVoiceShortcut(getConfig().companion.voice, getConfig().companion.voiceShortcut)
+  installMicrophonePermission()
   if (getConfig().companion.stayOnScreen) showCompanion()
   companionScheduler = startCompanionScheduler({
     store: companionStore(),
@@ -796,6 +804,7 @@ app.on('before-quit', () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   companionScheduler?.stop()
+  disposeVoice()
 })
 
 // ─── Quick-launcher overlay IPC ────────────────────────────────────────────────
@@ -1043,6 +1052,7 @@ ipcMain.handle('companion:dnd', (_, untilMs: unknown) => {
 ipcMain.handle('companion:state', (): CompanionStateView => ({
   dndUntil: companionStore().getState().dndUntil ?? null,
   shortcut: companionShortcut(),
+  voiceShortcut: companionVoiceShortcut(),
   prefs: getConfig().companion,
   petState: currentPetState(),
   bubble: currentBubble()
@@ -1068,6 +1078,57 @@ ipcMain.on('companion:open-main', () => {
   showMainWindow()
   sendToMainWindow('app:open-view', 'companion')
 })
+
+// ─── Companion dictation (companion-voice.ts, plan §4.2) ────────────────────────
+
+const VOICE_PHASES: readonly CompanionVoicePhase[] = ['idle', 'recording', 'transcribing']
+
+setVoiceProgressListener((status) => {
+  sendToBubble('companion:voice-progress', status)
+  sendToMainWindow('companion:voice-progress', status)
+})
+ipcMain.handle('companion:voice-status', () => voiceStatus())
+ipcMain.handle('companion:voice-install', () => installVoiceModels())
+ipcMain.handle('companion:voice-cancel-install', () => cancelVoiceInstall())
+ipcMain.handle('companion:voice-transcribe', async (e, clip: unknown) => {
+  // Only the bubble records; only it may ask, and only with voice on.
+  if (!isCompanionBubble(e.sender) || !getConfig().companion.voice) return { ok: false, error: 'unavailable' }
+  const bytes =
+    clip instanceof ArrayBuffer ? new Uint8Array(clip) : clip instanceof Uint8Array ? clip : null
+  if (!bytes) return { ok: false, error: 'invalid' }
+  if (bytes.byteLength > MAX_CLIP_BYTES) return { ok: false, error: 'too-long' }
+  return transcribe(bytes)
+})
+// Recording started: load the recognizer meanwhile, so the first dictation does not wait.
+ipcMain.on('companion:voice-prepare', (e) => {
+  if (isCompanionBubble(e.sender) && getConfig().companion.voice) prepareVoice()
+})
+ipcMain.on('companion:voice-phase', (e, phase: unknown) => {
+  if (!isCompanionBubble(e.sender) || !VOICE_PHASES.includes(phase as CompanionVoicePhase)) return
+  setVoicePhase(phase as CompanionVoicePhase)
+})
+
+/**
+ * The microphone, for the companion's bubble only, audio only, and only with dictation
+ * on (plan §8). Every other permission keeps Electron's default answer, as it had before
+ * any handler existed — the terminals' clipboard writes depend on it. The check handler
+ * is set too: navigator.permissions and some getUserMedia paths consult it, not the
+ * request handler.
+ */
+function installMicrophonePermission(): void {
+  const ses = session.defaultSession
+  const micAllowed = (contents: Electron.WebContents | null): boolean =>
+    !!contents && getConfig().companion.voice && isCompanionBubble(contents)
+  ses.setPermissionRequestHandler((contents, permission, callback, details) => {
+    if (permission !== 'media') return callback(true)
+    const types = (details as Electron.MediaAccessPermissionRequest).mediaTypes ?? []
+    callback(micAllowed(contents) && types.length > 0 && types.every((t) => t === 'audio'))
+  })
+  ses.setPermissionCheckHandler((contents, permission, _origin, details) => {
+    if (permission !== 'media') return true
+    return micAllowed(contents) && (details as { mediaType?: string }).mediaType !== 'video'
+  })
+}
 
 // ─── Notifications ────────────────────────────────────────────────────────────
 
@@ -2005,11 +2066,14 @@ ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
 // The companion's prefs: cleaned in config.ts, applied to the live windows, and the
 // summon shortcut re-registered when it changed. Returns the accelerator that won.
 ipcMain.handle('config:set-companion', (_, patch: unknown) => {
-  const prevShortcut = getConfig().companion.shortcut
+  const prev = getConfig().companion
   const companion = setCompanionPrefs(patch)
   applyCompanionPrefs(companion)
-  if (companion.shortcut !== prevShortcut) reregisterCompanionShortcut(companion.shortcut)
-  return { companion, registeredShortcut: companionShortcut() }
+  if (companion.shortcut !== prev.shortcut) reregisterCompanionShortcut(companion.shortcut)
+  if (companion.shortcut !== prev.shortcut || companion.voice !== prev.voice || companion.voiceShortcut !== prev.voiceShortcut) {
+    registerVoiceShortcut(companion.voice, companion.voiceShortcut)
+  }
+  return { companion, registeredShortcut: companionShortcut(), registeredVoiceShortcut: companionVoiceShortcut() }
 })
 // The ops folders (reports, handovers, runbooks) and the loose runbooks: null or '' resets
 // a folder to its default (no runbooks folder), null empties the loose list. Returns the
