@@ -225,6 +225,21 @@ at work. **[unverified: current Picovoice terms — but the dependency on a host
 disqualifies it here.]** Recommendation: **wake word never**, and say so in this document
 so it stops being re-litigated.
 
+**Spike result (2026-11-02, Core Ultra 7 155H, 16 cores):** whisper.cpp release `b5454`
+(`whisper-bin-x64.zip`), a 5 s 16 kHz clip: `base-q5_1` 0.8 s, `small-q5_1` **2.7 s at 8
+threads** (3.4 s at 4). Use `small-q5_1` (190,085,487 bytes, sha256
+`ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb`) with `-t 8` (capped at
+the logical core count). Shipping needs `whisper-cli.exe`, `whisper.dll`, `ggml.dll`,
+`ggml-base.dll` and the `ggml-cpu-*.dll` variants (~11 MB; not SDL2, llama, parakeet).
+pt-PT accuracy not measured: no pt voice is installed to synthesise test audio, so it is
+judged in real use. Installed voices are en-US only (David, Zira, Mark), so the TTS
+checkbox ships disabled with its reason.
+
+**Push-to-talk, as built:** Electron's `globalShortcut` fires on press only — there is no
+key-up — so "hold the shortcut" cannot be done. Dictation instead **toggles**: the
+dictation shortcut (or the mic button in the bubble) starts recording, and it stops on the
+second press, on Enter, on 1.5 s of silence after speech, or at 30 s.
+
 ### 4.3 Talking back (TTS)
 
 Cheap and, unlike recognition, actually works offline in Electron: the renderer's
