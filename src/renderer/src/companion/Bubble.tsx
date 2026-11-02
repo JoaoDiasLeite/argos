@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type {
   CompanionBubbleAnchor,
   CompanionBubblePayload,
@@ -27,7 +27,8 @@ import './bubble.css'
 
 // The bubble beside Argos's head (docs/COMPANION_PLAN.md §5.4, §3.2, wireframes 2, 4–6).
 // A separate focusable window that main sizes to whatever this measures and places by
-// the dog; `anchor` says which side of the head that is, so the tail can point at it.
+// the dog; `anchor` says whether that is above or below him and where his centre is, so
+// the tail can point at it.
 // One component per mode; the receipt also follows a capture made in 'input', and query
 // results show under the input.
 
@@ -42,7 +43,10 @@ const UNDONE_MS = 900
 /** Enter is ignored this long after a reminder appears (SYSTEM-DESIGN §6). */
 const ENTER_GUARD_MS = 400
 
-const ANCHORS: readonly CompanionBubbleAnchor[] = ['above-left', 'above-right', 'below-left', 'below-right']
+function isAnchor(a: unknown): a is CompanionBubbleAnchor {
+  const v = a as CompanionBubbleAnchor | null
+  return !!v && (v.side === 'above' || v.side === 'below') && Number.isFinite(v.tailX)
+}
 
 /** A keydown listener on the window for as long as the view is up. */
 function useWindowKey(handler: (e: KeyboardEvent) => void): void {
@@ -57,7 +61,7 @@ function useWindowKey(handler: (e: KeyboardEvent) => void): void {
 
 export default function Bubble() {
   const [view, setView] = useState<CompanionBubblePayload>({ mode: 'input', payload: null })
-  const [anchor, setAnchor] = useState<CompanionBubbleAnchor>('above-left')
+  const [anchor, setAnchor] = useState<CompanionBubbleAnchor>({ side: 'above', tailX: 0 })
   // Bumped on every summon, so the input view remounts empty.
   const [session, setSession] = useState(0)
   const frame = useRef<HTMLDivElement>(null)
@@ -94,7 +98,7 @@ export default function Bubble() {
 
   useEffect(() => {
     const acceptAnchor = (a: unknown): void => {
-      if (ANCHORS.includes(a as CompanionBubbleAnchor)) setAnchor(a as CompanionBubbleAnchor)
+      if (isAnchor(a)) setAnchor(a)
     }
     api
       .state()
@@ -155,7 +159,11 @@ export default function Bubble() {
   })()
 
   return (
-    <div ref={frame} className={`bq-frame bq-${anchor}`}>
+    <div
+      ref={frame}
+      className={`bq-frame bq-${anchor.side}`}
+      style={{ '--tail-x': `${anchor.tailX}px` } as CSSProperties}
+    >
       <div className={`bq bq-mode-${view.mode}`}>{content}</div>
     </div>
   )

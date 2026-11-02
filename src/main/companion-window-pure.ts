@@ -30,11 +30,8 @@ export const DOG_SIZE: Size = { width: 120, height: 130 }
 /** The hit area is a generous rounded rect, not a per-pixel test (plan §9.1). */
 export const HIT_RADIUS = 24
 
-/** How far the bubble reaches over the dog's head on the side it sits. */
-const BUBBLE_OVERLAP = 30
-
-/** Below, the bubble starts this far under the top of the dog: beside the head, not over it. */
-const BUBBLE_BELOW_OFFSET = 24
+/** The tail stays this far from the bubble window's sides, clear of the card's corners. */
+const TAIL_INSET = 30
 
 export const BUBBLE_MIN: Size = { width: 240, height: 60 }
 export const BUBBLE_MAX: Size = { width: 440, height: 420 }
@@ -129,10 +126,10 @@ export function clampBubbleSize(size: Size): Size {
 }
 
 /**
- * Where the bubble goes beside the dog's head. It leans away from the nearer screen
- * corner: above when the pet is in the lower half of its work area, below in the upper;
- * left when the pet is in the right half, right in the left. A side that has no room
- * flips to the other, and the result is clamped inside the work area either way.
+ * Where the bubble goes: centred straight over the dog, its tail pointing down at him.
+ * Below him only when there is no room above (a pet docked at the top); with room on
+ * neither side, the side with more. Near a screen edge the bubble slides inside the work
+ * area and the tail stays over the dog's centre, short of the card's corners.
  */
 export function bubblePlacement(
   pet: Rect,
@@ -144,28 +141,16 @@ export function bubblePlacement(
   const areaRight = workArea.x + workArea.width
 
   const aboveY = dog.y - bubble.height
-  const belowY = dog.y + BUBBLE_BELOW_OFFSET
+  const belowY = dog.y + dog.height
   const fitsAbove = aboveY >= workArea.y
   const fitsBelow = belowY + bubble.height <= areaBottom
-  const lowerHalf = pet.y + pet.height / 2 >= workArea.y + workArea.height / 2
-  let above = lowerHalf ? fitsAbove || !fitsBelow : !fitsBelow && fitsAbove
+  let above = fitsAbove || !fitsBelow
   // Neither fits (a tall bubble on a short screen): the side with more room.
   if (!fitsAbove && !fitsBelow) above = dog.y - workArea.y >= areaBottom - belowY
 
-  // Above, the bubble reaches over the head; below, it sits clear of the dog's body.
-  const leftX = above ? dog.x + BUBBLE_OVERLAP - bubble.width : dog.x - bubble.width
-  const rightX = above ? dog.x + dog.width - BUBBLE_OVERLAP : dog.x + dog.width
-  const fitsLeft = leftX >= workArea.x
-  const fitsRight = rightX + bubble.width <= areaRight
-  const rightHalf = pet.x + pet.width / 2 >= workArea.x + workArea.width / 2
-  let left = rightHalf ? fitsLeft || !fitsRight : !fitsRight && fitsLeft
-  if (!fitsLeft && !fitsRight) left = dog.x - workArea.x >= areaRight - (dog.x + dog.width)
-
-  const x = clamp(left ? leftX : rightX, workArea.x, areaRight - bubble.width)
-  const y = clamp(above ? aboveY : belowY, workArea.y, areaBottom - bubble.height)
-  return {
-    x: Math.round(x),
-    y: Math.round(y),
-    anchor: `${above ? 'above' : 'below'}-${left ? 'left' : 'right'}` as CompanionBubbleAnchor
-  }
+  const centre = dog.x + dog.width / 2
+  const x = Math.round(clamp(centre - bubble.width / 2, workArea.x, areaRight - bubble.width))
+  const y = Math.round(clamp(above ? aboveY : belowY, workArea.y, areaBottom - bubble.height))
+  const tailX = Math.round(clamp(centre - x, TAIL_INSET, bubble.width - TAIL_INSET))
+  return { x, y, anchor: { side: above ? 'above' : 'below', tailX } }
 }

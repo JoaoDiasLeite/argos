@@ -1,5 +1,6 @@
 /* The bubble window is transparent and sized by main to .bq-frame, which leaves room
-   for the card's shadow and, on the side facing the dog, its tail. */
+   for the card's shadow and, on the side facing the dog, its tail. --tail-x is where
+   the dog's centre falls, from the window's left edge. */
 html, body, #root { background: transparent; }
 
 .bq-frame {
@@ -9,9 +10,8 @@ html, body, #root { background: transparent; }
   width: max-content;
   padding: 12px;
 }
-.bq-above-left, .bq-above-right { padding-bottom: 20px; }
-.bq-below-left { padding-right: 20px; }
-.bq-below-right { padding-left: 20px; }
+.bq-above { padding-bottom: 20px; }
+.bq-below { padding-top: 20px; }
 
 .bq {
   position: relative;
@@ -42,10 +42,9 @@ html, body, #root { background: transparent; }
   transform: rotate(45deg);
 }
 .bq:focus-within::after { border-color: var(--border-light); }
-.bq-above-left .bq::after { right: 22px; bottom: -7px; border-right-width: 1px; border-bottom-width: 1px; }
-.bq-above-right .bq::after { left: 22px; bottom: -7px; border-right-width: 1px; border-bottom-width: 1px; }
-.bq-below-left .bq::after { right: -7px; top: 18px; border-top-width: 1px; border-right-width: 1px; }
-.bq-below-right .bq::after { left: -7px; top: 18px; border-bottom-width: 1px; border-left-width: 1px; }
+/* Centred on --tail-x: less the frame's 12 px padding and half the 12 px square. */
+.bq-above .bq::after { left: calc(var(--tail-x) - 18px); bottom: -7px; border-right-width: 1px; border-bottom-width: 1px; }
+.bq-below .bq::after { left: calc(var(--tail-x) - 18px); top: -7px; border-top-width: 1px; border-left-width: 1px; }
 
 /* Times in the sans face with aligned digits: --font-mono lands on Courier New on
    Windows, which reads as a typewriter in a bubble this small. */

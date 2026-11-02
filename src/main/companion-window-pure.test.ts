@@ -118,41 +118,58 @@ describe('hit test', () => {
 })
 
 describe('bubblePlacement', () => {
-  it('bottom-right pet: above-left of the head', () => {
-    const r = bubblePlacement(pet(1688, 808), bubble, area)
-    expect(r.anchor).toBe('above-left')
-    const dog = dogRect(pet(1688, 808))
+  const centreOf = (p: Rect): number => {
+    const dog = dogRect(p)
+    return dog.x + dog.width / 2
+  }
+
+  it('sits centred straight over the dog, its tail at his centre', () => {
+    const p = pet(900, 808)
+    const r = bubblePlacement(p, bubble, area)
+    const dog = dogRect(p)
+    expect(r.anchor.side).toBe('above')
     expect(r.y + bubble.height).toBe(dog.y)
-    expect(r.x + bubble.width).toBeLessThanOrEqual(dog.x + dog.width)
+    expect(r.x + bubble.width / 2).toBe(centreOf(p))
+    expect(r.x + r.anchor.tailX).toBe(centreOf(p))
   })
 
-  it('bottom-left pet: above-right', () => {
-    expect(bubblePlacement(pet(12, 808), bubble, area).anchor).toBe('above-right')
+  it('in the bottom-right corner, slides inside and keeps the tail over him', () => {
+    const p = pet(1688, 808)
+    const r = bubblePlacement(p, bubble, area)
+    expect(r.anchor.side).toBe('above')
+    expect(r.x + bubble.width).toBe(area.x + area.width)
+    expect(r.x + r.anchor.tailX).toBe(centreOf(p))
   })
 
-  it('top-right pet: below-left', () => {
-    expect(bubblePlacement(pet(1688, 12), bubble, area).anchor).toBe('below-left')
+  it('in the bottom-left corner, the same the other way', () => {
+    const p = pet(12, 808)
+    const r = bubblePlacement(p, bubble, area)
+    expect(r.x).toBe(area.x)
+    expect(r.x + r.anchor.tailX).toBe(centreOf(p))
   })
 
-  it('top-left pet: below-right', () => {
-    expect(bubblePlacement(pet(12, 12), bubble, area).anchor).toBe('below-right')
+  it('goes below him only when there is no room above', () => {
+    const p = pet(900, 12)
+    const r = bubblePlacement(p, bubble, area)
+    const dog = dogRect(p)
+    expect(r.anchor.side).toBe('below')
+    expect(r.y).toBe(dog.y + dog.height)
   })
 
-  it('flips below when a lower-half pet has no room above (a tall bubble)', () => {
+  it('with room on neither side, takes the roomier one and stays inside', () => {
     const tall = { width: 320, height: 420 }
-    // Lower half of a short display, with the dog's top only 300 px down.
-    const short: Rect = { x: 0, y: 0, width: 1920, height: 900 }
-    const r = bubblePlacement(pet(1688, 210), tall, short)
-    expect(r.anchor).toBe('below-left')
+    const short: Rect = { x: 0, y: 0, width: 1920, height: 600 }
+    const r = bubblePlacement(pet(900, 200), tall, short)
+    expect(r.y).toBeGreaterThanOrEqual(0)
+    expect(r.y + tall.height).toBeLessThanOrEqual(600)
   })
 
-  it('with no room on either side, takes the roomier one and stays inside', () => {
-    // 400 px wide: the bubble fits neither left nor right of the dog.
-    const narrow: Rect = { x: 0, y: 0, width: 400, height: 1040 }
-    const r = bubblePlacement(pet(170, 808), bubble, narrow)
-    expect(r.anchor).toBe('above-left')
-    expect(r.x).toBe(0)
-    expect(bubblePlacement(pet(10, 808), bubble, narrow).anchor).toBe('above-right')
+  it('keeps the tail clear of the corners when the dog is past the bubble edge', () => {
+    // A display barely wider than the bubble, the dog at its far left.
+    const narrow: Rect = { x: 0, y: 0, width: 330, height: 1040 }
+    const r = bubblePlacement(pet(-60, 808), bubble, narrow)
+    expect(r.anchor.tailX).toBeGreaterThanOrEqual(30)
+    expect(r.anchor.tailX).toBeLessThanOrEqual(bubble.width - 30)
   })
 
   it('always lands inside the work area', () => {
@@ -168,8 +185,9 @@ describe('bubblePlacement', () => {
   it('works on a display with a negative origin', () => {
     const p = pet(...(Object.values(defaultPetPosition(left)) as [number, number]))
     const r = bubblePlacement(p, bubble, left)
-    expect(r.anchor).toBe('above-left')
+    expect(r.anchor.side).toBe('above')
     expect(r.x).toBeGreaterThanOrEqual(left.x)
+    expect(r.x + r.anchor.tailX).toBe(centreOf(p))
   })
 })
 

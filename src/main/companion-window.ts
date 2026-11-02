@@ -79,7 +79,7 @@ let happyTimer: ReturnType<typeof setTimeout> | null = null
 let walk: (WalkPlan & { x: number; last: number }) | null = null
 let walkTimer: ReturnType<typeof setTimeout> | null = null
 let bubble: CompanionBubblePayload | null = null
-let bubbleAnchor: CompanionBubbleAnchor = 'above-left'
+let bubbleAnchor: CompanionBubbleAnchor = { side: 'above', tailX: 0 }
 let bubbleSize: Size = DEFAULT_BUBBLE_SIZE
 
 export interface CompanionWindowHooks {
@@ -528,7 +528,7 @@ function positionBubble(win: BrowserWindow): void {
   const display = screen.getDisplayNearestPoint({ x: pet.x + pet.width / 2, y: pet.y + pet.height / 2 })
   const place = bubblePlacement(pet, bubbleSize, display.workArea)
   win.setBounds({ x: place.x, y: place.y, width: bubbleSize.width, height: bubbleSize.height })
-  if (place.anchor !== bubbleAnchor) {
+  if (place.anchor.side !== bubbleAnchor.side || place.anchor.tailX !== bubbleAnchor.tailX) {
     bubbleAnchor = place.anchor
     send(win, 'companion:bubble-anchor', bubbleAnchor)
   }

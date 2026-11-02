@@ -153,8 +153,15 @@ export type CompanionPetFacing = 'left' | 'right'
 
 export type CompanionBubbleMode = 'input' | 'reminder' | 'catchup' | 'confirm'
 
-/** Which side of the pet's head the bubble sits on, so it can draw its tail. */
-export type CompanionBubbleAnchor = 'above-left' | 'above-right' | 'below-left' | 'below-right'
+/**
+ * Where the bubble sits against the pet, so it can draw its tail: above the dog (or below,
+ * when there is no room above), and `tailX`, the tail's distance in DIPs from the bubble
+ * window's left edge to the point straight over the dog's centre.
+ */
+export interface CompanionBubbleAnchor {
+  side: 'above' | 'below'
+  tailX: number
+}
 
 /** One reminder as the bubble shows it (the scheduler's DueReminder). */
 export interface CompanionReminder {
