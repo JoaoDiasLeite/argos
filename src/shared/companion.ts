@@ -65,6 +65,8 @@ export interface ParsedCapture {
   matchedSpan: [number, number] | null
   /** For 'query': the local day (or week) asked about, [from, to). */
   queryRange?: { from: number; to: number }
+  /** The date came from the model (layer 2), not the grammar: the receipt says so. */
+  fromModel?: boolean
 }
 
 // ---- preferences -------------------------------------------------------------------
@@ -87,6 +89,11 @@ export interface CompanionPrefs {
   voiceShortcut: string
   /** "Passear pelo ecrã": with stayOnScreen on, a short walk along the bottom now and then. */
   walk: boolean
+  /**
+   * "Perguntar ao modelo quando não percebo a data" (plan §5.1, layer 2): when the
+   * grammar is unsure, that one line goes to the account's model. On by default.
+   */
+  askModel: boolean
 }
 
 /**
@@ -195,9 +202,12 @@ export type CompanionPromoteResult =
   | { ok: true; sprintId: string; sprintItemId: string; sprintName: string }
   | { ok: false; reason: 'no-active-sprint' | 'not-found' | 'already' }
 
-/** What `companion:capture` did with a line of input. Nothing is saved for query and needs-title. */
+/**
+ * What `companion:capture` did with a line of input. Nothing is saved for query and
+ * needs-title, nor for 'cancelled' (Esc while the model was reading the date).
+ */
 export interface CompanionCaptureResult {
-  kind: 'todo' | 'note' | 'query' | 'needs-title'
+  kind: 'todo' | 'note' | 'query' | 'needs-title' | 'cancelled'
   todo?: CompanionTodo
   note?: CompanionNote
   results?: CompanionTodo[]

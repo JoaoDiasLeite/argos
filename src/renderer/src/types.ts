@@ -1424,8 +1424,14 @@ declare global {
       // Desktop companion — the pet and bubble windows and, for the list, the main window
       companion: {
         list: () => Promise<CompanionList>
-        /** null when the text was empty or too long. Nothing is saved for query / needs-title. */
-        capture: (text: string, source?: 'text' | 'voice') => Promise<CompanionCaptureResult | null>
+        /**
+         * null when the text was empty or too long. Nothing is saved for query / needs-title,
+         * nor for 'cancelled'. `id` names the capture for captureCancel while the model reads
+         * its date (onCaptureThinking).
+         */
+        capture: (text: string, source?: 'text' | 'voice', id?: string) => Promise<CompanionCaptureResult | null>
+        /** Esc while the model reads a capture's date: that capture resolves 'cancelled'. */
+        captureCancel: (id: string) => Promise<boolean>
         undo: (id: string, kind: 'todo' | 'note') => Promise<boolean>
         update: (todo: CompanionTodo) => Promise<CompanionTodo | null>
         /** A todo or a note, by id. */
@@ -1456,6 +1462,8 @@ declare global {
         onPetState: (cb: (state: CompanionPetState) => void) => () => void
         /** Which way the walk faces; sent before each `walking` state. */
         onPetFacing: (cb: (facing: CompanionPetFacing) => void) => () => void
+        /** The capture with this id is waiting on the model for its date (plan §5.1, layer 2). */
+        onCaptureThinking: (cb: (id: string) => void) => () => void
         onChanged: (cb: (list: CompanionList) => void) => () => void
         voiceStatus: () => Promise<CompanionVoiceStatus>
         /** Start the first-use model download; progress arrives on onVoiceProgress. */

@@ -180,6 +180,10 @@ function InputView({
   const [text, setText] = useState('')
   const [pending, setPending] = useState<Pending | null>(null)
   const [query, setQuery] = useState<CompanionCaptureResult | null>(null)
+  /** Main is asking the model for this capture's date (plan §5.1, layer 2). */
+  const [thinking, setThinking] = useState(false)
+  /** The capture in flight, so main's "thinking" and Esc's cancel name the right one. */
+  const captureId = useRef<string | null>(null)
   const busy = useRef(false)
   const input = useRef<HTMLInputElement>(null)
   /** Some of the text came from dictation: the capture is marked 'voice'. */
@@ -189,6 +193,14 @@ function InputView({
   useEffect(() => {
     input.current?.focus()
   }, [])
+
+  useEffect(
+    () =>
+      api.onCaptureThinking((id) => {
+        if (id === captureId.current) setThinking(true)
+      }),
+    []
+  )
 
   // Dictated text lands in the input, never submitted: João reads it and presses Enter.
   useEffect(() => {
@@ -209,6 +221,13 @@ function InputView({
 
   useWindowKey((e) => {
     const kind = dictation?.state.kind
+    // Esc while the model reads the date: nothing is saved, and the capture answers
+    // 'cancelled', which closes the bubble.
+    if (e.key === 'Escape' && thinking && captureId.current) {
+      e.preventDefault()
+      void api.captureCancel(captureId.current)
+      return
+    }
     if (e.key === 'Escape') {
       // Esc throws a recording away; the bubble stays for typing.
       if (kind === 'recording' || kind === 'starting') {
@@ -227,10 +246,16 @@ function InputView({
     const typed = text.trim()
     if (!typed || busy.current) return
     busy.current = true
+    const id = crypto.randomUUID()
+    captureId.current = id
     try {
       // The parser gets the title and the date together: "ligar à Câmara amanhã às 14h".
-      const r = await api.capture(pending ? `${typed} ${pending.text}` : typed, spoken.current ? 'voice' : 'text')
+      const r = await api.capture(pending ? `${typed} ${pending.text}` : typed, spoken.current ? 'voice' : 'text', id)
       if (!r) return
+      if (r.kind === 'cancelled') {
+        api.bubbleClose()
+        return
+      }
       if (r.kind === 'todo' || r.kind === 'note') {
         onReceipt(r)
         return
@@ -247,6 +272,8 @@ function InputView({
       if (!pending && r.parsed.when) setPending({ text: typed, at: r.parsed.when.at, precision: r.parsed.when.precision })
     } finally {
       busy.current = false
+      captureId.current = null
+      setThinking(false)
     }
   }
 
@@ -266,6 +293,7 @@ function InputView({
           value={text}
           maxLength={2000}
           spellCheck={false}
+          readOnly={thinking}
           onChange={(e) => {
             setText(e.target.value)
             if (!e.target.value.trim()) spoken.current = false
@@ -279,10 +307,24 @@ function InputView({
             }
           }}
         />
-        {dictation && <MicButton dictation={dictation} />}
+        {dictation && !thinking && <MicButton dictation={dictation} />}
       </div>
       {dictation && <DictationPanel dictation={dictation} />}
-      {!(dictation?.busy) && <div className="help">{t('companion.input.help')}</div>}
+      {thinking ? (
+        <div className="bq-thinking" role="status">
+          <span className="bq-thinking-label">
+            {t('companion.thinking.label')}
+            <span className="bq-dots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+          </span>
+          <span className="help">{t('companion.thinking.help')}</span>
+        </div>
+      ) : (
+        !dictation?.busy && <div className="help">{t('companion.input.help')}</div>
+      )}
       {query && <QueryResults result={query} now={now} />}
     </>
   )
@@ -433,6 +475,7 @@ function Receipt({ result }: { result: CompanionCaptureResult }) {
           )}
         </>
       )}
+      {todo && dated && result.parsed.fromModel && <div className="bq-model-mark">{t('companion.receipt.byModel')}</div>}
       <div className="bq-actions bq-end">
         <button type="button" className="btn-secondary small" onClick={() => api.openMain()}>
           <PencilIcon />

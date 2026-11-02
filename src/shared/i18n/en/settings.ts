@@ -117,6 +117,8 @@ export default {
   'companion.leadTime.hour': '1 hour',
   'companion.morning.label': 'Morning hour',
   'companion.morning.hint': 'What "tomorrow morning" means, and when a task with a day but no time reminds you.',
+  'companion.askModel.label': "Ask the model when I can't read the date",
+  'companion.askModel.hint': "Only that one line goes to your account's model; everything else stays here.",
   'companion.capture.label': 'Hidden from screen shares',
   'companion.capture.hint': 'In Teams and Zoom, whoever sees your screen does not see Argos.',
   'companion.login.label': 'Argos does not start with Windows',

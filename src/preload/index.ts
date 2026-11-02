@@ -180,8 +180,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Desktop companion — calls made by the PET and BUBBLE windows (and the main window's list)
   companion: {
     list: () => ipcRenderer.invoke('companion:list'),
-    capture: (text: string, source: 'text' | 'voice' = 'text') =>
-      ipcRenderer.invoke('companion:capture', { text, source }),
+    capture: (text: string, source: 'text' | 'voice' = 'text', id?: string) =>
+      ipcRenderer.invoke('companion:capture', { text, source, id }),
+    captureCancel: (id: string) => ipcRenderer.invoke('companion:capture-cancel', id),
     undo: (id: string, kind: 'todo' | 'note') => ipcRenderer.invoke('companion:undo', id, kind),
     update: (todo: unknown) => ipcRenderer.invoke('companion:update', todo),
     delete: (id: string) => ipcRenderer.invoke('companion:delete', id),
@@ -223,6 +224,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const fn = (_: unknown, facing: unknown) => cb(facing)
       ipcRenderer.on('companion:pet-facing', fn)
       return () => ipcRenderer.removeListener('companion:pet-facing', fn)
+    },
+    onCaptureThinking: (cb: (id: unknown) => void) => {
+      const fn = (_: unknown, id: unknown) => cb(id)
+      ipcRenderer.on('companion:capture-thinking', fn)
+      return () => ipcRenderer.removeListener('companion:capture-thinking', fn)
     },
     onChanged: (cb: (list: unknown) => void) => {
       const fn = (_: unknown, list: unknown) => cb(list)

@@ -211,6 +211,7 @@ import { companionStore, normalizeTodo } from './companion-store'
 import { startCompanionScheduler, type CompanionScheduler } from './companion-scheduler'
 import { snooze, type DueReminder, type SnoozeOption } from './companion-schedule-pure'
 import { parseCapture } from './companion-nlu-pure'
+import { buildWhenPrompt, MODEL_TIMEOUT_MS, needsModel, parsedFromModel } from './companion-nlu-gate-pure'
 import { listForView, planCapture } from './companion-capture-pure'
 import { activeSprint, activeSprintView, linkedItem, promote, sprintLinks, unlink, withSprintDone } from './companion-promote-pure'
 import {
@@ -230,6 +231,7 @@ import {
   reregisterCompanionShortcut,
   sendToBubble,
   setBubbleSize,
+  setCaptureThinking,
   setCompanionWindowHooks,
   setPetHitRect,
   setPetState,
@@ -238,7 +240,7 @@ import {
   startPetDrag,
   toggleCompanion
 } from './companion-window'
-import type { CompanionList, CompanionPromoteResult, CompanionRect, CompanionTodo, CompanionStateView, CompanionVoicePhase } from './companion-types'
+import type { CompanionCaptureResult, CompanionList, CompanionPrefs, CompanionPromoteResult, CompanionRect, CompanionTodo, CompanionStateView, CompanionVoicePhase, ParsedCapture } from './companion-types'
 import { MAX_CLIP_BYTES } from './companion-voice-pure'
 import { cancelVoiceInstall, disposeVoice, installVoiceModels, prepareVoice, setVoiceProgressListener, transcribe, voiceStatus } from './companion-voice'
 import { currentLanguage, t } from './i18n'
@@ -972,15 +974,38 @@ const asRect = (v: unknown): CompanionRect | null => {
 }
 
 ipcMain.handle('companion:list', () => companionList())
-ipcMain.handle('companion:capture', (_, payload: unknown) => {
-  const p = payload as { text?: unknown; source?: unknown } | null
+/** Captures waiting on the model for their date, by the bubble's capture id, so Esc can cancel one. */
+const companionModelCaptures = new Map<string, AbortController>()
+
+ipcMain.handle('companion:capture', async (e, payload: unknown): Promise<CompanionCaptureResult | null> => {
+  const p = payload as { text?: unknown; source?: unknown; id?: unknown } | null
   if (!p || typeof p.text !== 'string' || !p.text.trim() || p.text.length > 2000) return null
+  const text = p.text
   const source = p.source === 'voice' ? 'voice' : 'text'
   const prefs = getConfig().companion
+  let parsed = parseCapture(text, { now: Date.now(), leadMinutes: prefs.leadMinutes, morningHour: prefs.morningHour })
+  // Layer 2 (plan §5.1): the grammar is unsure, so this one line goes to the model — only
+  // with "Perguntar ao modelo" on. Never longer than MODEL_TIMEOUT_MS; any failure keeps
+  // the local parse. Esc in the bubble cancels, and then nothing is saved. Only from the
+  // bubble, which shows the wait; the panel's quick add stays instant.
+  if (prefs.askModel && isCompanionBubble(e.sender) && needsModel(text, parsed)) {
+    const id = isId(p.id) ? p.id : randomUUID()
+    const abort = new AbortController()
+    companionModelCaptures.set(id, abort)
+    sendToBubble('companion:capture-thinking', id)
+    setCaptureThinking(true)
+    try {
+      const answer = await askModelForWhen(text, Date.now(), prefs, parsed, abort)
+      if (abort.signal.reason === 'cancelled') return { kind: 'cancelled', parsed }
+      if (answer) parsed = answer
+    } finally {
+      companionModelCaptures.delete(id)
+      setCaptureThinking(false)
+    }
+  }
   const now = Date.now()
-  const parsed = parseCapture(p.text, { now, leadMinutes: prefs.leadMinutes, morningHour: prefs.morningHour })
   const store = companionStore()
-  const plan = planCapture({ text: p.text, source, parsed, todos: store.listTodos(), now, newId: randomUUID })
+  const plan = planCapture({ text, source, parsed, todos: store.listTodos(), now, newId: randomUUID })
   if (plan.kind === 'note') store.saveNote(plan.note)
   if (plan.kind === 'todo') {
     store.saveTodo(plan.todo)
@@ -988,6 +1013,14 @@ ipcMain.handle('companion:capture', (_, payload: unknown) => {
   }
   if (plan.kind === 'note' || plan.kind === 'todo') companionChanged()
   return plan
+})
+// Esc while the model reads a capture's date: the capture never happens.
+ipcMain.handle('companion:capture-cancel', (_, id: unknown) => {
+  if (!isId(id)) return false
+  const abort = companionModelCaptures.get(id)
+  if (!abort) return false
+  abort.abort('cancelled')
+  return true
 })
 // Ctrl+Z on the receipt card (plan §5.4): the capture never happened.
 ipcMain.handle('companion:undo', (_, id: unknown, kind: unknown) => {
@@ -2721,6 +2754,66 @@ function extractJson(text: string): unknown {
     if (start >= 0 && end > start) t = t.slice(start, end + 1)
   }
   return JSON.parse(t)
+}
+
+/**
+ * The companion's layer 2 (plan §5.1): one line plus the date context to the model, the
+ * answer checked and turned into a ParsedCapture; null on any failure (no account,
+ * offline, a model error, bad JSON, the timeout, Esc). Shaped like `standup:generate`:
+ * same policy, same provider resolution — the companion has no account picker, so it is
+ * the provider's default account — and nothing else from the app goes with it.
+ */
+async function askModelForWhen(
+  text: string,
+  now: number,
+  prefs: CompanionPrefs,
+  local: ParsedCapture,
+  abort: AbortController
+): Promise<ParsedCapture | null> {
+  const env = buildSubprocessEnv()
+  const policy = resolvePolicy({ profile: 'headless-reasoning' })
+  const providerId = providerFor(policy.model)
+  if (providerId !== 'claude') Object.assign(env, providerAccountEnv(providerId))
+  const timer = setTimeout(() => abort.abort('timeout'), MODEL_TIMEOUT_MS)
+  // An engine that ignores the abort must not hold the capture past the timeout.
+  const aborted = new Promise<null>((resolve) => {
+    if (abort.signal.aborted) resolve(null)
+    else abort.signal.addEventListener('abort', () => resolve(null), { once: true })
+  })
+  try {
+    const prompt = buildWhenPrompt({
+      text,
+      now,
+      language: currentLanguage() === 'pt-PT' ? 'pt-PT' : 'en',
+      leadMinutes: prefs.leadMinutes,
+      morningHour: prefs.morningHour
+    })
+    const stream = getEngine(providerId).run({
+      prompt: buildPrompt(prompt, undefined, undefined, '') as string,
+      ...policy,
+      cwd: os.homedir(),
+      env,
+      abortController: abort,
+      permissionMode: 'bypassPermissions'
+    })
+    const collected = collectText(stream)
+    // Lost to the timeout or Esc, its later rejection is nobody's to handle.
+    collected.catch(() => {})
+    const out = await Promise.race([collected, aborted])
+    if (!out || abort.signal.aborted) return null
+    if (out.isError) {
+      console.warn('[companion] the model could not read the date:', out.errorText || 'model error')
+      return null
+    }
+    const parsed = parsedFromModel(extractJson(out.text), local, { now, leadMinutes: prefs.leadMinutes, morningHour: prefs.morningHour })
+    if (!parsed) console.warn('[companion] the model answered with an unusable date')
+    return parsed
+  } catch (err: unknown) {
+    if (!abort.signal.aborted) console.warn('[companion] the model could not read the date:', err instanceof Error ? err.message : String(err))
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 ipcMain.handle(

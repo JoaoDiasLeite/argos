@@ -117,6 +117,8 @@ const settings: Record<keyof typeof en, string> = {
   'companion.leadTime.hour': '1 hora',
   'companion.morning.label': 'Hora da manhã',
   'companion.morning.hint': 'O que "amanhã de manhã" quer dizer, e quando avisa uma tarefa com dia mas sem hora.',
+  'companion.askModel.label': 'Perguntar ao modelo quando não percebo a data',
+  'companion.askModel.hint': 'Só o texto dessa frase vai para o modelo da tua conta; o resto fica aqui.',
   'companion.capture.label': 'Invisível em partilhas de ecrã',
   'companion.capture.hint': 'No Teams e no Zoom, quem vê o teu ecrã não vê o Argos.',
   'companion.login.label': 'O Argos não abre com o Windows',

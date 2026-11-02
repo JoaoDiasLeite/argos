@@ -19,6 +19,8 @@ const companion: Record<keyof typeof en, string> = {
   'input.placeholder': 'O que precisas?',
   'input.help': 'Enter guarda · Esc fecha',
   'needsTitle.question': 'O que é para {when}?',
+  'thinking.label': 'A pensar na data',
+  'thinking.help': 'Esc cancela e não guarda nada',
 
   'receipt.saved': 'Guardado',
   'receipt.savedNoDate': 'Guardado sem data',
@@ -29,6 +31,7 @@ const companion: Record<keyof typeof en, string> = {
   'receipt.setDate': 'Definir data',
   'receipt.undo': 'Desfazer',
   'receipt.undone': 'Desfeito',
+  'receipt.byModel': 'data lida pelo modelo',
 
   'query.title': 'Na lista',
   'query.range': '{from} a {to}',

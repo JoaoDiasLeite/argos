@@ -454,6 +454,21 @@ function remindersFor(
   return lead > ctx.now.getTime() ? [lead] : [when.at]
 }
 
+/**
+ * The reminders a todo with this `when` gets (plan §5.3): a day reminds at the morning
+ * hour, a time `leadMinutes` before, an explicit "lembra-me" at the time itself. Shared
+ * with the model's answer (companion-nlu-gate-pure.ts), so both layers follow one rule.
+ */
+export function remindersForWhen(
+  when: ParsedCapture['when'],
+  explicit: boolean,
+  opts: ParseOptions
+): number[] {
+  const now = new Date(opts.now)
+  const ctx: Ctx = { now, today: startOfDay(now), morningHour: opts.morningHour ?? 9 }
+  return remindersFor(when, explicit, ctx, opts.leadMinutes ?? 10)
+}
+
 // ---- entry -----------------------------------------------------------------------
 
 export function parseCapture(text: string, opts: ParseOptions): ParsedCapture {

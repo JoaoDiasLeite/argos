@@ -21,6 +21,9 @@ export default {
   'input.placeholder': 'What do you need?',
   'input.help': 'Enter saves · Esc closes',
   'needsTitle.question': "What's for {when}?",
+  /** The model is reading the date; pulsing dots follow. */
+  'thinking.label': 'Reading the date',
+  'thinking.help': 'Esc cancels and saves nothing',
 
   'receipt.saved': 'Saved',
   'receipt.savedNoDate': 'Saved without a date',
@@ -31,6 +34,8 @@ export default {
   'receipt.setDate': 'Set date',
   'receipt.undo': 'Undo',
   'receipt.undone': 'Undone',
+  /** Under a receipt whose date came from the model, so it gets a second look. */
+  'receipt.byModel': 'date read by the model',
 
   'query.title': 'On the list',
   'query.range': '{from} to {to}',

@@ -44,7 +44,8 @@ const DEFAULT_PREFS: CompanionPrefs = {
   hideFromCapture: true,
   voice: false,
   voiceShortcut: '',
-  walk: true
+  walk: true,
+  askModel: true
 }
 
 /** Text-field saves wait this long after the last keystroke. */

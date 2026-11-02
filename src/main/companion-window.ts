@@ -61,6 +61,8 @@ let registeredShortcut = ''
 let registeredVoiceShortcut = ''
 /** What the bubble is doing with the microphone; while busy, a blur does not close it. */
 let voicePhase: CompanionVoicePhase = 'idle'
+/** A capture is waiting on the model for its date (plan §5.1, layer 2); a blur does not close the bubble. */
+let captureThinking = false
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let ignoring = true
@@ -200,7 +202,7 @@ function createBubbleWindow(): BrowserWindow {
   // until it is answered. Skipped while devtools are open (opening them blurs).
   win.on('blur', () => {
     // Nor while dictating: the recording goes on if João clicks elsewhere to look at something.
-    if (bubble?.mode !== 'input' || voicePhase !== 'idle' || win.webContents.isDevToolsOpened()) return
+    if (bubble?.mode !== 'input' || voicePhase !== 'idle' || captureThinking || win.webContents.isDevToolsOpened()) return
     closeBubble()
   })
   win.on('closed', () => {
@@ -640,6 +642,13 @@ export function setVoicePhase(phase: CompanionVoicePhase): void {
   else if (phase === 'transcribing') setPetState('thinking')
   // Done: back to listening while the bubble waits for Enter, idle once it has gone.
   else if (petState === 'listening' || petState === 'thinking') setPetState(bubble?.mode === 'input' ? 'listening' : 'idle')
+}
+
+/** The model is reading a capture's date: the pet thinks, and the bubble stays up through a blur. */
+export function setCaptureThinking(on: boolean): void {
+  captureThinking = on
+  if (on) setPetState('thinking')
+  else if (petState === 'thinking') setPetState(bubble?.mode === 'input' ? 'listening' : 'idle')
 }
 
 /**

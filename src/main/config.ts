@@ -135,7 +135,8 @@ const COMPANION_DEFAULTS: CompanionPrefs = {
   hideFromCapture: true,
   voice: false,
   voiceShortcut: '',
-  walk: true
+  walk: true,
+  askModel: true
 }
 
 const configPath = path.join(app.getPath('userData'), 'config.json')
@@ -268,7 +269,8 @@ function cleanCompanionPrefs(base: CompanionPrefs, patch: unknown): CompanionPre
     hideFromCapture: typeof p.hideFromCapture === 'boolean' ? p.hideFromCapture : base.hideFromCapture,
     voice: typeof p.voice === 'boolean' ? p.voice : base.voice,
     voiceShortcut: typeof p.voiceShortcut === 'string' ? p.voiceShortcut.trim() : base.voiceShortcut,
-    walk: typeof p.walk === 'boolean' ? p.walk : base.walk
+    walk: typeof p.walk === 'boolean' ? p.walk : base.walk,
+    askModel: typeof p.askModel === 'boolean' ? p.askModel : base.askModel
   }
 }
 

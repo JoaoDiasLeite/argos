@@ -944,6 +944,13 @@ export default function SettingsView({
                     </Select>
                   </div>
                   {toggleRow(
+                    t('settings.companion.askModel.label'),
+                    t('settings.companion.askModel.hint'),
+                    companion.askModel,
+                    (askModel) => updateCompanion({ askModel }),
+                    companionBusy
+                  )}
+                  {toggleRow(
                     t('settings.companion.capture.label'),
                     t('settings.companion.capture.hint'),
                     companion.hideFromCapture,
