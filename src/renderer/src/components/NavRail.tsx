@@ -76,14 +76,17 @@ const ICONS: Record<string, JSX.Element> = {
       <path d="M8 14h.01M12 14h4M8 18h4" />
     </>
   ),
-  // A paw: one pad and four toes, for Argos the dog.
+  // A paw, filled: one pad and four toes, the top two close together. Filled rather than
+  // stroked because at 20 px the outlines of toes this close run into each other.
   companion: (
     <>
-      <path d="M12 13.5c-2.6 0-5 2.4-5 4.6 0 1.6 1.3 2.4 2.8 2.4.9 0 1.5-.4 2.2-.4s1.3.4 2.2.4c1.5 0 2.8-.8 2.8-2.4 0-2.2-2.4-4.6-5-4.6z" />
-      <ellipse cx="5.5" cy="10.5" rx="1.8" ry="2.3" />
-      <ellipse cx="9.3" cy="5.8" rx="1.8" ry="2.4" />
-      <ellipse cx="14.7" cy="5.8" rx="1.8" ry="2.4" />
-      <ellipse cx="18.5" cy="10.5" rx="1.8" ry="2.3" />
+      <g fill="currentColor" stroke="none">
+        <path d="M12 11.6c-1.7 0-2.8 1.7-3.9 3.4-.9 1.3-2.3 2.3-2.3 3.9 0 1.5 1.2 2.4 2.6 2.4 1.3 0 2.2-.6 3.6-.6s2.3.6 3.6.6c1.4 0 2.6-.9 2.6-2.4 0-1.6-1.4-2.6-2.3-3.9-1.1-1.7-2.2-3.4-3.9-3.4z" />
+        <ellipse cx="9.6" cy="6.4" rx="1.9" ry="2.6" transform="rotate(-10 9.6 6.4)" />
+        <ellipse cx="14.4" cy="6.4" rx="1.9" ry="2.6" transform="rotate(10 14.4 6.4)" />
+        <ellipse cx="5.4" cy="11" rx="1.7" ry="2.3" transform="rotate(-30 5.4 11)" />
+        <ellipse cx="18.6" cy="11" rx="1.7" ry="2.3" transform="rotate(30 18.6 11)" />
+      </g>
     </>
   ),
   usage: (
