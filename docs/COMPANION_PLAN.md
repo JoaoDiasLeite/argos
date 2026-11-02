@@ -627,7 +627,7 @@ One `Pet.tsx` with a `state` prop, one `pet.css` holding the keyframes, every po
 `<g>` toggled by class. A dozen CSS keyframe blocks beat any runtime.
 
 **Superseded (2026-11-02):** João chose **pixel art** (a chibi Portuguese Podengo in the
-spirit of the Codex desktop pets), so the pet is a **PNG sprite sheet per state**, 48×48
+spirit of the Codex desktop pets), so the pet is a **PNG sprite sheet per state**, 96×96
 frames, played with CSS `steps()` and scaled with `image-rendering: pixelated`. The art is
 generated and cleaned up outside the repo (`docs/COMPANION_ART_PROMPT.md`), which removes
 the "needs an animator" objection above. `Pet.tsx` keeps the same `state` prop; until the

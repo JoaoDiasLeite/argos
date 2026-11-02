@@ -29,7 +29,8 @@ the style from them, not the character.
 - **Pixel art means a sprite sheet, not an SVG.** Each state is a short row of frames in
   one PNG. The app plays them with CSS `steps()` and scales them up with
   `image-rendering: pixelated`, so the pixels stay sharp at any size.
-- **Grid:** each frame **48×48 px** (32×32 if the tool struggles), the dog sitting on the
+- **Grid:** each frame **96×96 px** (size test 2026-11-02: at 48 px the outline and the
+  eyes turn to mush, 64 px is borderline, 96 px keeps the face), the dog sitting on the
   same bottom line in every frame and state, transparent background.
 - **GIF is acceptable here** for previews, because pixel art has no soft edges to lose. In
   the app, use the PNG sheet: it's smaller and lets the app choose the speed.
@@ -44,7 +45,7 @@ the style from them, not the character.
 2. **ChatGPT image generation**: good at following this brief in one conversation. The
    output is pseudo-pixel (soft edges, uneven grid), so it needs a cleanup pass.
 3. **Cleanup and animation by hand:** **Aseprite** (paid, the standard) or **Piskel**
-   (free, in the browser). Import the generated image, snap it to the 48×48 grid and the
+   (free, in the browser). Import the generated image, snap it to the 96×96 grid and the
    palette below, then fix or draw the in-between frames. Plan on this step whatever tool
    generates the first image.
 
@@ -65,7 +66,7 @@ the style from them, not the character.
 ## Prompt 1: the character (run first)
 
 ```
-Pixel art character, 48x48 sprite, chibi style: "Argos", a cute cartoon Portuguese
+Pixel art character, 96x96 sprite, chibi style: "Argos", a cute cartoon Portuguese
 Podengo puppy. Big head on a tiny body, short legs. Very large semi-folded ears: they
 rise from a wide base and fold forward halfway, the triangular tips flopping down towards
 the eyes, pink inside. Slim pointed muzzle, small dark
@@ -98,7 +99,7 @@ Give the chosen sprite as the reference, then:
 
 ```
 Pixel art sprite sheet of the same character "Argos" from the reference, identical
-design, palette and proportions. <FRAMES> frames of 48x48 in one horizontal row,
+design, palette and proportions. <FRAMES> frames of 96x96 in one horizontal row,
 transparent background, hard edges, no anti-aliasing. The dog stays in the same spot and
 sits on the same bottom line in every frame. Animation: <ANIMATION>
 ```
@@ -116,10 +117,10 @@ sits on the same bottom line in every frame. Animation: <ANIMATION>
 
 ## Checklist before the art goes in the app
 
-- [ ] Every frame is 48×48 (or every frame 32×32), with the dog on the same bottom line,
+- [ ] Every frame is 96×96, with the dog on the same bottom line,
       so switching states does not make it jump.
 - [ ] Only palette colours, no semi-transparent pixels except fully transparent.
 - [ ] One PNG per state, frames left to right, no gaps (or note the gap size).
-- [ ] Reads clearly at 3× (144 px) and 2× (96 px) over a light and a dark wallpaper; the
+- [ ] Reads clearly at 1× (96 px) and 2× (192 px) over a light and a dark wallpaper; the
       dark outline must go all the way round.
-- [ ] The ears still read as big folded ears at 1× (48 px): the fold must be visible.
+- [ ] The ears still read as big folded ears at 1× (96 px): the fold must be visible.
