@@ -29,6 +29,10 @@ import './InterventionStart.css'
 const LAST_CLIENT_KEY = 'ops.lastClient'
 const HISTORY_LIMIT = 8
 
+/** Task, ticket and client are hidden for now (2026-11-03): the operator says what is wrong
+ *  in the terminal. Flip to bring the three fields back; everything behind them still works. */
+const SHOW_DETAILS = false
+
 // The history row's actions, as 14 px line icons (their names are in the tooltips): a row
 // of three outlined buttons per run outweighed the runs themselves.
 const ICON_RESUME = ['M3 12a9 9 0 1 0 3-6.7L3 8', 'M3 3v5h5']
@@ -303,15 +307,16 @@ export default function InterventionStart({ initialHostId, onStart, onResume }: 
     if (!canStart || !scope || !activePath) {
       return
     }
-    const c = client.trim()
-    const tk = ticket.trim()
-    writeLastClient(c)
+    // Hidden fields send nothing, not even the client remembered from the last start.
+    const c = SHOW_DETAILS ? client.trim() : ''
+    const tk = SHOW_DETAILS ? ticket.trim() : ''
+    if (SHOW_DETAILS) writeLastClient(c)
     // The built-in runbook is always one click away as the mode, so it is not remembered.
     if (mode === 'runbook' && !samePath(activePath, builtin)) writeLastRunbook(activePath)
     onStart({
       runbookPath: activePath,
       scope,
-      task: task.trim(),
+      task: SHOW_DETAILS ? task.trim() : '',
       ...(tk ? { ticket: tk } : {}),
       ...(c ? { client: c } : {}),
       ...(related.length ? { relatedRunIds: related.map((r) => r.runId) } : {})
@@ -456,6 +461,8 @@ export default function InterventionStart({ initialHostId, onStart, onResume }: 
               </div>
             )}
 
+            {SHOW_DETAILS && (
+            <>
             <div className="ivs-field">
               <label className="ivs-label" htmlFor={taskId}>
                 {t('ops.start.task')} <span className="ivs-optional">{t('ops.start.optional')}</span>
@@ -500,6 +507,8 @@ export default function InterventionStart({ initialHostId, onStart, onResume }: 
                 />
               </div>
             </div>
+            </>
+            )}
 
             {related.length > 0 && (
               <div className="ivs-related">
