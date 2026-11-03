@@ -255,7 +255,16 @@ describe('listRuns', () => {
     await ledger.append(startOf('old'), new Date('2026-03-04T10:00:00.000Z'))
     // Locked to web-01, crossing midnight, ended.
     await ledger.append(
-      startOf('locked', { hosts: [HOST], scope: { kind: 'host', hostId: 'h1' }, task: 'Reload nginx', appSessionId: 't1' }),
+      startOf('locked', {
+        hosts: [HOST],
+        scope: { kind: 'host', hostId: 'h1' },
+        task: 'Reload nginx',
+        ticket: 'WM-7',
+        client: 'CM X',
+        appSessionId: 't1',
+        resumesRunId: 'old',
+        cliSessionId: 'sess-1'
+      }),
       new Date('2026-03-05T23:59:00.000Z')
     )
     await ledger.append(decidedOn('locked', 'c1', 'h1', 'web-01'), new Date('2026-03-05T23:59:30.000Z'))
@@ -273,8 +282,14 @@ describe('listRuns', () => {
       startedAt: '2026-03-05T23:59:00.000Z',
       endedAt: '2026-03-06T00:00:10.000Z',
       runbook: 'nginx-config-reload',
+      runbookPath: '/repo/runbooks/nginx-config-reload',
       hostNames: ['web-01'],
       task: 'Reload nginx',
+      scope: { kind: 'host', hostId: 'h1' },
+      ticket: 'WM-7',
+      client: 'CM X',
+      cliSessionId: 'sess-1',
+      resumesRunId: 'old',
       ok: true,
       calls: 1,
       costUsd: 0.25
@@ -298,5 +313,22 @@ describe('listRuns', () => {
       await ledger.append(OTHER, new Date(Date.parse('2026-02-01T10:00:00.000Z') + d * 86_400_000))
     }
     expect(await ledger.listRuns()).toEqual({ ok: true, runs: [] })
+  })
+})
+
+describe('report of a resumed run', () => {
+  it('looks up the resumed run so the pt-PT reports can date it', async () => {
+    const ldir = fs.mkdtempSync(path.join(os.tmpdir(), 'argos-ledger-linked-'))
+    try {
+      const ledger = createLedger(ldir)
+      await ledger.append({ ...START, runId: 'first', task: 'Reload nginx' } as OpsAuditEvent, new Date('2026-03-01T10:00:00.000Z'))
+      await ledger.append({ ...START, runId: 'second', resumesRunId: 'first', relatedRunIds: ['gone'] } as OpsAuditEvent, new Date('2026-03-09T10:00:00.000Z'))
+      const handover = await ledger.report('second', 'handover')
+      expect(handover.ok && handover.markdown).toContain('Na sequência de: intervenção de 2026-03-01 (Reload nginx), que esta retoma; execução `gone`.')
+      const client = await ledger.report('second', 'client')
+      expect(client.ok && client.markdown).toContain('Continuação da intervenção de 01-03-2026.')
+    } finally {
+      fs.rmSync(ldir, { recursive: true, force: true })
+    }
   })
 })

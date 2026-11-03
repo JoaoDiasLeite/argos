@@ -10,7 +10,7 @@
  * fixed sentences are ours and are written to need no sanitising.
  */
 
-import type { OpsCallSummary, OpsRunSummary } from './ops-audit-pure'
+import type { OpsCallSummary, OpsLinkedRun, OpsRunSummary } from './ops-audit-pure'
 import type { OpsHostRef } from './ops-types'
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────────
@@ -110,6 +110,16 @@ export function renderInternalReport(summary: OpsRunSummary): string {
     const child = s.handover.childRunId ? ` (run \`${s.handover.childRunId}\`)` : ''
     out.push(`- Follow-up: intervention ${s.handover.runbook}${child}`)
   }
+  const ids = (list: string[]): string => list.map((id) => `\`${id}\``).join(', ')
+  if (s.resumesRunId) out.push(`- Resumes run \`${s.resumesRunId}\``)
+  if (s.relatedRunIds?.length) out.push(`- Related runs: ${ids(s.relatedRunIds)}`)
+  if (s.referencedRunIds?.length) out.push(`- Referred to by the operator: ${ids([...new Set(s.referencedRunIds)])}`)
+  if (s.historyReads) {
+    const read = s.historyReads.runIds.length ? `runs ${ids(s.historyReads.runIds)}` : 'no run'
+    const lists = s.historyReads.lists ? `; listed the history ${s.historyReads.lists} time${s.historyReads.lists === 1 ? '' : 's'}` : ''
+    out.push(`- History read by the model: ${read}${lists}`)
+  }
+  if (s.cliSessionId) out.push(`- Claude session: \`${s.cliSessionId}\``)
   out.push(`- Runbook: \`${s.runbook.path}\` (policy sha256 \`${s.runbook.policySha256}\`)`)
   if (s.runbook.platform) out.push(`- Platform: ${s.runbook.platform}`)
   out.push(`- Started: ${s.startedAt}`)
@@ -197,6 +207,9 @@ export interface ClientReportOptions {
   hostGroups: Record<string, string[]>
   /** Every stored host, so names and addresses are known. */
   hosts: OpsHostRef[]
+  /** The runs this one resumed or was related to, looked up by the caller: the client
+   *  report dates a continuation with it, the handover names them. */
+  linkedRuns?: OpsLinkedRun[]
 }
 
 const ROLE_DB = '[servidor de base de dados]'
@@ -363,6 +376,10 @@ export function renderClientReport(summary: OpsRunSummary, opts: ClientReportOpt
   if (s.runbook.platform) desc.push(`A intervenção incidiu sobre a plataforma ${s.runbook.platform}.`)
   // The diagnosis it follows is named without its id: the client has no use for one.
   if (s.parentRunId) desc.push('Esta intervenção deu seguimento a um diagnóstico prévio ao servidor.')
+  // A resumed intervention is one piece of work for the client: it gets the earlier day,
+  // never the id, and nothing at all when the caller could not date it.
+  const resumed = s.resumesRunId ? opts.linkedRuns?.find((r) => r.runId === s.resumesRunId) : undefined
+  if (resumed) desc.push(`Continuação da intervenção de ${ptDate(resumed.startedAt)}.`)
 
   // Titles are the runbook author's client-facing words, so they are sanitised only for
   // host names and addresses, not for argv words: on the first real run "Verificação da

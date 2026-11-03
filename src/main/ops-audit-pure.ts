@@ -194,6 +194,16 @@ export interface OpsRunSummary {
   scope?: OpsScope
   /** The diagnosis this intervention follows (run.start.parentRunId). */
   parentRunId?: string
+  /** The earlier run this one resumes, and the ones picked as related (run.start). */
+  resumesRunId?: string
+  relatedRunIds?: string[]
+  /** The Claude session the terminal pinned or resumed (run.start.cliSessionId). */
+  cliSessionId?: string
+  /** Earlier runs the operator pointed the model at mid-run (run.referenced), in order. */
+  referencedRunIds?: string[]
+  /** What the model read through past_interventions (history.read): run ids, and how
+   *  many times it listed the history. Absent when it read nothing. */
+  historyReads?: { runIds: string[]; lists: number }
   /** This diagnosis was handed over to a runbook intervention (run.handover). */
   handover?: { runbook: string; childRunId?: string }
   /** Open scope: the operator's answer per host, in the order given. */
@@ -209,6 +219,17 @@ export interface OpsRunSummary {
   aborted?: boolean
   error?: string
   costUsd?: number
+}
+
+/**
+ * An earlier run this one is linked to (resumed or related), as far as the reports need
+ * it: a renderer only gets the run's own lines, so the caller looks these up and passes
+ * them in. A link it could not look up is simply left out and the report names the id.
+ */
+export interface OpsLinkedRun {
+  runId: string
+  startedAt: string
+  task?: string
 }
 
 export const DECIDED_MISSING = 'decided event missing'
@@ -253,6 +274,9 @@ export function summarizeRun(lines: OpsAuditLine[], runId: string): OpsRunSummar
   if (start.event.client !== undefined) s.client = start.event.client
   if (start.event.scope !== undefined) s.scope = start.event.scope
   if (start.event.parentRunId !== undefined) s.parentRunId = start.event.parentRunId
+  if (start.event.resumesRunId !== undefined) s.resumesRunId = start.event.resumesRunId
+  if (start.event.relatedRunIds !== undefined && start.event.relatedRunIds.length) s.relatedRunIds = [...start.event.relatedRunIds]
+  if (start.event.cliSessionId !== undefined) s.cliSessionId = start.event.cliSessionId
   const calls = new Map<string, OpsCallSummary>()
   const callFor = (callId: string): OpsCallSummary => {
     let c = calls.get(callId)
@@ -329,6 +353,16 @@ export function summarizeRun(lines: OpsAuditLine[], runId: string): OpsRunSummar
       case 'run.handover':
         s.handover = { runbook: e.runbook, ...(e.childRunId !== undefined ? { childRunId: e.childRunId } : {}) }
         break
+      case 'run.referenced':
+        ;(s.referencedRunIds ??= []).push(e.refRunId)
+        break
+      case 'history.read': {
+        const r = (s.historyReads ??= { runIds: [], lists: 0 })
+        // The same run read twice is one run read: the report lists what was seen.
+        if (e.refRunId === undefined) r.lists++
+        else if (!r.runIds.includes(e.refRunId)) r.runIds.push(e.refRunId)
+        break
+      }
       case 'run.end':
         s.endedAt = at
         s.ok = e.ok
@@ -352,9 +386,18 @@ export interface OpsRunListItem {
   endedAt?: string
   /** The runbook folder's name. */
   runbook: string
+  /** The runbook folder's path (run.start.runbook.path): what a resume loads again. */
+  runbookPath: string
   /** The hosts the run was about: its locked host, the hosts an open run touched, or (before interventions) every runbook host. */
   hostNames: string[]
   task?: string
+  /** The rest of what a resume starts from: the run's scope, ticket and client, the Claude
+   *  session it can continue, and the run it itself resumed. */
+  scope?: OpsScope
+  ticket?: string
+  client?: string
+  cliSessionId?: string
+  resumesRunId?: string
   ok?: boolean
   aborted?: boolean
   calls: number
@@ -385,8 +428,14 @@ export function runListItem(s: OpsRunSummary, appSessionId: string): OpsRunListI
     startedAt: s.startedAt,
     ...(s.endedAt !== undefined ? { endedAt: s.endedAt } : {}),
     runbook: s.runbook.name,
+    runbookPath: s.runbook.path,
     hostNames: runHostIds(s).map(nameOf),
     ...(s.task !== undefined ? { task: s.task } : {}),
+    ...(s.scope !== undefined ? { scope: s.scope } : {}),
+    ...(s.ticket !== undefined ? { ticket: s.ticket } : {}),
+    ...(s.client !== undefined ? { client: s.client } : {}),
+    ...(s.cliSessionId !== undefined ? { cliSessionId: s.cliSessionId } : {}),
+    ...(s.resumesRunId !== undefined ? { resumesRunId: s.resumesRunId } : {}),
     ...(s.ok !== undefined ? { ok: s.ok } : {}),
     ...(s.aborted !== undefined ? { aborted: s.aborted } : {}),
     calls: s.calls.length,

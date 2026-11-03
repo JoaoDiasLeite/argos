@@ -179,6 +179,15 @@ export type OpsAuditEvent =
       /** The diagnosis this intervention follows ("Hand over to a runbook"): that run's id.
        *  Absent on a run started on its own. */
       parentRunId?: string
+      /** The earlier run this one resumes (INTERVENTION_HISTORY_PLAN §2). A resume is always
+       *  a new run: the earlier one stays ended, its plan approval does not carry over. */
+      resumesRunId?: string
+      /** Earlier interventions the operator picked on the start screen as related (at most
+       *  5); the model reads them through past_interventions. */
+      relatedRunIds?: string[]
+      /** The Claude session id the terminal pinned or resumed (a UUID), so a later resume
+       *  can continue the same conversation. Absent on runs from before pinning. */
+      cliSessionId?: string
     }
   | {
       /** The operator's answer to the first touch of a host in an open intervention. */
@@ -294,6 +303,20 @@ export type OpsAuditEvent =
       childRunId?: string
       /** The intervention's runbook name. */
       runbook: string
+    }
+  | {
+      /** The operator pointed the model at an earlier intervention in the middle of a run. */
+      kind: 'run.referenced'
+      runId: string
+      refRunId: string
+      by: 'operator'
+    }
+  | {
+      /** The model read the history through past_interventions: one earlier run's briefing,
+       *  or the list (no refRunId). Logged on every read, so the report says what it saw. */
+      kind: 'history.read'
+      runId: string
+      refRunId?: string
     }
   | {
       kind: 'run.end'

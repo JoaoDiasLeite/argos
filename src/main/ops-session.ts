@@ -174,6 +174,11 @@ export interface OpsSessionOptions {
   client?: string
   /** The diagnosis run this intervention follows (a handover); logged on run.start. */
   parentRunId?: string
+  /** The earlier run this one resumes, the ones picked as related, and the Claude session
+   *  the terminal pinned or resumed; all logged on run.start (INTERVENTION_HISTORY_PLAN §3). */
+  resumesRunId?: string
+  relatedRunIds?: string[]
+  cliSessionId?: string
   /** The CLI that runs the session (the ledger's `run.start.model`). */
   model: string
   account?: string
@@ -296,7 +301,10 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
       ...(opts.client?.trim() ? { client: opts.client.trim() } : {}),
       ...(scope ? { scope } : {}),
       ...(needsPlan ? {} : { planRequired: false as const }),
-      ...(opts.parentRunId ? { parentRunId: opts.parentRunId } : {})
+      ...(opts.parentRunId ? { parentRunId: opts.parentRunId } : {}),
+      ...(opts.resumesRunId ? { resumesRunId: opts.resumesRunId } : {}),
+      ...(opts.relatedRunIds?.length ? { relatedRunIds: opts.relatedRunIds } : {}),
+      ...(opts.cliSessionId ? { cliSessionId: opts.cliSessionId } : {})
     })
     if (!started.ok) return { ok: false, error: t('runbook.session.ledgerUnavailable', { error: started.error }) }
 

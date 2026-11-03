@@ -18,11 +18,19 @@ import {
   runTouchesHost,
   summarizeRun,
   verifyChain,
-  type OpsRunListItem
+  type OpsLinkedRun,
+  type OpsRunListItem,
+  type OpsRunSummary
 } from './ops-audit-pure'
 import { renderHandover } from './ops-handover-pure'
-import { clientReportWarnings, hostSyslogWarnings, renderClientReport, renderInternalReport } from './ops-report-pure'
-import type { OpsAuditEvent, OpsAuditLine, OpsHostRef } from './ops-types'
+import {
+  clientReportWarnings,
+  hostSyslogWarnings,
+  renderClientReport,
+  renderInternalReport,
+  type ClientReportOptions
+} from './ops-report-pure'
+import type { OpsAuditEvent, OpsAuditLine } from './ops-types'
 import { makeT, type TFunction } from '../shared/i18n'
 
 /** internal: ours, in English; client: the sanitised Relatório Técnico; handover: our pt-PT incident file. */
@@ -49,7 +57,7 @@ export interface OpsLedger {
   report(
     runId: string,
     kind: OpsReportKind,
-    opts?: { hostGroups: Record<string, string[]>; hosts: OpsHostRef[] }
+    opts?: ClientReportOptions
   ): Promise<{ ok: true; markdown: string; warnings: string[] } | { ok: false; error: string }>
   verify(date: string): Promise<{ ok: true; lines: number } | { ok: false; brokenAt?: number; reason: string }>
   info(): Promise<{ dir: string; files: number; bytes: number }>
@@ -190,6 +198,19 @@ export function createLedger(dir: string, t: TFunction = makeT('en')): OpsLedger
     })
   }
 
+  /** The day and task of each run `s` resumed or was related to; one that cannot be read is left out. */
+  async function linkedRunsOf(s: OpsRunSummary): Promise<OpsLinkedRun[]> {
+    const ids = [...new Set([...(s.resumesRunId ? [s.resumesRunId] : []), ...(s.relatedRunIds ?? [])])]
+    const out: OpsLinkedRun[] = []
+    for (const id of ids) {
+      const r = await readRun(id, new Date(s.startedAt))
+      const start = r.ok ? r.lines.find((l) => l.event.kind === 'run.start') : undefined
+      if (start?.event.kind !== 'run.start') continue
+      out.push({ runId: id, startedAt: start.at, ...(start.event.task ? { task: start.event.task } : {}) })
+    }
+    return out
+  }
+
   return {
     append(event, at = new Date()) {
       return enqueue(() => doAppend(event, at))
@@ -263,10 +284,15 @@ export function createLedger(dir: string, t: TFunction = makeT('en')): OpsLedger
       if (!summary) return { ok: false, error: t('runbook.audit.noRunStart', { runId }) }
       const warnings = [...hostSyslogWarnings(summary), ...clientReportWarnings(summary)]
       if (kind === 'internal') return { ok: true, markdown: renderInternalReport(summary), warnings }
+      // The pt-PT reports name earlier runs by day and task, which only those runs' own
+      // starts hold. Unless the caller already looked them up, read them here.
+      const linkedRuns = opts?.linkedRuns ?? (await linkedRunsOf(summary))
       // The handover is ours, not the client's: only the syslog warnings concern it.
-      if (kind === 'handover') return { ok: true, markdown: renderHandover(summary, r.lines, opts), warnings: hostSyslogWarnings(summary) }
+      if (kind === 'handover') {
+        return { ok: true, markdown: renderHandover(summary, r.lines, { hostGroups: {}, hosts: [], ...opts, linkedRuns }), warnings: hostSyslogWarnings(summary) }
+      }
       // Without the policy's groups the hosts still get sanitised, as plain "[servidor]".
-      const clientOpts = opts ?? { hostGroups: {}, hosts: summary.hosts }
+      const clientOpts = { ...(opts ?? { hostGroups: {}, hosts: summary.hosts }), linkedRuns }
       return { ok: true, markdown: renderClientReport(summary, clientOpts), warnings }
     },
 

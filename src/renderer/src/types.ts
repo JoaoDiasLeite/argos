@@ -948,9 +948,18 @@ export interface OpsRunListItem {
   endedAt?: string
   /** The runbook folder's name. */
   runbook: string
+  /** The runbook folder's path: what a resume loads again. */
+  runbookPath: string
   /** The locked host, the hosts an open run touched, or (older runs) every runbook host. */
   hostNames: string[]
   task?: string
+  /** What a resume starts from: scope, ticket and client, the Claude session it can
+   *  continue, and the run this one itself resumed. Absent on older runs. */
+  scope?: OpsScope
+  ticket?: string
+  client?: string
+  cliSessionId?: string
+  resumesRunId?: string
   ok?: boolean
   aborted?: boolean
   calls: number

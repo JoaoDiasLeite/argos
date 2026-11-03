@@ -13,8 +13,9 @@
 import type { OpsCallSummary, OpsRunSummary } from './ops-audit-pure'
 import { runHostIds } from './ops-audit-pure'
 import { canonicalCommand } from './ops-gate-pure'
+import { foldNotes, type FoldedNotes } from './ops-notes-pure'
 import type { ClientReportOptions } from './ops-report-pure'
-import type { OpsAuditLine, OpsNote } from './ops-types'
+import type { OpsAuditLine } from './ops-types'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────────
 
@@ -84,66 +85,6 @@ export function handoverFileName(s: { startedAt: string; client?: string; task?:
   return `${parts.join('-')}.md`
 }
 
-// ─── Folding the notes ─────────────────────────────────────────────────────────────
-
-interface Hypothesis {
-  id: string
-  text: string
-  status: NonNullable<OpsNote['status']>
-  evidence?: string
-}
-
-interface OperatorAsk {
-  askId: string
-  cmd: string
-  why: string
-  host?: string
-  answered?: { output?: string; declined?: true }
-}
-
-interface Folded {
-  summary?: string
-  /** First-seen order; the latest note of each id gives its text, status and evidence. */
-  hypotheses: Hypothesis[]
-  findings: OpsNote[]
-  events: OpsNote[]
-  actions: OpsNote[]
-  asks: OperatorAsk[]
-}
-
-function fold(lines: OpsAuditLine[], runId: string): Folded {
-  const f: Folded = { hypotheses: [], findings: [], events: [], actions: [], asks: [] }
-  const byId = new Map<string, Hypothesis>()
-  const asks = new Map<string, OperatorAsk>()
-  for (const { event: e } of lines) {
-    if (e.runId !== runId) continue
-    if (e.kind === 'note') {
-      const n = e.note
-      if (n.kind === 'summary') f.summary = n.text
-      else if (n.kind === 'finding') f.findings.push(n)
-      else if (n.kind === 'event') f.events.push(n)
-      else if (n.kind === 'action') f.actions.push(n)
-      else if (n.kind === 'hypothesis' && n.id) {
-        const next: Hypothesis = { id: n.id, text: n.text, status: n.status ?? 'open', ...(n.evidence ? { evidence: n.evidence } : {}) }
-        const prev = byId.get(n.id)
-        if (prev) Object.assign(prev, next, n.evidence ? {} : { evidence: prev.evidence })
-        else {
-          byId.set(n.id, next)
-          f.hypotheses.push(next)
-        }
-      }
-    } else if (e.kind === 'operator.asked') {
-      const a: OperatorAsk = { askId: e.askId, cmd: e.cmd, why: e.why, ...(e.host ? { host: e.host } : {}) }
-      asks.set(e.askId, a)
-      f.asks.push(a)
-    } else if (e.kind === 'operator.answered') {
-      const a = asks.get(e.askId)
-      if (a) a.answered = e.declined ? { declined: true } : { output: e.output ?? '' }
-    }
-  }
-  return f
-}
-
 // ─── Commands ─────────────────────────────────────────────────────────────────────
 
 /** Went to the host: neither the gate nor the operator stopped it, and it started or finished. */
@@ -181,7 +122,7 @@ function exitNote(c: OpsCallSummary): string {
   return c.exitCode === 0 ? '' : `  # exit ${c.exitCode}`
 }
 
-function commandsSection(s: OpsRunSummary, f: Folded, hostName: (id: string, fallback: string) => string): string[] {
+function commandsSection(s: OpsRunSummary, f: FoldedNotes, hostName: (id: string, fallback: string) => string): string[] {
   const out: string[] = ['## Comandos executados', '']
   const done = s.calls.filter(ran)
   const denied = s.calls.filter((c) => c.decision === 'deny')
@@ -228,7 +169,7 @@ function commandsSection(s: OpsRunSummary, f: Folded, hostName: (id: string, fal
  */
 export function renderHandover(summary: OpsRunSummary, lines: OpsAuditLine[], opts?: ClientReportOptions): string {
   const s = summary
-  const f = fold(lines, s.runId)
+  const f = foldNotes(lines, s.runId)
   const known = [...s.hosts, ...(opts?.hosts ?? [])]
   const hostName = (id: string, fallback: string): string => known.find((h) => h.id === id)?.name || fallback || id
 
@@ -254,6 +195,18 @@ export function renderHandover(summary: OpsRunSummary, lines: OpsAuditLine[], op
 
   // The other half of a handover to a runbook intervention, either way round.
   if (s.parentRunId) out.push(`Na sequência do despiste ${code(s.parentRunId)}.`, '')
+  // The earlier interventions this one resumed or was started with, by day and task as
+  // the operator remembers them; the id stands in for one the caller could not look up.
+  const linked = [...(s.resumesRunId ? [s.resumesRunId] : []), ...(s.relatedRunIds ?? []).filter((id) => id !== s.resumesRunId)]
+  if (linked.length) {
+    const named = linked.map((id) => {
+      const r = opts?.linkedRuns?.find((l) => l.runId === id)
+      const task = r?.task ? oneLine(r.task).replace(/[.\s]+$/, '') : ''
+      const what = r ? `intervenção de ${lisbonDate(r.startedAt)}${task ? ` (${task})` : ''}` : `execução ${code(id)}`
+      return id === s.resumesRunId ? `${what}, que esta retoma` : what
+    })
+    out.push(`Na sequência de: ${named.join('; ')}.`, '')
+  }
   if (s.handover) {
     const child = s.handover.childRunId ? ` (execução ${code(s.handover.childRunId)})` : ''
     out.push(`Seguimento: intervenção ${s.handover.runbook}${child}.`, '')

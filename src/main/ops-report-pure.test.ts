@@ -446,3 +446,35 @@ describe('reports of a handover from a diagnosis to a runbook intervention', () 
     expect(renderClientReport(run([READ_WEB]), OPTS)).not.toContain('diagnóstico prévio')
   })
 })
+
+describe('reports of a resumed intervention and its linked runs', () => {
+  it('the internal report lists the resumed, related, referenced and read run ids', () => {
+    const out = renderInternalReport(
+      run([READ_WEB], {
+        resumesRunId: 'run-40',
+        relatedRunIds: ['run-30', 'run-31'],
+        referencedRunIds: ['run-20', 'run-20'],
+        historyReads: { runIds: ['run-40', 'run-30'], lists: 2 },
+        cliSessionId: '0b7c4c1e-2f53-4a51-9d0f-3c3c7f3f7a10'
+      })
+    )
+    expect(out).toContain('- Resumes run `run-40`\n')
+    expect(out).toContain('- Related runs: `run-30`, `run-31`\n')
+    expect(out).toContain('- Referred to by the operator: `run-20`\n')
+    expect(out).toContain('- History read by the model: runs `run-40`, `run-30`; listed the history 2 times\n')
+    expect(out).toContain('- Claude session: `0b7c4c1e-2f53-4a51-9d0f-3c3c7f3f7a10`\n')
+    const plain = renderInternalReport(run([READ_WEB]))
+    expect(plain).not.toMatch(/Resumes run|Related runs|Referred to|History read|Claude session/)
+  })
+
+  it('the client report dates the continuation, without any id, only when the date is known', () => {
+    const s = run([READ_WEB], { resumesRunId: 'run-40', relatedRunIds: ['run-30'] })
+    const out = renderClientReport(s, { ...OPTS, linkedRuns: [{ runId: 'run-40', startedAt: '2026-07-14T23:30:00Z', task: 'Tomcat em baixo' }] })
+    expect(out).toContain('Continuação da intervenção de 15-07-2026.')
+    expect(out).not.toMatch(/run-40|run-30|Tomcat em baixo/)
+    expect(renderClientReport(s, OPTS)).not.toContain('Continuação')
+    // A related run alone is not a continuation.
+    const related = run([READ_WEB], { relatedRunIds: ['run-30'] })
+    expect(renderClientReport(related, { ...OPTS, linkedRuns: [{ runId: 'run-30', startedAt: '2026-07-14T10:00:00Z' }] })).not.toContain('Continuação')
+  })
+})

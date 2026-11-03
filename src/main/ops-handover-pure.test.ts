@@ -230,3 +230,40 @@ describe('handover to a runbook intervention', () => {
     expect(render([start()])).not.toContain('Na sequência')
   })
 })
+
+describe('handover of a resumed intervention', () => {
+  it('folds the links, the operator references and the history reads into the summary', () => {
+    const s = summarizeRun(
+      ledger([
+        start({ resumesRunId: 'run-0', relatedRunIds: ['run-a'], cliSessionId: 'sess-1' }),
+        { kind: 'history.read', runId: RUN },
+        { kind: 'history.read', runId: RUN, refRunId: 'run-0' },
+        { kind: 'history.read', runId: RUN, refRunId: 'run-0' },
+        { kind: 'run.referenced', runId: RUN, refRunId: 'run-b', by: 'operator' }
+      ]),
+      RUN
+    )
+    expect(s).toMatchObject({
+      resumesRunId: 'run-0',
+      relatedRunIds: ['run-a'],
+      cliSessionId: 'sess-1',
+      referencedRunIds: ['run-b'],
+      historyReads: { runIds: ['run-0'], lists: 1 }
+    })
+  })
+
+  it('names the earlier runs by day and task, and by id when they are not known', () => {
+    const lines = ledger([start({ resumesRunId: 'run-0', relatedRunIds: ['run-a', 'run-0'] })])
+    const s = summarizeRun(lines, RUN)
+    if (!s) throw new Error('no run.start')
+    const named = renderHandover(s, lines, {
+      hostGroups: {},
+      hosts: HOSTS,
+      linkedRuns: [{ runId: 'run-0', startedAt: '2026-10-18T22:30:00Z', task: 'Puma não arranca.' }]
+    })
+    expect(named).toContain('Na sequência de: intervenção de 2026-10-18 (Puma não arranca), que esta retoma; execução `run-a`.\n')
+    expect(named.indexOf('Na sequência de:')).toBeLessThan(named.indexOf('## Resumo'))
+    const bare = renderHandover(s, lines, { hostGroups: {}, hosts: HOSTS })
+    expect(bare).toContain('Na sequência de: execução `run-0`, que esta retoma; execução `run-a`.\n')
+  })
+})
