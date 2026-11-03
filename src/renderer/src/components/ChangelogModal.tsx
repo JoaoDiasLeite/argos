@@ -18,6 +18,25 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '3.0.0',
+    date: '2026-11-03',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Meet Argos, a pixel-art dog on your desktop for todos, notes and reminders. Ctrl+Alt+A (or a click on him) opens a speech bubble: type "ligar à Câmara amanhã às 14h" and it is saved with its time, "nota: …" keeps a note, and "o que tenho hoje?" lists the day. Dates are read locally in Portuguese and English ("próxima sexta", "daqui a 2 horas", "dia 15 às 9h"); when the line is unclear, only that line can go to your account’s model, which Settings can switch off.',
+          'Reminders come from Argos himself, ten minutes before a timed todo or at the morning hour for one with only a day, with Done, +10 min, tomorrow morning or another time. Reminders missed while Argos was closed, asleep or quiet arrive together in one bubble on the next launch.',
+          'Voice dictation: Ctrl+Alt+S or the microphone in the bubble records, and a local Whisper model transcribes on this machine into the input for you to review. Nothing is sent anywhere. The model is shared with the meeting-notes plugin when it is installed, and downloaded once otherwise.',
+          'The Companion panel in the main window lists todos by Today, Tomorrow, Later and No date, plus notes, with editing, done and delete. A todo can be promoted to the active sprint, which then owns it.',
+          'Quiet mode: "shh 1h" in the bubble, the tray or Argos’s right-click menu holds reminders until it ends, and then they arrive together.',
+          'Settings → Companion: the summon and dictation shortcuts, staying on screen all day (with a short walk along the bottom now and then) or only when called, the reminder lead time, the morning hour, hiding Argos from screen shares (on by default), and exporting notes to an Obsidian vault as Markdown files.',
+          'The profile export now carries Argos’s todos and notes; importing adds the ones the machine does not have.'
+        ]
+      }
+    ]
+  },
+  {
     version: '2.9.1',
     date: '2026-10-27',
     tag: 'latest',
