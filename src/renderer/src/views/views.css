@@ -33,6 +33,19 @@
   -webkit-app-region: drag;
 }
 .view-subnav .seg-control { -webkit-app-region: no-drag; }
+/* The group switcher reads as plain tabs: no frame around it, only the current one on a
+   soft fill. The framed .seg-control stays for toggles inside the views. */
+.view-subnav .seg-control {
+  gap: 4px;
+  padding: 0;
+  border: none;
+}
+.view-subnav .seg-control button {
+  padding: 5px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+.view-subnav .seg-control button.on { font-weight: 500; }
 
 /* The interventions left running, one chip each (OpsTabs), inline after the Servers
    sub-nav. Inside a workspace they are a .server-tabs strip instead. */
