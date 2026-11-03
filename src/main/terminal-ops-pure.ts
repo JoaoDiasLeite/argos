@@ -126,6 +126,12 @@ export function withOpsEnvPrefix(cmd: string, env: Record<string, string>): stri
  * that ended with an error, where it would do the same. It goes straight after the
  * session flag, ahead of `extra`, because --allowedTools and --disallowedTools are
  * variadic and would swallow a positional that followed them.
+ *
+ * `withResumePrompt` is the one exception: a resumed ops intervention
+ * (INTERVENTION_HISTORY_PLAN §4) is a new run inside an old conversation and has to be
+ * told so. Its message, read from RESUME_PROMPT_ENV, rides on the --resume step in the
+ * same place; the create step keeps its own (INITIAL_PROMPT_ENV, there the variant for a
+ * model that remembers nothing), and the bare fallback still gets neither.
  */
 export function claudeChain(
   kind: ShellKind,
@@ -133,12 +139,14 @@ export function claudeChain(
   createFirst: boolean,
   extra = '',
   bin?: string,
-  withPrompt = false
+  withPrompt = false,
+  withResumePrompt = false
 ): string {
   const arg = withPrompt ? initialPromptArg(kind) : null
   const p = arg ? ` ${arg}` : ''
+  const resumeArg = withResumePrompt ? initialPromptArg(kind, RESUME_PROMPT_ENV) : null
   const create = `--session-id ${sessionId}${p}`
-  const resume = `--resume ${sessionId}`
+  const resume = `--resume ${sessionId}${resumeArg ? ` ${resumeArg}` : ''}`
   const [first, second] = createFirst ? [create, resume] : [resume, create]
   const x = extra ? ` ${extra}` : ''
   if (kind === 'pwsh' || kind === 'powershell') {
@@ -170,16 +178,19 @@ export function typedLaunchLine(body: string): string {
 /** The pty env variable that carries a chat's first message onto Claude Code's command line. */
 export const INITIAL_PROMPT_ENV = 'ARGOS_INITIAL_PROMPT'
 
+/** The pty env variable that carries a resumed ops run's message onto the --resume step. */
+export const RESUME_PROMPT_ENV = 'ARGOS_RESUME_PROMPT'
+
 /**
  * How `kind`'s shell spells INITIAL_PROMPT_ENV as one argument, or null where the pty's
  * env does not reach the CLI (wsl, ssh: the launch is typed into a shell across a hop),
  * which keep typing the prompt in instead. A variable expansion rather than the text
  * itself, so free text never has to survive a shell's quoting rules.
  */
-export function initialPromptArg(kind: ShellKind): string | null {
-  if (kind === 'pwsh' || kind === 'powershell') return `"$env:${INITIAL_PROMPT_ENV}"`
-  if (kind === 'cmd') return `"%${INITIAL_PROMPT_ENV}%"`
-  if (kind === 'unix') return `"$${INITIAL_PROMPT_ENV}"`
+export function initialPromptArg(kind: ShellKind, name: string = INITIAL_PROMPT_ENV): string | null {
+  if (kind === 'pwsh' || kind === 'powershell') return `"$env:${name}"`
+  if (kind === 'cmd') return `"%${name}%"`
+  if (kind === 'unix') return `"$${name}"`
   return null
 }
 

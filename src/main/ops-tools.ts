@@ -120,6 +120,25 @@ function fileExec(ok: boolean, out: string, err: string, durationMs: number): Ex
 }
 
 /**
+ * The earlier runs a run may read or be pointed to, newest first, without itself: those
+ * that touched one of its scope hosts, by the same test the start screen's history uses
+ * (listRuns' hostId filter), merged over the scope hosts. Shared by past_interventions
+ * and the operator's mid-run reference (`ops:reference`).
+ */
+export async function earlierRunsInScope(
+  ctx: Pick<OpsRunContext, 'runId' | 'scope' | 'hosts' | 'ledger'>,
+  limit: number
+): Promise<{ ok: true; runs: OpsRunListItem[] } | { ok: false; error: string }> {
+  const lists: OpsRunListItem[][] = []
+  for (const hostId of historyScopeHosts(ctx)) {
+    const r = await ctx.ledger.listRuns({ hostId, limit })
+    if (!r.ok) return r
+    lists.push(r.runs)
+  }
+  return { ok: true, runs: mergeRunLists(lists, ctx.runId) }
+}
+
+/**
  * The five handlers as plain functions over a run context. Kept apart from the SDK
  * server so the whole gate + tool + ledger path is testable against the fake backend.
  */
@@ -542,20 +561,7 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
     }
   }
 
-  /**
-   * The earlier runs this run may read, newest first, without itself: those that touched
-   * one of its scope hosts, by the same test the start screen's history uses (listRuns'
-   * hostId filter), merged over the scope hosts.
-   */
-  async function runsInScope(limit: number): Promise<{ ok: true; runs: OpsRunListItem[] } | { ok: false; error: string }> {
-    const lists: OpsRunListItem[][] = []
-    for (const hostId of historyScopeHosts(ctx)) {
-      const r = await ctx.ledger.listRuns({ hostId, limit })
-      if (!r.ok) return r
-      lists.push(r.runs)
-    }
-    return { ok: true, runs: mergeRunLists(lists, runId) }
-  }
+  const runsInScope = (limit: number): ReturnType<typeof earlierRunsInScope> => earlierRunsInScope(ctx, limit)
 
   /**
    * `past_interventions` (INTERVENTION_HISTORY_PLAN §2, §4): the list of earlier runs in

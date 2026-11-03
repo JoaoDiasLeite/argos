@@ -407,6 +407,22 @@ export function encodePath(p: string): string {
   return encodeProjectPath(p)
 }
 
+/**
+ * Whether a CLI started in `cwd` under the machine's default Claude config can
+ * `claude --resume` the session `sessionId`: its transcript is in the folder Claude Code
+ * keeps for conversations started in `cwd`. Used by a resumed ops intervention, whose
+ * terminal runs under no account; a transcript under another account or folder would
+ * not be found by that CLI either, so it is not looked for.
+ */
+export function localTranscriptExists(cwd: string, sessionId: string): boolean {
+  if (!/^[A-Za-z0-9-]{1,128}$/.test(sessionId)) return false
+  try {
+    return fs.existsSync(path.join(localSource().projectsDir, encodePath(cwd), `${sessionId}.jsonl`))
+  } catch {
+    return false
+  }
+}
+
 function decodeFallback(encoded: string): string {
   let s = encoded.replace(/-/g, '/').replace(/\/{2,}/g, '/')
   s = s.replace(/^([A-Za-z])\//, '$1:/')

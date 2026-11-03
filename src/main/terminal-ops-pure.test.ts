@@ -137,6 +137,39 @@ describe('claudeChain with the first message', () => {
   })
 })
 
+describe('claudeChain resuming an ops run', () => {
+  it('pwsh: the resume message on the resume step, the fallback one on create, flags on all three', () => {
+    const extra = quoteArgs('pwsh', claudeOpsFlags(WIN_PATH))
+    expect(claudeChain('pwsh', SID, false, extra, undefined, true, true)).toBe(
+      `& $env:CLAUDE_BIN --resume ${SID} "$env:ARGOS_RESUME_PROMPT" ${extra}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN --session-id ${SID} "$env:ARGOS_INITIAL_PROMPT" ${extra}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN ${extra} } }`
+    )
+  })
+
+  it('cmd and unix: the exact resume lines', () => {
+    expect(claudeChain('cmd', SID, false, '', undefined, true, true)).toBe(
+      `"%CLAUDE_BIN%" --resume ${SID} "%ARGOS_RESUME_PROMPT%" || "%CLAUDE_BIN%" --session-id ${SID} "%ARGOS_INITIAL_PROMPT%" || "%CLAUDE_BIN%"`
+    )
+    expect(claudeChain('unix', SID, false, '', undefined, true, true)).toBe(
+      `"$CLAUDE_BIN" --resume ${SID} "$ARGOS_RESUME_PROMPT" || "$CLAUDE_BIN" --session-id ${SID} "$ARGOS_INITIAL_PROMPT" || "$CLAUDE_BIN"`
+    )
+  })
+
+  it('the resume message alone, each prompt right after its session flag', () => {
+    for (const kind of ['pwsh', 'powershell', 'cmd', 'unix'] as const) {
+      const extra = quoteArgs(kind, claudeOpsFlags(kind === 'unix' ? UNIX_PATH : WIN_PATH))
+      const line = claudeChain(kind, SID, false, extra, undefined, false, true)
+      expect(line).toContain(`--resume ${SID} ${initialPromptArg(kind, 'ARGOS_RESUME_PROMPT')} ${extra}`)
+      expect(line).toContain(`--session-id ${SID} ${extra}`)
+      expect(line).not.toContain('ARGOS_INITIAL_PROMPT')
+      expect(line.split(extra).length - 1).toBe(3)
+    }
+  })
+
+  it('is left off wsl and ssh too', () => {
+    expect(claudeChain('wsl', SID, false, '', 'claude', true, true)).toBe(claudeChain('wsl', SID, false, '', 'claude'))
+  })
+})
+
 describe('initialPromptValue', () => {
   it('passes a POSIX shell the text whole', () => {
     expect(initialPromptValue('unix', ' say "hi"\nthen $stop ')).toBe('say "hi"\nthen $stop')

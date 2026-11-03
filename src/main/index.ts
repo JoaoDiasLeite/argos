@@ -36,7 +36,8 @@ import {
   getUsage,
   listSources,
   searchSessions,
-  readSessionPeek
+  readSessionPeek,
+  localTranscriptExists
 } from './claude-data'
 import { writeTagsForSession } from './tags-sweep'
 import {
@@ -113,14 +114,16 @@ import {
 } from './remote-shell'
 import { listDistros, testDistro, testDistroClaude, runWslOneShot, uncToWslPath, wslHistory, wslHome, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths, wslShareRoot } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
-import { createLedger, type OpsLedger, type OpsReportKind } from './ops-audit'
+import { createLedger, RUN_LIST_MAX, type OpsLedger, type OpsReportKind } from './ops-audit'
+import { HISTORY_RUN_ID_RE } from './ops-briefing-pure'
+import { earlierRunsInScope } from './ops-tools'
 import { handoverFileName } from './ops-handover-pure'
 import { createExecutor, createSshBackend, type OpsExecutor } from './ops-exec'
 import { createFakeBackend } from './ops-backend-fake'
 import { loadRunbook, readScript, scanRunbookLibrary } from './ops-runbook'
 import { builtinRunbookDir } from './ops-builtin'
 import { summarizePolicy } from './ops-policy-pure'
-import { interventionPrompt } from './ops-scope-pure'
+import { interventionPrompt, referenceLine } from './ops-scope-pure'
 import type { OpsScope } from './ops-types'
 import {
   bridgeSessionFor,
@@ -1764,6 +1767,12 @@ interface TerminalOpsSession {
   /** The intervention as asked for, so a remount with the same one reattaches. */
   interventionKey: string
   initialPrompt: string
+  /** The Claude session the CLI continues (a resume whose transcript is on disk) or
+   *  creates under; exactly one is set. Logged as run.start.cliSessionId. */
+  resumeSessionId?: string
+  pinSessionId?: string
+  /** A resume only: the first message for the chain's create step, should --resume fail. */
+  resumeFallbackPrompt?: string
   provider: OpsCli
   token: string
   endpoint: string
@@ -1788,8 +1797,12 @@ type TerminalOpsResult =
       env: Record<string, string>
       mcpConfigPath: string
       guarantee: 'tools-and-local-shell' | 'tools-only'
-      /** The CLI's first message, for the renderer to type into the terminal. */
+      /** The CLI's first message, for the renderer to pass to the terminal (initialPrompt). */
       initialPrompt: string
+      /** Exactly one of these: the Claude session to continue, or the new id to create
+       *  under. The renderer passes it to the terminal as is. */
+      resumeSessionId?: string
+      pinSessionId?: string
     }
   | { ok: false; error: string }
 
@@ -1802,7 +1815,17 @@ interface OpsIntervention {
   client?: string
   /** "Hand over to a runbook": the diagnosis run this intervention follows. */
   parentRunId?: string
+  /** "Retomar" (INTERVENTION_HISTORY_PLAN §2): the earlier run this one continues. */
+  resumesRunId?: string
+  /** Earlier runs the operator pointed to on the start screen (≤ 5). */
+  relatedRunIds?: string[]
 }
+
+/** A run id is a UUID; anything else is not one Argos wrote. */
+const isRunId = (x: unknown): x is string => typeof x === 'string' && HISTORY_RUN_ID_RE.test(x)
+
+/** How many related runs one intervention may name. */
+const RELATED_RUNS_MAX = 5
 
 function parseIntervention(v: unknown): OpsIntervention | { error: string } {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return { error: t('main.ipc.ops.noIntervention') }
@@ -1818,15 +1841,21 @@ function parseIntervention(v: unknown): OpsIntervention | { error: string } {
     typeof x === 'string' && x.trim() !== '' ? x.trim().slice(0, max) : undefined
   const ticket = text(o.ticket, 200)
   const client = text(o.client, 200)
-  // A run id is a UUID; anything else is not one Argos wrote.
-  const parentRunId = typeof o.parentRunId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(o.parentRunId) ? o.parentRunId : undefined
+  const parentRunId = isRunId(o.parentRunId) ? o.parentRunId : undefined
+  const resumesRunId = isRunId(o.resumesRunId) ? o.resumesRunId : undefined
+  // Invalid ids dropped, duplicates and the resumed run left out, at most five.
+  const relatedRunIds = Array.isArray(o.relatedRunIds)
+    ? [...new Set(o.relatedRunIds.filter(isRunId))].filter((id) => id !== resumesRunId).slice(0, RELATED_RUNS_MAX)
+    : []
   return {
     runbookPath: o.runbookPath,
     scope,
     task: o.task.trim().slice(0, 4000),
     ...(ticket ? { ticket } : {}),
     ...(client ? { client } : {}),
-    ...(parentRunId ? { parentRunId } : {})
+    ...(parentRunId ? { parentRunId } : {}),
+    ...(resumesRunId ? { resumesRunId } : {}),
+    ...(relatedRunIds.length ? { relatedRunIds } : {})
   }
 }
 
@@ -1839,8 +1868,31 @@ function terminalOpsReply(s: TerminalOpsSession): TerminalOpsResult {
     env: { ARGOS_OPS_PIPE: s.endpoint, ARGOS_OPS_TOKEN: s.token, MCP_TOOL_TIMEOUT: String(3 * OPS_MAX_TIMEOUT_MS) },
     mcpConfigPath: s.mcpConfigPath,
     guarantee: s.guarantee,
-    initialPrompt: s.initialPrompt
+    initialPrompt: s.initialPrompt,
+    ...(s.resumeSessionId ? { resumeSessionId: s.resumeSessionId } : {}),
+    ...(s.pinSessionId ? { pinSessionId: s.pinSessionId } : {})
   }
+}
+
+/**
+ * The Claude session of a new ops run (INTERVENTION_HISTORY_PLAN §2): resuming a run whose
+ * session id is logged and whose transcript is still on disk continues that conversation;
+ * anything else creates under a new pinned id. Undefined when the run to resume is not in
+ * the ledger: a resume of a run this machine never saw is refused, not guessed at.
+ */
+async function opsSessionFor(
+  intervention: OpsIntervention
+): Promise<{ ok: true; resumeSessionId?: string; pinSessionId?: string } | { ok: false; error: string }> {
+  const { resumesRunId, runbookPath } = intervention
+  if (!resumesRunId) return { ok: true, pinSessionId: randomUUID() }
+  const r = await getOpsLedger().readRun(resumesRunId)
+  if (!r.ok) return { ok: false, error: t('main.ipc.ops.ledgerUnreadable', { error: r.error }) }
+  const start = r.lines.find((l) => l.event.kind === 'run.start')
+  if (start?.event.kind !== 'run.start') return { ok: false, error: t('main.ipc.ops.resumeRunUnknown', { runId: resumesRunId }) }
+  const sid = start.event.cliSessionId
+  // The terminal runs in the runbook folder under the default Claude config (no account).
+  if (sid && localTranscriptExists(runbookPath, sid)) return { ok: true, resumeSessionId: sid }
+  return { ok: true, pinSessionId: randomUUID() }
 }
 
 /** Log run.end for a terminal's ops session (once), revoke its token and remove its config. */
@@ -1893,8 +1945,17 @@ async function handOverParent(parentRunId: string, childRunId: string, runbook: 
 async function openTerminalOps(terminalId: string, intervention: OpsIntervention): Promise<TerminalOpsResult> {
   // Claude Code only (39badc7): the one CLI whose own shell and file tools can be switched off.
   const provider: OpsCli = 'claude'
-  const { runbookPath, scope, task, ticket, client, parentRunId } = intervention
-  const interventionKey = JSON.stringify([runbookPath, scope, task, ticket ?? '', client ?? '', parentRunId ?? ''])
+  const { runbookPath, scope, task, ticket, client, parentRunId, resumesRunId, relatedRunIds } = intervention
+  const interventionKey = JSON.stringify([
+    runbookPath,
+    scope,
+    task,
+    ticket ?? '',
+    client ?? '',
+    parentRunId ?? '',
+    resumesRunId ?? '',
+    relatedRunIds ?? []
+  ])
   const existing = terminalOps.get(terminalId)
   if (existing && !existing.ctx.ended) {
     // A remount reattaches to the same live pty, whose CLI holds this token: hand back the
@@ -1902,6 +1963,11 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
     if (existing.interventionKey === interventionKey) return terminalOpsReply(existing)
     await endTerminalOps(terminalId, { ok: false, aborted: true, error: 'replaced by a new ops session on the same terminal' })
   }
+
+  // Which Claude session the CLI runs in, decided before the run opens so run.start logs it.
+  const cli = await opsSessionFor(intervention)
+  if (!cli.ok) return cli
+  const cliSessionId = cli.resumeSessionId ?? cli.pinSessionId
 
   const abort = new AbortController()
   const opened = await openOpsSession({
@@ -1912,6 +1978,9 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
     ...(ticket ? { ticket } : {}),
     ...(client ? { client } : {}),
     ...(parentRunId ? { parentRunId } : {}),
+    ...(resumesRunId ? { resumesRunId } : {}),
+    ...(relatedRunIds?.length ? { relatedRunIds } : {}),
+    ...(cliSessionId ? { cliSessionId } : {}),
     model: `${provider} CLI (terminal)`,
     ledger: getOpsLedger(),
     executor: getOpsExecutor(),
@@ -1941,11 +2010,24 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
       runbookPath: ctx.runbook.ref.path
     })
     registerToken(token, bridgeSessionFor(opened))
+    // A resume that continues its conversation says so on the --resume step; the create
+    // step behind it (should the resume fail) gets the variant for a model that remembers
+    // nothing. Any other launch has one message, for the create step.
+    const promptOpts = { planRequired: ctx.planRequired, ...(relatedRunIds?.length ? { related: relatedRunIds } : {}) }
+    const freshPrompt = interventionPrompt(task, {
+      ...promptOpts,
+      ...(resumesRunId ? { resume: { runId: resumesRunId, conversation: false } } : {})
+    })
     const s: TerminalOpsSession = {
       runId: ctx.runId,
       runbookPath,
       interventionKey,
-      initialPrompt: interventionPrompt(task, { planRequired: ctx.planRequired }),
+      initialPrompt:
+        resumesRunId && cli.resumeSessionId
+          ? interventionPrompt(task, { ...promptOpts, resume: { runId: resumesRunId, conversation: true } })
+          : freshPrompt,
+      ...(cli.resumeSessionId ? { resumeSessionId: cli.resumeSessionId, resumeFallbackPrompt: freshPrompt } : {}),
+      ...(cli.pinSessionId ? { pinSessionId: cli.pinSessionId } : {}),
       provider,
       token,
       endpoint,
@@ -2005,6 +2087,23 @@ ipcMain.handle('ops:run-script', async (_, terminalId: string, name: unknown, ho
   const list = Array.isArray(args) && args.every((a) => typeof a === 'string') ? (args as string[]) : []
   const r = await runOperatorScript(s.session, name, hostId, list)
   return { ok: !r.isError, text: r.text }
+})
+
+// The run header's "Refer to an intervention…" (INTERVENTION_HISTORY_PLAN §4): the
+// operator points a live run at an earlier one. Only a run the model could itself read
+// through past_interventions (one that touched a host in this run's scope), logged as
+// run.referenced before the line is handed back; the renderer types the line into the CLI.
+ipcMain.handle('ops:reference', async (_, terminalId: unknown, refRunId: unknown) => {
+  const s = typeof terminalId === 'string' ? terminalOps.get(terminalId) : undefined
+  if (!s || s.ctx.ended) return { ok: false, error: t('main.ipc.ops.noLiveSession') }
+  if (!isRunId(refRunId)) return { ok: false, error: t('main.ipc.ops.invalidRunId') }
+  const all = await earlierRunsInScope(s.ctx, RUN_LIST_MAX)
+  if (!all.ok) return { ok: false, error: t('main.ipc.ops.ledgerUnreadable', { error: all.error }) }
+  const item = all.runs.find((r) => r.runId === refRunId)
+  if (!item) return { ok: false, error: t('main.ipc.ops.referenceOutOfScope') }
+  const logged = await s.ctx.log({ kind: 'run.referenced', runId: s.runId, refRunId, by: 'operator' })
+  if (!logged.ok) return { ok: false, error: t('main.ipc.ops.referenceNotLogged') }
+  return { ok: true, line: referenceLine(item) }
 })
 
 // A terminal can only be typed into one line at a time (raw "\n" is not bracketed paste
@@ -2649,9 +2748,14 @@ ipcMain.handle(
     // Returns { ok, shell, cliLaunched, reused, buffer }. The scrollback of a reused pty comes
     // back in this invoke result rather than over 'terminal:data' on purpose — that way the
     // renderer controls the ordering itself and can replay history before any live chunk.
+    // A resumed ops intervention's create-step fallback message is main's own, from the
+    // terminal's ops session, never the renderer's (see TerminalOpsSession).
+    const live = opts?.ops ? terminalOps.get(id) : undefined
+    const fallback =
+      live && !live.ctx.ended && live.resumeSessionId && live.resumeSessionId === opts.resumeSessionId ? live.resumeFallbackPrompt : undefined
     const r = createTerminal(
       id,
-      opts,
+      { ...opts, resumeFallbackPrompt: fallback },
       (tid, data) => send('terminal:data', { id: tid, data }),
       (tid, exitCode) => {
         send('terminal:exit', { id: tid, exitCode })

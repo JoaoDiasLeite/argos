@@ -17,6 +17,7 @@ import {
   claudeOpsFlags,
   INITIAL_PROMPT_ENV,
   initialPromptValue,
+  RESUME_PROMPT_ENV,
   isOpsLaunch,
   OPS_LOCAL_ONLY_ERROR,
   OPS_SETTINGS_FILE,
@@ -265,8 +266,13 @@ export interface CreateTerminalOptions {
   ops?: OpsTerminalLaunch
   /** The chat's first message. A local Claude terminal that is about to CREATE its
    *  session puts it on the CLI's command line (see claudeChain) and says so in
-   *  promptOnCommandLine; any other terminal ignores it and the renderer types it in. */
+   *  promptOnCommandLine; any other terminal ignores it and the renderer types it in.
+   *  An ops terminal that RESUMES a session (a resumed intervention) puts it on the
+   *  --resume step instead, and `resumeFallbackPrompt` on the create step behind it. */
   initialPrompt?: string
+  /** Ops resume only: the first message for the chain's create step, should the resume
+   *  fail (the variant for a model that remembers nothing). Set by main, not the renderer. */
+  resumeFallbackPrompt?: string
   cols: number
   rows: number
 }
@@ -457,6 +463,7 @@ export function createTerminal(
     }
     // Set below only when this launch carries a prompt, never inherited from Argos's own env.
     delete env[INITIAL_PROMPT_ENV]
+    delete env[RESUME_PROMPT_ENV]
     let promptOnCommandLine = false
 
     const cols = Number.isInteger(opts.cols) && opts.cols > 0 ? opts.cols : 80
@@ -562,13 +569,19 @@ export function createTerminal(
       const resumeId = safeResumeId(opts.resumeSessionId) || ''
       const pinId = resumeId ? '' : safeResumeId(opts.pinSessionId) || ''
       // The first message rides on the command line only when this launch creates the
-      // session: never on a resume, which already has its task. Codex and Gemini type it.
+      // session: never on a chat's resume, which already has its task. Codex and Gemini
+      // type it. The exception is an ops resume (a resumed intervention): a new run in an
+      // old conversation, whose message goes on the --resume step, with the fallback
+      // variant on the create step behind it (claudeChain's withResumePrompt).
+      const opsResume = provider === 'claude' && !!resumeId && !!ops
       const prompt = provider === 'claude' && !resumeId ? initialPromptValue(kind, opts.initialPrompt) : null
-      const cliCmd = buildCliInvocation(kind, provider, resumeId || pinId, id, !resumeId && !!pinId, ops, !!prompt)
-      if (cliCmd && prompt) {
-        env[INITIAL_PROMPT_ENV] = prompt
-        promptOnCommandLine = true
-      }
+      const resumePrompt = opsResume ? initialPromptValue(kind, opts.initialPrompt) : null
+      const fallbackPrompt = resumePrompt ? initialPromptValue(kind, opts.resumeFallbackPrompt) : null
+      const createPrompt = prompt ?? fallbackPrompt
+      const cliCmd = buildCliInvocation(kind, provider, resumeId || pinId, id, !resumeId && !!pinId, ops, !!createPrompt, !!resumePrompt)
+      if (cliCmd && createPrompt) env[INITIAL_PROMPT_ENV] = createPrompt
+      if (cliCmd && resumePrompt) env[RESUME_PROMPT_ENV] = resumePrompt
+      if (cliCmd && (prompt || resumePrompt)) promptOnCommandLine = true
       if (cliCmd) {
         if (kind === 'pwsh' || kind === 'powershell') {
           shellArgs = ['-NoLogo', '-NoProfile', '-Command', cliCmd]
@@ -788,7 +801,8 @@ function buildCliInvocation(
   id: string,
   createFirst = false,
   ops?: OpsTerminalLaunch,
-  withPrompt = false
+  withPrompt = false,
+  withResumePrompt = false
 ): string | null {
   if (kind !== 'pwsh' && kind !== 'powershell' && kind !== 'cmd' && kind !== 'unix') return null
 
@@ -811,9 +825,10 @@ function buildCliInvocation(
     // `withPrompt`: the chat's first message, read from INITIAL_PROMPT_ENV on the pty, goes
     // to the create step as Claude Code's own positional prompt. The CLI submits it itself
     // once it is ready (after the folder-trust question, if any), where typing it into the
-    // TUI raced the input box's mount.
+    // TUI raced the input box's mount. `withResumePrompt` (ops resume only): the same for
+    // the --resume step, from RESUME_PROMPT_ENV.
     const extra = ops ? quoteArgs(kind, opsFlags(ops)) : ''
-    return claudeChain(kind, sessionId, createFirst, extra, undefined, withPrompt)
+    return claudeChain(kind, sessionId, createFirst, extra, undefined, withPrompt, withResumePrompt)
   }
 
   if (provider === 'gemini') {

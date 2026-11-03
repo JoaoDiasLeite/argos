@@ -456,6 +456,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ticket?: string
       client?: string
       parentRunId?: string
+      resumesRunId?: string
+      relatedRunIds?: string[]
     }
   ) => ipcRenderer.invoke('ops:terminal-session', terminalId, intervention),
   // The start screen's history: run summaries from the ledger, newest first.
@@ -470,6 +472,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   opsScriptSource: (terminalId: string, name: string) => ipcRenderer.invoke('ops:script-source', terminalId, name),
   opsRunScript: (terminalId: string, name: string, hostId: string, args: string[]) =>
     ipcRenderer.invoke('ops:run-script', terminalId, name, hostId, args),
+  // The operator points a live run at an earlier intervention: logs run.referenced and
+  // returns the one line to type into the CLI.
+  opsReference: (terminalId: string, refRunId: string) => ipcRenderer.invoke('ops:reference', terminalId, refRunId),
   promptFileWrite: (sessionId: string, text: string) => ipcRenderer.invoke('prompts:write', sessionId, text),
   sftpDisconnect: (hostId: string) => ipcRenderer.invoke('sftp:disconnect', hostId),
 

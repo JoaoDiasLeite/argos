@@ -938,6 +938,11 @@ export interface OpsIntervention {
   /** "Hand over to a runbook": the diagnosis run this intervention follows. Main logs the
    *  handover in that run and ends it when this one opens. */
   parentRunId?: string
+  /** "Retomar": the earlier run this one continues (a new run, linked to it). Main
+   *  continues its Claude conversation when it can, else briefs the model on it. */
+  resumesRunId?: string
+  /** Earlier runs the operator picked on the start screen (≤ 5, deduped by main). */
+  relatedRunIds?: string[]
 }
 
 /** One run in the history list (`ops:runs`), newest first. */
@@ -1174,7 +1179,9 @@ export interface TerminalCreateOptions {
    *  creates under it (--session-id) instead of failing to resume it. */
   pinSessionId?: string
   /** The chat's first message. A local Claude launch that creates its session takes it on
-   *  the CLI's command line and answers promptOnCommandLine; otherwise it is ignored. */
+   *  the CLI's command line and answers promptOnCommandLine; so does an ops terminal that
+   *  resumes its session (a resumed intervention), on the --resume step. Otherwise it is
+   *  ignored. */
   initialPrompt?: string
   cols: number
   rows: number
@@ -1762,8 +1769,14 @@ declare global {
             env: Record<string, string>
             mcpConfigPath: string
             guarantee: 'tools-and-local-shell' | 'tools-only'
-            /** The CLI's first message ("Read RUNBOOK.md … then: <task>"), one line, to type into the terminal. */
+            /** The CLI's first message ("Read RUNBOOK.md … then: <task>"), one line. Pass it to
+             *  the terminal as initialPrompt: a local Claude launch takes it on its command
+             *  line (on the --resume step for a resumed intervention). */
             initialPrompt: string
+            /** Exactly one of these is set: pass it to the terminal (ChatTerminal's
+             *  resumeSessionId / pinSessionId) so the CLI runs in the session run.start logged. */
+            resumeSessionId?: string
+            pinSessionId?: string
           }
         | { ok: false; error: string }
       >
@@ -1793,6 +1806,12 @@ declare global {
       >
       opsScriptSource: (terminalId: string, name: string) => Promise<{ ok: true; text: string; sha256: string } | { ok: false; error: string }>
       opsRunScript: (terminalId: string, name: string, hostId: string, args: string[]) => Promise<{ ok: boolean; text?: string; error?: string }>
+      /**
+       * Point a live run at an earlier intervention in its scope: logs run.referenced and
+       * returns the one line to write (with `\r`) into the terminal. Errors when the run is
+       * not live, the id is not a run id, or the run never touched a host this one may reach.
+       */
+      opsReference: (terminalId: string, refRunId: string) => Promise<{ ok: true; line: string } | { ok: false; error: string }>
       /** Write a long prompt to userData/prompts/<sessionId>.md so a terminal can be told to read it. */
       promptFileWrite: (sessionId: string, text: string) => Promise<{ ok: true; path: string } | { ok: false; error: string }>
       sftpDisconnect: (hostId: string) => Promise<{ ok: boolean }>
