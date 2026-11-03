@@ -1,22 +1,21 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { rich } from '../lib/t-rich'
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { OpsIntervention, OpsRunListItem, OpsScope, SshHostPublic } from '../types'
 import { writeLastRunbook } from '../lib/runbook-library'
 import { samePath, useBuiltinRunbook } from '../lib/builtin-runbook'
 import OpsReportSheet from '../components/OpsReportSheet'
-import InterventionTag from '../components/InterventionTag'
 import { interventionLabel } from '../lib/intervention-label'
-import { IvsDropdown, RunbookField, runbookHostProblem, useRunbookPicker, type DropItem, type InfoState } from '../components/RunbookPicker'
+import { RunbookField, runbookHostProblem, useRunbookPicker, type InfoState } from '../components/RunbookPicker'
 import { plural, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
 import './InterventionStart.css'
 
 /**
- * Servers → Ops: the start of an intervention (docs/INTERVENTIONS_PLAN.md §4, board C2).
- * One server (or, deliberately, any server the runbook allows), one runbook, one task.
- * The right column says in plain words what the runbook allows before anything runs, and
- * lists the earlier runs on the chosen server.
+ * Servers → Ops: the start of an intervention (docs/INTERVENTIONS_PLAN.md §4, wireframe B).
+ * The servers are a rail on the left, each with its latest intervention; the right pane is
+ * the chosen server: what a diagnosis (or the chosen runbook) allows in one line, the way to
+ * start, and the server's history as a timeline where a resumed run joins the one it resumed.
  *
  * Runbooks are the runbooks folder of Settings (every subfolder that looks like one) and the
  * loose runbooks picked one by one, rescanned and re-read on mount: a runbook is a folder
@@ -27,14 +26,15 @@ import './InterventionStart.css'
  */
 
 const LAST_CLIENT_KEY = 'ops.lastClient'
-const HISTORY_LIMIT = 8
+/** Every run is fetched once; the rail groups them by server, the history shows the newest. */
+const RUNS_FETCHED = 200
+const HISTORY_LIMIT = 15
 
 /** Task, ticket and client are hidden for now (2026-11-03): the operator says what is wrong
  *  in the terminal. Flip to bring the three fields back; everything behind them still works. */
 const SHOW_DETAILS = false
 
-// The history row's actions, as 14 px line icons (their names are in the tooltips): a row
-// of three outlined buttons per run outweighed the runs themselves.
+// The history row's actions, as 14 px line icons (their names are in the tooltips).
 const ICON_RESUME = ['M3 12a9 9 0 1 0 3-6.7L3 8', 'M3 3v5h5']
 const ICON_REFER = ['M9 17H7A5 5 0 0 1 7 7h2', 'M15 7h2a5 5 0 1 1 0 10h-2', 'M8 12h8']
 const ICON_REPORT = ['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z', 'M14 2v6h6', 'M16 13H8', 'M16 17H8']
@@ -57,7 +57,6 @@ type ServerChoice = string | 'open' | null
 type Mode = 'despiste' | 'runbook'
 
 const OPEN = 'open' as const
-const MODES: Mode[] = ['despiste', 'runbook']
 /**
  * The names the built-in runbook's runs carry in the ledger: its folder name, and the one
  * it had before 2.9.0 shipped (`despiste`), so runs from then still map to it.
@@ -99,10 +98,15 @@ function withStop(s: string): string {
   return /[.!?…:]$/.test(t) ? t : `${t}.`
 }
 
+function clock(iso: string, locale?: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+}
+
 function runWhen(iso: string, t: TFunction, locale?: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  const time = d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+  const time = clock(iso, locale)
   const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
   const diff = Math.round((day(new Date()) - day(d)) / 86_400_000)
   if (diff === 0) return t('ops.start.today', { time })
@@ -118,11 +122,59 @@ function runStatus(r: OpsRunListItem, t: TFunction): { label: string; tone: 'ok'
   return { label: t('ops.start.status.ended'), tone: 'muted' }
 }
 
+/** The timeline's dot: green for a run that finished, red for one that failed, grey otherwise
+ *  (a stop is the operator's choice, not a failure). */
+function dotTone(r: OpsRunListItem): 'ok' | 'bad' | 'muted' {
+  if (r.ok === false) return 'bad'
+  if (r.ok === true && !r.aborted) return 'ok'
+  return 'muted'
+}
+
+/** Whether a run was about this host: its locked host, or (open and older runs) by name. */
+function runOnHost(r: OpsRunListItem, h: SshHostPublic): boolean {
+  if (r.scope?.kind === 'host') return r.scope.hostId === h.id
+  return r.hostNames.includes(h.name)
+}
+
+interface TimelineRow {
+  run: OpsRunListItem
+  /** The run that resumed this one, when it is on the list. */
+  resumedBy?: OpsRunListItem
+  lineTop: boolean
+  lineBottom: boolean
+}
+
+/**
+ * Newest first, with the runs of one resume chain (A, then the run that resumed A, ...)
+ * next to each other, newest of the chain on top, so a connector can join them.
+ */
+function buildTimeline(runs: OpsRunListItem[]): TimelineRow[] {
+  const byId = new Map(runs.map((r) => [r.runId, r]))
+  const resumedBy = new Map<string, OpsRunListItem>()
+  for (const r of runs) {
+    if (r.resumesRunId && byId.has(r.resumesRunId) && !resumedBy.has(r.resumesRunId)) resumedBy.set(r.resumesRunId, r)
+  }
+  const placed = new Set<string>()
+  const rows: TimelineRow[] = []
+  for (const tip of runs) {
+    if (placed.has(tip.runId) || resumedBy.has(tip.runId)) continue
+    const chain: OpsRunListItem[] = []
+    for (let cur: OpsRunListItem | undefined = tip; cur && !placed.has(cur.runId); cur = cur.resumesRunId ? byId.get(cur.resumesRunId) : undefined) {
+      placed.add(cur.runId)
+      chain.push(cur)
+    }
+    chain.forEach((run, i) => rows.push({ run, resumedBy: resumedBy.get(run.runId), lineTop: i > 0, lineBottom: i < chain.length - 1 }))
+  }
+  // A cycle or a skipped branch would leave runs out: keep them, unjoined.
+  for (const r of runs) if (!placed.has(r.runId)) rows.push({ run: r, lineTop: false, lineBottom: false })
+  return rows
+}
+
 // ── Icons ────────────────────────────────────────────────────────────────────
 
 const PlayIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-    <path d="M8 5v14l11-7z" />
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M7 4v16l13-8z" />
   </svg>
 )
 const FileIcon = () => (
@@ -136,46 +188,22 @@ const ShieldIcon = () => (
     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
   </svg>
 )
-
-// ── Mode ─────────────────────────────────────────────────────────────────────
-
-/** Two radio options side by side; arrow keys move the choice, only the chosen one is a tab stop. */
-function ModeControl({ labelledBy, mode, onChange }: { labelledBy: string; mode: Mode; onChange: (m: Mode) => void }) {
-  const t = useT()
-  const refs = useRef<(HTMLButtonElement | null)[]>([])
-  const onKey = (e: ReactKeyboardEvent, i: number) => {
-    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0
-    if (!step) return
-    e.preventDefault()
-    const next = (i + step + MODES.length) % MODES.length
-    onChange(MODES[next])
-    refs.current[next]?.focus()
-  }
-  return (
-    <div className="ivs-seg" role="radiogroup" aria-labelledby={labelledBy}>
-      {MODES.map((m, i) => (
-        <button
-          key={m}
-          ref={(el) => {
-            refs.current[i] = el
-          }}
-          type="button"
-          role="radio"
-          aria-checked={mode === m}
-          tabIndex={mode === m ? 0 : -1}
-          className={mode === m ? 'on' : ''}
-          onClick={() => onChange(m)}
-          onKeyDown={(e) => onKey(e, i)}
-        >
-          <span className="ivs-seg-title">{m === 'despiste' ? t('ops.start.mode.despiste') : t('ops.start.mode.runbook')}</span>
-          <span className="ivs-seg-sub">{m === 'despiste' ? t('ops.start.mode.despisteSub') : t('ops.start.mode.runbookSub')}</span>
-        </button>
-      ))}
-    </div>
-  )
-}
+const ChevronIcon = ({ className }: { className?: string }) => (
+  <svg className={className} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M9 6l6 6-6 6" />
+  </svg>
+)
 
 // ── The screen ───────────────────────────────────────────────────────────────
+
+/** An intervention of this app run whose CLI is running, as the server rail shows it. */
+export interface LiveIntervention {
+  hostId: string
+  /** Its task, or the server and mode as its tab names it. */
+  title: string
+  /** Back to its workspace. */
+  open: () => void
+}
 
 interface Props {
   /** Preselects this SSH host (the Ops button on a Remote & WSL row). */
@@ -183,9 +211,13 @@ interface Props {
   onStart: (intervention: OpsIntervention) => void
   /** "Retomar" on a past run: open its intervention again as a new run that continues it. */
   onResume: (intervention: OpsIntervention) => void
+  /** Interventions running on an SSH host right now (the LIVE badge and banner). */
+  live?: LiveIntervention[]
+  /** Where SSH hosts are managed (Remote & WSL). */
+  onAddHost?: () => void
 }
 
-export default function InterventionStart({ initialHostId, onStart, onResume }: Props) {
+export default function InterventionStart({ initialHostId, onStart, onResume, live = [], onAddHost }: Props) {
   const t = useT()
   const { locale } = useLanguage()
   const [hosts, setHosts] = useState<SshHostPublic[] | null>(null)
@@ -194,6 +226,7 @@ export default function InterventionStart({ initialHostId, onStart, onResume }: 
 
   /** Despiste on every mount, by decision: an intervention with a runbook is picked on purpose. */
   const [mode, setMode] = useState<Mode>('despiste')
+  const [allowsOpen, setAllowsOpen] = useState(false)
   const builtin = useBuiltinRunbook()
 
   /** The runbooks folder, the loose runbooks and the runbook-mode choice. The choice survives
@@ -216,9 +249,8 @@ export default function InterventionStart({ initialHostId, onStart, onResume }: 
   const [related, setRelated] = useState<OpsRunListItem[]>([])
   const [reportFor, setReportFor] = useState<{ runId: string; runbookPath?: string; appSessionId?: string } | null>(null)
 
-  const serverLabelId = useId()
-  const modeLabelId = useId()
   const runbookLabelId = useId()
+  const allowsId = useId()
   const taskId = useId()
   const ticketId = useId()
   const clientId = useId()
@@ -249,32 +281,50 @@ export default function InterventionStart({ initialHostId, onStart, onResume }: 
     if (builtin) void loadRunbook(builtin)
   }, [builtin, loadRunbook])
 
-  const scope: OpsScope | null =
-    server === null ? null : server === OPEN ? { kind: 'open' } : { kind: 'host', hostId: server }
-  const hostId = scope?.kind === 'host' ? scope.hostId : undefined
-
-  // Earlier runs on the chosen server; every run when the scope is open or not chosen yet.
+  // Every run once: the rail's latest-per-server line and the history are both cut from it.
   useEffect(() => {
     let cancelled = false
-    setRuns('loading')
     window.electronAPI
-      .opsRuns({ hostId, limit: HISTORY_LIMIT })
-      .then((res) => {
-        if (cancelled) return
-        setRuns(res)
-        // A run that is not on the newly chosen server's list is no longer one to refer to.
-        if (res.ok) {
-          const ids = new Set(res.runs.map((r) => r.runId))
-          setRelated((prev) => (prev.every((r) => ids.has(r.runId)) ? prev : prev.filter((r) => ids.has(r.runId))))
-        } else setRelated([])
-      })
+      .opsRuns({ limit: RUNS_FETCHED })
+      .then((res) => !cancelled && setRuns(res))
       .catch((e) => !cancelled && setRuns({ ok: false, error: e instanceof Error ? e.message : String(e) }))
     return () => {
       cancelled = true
     }
-  }, [hostId])
+  }, [])
 
+  const scope: OpsScope | null =
+    server === null ? null : server === OPEN ? { kind: 'open' } : { kind: 'host', hostId: server }
+  const hostId = scope?.kind === 'host' ? scope.hostId : undefined
   const selectedHost = hostId ? hosts?.find((h) => h.id === hostId) : undefined
+
+  /** The runs on the history: the chosen server's, or every run when none (or any) is chosen. */
+  const shownRuns = useMemo(() => {
+    if (runs === 'loading' || !runs.ok) return []
+    if (!hostId) return runs.runs
+    return selectedHost ? runs.runs.filter((r) => runOnHost(r, selectedHost)) : []
+  }, [runs, hostId, selectedHost])
+  const timeline = useMemo(() => buildTimeline(shownRuns).slice(0, HISTORY_LIMIT), [shownRuns])
+
+  // A run that is not on the newly chosen server's list is no longer one to refer to.
+  useEffect(() => {
+    const ids = new Set(shownRuns.map((r) => r.runId))
+    setRelated((prev) => (prev.every((r) => ids.has(r.runId)) ? prev : prev.filter((r) => ids.has(r.runId))))
+  }, [shownRuns])
+
+  /** The latest run per server, for the rail. */
+  const lastByHost = useMemo(() => {
+    const out: Record<string, OpsRunListItem> = {}
+    if (runs === 'loading' || !runs.ok || !hosts) return out
+    for (const h of hosts) {
+      const latest = runs.runs.filter((r) => runOnHost(r, h)).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]
+      if (latest) out[h.id] = latest
+    }
+    return out
+  }, [runs, hosts])
+
+  const liveHere = hostId ? live.filter((l) => l.hostId === hostId) : []
+
   const info: InfoState | undefined = activePath ? infos[activePath] : undefined
   const loaded = info && info !== 'loading' ? info : undefined
   const okInfo = loaded?.ok ? loaded : undefined
@@ -323,51 +373,6 @@ export default function InterventionStart({ initialHostId, onStart, onResume }: 
     })
   }
 
-  // ── Server field ───────────────────────────────────────────────────────────
-  const hostRow = (h: SshHostPublic) => (
-    <>
-      <span className={`ivs-dot ${dots[h.id] ?? 'checking'}`} aria-hidden="true" />
-      <span className="ivs-value">{h.name}</span>
-      <span className="ivs-meta">{hostAddress(h)}</span>
-    </>
-  )
-  const serverTrigger =
-    server === OPEN ? (
-      <span className="ivs-value">{t('ops.start.anyServer')}</span>
-    ) : selectedHost ? (
-      hostRow(selectedHost)
-    ) : server && hosts ? (
-      <span className="ivs-value">{t('ops.start.unknownServer')}</span>
-    ) : (
-      <span className="ivs-placeholder">{t('ops.start.chooseServer')}</span>
-    )
-  const serverItems: DropItem[] = [
-    ...(hosts && hosts.length === 0
-      ? [{ kind: 'note' as const, key: 'none', content: t('ops.start.noSshHosts') }]
-      : (hosts ?? []).map((h) => ({
-          kind: 'option' as const,
-          key: h.id,
-          selected: server === h.id,
-          content: hostRow(h),
-          onSelect: () => setServer(h.id)
-        }))),
-    { kind: 'divider', key: 'div' },
-    {
-      kind: 'option',
-      key: OPEN,
-      selected: server === OPEN,
-      content: <span className="ivs-value">{t('ops.start.anyServer')}</span>,
-      onSelect: () => setServer(OPEN)
-    }
-  ]
-  const serverHelp =
-    server === OPEN
-      ? t('ops.start.helpOpen')
-      : server
-        ? t('ops.start.helpLocked')
-        : t('ops.start.helpNone')
-
-  // ── Right column ───────────────────────────────────────────────────────────
   const openFile = (file: 'RUNBOOK.md' | 'policy.json') => {
     if (activePath) void window.electronAPI.opsOpenRunbookFile(activePath, file)
   }
@@ -411,103 +416,131 @@ export default function InterventionStart({ initialHostId, onStart, onResume }: 
     })
   const relatedText = (r: OpsRunListItem) => `${runWhen(r.startedAt, t, locale)} · ${r.task || r.runbook}`
 
-  const historyTitle = selectedHost ? t('ops.start.earlierOn', { name: selectedHost.name }) : t('ops.start.earlier')
+  // ── Header ─────────────────────────────────────────────────────────────────
+  const connState: DotState | undefined = selectedHost ? (dots[selectedHost.id] ?? 'checking') : undefined
+  const connText = connState === 'ok' ? t('ops.start.conn.ok') : connState === 'error' ? t('ops.start.conn.error') : t('ops.start.conn.checking')
+  const headTitle =
+    server === OPEN ? t('ops.start.anyServer') : selectedHost ? selectedHost.name : server && hosts ? t('ops.start.unknownServer') : t('ops.start.title')
+  const headSub = selectedHost ? (
+    <>
+      <span className={`ivs-dot ${connState}`} aria-hidden="true" />
+      {hostAddress(selectedHost)} · {connText}
+    </>
+  ) : server === OPEN ? (
+    t('ops.start.helpOpen')
+  ) : server ? null : (
+    t('ops.start.pickServer')
+  )
+
+  // ── The one-line summary ───────────────────────────────────────────────────
+  const sumParts: string[] = []
+  if (okInfo && summary) {
+    if (mode === 'despiste') sumParts.push(t('ops.start.sum.readOnly'))
+    sumParts.push(`${summary.autoReads} ${plural(t, 'ops.start.stat.auto', summary.autoReads)}`)
+    if (mode !== 'despiste') {
+      sumParts.push(`${summary.asks} ${plural(t, 'ops.start.stat.asks', summary.asks)}`)
+      sumParts.push(`${summary.mutates} ${plural(t, 'ops.start.stat.mutates', summary.mutates)}`)
+    }
+    sumParts.push(summary.scripts === 0 ? t('ops.start.sum.noScripts') : plural(t, 'ops.start.sum.scripts', summary.scripts))
+  }
+  const sumText = !activePath
+    ? mode === 'despiste'
+      ? t('common.loading')
+      : t('ops.start.allowsChoose')
+    : info === 'loading' || !info
+      ? t('common.loading')
+      : !okInfo
+        ? t('ops.start.allowsFailed')
+        : !summary
+          ? plural(t, okInfo.strict ? 'ops.start.noSummaryStrict' : 'ops.start.noSummary', okInfo.hosts.length)
+          : sumParts.join(' · ')
+
+  const fileLink = <span className="ivs-mono">RUNBOOK.md</span>
+
+  const hostLabel = (r: OpsRunListItem, dir: string | undefined) =>
+    interventionLabel(
+      {
+        runbook: r.runbook,
+        builtin: samePath(dir, builtin),
+        server: r.hostNames.length === 1 ? { kind: 'host', name: r.hostNames[0] } : { kind: 'open', reached: r.hostNames },
+        task: r.task
+      },
+      t
+    )
 
   return (
     <div className="view ivs">
-      <div className="ivs-scroll">
-        <div className="ivs-grid">
-          <div className="ivs-form">
-            <div className="ivs-head">
-              <h1 className="ivs-title">{t('ops.start.title')}</h1>
-              <p className="ivs-sub">{mode === 'despiste' ? t('ops.start.subDespiste') : t('ops.start.sub')}</p>
-            </div>
-
-            <div className="ivs-field">
-              <span className="ivs-label" id={serverLabelId}>
-                {t('ops.start.server')}
-              </span>
-              <IvsDropdown labelledBy={serverLabelId} trigger={serverTrigger} items={serverItems} invalid={!!hostProblem} />
-              {hostProblem ? (
-                <span className="ivs-error" role="alert">
-                  {hostProblem}
+      <nav className="ivs-rail" aria-label={t('ops.start.servers')}>
+        <div className="ivs-eyebrow ivs-rail-head">{t('ops.start.servers')}</div>
+        <div className="ivs-rail-list">
+          {hosts && hosts.length === 0 && <p className="ivs-help ivs-rail-note">{t('ops.start.noSshHosts')}</p>}
+          {(hosts ?? []).map((h) => {
+            const last = lastByHost[h.id]
+            const isLive = live.some((l) => l.hostId === h.id)
+            return (
+              <button
+                key={h.id}
+                type="button"
+                className={`ivs-srv${server === h.id ? ' on' : ''}`}
+                aria-pressed={server === h.id}
+                onClick={() => setServer(h.id)}
+              >
+                <span className="ivs-srv-top">
+                  <span className={`ivs-dot ${dots[h.id] ?? 'checking'}`} aria-hidden="true" />
+                  <span className="ivs-srv-name">{h.name}</span>
+                  {isLive && <span className="ivs-live">{t('ops.start.live')}</span>}
                 </span>
-              ) : (
-                <span className="ivs-help">{serverHelp}</span>
-              )}
-            </div>
-
-            <div className="ivs-field">
-              <span className="ivs-label" id={modeLabelId}>
-                {t('ops.start.mode')}
-              </span>
-              <ModeControl labelledBy={modeLabelId} mode={mode} onChange={setMode} />
-              {mode === 'despiste' &&
-                (loaded && !loaded.ok ? (
-                  <span className="ivs-error" role="alert">
-                    <strong>{t('ops.start.despisteUnusable')}</strong> {loaded.error}
-                  </span>
-                ) : (
-                  <span className="ivs-help">{t('ops.start.despisteHelp')}</span>
-                ))}
-            </div>
-
-            {mode === 'runbook' && (
-              <div className="ivs-field">
-                <span className="ivs-label" id={runbookLabelId}>
-                  {t('ops.start.runbook')}
+                <span className="ivs-srv-last">
+                  {runs === 'loading'
+                    ? ' '
+                    : last
+                      ? `${runWhen(last.startedAt, t, locale)} · ${runStatus(last, t).label}`
+                      : t('ops.start.noneYet')}
                 </span>
-                <RunbookField picker={picker} labelledBy={runbookLabelId} />
-              </div>
-            )}
+              </button>
+            )
+          })}
+          <button type="button" className={`ivs-srv ivs-srv-any${server === OPEN ? ' on' : ''}`} aria-pressed={server === OPEN} onClick={() => setServer(OPEN)}>
+            <span className="ivs-srv-top">
+              <span className="ivs-srv-name">{t('ops.start.anyServer')}</span>
+            </span>
+          </button>
+        </div>
+        {onAddHost && (
+          <button type="button" className="ivs-add" onClick={onAddHost}>
+            {t('ops.start.addHost')}
+          </button>
+        )}
+      </nav>
 
-            {SHOW_DETAILS && (
-            <>
-            <div className="ivs-field">
-              <label className="ivs-label" htmlFor={taskId}>
-                {t('ops.start.task')} <span className="ivs-optional">{t('ops.start.optional')}</span>
-              </label>
-              <textarea
-                id={taskId}
-                className="ivs-control ivs-textarea"
-                value={task}
-                placeholder={t('ops.start.taskPlaceholder')}
-                onChange={(e) => setTask(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault()
-                    start()
-                  }
-                }}
-              />
+      <div className="ivs-main">
+        <div className="ivs-pane">
+          <div className="ivs-head">
+            <div className="ivs-head-text">
+              <h1 className="ivs-title">{headTitle}</h1>
+              {headSub && <span className="ivs-sub">{headSub}</span>}
             </div>
+            <span className="ivs-spacer" />
+            <button type="button" className="ivs-btn ivs-btn-mode" onClick={() => setMode(mode === 'despiste' ? 'runbook' : 'despiste')}>
+              {mode === 'despiste' ? t('ops.start.toRunbook') : t('ops.start.toDespiste')}
+            </button>
+            <button type="button" className="ivs-start" disabled={!canStart} onClick={start}>
+              <PlayIcon />
+              {mode === 'despiste' ? t('ops.start.startDespiste') : t('ops.start.startButton')}
+            </button>
+          </div>
 
-            <div className="ivs-pair">
-              <div className="ivs-field">
-                <label className="ivs-label" htmlFor={ticketId}>
-                  {t('ops.start.ticket')} <span className="ivs-optional">{t('ops.start.optional')}</span>
-                </label>
-                <input
-                  id={ticketId}
-                  className="ivs-control ivs-input"
-                  value={ticket}
-                  onChange={(e) => setTicket(e.target.value)}
-                  spellCheck={false}
-                />
-              </div>
-              <div className="ivs-field">
-                <label className="ivs-label" htmlFor={clientId}>
-                  {t('ops.start.client')} <span className="ivs-optional">{t('ops.start.optional')}</span>
-                </label>
-                <input
-                  id={clientId}
-                  className="ivs-control ivs-input"
-                  value={client}
-                  onChange={(e) => setClient(e.target.value)}
-                />
-              </div>
-            </div>
-            </>
+          <div className="ivs-below">
+            {hostProblem ? (
+              <span className="ivs-error" role="alert">
+                {hostProblem}
+              </span>
+            ) : mode === 'despiste' && loaded && !loaded.ok ? (
+              <span className="ivs-error" role="alert">
+                <strong>{t('ops.start.despisteUnusable')}</strong> {loaded.error}
+              </span>
+            ) : (
+              <span className="ivs-help">{startHint}</span>
             )}
 
             {related.length > 0 && (
@@ -532,61 +565,79 @@ export default function InterventionStart({ initialHostId, onStart, onResume }: 
                 ))}
               </div>
             )}
-
-            <div className="ivs-actions">
-              <button type="button" className="ivs-start" disabled={!canStart} onClick={start}>
-                <PlayIcon />
-                {mode === 'despiste' ? t('ops.start.startDespiste') : t('ops.start.startButton')}
-              </button>
-              <span className="ivs-help">{startHint}</span>
-            </div>
           </div>
 
-          <div className="ivs-side">
-            <section className="ivs-panel" aria-labelledby={`${runbookLabelId}-allows`}>
-              <h2 className="ivs-eyebrow" id={`${runbookLabelId}-allows`}>
-                {mode === 'despiste' ? t('ops.start.despisteAllowsTitle') : t('ops.start.allowsTitle')}
-              </h2>
-              {!activePath ? (
-                <p className="ivs-panel-text">{mode === 'despiste' ? t('common.loading') : t('ops.start.allowsChoose')}</p>
-              ) : info === 'loading' || !info ? (
-                <p className="ivs-panel-text">{t('common.loading')}</p>
-              ) : !okInfo ? (
-                <p className="ivs-panel-text">{t('ops.start.allowsFailed')}</p>
-              ) : !summary ? (
-                <p className="ivs-panel-text">
-                  {plural(t, okInfo.strict ? 'ops.start.noSummaryStrict' : 'ops.start.noSummary', okInfo.hosts.length)}
-                </p>
-              ) : (
-                <>
-                  <div className="ivs-stats">
-                    <div>
-                      <div className="ivs-stat-n ok">{summary.autoReads}</div>
-                      <div className="ivs-stat-l">
-                        {plural(t, 'ops.start.stat.auto', summary.autoReads)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="ivs-stat-n warn">{summary.asks}</div>
-                      <div className="ivs-stat-l">{plural(t, 'ops.start.stat.asks', summary.asks)}</div>
-                    </div>
-                    <div>
-                      <div className="ivs-stat-n">{summary.mutates}</div>
-                      <div className="ivs-stat-l">{plural(t, 'ops.start.stat.mutates', summary.mutates)}</div>
-                    </div>
-                  </div>
+          {mode === 'runbook' && (
+            <div className="ivs-field">
+              <span className="ivs-label" id={runbookLabelId}>
+                {t('ops.start.runbook')}
+              </span>
+              <RunbookField picker={picker} labelledBy={runbookLabelId} />
+            </div>
+          )}
+
+          {SHOW_DETAILS && (
+            <>
+              <div className="ivs-field">
+                <label className="ivs-label" htmlFor={taskId}>
+                  {t('ops.start.task')} <span className="ivs-optional">{t('ops.start.optional')}</span>
+                </label>
+                <textarea
+                  id={taskId}
+                  className="ivs-control ivs-textarea"
+                  value={task}
+                  placeholder={t('ops.start.taskPlaceholder')}
+                  onChange={(e) => setTask(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault()
+                      start()
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="ivs-pair">
+                <div className="ivs-field">
+                  <label className="ivs-label" htmlFor={ticketId}>
+                    {t('ops.start.ticket')} <span className="ivs-optional">{t('ops.start.optional')}</span>
+                  </label>
+                  <input id={ticketId} className="ivs-control ivs-input" value={ticket} onChange={(e) => setTicket(e.target.value)} spellCheck={false} />
+                </div>
+                <div className="ivs-field">
+                  <label className="ivs-label" htmlFor={clientId}>
+                    {t('ops.start.client')} <span className="ivs-optional">{t('ops.start.optional')}</span>
+                  </label>
+                  <input id={clientId} className="ivs-control ivs-input" value={client} onChange={(e) => setClient(e.target.value)} />
+                </div>
+              </div>
+            </>
+          )}
+
+          <section className="ivs-allows" aria-label={mode === 'despiste' ? t('ops.start.despisteAllowsTitle') : t('ops.start.allowsTitle')}>
+            <div className="ivs-allows-line">
+              <span className="ivs-allows-sum">{sumText}</span>
+              {okInfo && (
+                <button
+                  type="button"
+                  className="ivs-disclose"
+                  aria-expanded={allowsOpen}
+                  aria-controls={allowsId}
+                  onClick={() => setAllowsOpen((v) => !v)}
+                >
+                  {t('ops.start.itAllows')}
+                  <ChevronIcon className={allowsOpen ? 'ivs-chev open' : 'ivs-chev'} />
+                </button>
+              )}
+            </div>
+            {okInfo && allowsOpen && (
+              <div className="ivs-allows-body" id={allowsId}>
+                <h2 className="ivs-eyebrow">{mode === 'despiste' ? t('ops.start.despisteAllowsTitle') : t('ops.start.allowsTitle')}</h2>
+                {summary && (
                   <p className="ivs-panel-text">
-                    {summary.guidelinesHead.trim() ? (
-                      <>
-                        {rich(t('ops.start.guidelines'), {
-                          text: withStop(summary.guidelinesHead),
-                          file: <span className="ivs-mono">RUNBOOK.md</span>
-                        })}
-                      </>
-                    ) : (
-                      <>{rich(t('ops.start.noGuidelines'), { file: <span className="ivs-mono">RUNBOOK.md</span> })}</>
-                    )}{' '}
-                    {summary.scripts === 0 ? t('ops.start.noScripts') : plural(t, 'ops.start.scripts', summary.scripts)}
+                    {summary.guidelinesHead.trim()
+                      ? rich(t('ops.start.guidelines'), { text: withStop(summary.guidelinesHead), file: fileLink })
+                      : rich(t('ops.start.noGuidelines'), { file: fileLink })}
                     {mode !== 'despiste' && summary.readPaths.length > 0 && (
                       <>
                         {' '}
@@ -603,10 +654,8 @@ export default function InterventionStart({ initialHostId, onStart, onResume }: 
                       </>
                     )}
                   </p>
-                </>
-              )}
-              {mode === 'despiste' && okInfo && <p className="ivs-panel-text">{t('ops.start.despisteLeftOut')}</p>}
-              {okInfo && (
+                )}
+                {mode === 'despiste' && <p className="ivs-panel-text">{t('ops.start.despisteLeftOut')}</p>}
                 <div className="ivs-file-buttons">
                   <button type="button" className="ivs-btn" onClick={() => openFile('RUNBOOK.md')}>
                     <FileIcon />
@@ -617,85 +666,101 @@ export default function InterventionStart({ initialHostId, onStart, onResume }: 
                     policy.json
                   </button>
                 </div>
-              )}
-            </section>
+              </div>
+            )}
+          </section>
 
-            <section className="ivs-history" aria-label={historyTitle}>
-              <h2 className="ivs-eyebrow">{historyTitle}</h2>
-              {runs === 'loading' ? (
-                <p className="ivs-help">{t('common.loading')}</p>
-              ) : !runs.ok ? (
-                <p className="ivs-error">{runs.error}</p>
-              ) : runs.runs.length === 0 ? (
-                <p className="ivs-help">
-                  {selectedHost ? t('ops.start.noneOn', { name: selectedHost.name }) : t('ops.start.none')}
-                </p>
-              ) : (
-                <div className="ivs-runs">
-                  {runs.runs.map((r) => {
-                    const st = runStatus(r, t)
-                    const problem = resumeProblem(r)
-                    const referred = related.some((x) => x.runId === r.runId)
-                    const dir = runbookDirFor(r)
-                    const label = interventionLabel(
-                      {
-                        runbook: r.runbook,
-                        builtin: samePath(dir, builtin),
-                        server:
-                          r.hostNames.length === 1 ? { kind: 'host', name: r.hostNames[0] } : { kind: 'open', reached: r.hostNames },
-                        task: r.task
-                      },
-                      t
-                    )
-                    return (
-                      <div key={r.runId} className="ivs-run" role="group">
-                        <span className="ivs-run-when" title={new Date(r.startedAt).toLocaleString(locale)}>
-                          {runWhen(r.startedAt, t, locale)}
+          {liveHere.map((l, i) => (
+            <div key={i} className="ivs-live-banner">
+              <span className="ivs-live-dot" aria-hidden="true" />
+              <strong>{t('ops.start.running')}</strong>
+              <span className="ivs-live-title">{l.title}</span>
+              <span className="ivs-spacer" />
+              <button type="button" className="ivs-open" onClick={l.open}>
+                {t('ops.start.openIt')}
+                <ChevronIcon />
+              </button>
+            </div>
+          ))}
+
+          <section className="ivs-history" aria-label={t('ops.start.history')}>
+            <h2 className="ivs-eyebrow">{t('ops.start.history')}</h2>
+            {runs === 'loading' ? (
+              <p className="ivs-help">{t('common.loading')}</p>
+            ) : !runs.ok ? (
+              <p className="ivs-error">{runs.error}</p>
+            ) : timeline.length === 0 ? (
+              <p className="ivs-help">
+                {selectedHost ? t('ops.start.noneOn', { name: selectedHost.name }) : t('ops.start.none')}
+              </p>
+            ) : (
+              <div className="ivs-runs">
+                {timeline.map(({ run: r, resumedBy, lineTop, lineBottom }) => {
+                  const st = runStatus(r, t)
+                  const problem = resumeProblem(r)
+                  const referred = related.some((x) => x.runId === r.runId)
+                  const dir = runbookDirFor(r)
+                  const label = hostLabel(r, dir)
+                  const calls = plural(t, 'ops.start.calls', r.calls)
+                  return (
+                    <div key={r.runId} className="ivs-run" role="group">
+                      <span className="ivs-gutter" aria-hidden="true">
+                        <span className={`ivs-line${lineTop ? ' on' : ''} top`} />
+                        <span className={`ivs-ring ${dotTone(r)}`} />
+                        <span className={`ivs-line${lineBottom ? ' on' : ''} bottom`} />
+                      </span>
+                      <span className="ivs-run-body">
+                        <span className="ivs-run-top">
+                          <span className="ivs-run-what" title={label.tooltip}>
+                            {r.task || label.title}
+                          </span>
+                          <span className="ivs-run-when" title={new Date(r.startedAt).toLocaleString(locale)}>
+                            {runWhen(r.startedAt, t, locale)}
+                          </span>
                         </span>
-                        <span className="ivs-run-what" title={label.tooltip}>
-                          <span className="ivs-run-what-text">{r.task || label.title}</span>
-                          <InterventionTag label={label} />
+                        <span className="ivs-run-detail">
+                          <span className={`ivs-run-status ${st.tone}`}>{st.label}</span> · {calls}
+                          {resumedBy && ` · ${t('ops.start.resumedAt', { time: clock(resumedBy.startedAt, locale) })}`}
                         </span>
-                        <span className={`ivs-run-status ${st.tone}`}>{st.label}</span>
-                        <span className="ivs-run-actions">
-                          <button
-                            type="button"
-                            className="ivs-icon-btn"
-                            disabled={!!problem}
-                            aria-label={t('ops.start.resume')}
-                            title={problem ?? t('ops.start.resumeTitle')}
-                            onClick={() => resume(r, dir)}
-                          >
-                            <RunIcon d={ICON_RESUME} />
-                          </button>
-                          <button
-                            type="button"
-                            className="ivs-icon-btn"
-                            aria-pressed={referred}
-                            aria-label={t('ops.start.refer')}
-                            disabled={!referred && related.length >= MAX_RELATED}
-                            title={!referred && related.length >= MAX_RELATED ? t('ops.start.referFull', { n: MAX_RELATED }) : t('ops.start.referTitle')}
-                            onClick={() => toggleRelated(r)}
-                          >
-                            <RunIcon d={ICON_REFER} />
-                          </button>
-                          <button
-                            type="button"
-                            className="ivs-icon-btn"
-                            aria-label={t('ops.start.report')}
-                            title={t('ops.start.report')}
-                            onClick={() => setReportFor({ runId: r.runId, runbookPath: dir, appSessionId: r.appSessionId })}
-                          >
-                            <RunIcon d={ICON_REPORT} />
-                          </button>
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </section>
-          </div>
+                      </span>
+                      <span className="ivs-run-actions">
+                        <button
+                          type="button"
+                          className="ivs-icon-btn"
+                          disabled={!!problem}
+                          aria-label={t('ops.start.resume')}
+                          title={problem ?? t('ops.start.resumeTitle')}
+                          onClick={() => resume(r, dir)}
+                        >
+                          <RunIcon d={ICON_RESUME} />
+                        </button>
+                        <button
+                          type="button"
+                          className="ivs-icon-btn"
+                          aria-pressed={referred}
+                          aria-label={t('ops.start.refer')}
+                          disabled={!referred && related.length >= MAX_RELATED}
+                          title={!referred && related.length >= MAX_RELATED ? t('ops.start.referFull', { n: MAX_RELATED }) : t('ops.start.referTitle')}
+                          onClick={() => toggleRelated(r)}
+                        >
+                          <RunIcon d={ICON_REFER} />
+                        </button>
+                        <button
+                          type="button"
+                          className="ivs-icon-btn"
+                          aria-label={t('ops.start.handover')}
+                          title={t('ops.start.handover')}
+                          onClick={() => setReportFor({ runId: r.runId, runbookPath: dir, appSessionId: r.appSessionId })}
+                        >
+                          <RunIcon d={ICON_REPORT} />
+                        </button>
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </section>
         </div>
       </div>
 

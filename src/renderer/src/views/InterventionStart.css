@@ -1,58 +1,7 @@
-/* ── InterventionStart.css ───────────────────────────────────────────────────
-   Servers → Ops: the start of an intervention (board C2 of the interventions
-   wireframes, docs/wireframes/interventions-start.html). Radii per the ops design
-   rule: --radius-surface (4px) on fields, panels and lists, --radius (8px) only on
-   buttons. Theme tokens only. Classes are prefixed `ivs-`. ─────────────────── */
-
-.ivs-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  container-type: inline-size;
-}
-
-/* One column by default; the side panel earns its own column only when there is
-   room for both (same container-query pattern as HomeView). Below that the panel
-   sits under the form instead of being crushed into a sliver. */
-.ivs-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 32px 48px;
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 36px 64px;
-}
-@container (min-width: 1040px) {
-  .ivs-grid { grid-template-columns: minmax(0, 620px) minmax(0, 1fr); }
-}
-@container (max-width: 640px) {
-  .ivs-grid { padding: 28px 24px; }
-}
-
-/* ── Left column ── */
-
-.ivs-form {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-  min-width: 0;
-}
-
-.ivs-head {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.ivs-title {
-  font-size: 22px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  color: var(--text-0);
-}
-.ivs-sub {
-  font-size: 13px;
-  color: var(--text-1);
-}
+/* InterventionStart.css: Servers > Ops start (wireframe B): a rail of servers on the left,
+   the chosen server on the right with its history as a timeline. Radii per the ops design
+   rule: --radius-surface (4px) on fields, rows and lists, --radius (8px) only on buttons.
+   Theme tokens only. Classes are prefixed ivs-. */
 
 .ivs-field {
   display: flex;
@@ -120,53 +69,6 @@
 }
 .ivs-textarea::placeholder,
 .ivs-input::placeholder {
-  color: var(--text-2);
-}
-
-/* ── Mode: two radio options side by side, each a title over a sub-line ── */
-
-.ivs-seg {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border: 1px solid var(--border);
-  border-radius: var(--radius-surface);
-  background: var(--bg-1);
-  overflow: hidden;
-}
-.ivs-seg button {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  padding: 9px 12px;
-  border: none;
-  background: transparent;
-  color: var(--text-1);
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-.ivs-seg button + button {
-  border-left: 1px solid var(--border);
-}
-.ivs-seg button:hover:not(.on) {
-  background: var(--bg-2);
-}
-.ivs-seg button.on {
-  background: var(--accent-dim);
-  color: var(--text-0);
-}
-.ivs-seg button:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 2px var(--accent);
-}
-.ivs-seg-title {
-  font-size: 13px;
-  font-weight: 600;
-}
-.ivs-seg-sub {
-  font-size: 11.5px;
   color: var(--text-2);
 }
 
@@ -418,205 +320,6 @@
   color: var(--text-0);
 }
 
-/* ── Start ── */
-
-.ivs-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 6px;
-}
-.ivs-actions .ivs-help {
-  font-size: 12px;
-}
-.ivs-start {
-  flex-shrink: 0;
-  height: 38px;
-  padding: 0 20px;
-  border-radius: var(--radius);
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: var(--bg-0);
-  font-family: inherit;
-  font-size: 13.5px;
-  font-weight: 700;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  transition: background 0.12s ease, border-color 0.12s ease;
-}
-.ivs-start:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-}
-.ivs-start:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.ivs-start:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* ── Right column ── */
-
-.ivs-side {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  min-width: 0;
-}
-/* Aligns the panel with the form past its heading — only when they sit side by side. */
-@container (min-width: 1040px) {
-  .ivs-side { padding-top: 44px; }
-}
-
-.ivs-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 18px 20px;
-  border-radius: var(--radius-surface);
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-}
-.ivs-eyebrow {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-2);
-}
-.ivs-panel-text {
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--text-1);
-  overflow-wrap: anywhere;
-}
-
-.ivs-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-.ivs-stat-n {
-  font-size: 20px;
-  font-weight: 650;
-  color: var(--text-0);
-  font-variant-numeric: tabular-nums;
-}
-.ivs-stat-n.ok { color: var(--success); }
-.ivs-stat-n.warn { color: var(--warn); }
-.ivs-stat-l {
-  font-size: 11.5px;
-  color: var(--text-2);
-}
-
-.ivs-file-buttons {
-  display: flex;
-  gap: 8px;
-}
-.ivs-btn {
-  height: 30px;
-  padding: 0 12px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border-light);
-  background: transparent;
-  color: var(--text-1);
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-.ivs-btn:hover {
-  background: var(--bg-2);
-  color: var(--text-0);
-}
-.ivs-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-.ivs-btn.small {
-  height: 26px;
-  padding: 0 10px;
-}
-
-.ivs-history {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.ivs-runs {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  column-gap: 14px;
-  font-size: 12.5px;
-  margin: 0 -8px;
-}
-/* One row of the parent grid each, so a row can take a hover background. */
-.ivs-run {
-  display: grid;
-  grid-template-columns: subgrid;
-  grid-column: 1 / -1;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 8px;
-  border-radius: 4px;
-}
-.ivs-run:hover,
-.ivs-run:focus-within { background: var(--bg-hover); }
-.ivs-run-when {
-  color: var(--text-2);
-  white-space: nowrap;
-}
-.ivs-run-what {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  color: var(--text-0);
-}
-.ivs-run-what-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ivs-run-status { white-space: nowrap; }
-.ivs-run-status.ok { color: var(--success); }
-.ivs-run-status.bad { color: var(--error); }
-.ivs-run-status.muted { color: var(--text-2); }
-
-.ivs-run-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.ivs-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-2);
-  cursor: pointer;
-}
-/* Actions show on the row under the pointer or the keyboard; a referred run keeps its mark. */
-.ivs-run:not(:hover):not(:focus-within) .ivs-icon-btn:not([aria-pressed='true']) { visibility: hidden; }
-.ivs-icon-btn:hover:not(:disabled) { background: var(--bg-2); color: var(--text-0); }
-.ivs-icon-btn[aria-pressed='true'] { color: var(--accent); }
-.ivs-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.ivs-icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-
 .ivs-related {
   display: flex;
   flex-wrap: wrap;
@@ -665,3 +368,408 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+/* ── Layout: rail + pane ── */
+
+.ivs {
+  flex-direction: row;
+  min-height: 0;
+}
+
+.ivs-rail {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 300px;
+  min-height: 0;
+  padding: 20px 12px;
+  gap: 4px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-1);
+}
+.ivs-eyebrow {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.ivs-rail-head {
+  padding: 0 8px 10px;
+}
+.ivs-rail-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+.ivs-rail-note {
+  padding: 0 8px;
+}
+.ivs-srv {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 10px;
+  border: none;
+  border-radius: var(--radius-surface);
+  background: transparent;
+  color: var(--text-0);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ivs-srv:hover { background: var(--bg-hover); }
+.ivs-srv.on { background: var(--bg-3); }
+.ivs-srv:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ivs-srv-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.ivs-srv-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ivs-srv-top .ivs-live { margin-left: auto; }
+.ivs-srv-last {
+  padding-left: 16px;
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ivs-srv-any { margin-top: 6px; }
+.ivs-srv-any .ivs-srv-top { font-weight: 500; font-size: 13px; }
+.ivs-live {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+.ivs-add {
+  height: 34px;
+  margin-top: 8px;
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.ivs-add:hover { background: var(--bg-hover); color: var(--text-0); }
+.ivs-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.ivs-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+.ivs-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  max-width: 920px;
+  padding: 32px 40px;
+}
+
+/* ── Header ── */
+
+.ivs-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.ivs-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.ivs-title {
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ivs-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-1);
+}
+.ivs-spacer { flex: 1; }
+
+.ivs-start {
+  flex-shrink: 0;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--bg-0);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.ivs-start:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.ivs-start:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ivs-start:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ivs-btn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-light);
+  background: transparent;
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.ivs-btn:hover {
+  background: var(--bg-2);
+  color: var(--text-0);
+}
+.ivs-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.ivs-btn-mode {
+  flex-shrink: 0;
+  height: 38px;
+  padding: 0 14px;
+  font-size: 13px;
+  color: var(--text-0);
+}
+
+.ivs-below {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: -10px;
+}
+
+/* ── What it allows: one line, opening inline ── */
+
+.ivs-allows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ivs-allows-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--text-1);
+}
+.ivs-allows-sum { min-width: 0; }
+.ivs-disclose,
+.ivs-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border: none;
+  border-radius: var(--radius-surface);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ivs-disclose:hover,
+.ivs-open:hover { color: var(--accent-hover); }
+.ivs-disclose:focus-visible,
+.ivs-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ivs-chev { transition: transform 0.12s ease; }
+.ivs-chev.open { transform: rotate(90deg); }
+.ivs-allows-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 14px;
+  border-left: 2px solid var(--border);
+}
+.ivs-panel-text {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+.ivs-file-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── Live banner ── */
+
+.ivs-live-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-surface);
+  background: var(--accent-dim);
+  font-size: 13px;
+  color: var(--text-0);
+}
+.ivs-live-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.ivs-live-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+}
+
+/* ── History: a timeline, resumed runs joined by a line ── */
+
+.ivs-history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ivs-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ivs-run {
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  min-height: 52px;
+  padding: 0 8px;
+  margin: 0 -8px;
+  border-radius: var(--radius-surface);
+}
+.ivs-run:hover,
+.ivs-run:focus-within { background: var(--bg-hover); }
+.ivs-gutter {
+  flex-shrink: 0;
+  width: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.ivs-line {
+  width: 2px;
+  background: transparent;
+}
+.ivs-line.top { height: 10px; }
+.ivs-line.bottom { flex: 1; }
+.ivs-line.on { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.ivs-ring {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid var(--text-2);
+  background: var(--bg-0);
+}
+.ivs-ring.ok { border-color: var(--success); }
+.ivs-ring.bad { border-color: var(--error); }
+.ivs-run-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 0 12px;
+}
+.ivs-run-top {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13.5px;
+}
+.ivs-run-what {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text-0);
+}
+.ivs-run-when {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.ivs-run-detail {
+  font-size: 12.5px;
+  color: var(--text-1);
+}
+.ivs-run-status.ok { color: var(--success); }
+.ivs-run-status.bad { color: var(--error); }
+.ivs-run-status.muted { color: var(--text-2); }
+
+.ivs-run-actions {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  gap: 2px;
+}
+.ivs-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+/* Actions show on the row under the pointer or the keyboard; a referred run keeps its mark. */
+.ivs-run:not(:hover):not(:focus-within) .ivs-icon-btn:not([aria-pressed='true']) { visibility: hidden; }
+.ivs-icon-btn:hover:not(:disabled) { background: var(--bg-2); color: var(--text-0); }
+.ivs-icon-btn[aria-pressed='true'] { color: var(--accent); }
+.ivs-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.ivs-icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

@@ -2939,7 +2939,18 @@ export default function App() {
           <Suspense fallback={<ViewLoading />}>
             {view === 'mcp' && <McpView />}
             {(view === 'ops' || view === 'ops-workspace') && (
-              <InterventionStart key={opsStartHostId ?? ''} initialHostId={opsStartHostId} onStart={openOpsWorkspace} onResume={openOpsWorkspace} />
+              <InterventionStart
+                key={opsStartHostId ?? ''}
+                initialHostId={opsStartHostId}
+                onStart={openOpsWorkspace}
+                onResume={openOpsWorkspace}
+                live={opsTabs.flatMap((it) =>
+                  !it.ended && it.intervention.scope.kind === 'host'
+                    ? [{ hostId: it.intervention.scope.hostId, title: it.intervention.task.trim() || it.label.title, open: () => selectOpsTab(it.intervention) }]
+                    : []
+                )}
+                onAddHost={() => setView('remote')}
+              />
             )}
             {view === 'remote' && (
               <RemoteView
