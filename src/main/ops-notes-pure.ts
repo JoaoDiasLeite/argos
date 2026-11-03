@@ -66,3 +66,19 @@ export function foldNotes(lines: OpsAuditLine[], runId: string): FoldedNotes {
   }
   return f
 }
+
+/** HEADLINE_CHARS: a list row's title, not the note. */
+const HEADLINE_CHARS = 140
+
+/**
+ * One line that says what a run came to, for the history and the Refer list: the model's
+ * summary, else the first confirmed hypothesis, else the first finding, else the first
+ * hypothesis. Undefined when the run noted nothing.
+ */
+export function runHeadline(f: FoldedNotes): string | undefined {
+  const text =
+    f.summary ?? f.hypotheses.find((h) => h.status === 'confirmed')?.text ?? f.findings[0]?.text ?? f.hypotheses[0]?.text
+  if (!text) return undefined
+  const line = text.replace(/\s+/g, ' ').trim()
+  return line.length > HEADLINE_CHARS ? `${line.slice(0, HEADLINE_CHARS - 1).trimEnd()}…` : line
+}

@@ -402,6 +402,12 @@ export interface OpsRunListItem {
   aborted?: boolean
   calls: number
   costUsd?: number
+  /** What the run came to, in one line: the model's summary, else its first confirmed
+   *  hypothesis, finding or hypothesis. Absent when it noted nothing. */
+  headline?: string
+  /** How many findings and hypotheses the model noted. */
+  findings?: number
+  hypotheses?: number
 }
 
 /** The ids of the hosts a run was about, in the sense of OpsRunListItem.hostNames. */
@@ -419,7 +425,11 @@ export function runTouchesHost(s: OpsRunSummary, hostId: string): boolean {
   return runHostIds(s).includes(hostId)
 }
 
-export function runListItem(s: OpsRunSummary, appSessionId: string): OpsRunListItem {
+export function runListItem(
+  s: OpsRunSummary,
+  appSessionId: string,
+  notes?: { headline?: string; findings: number; hypotheses: number }
+): OpsRunListItem {
   const nameOf = (id: string): string =>
     s.hosts.find((h) => h.id === id)?.name ?? s.calls.find((c) => c.hostId === id)?.host ?? s.hostAnswers?.find((a) => a.hostId === id)?.host ?? id
   return {
@@ -439,6 +449,9 @@ export function runListItem(s: OpsRunSummary, appSessionId: string): OpsRunListI
     ...(s.ok !== undefined ? { ok: s.ok } : {}),
     ...(s.aborted !== undefined ? { aborted: s.aborted } : {}),
     calls: s.calls.length,
-    ...(s.costUsd !== undefined ? { costUsd: s.costUsd } : {})
+    ...(s.costUsd !== undefined ? { costUsd: s.costUsd } : {}),
+    ...(notes?.headline ? { headline: notes.headline } : {}),
+    ...(notes?.findings ? { findings: notes.findings } : {}),
+    ...(notes?.hypotheses ? { hypotheses: notes.hypotheses } : {})
   }
 }

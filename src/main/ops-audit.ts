@@ -23,6 +23,7 @@ import {
   type OpsRunSummary
 } from './ops-audit-pure'
 import { renderHandover } from './ops-handover-pure'
+import { foldNotes, runHeadline } from './ops-notes-pure'
 import {
   clientReportWarnings,
   hostSyslogWarnings,
@@ -267,7 +268,9 @@ export function createLedger(dir: string, t: TFunction = makeT('en')): OpsLedger
             const s = summarizeRun(byRun.get(runId) ?? [], runId)
             if (!s) continue
             if (opts.hostId !== undefined && !runTouchesHost(s, opts.hostId)) continue
-            runs.push(runListItem(s, appSessionId))
+            const f = foldNotes(byRun.get(runId) ?? [], runId)
+            const headline = runHeadline(f)
+            runs.push(runListItem(s, appSessionId, { ...(headline ? { headline } : {}), findings: f.findings.length, hypotheses: f.hypotheses.length }))
           }
           runs.sort((a, b) => (a.startedAt < b.startedAt ? 1 : a.startedAt > b.startedAt ? -1 : 0))
           return { ok: true as const, runs: runs.slice(0, limit) }

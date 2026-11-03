@@ -969,6 +969,10 @@ export interface OpsRunListItem {
   aborted?: boolean
   calls: number
   costUsd?: number
+  /** What the run came to, in one line (summary, confirmed hypothesis, finding). */
+  headline?: string
+  findings?: number
+  hypotheses?: number
 }
 
 /**
