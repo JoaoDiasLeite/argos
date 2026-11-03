@@ -53,11 +53,12 @@ function RunIcon({ d }: { d: string[] }) {
 const MAX_RELATED = 5
 
 type DotState = 'checking' | 'ok' | 'error'
-/** `null` until chosen; `'open'` is "Any server this runbook allows". */
-type ServerChoice = string | 'open' | null
+/** A stored host's id, or `null` until one is chosen. Every new intervention is on one
+ *  server: the open scope ("any server this runbook allows") was taken off the screen
+ *  (2026-11-03); resuming an older open run still works through main. */
+type ServerChoice = string | null
 type Mode = 'despiste' | 'runbook'
 
-const OPEN = 'open' as const
 /**
  * The names the built-in runbook's runs carry in the ledger: its folder name, and the one
  * it had before 2.9.0 shipped (`despiste`), so runs from then still map to it.
@@ -228,7 +229,7 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
    *  a detour through despiste, and never holds the built-in path from a list. */
   const picker = useRunbookPicker({
     active: mode === 'runbook',
-    hostId: typeof server === 'string' && server !== OPEN ? server : undefined,
+    hostId: server ?? undefined,
     builtin
   })
   const { listed, infos, runbookPath, loadRunbook } = picker
@@ -289,7 +290,7 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
   }, [])
 
   const scope: OpsScope | null =
-    server === null ? null : server === OPEN ? { kind: 'open' } : { kind: 'host', hostId: server }
+    server === null ? null : { kind: 'host', hostId: server }
   const hostId = scope?.kind === 'host' ? scope.hostId : undefined
   const selectedHost = hostId ? hosts?.find((h) => h.id === hostId) : undefined
 
@@ -423,14 +424,12 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
   const connState: DotState | undefined = selectedHost ? (dots[selectedHost.id] ?? 'checking') : undefined
   const connText = connState === 'ok' ? t('ops.start.conn.ok') : connState === 'error' ? t('ops.start.conn.error') : t('ops.start.conn.checking')
   const headTitle =
-    server === OPEN ? t('ops.start.anyServer') : selectedHost ? selectedHost.name : server && hosts ? t('ops.start.unknownServer') : t('ops.start.title')
+    selectedHost ? selectedHost.name : server && hosts ? t('ops.start.unknownServer') : t('ops.start.title')
   const headSub = selectedHost ? (
     <>
       <span className={`ivs-dot ${connState}`} aria-hidden="true" />
       {hostAddress(selectedHost)} · {connText}
     </>
-  ) : server === OPEN ? (
-    t('ops.start.helpOpen')
   ) : server ? null : (
     t('ops.start.pickServer')
   )
@@ -503,11 +502,6 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
               </button>
             )
           })}
-          <button type="button" className={`ivs-srv ivs-srv-any${server === OPEN ? ' on' : ''}`} aria-pressed={server === OPEN} onClick={() => setServer(OPEN)}>
-            <span className="ivs-srv-top">
-              <span className="ivs-srv-name">{t('ops.start.anyServer')}</span>
-            </span>
-          </button>
         </div>
         {onAddHost && (
           <button type="button" className="ivs-add" onClick={onAddHost}>

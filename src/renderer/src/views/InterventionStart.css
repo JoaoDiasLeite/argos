@@ -448,8 +448,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ivs-srv-any { margin-top: 6px; }
-.ivs-srv-any .ivs-srv-top { font-weight: 500; font-size: 13px; }
 .ivs-live {
   flex-shrink: 0;
   font-size: 11px;
