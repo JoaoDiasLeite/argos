@@ -3,7 +3,8 @@ import { plural, type TFunction } from '../../../shared/i18n'
 
 /** How a listed run ended, as a short word and a tone (the start screen and the Refer picker). */
 export function runStatus(r: OpsRunListItem, t: TFunction): { label: string; tone: 'ok' | 'bad' | 'muted' } {
-  if (r.aborted) return { label: t('ops.start.status.stopped'), tone: 'bad' }
+  // Stopping is how most diagnoses end: grey, not red. Red is kept for a run that failed.
+  if (r.aborted) return { label: t('ops.start.status.stopped'), tone: 'muted' }
   if (r.ok === true) return { label: t('ops.start.status.finished'), tone: 'ok' }
   if (r.ok === false) return { label: t('ops.start.status.failed'), tone: 'bad' }
   if (!r.endedAt) return { label: t('ops.start.status.unfinished'), tone: 'muted' }

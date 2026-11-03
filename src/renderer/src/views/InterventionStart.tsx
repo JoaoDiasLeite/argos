@@ -118,8 +118,10 @@ function runWhen(iso: string, t: TFunction, locale?: string): string {
 /** The timeline's dot: green for a run that finished, red for one that failed, grey otherwise
  *  (a stop is the operator's choice, not a failure). */
 function dotTone(r: OpsRunListItem): 'ok' | 'bad' | 'muted' {
+  // A stopped run is logged ok: false and aborted: true; the stop comes first.
+  if (r.aborted) return 'muted'
   if (r.ok === false) return 'bad'
-  if (r.ok === true && !r.aborted) return 'ok'
+  if (r.ok === true) return 'ok'
   return 'muted'
 }
 
@@ -297,7 +299,15 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
     if (!hostId) return runs.runs
     return selectedHost ? runs.runs.filter((r) => runOnHost(r, selectedHost)) : []
   }, [runs, hostId, selectedHost])
-  const timeline = useMemo(() => buildTimeline(shownRuns).slice(0, HISTORY_LIMIT), [shownRuns])
+  // A run that ended with no call and no note (a start and a stop) says nothing: such runs
+  // are hidden behind one line unless asked for.
+  const [showEmpty, setShowEmpty] = useState(false)
+  const isEmptyRun = (r: OpsRunListItem): boolean => !!r.endedAt && r.calls === 0 && !r.headline && !r.findings && !r.hypotheses
+  const emptyCount = useMemo(() => shownRuns.filter(isEmptyRun).length, [shownRuns])
+  const timeline = useMemo(
+    () => buildTimeline(showEmpty ? shownRuns : shownRuns.filter((r) => !isEmptyRun(r))).slice(0, HISTORY_LIMIT),
+    [shownRuns, showEmpty]
+  )
 
   // A run that is not on the newly chosen server's list is no longer one to refer to.
   useEffect(() => {
@@ -514,6 +524,8 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
               {headSub && <span className="ivs-sub">{headSub}</span>}
             </div>
             <span className="ivs-spacer" />
+            {server !== null && (
+              <>
             <button type="button" className="ivs-btn ivs-btn-mode" onClick={() => setMode(mode === 'despiste' ? 'runbook' : 'despiste')}>
               {mode === 'despiste' ? t('ops.start.toRunbook') : t('ops.start.toDespiste')}
             </button>
@@ -521,6 +533,8 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
               <PlayIcon />
               {mode === 'despiste' ? t('ops.start.startDespiste') : t('ops.start.startButton')}
             </button>
+              </>
+            )}
           </div>
 
           <div className="ivs-below">
@@ -532,9 +546,9 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
               <span className="ivs-error" role="alert">
                 <strong>{t('ops.start.despisteUnusable')}</strong> {loaded.error}
               </span>
-            ) : (
+            ) : server !== null ? (
               <span className="ivs-help">{startHint}</span>
-            )}
+            ) : null}
 
             {related.length > 0 && (
               <div className="ivs-related">
@@ -752,6 +766,11 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
                   )
                 })}
               </div>
+            )}
+            {emptyCount > 0 && (
+              <button type="button" className="ivs-empty-toggle" onClick={() => setShowEmpty((v) => !v)}>
+                {showEmpty ? t('ops.start.hideEmpty') : plural(t, 'ops.start.emptyHidden', emptyCount)}
+              </button>
             )}
           </section>
         </div>
