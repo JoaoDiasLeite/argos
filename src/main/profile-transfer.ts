@@ -32,6 +32,7 @@ import {
   BundleError,
   BundleWriter,
   CHAT_ID,
+  COMPANION_FILES,
   DEFAULT_ACCOUNT_ID,
   MAX_NAME_LENGTH,
   PROFILE_DIRS,
@@ -45,6 +46,7 @@ import {
   isTranscriptRel,
   makePathRemapper,
   mergeAccountGroup,
+  mergeCompanionList,
   mergeHosts,
   mergeStore,
   mergeTrust,
@@ -262,6 +264,7 @@ async function readProfileDirs(): Promise<Record<string, Record<string, string>>
     const root = path.join(userData(), name)
     const files: Record<string, string> = {}
     for (const f of await walkFiles(root, 3)) {
+      if (name === 'companion' && !(COMPANION_FILES as readonly string[]).includes(f.rel)) continue
       try {
         files[f.rel] = await fs.promises.readFile(f.abs, 'utf8')
       } catch {
@@ -726,6 +729,10 @@ async function applyProfileDirs(ctx: ImportContext, skipped: ImportSkip[]): Prom
   for (const name of PROFILE_DIRS) {
     const files = ctx.profile.dirs[name]
     if (!isPlainObject(files)) continue
+    if (name === 'companion') {
+      await applyCompanion(ctx, files, skipped)
+      continue
+    }
     for (const [rel, text] of Object.entries(files)) {
       const safe = safeRel(rel)
       if (!safe || typeof text !== 'string') continue
@@ -742,6 +749,37 @@ async function applyProfileDirs(ctx: ImportContext, skipped: ImportSkip[]): Prom
       } catch (e) {
         skipped.push({ name: `${name}/${safe}`, reason: errMsg(e) })
       }
+    }
+  }
+}
+
+/** Companion todos and notes: merged by id, the ones already here win. */
+async function applyCompanion(ctx: ImportContext, files: Record<string, unknown>, skipped: ImportSkip[]): Promise<void> {
+  for (const name of COMPANION_FILES) {
+    const text = files[name]
+    if (typeof text !== 'string') continue
+    const file = path.join(userData(), 'companion', name)
+    try {
+      let local: string | null = null
+      try {
+        local = await fs.promises.readFile(file, 'utf8')
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
+      }
+      let incoming = text
+      try {
+        incoming = JSON.stringify(ctx.remap.deep(JSON.parse(text)))
+      } catch {
+        // not JSON: mergeCompanionList refuses it below
+      }
+      const merged = mergeCompanionList(local, incoming)
+      if (merged === null) continue
+      await fs.promises.mkdir(path.dirname(file), { recursive: true })
+      const tmp = `${file}.import-${process.pid}`
+      await fs.promises.writeFile(tmp, merged, 'utf8')
+      await fs.promises.rename(tmp, file)
+    } catch (e) {
+      skipped.push({ name: `companion/${name}`, reason: errMsg(e) })
     }
   }
 }

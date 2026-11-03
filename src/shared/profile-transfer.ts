@@ -1,7 +1,7 @@
 /**
  * The contract between the main process and the renderer for moving Argos to another
  * machine: one `.argos` file carrying the profile (preferences, accounts without their
- * logins, sprints, planner, servers, ops ledger) and the chats of the projects the user
+ * logins, sprints, planner, companion todos and notes, servers, ops ledger) and the chats of the projects the user
  * picks. Secrets travel only when the user sets a passphrase.
  */
 

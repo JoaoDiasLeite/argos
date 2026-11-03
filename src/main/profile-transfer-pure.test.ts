@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { gzipSync } from 'zlib'
 import { PassThrough, Readable } from 'stream'
 import {
+  mergeCompanionList,
   BUNDLE_FORMAT,
   BUNDLE_VERSION,
   BundleError,
@@ -423,5 +424,26 @@ describe('chat selection', () => {
 describe('defaultExportName', () => {
   it('is dated', () => {
     expect(defaultExportName(new Date(2026, 9, 9))).toBe('argos-profile-2026-10-09.argos')
+  })
+})
+
+describe('mergeCompanionList', () => {
+  it('appends imported items by id and keeps the local copy of one both have', () => {
+    const local = JSON.stringify([{ id: 'a', title: 'local' }])
+    const imported = JSON.stringify([{ id: 'a', title: 'imported' }, { id: 'b', title: 'new' }])
+    expect(JSON.parse(mergeCompanionList(local, imported)!)).toEqual([
+      { id: 'a', title: 'local' },
+      { id: 'b', title: 'new' }
+    ])
+  })
+
+  it('takes the whole import when there is no local file', () => {
+    expect(JSON.parse(mergeCompanionList(null, '[{"id":"a"}]')!)).toEqual([{ id: 'a' }])
+  })
+
+  it('is null when nothing is new or either side is not a list', () => {
+    expect(mergeCompanionList('[{"id":"a"}]', '[{"id":"a"},{"x":1}]')).toBeNull()
+    expect(mergeCompanionList('{oops', '[{"id":"a"}]')).toBeNull()
+    expect(mergeCompanionList('[]', '{"id":"a"}')).toBeNull()
   })
 })

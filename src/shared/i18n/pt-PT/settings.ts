@@ -297,7 +297,7 @@ const settings: Record<keyof typeof en, string> = {
   // Mover para outra máquina (exportar / importar perfil)
   'transfer.eyebrow': 'Mover para outra máquina',
   'transfer.label': 'Perfil e conversas',
-  'transfer.hint': 'Exporta as tuas preferências, sprints, servidores e conversas para um único ficheiro .argos e importa-o noutra máquina.',
+  'transfer.hint': 'Exporta as tuas preferências, sprints, tarefas e notas do Argos, servidores e conversas para um único ficheiro .argos e importa-o noutra máquina.',
   'transfer.export': 'Exportar…',
   'transfer.import': 'Importar…',
   'transfer.bytes.b': '{n} B',

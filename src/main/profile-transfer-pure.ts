@@ -31,7 +31,13 @@ export const PROFILE_JSON_FILES = [
 ] as const
 
 /** Profile folders that travel file by file. */
-export const PROFILE_DIRS = ['sprints', 'planner', 'ops-audit'] as const
+export const PROFILE_DIRS = ['sprints', 'planner', 'ops-audit', 'companion'] as const
+
+/**
+ * The companion's files that travel: its todos and notes. state.json (pet position per
+ * display, quiet mode, last catch-up) describes this machine and stays.
+ */
+export const COMPANION_FILES = ['todos.json', 'notes.json'] as const
 
 /** Everything an import may replace or merge, copied aside before it starts. */
 export const BACKUP_FILES = [...PROFILE_JSON_FILES, 'ssh-hosts.bin', 'api-key.bin']
@@ -647,6 +653,34 @@ export function splitHostSecrets<T extends HostLike>(hosts: T[]): { hosts: Omit<
     return rest
   })
   return { hosts: out, secrets }
+}
+
+/**
+ * A companion list (todos.json or notes.json) merged by id: imported items this machine
+ * lacks are appended, one it already has stays as it is here. null when nothing is new,
+ * or when either side is not a JSON array (the local file is then left alone).
+ */
+export function mergeCompanionList(localText: string | null, importedText: string): string | null {
+  let local: unknown = []
+  let imported: unknown
+  try {
+    if (localText !== null) local = JSON.parse(localText)
+    imported = JSON.parse(importedText)
+  } catch {
+    return null
+  }
+  if (!Array.isArray(local) || !Array.isArray(imported)) return null
+  const id = (x: unknown): string | null =>
+    isObj(x) && typeof (x as { id?: unknown }).id === 'string' ? ((x as { id: string }).id) : null
+  const have = new Set(local.map(id).filter((x): x is string => x !== null))
+  const added = imported.filter((x) => {
+    const k = id(x)
+    if (k === null || have.has(k)) return false
+    have.add(k)
+    return true
+  })
+  if (!added.length) return null
+  return JSON.stringify([...local, ...added], null, 2)
 }
 
 /** Host-key trust: entries this machine has not seen are added; one it has verified stays. */

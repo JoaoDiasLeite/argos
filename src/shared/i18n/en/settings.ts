@@ -297,7 +297,7 @@ export default {
   // Move to another machine (export / import profile)
   'transfer.eyebrow': 'Move to another machine',
   'transfer.label': 'Profile and chats',
-  'transfer.hint': 'Export your preferences, sprints, servers and chats to one .argos file, and import it on another machine.',
+  'transfer.hint': 'Export your preferences, sprints, Argos’s todos and notes, servers and chats to one .argos file, and import it on another machine.',
   'transfer.export': 'Export…',
   'transfer.import': 'Import…',
   'transfer.bytes.b': '{n} B',
