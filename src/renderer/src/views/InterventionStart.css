@@ -582,3 +582,71 @@
 .ivs-run-status.ok { color: var(--success); }
 .ivs-run-status.bad { color: var(--error); }
 .ivs-run-status.muted { color: var(--text-2); }
+
+.ivs-run-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ivs-btn.small[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-2);
+}
+.ivs-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ivs-btn:disabled:hover {
+  background: transparent;
+  color: var(--text-1);
+}
+
+.ivs-related {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.ivs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  height: 24px;
+  padding: 0 4px 0 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-light);
+  color: var(--text-1);
+}
+.ivs-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ivs-chip-x {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.ivs-chip-x:hover {
+  background: var(--bg-2);
+  color: var(--text-0);
+}
+.ivs-chip-x:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

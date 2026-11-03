@@ -187,7 +187,6 @@ const ops: Record<keyof typeof en, string> = {
   'workspace.stopped': 'Intervenção parada',
   'workspace.exitedCode': 'A CLI terminou · código {code}',
   'workspace.exited': 'A CLI terminou',
-  'workspace.relaunch': 'Relançar',
   'workspace.handover': 'Passar a intervenção…',
   'workspace.handoverTitle': 'Terminar este despiste e seguir com uma intervenção com runbook no mesmo servidor',
   // views/OpsHandoverDialog
@@ -283,7 +282,29 @@ const ops: Record<keyof typeof en, string> = {
   'start.readsAllowed': 'Leituras permitidas em {paths}.',
   'start.noneOn': 'Ainda não há intervenções em {name}.',
   'start.none': 'Ainda não há intervenções.',
-  'start.report': 'Relatório'
+  'start.report': 'Relatório',
+  'start.resume': 'Retomar',
+  'start.resumeTitle': 'Abre esta intervenção outra vez, como uma nova execução que continua a partir dela',
+  'start.resumeNoRunbook': 'Esta execução não guardou o runbook, por isso não pode ser retomada.',
+  'start.resumeNoHost': 'O servidor desta execução já não está nos teus anfitriões SSH.',
+  'start.refer': 'Referir',
+  'start.referTitle': 'Aponta a nova intervenção para esta',
+  'start.referFull': 'Só podes referir até {n} intervenções anteriores.',
+  'start.related': 'Relacionada com:',
+  'start.relatedRemove': 'Deixar de referir {what}',
+  'start.relatedTask': 'Sem tarefa',
+  'workspace.resume': 'Retomar',
+  'workspace.resumeTitle': 'Inicia uma nova execução que continua a última desta intervenção',
+  'activity.refer': 'Referir intervenção…',
+  'activity.referTitle': 'Aponta o modelo para uma intervenção anterior neste servidor',
+  'activity.referNone': 'Não há intervenções anteriores.',
+  'activity.referLoading': 'A carregar…',
+  'activity.referError': 'Não foi possível referir: {error}',
+  'activity.referred': 'Referiste a intervenção de {when}',
+  'activity.referredId': 'Referiste a execução {id}',
+  'activity.modelRead': 'O modelo consultou a intervenção de {when}',
+  'activity.modelReadId': 'O modelo consultou a execução {id}',
+  'activity.modelReadList': 'O modelo consultou o histórico'
 }
 
 export default ops

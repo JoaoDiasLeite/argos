@@ -28,6 +28,8 @@ import './InterventionStart.css'
 
 const LAST_CLIENT_KEY = 'ops.lastClient'
 const HISTORY_LIMIT = 8
+/** The most earlier interventions a new one can be related to. */
+const MAX_RELATED = 5
 
 type DotState = 'checking' | 'ok' | 'error'
 /** `null` until chosen; `'open'` is "Any server this runbook allows". */
@@ -159,9 +161,11 @@ interface Props {
   /** Preselects this SSH host (the Ops button on a Remote & WSL row). */
   initialHostId?: string
   onStart: (intervention: OpsIntervention) => void
+  /** "Retomar" on a past run: open its intervention again as a new run that continues it. */
+  onResume: (intervention: OpsIntervention) => void
 }
 
-export default function InterventionStart({ initialHostId, onStart }: Props) {
+export default function InterventionStart({ initialHostId, onStart, onResume }: Props) {
   const t = useT()
   const { locale } = useLanguage()
   const [hosts, setHosts] = useState<SshHostPublic[] | null>(null)
@@ -188,6 +192,8 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
   const [client, setClient] = useState(readLastClient)
 
   const [runs, setRuns] = useState<{ ok: true; runs: OpsRunListItem[] } | { ok: false; error: string } | 'loading'>('loading')
+  /** Earlier runs toggled with Refer: they go into onStart as relatedRunIds. */
+  const [related, setRelated] = useState<OpsRunListItem[]>([])
   const [reportFor, setReportFor] = useState<{ runId: string; runbookPath?: string; appSessionId?: string } | null>(null)
 
   const serverLabelId = useId()
@@ -233,7 +239,15 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
     setRuns('loading')
     window.electronAPI
       .opsRuns({ hostId, limit: HISTORY_LIMIT })
-      .then((res) => !cancelled && setRuns(res))
+      .then((res) => {
+        if (cancelled) return
+        setRuns(res)
+        // A run that is not on the newly chosen server's list is no longer one to refer to.
+        if (res.ok) {
+          const ids = new Set(res.runs.map((r) => r.runId))
+          setRelated((prev) => (prev.every((r) => ids.has(r.runId)) ? prev : prev.filter((r) => ids.has(r.runId))))
+        } else setRelated([])
+      })
       .catch((e) => !cancelled && setRuns({ ok: false, error: e instanceof Error ? e.message : String(e) }))
     return () => {
       cancelled = true
@@ -278,7 +292,14 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
     writeLastClient(c)
     // The built-in runbook is always one click away as the mode, so it is not remembered.
     if (mode === 'runbook' && !samePath(activePath, builtin)) writeLastRunbook(activePath)
-    onStart({ runbookPath: activePath, scope, task: task.trim(), ...(tk ? { ticket: tk } : {}), ...(c ? { client: c } : {}) })
+    onStart({
+      runbookPath: activePath,
+      scope,
+      task: task.trim(),
+      ...(tk ? { ticket: tk } : {}),
+      ...(c ? { client: c } : {}),
+      ...(related.length ? { relatedRunIds: related.map((r) => r.runId) } : {})
+    })
   }
 
   // ── Server field ───────────────────────────────────────────────────────────
@@ -345,6 +366,29 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
       return i && i !== 'loading' && i.ok && i.name === r.runbook
     })
   }
+
+  const toggleRelated = (r: OpsRunListItem) =>
+    setRelated((prev) => (prev.some((x) => x.runId === r.runId) ? prev.filter((x) => x.runId !== r.runId) : prev.length >= MAX_RELATED ? prev : [...prev, r]))
+
+  /** Why a run cannot be resumed (shown as the button's tooltip), or undefined when it can. */
+  const resumeProblem = (r: OpsRunListItem): string | undefined => {
+    if (!r.runbookPath?.trim()) return t('ops.start.resumeNoRunbook')
+    if (r.scope?.kind === 'host' && hosts && !hosts.some((h) => h.id === (r.scope as { hostId: string }).hostId)) {
+      return t('ops.start.resumeNoHost')
+    }
+    return undefined
+  }
+  const resume = (r: OpsRunListItem, dir: string | undefined) =>
+    onResume({
+      // The built-in runbook moves with the install: a run from an older path uses today's.
+      runbookPath: dir && builtin && samePath(dir, builtin) ? builtin : r.runbookPath,
+      scope: r.scope ?? { kind: 'open' },
+      task: r.task ?? '',
+      ...(r.ticket ? { ticket: r.ticket } : {}),
+      ...(r.client ? { client: r.client } : {}),
+      resumesRunId: r.runId
+    })
+  const relatedText = (r: OpsRunListItem) => `${runWhen(r.startedAt, t, locale)} · ${r.task || r.runbook}`
 
   const historyTitle = selectedHost ? t('ops.start.earlierOn', { name: selectedHost.name }) : t('ops.start.earlier')
 
@@ -440,6 +484,29 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
                 />
               </div>
             </div>
+
+            {related.length > 0 && (
+              <div className="ivs-related">
+                <span>{t('ops.start.related')}</span>
+                {related.map((r) => (
+                  <span key={r.runId} className="ivs-chip">
+                    <span className="ivs-chip-text" title={relatedText(r)}>
+                      {relatedText(r)}
+                    </span>
+                    <button
+                      type="button"
+                      className="ivs-chip-x"
+                      aria-label={t('ops.start.relatedRemove', { what: relatedText(r) })}
+                      onClick={() => toggleRelated(r)}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6L6 18" />
+                      </svg>
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
 
             <div className="ivs-actions">
               <button type="button" className="ivs-start" disabled={!canStart} onClick={start}>
@@ -542,6 +609,8 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
                 <div className="ivs-runs">
                   {runs.runs.map((r) => {
                     const st = runStatus(r, t)
+                    const problem = resumeProblem(r)
+                    const referred = related.some((x) => x.runId === r.runId)
                     const dir = runbookDirFor(r)
                     const label = interventionLabel(
                       {
@@ -563,13 +632,34 @@ export default function InterventionStart({ initialHostId, onStart }: Props) {
                           <InterventionTag label={label} />
                         </span>
                         <span className={`ivs-run-status ${st.tone}`}>{st.label}</span>
-                        <button
-                          type="button"
-                          className="ivs-btn small"
-                          onClick={() => setReportFor({ runId: r.runId, runbookPath: dir, appSessionId: r.appSessionId })}
-                        >
-                          {t('ops.start.report')}
-                        </button>
+                        <span className="ivs-run-actions">
+                          <button
+                            type="button"
+                            className="ivs-btn small"
+                            disabled={!!problem}
+                            title={problem ?? t('ops.start.resumeTitle')}
+                            onClick={() => resume(r, dir)}
+                          >
+                            {t('ops.start.resume')}
+                          </button>
+                          <button
+                            type="button"
+                            className="ivs-btn small"
+                            aria-pressed={referred}
+                            disabled={!referred && related.length >= MAX_RELATED}
+                            title={!referred && related.length >= MAX_RELATED ? t('ops.start.referFull', { n: MAX_RELATED }) : t('ops.start.referTitle')}
+                            onClick={() => toggleRelated(r)}
+                          >
+                            {t('ops.start.refer')}
+                          </button>
+                          <button
+                            type="button"
+                            className="ivs-btn small"
+                            onClick={() => setReportFor({ runId: r.runId, runbookPath: dir, appSessionId: r.appSessionId })}
+                          >
+                            {t('ops.start.report')}
+                          </button>
+                        </span>
                       </div>
                     )
                   })}

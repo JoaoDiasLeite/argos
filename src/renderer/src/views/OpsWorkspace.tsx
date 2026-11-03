@@ -147,10 +147,12 @@ export default function OpsWorkspace({
   }, [lockedHostId])
 
   // ── The terminal ──
-  /** `fresh`: a new run on purpose (Restart, Relaunch after an exit) — the old pty, if any,
-   *  is ended first. Otherwise a live pty is reattached to as it is. */
+  /** `fresh`: a new run on purpose (Restart, Retomar after an exit) — the old pty, if any,
+   *  is ended first. Otherwise a live pty is reattached to as it is. A fresh start drops the
+   *  links the intervention was opened with (resumesRunId, relatedRunIds); `resumesRunId`
+   *  makes it a resume of that run instead. */
   const start = useCallback(
-    async (fresh: boolean) => {
+    async (fresh: boolean, opts?: { resumesRunId?: string }) => {
       const seq = ++startSeqRef.current
       setTerm({ kind: 'starting' })
       try {
@@ -170,7 +172,9 @@ export default function OpsWorkspace({
           launches.delete(terminalId)
           if (alive) await window.electronAPI.terminalKill(terminalId)
         }
-        const res = await window.electronAPI.opsTerminalSession(terminalId, interventionRef.current)
+        const base = interventionRef.current
+        const iv: OpsIntervention = fresh ? { ...base, resumesRunId: opts?.resumesRunId, relatedRunIds: undefined } : base
+        const res = await window.electronAPI.opsTerminalSession(terminalId, iv)
         if (seq !== startSeqRef.current) return
         if (!res.ok) {
           setTerm({ kind: 'error', error: res.error })
@@ -259,6 +263,9 @@ export default function OpsWorkspace({
     () => splitRuns(foldOpsEvents(events), launch?.runId ?? ''),
     [events, launch?.runId]
   )
+
+  // The last run of this terminal, which Retomar continues: the launch's, else the newest seen.
+  const lastRunId = launch?.runId ?? current?.runId ?? earlier[0]?.runId
 
   // ── Header ──
   const okInfo = info?.ok ? info : undefined
@@ -382,8 +389,12 @@ export default function OpsWorkspace({
           {term.kind === 'exited' && (
             <div className="ops-ws-strip">
               <span>{term.stopped ? t('ops.workspace.stopped') : term.code ? t('ops.workspace.exitedCode', { code: term.code }) : t('ops.workspace.exited')}</span>
-              <button className="ops-ws-btn small" onClick={() => void start(true)}>
-                {t('ops.workspace.relaunch')}
+              <button
+                className="ops-ws-btn small"
+                onClick={() => void start(true, { resumesRunId: lastRunId })}
+                title={t('ops.workspace.resumeTitle')}
+              >
+                {t('ops.workspace.resume')}
               </button>
             </div>
           )}
@@ -397,6 +408,8 @@ export default function OpsWorkspace({
               active
               ops={{ env: term.launch.env, mcpConfigPath: term.launch.mcpConfigPath }}
               place={label.title}
+              resumeSessionId={term.launch.resumeSessionId}
+              pinSessionId={term.launch.pinSessionId}
               initialPrompt={term.kind === 'ready' ? term.prompt : undefined}
               onClose={() => void endIntervention(true)}
             />

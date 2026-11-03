@@ -95,10 +95,22 @@ export interface OpsRun {
   events: OpsNoteItem[]
   /** Commands the model handed the operator (ask_operator), in ledger order. */
   asks: OpsOperatorAsk[]
+  /** Earlier runs the model read or the operator pointed it at, in ledger order. */
+  links?: OpsRunLink[]
   /** The model's latest summary note, if any. */
   summary?: string
   /** Its recommended actions (`note` kind action), in ledger order. */
   actions?: { text: string; when: 'now' | 'later' }[]
+}
+
+/** A pointer to an earlier run: the model read it (`history.read`; no refRunId is the list)
+ *  or the operator pointed the model at it (`run.referenced`). */
+export interface OpsRunLink {
+  kind: 'read' | 'referenced'
+  refRunId?: string
+  at: string
+  /** How many calls the run had when it happened: the row sits among the calls there. */
+  beforeCall: number
 }
 
 export interface OpsHypothesis {
@@ -371,6 +383,17 @@ export function foldOpsEvents(events: OpsLiveEvent[]): OpsRun[] {
           const plan = str(e.planText)
           if (plan && !startPlans.has(runId)) run.planText = plan
         }
+        break
+      }
+      case 'history.read':
+      case 'run.referenced': {
+        const ref = str(e.refRunId)
+        ;(run.links ??= []).push({
+          kind: e.kind === 'history.read' ? 'read' : 'referenced',
+          ...(ref ? { refRunId: ref } : {}),
+          at: ev.line.at,
+          beforeCall: run.calls.length
+        })
         break
       }
       case 'run.end': {

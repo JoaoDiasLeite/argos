@@ -31,7 +31,9 @@ const CHANGELOG: Entry[] = [
           'The Companion panel in the main window lists todos by Today, Tomorrow, Later and No date, plus notes, with editing, done and delete. A todo can be promoted to the active sprint, which then owns it.',
           'Quiet mode: "shh 1h" in the bubble, the tray or Argos’s right-click menu holds reminders until it ends, and then they arrive together.',
           'Settings → Companion: the summon and dictation shortcuts, staying on screen all day (with a short walk along the bottom now and then) or only when called, the reminder lead time, the morning hour, hiding Argos from screen shares (on by default), and exporting notes to an Obsidian vault as Markdown files.',
-          'The profile export now carries Argos’s todos and notes; importing adds the ones the machine does not have.'
+          'The profile export now carries Argos’s todos and notes; importing adds the ones the machine does not have.',
+          'Resume an intervention: Resume on a past run (or on the exited terminal) opens a new run that continues it. When the Claude conversation is still on this machine it carries on from there; otherwise the run starts from a briefing of the earlier one. Either way the plan is approved again.',
+          'Refer to earlier interventions: pick related ones on the start screen, point the model at one in the middle of a run, and the model can look up earlier interventions on the same server itself through a read-only tool. Each lookup shows in the activity column and in the report.'
         ]
       }
     ]

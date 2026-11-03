@@ -70,6 +70,23 @@ const finished = (callId: string, exitCode: number | null, timedOut = false) =>
 
 const row = (events: OpsLiveEvent[]) => foldOpsEvents(events)[0].calls[0]
 
+describe('foldOpsEvents links', () => {
+  it('folds history.read and run.referenced into links among the calls', () => {
+    const [run] = foldOpsEvents([
+      start,
+      ev({ kind: 'history.read' }),
+      decided('c1', 'allow'),
+      ev({ kind: 'history.read', refRunId: 'r0' }),
+      ev({ kind: 'run.referenced', refRunId: 'r9', by: 'operator' })
+    ])
+    expect(run.links?.map((l) => [l.kind, l.refRunId, l.beforeCall])).toEqual([
+      ['read', undefined, 0],
+      ['read', 'r0', 1],
+      ['referenced', 'r9', 1]
+    ])
+  })
+})
+
 describe('foldOpsEvents', () => {
   it('reads the run header from run.start', () => {
     const [run] = foldOpsEvents([start])

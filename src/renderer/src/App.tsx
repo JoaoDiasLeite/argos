@@ -2939,7 +2939,7 @@ export default function App() {
           <Suspense fallback={<ViewLoading />}>
             {view === 'mcp' && <McpView />}
             {(view === 'ops' || view === 'ops-workspace') && (
-              <InterventionStart key={opsStartHostId ?? ''} initialHostId={opsStartHostId} onStart={openOpsWorkspace} />
+              <InterventionStart key={opsStartHostId ?? ''} initialHostId={opsStartHostId} onStart={openOpsWorkspace} onResume={openOpsWorkspace} />
             )}
             {view === 'remote' && (
               <RemoteView

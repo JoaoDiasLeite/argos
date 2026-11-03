@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactElement } from 'react'
+import { useEffect, useId, useState, type ReactElement } from 'react'
 import { rich } from '../lib/t-rich'
-import type { ApprovalOpsContext, ApprovalRequest, OpsOperatorRequest } from '../types'
+import type { ApprovalOpsContext, ApprovalRequest, OpsOperatorRequest, OpsRunListItem } from '../types'
 import { describeOpsRequest, displayArgv } from '../lib/ops-approval'
 import { splitSections, type OpsOutputSection } from '../lib/ops-sections'
 import {
@@ -14,9 +14,11 @@ import {
   type OpsOperatorAsk,
   type OpsRow,
   type OpsRowTone,
+  type OpsRunLink,
   type OpsRun,
   type OpsStepGroup
 } from '../lib/ops-timeline'
+import { IvsDropdown, type DropItem } from './RunbookPicker'
 import PlanReviewSheet from './PlanReviewSheet'
 import OpsReportSheet from './OpsReportSheet'
 import { backdropClose } from '../lib/backdrop-close'
@@ -458,6 +460,81 @@ function HostLine({ answer }: { answer: OpsHostAnswer }) {
   )
 }
 
+const shortDate = (iso: string, locale: string | undefined): string => {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(locale, { day: '2-digit', month: '2-digit' })
+}
+
+/** "The model looked up the intervention of 03/11" / "You referred to …". The date is known
+ *  when the referred run is among the ones this column has seen;
+ *  otherwise the short run id stands in. */
+function LinkLine({ link, startedAt }: { link: OpsRunLink; startedAt?: string }) {
+  const t = useT()
+  const { locale } = useLanguage()
+  const when = startedAt ? shortDate(startedAt, locale) : ''
+  const id = link.refRunId ? link.refRunId.slice(0, 8) : ''
+  const text =
+    link.kind === 'referenced'
+      ? when
+        ? t('ops.activity.referred', { when })
+        : t('ops.activity.referredId', { id })
+      : !link.refRunId
+        ? t('ops.activity.modelReadList')
+        : when
+          ? t('ops.activity.modelRead', { when })
+          : t('ops.activity.modelReadId', { id })
+  return <div className="ac-hostline approved">{text}</div>
+}
+
+/** "Refer to an intervention…": points the live run at an earlier one on the same server. */
+function ReferButton({ terminalId, run }: { terminalId: string; run: OpsRun }) {
+  const t = useT()
+  const { locale } = useLanguage()
+  const labelId = useId()
+  const [runs, setRuns] = useState<OpsRunListItem[] | 'loading'>('loading')
+  const [error, setError] = useState<string | null>(null)
+  const hostId = run.scope?.kind === 'host' ? run.scope.hostId : undefined
+  useEffect(() => {
+    let cancelled = false
+    setRuns('loading')
+    window.electronAPI
+      .opsRuns({ hostId, limit: 15 })
+      .then((res) => !cancelled && setRuns(res.ok ? res.runs.filter((r) => r.runId !== run.runId) : []))
+      .catch(() => !cancelled && setRuns([]))
+    return () => {
+      cancelled = true
+    }
+  }, [hostId, run.runId])
+
+  const pick = async (r: OpsRunListItem): Promise<void> => {
+    setError(null)
+    try {
+      const res = await window.electronAPI.opsReference(terminalId, r.runId)
+      if (res.ok) window.electronAPI.terminalWrite(terminalId, res.line + '\r')
+      else setError(res.error)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+  const items: DropItem[] =
+    runs === 'loading'
+      ? [{ kind: 'note', key: 'loading', content: t('ops.activity.referLoading') }]
+      : runs.length === 0
+        ? [{ kind: 'note', key: 'none', content: t('ops.activity.referNone') }]
+        : runs.map((r) => ({
+            kind: 'option' as const,
+            key: r.runId,
+            content: <span className="ivs-value">{`${shortDate(r.startedAt, locale)} · ${r.task || r.runbook}`}</span>,
+            onSelect: () => void pick(r)
+          }))
+  return (
+    <div className="ac-refer" title={t('ops.activity.referTitle')}>
+      <IvsDropdown labelledBy={labelId} trigger={<span id={labelId}>{t('ops.activity.refer')}</span>} items={items} />
+      {error && <div className="ac-run-error" role="alert">{t('ops.activity.referError', { error })}</div>}
+    </div>
+  )
+}
+
 const HYP_MARK: Record<OpsHypothesis['status'], string> = { open: '●', confirmed: '✓', ruled_out: '✕' }
 
 /** The model's hypotheses with their status, then its findings; nothing when it noted none. */
@@ -724,8 +801,14 @@ export default function ActivityColumn({
 
   // Host lines and the operator's commands sit among the rows at the point they came; a
   // command still on its card is not listed twice.
+  const knownStart = new Map([current, ...earlier].flatMap((r) => (r ? [[r.runId, r.startedAt] as const] : [])))
   const lines: { beforeCall: number; at: string; el: ReactElement }[] = current
     ? [
+        ...(current.links ?? []).map((l, i) => ({
+          beforeCall: l.beforeCall,
+          at: l.at,
+          el: <LinkLine key={`l:${i}`} link={l} startedAt={l.refRunId ? knownStart.get(l.refRunId) : undefined} />
+        })),
         ...current.hostAnswers.map((a: OpsHostAnswer) => ({ beforeCall: a.beforeCall, at: a.at, el: <HostLine key={`h:${a.hostId}:${a.at}`} answer={a} /> })),
         ...current.asks
           .filter((a) => !carded.has(a.askId))
@@ -771,6 +854,7 @@ export default function ActivityColumn({
           </div>
         )}
         {current?.ended?.error && <div className="ac-run-error">{current.ended.error}</div>}
+        {current && running && <ReferButton terminalId={terminalId} run={current} />}
         <div className="ac-run-actions">
           <button type="button" className="ac-btn" disabled={!current} onClick={() => current && setReportRunId(current.runId)}>
             {t('sessions.activity.report')}
