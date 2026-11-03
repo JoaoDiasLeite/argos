@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useOpsEvents } from '../hooks/useOpsEvents'
-import { displayArgv } from '../lib/ops-approval'
 import type { TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
-import { foldOpsEvents, rowLabel, rowTone, runCounts, touchedHosts, type OpsRow, type OpsRun } from '../lib/ops-timeline'
+import { foldOpsEvents, touchedHosts, type OpsRun } from '../lib/ops-timeline'
 import Markdown from './Markdown'
 import Sheet from './Sheet'
 import type { OpsReportKind } from '../types'
@@ -53,18 +52,9 @@ function hostLine(run: OpsRun, t: TFunction): string {
   return run.hosts.join(', ')
 }
 
-const callText = (c: OpsRow): string =>
-  c.argv && c.argv.length ? displayArgv(c.argv) : c.path ? `${c.tool || 'read'} ${c.path}` : c.tool || c.callId
-
-/** A call's result, coloured: exit 0 green, a non-zero exit amber, a refusal red. */
-function resultOf(c: OpsRow, t: TFunction): { text: string; tone: string } {
-  if (c.status === 'done') return { text: t('ops.timeline.row.exit', { code: 0 }), tone: 'ok' }
-  return { text: rowLabel(c, t) || c.status, tone: rowTone(c) }
-}
-
 /**
  * The run report as a document (docs/INTERVENTIONS_PLAN.md §4, board E2): a sheet from the
- * right over the terminal, Internal / Client / Handover toggle, Copy, and a save that writes
+ * right over the terminal showing the handover, Copy, and a save that writes
  * a new file in the reports folder (the handovers folder for a handover), both set in Settings. The internal view leads with what the ledger says (tiles, plan,
  * calls), the full rendered report one toggle below; the client view is that report's
  * client rendering as it would be sent. Nothing here is sent anywhere.
@@ -72,7 +62,9 @@ function resultOf(c: OpsRow, t: TFunction): { text: string; tone: string } {
 export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClose }: Props) {
   const t = useT()
   const { locale } = useLanguage()
-  const [kind, setKind] = useState<Kind>('internal')
+  // Only the handover is shown: the internal and client views were dropped from the sheet
+  // (2026-11-03). main still renders them, for the reports a skill reads off disk.
+  const kind: Kind = 'handover'
   const [loading, setLoading] = useState(true)
   const [markdown, setMarkdown] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
@@ -80,20 +72,12 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
   const [copied, setCopied] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<{ ok: true; path: string } | { ok: false; error: string } | null>(null)
-  const [showAll, setShowAll] = useState(false)
   const [verified, setVerified] = useState<Verified>(null)
   const [dirs, setDirs] = useState<{ reportsDir: string; handoversDir: string } | null>(null)
-  const kindChosen = useRef(false)
 
   const { events } = useOpsEvents(appSessionId)
   const run = useMemo(() => foldOpsEvents(events).find((r) => r.runId === runId), [events, runId])
   const ledgerDay = run?.startedAt.slice(0, 10)
-  const diagnosis = run?.planRequired === false
-
-  // A diagnosis (a read-only run, no plan) opens on its handover, unless a tab was chosen.
-  useEffect(() => {
-    if (diagnosis && !kindChosen.current) setKind('handover')
-  }, [diagnosis])
 
   useEffect(() => {
     let cancelled = false
@@ -181,22 +165,6 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
 
   const headerExtra = (
     <>
-      <div className="ops-rs-toggle" role="group" aria-label={t('ops.report.kindAria')}>
-        {(['internal', 'client', 'handover'] as const).map((k) => (
-          <button
-            key={k}
-            type="button"
-            className={kind === k ? 'active' : ''}
-            aria-pressed={kind === k}
-            onClick={() => {
-              kindChosen.current = true
-              setKind(k)
-            }}
-          >
-            {t(`ops.report.${k}`)}
-          </button>
-        ))}
-      </div>
       <button type="button" className="ops-rs-btn" onClick={copy} disabled={loading || !markdown}>
         {copied ? t('ops.report.copied') : t('common.copy')}
       </button>
@@ -265,11 +233,7 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
           </div>
         )}
 
-        {kind !== 'internal' || !run ? (
-          <div className="ops-rs-md">{rendered}</div>
-        ) : (
-          <InternalBody run={run} showAll={showAll} onToggleAll={() => setShowAll((v) => !v)} rendered={rendered} />
-        )}
+        <div className="ops-rs-md">{rendered}</div>
 
         {run && (
           <div className="ops-rs-foot">
@@ -291,101 +255,5 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
         )}
       </div>
     </Sheet>
-  )
-}
-
-function InternalBody({
-  run,
-  showAll,
-  onToggleAll,
-  rendered
-}: {
-  run: OpsRun
-  showAll: boolean
-  onToggleAll: () => void
-  rendered: ReactNode
-}) {
-  const t = useT()
-  const { locale } = useLanguage()
-  const counts = runCounts(run)
-  const steps = run.planSteps ?? []
-  const askedCmds = new Set(run.calls.filter((c) => c.asked).map(callText))
-
-  return (
-    <>
-      <div className="ops-rs-tiles">
-        <div className="ops-rs-tile">
-          <span className="ops-rs-n">{counts.calls}</span>
-          <span>{t('ops.report.tile.calls')}</span>
-        </div>
-        <div className="ops-rs-tile">
-          <span className="ops-rs-n ok">{counts.ran}</span>
-          <span>{t('ops.report.tile.ran')}</span>
-        </div>
-        <div className="ops-rs-tile">
-          <span className="ops-rs-n warn">{counts.asked}</span>
-          <span>{t('ops.report.tile.asked')}</span>
-        </div>
-        <div className="ops-rs-tile">
-          <span className="ops-rs-n bad">{counts.notAllowed}</span>
-          <span>{t('ops.report.tile.notAllowed')}</span>
-        </div>
-      </div>
-
-      {steps.length > 0 && (
-        <section className="ops-rs-section">
-          <h3 className="ops-rs-eyebrow">{t('ops.report.plan')}</h3>
-          <ol className="ops-rs-plan">
-            {steps.map((s, i) => {
-              const asked = s.commands.some((c) => askedCmds.has(c))
-              return (
-                <li key={i} className={s.skipped ? 'skipped' : undefined}>
-                  <span className="ops-rs-step">{s.title}</span>
-                  {s.commands.length > 0 && <span className="ops-rs-muted ops-rs-step"> · {s.commands.join(', ')}</span>}
-                  {s.skipped ? (
-                    <span className="ops-rs-muted"> · {t('ops.report.step.skipped')}</span>
-                  ) : asked ? (
-                    <span className="ops-rs-warn"> · {t('ops.report.step.asked')}</span>
-                  ) : s.verdict === 'asks' ? (
-                    <span className="ops-rs-warn"> · {t('ops.report.step.asks')}</span>
-                  ) : s.verdict === 'denied' ? (
-                    <span className="ops-rs-bad"> · {t('ops.report.step.notAllowed')}</span>
-                  ) : null}
-                </li>
-              )
-            })}
-          </ol>
-        </section>
-      )}
-
-      <section className="ops-rs-section">
-        <h3 className="ops-rs-eyebrow">{t('ops.report.calls')}</h3>
-        {run.calls.length === 0 ? (
-          <p className="ops-rs-muted">{t('ops.report.noCalls')}</p>
-        ) : (
-          <div className="ops-rs-calls">
-            {run.calls.map((c) => {
-              const r = resultOf(c, t)
-              const refused = c.status === 'denied' || c.status === 'stopped'
-              return (
-                <div key={c.callId} className="ops-rs-call">
-                  <span className="ops-rs-muted">{clock(c.at, true, locale)}</span>
-                  <span className={`ops-rs-cmd${refused ? ' refused' : ''}`}>
-                    {callText(c)}
-                    {c.asked && c.answer === 'allow' && <span className="ops-rs-allowed"> · {t('ops.report.youAllowed')}</span>}
-                  </span>
-                  <span className={`ops-rs-result ${r.tone}`}>{r.text}</span>
-                </div>
-              )
-            })}
-          </div>
-        )}
-        <button type="button" className="ops-rs-link" aria-expanded={showAll} onClick={onToggleAll}>
-          {showAll ? t('ops.report.hideOutput') : t('ops.report.showOutput')}
-        </button>
-      </section>
-
-      {showAll && <div className="ops-rs-md">{rendered}</div>}
-    </>
   )
 }
