@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
-import type { ApprovalRequest, OpsIntervention, OpsOperatorRequest, OpsRunbookInfo, OpsRunListItem } from '../types'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { ApprovalRequest, OpsIntervention, OpsOperatorRequest, OpsRunbookInfo } from '../types'
 import ChatTerminal from '../components/ChatTerminal'
 import ActivityColumn from '../components/ActivityColumn'
 import OpsHandoverDialog from '../components/OpsHandoverDialog'
-import OpsReportSheet from '../components/OpsReportSheet'
 import { useOpsEvents } from '../hooks/useOpsEvents'
 import { foldOpsEvents, splitRuns, touchedHosts, type OpsRun } from '../lib/ops-timeline'
 import { opsTerminalIdFor, type OpsTerminalProvider, type OpsTerminalSessionResult } from '../lib/ops-terminal'
@@ -58,18 +57,13 @@ type HostDot = 'checking' | 'ok' | 'error'
 
 const PANEL_OPEN_KEY = 'argos.ops.side-panel'
 
-const shortDate = (iso: string, locale: string | undefined): string => {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(locale, { day: '2-digit', month: '2-digit' })
-}
-
 const clock = (iso: string | undefined, locale: string | undefined): string => {
   if (!iso) return ''
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
 }
 
-/** A minute-ticking clock while `on`, for the header's "running 12 min". */
+/** A ticking clock while `on`, for the header's elapsed time. */
 function useNow(on: boolean): number {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -81,144 +75,7 @@ function useNow(on: boolean): number {
   return now
 }
 
-/** Closes a popover on a click outside it and on Escape, like any menu. */
-function useDismiss(ref: RefObject<HTMLElement | null>, open: boolean, close: () => void): void {
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) close()
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close()
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
-}
-
-/**
- * "Refer…": a quiet button in the header that opens a short list of the earlier runs on
- * this server; picking one points the live run's model at it. The list is only fetched when
- * opened, and an error stays in the open list rather than taking a row of the header.
- */
-function ReferButton({ terminalId, run }: { terminalId: string; run: OpsRun }) {
-  const t = useT()
-  const { locale } = useLanguage()
-  const listId = useId()
-  const wrapRef = useRef<HTMLSpanElement>(null)
-  const [open, setOpen] = useState(false)
-  const [runs, setRuns] = useState<OpsRunListItem[] | 'loading'>('loading')
-  const [error, setError] = useState<string | null>(null)
-  const hostId = run.scope?.kind === 'host' ? run.scope.hostId : undefined
-
-  useEffect(() => {
-    if (!open) return
-    let cancelled = false
-    setRuns('loading')
-    window.electronAPI
-      .opsRuns({ hostId, limit: 15 })
-      .then((res) => !cancelled && setRuns(res.ok ? res.runs.filter((r) => r.runId !== run.runId) : []))
-      .catch(() => !cancelled && setRuns([]))
-    return () => {
-      cancelled = true
-    }
-  }, [open, hostId, run.runId])
-  useDismiss(wrapRef, open, () => setOpen(false))
-
-  const pick = async (r: OpsRunListItem): Promise<void> => {
-    setError(null)
-    try {
-      const res = await window.electronAPI.opsReference(terminalId, r.runId)
-      if (!res.ok) return setError(res.error)
-      window.electronAPI.terminalWrite(terminalId, res.line + '\r')
-      setOpen(false)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    }
-  }
-
-  return (
-    <span className="ops-ws-pop" ref={wrapRef}>
-      <button
-        type="button"
-        className="ops-ws-btn"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={open ? listId : undefined}
-        title={t('ops.activity.referTitle')}
-        onClick={() => {
-          setError(null)
-          setOpen((o) => !o)
-        }}
-      >
-        {t('ops.activity.refer')}
-      </button>
-      {open && (
-        <div className="ops-ws-menu refer" id={listId} role="listbox" aria-label={t('ops.activity.referTitle')}>
-          {error && (
-            <div className="ops-ws-note error" role="alert">
-              {t('ops.activity.referError', { error })}
-            </div>
-          )}
-          {runs === 'loading' ? (
-            <div className="ops-ws-note">{t('ops.activity.referLoading')}</div>
-          ) : runs.length === 0 ? (
-            <div className="ops-ws-note">{t('ops.activity.referNone')}</div>
-          ) : (
-            runs.map((r) => (
-              <button key={r.runId} type="button" role="option" aria-selected={false} className="ops-ws-item" onClick={() => void pick(r)}>
-                <span className="ops-ws-item-when">{shortDate(r.startedAt, locale)}</span>
-                <span className="ops-ws-item-what">{r.task || r.runbook}</span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </span>
-  )
-}
-
-
-/** The header's overflow menu: what is rarely used (Restart) and the gated line, as text. */
-function MoreMenu({ children }: { children: ReactNode }) {
-  const t = useT()
-  const listId = useId()
-  const wrapRef = useRef<HTMLSpanElement>(null)
-  const [open, setOpen] = useState(false)
-  useDismiss(wrapRef, open, () => setOpen(false))
-  return (
-    <span className="ops-ws-pop" ref={wrapRef}>
-      <button
-        type="button"
-        className="ops-ws-icon"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? listId : undefined}
-        aria-label={t('ops.workspace.more')}
-        title={t('ops.workspace.more')}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <circle cx="5" cy="12" r="1.8" />
-          <circle cx="12" cy="12" r="1.8" />
-          <circle cx="19" cy="12" r="1.8" />
-        </svg>
-      </button>
-      {open && (
-        <div className="ops-ws-menu" id={listId} role="menu" onClick={() => setOpen(false)}>
-          {children}
-        </div>
-      )}
-    </span>
-  )
-}
-
-/** "running 12 min", or how the run ended. */
+/** "12 min" while it runs, or how the run ended. */
 function runTime(run: OpsRun, now: number, t: ReturnType<typeof useT>, locale: string | undefined): string {
   if (run.ended) return run.ended.aborted ? t('sessions.activity.run.stopped') : t('sessions.activity.run.finished', { time: clock(run.endedAt, locale) })
   const started = new Date(run.startedAt).getTime()
@@ -243,8 +100,8 @@ interface Props {
   /** Deny the waiting approval and stop the run. */
   onStop?: () => void
   /** The intervention was ended from here: its run is stopped and its CLI closed, so App
-   *  stops counting it. `leave`: the terminal's ×, which also closes the workspace; Stop
-   *  and Deny and stop keep it on screen until the operator leaves. */
+   *  stops counting it. Stop and Deny and stop keep the workspace on screen until the
+   *  operator leaves (`leave` is always false from here; the tab's × is App's own). */
   onEnded?: (terminalId: string, leave: boolean) => void
   /** The tabs of the running interventions, at the top like the Remote/WSL sessions'. */
   tabs?: ReactNode
@@ -282,7 +139,6 @@ export default function OpsWorkspace({
   const [hostDot, setHostDot] = useState<HostDot>('checking')
   const [term, setTerm] = useState<TermState>({ kind: 'starting' })
   const [handoverOpen, setHandoverOpen] = useState(false)
-  const [reportOpen, setReportOpen] = useState(false)
   const [panelOpen, setPanelOpen] = useState<boolean>(() => {
     try {
       return localStorage.getItem(PANEL_OPEN_KEY) !== '0'
@@ -302,7 +158,7 @@ export default function OpsWorkspace({
 
   const terminalId = opsTerminalIdFor(intervention)
   const keyRef = useRef(0)
-  // Bumped by every start, so an answer to a superseded one (Restart pressed twice) is
+  // Bumped by every start, so an answer to a superseded one (Retomar pressed twice) is
   // dropped instead of overwriting the newer state.
   const startSeqRef = useRef(0)
   // The latest intervention, for `start` without making it a dependency (a new object
@@ -338,7 +194,7 @@ export default function OpsWorkspace({
   }, [lockedHostId])
 
   // ── The terminal ──
-  /** `fresh`: a new run on purpose (Restart, Retomar after an exit) — the old pty, if any,
+  /** `fresh`: a new run on purpose (Retomar after an exit) — the old pty, if any,
    *  is ended first. Otherwise a live pty is reattached to as it is. A fresh start drops the
    *  links the intervention was opened with (resumesRunId, relatedRunIds); `resumesRunId`
    *  makes it a resume of that run instead. */
@@ -399,11 +255,11 @@ export default function OpsWorkspace({
   }, [term.kind, terminalId, onRunning])
 
 
-  /** Stop and the terminal's × end the intervention, not just the run: a CLI left up after
-   *  its run is over can only start a run that does nothing, yet it keeps the intervention
-   *  counted as running on the rail and in the tabs. Stop leaves the terminal's scrollback
-   *  and the activity on screen; the × also leaves the workspace. */
-  const endIntervention = async (leave: boolean, denyFirst?: () => void) => {
+  /** Stop ends the intervention, not just the run: a CLI left up after its run is over can
+   *  only start a run that does nothing, yet it keeps the intervention counted as running on
+   *  the rail and in the tabs. It leaves the terminal's scrollback and the activity on screen
+   *  until the operator leaves (the tab's × closes the workspace too). */
+  const endIntervention = async (denyFirst?: () => void) => {
     startSeqRef.current++
     launches.delete(terminalId)
     denyFirst?.()
@@ -411,12 +267,10 @@ export default function OpsWorkspace({
     // a terminal that went away.
     await window.electronAPI.opsStop(terminalId).catch(() => undefined)
     await window.electronAPI.terminalKill(terminalId).catch(() => undefined)
-    if (!leave) {
-      setTerm((prev) =>
-        prev.kind === 'ready' ? { kind: 'exited', code: 0, launch: prev.launch, key: prev.key, stopped: true } : prev
-      )
-    }
-    onEnded?.(terminalId, leave)
+    setTerm((prev) =>
+      prev.kind === 'ready' ? { kind: 'exited', code: 0, launch: prev.launch, key: prev.key, stopped: true } : prev
+    )
+    onEnded?.(terminalId, false)
   }
 
   /**
@@ -547,52 +401,20 @@ export default function OpsWorkspace({
           )}
         </div>
         <div className="ops-ws-spacer" />
-        {current && running && <ReferButton terminalId={terminalId} run={current} />}
-        <button
-          className="ops-ws-btn"
-          onClick={() => setReportOpen(true)}
-          disabled={!current}
-          title={t('ops.workspace.handoverReportTitle')}
-        >
-          {t('ops.workspace.handoverReport')}
-        </button>
-        {/* A diagnosis only (its run.start skipped the plan): the runbook it hands over to does the fix. */}
-        {onHandover && current?.planRequired === false && (
-          <button
-            className="ops-ws-btn"
-            onClick={() => setHandoverOpen(true)}
-            disabled={term.kind === 'starting'}
-            title={t('ops.workspace.handoverTitle')}
-          >
-            {t('ops.workspace.handover')}
-          </button>
-        )}
-        <MoreMenu>
-          <button
-            type="button"
-            role="menuitem"
-            className="ops-ws-item"
-            disabled={term.kind === 'starting'}
-            title={t('ops.workspace.restartTitle')}
-            onClick={() => void start(true)}
-          >
-            {t('ops.workspace.restart')}
-          </button>
-          <div className="ops-ws-note" title={t('ops.workspace.gatedHint')}>
-            {t('ops.workspace.gated')}
-          </div>
-        </MoreMenu>
         <button
           className="ops-ws-btn stop"
           disabled={stopDisabled}
-          onClick={() => (onEnded ? void endIntervention(false) : void window.electronAPI.opsStop(terminalId))}
+          onClick={() => (onEnded ? void endIntervention() : void window.electronAPI.opsStop(terminalId))}
           title={onEnded ? t('sessions.activity.run.endTitle') : t('sessions.activity.run.stopTitle')}
         >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <rect x="5" y="5" width="14" height="14" rx="2" />
+          </svg>
           {t('sessions.activity.run.stop')}
         </button>
         <button
           type="button"
-          className={`ops-ws-icon bordered${panelOpen ? ' on' : ''}`}
+          className={`ops-ws-icon${panelOpen ? ' on' : ''}`}
           aria-pressed={panelOpen}
           aria-label={t('ops.workspace.togglePanel')}
           title={t('ops.workspace.togglePanel')}
@@ -637,11 +459,10 @@ export default function OpsWorkspace({
               autoLaunchCli
               active
               ops={{ env: term.launch.env, mcpConfigPath: term.launch.mcpConfigPath }}
-              place={label.title}
+              bare
               resumeSessionId={term.launch.resumeSessionId}
               pinSessionId={term.launch.pinSessionId}
               initialPrompt={term.kind === 'ready' ? term.prompt : undefined}
-              onClose={() => void endIntervention(true)}
             />
           )}
         </div>
@@ -653,18 +474,16 @@ export default function OpsWorkspace({
           loading={loading}
           waiting={mine}
           onDecide={onDecide}
-          onDenyStop={onStop ? () => void endIntervention(false, onStop) : undefined}
+          onDenyStop={onStop ? () => void endIntervention(onStop) : undefined}
           operatorRequests={operatorRequests}
           onOperatorAnswer={onOperatorAnswer}
           collapsed={!panelOpen}
           serverLabel={label.title}
           modeLabel={builtin ? `${label.tag} · ${t('ops.label.readOnly')}` : label.tag}
+          onHandover={onHandover && current?.planRequired === false ? () => setHandoverOpen(true) : undefined}
+          handoverDisabled={term.kind === 'starting'}
         />
       </div>
-
-      {reportOpen && current && (
-        <OpsReportSheet runId={current.runId} appSessionId={terminalId} runbookPath={runbookPath} onClose={() => setReportOpen(false)} />
-      )}
 
       {handoverOpen && current && (
         <OpsHandoverDialog

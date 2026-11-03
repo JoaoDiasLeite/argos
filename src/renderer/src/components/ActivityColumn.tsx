@@ -18,6 +18,7 @@ import {
   type OpsRun,
   type OpsStepGroup
 } from '../lib/ops-timeline'
+import OpsReferPicker from './OpsReferPicker'
 import PlanReviewSheet from './PlanReviewSheet'
 import OpsReportSheet from './OpsReportSheet'
 import { backdropClose } from '../lib/backdrop-close'
@@ -48,6 +49,9 @@ interface Props {
   /** The Context section's chips: the server and the mode the intervention runs in. */
   serverLabel?: string
   modeLabel?: string
+  /** "Hand over to a runbook…" in the footer: given only for a diagnosis that can. */
+  onHandover?: () => void
+  handoverDisabled?: boolean
 }
 
 interface ScriptInfo {
@@ -774,7 +778,8 @@ const whenOf = (id: string, known: Map<string, string>, locale: string | undefin
  * for the operator pinned at the top as the only highlighted block, then three collapsible
  * sections: Progress (plan, hypotheses, findings), Context (server, runbook, linked runs,
  * scripts) and Activity (one line per call, newest first, earlier runs folded at the end).
- * The run's state, Refer, Handover and Stop live in the workspace's own header.
+ * The run's state and Stop live in the workspace's own header; Refer is a chip in Context
+ * and Handover sits in the footer.
  */
 export default function ActivityColumn({
   terminalId,
@@ -789,11 +794,17 @@ export default function ActivityColumn({
   onOperatorAnswer,
   collapsed,
   serverLabel,
-  modeLabel
+  modeLabel,
+  onHandover,
+  handoverDisabled
 }: Props) {
   const t = useT()
   const { locale } = useLanguage()
   const [reportRunId, setReportRunId] = useState<string | null>(null)
+  const [referOpen, setReferOpen] = useState(false)
+  const contextRef = useRef<HTMLElement>(null)
+  const referChipRef = useRef<HTMLButtonElement>(null)
+  const live = !!current && !current.ended
   const progress = current ? planProgress(current) : null
   const today = new Date()
   const earlierToday = earlier.filter((r) => sameDay(r.startedAt, today))
@@ -998,7 +1009,7 @@ export default function ActivityColumn({
           </PanelSection>
         )}
 
-        <PanelSection id="context" title={t('sessions.activity.panel.context')}>
+        <PanelSection id="context" title={t('sessions.activity.panel.context')} sectionRef={contextRef}>
           <div className="ac-chips">
             {serverLabel && <span className="ac-chip">{serverLabel}</span>}
             {modeLabel && <span className="ac-chip">{modeLabel}</span>}
@@ -1007,6 +1018,19 @@ export default function ActivityColumn({
                 {l.text}
               </span>
             ))}
+            {live && (
+              <button
+                type="button"
+                ref={referChipRef}
+                className="ac-chip refer"
+                aria-haspopup="listbox"
+                aria-expanded={referOpen}
+                title={t('ops.activity.referTitle')}
+                onClick={() => setReferOpen((o) => !o)}
+              >
+                {t('ops.activity.referChip')}
+              </button>
+            )}
           </div>
           {/* The model's tool call is blocked on a card: a script prompt would only queue behind it. */}
           <ScriptsList terminalId={terminalId} runId={current?.runId} disabled={!!current?.ended || !!waiting || cards.length > 0} />
@@ -1047,6 +1071,30 @@ export default function ActivityColumn({
           </div>
         </PanelSection>
       </div>
+
+      {live && referOpen && current && (
+        <OpsReferPicker
+          terminalId={terminalId}
+          run={current}
+          serverLabel={serverLabel}
+          anchorRef={contextRef}
+          chipRef={referChipRef}
+          onClose={() => setReferOpen(false)}
+        />
+      )}
+
+      {current && (
+        <div className="ac-foot">
+          <button type="button" className="ac-foot-btn" onClick={() => setReportRunId(current.runId)} title={t('ops.workspace.handoverReportTitle')}>
+            {t('ops.workspace.handoverReport')}
+          </button>
+          {onHandover && (
+            <button type="button" className="ac-foot-btn wide" disabled={handoverDisabled} onClick={onHandover} title={t('ops.workspace.handoverTitle')}>
+              {t('ops.workspace.handover')}
+            </button>
+          )}
+        </div>
+      )}
 
       {reportRunId && (
         <OpsReportSheet runId={reportRunId} appSessionId={terminalId} runbookPath={runbookPath} onClose={() => setReportRunId(null)} />

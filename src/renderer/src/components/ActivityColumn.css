@@ -4,6 +4,7 @@
    sections, newest call first. Surfaces 4 px, buttons 8 px. Classes are prefixed "ac-". ── */
 
 .ac {
+  position: relative;
   flex: 0 0 360px;
   min-width: 300px;
   max-width: 45%;
@@ -85,6 +86,114 @@
   white-space: nowrap;
 }
 .ac-chip.link { background: var(--accent-dim); color: var(--accent); }
+.ac-chip.refer {
+  border: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ac-chip.refer:hover,
+.ac-chip.refer[aria-expanded='true'] { border-style: solid; }
+.ac-chip.refer:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── Refer picker: inside the panel, under Context, above the sections ── */
+.ac-refer {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  z-index: 5;
+  max-height: calc(100% - 140px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-surface);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+.ac-refer-search { padding: 10px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+.ac-refer-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-surface);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font: inherit;
+  font-size: 12.5px;
+}
+.ac-refer-input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.ac-refer-label {
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  flex: 0 0 auto;
+}
+.ac-refer-list { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; }
+.ac-refer-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-0);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.ac-refer-row.on { background: var(--bg-hover); }
+.ac-refer-top { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; }
+.ac-refer-title { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ac-refer-when { font-size: 11.5px; color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ac-refer-sub { font-size: 11.5px; color: var(--text-1); }
+.ac-refer-note { padding: 8px 12px; font-size: 12px; color: var(--text-2); }
+.ac-refer-note.error { color: var(--error); }
+.ac-refer-foot {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-2);
+  flex: 0 0 auto;
+}
+
+/* ── Footer: Handover and Hand over to a runbook ── */
+.ac-foot {
+  display: flex;
+  gap: 8px;
+  margin: 0 12px 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.ac-foot-btn {
+  flex: 1;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ac-foot-btn.wide { flex: 1.4; }
+.ac-foot-btn:hover:not(:disabled) { background: var(--bg-hover); }
+.ac-foot-btn:disabled { opacity: 0.5; cursor: default; }
+.ac-foot-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ── Plan progress (top of Progress) ── */
 .ac-plan { display: flex; flex-direction: column; gap: 6px; }

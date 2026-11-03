@@ -59,6 +59,9 @@ interface Props {
   /** Shown in the header's folder chip instead of the cwd's last segment (an ops terminal
    *  names its server there, not the runbook folder it runs in). */
   place?: string
+  /** No header at all: the terminal sits directly under the host's own bar (the ops
+   *  workspace, whose tab already ends the intervention). */
+  bare?: boolean
   /** Spread on the header: a split pane makes it the handle that drags the pane. */
   headProps?: HTMLAttributes<HTMLDivElement>
   /** Given only in a split: the header's × then closes the pane (the CLI keeps running),
@@ -195,7 +198,7 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onClosePane, title, place, headProps, onPopOut, onPopIn, onActive, initialPrompt, onInitialPromptSent, accelerated, ops, onCwdChange }: Props) {
+export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onClosePane, title, place, bare, headProps, onPopOut, onPopIn, onActive, initialPrompt, onInitialPromptSent, accelerated, ops, onCwdChange }: Props) {
   const t = useT()
   // Read from the one-shot setup effect, which cannot close over a prop.
   const onCwdRef = useRef(onCwdChange)
@@ -1085,28 +1088,30 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
 
   return (
     <div className="chat-terminal">
-      <ChatHead
-        title={title ?? t('chat.terminal.label')}
-        cwd={cwd}
-        cwdLabel={place}
-        dragProps={headProps}
-        actions={
-          <>
-            <Menu
-              triggerClass="chat-head-btn"
-              triggerContent={
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
-                </svg>
-              }
-              triggerTitle={t('chat.terminal.menu')}
-              ariaLabel={t('chat.terminal.menu')}
-              items={menuItems}
-            />
-            {closeButton}
-          </>
-        }
-      />
+      {!bare && (
+        <ChatHead
+          title={title ?? t('chat.terminal.label')}
+          cwd={cwd}
+          cwdLabel={place}
+          dragProps={headProps}
+          actions={
+            <>
+              <Menu
+                triggerClass="chat-head-btn"
+                triggerContent={
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
+                  </svg>
+                }
+                triggerTitle={t('chat.terminal.menu')}
+                ariaLabel={t('chat.terminal.menu')}
+                items={menuItems}
+              />
+              {closeButton}
+            </>
+          }
+        />
+      )}
       <div className="chat-terminal-host-wrap">
         <div ref={hostRef} className="chat-terminal-host" />
         {starting && !exited && (

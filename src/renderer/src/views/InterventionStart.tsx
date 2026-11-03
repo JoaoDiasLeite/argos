@@ -6,6 +6,7 @@ import { writeLastRunbook } from '../lib/runbook-library'
 import { samePath, useBuiltinRunbook } from '../lib/builtin-runbook'
 import OpsReportSheet from '../components/OpsReportSheet'
 import { interventionLabel } from '../lib/intervention-label'
+import { runNotes, runStatus } from '../lib/ops-run-status'
 import { RunbookField, runbookHostProblem, useRunbookPicker, type InfoState } from '../components/RunbookPicker'
 import { plural, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
@@ -112,14 +113,6 @@ function runWhen(iso: string, t: TFunction, locale?: string): string {
   if (diff === 0) return t('ops.start.today', { time })
   if (diff === 1) return t('ops.start.yesterday')
   return d.toLocaleDateString(locale, { day: 'numeric', month: 'short' })
-}
-
-function runStatus(r: OpsRunListItem, t: TFunction): { label: string; tone: 'ok' | 'bad' | 'muted' } {
-  if (r.aborted) return { label: t('ops.start.status.stopped'), tone: 'bad' }
-  if (r.ok === true) return { label: t('ops.start.status.finished'), tone: 'ok' }
-  if (r.ok === false) return { label: t('ops.start.status.failed'), tone: 'bad' }
-  if (!r.endedAt) return { label: t('ops.start.status.unfinished'), tone: 'muted' }
-  return { label: t('ops.start.status.ended'), tone: 'muted' }
 }
 
 /** The timeline's dot: green for a run that finished, red for one that failed, grey otherwise
@@ -712,14 +705,14 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
                       <span className="ivs-run-body">
                         <span className="ivs-run-top">
                           <span className="ivs-run-what" title={label.tooltip}>
-                            {r.task || label.title}
+                            {r.task || r.headline || label.title}
                           </span>
                           <span className="ivs-run-when" title={new Date(r.startedAt).toLocaleString(locale)}>
                             {runWhen(r.startedAt, t, locale)}
                           </span>
                         </span>
                         <span className="ivs-run-detail">
-                          <span className={`ivs-run-status ${st.tone}`}>{st.label}</span> · {calls}
+                          <span className={`ivs-run-status ${st.tone}`}>{st.label}</span> · {[calls, ...runNotes(r, t)].join(' · ')}
                           {resumedBy && ` · ${t('ops.start.resumedAt', { time: clock(resumedBy.startedAt, locale) })}`}
                         </span>
                       </span>
