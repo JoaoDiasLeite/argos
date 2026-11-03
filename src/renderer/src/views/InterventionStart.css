@@ -554,13 +554,22 @@
 .ivs-runs {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
-  gap: 8px 14px;
-  align-items: center;
+  column-gap: 14px;
   font-size: 12.5px;
+  margin: 0 -8px;
 }
+/* One row of the parent grid each, so a row can take a hover background. */
 .ivs-run {
-  display: contents;
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 4px;
 }
+.ivs-run:hover,
+.ivs-run:focus-within { background: var(--bg-hover); }
 .ivs-run-when {
   color: var(--text-2);
   white-space: nowrap;
@@ -586,21 +595,27 @@
 .ivs-run-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
 }
-.ivs-btn.small[aria-pressed='true'] {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--bg-2);
-}
-.ivs-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.ivs-btn:disabled:hover {
+.ivs-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
   background: transparent;
-  color: var(--text-1);
+  color: var(--text-2);
+  cursor: pointer;
 }
+/* Actions show on the row under the pointer or the keyboard; a referred run keeps its mark. */
+.ivs-run:not(:hover):not(:focus-within) .ivs-icon-btn:not([aria-pressed='true']) { visibility: hidden; }
+.ivs-icon-btn:hover:not(:disabled) { background: var(--bg-2); color: var(--text-0); }
+.ivs-icon-btn[aria-pressed='true'] { color: var(--accent); }
+.ivs-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.ivs-icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .ivs-related {
   display: flex;

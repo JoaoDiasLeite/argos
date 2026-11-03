@@ -295,7 +295,7 @@ const ops: Record<keyof typeof en, string> = {
   'start.relatedTask': 'Sem tarefa',
   'workspace.resume': 'Retomar',
   'workspace.resumeTitle': 'Inicia uma nova execução que continua a última desta intervenção',
-  'activity.refer': 'Referir intervenção…',
+  'activity.refer': 'Referir…',
   'activity.referTitle': 'Aponta o modelo para uma intervenção anterior neste servidor',
   'activity.referNone': 'Não há intervenções anteriores.',
   'activity.referLoading': 'A carregar…',

@@ -28,6 +28,22 @@ import './InterventionStart.css'
 
 const LAST_CLIENT_KEY = 'ops.lastClient'
 const HISTORY_LIMIT = 8
+
+// The history row's actions, as 14 px line icons (their names are in the tooltips): a row
+// of three outlined buttons per run outweighed the runs themselves.
+const ICON_RESUME = ['M3 12a9 9 0 1 0 3-6.7L3 8', 'M3 3v5h5']
+const ICON_REFER = ['M9 17H7A5 5 0 0 1 7 7h2', 'M15 7h2a5 5 0 1 1 0 10h-2', 'M8 12h8']
+const ICON_REPORT = ['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z', 'M14 2v6h6', 'M16 13H8', 'M16 17H8']
+
+function RunIcon({ d }: { d: string[] }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {d.map((p) => (
+        <path key={p} d={p} />
+      ))}
+    </svg>
+  )
+}
 /** The most earlier interventions a new one can be related to. */
 const MAX_RELATED = 5
 
@@ -635,29 +651,33 @@ export default function InterventionStart({ initialHostId, onStart, onResume }: 
                         <span className="ivs-run-actions">
                           <button
                             type="button"
-                            className="ivs-btn small"
+                            className="ivs-icon-btn"
                             disabled={!!problem}
+                            aria-label={t('ops.start.resume')}
                             title={problem ?? t('ops.start.resumeTitle')}
                             onClick={() => resume(r, dir)}
                           >
-                            {t('ops.start.resume')}
+                            <RunIcon d={ICON_RESUME} />
                           </button>
                           <button
                             type="button"
-                            className="ivs-btn small"
+                            className="ivs-icon-btn"
                             aria-pressed={referred}
+                            aria-label={t('ops.start.refer')}
                             disabled={!referred && related.length >= MAX_RELATED}
                             title={!referred && related.length >= MAX_RELATED ? t('ops.start.referFull', { n: MAX_RELATED }) : t('ops.start.referTitle')}
                             onClick={() => toggleRelated(r)}
                           >
-                            {t('ops.start.refer')}
+                            <RunIcon d={ICON_REFER} />
                           </button>
                           <button
                             type="button"
-                            className="ivs-btn small"
+                            className="ivs-icon-btn"
+                            aria-label={t('ops.start.report')}
+                            title={t('ops.start.report')}
                             onClick={() => setReportFor({ runId: r.runId, runbookPath: dir, appSessionId: r.appSessionId })}
                           >
-                            {t('ops.start.report')}
+                            <RunIcon d={ICON_REPORT} />
                           </button>
                         </span>
                       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactElement } from 'react'
+import { useEffect, useId, useRef, useState, type ReactElement } from 'react'
 import { rich } from '../lib/t-rich'
 import type { ApprovalOpsContext, ApprovalRequest, OpsOperatorRequest, OpsRunListItem } from '../types'
 import { describeOpsRequest, displayArgv } from '../lib/ops-approval'
@@ -18,7 +18,6 @@ import {
   type OpsRun,
   type OpsStepGroup
 } from '../lib/ops-timeline'
-import { IvsDropdown, type DropItem } from './RunbookPicker'
 import PlanReviewSheet from './PlanReviewSheet'
 import OpsReportSheet from './OpsReportSheet'
 import { backdropClose } from '../lib/backdrop-close'
@@ -486,15 +485,24 @@ function LinkLine({ link, startedAt }: { link: OpsRunLink; startedAt?: string })
   return <div className="ac-hostline approved">{text}</div>
 }
 
-/** "Refer to an intervention…": points the live run at an earlier one on the same server. */
+/**
+ * "Refer…": a quiet button beside Report and Stop that opens a short list of the earlier
+ * runs on this server; picking one points the live run's model at it. The list is only
+ * fetched when opened, and an error stays in the open list rather than taking a row of
+ * the header.
+ */
 function ReferButton({ terminalId, run }: { terminalId: string; run: OpsRun }) {
   const t = useT()
   const { locale } = useLanguage()
-  const labelId = useId()
+  const listId = useId()
+  const wrapRef = useRef<HTMLSpanElement>(null)
+  const [open, setOpen] = useState(false)
   const [runs, setRuns] = useState<OpsRunListItem[] | 'loading'>('loading')
   const [error, setError] = useState<string | null>(null)
   const hostId = run.scope?.kind === 'host' ? run.scope.hostId : undefined
+
   useEffect(() => {
+    if (!open) return
     let cancelled = false
     setRuns('loading')
     window.electronAPI
@@ -504,34 +512,75 @@ function ReferButton({ terminalId, run }: { terminalId: string; run: OpsRun }) {
     return () => {
       cancelled = true
     }
-  }, [hostId, run.runId])
+  }, [open, hostId, run.runId])
+
+  // Closes on a click elsewhere and on Escape, like any menu.
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
 
   const pick = async (r: OpsRunListItem): Promise<void> => {
     setError(null)
     try {
       const res = await window.electronAPI.opsReference(terminalId, r.runId)
-      if (res.ok) window.electronAPI.terminalWrite(terminalId, res.line + '\r')
-      else setError(res.error)
+      if (!res.ok) return setError(res.error)
+      window.electronAPI.terminalWrite(terminalId, res.line + '\r')
+      setOpen(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
   }
-  const items: DropItem[] =
-    runs === 'loading'
-      ? [{ kind: 'note', key: 'loading', content: t('ops.activity.referLoading') }]
-      : runs.length === 0
-        ? [{ kind: 'note', key: 'none', content: t('ops.activity.referNone') }]
-        : runs.map((r) => ({
-            kind: 'option' as const,
-            key: r.runId,
-            content: <span className="ivs-value">{`${shortDate(r.startedAt, locale)} · ${r.task || r.runbook}`}</span>,
-            onSelect: () => void pick(r)
-          }))
+
   return (
-    <div className="ac-refer" title={t('ops.activity.referTitle')}>
-      <IvsDropdown labelledBy={labelId} trigger={<span id={labelId}>{t('ops.activity.refer')}</span>} items={items} />
-      {error && <div className="ac-run-error" role="alert">{t('ops.activity.referError', { error })}</div>}
-    </div>
+    <span className="ac-refer" ref={wrapRef}>
+      <button
+        type="button"
+        className="ac-btn"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        title={t('ops.activity.referTitle')}
+        onClick={() => {
+          setError(null)
+          setOpen((o) => !o)
+        }}
+      >
+        {t('ops.activity.refer')}
+      </button>
+      {open && (
+        <div className="ac-refer-menu" id={listId} role="listbox" aria-label={t('ops.activity.referTitle')}>
+          {error && (
+            <div className="ac-refer-note error" role="alert">
+              {t('ops.activity.referError', { error })}
+            </div>
+          )}
+          {runs === 'loading' ? (
+            <div className="ac-refer-note">{t('ops.activity.referLoading')}</div>
+          ) : runs.length === 0 ? (
+            <div className="ac-refer-note">{t('ops.activity.referNone')}</div>
+          ) : (
+            runs.map((r) => (
+              <button key={r.runId} type="button" role="option" aria-selected={false} className="ac-refer-item" onClick={() => void pick(r)}>
+                <span className="ac-refer-when">{shortDate(r.startedAt, locale)}</span>
+                <span className="ac-refer-what">{r.task || r.runbook}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </span>
   )
 }
 
@@ -854,11 +903,11 @@ export default function ActivityColumn({
           </div>
         )}
         {current?.ended?.error && <div className="ac-run-error">{current.ended.error}</div>}
-        {current && running && <ReferButton terminalId={terminalId} run={current} />}
         <div className="ac-run-actions">
           <button type="button" className="ac-btn" disabled={!current} onClick={() => current && setReportRunId(current.runId)}>
             {t('sessions.activity.report')}
           </button>
+          {current && running && <ReferButton terminalId={terminalId} run={current} />}
           <button
             type="button"
             className="ac-btn stop"

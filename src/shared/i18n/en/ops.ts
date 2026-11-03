@@ -294,7 +294,7 @@ export default {
   'start.relatedTask': 'No task',
   'workspace.resume': 'Resume',
   'workspace.resumeTitle': 'Start a new run that continues this intervention’s last run',
-  'activity.refer': 'Refer to an intervention…',
+  'activity.refer': 'Refer…',
   'activity.referTitle': 'Point the model at an earlier intervention on this server',
   'activity.referNone': 'No earlier interventions.',
   'activity.referLoading': 'Loading…',
