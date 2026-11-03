@@ -75,13 +75,6 @@ export default {
   'activity.run.endTitle': 'End this intervention: pending calls are refused, the CLI is closed and you go back to Ops',
   'activity.run.stopTitle': "Stop this run: pending calls are refused and the CLI's ops tools stop working",
 
-  'activity.earlier.notClosed': 'not closed',
-  'activity.earlier.stopped': 'stopped',
-  'activity.earlier.finished': 'finished',
-  'activity.earlier.failed': 'failed',
-  'activity.earlier.title.one': 'Earlier today · {n} run',
-  'activity.earlier.title.other': 'Earlier today · {n} runs',
-  'activity.earlier.line': '{time} · {state} · {calls}',
 
   'activity.section.output': 'output',
   'activity.section.noOutput': '(no output)',

@@ -78,13 +78,6 @@ const sessions: Record<keyof typeof en, string> = {
   'activity.run.stopTitle':
     'Parar esta execução: as chamadas pendentes são recusadas e as ferramentas de ops da CLI deixam de funcionar',
 
-  'activity.earlier.notClosed': 'não fechou',
-  'activity.earlier.stopped': 'parou',
-  'activity.earlier.finished': 'terminou',
-  'activity.earlier.failed': 'falhou',
-  'activity.earlier.title.one': 'Hoje, mais cedo · {n} execução',
-  'activity.earlier.title.other': 'Hoje, mais cedo · {n} execuções',
-  'activity.earlier.line': '{time} · {state} · {calls}',
 
   'activity.section.output': 'saída',
   'activity.section.noOutput': '(sem saída)',

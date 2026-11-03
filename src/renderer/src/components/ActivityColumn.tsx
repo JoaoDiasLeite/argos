@@ -69,23 +69,9 @@ const clock = (iso: string | undefined, locale: string | undefined): string => {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
 }
 
-const sameDay = (iso: string, now: Date): boolean => {
-  const d = new Date(iso)
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
-}
-
 /** The command, or `read <path>` for a file tool. */
 const rowText = (r: OpsRow): string =>
   r.argv && r.argv.length ? displayArgv(r.argv) : r.path ? `${r.tool || 'read'} ${r.path}` : r.tool || r.callId
-
-function earlierState(run: OpsRun, t: TFunction): string {
-  if (!run.ended) return t('sessions.activity.earlier.notClosed')
-  return run.ended.aborted
-    ? t('sessions.activity.earlier.stopped')
-    : run.ended.ok
-      ? t('sessions.activity.earlier.finished')
-      : t('sessions.activity.earlier.failed')
-}
 
 /** One `== title ==` section of a script's output, folded until clicked. */
 function SectionItem({ section, forceOpen }: { section: OpsOutputSection; forceOpen: boolean }) {
@@ -806,8 +792,6 @@ export default function ActivityColumn({
   const referChipRef = useRef<HTMLButtonElement>(null)
   const live = !!current && !current.ended
   const progress = current ? planProgress(current) : null
-  const today = new Date()
-  const earlierToday = earlier.filter((r) => sameDay(r.startedAt, today))
   const ops = waiting?.ops
 
   // The calls under the plan steps they carried out; steps that ran nothing are not
@@ -1049,27 +1033,6 @@ export default function ActivityColumn({
             {current && items.length === 0 && <p className="ac-empty">{t('sessions.activity.noCalls')}</p>}
             {items}
 
-            {earlierToday.length > 0 && (
-              <>
-                <div className="ac-divider">
-                  <span>{plural(t, 'sessions.activity.earlier.title', earlierToday.length)}</span>
-                </div>
-                {earlierToday.map((r) => (
-                  <div key={r.runId} className="ac-earlier">
-                    <span>
-                      {t('sessions.activity.earlier.line', {
-                        time: clock(r.startedAt, locale),
-                        state: earlierState(r, t),
-                        calls: plural(t, 'sessions.activity.calls', r.calls.length)
-                      })}
-                    </span>
-                    <button type="button" className="ac-link" onClick={() => setReportRunId(r.runId)}>
-                      {t('sessions.activity.report')}
-                    </button>
-                  </div>
-                ))}
-              </>
-            )}
           </div>
         </PanelSection>
       </div>
