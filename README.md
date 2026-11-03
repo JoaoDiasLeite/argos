@@ -43,6 +43,12 @@ its own login, its own `/model` and its own tool prompts. Argos adds the workspa
   - **Runbook library**: point Argos at a runbooks folder (a git checkout, say) and every
     runbook in it is listed, read in place on each visit. Report and handover folders are
     set in Settings → Interventions.
+- **Argos the dog**: a pixel-art companion on the desktop for todos, notes and reminders.
+  Ctrl+Alt+A opens a speech bubble where "ligar à Câmara amanhã às 14h" becomes a todo
+  with a reminder, read locally in Portuguese or English; Ctrl+Alt+S dictates with a local
+  Whisper model, so audio never leaves the machine. Missed reminders arrive together on the
+  next launch, quiet mode holds them, a todo can be promoted to the active sprint, and notes
+  can also be written to an Obsidian vault. Hidden from screen shares by default.
 - **Move to another machine**: export the profile and chats to one `.argos` file and
   import it elsewhere. Logins never travel; server passwords travel only encrypted with a
   passphrase.

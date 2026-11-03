@@ -4,9 +4,13 @@ _Brainstormed and designed by Fable on 2026-11-02 from the owner's brief: "a kin
 companion to Argos, like a mini pet, that lets me interact with him by voice or text,
 where I can add things to a todo list or notes, and if I say 'I need to do this tomorrow
 by 2pm' it shows up then if the companion is activated. Practically a kind of Clippy on
-the desktop." Nothing here is implemented. Every file reference was read on 2026-11-02 at
+the desktop." Every file reference was read on 2026-11-02 at
 `2.9.1` / `1787e6c`. Claims flagged **[unverified]** need a 20-minute spike before the
 batch that depends on them starts._
+
+**Status (2026-11-03): built.** Batches A to L are on `main` for 3.0.0 (unreleased). §8 and
+§9.4 describe what was built; the rest is the design as written before it, with the spike
+results and §10's decisions folded in where they changed it.
 
 ## 1. What this is, in one paragraph
 
@@ -514,27 +518,32 @@ left column, not a second view.
 
 ## 8. Privacy and security
 
-- **Microphone.** `session.setPermissionRequestHandler` on the default session, allowing
-  `media` only when `webContents.id` is the companion window's and only while a push-to-talk
-  gesture is active; everything else denied. Also set `setPermissionCheckHandler` — the
-  check handler is what `navigator.permissions.query` and some getUserMedia paths actually
-  consult, and leaving it unset defeats the request handler. None of this exists in the repo
-  today (grepped: no `setPermissionRequestHandler` anywhere), so it is new and belongs in
-  its own batch.
-- **Audio never leaves the machine.** Recording goes to
-  `userData/companion/audio/<uuid>.wav`, is passed to a local binary, and is **deleted in a
-  `finally`** whether transcription succeeded or not. No audio retention setting — retention
-  of client voice would be the exact thing GDPR policy forbids, so it is not offered.
-- **`hardenWebContents(petWindow)`** like every other window (`src/main/overlay.ts:54`,
-  `src/main/toast.ts:49`): renderers run `sandbox: false`, so a navigation away from the app
-  would inherit the full preload bridge.
-- **The model path sees text only**, and only on the low-confidence fallback. The settings
-  pane should say which engine that is, since it is the one place a captured sentence can
-  leave the process.
-- **Storage** is `userData`, which is per-user and already covered by the profile
-  export/import. Not encrypted — consistent with everything else Argos stores — but the
-  companion folder must be in the export's candidate list so a profile move does not silently
-  drop someone's todos.
+As built (batches C, H, G, J, K):
+
+- **Microphone.** `installMicrophonePermission` (`src/main/index.ts`) sets both
+  `setPermissionRequestHandler` and `setPermissionCheckHandler` on the default session:
+  `media` is granted only to the bubble's webContents, only for audio, and only while the
+  `voice` pref is on. Every other permission keeps Electron's default answer (the
+  terminals' clipboard writes depend on it). The pet window never asks.
+- **Audio never touches the disk or the network.** The bubble records 16 kHz PCM, packs it
+  into a WAV in memory (`src/shared/companion-wav.ts`) and hands the buffer to main over
+  `companion:voice-transcribe`; main checks its size and header and passes it to a
+  `worker_threads` worker (sherpa-onnx, Silero VAD, Whisper large-v3-turbo int8). No temp
+  file, no retention setting: keeping client voice is exactly what the GDPR policy rules
+  out, so it is not offered. The only network use is the one-time model download from
+  GitHub when meeting-notes' models are not already on the machine.
+- **`hardenWebContents`** on the pet and the bubble, like every other window: renderers run
+  `sandbox: false`, so a navigation away from the app would inherit the full preload bridge.
+- **The model sees text only,** one line, and only when the grammar is unsure, the capture
+  came from the bubble and "Perguntar ao modelo" is on (the default; Settings says what it
+  sends). It runs with the headless-reasoning policy: no tools.
+- **Hidden from screen capture** by default (`setContentProtection`, "Invisível em
+  partilhas de ecrã"), which also hides the pet from the user's own screenshots.
+- **Storage** is `userData/companion` (todos.json, notes.json, state.json), per-user and not
+  encrypted, like everything else Argos stores. The profile export carries todos.json and
+  notes.json (import merges them by id, the local copy wins); state.json is per machine.
+- **Obsidian export** writes notes, never todos, into a vault the user picks, never
+  overwriting a file there.
 
 ---
 
@@ -613,7 +622,8 @@ and its first paint instant.
 | `companion-schedule-pure.ts` | given now + todos + state → what is due, what is late, what to re-arm; no timers; fully tested |
 | `companion-scheduler.ts` | the one timer, `powerMonitor` wiring, catch-up, delivery routing (bubble vs notification) |
 | `companion-window.ts` | the pet (and bubble) windows, placement, click-through, dnd |
-| `companion-voice.ts` | whisper binary discovery, model download, transcribe, temp-file cleanup |
+| `companion-voice.ts` | model discovery (meeting-notes' copy first) and first-use download; transcription runs in `companion-voice-worker.ts` through `companion-voice-engine.ts` |
+| `companion-obsidian.ts` | writes notes into the Obsidian vault (`-pure`: file name, frontmatter, subfolder) |
 
 The `-pure` / `.test.ts` split is the house pattern (`ops-policy-pure.ts`,
 `plan-alerts-pure.ts`, `notify-hook-pure.ts` …) and is what makes the two genuinely risky
@@ -621,23 +631,35 @@ parts — date parsing and "what is due now" — testable without launching Elec
 
 ### 9.4 IPC surface
 
-```
-companion:list            → { todos, notes }
-companion:capture(text, source)  → { item, parsed }   // the hot path
-companion:update(todo)    companion:delete(id)
-companion:done(id, done)  companion:snooze(id, ms)
-companion:promote(id, sprintId)  → { sprintItemId }
-companion:note(text)      companion:notes-search(q)
-companion:dnd(untilMs | null)
-companion:state           → { position, dnd, voiceReady }
-companion:voice-start     companion:voice-stop → { text, ms }
-companion:voice-install   → progress events while the model downloads
-companion:settings        companion:set-settings(partial)
+As built. Renderer → main (`invoke` unless marked *send*):
 
-// main → renderers
-companion:due             { todo, late }        // to the pet window
-companion:changed         { todos?, notes? }    // to the main window panel
-companion:shown                                 // reset + focus the bubble (overlay:shown's twin)
+```
+companion:list                      → { todos, notes, sprintLinks, activeSprint, dndUntil }
+companion:capture({ text, source, id })  → CompanionCaptureResult   // the hot path
+companion:capture-cancel(id)        // Esc while the model reads the date
+companion:undo(id, kind)            // Ctrl+Z on the receipt
+companion:update(todo)  companion:delete(id)  companion:done(id, done)
+companion:snooze(id, { minutes } | { tomorrowMorning } | { at })
+companion:dismiss(id)               companion:dnd(untilMs | null)
+companion:promote(id) → CompanionPromoteResult   companion:unlink(id)
+companion:state                     → CompanionStateView (prefs, shortcuts, pet state, bubble)
+companion:obsidian-info(dir)        companion:obsidian-export → { exported, failed }
+companion:voice-status  companion:voice-install  companion:voice-cancel-install
+companion:voice-transcribe(wav: ArrayBuffer) → CompanionVoiceResult
+config:set-companion(partial)       → { companion, registeredShortcut, registeredVoiceShortcut }
+
+send: companion:bubble-size  companion:bubble-close  companion:drag-start  companion:drag-end
+      companion:hit-rect  companion:summon  companion:open-main  companion:pet-menu
+      companion:voice-prepare  companion:voice-phase
+```
+
+Main → renderers:
+
+```
+companion:shown  companion:bubble-mode  companion:bubble-anchor  companion:bubble-hidden
+companion:pet-state  companion:pet-facing  companion:capture-thinking
+companion:changed (list, to the panel and the bubble)
+companion:voice-progress  companion:voice-toggle
 ```
 
 All of them go through `src/preload/index.ts` the same way everything else does.
