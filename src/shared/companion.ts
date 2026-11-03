@@ -94,6 +94,10 @@ export interface CompanionPrefs {
    * grammar is unsure, that one line goes to the account's model. On by default.
    */
   askModel: boolean
+  /** The Obsidian vault notes are also written to (plan §6.2). '' = no export, the default. */
+  obsidianVault: string
+  /** The folder inside the vault, '/'-separated; '' = the vault's root. */
+  obsidianFolder: string
 }
 
 /**

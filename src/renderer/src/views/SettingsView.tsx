@@ -477,6 +477,51 @@ export default function SettingsView({
     }
   }, [section])
 
+  // Obsidian export (plan §6.2): whether the vault folder looks like a vault, the
+  // subfolder as typed (saved on blur), and the last "export the rest" result.
+  const [vault, setVault] = useState<{ exists: boolean; isVault: boolean } | null>(null)
+  const [obsidianFolder, setObsidianFolder] = useState<string | null>(null)
+  const [obsidianResult, setObsidianResult] = useState<{ exported: number; failed: number } | null>(null)
+  const obsidianVault = companion?.obsidianVault ?? ''
+
+  useEffect(() => {
+    let cancelled = false
+    setVault(null)
+    if (!obsidianVault) return
+    window.electronAPI.companion
+      .obsidianInfo(obsidianVault)
+      .then((info) => {
+        if (!cancelled) setVault(info)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [obsidianVault])
+
+  const pickVault = async () => {
+    const dir = await window.electronAPI.openFolder(obsidianVault || undefined)
+    if (!dir) return
+    setObsidianResult(null)
+    await updateCompanion({ obsidianVault: dir })
+  }
+
+  const saveObsidianFolder = async () => {
+    if (obsidianFolder === null || !companion) return
+    await updateCompanion({ obsidianFolder })
+    // Main keeps the old value for a folder it refuses; show what was stored.
+    setObsidianFolder(null)
+  }
+
+  const exportObsidian = async () => {
+    setCompanionBusy(true)
+    try {
+      setObsidianResult(await window.electronAPI.companion.obsidianExport())
+    } finally {
+      setCompanionBusy(false)
+    }
+  }
+
   const updateCompanion = async (patch: Partial<CompanionPrefs>) => {
     setCompanionBusy(true)
     try {
@@ -984,6 +1029,83 @@ export default function SettingsView({
                       registeredShortcut={companionVoiceShortcut}
                       onChange={(patch) => void updateCompanion(patch)}
                     />
+                  )}
+                  <div className="srow">
+                    <div className="srow-text">
+                      <span className="srow-label">{t('settings.companion.obsidian.label')}</span>
+                      {obsidianVault ? (
+                        <code className="settings-path">{obsidianVault}</code>
+                      ) : (
+                        <span className="help">{t('settings.companion.obsidian.off')}</span>
+                      )}
+                      <span className="help">{t('settings.companion.obsidian.hint')}</span>
+                      {vault && !vault.exists && (
+                        <span className="help settings-error" role="alert">
+                          {t('settings.companion.obsidian.missing')}
+                        </span>
+                      )}
+                      {vault?.exists && !vault.isVault && (
+                        <span className="help">{t('settings.companion.obsidian.notVault')}</span>
+                      )}
+                    </div>
+                    <div className="settings-btn-pair">
+                      <button type="button" className="btn-ghost small" disabled={companionBusy} onClick={() => void pickVault()}>
+                        {obsidianVault ? t('settings.companion.obsidian.change') : t('settings.companion.obsidian.choose')}
+                      </button>
+                      {obsidianVault && (
+                        <button
+                          type="button"
+                          className="btn-ghost small"
+                          disabled={companionBusy}
+                          onClick={() => {
+                            setObsidianResult(null)
+                            void updateCompanion({ obsidianVault: '' })
+                          }}
+                        >
+                          {t('settings.companion.obsidian.turnOff')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {obsidianVault && (
+                    <>
+                      <div className="srow">
+                        <div className="srow-text">
+                          <span className="srow-label">{t('settings.companion.obsidian.folder.label')}</span>
+                          <span className="help">{t('settings.companion.obsidian.folder.hint')}</span>
+                        </div>
+                        <input
+                          className="text-input"
+                          value={obsidianFolder ?? companion.obsidianFolder}
+                          disabled={companionBusy}
+                          placeholder={t('settings.companion.obsidian.folder.root')}
+                          aria-label={t('settings.companion.obsidian.folder.label')}
+                          onChange={(e) => setObsidianFolder(e.target.value)}
+                          onBlur={() => void saveObsidianFolder()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') e.currentTarget.blur()
+                            if (e.key === 'Escape') setObsidianFolder(null)
+                          }}
+                        />
+                      </div>
+                      <div className="srow">
+                        <div className="srow-text">
+                          <span className="srow-label">{t('settings.companion.obsidian.export.label')}</span>
+                          <span className="help">
+                            {obsidianResult
+                              ? obsidianResult.failed
+                                ? t('settings.companion.obsidian.export.failed', { n: obsidianResult.exported, failed: obsidianResult.failed })
+                                : obsidianResult.exported
+                                  ? plural(t, 'settings.companion.obsidian.export.done', obsidianResult.exported)
+                                  : t('settings.companion.obsidian.export.none')
+                              : t('settings.companion.obsidian.export.hint')}
+                          </span>
+                        </div>
+                        <button type="button" className="btn-ghost small" disabled={companionBusy || !vault?.exists} onClick={() => void exportObsidian()}>
+                          {t('settings.companion.obsidian.export.action')}
+                        </button>
+                      </div>
+                    </>
                   )}
                   {/* Reminders need the app running (plan §10, decision 8): nudge towards
                       starting with Windows while that is off, through the System pref. */}

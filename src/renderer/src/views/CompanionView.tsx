@@ -45,7 +45,9 @@ const DEFAULT_PREFS: CompanionPrefs = {
   voice: false,
   voiceShortcut: '',
   walk: true,
-  askModel: true
+  askModel: true,
+  obsidianVault: '',
+  obsidianFolder: 'Argos'
 }
 
 /** Text-field saves wait this long after the last keystroke. */

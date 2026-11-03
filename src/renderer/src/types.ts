@@ -1436,6 +1436,10 @@ declare global {
         update: (todo: CompanionTodo) => Promise<CompanionTodo | null>
         /** A todo or a note, by id. */
         delete: (id: string) => Promise<boolean>
+        /** Whether a folder exists and has `.obsidian/` (Settings warns, never refuses). */
+        obsidianInfo: (dir: string) => Promise<{ exists: boolean; isVault: boolean }>
+        /** Write every note not yet in the vault (plan §6.2). */
+        obsidianExport: () => Promise<{ exported: number; failed: number }>
         done: (id: string, done: boolean) => Promise<CompanionTodo | null>
         /** Hand a todo to the active sprint as a new item (plan §6.1); never twice. */
         promote: (id: string) => Promise<CompanionPromoteResult>

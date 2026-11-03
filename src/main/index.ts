@@ -208,6 +208,7 @@ import { noteTerminalBusy } from './run-indicators-pure'
 import { successBadge, errorBadge, approvalBadge } from './badges'
 import { createTray, quietUntilLabel, refreshTrayMenu, updateTrayShortcutLabel } from './tray'
 import { companionStore, normalizeTodo } from './companion-store'
+import { exportNote, removeExport, vaultInfo } from './companion-obsidian'
 import { startCompanionScheduler, type CompanionScheduler } from './companion-scheduler'
 import { snooze, type DueReminder, type SnoozeOption } from './companion-schedule-pure'
 import { parseCapture } from './companion-nlu-pure'
@@ -1128,7 +1129,16 @@ ipcMain.handle('companion:capture', async (e, payload: unknown): Promise<Compani
   const now = Date.now()
   const store = companionStore()
   const plan = planCapture({ text, source, parsed, todos: store.listTodos(), now, newId: randomUUID })
-  if (plan.kind === 'note') store.saveNote(plan.note)
+  if (plan.kind === 'note') {
+    store.saveNote(plan.note)
+    // Also into the Obsidian vault when one is set (plan §6.2); a failure leaves the note
+    // in notes.json only, and "Exportar as que faltam" in Settings picks it up later.
+    const obsidianPath = exportNote(plan.note, prefs)
+    if (obsidianPath) {
+      plan.note = { ...plan.note, obsidianPath }
+      store.saveNote(plan.note)
+    }
+  }
   if (plan.kind === 'todo') {
     store.saveTodo(plan.todo)
     companionScheduler?.poke()
@@ -1148,7 +1158,9 @@ ipcMain.handle('companion:capture-cancel', (_, id: unknown) => {
 ipcMain.handle('companion:undo', (_, id: unknown, kind: unknown) => {
   if (!isId(id) || (kind !== 'todo' && kind !== 'note')) return false
   const store = companionStore()
+  const note = kind === 'note' ? store.listNotes().find((n) => n.id === id) : undefined
   const removed = kind === 'todo' ? store.deleteTodo(id) : store.deleteNote(id)
+  if (removed && note) removeExport(note)
   if (removed) {
     if (kind === 'todo') {
       settleCompanionReminder(id)
@@ -1184,6 +1196,28 @@ ipcMain.handle('companion:delete', (_, id: unknown) => {
     companionChanged()
   }
   return removed
+})
+// Settings' Obsidian row: whether the picked folder is a vault, and a catch-up export of
+// every note not written yet (made before the export was on, or while the vault was away).
+ipcMain.handle('companion:obsidian-info', (_, dir: unknown) => vaultInfo(typeof dir === 'string' ? dir : ''))
+ipcMain.handle('companion:obsidian-export', () => {
+  const prefs = getConfig().companion
+  if (!prefs.obsidianVault) return { exported: 0, failed: 0 }
+  const store = companionStore()
+  let exported = 0
+  let failed = 0
+  for (const note of store.listNotes()) {
+    if (note.obsidianPath) continue
+    const obsidianPath = exportNote(note, prefs)
+    if (obsidianPath) {
+      store.saveNote({ ...note, obsidianPath })
+      exported++
+    } else {
+      failed++
+    }
+  }
+  if (exported) companionChanged()
+  return { exported, failed }
 })
 ipcMain.handle('companion:done', (_, id: unknown, done: unknown) => {
   if (!isId(id) || typeof done !== 'boolean') return null

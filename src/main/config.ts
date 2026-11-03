@@ -5,6 +5,7 @@ import * as os from 'os'
 import { readJsonFile } from './json-file'
 import { UiPrefs, UiPrefsPatch, applyUiPatch, migrateUiPrefs, resolveUiPrefs } from './ui-prefs-pure'
 import type { CompanionPrefs } from './companion-types'
+import { cleanSubfolder, DEFAULT_OBSIDIAN_FOLDER } from './companion-obsidian-pure'
 // i18n.ts reads getConfig() from here: a cycle, but both sides only call each other at
 // run time, never while the modules load.
 import { t } from './i18n'
@@ -136,7 +137,9 @@ const COMPANION_DEFAULTS: CompanionPrefs = {
   voice: false,
   voiceShortcut: '',
   walk: true,
-  askModel: true
+  askModel: true,
+  obsidianVault: '',
+  obsidianFolder: DEFAULT_OBSIDIAN_FOLDER
 }
 
 const configPath = path.join(app.getPath('userData'), 'config.json')
@@ -270,7 +273,13 @@ function cleanCompanionPrefs(base: CompanionPrefs, patch: unknown): CompanionPre
     voice: typeof p.voice === 'boolean' ? p.voice : base.voice,
     voiceShortcut: typeof p.voiceShortcut === 'string' ? p.voiceShortcut.trim() : base.voiceShortcut,
     walk: typeof p.walk === 'boolean' ? p.walk : base.walk,
-    askModel: typeof p.askModel === 'boolean' ? p.askModel : base.askModel
+    askModel: typeof p.askModel === 'boolean' ? p.askModel : base.askModel,
+    // An absolute folder or '' (off); anything else keeps what was there.
+    obsidianVault:
+      typeof p.obsidianVault === 'string' && (p.obsidianVault.trim() === '' || path.isAbsolute(p.obsidianVault.trim()))
+        ? p.obsidianVault.trim()
+        : base.obsidianVault,
+    obsidianFolder: typeof p.obsidianFolder === 'string' ? (cleanSubfolder(p.obsidianFolder) ?? base.obsidianFolder) : base.obsidianFolder
   }
 }
 

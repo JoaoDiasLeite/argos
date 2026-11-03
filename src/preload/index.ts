@@ -186,6 +186,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     undo: (id: string, kind: 'todo' | 'note') => ipcRenderer.invoke('companion:undo', id, kind),
     update: (todo: unknown) => ipcRenderer.invoke('companion:update', todo),
     delete: (id: string) => ipcRenderer.invoke('companion:delete', id),
+    obsidianInfo: (dir: string) => ipcRenderer.invoke('companion:obsidian-info', dir),
+    obsidianExport: () => ipcRenderer.invoke('companion:obsidian-export'),
     done: (id: string, done: boolean) => ipcRenderer.invoke('companion:done', id, done),
     promote: (id: string) => ipcRenderer.invoke('companion:promote', id),
     unlink: (id: string) => ipcRenderer.invoke('companion:unlink', id),
