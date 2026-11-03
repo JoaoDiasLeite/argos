@@ -77,6 +77,9 @@ export interface OpsRun {
   ticket?: string
   client?: string
   scope?: { kind: 'host'; hostId: string } | { kind: 'open' }
+  /** The earlier run this one resumes, and the ones picked as related (run.start). */
+  resumesRunId?: string
+  relatedRunIds?: string[]
   policySha256?: string
   /** The operator's answers to a host's first touch in an open intervention, in order. */
   hostAnswers: OpsHostAnswer[]
@@ -239,6 +242,9 @@ export function foldOpsEvents(events: OpsLiveEvent[]): OpsRun[] {
           startPlans.add(runId)
         }
         if (e.planRequired === false) run.planRequired = false
+        run.resumesRunId = str(e.resumesRunId) || undefined
+        const related = Array.isArray(e.relatedRunIds) ? e.relatedRunIds.filter((x): x is string => typeof x === 'string' && x !== '') : []
+        run.relatedRunIds = related.length ? related : undefined
         break
       }
       case 'note': {

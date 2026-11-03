@@ -1,6 +1,6 @@
-import { useEffect, useId, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement, type ReactNode, type Ref } from 'react'
 import { rich } from '../lib/t-rich'
-import type { ApprovalOpsContext, ApprovalRequest, OpsOperatorRequest, OpsRunListItem } from '../types'
+import type { ApprovalOpsContext, ApprovalRequest, OpsOperatorRequest } from '../types'
 import { describeOpsRequest, displayArgv } from '../lib/ops-approval'
 import { splitSections, type OpsOutputSection } from '../lib/ops-sections'
 import {
@@ -39,15 +39,15 @@ interface Props {
   onDecide?: (allow: boolean, skipSteps?: number[]) => void
   /** Deny the waiting request and stop the run. */
   onDenyStop?: () => void
-  /** End the intervention: stop the run, close its CLI and leave the workspace. Without
-   *  it, Stop only stops the run. */
-  onStop?: () => void
-  /** The CLI is still up, so there is something for onStop to end even after the run has. */
-  cliAlive?: boolean
   /** The model's ask_operator requests still open on this terminal (App owns them). */
   operatorRequests?: OpsOperatorRequest[]
   /** Answer one with the pasted output; null declines. */
   onOperatorAnswer?: (requestId: string, output: string | null) => void
+  /** The header's panel toggle hid the panel (an approval or a card still shows it). */
+  collapsed?: boolean
+  /** The Context section's chips: the server and the mode the intervention runs in. */
+  serverLabel?: string
+  modeLabel?: string
 }
 
 interface ScriptInfo {
@@ -73,12 +73,6 @@ const sameDay = (iso: string, now: Date): boolean => {
 /** The command, or `read <path>` for a file tool. */
 const rowText = (r: OpsRow): string =>
   r.argv && r.argv.length ? displayArgv(r.argv) : r.path ? `${r.tool || 'read'} ${r.path}` : r.tool || r.callId
-
-function runState(run: OpsRun, t: TFunction, locale: string | undefined): string {
-  if (!run.ended) return t('sessions.activity.run.runningSince', { time: clock(run.startedAt, locale) })
-  if (run.ended.aborted) return t('sessions.activity.run.stopped')
-  return t('sessions.activity.run.finished', { time: clock(run.endedAt, locale) })
-}
 
 function earlierState(run: OpsRun, t: TFunction): string {
   if (!run.ended) return t('sessions.activity.earlier.notClosed')
@@ -132,7 +126,7 @@ function CallRow({ row }: { row: OpsRow }) {
   const refused = row.status === 'denied' || row.status === 'stopped'
   const text = rowText(row)
   const label = rowLabel(row, t)
-  const cls = `ac-row${open ? ' open' : ''}${refused ? ' refused' : ''}${output ? ' has-output' : ''}`
+  const cls = `ac-row${open ? ' open' : ''}${refused ? ' refused' : ''}${output ? ' has-output' : ''}${row.status === 'running' ? ' running' : ''}`
   const inner = (
     <>
       <span className={`ac-dot ${tone}${row.status === 'running' ? ' pulse' : ''}`} aria-hidden="true" />
@@ -379,7 +373,10 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
   return (
     <div className="ac-scripts">
       <button type="button" className="ac-scripts-head" aria-expanded={open} onClick={toggle}>
-        <span aria-hidden="true">{open ? '▾' : '▸'}</span> {t('sessions.activity.scripts.title')} <span className="ac-scripts-n">{scripts.length}</span>
+        {t('sessions.activity.scripts.title')} <span className="ac-scripts-n">{scripts.length}</span>
+        <svg className={`ac-chev right${open ? ' open' : ''}`} width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="m9 18 6-6-6-6" />
+        </svg>
       </button>
       {open &&
         scripts.map((s) => (
@@ -485,144 +482,117 @@ function LinkLine({ link, startedAt }: { link: OpsRunLink; startedAt?: string })
   return <div className="ac-hostline approved">{text}</div>
 }
 
-/**
- * "Refer…": a quiet button beside Report and Stop that opens a short list of the earlier
- * runs on this server; picking one points the live run's model at it. The list is only
- * fetched when opened, and an error stays in the open list rather than taking a row of
- * the header.
- */
-function ReferButton({ terminalId, run }: { terminalId: string; run: OpsRun }) {
-  const t = useT()
-  const { locale } = useLanguage()
-  const listId = useId()
-  const wrapRef = useRef<HTMLSpanElement>(null)
-  const [open, setOpen] = useState(false)
-  const [runs, setRuns] = useState<OpsRunListItem[] | 'loading'>('loading')
-  const [error, setError] = useState<string | null>(null)
-  const hostId = run.scope?.kind === 'host' ? run.scope.hostId : undefined
+const FOLD_PREFIX = 'argos.ops.panel.'
 
-  useEffect(() => {
-    if (!open) return
-    let cancelled = false
-    setRuns('loading')
-    window.electronAPI
-      .opsRuns({ hostId, limit: 15 })
-      .then((res) => !cancelled && setRuns(res.ok ? res.runs.filter((r) => r.runId !== run.runId) : []))
-      .catch(() => !cancelled && setRuns([]))
-    return () => {
-      cancelled = true
-    }
-  }, [open, hostId, run.runId])
-
-  // Closes on a click elsewhere and on Escape, like any menu.
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
-  const pick = async (r: OpsRunListItem): Promise<void> => {
-    setError(null)
+/** A section's folded state, remembered per section across tabs and restarts. */
+function useFold(id: string): [boolean, () => void] {
+  const [closed, setClosed] = useState<boolean>(() => {
     try {
-      const res = await window.electronAPI.opsReference(terminalId, r.runId)
-      if (!res.ok) return setError(res.error)
-      window.electronAPI.terminalWrite(terminalId, res.line + '\r')
-      setOpen(false)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      return localStorage.getItem(FOLD_PREFIX + id) === '1'
+    } catch {
+      return false
     }
-  }
+  })
+  const toggle = (): void =>
+    setClosed((c) => {
+      try {
+        localStorage.setItem(FOLD_PREFIX + id, c ? '0' : '1')
+      } catch {
+        // A remembered fold is a convenience.
+      }
+      return !c
+    })
+  return [closed, toggle]
+}
 
+function Chevron({ open }: { open: boolean }) {
   return (
-    <span className="ac-refer" ref={wrapRef}>
-      <button
-        type="button"
-        className="ac-btn"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={open ? listId : undefined}
-        title={t('ops.activity.referTitle')}
-        onClick={() => {
-          setError(null)
-          setOpen((o) => !o)
-        }}
-      >
-        {t('ops.activity.refer')}
-      </button>
-      {open && (
-        <div className="ac-refer-menu" id={listId} role="listbox" aria-label={t('ops.activity.referTitle')}>
-          {error && (
-            <div className="ac-refer-note error" role="alert">
-              {t('ops.activity.referError', { error })}
-            </div>
-          )}
-          {runs === 'loading' ? (
-            <div className="ac-refer-note">{t('ops.activity.referLoading')}</div>
-          ) : runs.length === 0 ? (
-            <div className="ac-refer-note">{t('ops.activity.referNone')}</div>
-          ) : (
-            runs.map((r) => (
-              <button key={r.runId} type="button" role="option" aria-selected={false} className="ac-refer-item" onClick={() => void pick(r)}>
-                <span className="ac-refer-when">{shortDate(r.startedAt, locale)}</span>
-                <span className="ac-refer-what">{r.task || r.runbook}</span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </span>
+    <svg className={`ac-chev${open ? ' open' : ''}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
   )
 }
 
-const HYP_MARK: Record<OpsHypothesis['status'], string> = { open: '●', confirmed: '✓', ruled_out: '✕' }
-
-/** The model's hypotheses with their status, then its findings; nothing when it noted none. */
-function NotesSection({ run }: { run: OpsRun }) {
+/** One collapsible section of the side panel: a header row (title, muted count, chevron). */
+function PanelSection({
+  id,
+  title,
+  count,
+  sectionRef,
+  children
+}: {
+  id: string
+  title: string
+  count?: string
+  sectionRef?: Ref<HTMLElement>
+  children: ReactNode
+}) {
   const t = useT()
-  if (run.hypotheses.length === 0 && run.findings.length === 0) return null
+  const [closed, toggle] = useFold(id)
+  return (
+    <section className="ac-ps" ref={sectionRef}>
+      <button type="button" className="ac-ps-head" aria-expanded={!closed} title={t('sessions.activity.panel.toggle', { name: title })} onClick={toggle}>
+        <span className="ac-ps-title">{title}</span>
+        {count && <span className="ac-ps-count">{count}</span>}
+        <span className="ac-ps-spacer" />
+        <Chevron open={!closed} />
+      </button>
+      {!closed && <div className="ac-ps-body">{children}</div>}
+    </section>
+  )
+}
+
+/** A row's slot. Opens its height and slides in from the right when `entering` was true at
+ *  the moment it mounted (a row that arrived after the list was on screen); otherwise it
+ *  is a plain wrapper. The choice is taken once, so a later render cannot cut the motion. */
+function Slot({ entering, children }: { entering: boolean; children: ReactNode }) {
+  const [enter] = useState(entering)
+  return (
+    <div className={`ac-slot${enter ? ' enter' : ''}`}>
+      <div className="ac-slot-in">{children}</div>
+    </div>
+  )
+}
+
+/** The model's hypotheses as a checklist, then its findings; the plan's progress on top. */
+function ProgressBody({ run, progress }: { run: OpsRun; progress: { done: number; total: number } | null }) {
+  const t = useT()
   const statusText = (s: OpsHypothesis['status']): string =>
     s === 'confirmed' ? t('sessions.activity.notes.confirmed') : s === 'ruled_out' ? t('sessions.activity.notes.ruledOut') : t('sessions.activity.notes.open')
   return (
     <div className="ac-notes">
-      {run.hypotheses.length > 0 && (
-        <>
-          <span className="ac-notes-title">{t('sessions.activity.notes.hypotheses')}</span>
-          {run.hypotheses.map((h) => (
-            <div key={h.id} className={`ac-hyp ${h.status}`}>
-              <span className="ac-hyp-mark" role="img" aria-label={statusText(h.status)} title={statusText(h.status)}>
-                {HYP_MARK[h.status]}
-              </span>
-              <span className="ac-hyp-text">
-                {h.text}
-                {h.evidence && <small>{h.evidence}</small>}
-              </span>
-            </div>
-          ))}
-        </>
+      {progress && (
+        <div className="ac-plan">
+          <span className="ac-plan-steps">{plural(t, 'sessions.activity.run.steps', progress.total, { done: progress.done })}</span>
+          <div className="ac-progress" aria-hidden="true">
+            <span style={{ width: `${(progress.done / progress.total) * 100}%` }} />
+          </div>
+        </div>
       )}
-      {run.findings.length > 0 && (
-        <>
-          <span className="ac-notes-title">{t('sessions.activity.notes.findings')}</span>
-          <ul className="ac-findings">
-            {run.findings.map((f, i) => (
-              <li key={i}>
-                {f.text}
-                {f.evidence && <small>{f.evidence}</small>}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      {run.hypotheses.map((h) => (
+        <div key={h.id} className={`ac-hyp ${h.status}`}>
+          <span className="ac-hyp-mark" role="img" aria-label={statusText(h.status)} title={statusText(h.status)}>
+            {h.status === 'confirmed' && (
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M5 12.5l4.5 4.5L19 7.5" />
+              </svg>
+            )}
+          </span>
+          <span className="ac-hyp-text">
+            {h.text}
+            {h.evidence && <small>{h.evidence}</small>}
+          </span>
+        </div>
+      ))}
+      {run.findings.map((f, i) => (
+        <div key={`f${i}`} className="ac-find">
+          <span className="ac-find-dot" aria-hidden="true" />
+          <span className="ac-hyp-text">
+            {f.text}
+            {f.evidence && <small>{f.evidence}</small>}
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -793,10 +763,18 @@ function WaitingCall({ ops, onDecide }: { ops: ApprovalOpsContext; onDecide: (al
   )
 }
 
+const whenOf = (id: string, known: Map<string, string>, locale: string | undefined): string => {
+  const at = known.get(id)
+  if (!at) return id.slice(0, 8)
+  return [shortDate(at, locale), clock(at, locale)].filter(Boolean).join(' ')
+}
+
 /**
- * The Ops workspace's one activity column (docs/INTERVENTIONS_PLAN.md §4, board D2): the
- * run header, whatever waits for the operator as the only highlighted block, one line per
- * call, and the earlier runs of this intervention folded to a line each.
+ * The Ops workspace's side panel (docs/INTERVENTIONS_PLAN.md §4, board D2): whatever waits
+ * for the operator pinned at the top as the only highlighted block, then three collapsible
+ * sections: Progress (plan, hypotheses, findings), Context (server, runbook, linked runs,
+ * scripts) and Activity (one line per call, newest first, earlier runs folded at the end).
+ * The run's state, Refer, Handover and Stop live in the workspace's own header.
  */
 export default function ActivityColumn({
   terminalId,
@@ -807,10 +785,11 @@ export default function ActivityColumn({
   waiting,
   onDecide,
   onDenyStop,
-  onStop,
-  cliAlive,
   operatorRequests,
-  onOperatorAnswer
+  onOperatorAnswer,
+  collapsed,
+  serverLabel,
+  modeLabel
 }: Props) {
   const t = useT()
   const { locale } = useLanguage()
@@ -818,7 +797,6 @@ export default function ActivityColumn({
   const progress = current ? planProgress(current) : null
   const today = new Date()
   const earlierToday = earlier.filter((r) => sameDay(r.startedAt, today))
-  const running = !!current && !current.ended
   const ops = waiting?.ops
 
   // The calls under the plan steps they carried out; steps that ran nothing are not
@@ -847,139 +825,227 @@ export default function ActivityColumn({
     ? (operatorRequests ?? []).filter((r) => r.appSessionId === terminalId && !settledAsks.has(`${r.runId}:${r.askId}`))
     : []
   const carded = new Set(cards.filter((r) => r.runId === current?.runId).map((r) => r.askId))
+  const pending = !!(waiting && ops && onDecide) || cards.length > 0
+
+  // ── New rows: which ones arrive after the list is on screen ──
+  // `seen` holds every row key shown so far (updated after each commit); `ready` turns on
+  // once the history has loaded, so what is there on first render or after a tab switch
+  // never animates. A list scrolled away from its top is left alone: new rows are counted
+  // into a pill instead of moving what the operator is reading.
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const sectionRef = useRef<HTMLElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const seenRef = useRef<Set<string>>(new Set())
+  const readyRef = useRef(false)
+  const scrolledRef = useRef(false)
+  const [newCount, setNewCount] = useState(0)
+  const keys: string[] = []
+  const canAnimate = readyRef.current && !scrolledRef.current
+  const isNew = (key: string): boolean => canAnimate && !seenRef.current.has(key)
+  const slot = (key: string, el: ReactElement, suppress = false): ReactElement => {
+    keys.push(key)
+    return (
+      <Slot key={key} entering={!suppress && isNew(key)}>
+        {el}
+      </Slot>
+    )
+  }
 
   // Host lines and the operator's commands sit among the rows at the point they came; a
   // command still on its card is not listed twice.
   const knownStart = new Map([current, ...earlier].flatMap((r) => (r ? [[r.runId, r.startedAt] as const] : [])))
-  const lines: { beforeCall: number; at: string; el: ReactElement }[] = current
+  const lines: { beforeCall: number; at: string; key: string; el: ReactElement }[] = current
     ? [
         ...(current.links ?? []).map((l, i) => ({
           beforeCall: l.beforeCall,
           at: l.at,
-          el: <LinkLine key={`l:${i}`} link={l} startedAt={l.refRunId ? knownStart.get(l.refRunId) : undefined} />
+          key: `${current.runId}:l:${i}`,
+          el: <LinkLine link={l} startedAt={l.refRunId ? knownStart.get(l.refRunId) : undefined} />
         })),
-        ...current.hostAnswers.map((a: OpsHostAnswer) => ({ beforeCall: a.beforeCall, at: a.at, el: <HostLine key={`h:${a.hostId}:${a.at}`} answer={a} /> })),
+        ...current.hostAnswers.map((a: OpsHostAnswer) => ({
+          beforeCall: a.beforeCall,
+          at: a.at,
+          key: `${current.runId}:h:${a.hostId}:${a.at}`,
+          el: <HostLine answer={a} />
+        })),
         ...current.asks
           .filter((a) => !carded.has(a.askId))
-          .map((a) => ({ beforeCall: a.beforeCall, at: a.at, el: <AskRow key={`a:${a.askId}`} ask={a} /> }))
+          .map((a) => ({ beforeCall: a.beforeCall, at: a.at, key: `${current.runId}:a:${a.askId}`, el: <AskRow ask={a} /> }))
       ].sort((a, b) => a.beforeCall - b.beforeCall || (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
     : []
-  const rowsOf = (rows: OpsRow[], firstCall: number): ReactElement[] => {
+  // Built oldest first (a line sits before the call it preceded), then flipped: newest on top.
+  const rowsOf = (rows: OpsRow[], firstCall: number, suppress: boolean): ReactElement[] => {
     const out: ReactElement[] = []
     rows.forEach((row, j) => {
-      while (lines.length && lines[0].beforeCall <= firstCall + j) out.push(lines.shift()!.el)
-      out.push(<CallRow key={row.callId} row={row} />)
+      while (lines.length && lines[0].beforeCall <= firstCall + j) {
+        const l = lines.shift()!
+        out.push(slot(l.key, l.el, suppress))
+      }
+      out.push(slot(`${current?.runId}:c:${row.callId}`, <CallRow row={row} />, suppress))
     })
     return out
   }
-  const rows: ReactElement[] = []
+  const items: ReactElement[] = []
   // A run with no plan (yet) has nothing to group by: its calls read as a plain list.
-  if (groups.length === 1 && groups[0].key === 'pre') rows.push(...rowsOf(groups[0].rows, 0))
+  if (groups.length === 1 && groups[0].key === 'pre') items.push(...rowsOf(groups[0].rows, 0, false))
   else
     for (const g of groups) {
-      const children = rowsOf(g.rows, g.firstCall)
-      rows.push(
-        <StepGroup key={g.key} group={g} open={openSteps.has(g.key)} current={g.key === currentKey} onToggle={() => toggleStep(g.key)}>
-          {children}
-        </StepGroup>
+      const gk = `${current?.runId}:g:${g.key}`
+      // A step that opens now carries its rows in with it.
+      const children = rowsOf(g.rows, g.firstCall, isNew(gk)).reverse()
+      items.push(
+        slot(
+          gk,
+          <StepGroup group={g} open={openSteps.has(g.key)} current={g.key === currentKey} onToggle={() => toggleStep(g.key)}>
+            {children}
+          </StepGroup>
+        )
       )
     }
-  for (const l of lines) rows.push(l.el)
+  for (const l of lines) items.push(slot(l.key, l.el))
+  items.reverse()
+
+  const keySig = keys.join('\n')
+  useEffect(() => {
+    const seen = seenRef.current
+    let added = 0
+    for (const k of keys) {
+      if (seen.has(k)) continue
+      seen.add(k)
+      if (!k.includes(':g:')) added++
+    }
+    if (readyRef.current && scrolledRef.current && added > 0) setNewCount((c) => c + added)
+    if (!loading) readyRef.current = true
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keySig, loading])
+
+  /** How far the list's first row is above the panel's visible top. */
+  const awayFromTop = (): number => {
+    const body = bodyRef.current
+    const list = listRef.current
+    return body && list ? body.getBoundingClientRect().top - list.getBoundingClientRect().top : 0
+  }
+  const onBodyScroll = (): void => {
+    const away = awayFromTop() > 8
+    scrolledRef.current = away
+    if (!away) setNewCount(0)
+  }
+  const showNew = (): void => {
+    const body = bodyRef.current
+    const sec = sectionRef.current
+    if (!body || !sec) return
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    body.scrollBy({ top: sec.getBoundingClientRect().top - body.getBoundingClientRect().top - 10, behavior: reduce ? 'auto' : 'smooth' })
+    setNewCount(0)
+  }
+
+  const runLinks: { key: string; text: string }[] = []
+  if (current?.resumesRunId) runLinks.push({ key: 'resumes', text: t('sessions.activity.panel.resumes', { when: whenOf(current.resumesRunId, knownStart, locale) }) })
+  for (const id of current?.relatedRunIds ?? []) runLinks.push({ key: `rel:${id}`, text: t('sessions.activity.panel.related', { when: whenOf(id, knownStart, locale) }) })
+  const referred = new Set((current?.links ?? []).filter((l) => l.kind === 'referenced' && l.refRunId).map((l) => l.refRunId as string))
+  for (const id of referred) runLinks.push({ key: `ref:${id}`, text: t('sessions.activity.panel.refers', { when: whenOf(id, knownStart, locale) }) })
+
+  const hasProgress = !!progress || (current ? current.hypotheses.length > 0 || current.findings.length > 0 : false)
+  // Folded away by the header's panel toggle; an approval or a card still shows it, since the
+  // run is blocked until the operator answers.
+  const hide = !!collapsed && !pending
 
   return (
-    <aside className="ac" aria-label={t('sessions.activity.label')}>
-      <div className="ac-run">
-        <div className="ac-run-line">
-          <span className="ac-run-state">{current ? runState(current, t, locale) : loading ? t('sessions.activity.loading') : t('sessions.activity.run.starting')}</span>
-          {progress && (
-            <span className="ac-run-steps">
-              {plural(t, 'sessions.activity.run.steps', progress.total, { done: progress.done })}
-            </span>
+    <aside className={`ac${hide ? ' hidden' : ''}`} aria-label={t('sessions.activity.label')} aria-hidden={hide || undefined}>
+      {(pending || current?.ended?.error) && (
+        <div className="ac-pinned">
+          {waiting && ops && onDecide && (
+            <div className="ac-wait-wrap">
+              <div className={`ac-wait${ops.tool === 'plan' ? ' plan' : ''}`}>
+                {ops.tool === 'plan' ? (
+                  <PlanReviewSheet key={waiting.approvalId} request={waiting} onDecide={onDecide} />
+                ) : (
+                  <WaitingCall key={waiting.approvalId} ops={ops} onDecide={onDecide} />
+                )}
+              </div>
+              {onDenyStop && (
+                <button type="button" className="ac-denystop" onClick={onDenyStop}>
+                  {t('sessions.activity.wait.denyStop')}
+                </button>
+              )}
+            </div>
           )}
+
+          {cards.length > 0 && onOperatorAnswer && (
+            <div className="ac-op-wrap">
+              {cards.map((r) => (
+                <OperatorCard key={r.requestId} req={r} onAnswer={onOperatorAnswer} />
+              ))}
+            </div>
+          )}
+
+          {current?.ended?.error && <div className="ac-run-error">{current.ended.error}</div>}
         </div>
-        {progress && (
-          <div className="ac-progress" aria-hidden="true">
-            <span style={{ width: `${(progress.done / progress.total) * 100}%` }} />
+      )}
+
+      <div className="ac-body" ref={bodyRef} onScroll={onBodyScroll}>
+        {newCount > 0 && (
+          <div className="ac-newpill-wrap">
+            <button type="button" className="ac-newpill" onClick={showNew}>
+              {t('sessions.activity.panel.newRows', { n: newCount })}
+            </button>
           </div>
         )}
-        {current?.ended?.error && <div className="ac-run-error">{current.ended.error}</div>}
-        <div className="ac-run-actions">
-          <button type="button" className="ac-btn" disabled={!current} onClick={() => current && setReportRunId(current.runId)}>
-            {t('sessions.activity.report')}
-          </button>
-          {current && running && <ReferButton terminalId={terminalId} run={current} />}
-          <button
-            type="button"
-            className="ac-btn stop"
-            disabled={onStop ? !running && !cliAlive : !running}
-            onClick={() => (onStop ? onStop() : void window.electronAPI.opsStop(terminalId))}
-            title={
-              onStop
-                ? t('sessions.activity.run.endTitle')
-                : t('sessions.activity.run.stopTitle')
-            }
-          >
-            {t('sessions.activity.run.stop')}
-          </button>
-        </div>
-      </div>
 
-      {waiting && ops && onDecide && (
-        <div className="ac-wait-wrap">
-          <div className={`ac-wait${ops.tool === 'plan' ? ' plan' : ''}`}>
-            {ops.tool === 'plan' ? (
-              <PlanReviewSheet key={waiting.approvalId} request={waiting} onDecide={onDecide} />
-            ) : (
-              <WaitingCall key={waiting.approvalId} ops={ops} onDecide={onDecide} />
+        {hasProgress && current && (
+          <PanelSection id="progress" title={t('sessions.activity.panel.progress')}>
+            <ProgressBody run={current} progress={progress} />
+          </PanelSection>
+        )}
+
+        <PanelSection id="context" title={t('sessions.activity.panel.context')}>
+          <div className="ac-chips">
+            {serverLabel && <span className="ac-chip">{serverLabel}</span>}
+            {modeLabel && <span className="ac-chip">{modeLabel}</span>}
+            {runLinks.map((l) => (
+              <span key={l.key} className="ac-chip link">
+                {l.text}
+              </span>
+            ))}
+          </div>
+          {/* The model's tool call is blocked on a card: a script prompt would only queue behind it. */}
+          <ScriptsList terminalId={terminalId} runId={current?.runId} disabled={!!current?.ended || !!waiting || cards.length > 0} />
+        </PanelSection>
+
+        <PanelSection
+          id="activity"
+          title={t('sessions.activity.panel.activity')}
+          count={current ? plural(t, 'sessions.activity.calls', current.calls.length) : undefined}
+          sectionRef={sectionRef}
+        >
+          <div className="ac-list" ref={listRef}>
+            {!current && loading && <p className="ac-empty">{t('sessions.activity.loading')}</p>}
+            {current && items.length === 0 && <p className="ac-empty">{t('sessions.activity.noCalls')}</p>}
+            {items}
+
+            {earlierToday.length > 0 && (
+              <>
+                <div className="ac-divider">
+                  <span>{plural(t, 'sessions.activity.earlier.title', earlierToday.length)}</span>
+                </div>
+                {earlierToday.map((r) => (
+                  <div key={r.runId} className="ac-earlier">
+                    <span>
+                      {t('sessions.activity.earlier.line', {
+                        time: clock(r.startedAt, locale),
+                        state: earlierState(r, t),
+                        calls: plural(t, 'sessions.activity.calls', r.calls.length)
+                      })}
+                    </span>
+                    <button type="button" className="ac-link" onClick={() => setReportRunId(r.runId)}>
+                      {t('sessions.activity.report')}
+                    </button>
+                  </div>
+                ))}
+              </>
             )}
           </div>
-          {onDenyStop && (
-            <button type="button" className="ac-denystop" onClick={onDenyStop}>
-              {t('sessions.activity.wait.denyStop')}
-            </button>
-          )}
-        </div>
-      )}
-
-      {cards.length > 0 && onOperatorAnswer && (
-        <div className="ac-op-wrap">
-          {cards.map((r) => (
-            <OperatorCard key={r.requestId} req={r} onAnswer={onOperatorAnswer} />
-          ))}
-        </div>
-      )}
-
-      {/* The model's tool call is blocked on a card: a script prompt would only queue behind it. */}
-      <ScriptsList terminalId={terminalId} runId={current?.runId} disabled={!!current?.ended || !!waiting || cards.length > 0} />
-
-      <div className="ac-list">
-        {current && <NotesSection run={current} />}
-        {current && rows.length === 0 && <p className="ac-empty">{t('sessions.activity.noCalls')}</p>}
-        {rows}
-
-        {earlierToday.length > 0 && (
-          <>
-            <div className="ac-divider">
-              <span>
-                {plural(t, 'sessions.activity.earlier.title', earlierToday.length)}
-              </span>
-            </div>
-            {earlierToday.map((r) => (
-              <div key={r.runId} className="ac-earlier">
-                <span>
-                  {t('sessions.activity.earlier.line', {
-                    time: clock(r.startedAt, locale),
-                    state: earlierState(r, t),
-                    calls: plural(t, 'sessions.activity.calls', r.calls.length)
-                  })}
-                </span>
-                <button type="button" className="ac-link" onClick={() => setReportRunId(r.runId)}>
-                  {t('sessions.activity.report')}
-                </button>
-              </div>
-            ))}
-          </>
-        )}
+        </PanelSection>
       </div>
 
       {reportRunId && (

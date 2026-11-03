@@ -96,6 +96,12 @@ describe('foldOpsEvents', () => {
     expect(run.ended).toBeUndefined()
   })
 
+  it('reads the run it resumes and the ones picked as related from run.start', () => {
+    const withLinks = ev({ kind: 'run.start', runbook: { name: 'rb' }, resumesRunId: 'old', relatedRunIds: ['a', 'b'] })
+    expect(foldOpsEvents([withLinks])[0]).toMatchObject({ resumesRunId: 'old', relatedRunIds: ['a', 'b'] })
+    expect(foldOpsEvents([start])[0].resumesRunId).toBeUndefined()
+  })
+
   it('a decided allow stays decided and carries the gate fields', () => {
     expect(row([start, decided('c1', 'allow')])).toMatchObject({
       callId: 'c1', host: 'web1', tool: 'run', class: 'read', decision: 'allow', status: 'decided',

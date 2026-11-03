@@ -1,11 +1,11 @@
 /* ── ActivityColumn.css ──────────────────────────────────────────────────────
-   The Ops workspace's activity column (board D2): run header, the waiting block
-   (the only highlighted element), one row per call, earlier runs folded.
-   Surfaces 4 px, buttons 8 px. Classes are prefixed `ac-`. ─────────────────── */
+   The Ops workspace's side panel (board D2): the waiting block pinned on top (the
+   only highlighted element), then Progress, Context and Activity as collapsible
+   sections, newest call first. Surfaces 4 px, buttons 8 px. Classes are prefixed "ac-". ── */
 
 .ac {
-  flex: 0 0 440px;
-  min-width: 320px;
+  flex: 0 0 360px;
+  min-width: 300px;
   max-width: 45%;
   min-height: 0;
   display: flex;
@@ -14,20 +14,81 @@
   background: var(--bg-1);
   border-left: 1px solid var(--border);
 }
+.ac.hidden { display: none; }
 
-/* ── Run header ── */
-.ac-run {
+/* What waits for the operator, above the sections; it scrolls before it pushes them away. */
+.ac-pinned {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px 10px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+  gap: 10px;
+  padding: 12px 12px 0;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 65%;
+  overflow-y: auto;
 }
-.ac-run-line { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.ac-run-state { font-size: 13px; font-weight: 650; color: var(--text-0); }
-.ac-run-steps { font-size: 12px; color: var(--text-2); white-space: nowrap; }
 .ac-run-error { font-size: 12px; color: var(--error); overflow-wrap: anywhere; }
+
+.ac-body {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── Sections ── */
+.ac-ps {
+  flex-shrink: 0;
+  border-radius: var(--radius-surface);
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+}
+.ac-ps-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--radius-surface);
+  background: transparent;
+  color: var(--text-0);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.ac-ps-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ac-ps-count { font-size: 12px; font-weight: 400; color: var(--text-2); }
+.ac-ps-spacer { flex: 1; }
+.ac-ps-body { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; }
+.ac-chev { flex-shrink: 0; color: var(--text-2); transform: rotate(-90deg); transition: transform 0.15s ease; }
+.ac-chev.open { transform: none; }
+.ac-chev.right { transform: none; }
+.ac-chev.right.open { transform: rotate(90deg); }
+.ac-ps-head:hover .ac-chev { color: var(--text-0); }
+
+.ac-chips { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.ac-chip {
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: var(--radius-surface);
+  background: var(--bg-2);
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ac-chip.link { background: var(--accent-dim); color: var(--accent); }
+
+/* ── Plan progress (top of Progress) ── */
+.ac-plan { display: flex; flex-direction: column; gap: 6px; }
+.ac-plan-steps { font-size: 12px; color: var(--text-1); }
 .ac-progress {
   display: flex;
   height: 4px;
@@ -36,44 +97,33 @@
   background: var(--bg-2);
 }
 .ac-progress span { background: var(--success); transition: width 0.3s ease; }
-.ac-run-actions { display: flex; gap: 8px; }
 
-/* "Refer…": a menu under its button, over the column, never a row of its own. */
-.ac-refer { position: relative; display: inline-flex; }
-.ac-refer-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 20;
-  width: 280px;
-  max-height: 320px;
-  overflow-y: auto;
-  padding: 4px;
-  border: 1px solid var(--border-light);
-  border-radius: 4px;
-  background: var(--bg-1);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
-}
-.ac-refer-item {
+/* "N new": over the top of the panel while the activity is scrolled away from its top. */
+.ac-newpill-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  height: 0;
+  margin-bottom: -10px;
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  width: 100%;
-  padding: 6px 8px;
+  justify-content: center;
+  overflow: visible;
+}
+.ac-newpill {
+  height: 24px;
+  padding: 0 12px;
   border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-0);
-  font-size: 12px;
-  text-align: left;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--bg-0);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 650;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
   cursor: pointer;
 }
-.ac-refer-item:hover,
-.ac-refer-item:focus-visible { background: var(--bg-hover); outline: none; }
-.ac-refer-when { flex-shrink: 0; color: var(--text-2); font-variant-numeric: tabular-nums; }
-.ac-refer-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ac-refer-note { padding: 6px 8px; font-size: 12px; color: var(--text-2); }
-.ac-refer-note.error { color: var(--error); }
+.ac-newpill:hover { background: var(--accent-hover); }
+.ac-newpill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .ac-btn {
   height: 28px;
@@ -86,11 +136,6 @@
   cursor: pointer;
 }
 .ac-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-0); }
-.ac-btn.stop {
-  color: var(--error);
-  border-color: color-mix(in srgb, var(--error) 50%, transparent);
-}
-.ac-btn.stop:hover:not(:disabled) { background: color-mix(in srgb, var(--error) 12%, transparent); color: var(--error); }
 .ac-btn:disabled { opacity: 0.45; cursor: default; }
 
 /* ── Waiting block ── */
@@ -99,9 +144,8 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-  margin: 12px 12px 0;
   min-height: 0;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
 }
 .ac-wait {
   align-self: stretch;
@@ -172,15 +216,11 @@
 
 /* ── Rows ── */
 .ac-list {
-  flex: 1 1 0;
-  min-height: 96px;
-  overflow-y: auto;
-  padding: 10px 12px 12px;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.ac-empty { padding: 8px 6px; font-size: 12px; color: var(--text-2); }
+.ac-empty { margin: 0; padding: 4px 2px; font-size: 12px; color: var(--text-2); }
 
 .ac-row {
   display: grid;
@@ -200,6 +240,8 @@
 .ac-row.has-output { cursor: pointer; }
 .ac-row.has-output:hover { background: color-mix(in srgb, var(--bg-2) 60%, transparent); }
 .ac-row.open { background: var(--bg-2); }
+/* The call in flight keeps an accent ring. */
+.ac-row.running { box-shadow: inset 0 0 0 1.5px var(--accent); }
 .ac-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .ac-dot {
@@ -250,6 +292,26 @@
   flex-shrink: 0;
 }
 
+/* ── A new row: its slot opens (160 ms), then it slides in from the right (220 ms). Only rows
+   that arrive after the list was on screen get "enter"; the slot clips what is off its edge. ── */
+.ac-slot { display: grid; grid-template-rows: 1fr; flex-shrink: 0; }
+.ac-slot-in { min-height: 0; display: flex; flex-direction: column; }
+.ac-slot.enter { overflow: hidden; animation: ac-slot-open 160ms ease-out; }
+.ac-slot.enter > .ac-slot-in { animation: ac-slide-in 220ms ease-out; }
+@keyframes ac-slot-open {
+  from { grid-template-rows: 0fr; }
+  to { grid-template-rows: 1fr; }
+}
+@keyframes ac-slide-in {
+  from { transform: translateX(60px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ac-slot.enter,
+  .ac-slot.enter > .ac-slot-in { animation: none; }
+  .ac-chev { transition: none; }
+}
+
 /* ── Calls by plan step: one folded line per step, the current one open ── */
 .ac-step { display: flex; flex-direction: column; flex-shrink: 0; }
 .ac-step + .ac-step { border-top: 1px solid var(--border); }
@@ -291,7 +353,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 6px 6px;
+  padding: 10px 6px 4px;
   font-size: 11px;
   color: var(--text-2);
   flex-shrink: 0;
@@ -335,12 +397,13 @@
 }
 
 /* ── Scripts list: folded, one line each ── */
-/* Shrinks (and scrolls) before the run list does, so the list keeps room to scroll. */
-.ac-scripts { display: flex; flex-direction: column; gap: 2px; margin: 10px 12px 0; flex: 0 1 auto; min-height: 0; overflow-y: auto; }
+/* A sub-disclosure of Context: "Scripts 9". */
+.ac-scripts { display: flex; flex-direction: column; gap: 2px; min-height: 0; }
 .ac-scripts-head {
-  display: flex; align-items: center; gap: 6px; padding: 4px 6px; border: none; background: transparent;
-  color: var(--text-2); font: inherit; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; cursor: pointer; text-align: left;
+  display: flex; align-items: center; gap: 6px; padding: 4px 0; border: none; background: transparent;
+  color: var(--text-1); font: inherit; font-size: 12px; cursor: pointer; text-align: left;
 }
+.ac-scripts-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .ac-scripts-head:hover { color: var(--text-0); }
 .ac-scripts-n { color: var(--text-2); font-variant-numeric: tabular-nums; }
 .ac-sr-wrap { display: flex; flex-direction: column; }
@@ -430,56 +493,45 @@
 .ac-sec-err { margin-left: 0; color: var(--error); }
 .ac-sr-ask { flex: 1; align-self: center; font-size: 12px; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ── Hypotheses and findings, from the model's notes: above the calls ── */
-.ac-notes {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 4px 6px 12px;
-  margin-bottom: 6px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.ac-notes-title { font-size: 11px; font-weight: 650; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
-.ac-hyp {
+/* ── Progress: hypotheses as a checklist, then findings ── */
+.ac-notes { display: flex; flex-direction: column; gap: 8px; }
+.ac-hyp,
+.ac-find {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr);
   gap: 10px;
-  align-items: baseline;
+  align-items: start;
   font-size: 12.5px;
   color: var(--text-0);
   line-height: 1.45;
 }
-.ac-hyp-mark { justify-self: center; font-size: 11px; font-weight: 700; }
-.ac-hyp.open .ac-hyp-mark { color: var(--warn); }
-.ac-hyp.confirmed .ac-hyp-mark { color: var(--success); }
-.ac-hyp.ruled_out .ac-hyp-mark { color: var(--error); }
-.ac-hyp.ruled_out .ac-hyp-text { color: var(--text-2); }
-.ac-hyp-text { overflow-wrap: anywhere; }
-.ac-hyp-text small,
-.ac-findings small { display: block; font-size: 11.5px; color: var(--text-2); }
-.ac-findings {
-  margin: 0;
-  padding: 0 0 0 26px;
+.ac-hyp-mark {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12.5px;
-  color: var(--text-1);
-  line-height: 1.45;
-  overflow-wrap: anywhere;
+  align-items: center;
+  justify-content: center;
 }
-.ac-findings li::marker { color: var(--text-2); }
+.ac-hyp.confirmed .ac-hyp-mark { border-color: var(--success); background: var(--success); color: var(--bg-0); }
+.ac-hyp.ruled_out .ac-hyp-mark { border-color: var(--text-2); }
+.ac-hyp.confirmed .ac-hyp-text { color: var(--text-1); }
+.ac-hyp.ruled_out .ac-hyp-text { color: var(--text-2); text-decoration: line-through; }
+.ac-hyp.ruled_out .ac-hyp-text small { text-decoration: none; }
+.ac-hyp-text { overflow-wrap: anywhere; }
+.ac-hyp-text small { display: block; font-size: 11.5px; color: var(--text-2); }
+.ac-find { color: var(--text-1); }
+.ac-find-dot { width: 6px; height: 6px; margin: 7px 0 0 5px; border-radius: 50%; background: var(--text-2); }
 
 /* ── For you to run: the model's ask_operator, until the operator answers ── */
 .ac-op-wrap {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 12px 12px 0;
-  flex: 0 1 auto;
-  min-height: 0;
-  overflow-y: auto;
+  flex: 0 0 auto;
 }
 .ac-op {
   display: flex;

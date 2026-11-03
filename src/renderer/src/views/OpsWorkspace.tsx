@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { ApprovalRequest, OpsIntervention, OpsOperatorRequest, OpsRunbookInfo } from '../types'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import type { ApprovalRequest, OpsIntervention, OpsOperatorRequest, OpsRunbookInfo, OpsRunListItem } from '../types'
 import ChatTerminal from '../components/ChatTerminal'
 import ActivityColumn from '../components/ActivityColumn'
 import OpsHandoverDialog from '../components/OpsHandoverDialog'
+import OpsReportSheet from '../components/OpsReportSheet'
 import { useOpsEvents } from '../hooks/useOpsEvents'
-import { foldOpsEvents, splitRuns, touchedHosts } from '../lib/ops-timeline'
+import { foldOpsEvents, splitRuns, touchedHosts, type OpsRun } from '../lib/ops-timeline'
 import { opsTerminalIdFor, type OpsTerminalProvider, type OpsTerminalSessionResult } from '../lib/ops-terminal'
 import { interventionLabel, type OpsLabelInfo } from '../lib/intervention-label'
 import { samePath, useBuiltinRunbook } from '../lib/builtin-runbook'
 import { useSshHostNames } from '../lib/ssh-host-names'
 import InterventionTag from '../components/InterventionTag'
 import { plural } from '../../../shared/i18n'
-import { useT } from '../i18n'
+import { useLanguage, useT } from '../i18n'
 import './OpsWorkspace.css'
 
 /**
@@ -54,6 +55,178 @@ type TermState =
   | { kind: 'exited'; code: number; launch: Launched; key: number; stopped?: boolean }
 
 type HostDot = 'checking' | 'ok' | 'error'
+
+const PANEL_OPEN_KEY = 'argos.ops.side-panel'
+
+const shortDate = (iso: string, locale: string | undefined): string => {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(locale, { day: '2-digit', month: '2-digit' })
+}
+
+const clock = (iso: string | undefined, locale: string | undefined): string => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+}
+
+/** A minute-ticking clock while `on`, for the header's "running 12 min". */
+function useNow(on: boolean): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!on) return
+    setNow(Date.now())
+    const id = setInterval(() => setNow(Date.now()), 20_000)
+    return () => clearInterval(id)
+  }, [on])
+  return now
+}
+
+/** Closes a popover on a click outside it and on Escape, like any menu. */
+function useDismiss(ref: RefObject<HTMLElement | null>, open: boolean, close: () => void): void {
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) close()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+}
+
+/**
+ * "Refer…": a quiet button in the header that opens a short list of the earlier runs on
+ * this server; picking one points the live run's model at it. The list is only fetched when
+ * opened, and an error stays in the open list rather than taking a row of the header.
+ */
+function ReferButton({ terminalId, run }: { terminalId: string; run: OpsRun }) {
+  const t = useT()
+  const { locale } = useLanguage()
+  const listId = useId()
+  const wrapRef = useRef<HTMLSpanElement>(null)
+  const [open, setOpen] = useState(false)
+  const [runs, setRuns] = useState<OpsRunListItem[] | 'loading'>('loading')
+  const [error, setError] = useState<string | null>(null)
+  const hostId = run.scope?.kind === 'host' ? run.scope.hostId : undefined
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setRuns('loading')
+    window.electronAPI
+      .opsRuns({ hostId, limit: 15 })
+      .then((res) => !cancelled && setRuns(res.ok ? res.runs.filter((r) => r.runId !== run.runId) : []))
+      .catch(() => !cancelled && setRuns([]))
+    return () => {
+      cancelled = true
+    }
+  }, [open, hostId, run.runId])
+  useDismiss(wrapRef, open, () => setOpen(false))
+
+  const pick = async (r: OpsRunListItem): Promise<void> => {
+    setError(null)
+    try {
+      const res = await window.electronAPI.opsReference(terminalId, r.runId)
+      if (!res.ok) return setError(res.error)
+      window.electronAPI.terminalWrite(terminalId, res.line + '\r')
+      setOpen(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  return (
+    <span className="ops-ws-pop" ref={wrapRef}>
+      <button
+        type="button"
+        className="ops-ws-btn"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        title={t('ops.activity.referTitle')}
+        onClick={() => {
+          setError(null)
+          setOpen((o) => !o)
+        }}
+      >
+        {t('ops.activity.refer')}
+      </button>
+      {open && (
+        <div className="ops-ws-menu refer" id={listId} role="listbox" aria-label={t('ops.activity.referTitle')}>
+          {error && (
+            <div className="ops-ws-note error" role="alert">
+              {t('ops.activity.referError', { error })}
+            </div>
+          )}
+          {runs === 'loading' ? (
+            <div className="ops-ws-note">{t('ops.activity.referLoading')}</div>
+          ) : runs.length === 0 ? (
+            <div className="ops-ws-note">{t('ops.activity.referNone')}</div>
+          ) : (
+            runs.map((r) => (
+              <button key={r.runId} type="button" role="option" aria-selected={false} className="ops-ws-item" onClick={() => void pick(r)}>
+                <span className="ops-ws-item-when">{shortDate(r.startedAt, locale)}</span>
+                <span className="ops-ws-item-what">{r.task || r.runbook}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </span>
+  )
+}
+
+
+/** The header's overflow menu: what is rarely used (Restart) and the gated line, as text. */
+function MoreMenu({ children }: { children: ReactNode }) {
+  const t = useT()
+  const listId = useId()
+  const wrapRef = useRef<HTMLSpanElement>(null)
+  const [open, setOpen] = useState(false)
+  useDismiss(wrapRef, open, () => setOpen(false))
+  return (
+    <span className="ops-ws-pop" ref={wrapRef}>
+      <button
+        type="button"
+        className="ops-ws-icon"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        aria-label={t('ops.workspace.more')}
+        title={t('ops.workspace.more')}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <circle cx="5" cy="12" r="1.8" />
+          <circle cx="12" cy="12" r="1.8" />
+          <circle cx="19" cy="12" r="1.8" />
+        </svg>
+      </button>
+      {open && (
+        <div className="ops-ws-menu" id={listId} role="menu" onClick={() => setOpen(false)}>
+          {children}
+        </div>
+      )}
+    </span>
+  )
+}
+
+/** "running 12 min", or how the run ended. */
+function runTime(run: OpsRun, now: number, t: ReturnType<typeof useT>, locale: string | undefined): string {
+  if (run.ended) return run.ended.aborted ? t('sessions.activity.run.stopped') : t('sessions.activity.run.finished', { time: clock(run.endedAt, locale) })
+  const started = new Date(run.startedAt).getTime()
+  if (Number.isNaN(started)) return ''
+  const min = Math.max(0, Math.floor((now - started) / 60_000))
+  if (min < 1) return t('ops.workspace.runningLess')
+  return min < 60 ? t('ops.workspace.runningMin', { n: min }) : t('ops.workspace.runningHours', { h: Math.floor(min / 60), m: min % 60 })
+}
 
 interface Props {
   intervention: OpsIntervention
@@ -103,11 +276,29 @@ export default function OpsWorkspace({
   onLabelInfo
 }: Props) {
   const t = useT()
+  const { locale } = useLanguage()
   const { runbookPath, scope } = intervention
   const [info, setInfo] = useState<OpsRunbookInfo | null>(null)
   const [hostDot, setHostDot] = useState<HostDot>('checking')
   const [term, setTerm] = useState<TermState>({ kind: 'starting' })
   const [handoverOpen, setHandoverOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [panelOpen, setPanelOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(PANEL_OPEN_KEY) !== '0'
+    } catch {
+      return true
+    }
+  })
+  const togglePanel = (): void =>
+    setPanelOpen((o) => {
+      try {
+        localStorage.setItem(PANEL_OPEN_KEY, o ? '0' : '1')
+      } catch {
+        // A remembered panel is a convenience.
+      }
+      return !o
+    })
 
   const terminalId = opsTerminalIdFor(intervention)
   const keyRef = useRef(0)
@@ -268,6 +459,10 @@ export default function OpsWorkspace({
   const lastRunId = launch?.runId ?? current?.runId ?? earlier[0]?.runId
 
   // ── Header ──
+  const running = !!current && !current.ended
+  const now = useNow(running)
+  const stateText = current ? runTime(current, now, t, locale) : ''
+  const stopDisabled = onEnded ? !running && term.kind !== 'ready' : !running
   const okInfo = info?.ok ? info : undefined
   const name = okInfo?.name ?? baseName(runbookPath)
   const lockedHost = lockedHostId ? okInfo?.hosts.find((h) => h.id === lockedHostId) : undefined
@@ -330,6 +525,7 @@ export default function OpsWorkspace({
               text={builtin ? `${label.tag} · ${t('ops.label.readOnly')}` : label.tag}
               title={runbookPath}
             />
+            {stateText && <span className="ops-ws-meta">{stateText}</span>}
             {intervention.client && <span className="ops-ws-chip" title={t('ops.label.tipClient', { name: intervention.client })}>{intervention.client}</span>}
             {intervention.ticket && <span className="ops-ws-chip" title={t('ops.label.tipTicket', { ticket: intervention.ticket })}>{intervention.ticket}</span>}
             {policyLine && <span className="ops-ws-meta">{policyLine}</span>}
@@ -351,9 +547,15 @@ export default function OpsWorkspace({
           )}
         </div>
         <div className="ops-ws-spacer" />
-        <span className="ops-ws-meta" title={t('ops.workspace.gatedHint')}>
-          {t('ops.workspace.gated')}
-        </span>
+        {current && running && <ReferButton terminalId={terminalId} run={current} />}
+        <button
+          className="ops-ws-btn"
+          onClick={() => setReportOpen(true)}
+          disabled={!current}
+          title={t('ops.workspace.handoverReportTitle')}
+        >
+          {t('ops.workspace.handoverReport')}
+        </button>
         {/* A diagnosis only (its run.start skipped the plan): the runbook it hands over to does the fix. */}
         {onHandover && current?.planRequired === false && (
           <button
@@ -365,13 +567,41 @@ export default function OpsWorkspace({
             {t('ops.workspace.handover')}
           </button>
         )}
+        <MoreMenu>
+          <button
+            type="button"
+            role="menuitem"
+            className="ops-ws-item"
+            disabled={term.kind === 'starting'}
+            title={t('ops.workspace.restartTitle')}
+            onClick={() => void start(true)}
+          >
+            {t('ops.workspace.restart')}
+          </button>
+          <div className="ops-ws-note" title={t('ops.workspace.gatedHint')}>
+            {t('ops.workspace.gated')}
+          </div>
+        </MoreMenu>
         <button
-          className="ops-ws-btn"
-          onClick={() => void start(true)}
-          disabled={term.kind === 'starting'}
-          title={t('ops.workspace.restartTitle')}
+          className="ops-ws-btn stop"
+          disabled={stopDisabled}
+          onClick={() => (onEnded ? void endIntervention(false) : void window.electronAPI.opsStop(terminalId))}
+          title={onEnded ? t('sessions.activity.run.endTitle') : t('sessions.activity.run.stopTitle')}
         >
-          {t('ops.workspace.restart')}
+          {t('sessions.activity.run.stop')}
+        </button>
+        <button
+          type="button"
+          className={`ops-ws-icon bordered${panelOpen ? ' on' : ''}`}
+          aria-pressed={panelOpen}
+          aria-label={t('ops.workspace.togglePanel')}
+          title={t('ops.workspace.togglePanel')}
+          onClick={togglePanel}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M15 4v16" />
+          </svg>
         </button>
       </div>
 
@@ -424,12 +654,17 @@ export default function OpsWorkspace({
           waiting={mine}
           onDecide={onDecide}
           onDenyStop={onStop ? () => void endIntervention(false, onStop) : undefined}
-          onStop={onEnded ? () => void endIntervention(false) : undefined}
-          cliAlive={term.kind === 'ready'}
           operatorRequests={operatorRequests}
           onOperatorAnswer={onOperatorAnswer}
+          collapsed={!panelOpen}
+          serverLabel={label.title}
+          modeLabel={builtin ? `${label.tag} · ${t('ops.label.readOnly')}` : label.tag}
         />
       </div>
+
+      {reportOpen && current && (
+        <OpsReportSheet runId={current.runId} appSessionId={terminalId} runbookPath={runbookPath} onClose={() => setReportOpen(false)} />
+      )}
 
       {handoverOpen && current && (
         <OpsHandoverDialog
