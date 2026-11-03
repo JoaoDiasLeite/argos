@@ -401,17 +401,36 @@ export default function OpsWorkspace({
           )}
         </div>
         <div className="ops-ws-spacer" />
-        <button
-          className="ops-ws-btn stop"
-          disabled={stopDisabled}
-          onClick={() => (onEnded ? void endIntervention() : void window.electronAPI.opsStop(terminalId))}
-          title={onEnded ? t('sessions.activity.run.endTitle') : t('sessions.activity.run.stopTitle')}
-        >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <rect x="5" y="5" width="14" height="14" rx="2" />
-          </svg>
-          {t('sessions.activity.run.stop')}
-        </button>
+        {term.kind === 'exited' ? (
+          // Once the CLI is gone the one thing left to do here is pick it up again: Stop
+          // turns into Resume, which continues this terminal's last run.
+          <button
+            className="ops-ws-btn resume"
+            onClick={() => void start(true, { resumesRunId: lastRunId })}
+            title={
+              term.stopped || !term.code
+                ? t('ops.workspace.resumeTitle')
+                : `${t('ops.workspace.exitedCode', { code: term.code })} · ${t('ops.workspace.resumeTitle')}`
+            }
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M7 4v16l13-8z" />
+            </svg>
+            {t('ops.workspace.resume')}
+          </button>
+        ) : (
+          <button
+            className="ops-ws-btn stop"
+            disabled={stopDisabled}
+            onClick={() => (onEnded ? void endIntervention() : void window.electronAPI.opsStop(terminalId))}
+            title={onEnded ? t('sessions.activity.run.endTitle') : t('sessions.activity.run.stopTitle')}
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <rect x="5" y="5" width="14" height="14" rx="2" />
+            </svg>
+            {t('sessions.activity.run.stop')}
+          </button>
+        )}
         <button
           type="button"
           className={`ops-ws-icon${panelOpen ? ' on' : ''}`}
@@ -435,18 +454,6 @@ export default function OpsWorkspace({
               <span>{term.error}</span>
               <button className="ops-ws-btn" onClick={() => void start(false)}>
                 {t('common.retry')}
-              </button>
-            </div>
-          )}
-          {term.kind === 'exited' && (
-            <div className="ops-ws-strip">
-              <span>{term.stopped ? t('ops.workspace.stopped') : term.code ? t('ops.workspace.exitedCode', { code: term.code }) : t('ops.workspace.exited')}</span>
-              <button
-                className="ops-ws-btn small"
-                onClick={() => void start(true, { resumesRunId: lastRunId })}
-                title={t('ops.workspace.resumeTitle')}
-              >
-                {t('ops.workspace.resume')}
               </button>
             </div>
           )}

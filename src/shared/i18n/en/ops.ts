@@ -179,9 +179,7 @@ export default {
   'workspace.warnings.one': '{n} warning',
   'workspace.warnings.other': '{n} warnings',
   'workspace.starting': 'Starting the ops session…',
-  'workspace.stopped': 'Intervention stopped',
   'workspace.exitedCode': 'CLI exited · code {code}',
-  'workspace.exited': 'CLI exited',
   'workspace.handover': 'Hand over to a runbook…',
   'workspace.handoverTitle': 'End this diagnosis and carry on with a runbook intervention on the same server',
   // views/OpsHandoverDialog

@@ -837,6 +837,8 @@ export default function ActivityColumn({
     : []
   const carded = new Set(cards.filter((r) => r.runId === current?.runId).map((r) => r.askId))
   const pending = !!(waiting && ops && onDecide) || cards.length > 0
+  // A run the operator stopped ended as asked: its reason is not an error to show in red.
+  const endError = current?.ended && !current.ended.aborted ? current.ended.error : undefined
 
   // ── New rows: which ones arrive after the list is on screen ──
   // `seen` holds every row key shown so far (updated after each commit); `ready` turns on
@@ -963,7 +965,7 @@ export default function ActivityColumn({
 
   return (
     <aside className={`ac${hide ? ' hidden' : ''}`} aria-label={t('sessions.activity.label')} aria-hidden={hide || undefined}>
-      {(pending || current?.ended?.error) && (
+      {(pending || endError) && (
         <div className="ac-pinned">
           {waiting && ops && onDecide && (
             <div className="ac-wait-wrap">
@@ -990,7 +992,7 @@ export default function ActivityColumn({
             </div>
           )}
 
-          {current?.ended?.error && <div className="ac-run-error">{current.ended.error}</div>}
+          {endError && <div className="ac-run-error">{endError}</div>}
         </div>
       )}
 

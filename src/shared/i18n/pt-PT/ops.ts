@@ -180,9 +180,7 @@ const ops: Record<keyof typeof en, string> = {
   'workspace.warnings.one': '{n} aviso',
   'workspace.warnings.other': '{n} avisos',
   'workspace.starting': 'A iniciar a sessão de ops…',
-  'workspace.stopped': 'Intervenção parada',
   'workspace.exitedCode': 'A CLI terminou · código {code}',
-  'workspace.exited': 'A CLI terminou',
   'workspace.handover': 'Passar a intervenção…',
   'workspace.handoverTitle': 'Terminar este despiste e seguir com uma intervenção com runbook no mesmo servidor',
   // views/OpsHandoverDialog
