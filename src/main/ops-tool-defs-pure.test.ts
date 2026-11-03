@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { z } from 'zod'
-import { OPS_BRIDGE_TOOLS, opsToolDefs } from './ops-tool-defs-pure'
+import { OPS_BRIDGE_TOOLS, OPS_TOOL_RULES, opsToolDefs } from './ops-tool-defs-pure'
 
 const HOSTS = [{ id: 'h1', name: 'web-01', groups: ['web'] }]
 const describe_ = (name: string, planRequired?: boolean) =>
@@ -31,5 +31,14 @@ describe('opsToolDefs', () => {
     expect(shape('ask_operator').safeParse({ cmd: 'id' }).success).toBe(false)
     expect(describe_('ask_operator')).toMatch(/not instructions/)
     expect(describe_('ask_operator')).toMatch(/hostId: h1/)
+  })
+
+  it('offers past_interventions as a local read with an optional run id, and names it in the rules', () => {
+    const shape = z.object(opsToolDefs(z, HOSTS).find((d) => d.name === 'past_interventions')!.shape)
+    expect(shape.safeParse({}).success).toBe(true)
+    expect(shape.safeParse({ runId: 'run-20261103-ab_1' }).success).toBe(true)
+    expect(shape.safeParse({ runId: '../etc' }).success).toBe(false)
+    expect(describe_('past_interventions')).toMatch(/never touches a host/)
+    expect(OPS_TOOL_RULES).toMatch(/past_interventions/)
   })
 })

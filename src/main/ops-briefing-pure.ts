@@ -12,7 +12,7 @@
 import { summarizeRun, type OpsCallSummary, type OpsLinkedRun, type OpsRunListItem, type OpsRunSummary } from './ops-audit-pure'
 import { lisbonDate } from './ops-handover-pure'
 import { foldNotes } from './ops-notes-pure'
-import type { OpsAuditLine } from './ops-types'
+import type { OpsAuditLine, OpsScope } from './ops-types'
 
 export const BRIEFING_MAX_BYTES = 8 * 1024
 /** The most recent calls a briefing lists. */
@@ -21,6 +21,10 @@ export const BRIEFING_MAX_CALLS = 40
 export const BRIEFING_OUTPUT_CHARS = 300
 /** Ancestors (runs the briefed run itself resumed) named, one line each. */
 export const BRIEFING_MAX_ANCESTORS = 3
+/** The most runs past_interventions lists. */
+export const HISTORY_LIST_MAX = 15
+/** A run id as past_interventions takes it (the same shape the ledger's run ids have). */
+export const HISTORY_RUN_ID_RE = /^[A-Za-z0-9_-]{1,64}$/
 /** A command longer than this is cut: a briefing names what ran, it does not replay it. */
 const COMMAND_CHARS = 300
 
@@ -202,4 +206,32 @@ export function historyListText(items: OpsRunListItem[]): string {
     out.push(`- ${r.runId} · ${lisbonStamp(r.startedAt)} · ${hosts} · ${r.runbook} · ${task} · ${end}, ${r.calls} calls${resumed}`)
   }
   return out.join('\n') + '\n'
+}
+
+/**
+ * The hosts whose history this run may read (INTERVENTION_HISTORY_PLAN §2): the locked host
+ * of a host scope, or every runbook host for an open scope or a run without one, since
+ * those may reach any of them.
+ */
+export function historyScopeHosts(ctx: { scope?: OpsScope; hosts: { byId: Map<string, unknown> } }): string[] {
+  if (ctx.scope?.kind === 'host') return [ctx.scope.hostId]
+  return [...ctx.hosts.byId.keys()]
+}
+
+/**
+ * Lists of runs (one per scope host, newest first each) merged into one newest-first list,
+ * each run once, without `excludeRunId` (the run that asks).
+ */
+export function mergeRunLists(lists: OpsRunListItem[][], excludeRunId: string): OpsRunListItem[] {
+  const byId = new Map<string, OpsRunListItem>()
+  for (const list of lists) for (const r of list) if (r.runId !== excludeRunId && !byId.has(r.runId)) byId.set(r.runId, r)
+  return [...byId.values()].sort((a, b) => (a.startedAt < b.startedAt ? 1 : a.startedAt > b.startedAt ? -1 : 0))
+}
+
+/** The runs in `items` (newest first) that resumed `runId`, oldest first as the briefing names them. */
+export function resumedByOf(items: OpsRunListItem[], runId: string): OpsLinkedRun[] {
+  return items
+    .filter((r) => r.resumesRunId === runId)
+    .reverse()
+    .map((r) => ({ runId: r.runId, startedAt: r.startedAt, ...(r.task !== undefined ? { task: r.task } : {}) }))
 }

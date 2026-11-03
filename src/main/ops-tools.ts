@@ -45,7 +45,18 @@ import {
   writeResultText
 } from './ops-run-pure'
 import { failedExec, type ExecOpts, type ExecResult } from './ops-exec-pure'
-import { sha256Hex } from './ops-audit-pure'
+import { sha256Hex, type OpsRunListItem } from './ops-audit-pure'
+import { RUN_LIST_MAX } from './ops-audit'
+import {
+  BRIEFING_MAX_ANCESTORS,
+  HISTORY_LIST_MAX,
+  HISTORY_RUN_ID_RE,
+  historyListText,
+  historyScopeHosts,
+  mergeRunLists,
+  renderBriefing,
+  resumedByOf
+} from './ops-briefing-pure'
 import {
   LOGGER_PROBE_ARGV,
   loggerArgv,
@@ -59,7 +70,7 @@ import {
 } from './ops-syslog-pure'
 import type { OpsRunContext } from './ops-session'
 import type { OpsToolHost } from './ops-tool-defs-pure'
-import type { OpsAuditEvent, OpsGateResult, OpsToolInput, OpsToolName } from './ops-types'
+import type { OpsAuditEvent, OpsAuditLine, OpsGateResult, OpsToolInput, OpsToolName } from './ops-types'
 
 /** The MCP tool result shape, kept local so this file needs no @modelcontextprotocol import. */
 export interface OpsToolResult {
@@ -70,14 +81,18 @@ export interface OpsToolResult {
 
 type OpsHandler = (args: Record<string, unknown>) => Promise<OpsToolResult>
 
-/** The five gated tools, plus propose_plan, which canUseTool alone decides, and note and
- *  ask_operator, which never reach a host. */
+/** The five gated tools, plus propose_plan, which canUseTool alone decides, and note,
+ *  ask_operator and past_interventions, which never reach a host. */
 export type OpsToolHandlers = Record<OpsToolName, OpsHandler> & {
   propose_plan: OpsHandler
   operatorScript: OpsHandler
   note: OpsHandler
   ask_operator: OpsHandler
+  past_interventions: OpsHandler
 }
+
+/** How many runs per scope host past_interventions looks at before it cuts the list to HISTORY_LIST_MAX. */
+const HISTORY_SCAN_LIMIT = 100
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
@@ -527,9 +542,82 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
     }
   }
 
+  /**
+   * The earlier runs this run may read, newest first, without itself: those that touched
+   * one of its scope hosts, by the same test the start screen's history uses (listRuns'
+   * hostId filter), merged over the scope hosts.
+   */
+  async function runsInScope(limit: number): Promise<{ ok: true; runs: OpsRunListItem[] } | { ok: false; error: string }> {
+    const lists: OpsRunListItem[][] = []
+    for (const hostId of historyScopeHosts(ctx)) {
+      const r = await ctx.ledger.listRuns({ hostId, limit })
+      if (!r.ok) return r
+      lists.push(r.runs)
+    }
+    return { ok: true, runs: mergeRunLists(lists, runId) }
+  }
+
+  /**
+   * `past_interventions` (INTERVENTION_HISTORY_PLAN §2, §4): the list of earlier runs in
+   * scope, or one of them as a briefing. Reads the local ledger only. A read is logged as
+   * `history.read` before the model sees it, and one that cannot be logged is not shown,
+   * so the ledger holds everything the model read. A refusal (bad id, out of scope) shows
+   * nothing, so it is not logged.
+   */
+  async function pastInterventions(args: Record<string, unknown>): Promise<OpsToolResult> {
+    try {
+      const ref = args.runId
+      if (ref !== undefined && (typeof ref !== 'string' || !HISTORY_RUN_ID_RE.test(ref))) {
+        return text('Refused: runId must be a run id (letters, digits, _ and -, at most 64).', true)
+      }
+      if (ctx.abort.signal.aborted) return text('Refused: the run was stopped.', true)
+
+      const unavailable = (error: string): OpsToolResult => text(`The ops ledger could not be read: ${error}`, true)
+      const shown = async (body: string, refRunId?: string): Promise<OpsToolResult> => {
+        const logged = await ctx.log({ kind: 'history.read', runId, ...(refRunId !== undefined ? { refRunId } : {}) })
+        return logged.ok ? text(body) : text('Refused: the ops ledger is unavailable, so the history read was not recorded or shown.', true)
+      }
+
+      if (ref === undefined) {
+        const r = await runsInScope(HISTORY_SCAN_LIMIT)
+        if (!r.ok) return unavailable(r.error)
+        return await shown(historyListText(r.runs.slice(0, HISTORY_LIST_MAX)))
+      }
+
+      // In scope means listed: the same runs the list offers, looked up further back.
+      const all = await runsInScope(RUN_LIST_MAX)
+      if (!all.ok) return unavailable(all.error)
+      const item = all.runs.find((r) => r.runId === ref)
+      if (!item) return text(`Run ${ref} is not an earlier intervention on a host this run may reach.`, true)
+
+      const run = await ctx.ledger.readRun(ref, new Date(item.startedAt))
+      if (!run.ok) return unavailable(run.error)
+
+      // The runs it itself resumed, nearest first; one line each in the briefing.
+      const ancestors: OpsAuditLine[][] = []
+      const seen = new Set([ref, runId])
+      let next = item.resumesRunId
+      let around = new Date(item.startedAt)
+      while (next !== undefined && !seen.has(next) && ancestors.length < BRIEFING_MAX_ANCESTORS) {
+        seen.add(next)
+        const a = await ctx.ledger.readRun(next, around)
+        const start = a.ok ? a.lines.find((l) => l.event.kind === 'run.start') : undefined
+        if (!a.ok || start?.event.kind !== 'run.start') break
+        ancestors.push(a.lines)
+        next = start.event.resumesRunId
+        around = new Date(start.at)
+      }
+
+      return await shown(renderBriefing(run.lines, ancestors, { resumedBy: resumedByOf(all.runs, ref) }), ref)
+    } catch (e) {
+      return text(`The ops tool failed: ${message(e)}`, true)
+    }
+  }
+
   return {
     note,
     ask_operator: askOperator,
+    past_interventions: pastInterventions,
     run: (a) => handle('run', a),
     script: (a) => handle('script', a),
     operatorScript: (a) => handle('script', a, true),

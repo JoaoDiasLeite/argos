@@ -215,13 +215,13 @@ describe('ops session through callOpsTool', () => {
     expect(l[1].event).toMatchObject({ kind: 'call.decided', decision: 'deny', rawInput: {} })
   })
 
-  it('the bridge session says hello with the runbook, its hosts and the eight tools, and calls through the gate', async () => {
+  it('the bridge session says hello with the runbook, its hosts and the nine tools, and calls through the gate', async () => {
     const { fake, session } = await start({ exec: () => ({ stdout: 'ok' }) })
     const bridge = bridgeSessionFor(session)
     const hello = bridge.hello()
     expect(hello.runbook).toBe('nginx-config-reload')
     expect(hello.hosts).toEqual([{ id: 'h1', name: 'web-01', groups: ['web'] }])
-    expect(hello.tools).toEqual(['propose_plan', 'run', 'script', 'read', 'list', 'write', 'note', 'ask_operator'])
+    expect(hello.tools).toEqual(['propose_plan', 'run', 'script', 'read', 'list', 'write', 'note', 'ask_operator', 'past_interventions'])
     expect(hello.planRequired).toBe(true)
     expect((await bridge.call('run', { hostId: 'h1', cmd: 'systemctl status nginx' })).isError).toBe(false)
     expect((await bridge.call('run', { hostId: 'h1', cmd: 'systemctl stop nginx' })).isError).toBe(true)
@@ -1133,6 +1133,114 @@ describe('note', () => {
     expect(res.isError).toBe(true)
     expect(res.text).toMatch(/^Refused: a hypothesis needs an id/)
     expect(await kinds()).toEqual(['run.start'])
+  })
+})
+
+describe('past_interventions', () => {
+  /** Both hosts in the policy, so a run without a locked host may reach either. */
+  beforeEach(() => {
+    const policyFile = path.join(rbDir, 'policy.json')
+    const policy = JSON.parse(fs.readFileSync(policyFile, 'utf-8'))
+    policy.hosts.db = ['db-01']
+    fs.writeFileSync(policyFile, JSON.stringify(policy))
+  })
+
+  const RB = { name: 'nginx-config-reload', path: '/rb/nginx-config-reload', policySha256: 'p', runbookMdSha256: 'm' }
+
+  /** Earlier runs in the ledger: run-a and run-c (which resumes run-a) on web-01, run-b on db-01. */
+  async function seed(): Promise<void> {
+    const at = (hoursAgo: number) => new Date(Date.now() - hoursAgo * 3_600_000)
+    const startOf = (runId: string, host: OpsHostRef, extra: Record<string, unknown> = {}) => ({
+      kind: 'run.start' as const,
+      runId,
+      appSessionId: 'opsterm_old',
+      runbook: RB,
+      hosts: [host],
+      model: 'claude CLI (terminal)',
+      scope: { kind: 'host' as const, hostId: host.id },
+      ...extra
+    })
+    await ledger.append(startOf('run-a', HOSTS[0], { task: 'nginx returns 502' }), at(5))
+    await ledger.append({ kind: 'note', runId: 'run-a', note: { kind: 'finding', text: 'puma was down' } }, at(5))
+    await ledger.append({ kind: 'run.end', runId: 'run-a', ok: true, costUsd: 0 }, at(5))
+    await ledger.append(startOf('run-b', HOSTS[1], { task: 'slow queries' }), at(4))
+    await ledger.append({ kind: 'run.end', runId: 'run-b', ok: true, costUsd: 0 }, at(4))
+    await ledger.append(startOf('run-c', HOSTS[0], { task: 'nginx returns 502 again', resumesRunId: 'run-a' }), at(3))
+    await ledger.append({ kind: 'run.end', runId: 'run-c', ok: false, costUsd: 0, aborted: true }, at(3))
+  }
+
+  const historyReads = async () => (await lines()).filter((l) => l.event.kind === 'history.read').map((l) => l.event)
+
+  it('lists the earlier runs on the locked host only, newest first, without the run itself, and logs the read', async () => {
+    await seed()
+    const { fake, call } = await start({}, undefined, { scope: { kind: 'host', hostId: 'h1' } })
+    const res = await call('past_interventions', {})
+    expect(res.isError).toBe(false)
+    expect(res.text).toMatch(/^Earlier interventions in scope, newest first \(2\)/)
+    expect(res.text.indexOf('- run-c ')).toBeGreaterThan(-1)
+    expect(res.text.indexOf('- run-c ')).toBeLessThan(res.text.indexOf('- run-a '))
+    expect(res.text).not.toContain('run-b')
+    expect(res.text).not.toContain('run-1')
+    expect(await historyReads()).toEqual([{ kind: 'history.read', runId: 'run-1' }])
+    expect(hostCalls(fake)).toEqual([])
+  })
+
+  it('an open scope lists the runs on every runbook host', async () => {
+    await seed()
+    const { call } = await start({}, undefined, { scope: { kind: 'open' } })
+    const res = await call('past_interventions', {})
+    expect(res.text).toMatch(/newest first \(3\)/)
+    expect(res.text).toContain('- run-b ')
+  })
+
+  it('reads a run in scope as a briefing before a required plan, with its chain, and logs which', async () => {
+    await seed()
+    const { session, call } = await start({}, undefined, { scope: { kind: 'host', hostId: 'h1' }, plan: false })
+    expect(session.ctx.planRequired).toBe(true)
+    expect(session.ctx.planApproved).toBe(false)
+    const a = await call('past_interventions', { runId: 'run-a' })
+    expect(a.isError).toBe(false)
+    expect(a.text).toMatch(/^# Earlier intervention run-a\n/)
+    expect(a.text).toContain('- Task: nginx returns 502')
+    expect(a.text).toContain('puma was down')
+    expect(a.text).toMatch(/- Resumed later by run run-c \(/)
+
+    const c = await call('past_interventions', { runId: 'run-c' })
+    expect(c.text).toContain('- Resumed run run-a')
+    expect(c.text).toMatch(/## Earlier in this chain\n\n- run-a \(.*\): nginx returns 502; finished/)
+
+    expect(await historyReads()).toEqual([
+      { kind: 'history.read', runId: 'run-1', refRunId: 'run-a' },
+      { kind: 'history.read', runId: 'run-1', refRunId: 'run-c' }
+    ])
+    // Nothing went through the gate.
+    expect(await kinds()).toEqual(['run.start', 'history.read', 'history.read'])
+  })
+
+  it('refuses a run outside the scope, the run itself, an unknown id and a malformed one, and logs none', async () => {
+    await seed()
+    const { call } = await start({}, undefined, { scope: { kind: 'host', hostId: 'h1' } })
+    for (const id of ['run-b', 'run-1', 'run-zz']) {
+      expect(await call('past_interventions', { runId: id })).toEqual({
+        text: `Run ${id} is not an earlier intervention on a host this run may reach.`,
+        isError: true
+      })
+    }
+    expect((await call('past_interventions', { runId: '../x' })).text).toMatch(/^Refused: runId must be a run id/)
+    expect(await kinds()).toEqual(['run.start'])
+  })
+
+  it('works in a run without a scope, and says when there is nothing on record', async () => {
+    const { call } = await start({}, undefined, { plan: false })
+    expect(await call('past_interventions', {})).toEqual({
+      text: 'No earlier interventions on record for the hosts this run may reach.\n',
+      isError: false
+    })
+  })
+
+  it('is not an operator action', async () => {
+    const { session } = await start()
+    expect(await session.operatorCanUseTool('mcp__ops__past_interventions', {})).toMatchObject({ behavior: 'deny' })
   })
 })
 

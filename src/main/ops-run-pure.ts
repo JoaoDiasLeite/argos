@@ -763,6 +763,8 @@ export function callPlanLine(input: OpsToolInput, gate: OpsGateResult): string |
 /** The SDK names of the two tools that never reach a host: no gate, no plan, no scope. */
 export const OPS_NOTE_TOOL = 'mcp__ops__note'
 export const OPS_ASK_OPERATOR_TOOL = 'mcp__ops__ask_operator'
+/** Reads the local ledger only (INTERVENTION_HISTORY_PLAN §2): like note, no gate, no plan. */
+export const OPS_PAST_INTERVENTIONS_TOOL = 'mcp__ops__past_interventions'
 
 export const NOTE_KINDS = ['hypothesis', 'finding', 'event', 'summary', 'action'] as const
 export const NOTE_STATUSES = ['open', 'confirmed', 'ruled_out'] as const

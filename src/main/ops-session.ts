@@ -21,6 +21,7 @@ import {
   mcpInputToOpsInput,
   OPS_ASK_OPERATOR_TOOL,
   OPS_NOTE_TOOL,
+  OPS_PAST_INTERVENTIONS_TOOL,
   OPS_PLAN_TOOL,
   opsHostsFor,
   planRequired,
@@ -451,9 +452,10 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions, operator
   return async (toolName, input) => {
     try {
       if (toolName === OPS_PLAN_TOOL) return await decidePlan(ctx, opts, toolName, input)
-      // Neither reaches a host: no gate, no plan, no scope. Their handlers check the input
-      // and write their own ledger lines.
-      if (toolName === OPS_NOTE_TOOL || toolName === OPS_ASK_OPERATOR_TOOL) {
+      // None of these reaches a host: no gate, no plan, no scope. Their handlers check the
+      // input (past_interventions holds itself to the run's scope) and write their own
+      // ledger lines.
+      if (toolName === OPS_NOTE_TOOL || toolName === OPS_ASK_OPERATOR_TOOL || toolName === OPS_PAST_INTERVENTIONS_TOOL) {
         return operator ? deny(`${toolName} is not an operator action.`) : { behavior: 'allow' as const, updatedInput: input }
       }
 

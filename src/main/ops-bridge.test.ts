@@ -166,7 +166,7 @@ describe('ops bridge', () => {
     expect(JSON.parse((hello.result as { text: string }).text)).toEqual({
       runbook: 'nginx-check',
       hosts: [{ id: 'h1', name: 'web-01', groups: ['web'] }],
-      tools: ['propose_plan', 'run', 'script', 'read', 'list', 'write', 'note', 'ask_operator'],
+      tools: ['propose_plan', 'run', 'script', 'read', 'list', 'write', 'note', 'ask_operator', 'past_interventions'],
       planRequired: true
     })
 
@@ -359,7 +359,7 @@ describe('ops relay', () => {
 
     const list = await mcp.request('tools/list')
     const tools = (list.result as { tools: { name: string; description: string }[] }).tools
-    expect(tools.map((t) => t.name)).toEqual(['propose_plan', 'run', 'script', 'read', 'list', 'write', 'note', 'ask_operator'])
+    expect(tools.map((t) => t.name)).toEqual(['propose_plan', 'run', 'script', 'read', 'list', 'write', 'note', 'ask_operator', 'past_interventions'])
     expect(tools.find((t) => t.name === 'propose_plan')?.description).toMatch(/^Call this once, before any other ops tool/)
     expect(tools.find((t) => t.name === 'run')?.description).toMatch(/hostId: h1/)
 

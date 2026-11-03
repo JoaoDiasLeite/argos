@@ -14,15 +14,16 @@ export interface OpsToolHost {
   groups: string[]
 }
 
-/** The eight tool names, bare (the model sees them as `mcp__ops__<name>`). note and
- *  ask_operator never reach a host. */
-export const OPS_BRIDGE_TOOLS = ['propose_plan', 'run', 'script', 'read', 'list', 'write', 'note', 'ask_operator'] as const
+/** The nine tool names, bare (the model sees them as `mcp__ops__<name>`). note,
+ *  ask_operator and past_interventions never reach a host. */
+export const OPS_BRIDGE_TOOLS = ['propose_plan', 'run', 'script', 'read', 'list', 'write', 'note', 'ask_operator', 'past_interventions'] as const
 export type OpsBridgeTool = (typeof OPS_BRIDGE_TOOLS)[number]
 
 export const OPS_TOOL_RULES =
   'One simple command only: no chaining (;, &&, ||), no pipes, redirections, subshells or variable assignments. ' +
   'Use the scripts the runbook provides for anything that needs more than one command. ' +
-  "Every call is checked against the runbook policy and may be refused or need the operator's approval."
+  "Every call is checked against the runbook policy and may be refused or need the operator's approval. " +
+  'Call past_interventions when the operator or the first message names an earlier run, or to check whether the same problem was seen before on this server.'
 
 /** The hosts the model may name, in every tool description: the id is what it must send. */
 export function opsHostListText(hosts: OpsToolHost[]): string {
@@ -149,6 +150,16 @@ export function opsToolDefs(z: typeof ZodNs, hosts: OpsToolHost[], opts: { planR
         why: z.string().min(1).max(500),
         hostId: z.string().optional(),
         expect: z.string().max(300).optional()
+      }
+    },
+    {
+      name: 'past_interventions',
+      description:
+        'Without runId: list the earlier Argos interventions on the hosts this run may reach, newest first. ' +
+        "With runId: return that run's briefing (task, outcome, plan, hypotheses, findings, calls). " +
+        'Read-only and local: it reads the Argos ledger on this machine and never touches a host, and it needs no plan.',
+      shape: {
+        runId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional()
       }
     }
   ]
