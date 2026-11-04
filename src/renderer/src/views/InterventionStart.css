@@ -924,7 +924,7 @@
 
 .ivs-row {
   display: grid;
-  grid-template-columns: 84px minmax(0, 1fr) 110px auto;
+  grid-template-columns: 84px minmax(0, 1fr) 150px auto;
   gap: 14px;
   align-items: center;
   padding: 11px 4px;
@@ -958,22 +958,19 @@
 }
 .ivs-row-check { color: var(--success); }
 .ivs-row-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   font-size: 12px;
   color: var(--text-2);
   white-space: nowrap;
+  min-width: 0;
 }
-.ivs-row-action {
-  min-width: 70px;
-  padding: 2px 4px;
-  border: none;
-  border-radius: var(--radius-surface);
-  background: none;
-  color: var(--accent);
-  font: inherit;
-  font-size: 12.5px;
-  text-align: right;
-  cursor: pointer;
+.ivs-row-open { color: var(--warn); }
+.ivs-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
-.ivs-row-action:hover:not(:disabled) { color: var(--accent-hover); text-decoration: underline; }
-.ivs-row-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.ivs-row-action:disabled { color: var(--text-2); cursor: not-allowed; }
+/* A chain with hypotheses still open: Resume is the likely next step, so it reads in accent. */
+.ivs-icon-btn.strong:not(:disabled) { color: var(--accent); }

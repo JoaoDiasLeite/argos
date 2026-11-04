@@ -32,7 +32,8 @@ const LAST_CLIENT_KEY = 'ops.lastClient'
 const RUNS_FETCHED = 200
 const HISTORY_LIMIT = 15
 /** Rows of the Recent table on the start screen when no server is picked. */
-const RECENT_LIMIT = 20
+/** Recent shows this many chains until "Show more" is pressed. */
+const RECENT_LIMIT = 6
 
 /** Task, ticket and client are hidden for now (2026-11-03): the operator says what is wrong
  *  in the terminal. Flip to bring the three fields back; everything behind them still works. */
@@ -289,6 +290,7 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
   // A run that ended with no call and no note (a start and a stop) says nothing: such runs
   // are hidden behind one line unless asked for.
   const [showEmpty, setShowEmpty] = useState(false)
+  const [showAllRecent, setShowAllRecent] = useState(false)
   const isEmptyRun = (r: OpsRunListItem): boolean => !!r.endedAt && r.calls === 0 && !r.headline && !r.findings && !r.hypotheses
   const emptyCount = useMemo(() => shownRuns.filter(isEmptyRun).length, [shownRuns])
   const timeline = useMemo(
@@ -399,6 +401,8 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
     if (r.scope?.kind === 'host' && hosts && !hosts.some((h) => h.id === (r.scope as { hostId: string }).hostId)) {
       return t('ops.start.resumeNoHost')
     }
+    // Greyed out, not hidden: the row keeps its shape and the tooltip says why.
+    if (r.scope?.kind === 'host' && dots[r.scope.hostId] === 'error') return t('ops.start.resumeUnreachable')
     return undefined
   }
   const resume = (r: OpsRunListItem, dir: string | undefined) =>
@@ -433,7 +437,6 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
   const recent = recentAll
     .filter((c) => !hostFilter || chainHostId(c) === hostFilter)
     .filter((c) => !needle || [chainTitle(c), c.task, c.headline, c.hostName].some((x) => x?.toLowerCase().includes(needle)))
-    .slice(0, RECENT_LIMIT)
   const ongoingCount = runningRows.length
   const filterHost = hostFilter ? hosts?.find((h) => h.id === hostFilter) : undefined
 
@@ -643,9 +646,8 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
                   <p className="ivs-help">{t('ops.start.noMatch')}</p>
                 ) : (
                   <div className="ivs-table">
-                    {recent.map((c) => {
-                      const handover = !c.newest.openHypotheses
-                      const problem = handover ? undefined : resumeProblem(c.newest)
+                    {(showAllRecent ? recent : recent.slice(0, RECENT_LIMIT)).map((c) => {
+                      const problem = resumeProblem(c.newest)
                       return (
                         <div key={c.newest.runId} className="ivs-row">
                           <span className="ivs-row-when" title={new Date(c.newest.startedAt).toLocaleString(locale)}>
@@ -665,27 +667,43 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
                             )}
                           </div>
                           <span className="ivs-row-meta">
-                            {c.openHypotheses > 0
-                              ? `${sessionsText(c)} · ${t('ops.start.openHyps', { hyps: plural(t, 'ops.start.hypotheses', c.openHypotheses) })}`
-                              : sessionsText(c)}
+                            <span>{sessionsText(c)}</span>
+                            {c.openHypotheses > 0 && (
+                              <span className="ivs-row-open">
+                                {t('ops.start.openHyps', { hyps: plural(t, 'ops.start.hypotheses', c.openHypotheses) })}
+                              </span>
+                            )}
                           </span>
-                          <button
-                            type="button"
-                            className="ivs-row-action"
-                            disabled={!!problem}
-                            title={problem}
-                            onClick={() =>
-                              handover
-                                ? setReportFor({ runId: c.newest.runId, runbookPath: runbookDirFor(c.newest), appSessionId: c.newest.appSessionId })
-                                : resume(c.newest, runbookDirFor(c.newest))
-                            }
-                          >
-                            {handover ? t('ops.start.handover') : t('ops.start.resume')}
-                          </button>
+                          <span className="ivs-row-actions">
+                            <button
+                              type="button"
+                              className={`ivs-icon-btn${c.openHypotheses > 0 ? ' strong' : ''}`}
+                              disabled={!!problem}
+                              aria-label={t('ops.start.resume')}
+                              title={problem ?? t('ops.start.resumeTitle')}
+                              onClick={() => resume(c.newest, runbookDirFor(c.newest))}
+                            >
+                              <RunIcon d={ICON_RESUME} />
+                            </button>
+                            <button
+                              type="button"
+                              className="ivs-icon-btn"
+                              aria-label={t('ops.start.handover')}
+                              title={t('ops.start.handover')}
+                              onClick={() => setReportFor({ runId: c.newest.runId, runbookPath: runbookDirFor(c.newest), appSessionId: c.newest.appSessionId })}
+                            >
+                              <RunIcon d={ICON_REPORT} />
+                            </button>
+                          </span>
                         </div>
                       )
                     })}
                   </div>
+                )}
+                {recent.length > RECENT_LIMIT && (
+                  <button type="button" className="ivs-empty-toggle" onClick={() => setShowAllRecent((v) => !v)}>
+                    {showAllRecent ? t('ops.start.showLess') : t('ops.start.showMore', { n: recent.length - RECENT_LIMIT })}
+                  </button>
                 )}
               </section>
             </>
