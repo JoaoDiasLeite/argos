@@ -973,6 +973,8 @@ export interface OpsRunListItem {
   headline?: string
   findings?: number
   hypotheses?: number
+  /** Hypotheses still open when the run ended. */
+  openHypotheses?: number
 }
 
 /**

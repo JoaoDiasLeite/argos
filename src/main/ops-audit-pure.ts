@@ -408,6 +408,8 @@ export interface OpsRunListItem {
   /** How many findings and hypotheses the model noted. */
   findings?: number
   hypotheses?: number
+  /** Hypotheses whose last note left them open: what a resume would pick up. */
+  openHypotheses?: number
 }
 
 /** The ids of the hosts a run was about, in the sense of OpsRunListItem.hostNames. */
@@ -428,7 +430,7 @@ export function runTouchesHost(s: OpsRunSummary, hostId: string): boolean {
 export function runListItem(
   s: OpsRunSummary,
   appSessionId: string,
-  notes?: { headline?: string; findings: number; hypotheses: number }
+  notes?: { headline?: string; findings: number; hypotheses: number; openHypotheses?: number }
 ): OpsRunListItem {
   const nameOf = (id: string): string =>
     s.hosts.find((h) => h.id === id)?.name ?? s.calls.find((c) => c.hostId === id)?.host ?? s.hostAnswers?.find((a) => a.hostId === id)?.host ?? id
@@ -452,6 +454,7 @@ export function runListItem(
     ...(s.costUsd !== undefined ? { costUsd: s.costUsd } : {}),
     ...(notes?.headline ? { headline: notes.headline } : {}),
     ...(notes?.findings ? { findings: notes.findings } : {}),
-    ...(notes?.hypotheses ? { hypotheses: notes.hypotheses } : {})
+    ...(notes?.hypotheses ? { hypotheses: notes.hypotheses } : {}),
+    ...(notes?.openHypotheses ? { openHypotheses: notes.openHypotheses } : {})
   }
 }
