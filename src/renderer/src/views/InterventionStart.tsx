@@ -7,7 +7,8 @@ import { samePath, useBuiltinRunbook } from '../lib/builtin-runbook'
 import OpsReportSheet from '../components/OpsReportSheet'
 import { interventionLabel } from '../lib/intervention-label'
 import { runNotes, runStatus } from '../lib/ops-run-status'
-import { RunbookField, runbookHostProblem, useRunbookPicker, type InfoState } from '../components/RunbookPicker'
+import { chainIsEmpty, chainsOf, type RunChain } from '../lib/ops-chains'
+import { IvsDropdown, RunbookField, runbookHostProblem, useRunbookPicker, type InfoState } from '../components/RunbookPicker'
 import { plural, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
 import './InterventionStart.css'
@@ -30,6 +31,8 @@ const LAST_CLIENT_KEY = 'ops.lastClient'
 /** Every run is fetched once; the rail groups them by server, the history shows the newest. */
 const RUNS_FETCHED = 200
 const HISTORY_LIMIT = 15
+/** Rows of the Recent table on the start screen when no server is picked. */
+const RECENT_LIMIT = 20
 
 /** Task, ticket and client are hidden for now (2026-11-03): the operator says what is wrong
  *  in the terminal. Flip to bring the three fields back; everything behind them still works. */
@@ -145,25 +148,9 @@ interface TimelineRow {
  * next to each other, newest of the chain on top, so a connector can join them.
  */
 function buildTimeline(runs: OpsRunListItem[]): TimelineRow[] {
-  const byId = new Map(runs.map((r) => [r.runId, r]))
-  const resumedBy = new Map<string, OpsRunListItem>()
-  for (const r of runs) {
-    if (r.resumesRunId && byId.has(r.resumesRunId) && !resumedBy.has(r.resumesRunId)) resumedBy.set(r.resumesRunId, r)
-  }
-  const placed = new Set<string>()
-  const rows: TimelineRow[] = []
-  for (const tip of runs) {
-    if (placed.has(tip.runId) || resumedBy.has(tip.runId)) continue
-    const chain: OpsRunListItem[] = []
-    for (let cur: OpsRunListItem | undefined = tip; cur && !placed.has(cur.runId); cur = cur.resumesRunId ? byId.get(cur.resumesRunId) : undefined) {
-      placed.add(cur.runId)
-      chain.push(cur)
-    }
-    chain.forEach((run, i) => rows.push({ run, resumedBy: resumedBy.get(run.runId), lineTop: i > 0, lineBottom: i < chain.length - 1 }))
-  }
-  // A cycle or a skipped branch would leave runs out: keep them, unjoined.
-  for (const r of runs) if (!placed.has(r.runId)) rows.push({ run: r, lineTop: false, lineBottom: false })
-  return rows
+  return chainsOf(runs).flatMap(({ runs: chain }) =>
+    chain.map((run, i) => ({ run, resumedBy: chain[i - 1], lineTop: i > 0, lineBottom: i < chain.length - 1 }))
+  )
 }
 
 // ── Icons ────────────────────────────────────────────────────────────────────
@@ -294,10 +281,9 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
   const hostId = scope?.kind === 'host' ? scope.hostId : undefined
   const selectedHost = hostId ? hosts?.find((h) => h.id === hostId) : undefined
 
-  /** The runs on the history: the chosen server's, or every run when none (or any) is chosen. */
+  /** The runs on the history: the chosen server's (none when no server is chosen). */
   const shownRuns = useMemo(() => {
-    if (runs === 'loading' || !runs.ok) return []
-    if (!hostId) return runs.runs
+    if (runs === 'loading' || !runs.ok || !hostId) return []
     return selectedHost ? runs.runs.filter((r) => runOnHost(r, selectedHost)) : []
   }, [runs, hostId, selectedHost])
   // A run that ended with no call and no note (a start and a stop) says nothing: such runs
@@ -326,6 +312,13 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
     }
     return out
   }, [runs, hosts])
+
+  /** Every run grouped into resume chains, newest first (the overview's two lists). */
+  const chains = useMemo(() => (runs === 'loading' || !runs.ok ? [] : chainsOf(runs.runs)), [runs])
+  const [filter, setFilter] = useState('')
+  /** The Recent table's server filter: it narrows the table, it does not pick the server. */
+  const [hostFilter, setHostFilter] = useState<string | null>(null)
+  const filterLabelId = useId()
 
   const liveHere = hostId ? live.filter((l) => l.hostId === hostId) : []
 
@@ -419,6 +412,32 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
       resumesRunId: r.runId
     })
   const relatedText = (r: OpsRunListItem) => `${runWhen(r.startedAt, t, locale)} · ${r.task || r.runbook}`
+
+  // ── The overview (no server picked): ongoing interventions, then recent chains ──
+  const chainHostId = (c: RunChain): string | undefined =>
+    c.newest.scope?.kind === 'host' ? c.newest.scope.hostId : hosts?.find((h) => c.newest.hostNames.includes(h.name))?.id
+  const chainTitle = (c: RunChain) =>
+    `${c.hostName || '…'} · ${c.task || hostLabel(c.newest, runbookDirFor(c.newest)).tag}`
+  const sessionsText = (c: RunChain) => plural(t, 'ops.start.sessions', c.sessions)
+
+  const runningRows = live.map((l) => ({
+    live: l,
+    host: hosts?.find((h) => h.id === l.hostId),
+    chain: chains.find((c) => !c.newest.endedAt && chainHostId(c) === l.hostId)
+  }))
+  const runningChains = new Set(runningRows.flatMap((r) => (r.chain ? [r.chain] : [])))
+  const liveHostIds = new Set(live.map((l) => l.hostId))
+  const pausedChains = chains.filter(
+    (c) => !runningChains.has(c) && !!c.newest.endedAt && c.openHypotheses > 0 && !liveHostIds.has(chainHostId(c) ?? '')
+  )
+  const needle = filter.trim().toLowerCase()
+  const recentAll = chains.filter((c) => !runningChains.has(c) && !pausedChains.includes(c) && !chainIsEmpty(c))
+  const recent = recentAll
+    .filter((c) => !hostFilter || chainHostId(c) === hostFilter)
+    .filter((c) => !needle || [chainTitle(c), c.task, c.headline, c.hostName].some((x) => x?.toLowerCase().includes(needle)))
+    .slice(0, RECENT_LIMIT)
+  const ongoingCount = runningRows.length + pausedChains.length
+  const filterHost = hostFilter ? hosts?.find((h) => h.id === hostFilter) : undefined
 
   // ── Header ─────────────────────────────────────────────────────────────────
   const connState: DotState | undefined = selectedHost ? (dots[selectedHost.id] ?? 'checking') : undefined
@@ -531,6 +550,168 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
             )}
           </div>
 
+          {server === null ? (
+            <>
+              {ongoingCount > 0 && (
+                <section className="ivs-ongoing" aria-label={t('ops.start.ongoing')}>
+                  <div className="ivs-sec-head">
+                    <h2 className="ivs-eyebrow">{t('ops.start.ongoing')}</h2>
+                    <span className="ivs-sec-count">{ongoingCount}</span>
+                  </div>
+                  {runningRows.map(({ live: l, host, chain }, i) => (
+                    <div key={`live-${i}`} className="ivs-ong running">
+                      <span className="ivs-ong-dot" aria-hidden="true" />
+                      <div className="ivs-ong-body">
+                        <span className="ivs-ong-title">{l.title}</span>
+                        <span className="ivs-ong-sub">
+                          {[
+                            host?.name,
+                            ...(chain
+                              ? [
+                                  t('ops.start.sinceAt', { time: clock(chain.newest.startedAt, locale) }),
+                                  plural(t, 'ops.start.calls', chain.newest.calls),
+                                  ...(runNotes(chain.newest, t).length ? runNotes(chain.newest, t) : [t('ops.start.noNotesYet')])
+                                ]
+                              : [])
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </span>
+                      </div>
+                      <span className="ivs-ong-state">{t('ops.start.running')}</span>
+                      <button type="button" className="ivs-ong-btn" onClick={l.open}>
+                        {t('ops.start.openIt')}
+                      </button>
+                    </div>
+                  ))}
+                  {pausedChains.map((c) => {
+                    const problem = resumeProblem(c.newest)
+                    return (
+                      <div key={c.newest.runId} className="ivs-ong paused">
+                        <span className="ivs-ong-dot" aria-hidden="true" />
+                        <div className="ivs-ong-body">
+                          <span className="ivs-ong-title">{chainTitle(c)}</span>
+                          <span className="ivs-ong-sub">
+                            {t('ops.start.pausedSub', {
+                              sessions: sessionsText(c),
+                              when: runWhen(c.newest.endedAt ?? c.newest.startedAt, t, locale).toLowerCase(),
+                              hyps: plural(t, 'ops.start.hypotheses', c.openHypotheses)
+                            })}
+                          </span>
+                        </div>
+                        <span className="ivs-ong-state">{t('ops.start.paused')}</span>
+                        <button
+                          type="button"
+                          className="ivs-ong-btn"
+                          disabled={!!problem}
+                          title={problem ?? t('ops.start.resumeTitle')}
+                          onClick={() => resume(c.newest, runbookDirFor(c.newest))}
+                        >
+                          {t('ops.start.resume')}
+                        </button>
+                      </div>
+                    )
+                  })}
+                </section>
+              )}
+
+              <section className="ivs-recent" aria-label={t('ops.start.recent')}>
+                <div className="ivs-sec-head ivs-recent-head">
+                  <h2 className="ivs-eyebrow">{t('ops.start.recent')}</h2>
+                  <span className="ivs-spacer" />
+                  <label className="ivs-filter">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                      <circle cx="11" cy="11" r="7" />
+                      <path d="m20 20-3.5-3.5" />
+                    </svg>
+                    <input
+                      aria-label={t('ops.start.filterLabel')}
+                      placeholder={t('ops.start.filterPlaceholder')}
+                      value={filter}
+                      onChange={(e) => setFilter(e.target.value)}
+                      spellCheck={false}
+                    />
+                  </label>
+                  <span className="ivs-recent-dd">
+                    <span id={filterLabelId} hidden>
+                      {t('ops.start.servers')}
+                    </span>
+                    <IvsDropdown
+                      labelledBy={filterLabelId}
+                      trigger={<span className="ivs-value">{filterHost ? filterHost.name : t('ops.start.allServers')}</span>}
+                      items={[
+                        {
+                          kind: 'option',
+                          key: 'all',
+                          selected: !hostFilter,
+                          onSelect: () => setHostFilter(null),
+                          content: <span className="ivs-value">{t('ops.start.allServers')}</span>
+                        },
+                        ...(hosts ?? []).map((h) => ({
+                          kind: 'option' as const,
+                          key: h.id,
+                          selected: hostFilter === h.id,
+                          onSelect: () => setHostFilter(h.id),
+                          content: <span className="ivs-value">{h.name}</span>
+                        }))
+                      ]}
+                    />
+                  </span>
+                </div>
+                {runs === 'loading' ? (
+                  <p className="ivs-help">{t('common.loading')}</p>
+                ) : !runs.ok ? (
+                  <p className="ivs-error">{runs.error}</p>
+                ) : recentAll.length === 0 ? (
+                  ongoingCount === 0 && <p className="ivs-help">{t('ops.start.none')}</p>
+                ) : recent.length === 0 ? (
+                  <p className="ivs-help">{t('ops.start.noMatch')}</p>
+                ) : (
+                  <div className="ivs-table">
+                    {recent.map((c) => {
+                      const handover = !c.newest.openHypotheses
+                      const problem = handover ? undefined : resumeProblem(c.newest)
+                      return (
+                        <div key={c.newest.runId} className="ivs-row">
+                          <span className="ivs-row-when" title={new Date(c.newest.startedAt).toLocaleString(locale)}>
+                            {runWhen(c.newest.startedAt, t, locale)}
+                          </span>
+                          <div className="ivs-row-body">
+                            <span className="ivs-row-title" title={chainTitle(c)}>
+                              {chainTitle(c)}
+                            </span>
+                            {c.headline && (
+                              <span className="ivs-row-found" title={c.headline}>
+                                <span className="ivs-row-check" aria-hidden="true">
+                                  ✓
+                                </span>{' '}
+                                {c.headline}
+                              </span>
+                            )}
+                          </div>
+                          <span className="ivs-row-meta">{sessionsText(c)}</span>
+                          <button
+                            type="button"
+                            className="ivs-row-action"
+                            disabled={!!problem}
+                            title={problem}
+                            onClick={() =>
+                              handover
+                                ? setReportFor({ runId: c.newest.runId, runbookPath: runbookDirFor(c.newest), appSessionId: c.newest.appSessionId })
+                                : resume(c.newest, runbookDirFor(c.newest))
+                            }
+                          >
+                            {handover ? t('ops.start.handover') : t('ops.start.resume')}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+            </>
+          ) : (
+            <>
           <div className="ivs-below">
             {hostProblem ? (
               <span className="ivs-error" role="alert">
@@ -767,6 +948,8 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
               </button>
             )}
           </section>
+            </>
+          )}
         </div>
       </div>
 
