@@ -19,7 +19,7 @@ interface Entry {
 const CHANGELOG: Entry[] = [
   {
     version: '3.0.0',
-    date: '2026-11-03',
+    date: '2026-11-04',
     tag: 'new',
     sections: [
       {
@@ -33,7 +33,16 @@ const CHANGELOG: Entry[] = [
           'Settings → Companion: the summon and dictation shortcuts, staying on screen all day (with a short walk along the bottom now and then) or only when called, the reminder lead time, the morning hour, hiding Argos from screen shares (on by default), and exporting notes to an Obsidian vault as Markdown files.',
           'The profile export now carries Argos’s todos and notes; importing adds the ones the machine does not have.',
           'Resume an intervention: Resume on a past run (or on the exited terminal) opens a new run that continues it. When the Claude conversation is still on this machine it carries on from there; otherwise the run starts from a briefing of the earlier one. Either way the plan is approved again.',
-          'Refer to earlier interventions: pick related ones on the start screen, point the model at one in the middle of a run, and the model can look up earlier interventions on the same server itself through a read-only tool. Each lookup shows in the activity column and in the report.'
+          'Refer to earlier interventions: pick related ones on a server’s history, point the model at one mid-run from "+ Refer an earlier one" (searchable, titled by what each run found), and the model can look up earlier interventions on the same server itself through a read-only tool. Each lookup shows in the activity panel and in the report.'
+        ]
+      },
+      {
+        title: 'Changes',
+        items: [
+          'New start screen for operations: servers on the left with their connection and latest intervention. With no server picked you see what is running now and the recent interventions, one row per problem however many times it was resumed, with what it found, a filter, and Resume and Handover on each row. Picking a server shows its header, start buttons and history as a timeline.',
+          'The intervention workspace is quieter: the header keeps only Stop (Resume once the run is over) and the side panel toggle, and the terminal sits right under it. The side panel folds into Progress (plan, hypotheses as a checklist, findings), Context and Activity, newest call on top sliding in as it arrives, with Handover and the hand over at its foot.',
+          'A stopped intervention now reads "closed", not "stopped" in red, and an unreachable server shows a grey ring with the word rather than a red dot. Resume stays visible but greyed out while the server cannot be reached.',
+          'The run report shows the handover only; task, ticket and client are no longer asked on the start screen, and a new intervention is always on one server.'
         ]
       }
     ]
