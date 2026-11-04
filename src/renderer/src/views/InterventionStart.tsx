@@ -426,18 +426,20 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
     chain: chains.find((c) => !c.newest.endedAt && chainHostId(c) === l.hostId)
   }))
   const runningChains = new Set(runningRows.flatMap((r) => (r.chain ? [r.chain] : [])))
-  const liveHostIds = new Set(live.map((l) => l.hostId))
-  const pausedChains = chains.filter(
-    (c) => !runningChains.has(c) && !!c.newest.endedAt && c.openHypotheses > 0 && !liveHostIds.has(chainHostId(c) ?? '')
-  )
+  // Ongoing is only what is running. A run the operator stopped is closed, even with a
+  // hypothesis left open: it sits under Recent with Resume as its action.
   const needle = filter.trim().toLowerCase()
-  const recentAll = chains.filter((c) => !runningChains.has(c) && !pausedChains.includes(c) && !chainIsEmpty(c))
+  const recentAll = chains.filter((c) => !runningChains.has(c) && !chainIsEmpty(c))
   const recent = recentAll
     .filter((c) => !hostFilter || chainHostId(c) === hostFilter)
     .filter((c) => !needle || [chainTitle(c), c.task, c.headline, c.hostName].some((x) => x?.toLowerCase().includes(needle)))
     .slice(0, RECENT_LIMIT)
-  const ongoingCount = runningRows.length + pausedChains.length
+  const ongoingCount = runningRows.length
   const filterHost = hostFilter ? hosts?.find((h) => h.id === hostFilter) : undefined
+
+  /** The rail dot's tooltip: it is the connection, not how the last intervention ended. */
+  const dotTitle = (d: DotState | undefined): string =>
+    d === 'ok' ? t('ops.start.conn.ok') : d === 'error' ? t('ops.start.conn.error') : t('ops.start.conn.checking')
 
   // ── Header ─────────────────────────────────────────────────────────────────
   const connState: DotState | undefined = selectedHost ? (dots[selectedHost.id] ?? 'checking') : undefined
@@ -507,7 +509,7 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
                 onClick={() => setServer(h.id)}
               >
                 <span className="ivs-srv-top">
-                  <span className={`ivs-dot ${dots[h.id] ?? 'checking'}`} aria-hidden="true" />
+                  <span className={`ivs-dot ${dots[h.id] ?? 'checking'}`} aria-hidden="true" title={dotTitle(dots[h.id])} />
                   <span className="ivs-srv-name">{h.name}</span>
                   {isLive && <span className="ivs-live">{t('ops.start.live')}</span>}
                 </span>
@@ -517,6 +519,7 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
                     : last
                       ? `${runWhen(last.startedAt, t, locale)} · ${runStatus(last, t).label}`
                       : t('ops.start.noneYet')}
+                  {dots[h.id] === 'error' && ` · ${t('ops.start.conn.error')}`}
                 </span>
               </button>
             )
@@ -584,34 +587,6 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
                       </button>
                     </div>
                   ))}
-                  {pausedChains.map((c) => {
-                    const problem = resumeProblem(c.newest)
-                    return (
-                      <div key={c.newest.runId} className="ivs-ong paused">
-                        <span className="ivs-ong-dot" aria-hidden="true" />
-                        <div className="ivs-ong-body">
-                          <span className="ivs-ong-title">{chainTitle(c)}</span>
-                          <span className="ivs-ong-sub">
-                            {t('ops.start.pausedSub', {
-                              sessions: sessionsText(c),
-                              when: runWhen(c.newest.endedAt ?? c.newest.startedAt, t, locale).toLowerCase(),
-                              hyps: plural(t, 'ops.start.hypotheses', c.openHypotheses)
-                            })}
-                          </span>
-                        </div>
-                        <span className="ivs-ong-state">{t('ops.start.paused')}</span>
-                        <button
-                          type="button"
-                          className="ivs-ong-btn"
-                          disabled={!!problem}
-                          title={problem ?? t('ops.start.resumeTitle')}
-                          onClick={() => resume(c.newest, runbookDirFor(c.newest))}
-                        >
-                          {t('ops.start.resume')}
-                        </button>
-                      </div>
-                    )
-                  })}
                 </section>
               )}
 
@@ -689,7 +664,11 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
                               </span>
                             )}
                           </div>
-                          <span className="ivs-row-meta">{sessionsText(c)}</span>
+                          <span className="ivs-row-meta">
+                            {c.openHypotheses > 0
+                              ? `${sessionsText(c)} · ${t('ops.start.openHyps', { hyps: plural(t, 'ops.start.hypotheses', c.openHypotheses) })}`
+                              : sessionsText(c)}
+                          </span>
                           <button
                             type="button"
                             className="ivs-row-action"

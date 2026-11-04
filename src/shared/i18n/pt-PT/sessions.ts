@@ -68,7 +68,7 @@ const sessions: Record<keyof typeof en, string> = {
   'activity.calls.one': '{n} chamada',
   'activity.calls.other': '{n} chamadas',
 
-  'activity.run.stopped': 'Parou',
+  'activity.run.stopped': 'Fechada',
   'activity.run.finished': 'Terminou às {time}',
   'activity.run.steps.one': '{done} de {n} passo',
   'activity.run.steps.other': '{done} de {n} passos',

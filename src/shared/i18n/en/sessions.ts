@@ -67,7 +67,7 @@ export default {
   'activity.calls.one': '{n} call',
   'activity.calls.other': '{n} calls',
 
-  'activity.run.stopped': 'Stopped',
+  'activity.run.stopped': 'Closed',
   'activity.run.finished': 'Finished {time}',
   'activity.run.steps.one': '{done} of {n} step',
   'activity.run.steps.other': '{done} of {n} steps',

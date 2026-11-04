@@ -164,8 +164,12 @@
   background: var(--success);
   opacity: 1;
 }
+/* Unreachable: a hollow grey ring, not red. Red beside a run's status read as the
+   intervention having failed; the word "unreachable" says what it is. */
 .ivs-dot.error {
-  background: var(--error);
+  background: transparent;
+  border: 1.5px solid var(--text-2);
+  box-sizing: border-box;
   opacity: 1;
 }
 .ivs-dot.checking {
@@ -823,7 +827,6 @@
   border-radius: 50%;
 }
 .ivs-ong.running .ivs-ong-dot { background: var(--accent); }
-.ivs-ong.paused .ivs-ong-dot { background: var(--warn); }
 .ivs-ong-body {
   flex: 1;
   min-width: 0;
@@ -851,7 +854,6 @@
   text-transform: uppercase;
 }
 .ivs-ong.running .ivs-ong-state { color: var(--accent); }
-.ivs-ong.paused .ivs-ong-state { color: var(--warn); }
 .ivs-ong-btn {
   flex-shrink: 0;
   height: 32px;
