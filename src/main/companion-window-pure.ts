@@ -65,10 +65,16 @@ export function isInsideArea(pos: Point, size: number, workArea: Rect): boolean 
 }
 
 /**
- * Where a dropped pet comes to rest: against the nearer left or right edge of the work
- * area, PET_MARGIN in, keeping its height (clamped inside). Docked, not free-floating.
+ * Where a dropped pet comes to rest. Dropped in the lower third of the work area he lands
+ * on the floor where he was let go, PET_MARGIN up from the bottom, so he can walk from
+ * there. Higher up he docks against the nearer left or right edge, PET_MARGIN in, keeping
+ * his height (clamped inside): docked, not free-floating, and not walking.
  */
 export function snapToEdge(pos: Point, workArea: Rect, size = PET_SIZE, margin = PET_MARGIN): Point {
+  const bottom = workArea.y + workArea.height
+  if (pos.y + size >= bottom - workArea.height / 3) {
+    return clampToArea({ x: pos.x, y: bottom - size - margin }, size, workArea)
+  }
   const centre = pos.x + size / 2
   const left = centre < workArea.x + workArea.width / 2
   const x = left ? workArea.x + margin : workArea.x + workArea.width - size - margin

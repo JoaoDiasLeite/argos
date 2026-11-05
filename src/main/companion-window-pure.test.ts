@@ -41,8 +41,12 @@ describe('snapToEdge', () => {
     expect(snapToEdge({ x: 1200, y: 300 }, area)).toEqual({ x: 1920 - 220 - 12, y: 300 })
   })
 
-  it('clamps a drop half off the bottom back inside', () => {
-    expect(snapToEdge({ x: 1500, y: 1000 }, area)).toEqual({ x: 1688, y: 1040 - 220 })
+  it('lands a drop in the lower third on the floor, where it was let go', () => {
+    expect(snapToEdge({ x: 900, y: 600 }, area)).toEqual({ x: 900, y: 1040 - 220 - 12 })
+  })
+
+  it('lands a drop half off the bottom on the floor, inside the sides', () => {
+    expect(snapToEdge({ x: 1800, y: 1000 }, area)).toEqual({ x: 1920 - 220, y: 1040 - 220 - 12 })
   })
 
   it('clamps a drop above the top back inside', () => {
