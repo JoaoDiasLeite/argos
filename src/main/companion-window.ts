@@ -38,6 +38,8 @@ import { FOLLOW_POLL_MS, followUpdate, shouldFollow, type FollowWatch } from './
 import { ROUTINE_POSE_MS, dayKey, isNight, routineMoment, type RoutineMoment } from './companion-routine-pure'
 import { fallY, isFall, type Fall } from './companion-fall-pure'
 import { BALL_SIZE, ballAt, fetchX, planThrow, type Throw } from './companion-ball-pure'
+import { PERCH_POLL_MS, isOverTitleBar, perchFollow, perchPosition } from './companion-perch-pure'
+import { foregroundWindow, windowBounds } from './companion-win32'
 import { restingPetState } from './companion-quiet-pure'
 import { PET_SCALE, POSITIONS_VERSION, VOICE_SHORTCUT_DEFAULTS } from './companion-types'
 import type {
@@ -105,6 +107,9 @@ let walkTimer: ReturnType<typeof setTimeout> | null = null
 let fall: (Fall & { x: number; startAt: number }) | null = null
 /** Counts down to a doze while he sits idle (plan §13.3, M1). */
 let dozeTimer: ReturnType<typeof setTimeout> | null = null
+/** Perched on a window (plan §13.3, R): its handle, where it was last seen, and the watch on it. */
+let perch: { hwnd: unknown; last: Rect } | null = null
+let perchTimer: ReturnType<typeof setInterval> | null = null
 /** The day's routine (plan §13.3, U2): the clock, and which moments are done today. */
 let routineTimer: ReturnType<typeof setInterval> | null = null
 const routineDone: Partial<Record<RoutineMoment, string>> = {}
@@ -554,9 +559,10 @@ function stopPolling(): void {
 export function startPetDrag(): void {
   if (!alive(petWindow) || !petWindow.isVisible()) return
   stopWalk()
-  // Caught mid-air: the fall ends where he is, and so does the game.
+  // Caught mid-air: the fall ends where he is, and so does the game; lifted off a window too.
   fall = null
   if (game) endGame()
+  unperch()
   wakePet()
   cancelDoze()
   const [x, y] = petWindow.getPosition()
@@ -574,9 +580,77 @@ export function endPetDrag(): void {
   // The display the dog was dropped on, by the window's centre; positions are clamped to
   // its work area, which also settles a drag across displays of different scale.
   const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
+  // Let go over the title bar of the window in front: he sits on its top edge (plan §13.3, R).
+  const front = foregroundWindow()
+  if (front && isOverTitleBar(b, front.bounds)) {
+    startPerch(front.hwnd, front.bounds, b)
+    return
+  }
   const pos = snapToEdge({ x: b.x, y: b.y }, display.workArea, { width: b.width, height: b.height })
   if (isFall(b.y, pos.y) && !reducedMotion()) {
     // On his feet for the drop; stepFall sits him down on landing.
+    petWindow.setPosition(pos.x, b.y)
+    fall = { fromY: b.y, toY: pos.y, x: pos.x, startAt: Date.now() }
+    setPetState('standing')
+    startPolling(WALK_POLL_MS)
+  } else {
+    petWindow.setPosition(pos.x, pos.y)
+    settlePose()
+  }
+  placeBubble()
+  savePetPosition(display.id, pos)
+  scheduleWalk()
+  scheduleDoze()
+}
+
+// ─── Perching (plan §13.3, R) ──────────────────────────────────────────────────
+
+/** Sit on the window's top edge and keep an eye on it. Nothing is saved: the place is the window's, not the display's. */
+function startPerch(hwnd: unknown, bounds: Rect, b: Rect): void {
+  unperch()
+  if (!alive(petWindow)) return
+  perch = { hwnd, last: bounds }
+  const pos = perchPosition(b, bounds, { width: b.width, height: b.height })
+  petWindow.setPosition(pos.x, pos.y)
+  placeBubble()
+  setPetState('perched')
+  perchTimer = setInterval(perchTick, PERCH_POLL_MS)
+}
+
+function unperch(): void {
+  if (perchTimer) clearInterval(perchTimer)
+  perchTimer = null
+  perch = null
+}
+
+/** The window moved: along with it. Minimised, closed or hidden: down to the floor. */
+function perchTick(): void {
+  if (!perch || !alive(petWindow) || !petWindow.isVisible()) {
+    unperch()
+    return
+  }
+  if (drag) return
+  const bounds = windowBounds(perch.hwnd)
+  if (!bounds) {
+    unperch()
+    dropToFloor()
+    return
+  }
+  if (bounds.x === perch.last.x && bounds.y === perch.last.y) return
+  const [x, y] = petWindow.getPosition()
+  const pos = perchFollow({ x, y }, perch.last, bounds)
+  perch.last = bounds
+  petWindow.setPosition(pos.x, pos.y)
+  placeBubble()
+}
+
+/** From wherever he is, down to the floor of his display (the window he sat on went). */
+function dropToFloor(): void {
+  if (!alive(petWindow)) return
+  const b = petWindow.getBounds()
+  const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
+  const pos = snapToEdge({ x: b.x, y: b.y }, display.workArea, { width: b.width, height: b.height })
+  if (isFall(b.y, pos.y) && !reducedMotion()) {
     petWindow.setPosition(pos.x, b.y)
     fall = { fromY: b.y, toY: pos.y, x: pos.x, startAt: Date.now() }
     setPetState('standing')
@@ -656,7 +730,9 @@ function restingState(): CompanionPetState {
   } catch {
     // unreadable state.json: not muted
   }
-  return state === 'idle' && leaningOn() ? 'leaning' : state
+  if (state !== 'idle') return state
+  if (perch) return 'perched'
+  return leaningOn() ? 'leaning' : state
 }
 
 /** The wall he is docked against, if any; the lean faces away from it (the sheet has the wall on the left). */
@@ -925,6 +1001,7 @@ function hidePet(): void {
   cancelDoze()
   stopFollowing()
   stopRoutine()
+  unperch()
   // Hidden while dozing: he comes back sitting up.
   if (asleep()) petState = restingState()
 }
@@ -992,7 +1069,7 @@ export function popupPetMenu(menu: Menu): void {
 export function petThePet(): void {
   if (!isCompanionVisible() || bubble) return
   wakePet()
-  if (petState !== 'idle' && petState !== 'looking' && petState !== 'leaning' && petState !== 'shh') return
+  if (petState !== 'idle' && petState !== 'looking' && petState !== 'leaning' && petState !== 'perched' && petState !== 'shh') return
   setPetState('happy')
 }
 

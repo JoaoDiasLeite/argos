@@ -65,7 +65,9 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   yawning: { src: SHEETS.wag, frames: 4, fps: 4 },
   sleeping: { src: SHEETS.doze, frames: 2, fps: 1 },
   // A fidget (plan §13.4): the wag stands in for scratch.png.
-  scratching: { src: SHEETS.wag, frames: 4, fps: 8 }
+  scratching: { src: SHEETS.wag, frames: 4, fps: 8 },
+  // On a window's top edge (plan §13.4): idle until perch.png is drawn.
+  perched: IDLE
 }
 
 const FRAME = 96
@@ -96,7 +98,8 @@ const PET_STATES: readonly CompanionPetState[] = [
   'stretching',
   'yawning',
   'sleeping',
-  'scratching'
+  'scratching',
+  'perched'
 ]
 
 /** Now and then while just sitting (plan §13.3, U3): a scratch, or a glance the other way. */
