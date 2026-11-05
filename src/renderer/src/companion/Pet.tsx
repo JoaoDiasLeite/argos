@@ -24,7 +24,8 @@ const SHEETS = {
   listen: new URL('./sprites/listen.png', import.meta.url).href,
   think: new URL('./sprites/think.png', import.meta.url).href,
   walk: new URL('./sprites/walk.png', import.meta.url).href,
-  run: new URL('./sprites/run.png', import.meta.url).href
+  run: new URL('./sprites/run.png', import.meta.url).href,
+  lean: new URL('./sprites/lean.png', import.meta.url).href
 }
 
 interface Sprite {
@@ -58,8 +59,8 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   running: { src: SHEETS.run, frames: 5, fps: 10 },
   // On his feet before and after a walk: the walk sheet's first frame, held.
   standing: { src: SHEETS.walk, frames: 1, fps: 1, sheetFrames: 4 },
-  // Back to a side wall (plan §13.4): idle until lean.png is drawn, mirrored for the right wall.
-  leaning: IDLE,
+  // Back to a side wall (drawn with the wall on the left), mirrored for the right wall.
+  leaning: { src: SHEETS.lean, frames: 1, fps: 1 },
   // Turned toward the cursor (plan §13.4): idle, mirrored to face it, until look.png is drawn.
   looking: IDLE,
   // The day's routine (plan §13.4): the wag stands in for stretch.png, the doze for sleep.png.
