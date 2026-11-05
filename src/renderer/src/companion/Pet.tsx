@@ -30,7 +30,8 @@ const SHEETS = {
   look: new URL('./sprites/look.png', import.meta.url).href,
   stretch: new URL('./sprites/stretch.png', import.meta.url).href,
   sleep1: new URL('./sprites/sleep1.png', import.meta.url).href,
-  sleep2: new URL('./sprites/sleep2.png', import.meta.url).href
+  sleep2: new URL('./sprites/sleep2.png', import.meta.url).href,
+  scratch: new URL('./sprites/scratch.png', import.meta.url).href
 }
 
 interface Sprite {
@@ -76,8 +77,8 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   yawning: { src: SHEETS.stretch, frames: 1, fps: 1, sheetFrames: 3, frame: 1 },
   // Flat out for the night, one slow breath; Pet picks sleep1 or sleep2 each time he lies down.
   sleeping: { src: SHEETS.sleep1, frames: 2, fps: 1 },
-  // A fidget (plan §13.4): the wag stands in for scratch.png.
-  scratching: { src: SHEETS.wag, frames: 4, fps: 8 },
+  // A fidget: the hind leg up to the ear, two scratches with the ear flapping, and down.
+  scratching: { src: SHEETS.scratch, frames: 4, fps: 8 },
   // On a window's top edge: a look down over it, then straight ahead, slowly.
   perched: { src: SHEETS.perch, frames: 2, fps: 0.5 }
 }
