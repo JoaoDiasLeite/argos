@@ -954,6 +954,14 @@ export default function SettingsView({
                       (walk) => updateCompanion({ walk }),
                       companionBusy
                     )}
+                  {companion.stayOnScreen &&
+                    toggleRow(
+                      t('settings.companion.follow.label'),
+                      t('settings.companion.follow.hint'),
+                      companion.follow,
+                      (follow) => updateCompanion({ follow }),
+                      companionBusy
+                    )}
                   <div className="srow">
                     <div className="srow-text">
                       <span className="srow-label">{t('settings.companion.size.label')}</span>

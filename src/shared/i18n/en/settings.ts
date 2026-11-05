@@ -110,6 +110,8 @@ export default {
   'companion.stay.hint': 'Off: Argos hides after you save and comes back only for reminders.',
   'companion.walk.label': 'Walk around the screen',
   'companion.walk.hint': 'With Argos on screen, every now and then he takes a few steps along the bottom.',
+  'companion.follow.label': 'Follow me between screens',
+  'companion.follow.hint': 'With Argos on screen, once you have been on another monitor for a while he runs over there.',
   'companion.size.label': 'Size of Argos',
   'companion.size.hint': 'How big he is on the desktop. He keeps his place when it changes.',
   'companion.size.small': 'Small',

@@ -110,6 +110,8 @@ const settings: Record<keyof typeof en, string> = {
   'companion.stay.hint': 'Desligado: o Argos esconde-se depois de guardares e só volta para lembretes.',
   'companion.walk.label': 'Passear pelo ecrã',
   'companion.walk.hint': 'Com o Argos no ecrã, de vez em quando dá uns passos ao longo do fundo.',
+  'companion.follow.label': 'Seguir-me entre ecrãs',
+  'companion.follow.hint': 'Com o Argos no ecrã, quando já estás há uns tempos noutro monitor, ele vai lá ter a correr.',
   'companion.size.label': 'Tamanho do Argos',
   'companion.size.hint': 'O tamanho dele no ambiente de trabalho. Fica no mesmo sítio quando muda.',
   'companion.size.small': 'Pequeno',

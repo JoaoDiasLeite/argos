@@ -138,6 +138,7 @@ const COMPANION_DEFAULTS: CompanionPrefs = {
   voice: false,
   voiceShortcut: '',
   walk: true,
+  follow: false,
   askModel: true,
   obsidianVault: '',
   obsidianFolder: DEFAULT_OBSIDIAN_FOLDER,
@@ -277,6 +278,7 @@ function cleanCompanionPrefs(base: CompanionPrefs, patch: unknown): CompanionPre
     voice: typeof p.voice === 'boolean' ? p.voice : base.voice,
     voiceShortcut: typeof p.voiceShortcut === 'string' ? p.voiceShortcut.trim() : base.voiceShortcut,
     walk: typeof p.walk === 'boolean' ? p.walk : base.walk,
+    follow: typeof p.follow === 'boolean' ? p.follow : base.follow,
     askModel: typeof p.askModel === 'boolean' ? p.askModel : base.askModel,
     // An absolute folder or '' (off); anything else keeps what was there.
     obsidianVault:

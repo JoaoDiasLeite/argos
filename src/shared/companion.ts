@@ -116,6 +116,8 @@ export interface CompanionPrefs {
   voiceShortcut: string
   /** "Passear pelo ecrã": with stayOnScreen on, a short walk along the bottom now and then. */
   walk: boolean
+  /** "Seguir-me entre ecrãs": with stayOnScreen on, he goes to the display the cursor has settled on. */
+  follow: boolean
   /**
    * "Perguntar ao modelo quando não percebo a data" (plan §5.1, layer 2): when the
    * grammar is unsure, that one line goes to the account's model. On by default.

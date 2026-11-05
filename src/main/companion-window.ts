@@ -8,6 +8,7 @@ import {
   bubblePlacement,
   clampBubbleSize,
   clampToArea,
+  defaultPetPosition,
   dogRect,
   petHitTest,
   petStranded,
@@ -24,12 +25,14 @@ import {
   canWalk,
   nextWalkDelay,
   planLap,
+  planRunTo,
   planWalk,
   speedOf,
   stepToward,
   type WalkPlan
 } from './companion-walk-pure'
 import { DOZE_AFTER_MS, canDoze, cursorNearPet, type DozeConditions } from './companion-doze-pure'
+import { FOLLOW_POLL_MS, followUpdate, shouldFollow, type FollowWatch } from './companion-follow-pure'
 import { fallY, isFall, type Fall } from './companion-fall-pure'
 import { restingPetState } from './companion-quiet-pure'
 import { PET_SCALE, POSITIONS_VERSION, VOICE_SHORTCUT_DEFAULTS } from './companion-types'
@@ -95,6 +98,10 @@ let walkTimer: ReturnType<typeof setTimeout> | null = null
 let fall: (Fall & { x: number; startAt: number }) | null = null
 /** Counts down to a doze while he sits idle (plan §13.3, M1). */
 let dozeTimer: ReturnType<typeof setTimeout> | null = null
+/** "Follow me" (plan §13.3, O2): the cursor's whereabouts, and the display he is on his way to. */
+let followTimer: ReturnType<typeof setInterval> | null = null
+let followWatch: FollowWatch | null = null
+let followingTo: number | null = null
 let bubble: CompanionBubblePayload | null = null
 let bubbleAnchor: CompanionBubbleAnchor = { side: 'above', tailX: 0 }
 let bubbleSize: Size = DEFAULT_BUBBLE_SIZE
@@ -417,6 +424,7 @@ function stepFall(win: BrowserWindow): void {
   const b = win.getBounds()
   const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
   savePetPosition(display.id, { x: b.x, y: b.y })
+  settleFollow()
   if (petState === 'standing') setPetState(restingState())
 }
 
@@ -536,7 +544,7 @@ function stepWalk(win: BrowserWindow, cursorOverPet: boolean): void {
     return
   }
   if (walk.arriveAt !== null) {
-    if (now >= walk.arriveAt) stopWalk()
+    if (now >= walk.arriveAt) stopWalk(true)
     return
   }
   if (petState === 'standing') setPetState(walk.gait === 'run' ? 'running' : 'walking')
@@ -558,8 +566,12 @@ function stepWalk(win: BrowserWindow, cursorOverPet: boolean): void {
   }
 }
 
-/** Sit down where he is, remember it for this display, and roll the next walk. */
-function stopWalk(): void {
+/**
+ * Sit down where he is, remember it for this display, and roll the next walk. `arrived`
+ * says the plan ran its course (not a bubble or the cursor cutting it short), which is
+ * when a follow that the lane could not finish hops the rest of the way.
+ */
+function stopWalk(arrived = false): void {
   if (!walk) return
   walk = null
   if (pollTimer && !drag) startPolling(POLL_MS)
@@ -569,7 +581,67 @@ function stopWalk(): void {
     const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
     savePetPosition(display.id, { x: b.x, y: b.y })
   }
+  if (arrived) settleFollow()
+  else followingTo = null
   scheduleWalk()
+}
+
+// ─── Follow me (plan §13.3, O2) ────────────────────────────────────────────────
+
+function stopFollowing(): void {
+  if (followTimer) clearInterval(followTimer)
+  followTimer = null
+  followWatch = null
+  followingTo = null
+}
+
+/** Watch the cursor while the pet is up all day with the preference on. */
+function startFollowing(): void {
+  stopFollowing()
+  const p = prefs()
+  if (!p.stayOnScreen || !p.follow || !isCompanionVisible()) return
+  followTimer = setInterval(followTick, FOLLOW_POLL_MS)
+}
+
+/** One look at the cursor: note how long it has been elsewhere, and set off once it has settled. */
+function followTick(): void {
+  if (!alive(petWindow) || !petWindow.isVisible()) return
+  // Busy, or already on his way: the clock starts over once he is sat again.
+  if (walk || fall || drag || bubble) {
+    followWatch = null
+    return
+  }
+  const cursor = screen.getCursorScreenPoint()
+  const b = petWindow.getBounds()
+  const petDisplay = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
+  const cursorDisplay = screen.getDisplayNearestPoint(cursor)
+  const now = Date.now()
+  followWatch = followUpdate(followWatch, cursorDisplay.id, petDisplay.id, now)
+  if (!shouldFollow(followWatch, now) || !walkAllowed(petHitTest(cursor, b), true)) return
+  followWatch = null
+  followingTo = cursorDisplay.id
+  // Along the lane toward that display's corner, as far as it goes; the rest is a hop on arrival.
+  const areas = screen.getAllDisplays().map((d) => d.workArea)
+  const plan = planRunTo(b, areas, defaultPetPosition(cursorDisplay.workArea, { width: b.width, height: b.height }).x)
+  if (plan) startPlan(plan)
+  else settleFollow()
+}
+
+/** The run is over: if the lane did not reach the display he was going to, he hops there. */
+function settleFollow(): void {
+  const target = followingTo
+  followingTo = null
+  if (target == null || !alive(petWindow)) return
+  const b = petWindow.getBounds()
+  const here = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
+  if (here.id === target) return
+  const display = screen.getAllDisplays().find((d) => d.id === target)
+  if (!display) return
+  const size = { width: b.width, height: b.height }
+  const pos = restoredPetPosition(companionStore().getState().positions?.[String(display.id)], display.workArea, size)
+  petWindow.setBounds({ x: pos.x, y: pos.y, width: size.width, height: size.height })
+  placeBubble()
+  savePetPosition(display.id, pos)
 }
 
 // ─── Showing and hiding ────────────────────────────────────────────────────────
@@ -624,6 +696,7 @@ function showPet(): BrowserWindow {
     hooks.onVisibilityChanged?.()
     scheduleWalk()
     scheduleDoze()
+    startFollowing()
   }
   return win
 }
@@ -643,6 +716,7 @@ function hidePet(): void {
   }
   cancelWalkTimer()
   cancelDoze()
+  stopFollowing()
   // Hidden while dozing: he comes back sitting up.
   if (petState === 'dozing') petState = restingState()
 }
@@ -832,6 +906,7 @@ export function applyCompanionPrefs(next: CompanionPrefs): void {
   }
   // On → the next walk is rolled; off → the timer goes (scheduleWalk reads the new prefs).
   scheduleWalk()
+  startFollowing()
 }
 
 /**
