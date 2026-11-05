@@ -216,7 +216,15 @@ import { startCompanionScheduler, type CompanionScheduler } from './companion-sc
 import { snooze, type DueReminder, type SnoozeOption } from './companion-schedule-pure'
 import { parseCapture, remindersForWhen } from './companion-nlu-pure'
 import { nextTodo } from './companion-repeat-pure'
-import { TERMINAL_ALERT_MS, TERMINAL_STALE_MS, chatSessionId, hookKey, shouldTell, terminalKey } from './companion-terminal-pure'
+import {
+  TERMINAL_ALERT_MS,
+  TERMINAL_STALE_MS,
+  chatSessionId,
+  hookKey,
+  isEmbeddedKey,
+  shouldTell,
+  terminalKey
+} from './companion-terminal-pure'
 import { buildWhenPrompt, MODEL_TIMEOUT_MS, needsModel, parsedFromModel } from './companion-nlu-gate-pure'
 import { listForView, planCapture, todayQuery } from './companion-capture-pure'
 import { isQuiet, parseQuietCommand, tomorrowAt } from './companion-quiet-pure'
@@ -923,7 +931,12 @@ const companionAlerts: CompanionAlert[] = []
 let companionReminderId: string | null = null
 
 function queueCompanionAlerts(alerts: CompanionAlert[]): void {
-  companionAlerts.push(...alerts)
+  // Reminders go ahead of every queued terminal alert; those keep their order behind.
+  for (const a of alerts) {
+    const firstTerminal = a.mode === 'terminal' ? -1 : companionAlerts.findIndex((q) => q.mode === 'terminal')
+    if (firstTerminal >= 0) companionAlerts.splice(firstTerminal, 0, a)
+    else companionAlerts.push(a)
+  }
   try {
     // A reminder does not wait behind word of a terminal: that bubble gives way, and the
     // bubble-closed hook puts the reminder up.
@@ -960,8 +973,12 @@ function companionTakesTerminalAlerts(): boolean {
  */
 function tellCompanionTerminal(alert: CompanionTerminalAlert, open: () => void): boolean {
   if (!companionTakesTerminalAlerts()) return false
-  if (!shouldTell(toldTerminals.get(alert.key), alert.kind)) return true
-  toldTerminals.set(alert.key, alert.kind)
+  // Only an embedded chat is deduped: nothing ever clears what was said about one outside
+  // Argos, so it would go quiet for good after its first word.
+  if (isEmbeddedKey(alert.key)) {
+    if (!shouldTell(toldTerminals.get(alert.key), alert.kind)) return true
+    toldTerminals.set(alert.key, alert.kind)
+  }
   terminalOpeners.set(alert.key, open)
   const up = currentBubble()
   if (up?.mode === 'terminal' && up.payload.alert.key === alert.key) {
@@ -1031,8 +1048,8 @@ function tellCompanionAboutHook(p: NotifyPayload): boolean {
   const target = p.link ? parseDeepLink(p.link) : null
   const key = hookKey(target?.sessionId ?? null, terminalClaudeSessions, p.title)
   const sessionId = key.startsWith('term:') ? chatSessionId(key.slice('term:'.length)) : null
-  // An embedded chat with the main window in front of you: no bubble, no toast either.
-  if (sessionId && !mainWindowInactive() && companionTakesTerminalAlerts()) return true
+  // An embedded chat while you are looking at Argos: the toast does what it always did.
+  if (sessionId && !mainWindowInactive()) return false
   return tellCompanionTerminal({ key, kind: p.urgent ? 'waiting' : 'finished', title: p.title, detail: p.body }, () =>
     sessionId ? openChat(sessionId) : openDeepLink(p.link)
   )
@@ -1044,8 +1061,10 @@ function tellCompanionAboutHook(p: NotifyPayload): boolean {
  * comes out when it lifts.
  */
 function showNextCompanionAlert(): void {
+  // A bubble still up keeps its reminder id, so settleCompanionReminder can close it.
+  if (currentBubble()) return
   companionReminderId = null
-  if (currentBubble() || companionQuietUntil() !== null) return
+  if (companionQuietUntil() !== null) return
   let next = companionAlerts.shift()
   // Word of a terminal that waited too long behind reminders is old news.
   while (next?.mode === 'terminal' && Date.now() - next.at > TERMINAL_STALE_MS) next = companionAlerts.shift()
@@ -2910,6 +2929,7 @@ ipcMain.handle(
         // terminal.ts forgets an exited pty's busy state without an idle transition.
         dropBusyTerminal(tid)
         terminalClaudeSessions.delete(tid)
+        forgetTerminalAlert(terminalKey(tid))
         // One ops run per CLI launch: the pty going away ends it.
         void endTerminalOps(tid, exitCode === 0 ? { ok: true } : { ok: false, error: `the terminal exited with code ${exitCode}` })
       },
@@ -2933,6 +2953,8 @@ ipcMain.handle(
     // A Claude chat's session id, so Claude Code's hook about it lands on this terminal.
     const claudeSid = opts?.resumeSessionId || opts?.pinSessionId
     if (r.ok && claudeSid && (opts.provider ?? 'claude') === 'claude') terminalClaudeSessions.set(id, claudeSid)
+    // A fresh pty with another CLI (a reused one keeps whatever it already runs).
+    else if (r.ok && !r.reused && (opts.provider ?? 'claude') !== 'claude') terminalClaudeSessions.delete(id)
     // A session opened for a terminal that then failed to start would otherwise stay open
     // with no pty to end it.
     if (!r.ok && terminalOps.has(id)) void endTerminalOps(id, { ok: false, error: r.error ?? 'the terminal did not start' })
@@ -2960,6 +2982,7 @@ ipcMain.handle('terminal:kill', (_, id: string) => {
   const r = killTerminal(id)
   dropBusyTerminal(id)
   terminalClaudeSessions.delete(id)
+  forgetTerminalAlert(terminalKey(id))
   void endTerminalOps(id, TERMINAL_CLOSED)
   return r
 })
@@ -2986,6 +3009,8 @@ ipcMain.handle(
   ) => {
     const sid = resumeSessionId || pinSessionId
     if (provider === 'claude' && typeof sid === 'string' && sid) terminalClaudeSessions.set(id, sid)
+    // Another CLI in a pty that ran Claude: a hook about that old session is not about it.
+    else if (provider !== 'claude') terminalClaudeSessions.delete(id)
     return startCliInTerminal(id, provider, resumeSessionId, pinSessionId)
   }
 )

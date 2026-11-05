@@ -31,6 +31,15 @@ export function terminalKey(terminalId: string): string {
 }
 
 /**
+ * Whether an alert key is an embedded chat's. Only those hear from two sources (the
+ * terminal and the hook), so only those are deduped per turn; a chat outside Argos has
+ * no busy signal to clear what was said, and is told every time.
+ */
+export function isEmbeddedKey(key: string): boolean {
+  return key.startsWith('term:')
+}
+
+/**
  * The key for a hook notification: the embedded terminal running that Claude session if
  * there is one (so both sources land on one key), else the session itself.
  */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { chatSessionId, hookKey, shouldTell, terminalKey } from './companion-terminal-pure'
+import { chatSessionId, hookKey, isEmbeddedKey, shouldTell, terminalKey } from './companion-terminal-pure'
 
 describe('shouldTell', () => {
   it('says the first word about a turn', () => {
@@ -31,6 +31,13 @@ describe('keys', () => {
   it('keys a session outside Argos by its id, and one with no id by its title', () => {
     expect(hookKey('claude-9', terminals, 't')).toBe('claude:claude-9')
     expect(hookKey(null, terminals, '[argos] x')).toBe('hook:[argos] x')
+  })
+
+  it('dedupes only embedded chats: one outside Argos is told every time', () => {
+    expect(isEmbeddedKey(terminalKey('chatterm_a'))).toBe(true)
+    expect(isEmbeddedKey(hookKey('claude-2', terminals, 'x'))).toBe(true)
+    expect(isEmbeddedKey(hookKey('claude-9', terminals, 'x'))).toBe(false)
+    expect(isEmbeddedKey(hookKey(null, terminals, 'x'))).toBe(false)
   })
 
   it('knows a chat terminal from any other pty', () => {
