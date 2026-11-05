@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { WAKE_RADIUS, canDoze, cursorNearPet, shouldWake, type DozeConditions } from './companion-doze-pure'
+import { WAKE_RADIUS, canDoze, cursorNearPet, cursorSideOf, shouldWake, type DozeConditions } from './companion-doze-pure'
 import { PET_SIZE, dogRect, type Rect } from './companion-window-pure'
 
 const QUIET: DozeConditions = {
@@ -54,6 +54,14 @@ describe('shouldWake', () => {
 
   it('is nothing to a dog that is not dozing', () => {
     expect(shouldWake({ ...QUIET, cursorNear: true })).toBe(false)
+  })
+})
+
+describe('cursorSideOf', () => {
+  it('splits at the dog, not the window', () => {
+    const dog = dogRect(pet)
+    expect(cursorSideOf({ x: dog.x + dog.width / 2 - 1, y: 0 }, pet)).toBe('left')
+    expect(cursorSideOf({ x: dog.x + dog.width / 2 + 1, y: 0 }, pet)).toBe('right')
   })
 })
 

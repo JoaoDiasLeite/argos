@@ -48,6 +48,12 @@ export function shouldWake(c: DozeConditions): boolean {
   return c.petState === 'dozing' && (c.cursorNear || c.bubbleOpen || c.alertsPending || c.dragging || !c.visible)
 }
 
+/** Which side of the dog the cursor is on, for him to look that way (plan §13.3, U1). */
+export function cursorSideOf(cursor: Point, pet: Rect): 'left' | 'right' {
+  const d = dogRect(pet)
+  return cursor.x < d.x + d.width / 2 ? 'left' : 'right'
+}
+
 /** Whether the cursor is within `radius` of the dog's rect (not the window's). */
 export function cursorNearPet(cursor: Point, pet: Rect, radius = WAKE_RADIUS): boolean {
   const d = dogRect(pet)

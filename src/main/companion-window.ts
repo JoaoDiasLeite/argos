@@ -17,6 +17,7 @@ import {
   restoredPetPosition,
   snapToEdge,
   type Point,
+  type Rect,
   type Size
 } from './companion-window-pure'
 import { voiceShortcutCandidates } from './companion-voice-pure'
@@ -32,7 +33,7 @@ import {
   stepToward,
   type WalkPlan
 } from './companion-walk-pure'
-import { DOZE_AFTER_MS, canDoze, cursorNearPet, type DozeConditions } from './companion-doze-pure'
+import { DOZE_AFTER_MS, canDoze, cursorNearPet, cursorSideOf, type DozeConditions } from './companion-doze-pure'
 import { FOLLOW_POLL_MS, followUpdate, shouldFollow, type FollowWatch } from './companion-follow-pure'
 import { fallY, isFall, type Fall } from './companion-fall-pure'
 import { BALL_SIZE, ballAt, fetchX, planThrow, type Throw } from './companion-ball-pure'
@@ -255,6 +256,34 @@ function tryDoze(): void {
   sendToPet('companion:pet-state', petState)
 }
 
+/**
+ * The cursor near a sitting dog (plan §13.3, U1): he turns to face it, and turns back when
+ * it goes. Only between idle and looking, so nothing else he is doing is cut short; the
+ * doze clock keeps running underneath (canDoze says no while the cursor is near).
+ */
+function lookAtCursor(cursor: Point, b: Rect): void {
+  if (drag || walk || fall || game) return
+  const near = !petHitTest(cursor, b) && cursorNearPet(cursor, b)
+  if (petState === 'idle' && near) {
+    petState = 'looking'
+    petFacing = cursorSideOf(cursor, b)
+    sendToPet('companion:pet-facing', petFacing)
+    sendToPet('companion:pet-state', petState)
+  } else if (petState === 'looking') {
+    if (!near) {
+      petState = restingState()
+      sendToPet('companion:pet-state', petState)
+      scheduleDoze()
+      return
+    }
+    const side = cursorSideOf(cursor, b)
+    if (side !== petFacing) {
+      petFacing = side
+      sendToPet('companion:pet-facing', petFacing)
+    }
+  }
+}
+
 /** The cursor came near, or something happened: a dozing dog sits up, and the clock restarts. */
 function wakePet(): void {
   if (petState !== 'dozing') return
@@ -469,6 +498,7 @@ function poll(): void {
   const over = petHitTest(cursor, b)
   setIgnore(!over)
   if (petState === 'dozing' && cursorNearPet(cursor, b)) wakePet()
+  lookAtCursor(cursor, b)
   if (fall) stepFall(petWindow)
   else if (walk) stepWalk(petWindow, over)
   else if (game?.phase === 'throw') stepThrow()
@@ -924,7 +954,7 @@ export function popupPetMenu(menu: Menu): void {
 export function petThePet(): void {
   if (!isCompanionVisible() || bubble) return
   wakePet()
-  if (petState !== 'idle' && petState !== 'leaning' && petState !== 'shh') return
+  if (petState !== 'idle' && petState !== 'looking' && petState !== 'leaning' && petState !== 'shh') return
   setPetState('happy')
 }
 

@@ -57,7 +57,9 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   // On his feet before and after a walk: the walk sheet's first frame, held.
   standing: { src: SHEETS.walk, frames: 1, fps: 1, sheetFrames: 4 },
   // Back to a side wall (plan §13.4): idle until lean.png is drawn, mirrored for the right wall.
-  leaning: IDLE
+  leaning: IDLE,
+  // Turned toward the cursor (plan §13.4): idle, mirrored to face it, until look.png is drawn.
+  looking: IDLE
 }
 
 const FRAME = 96
@@ -83,13 +85,14 @@ const PET_STATES: readonly CompanionPetState[] = [
   'walking',
   'running',
   'standing',
-  'leaning'
+  'leaning',
+  'looking'
 ]
 
 /** The gaits: drawn facing right and mirrored for the left, never shown with reduced motion. */
 const ON_THE_MOVE: readonly CompanionPetState[] = ['walking', 'running', 'standing']
-/** Drawn facing right and mirrored for the left: the gaits, and the lean (wall on the left). */
-const MIRRORABLE: readonly CompanionPetState[] = [...ON_THE_MOVE, 'leaning']
+/** Drawn facing right and mirrored for the left: the gaits, the lean (wall on the left), the look. */
+const MIRRORABLE: readonly CompanionPetState[] = [...ON_THE_MOVE, 'leaning', 'looking']
 
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
 
