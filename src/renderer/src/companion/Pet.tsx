@@ -23,7 +23,8 @@ const SHEETS = {
   shh: new URL('./sprites/shh.png', import.meta.url).href,
   listen: new URL('./sprites/listen.png', import.meta.url).href,
   think: new URL('./sprites/think.png', import.meta.url).href,
-  walk: new URL('./sprites/walk.png', import.meta.url).href
+  walk: new URL('./sprites/walk.png', import.meta.url).href,
+  run: new URL('./sprites/run.png', import.meta.url).href
 }
 
 interface Sprite {
@@ -52,8 +53,9 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   thinking: { src: SHEETS.think, frames: 4, fps: 2 },
   // Drawn facing right; mirrored on the wrapper for a walk to the left (main moves the window).
   walking: { src: SHEETS.walk, frames: 4, fps: 8 },
-  // The run (plan §13.4): the walk sheet at a faster clip until run.png is drawn.
-  running: { src: SHEETS.walk, frames: 4, fps: 12 },
+  // A gallop: reach, push, all four paws off the ground, and back (five of the six drawn
+  // frames; the generator smeared one, scripts/companion-sheet.py --keep left it out).
+  running: { src: SHEETS.run, frames: 5, fps: 10 },
   // On his feet before and after a walk: the walk sheet's first frame, held.
   standing: { src: SHEETS.walk, frames: 1, fps: 1, sheetFrames: 4 },
   // Back to a side wall (plan §13.4): idle until lean.png is drawn, mirrored for the right wall.
