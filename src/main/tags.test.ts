@@ -6,6 +6,7 @@ import { readEffectiveTags, writeSessionTags } from './tags'
 import { InvalidTagError } from './tags-pure'
 
 let dir: string
+const dirs: string[] = []
 
 function transcript(body: string): string {
   const p = path.join(dir, 'session.jsonl')
@@ -15,13 +16,19 @@ function transcript(body: string): string {
 
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'argos-tags-'))
+  dirs.push(dir)
 })
 
 afterAll(() => {
-  try {
-    fs.rmSync(path.dirname(dir), { recursive: true, force: true })
-  } catch {
-    /* temp dirs */
+  // Only the folders this file made: `path.dirname(dir)` is the system temp
+  // directory itself, and removing it recursively took vitest's own temp
+  // files (and anything else in there) with it.
+  for (const d of dirs) {
+    try {
+      fs.rmSync(d, { recursive: true, force: true })
+    } catch {
+      /* temp dirs */
+    }
   }
 })
 
