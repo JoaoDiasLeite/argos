@@ -36,6 +36,15 @@ export default {
   'receipt.undone': 'Undone',
   /** Under a receipt whose date came from the model, so it gets a second look. */
   'receipt.byModel': 'date read by the model',
+  'receipt.repeat': 'Repeats: {rule}. Ticking it done adds the next one.',
+
+  // A repeating todo's rule (companion-repeat-pure.ts), in the receipt, the panel's rows and its detail.
+  'repeat.day': 'Every day',
+  'repeat.weekday': 'Monday to Friday',
+  'repeat.week': 'Every week',
+  'repeat.month': 'Every month, on day {day}',
+  'repeat.none': 'Does not repeat',
+  'repeat.glyph': 'Repeats: {rule}',
 
   'query.title': 'On the list',
   'query.range': '{from} to {to}',
@@ -111,6 +120,8 @@ export default {
   'panel.detail.time': 'Time',
   'panel.detail.optional': 'optional',
   'panel.detail.clearDate': 'No date',
+  'panel.detail.repeat': 'Repeat',
+  'panel.detail.repeatHelp': 'Ticking it done adds the next one; unticking it takes that one back.',
   'panel.detail.dayHelp': 'With no time, it reminds you at {time} that day.',
   'panel.detail.reminders': 'Reminders',
   'panel.detail.noReminders': 'No reminders.',

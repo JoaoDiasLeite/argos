@@ -24,6 +24,19 @@ export interface CompanionTodo {
   sprintId?: string | null
   sprintItemId?: string | null
   projectPath?: string | null
+  /** Repeats: ticking it done adds the next occurrence (companion-repeat-pure.ts). Needs dueAt. */
+  repeat?: CompanionRepeat | null
+  /** The occurrence added when this one was ticked, so un-ticking it takes that one back. */
+  repeatNextId?: string | null
+}
+
+/** How often a todo comes back: every day, Monday to Friday, every week, every month. */
+export type CompanionRepeatEvery = 'day' | 'weekday' | 'week' | 'month'
+
+export interface CompanionRepeat {
+  every: CompanionRepeatEvery
+  /** For 'month': the day it falls on, kept so a 31st comes back after a shorter month. */
+  monthDay?: number
 }
 
 export interface CompanionNote {
@@ -67,6 +80,8 @@ export interface ParsedCapture {
   queryRange?: { from: number; to: number }
   /** The date came from the model (layer 2), not the grammar: the receipt says so. */
   fromModel?: boolean
+  /** "todos os dias", "todas as segundas": the todo repeats from `when`. */
+  repeat?: CompanionRepeat | null
 }
 
 // ---- preferences -------------------------------------------------------------------

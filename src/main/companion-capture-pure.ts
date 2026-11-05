@@ -96,7 +96,9 @@ export function planCapture({ text, source, parsed, todos, now, newId }: Capture
     remindAt: [...parsed.remindAt],
     done: false,
     createdAt: now,
-    source
+    source,
+    // A repeat needs a date to step from; the parser always gives it one.
+    ...(parsed.repeat && parsed.when ? { repeat: parsed.repeat } : {})
   }
   return { kind: 'todo', todo, parsed }
 }

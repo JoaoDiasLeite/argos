@@ -17,6 +17,7 @@ import {
   defaultPickTime,
   formatTime,
   lateSpan,
+  repeatLabel,
   rowWhen,
   toLocalInputValue,
   untilPhrase,
@@ -490,6 +491,9 @@ function Receipt({ result }: { result: CompanionCaptureResult }) {
             <div className="help">{`${t('companion.receipt.reminder')} ${whenPhrase(remind, 'minute', now, locale, t)}`}</div>
           )}
         </>
+      )}
+      {todo && dated && todo.repeat && (
+        <div className="help">{t('companion.receipt.repeat', { rule: repeatLabel(todo.repeat, todo.dueAt!, t) })}</div>
       )}
       {todo && dated && result.parsed.fromModel && <div className="bq-model-mark">{t('companion.receipt.byModel')}</div>}
       <div className="bq-actions bq-end">

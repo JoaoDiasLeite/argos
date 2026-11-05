@@ -2,8 +2,15 @@
 // "Amanhã, ter 3 nov", "amanhã às 14:00", "atrasado 1 h". Pure: every function takes
 // `now`, the locale for Intl and the translator, so it is tested without a window.
 import type { TFunction } from '../../../shared/i18n'
+import type { CompanionRepeat } from '../../../shared/companion'
 
 const DAY_MS = 24 * 60 * 60_000
+
+/** "Todos os dias", "Todos os meses, dia 15": a repeating todo's rule. */
+export function repeatLabel(repeat: CompanionRepeat, dueAt: number, t: TFunction): string {
+  if (repeat.every === 'month') return t('companion.repeat.month', { day: repeat.monthDay ?? new Date(dueAt).getDate() })
+  return t(`companion.repeat.${repeat.every}`)
+}
 
 /** Local midnight of the day `at` falls on. */
 function startOfDay(at: number): number {

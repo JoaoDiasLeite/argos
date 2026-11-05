@@ -214,7 +214,8 @@ import { companionStore, normalizeTodo } from './companion-store'
 import { exportNote, removeExport, vaultInfo } from './companion-obsidian'
 import { startCompanionScheduler, type CompanionScheduler } from './companion-scheduler'
 import { snooze, type DueReminder, type SnoozeOption } from './companion-schedule-pure'
-import { parseCapture } from './companion-nlu-pure'
+import { parseCapture, remindersForWhen } from './companion-nlu-pure'
+import { nextTodo } from './companion-repeat-pure'
 import { buildWhenPrompt, MODEL_TIMEOUT_MS, needsModel, parsedFromModel } from './companion-nlu-gate-pure'
 import { listForView, planCapture, todayQuery } from './companion-capture-pure'
 import { isQuiet, parseQuietCommand, tomorrowAt } from './companion-quiet-pure'
@@ -1229,7 +1230,27 @@ ipcMain.handle('companion:done', (_, id: unknown, done: unknown) => {
   if (!todo) return null
   // Promoted: the sprint item owns `done`; it is ticked in the Sprint view.
   if (isSprintOwned(todo)) return null
-  const next = { ...todo, done, doneAt: done ? Date.now() : null }
+  const now = Date.now()
+  const next: CompanionTodo = { ...todo, done, doneAt: done ? now : null }
+  // A repeating todo: ticked, the next occurrence is added (once); un-ticked, it goes
+  // again, unless it was already ticked or promoted on its own.
+  if (done && !todo.done && todo.repeat && !todo.repeatNextId) {
+    const prefs = getConfig().companion
+    const spawned = nextTodo(todo, now, randomUUID(), (when, explicit) =>
+      remindersForWhen(when, explicit, { now, leadMinutes: prefs.leadMinutes, morningHour: prefs.morningHour })
+    )
+    if (spawned) {
+      store.saveTodo(spawned)
+      next.repeatNextId = spawned.id
+    }
+  } else if (!done && todo.repeatNextId) {
+    const spawned = store.listTodos().find((t) => t.id === todo.repeatNextId)
+    if (spawned && !spawned.done && !spawned.sprintItemId) {
+      store.deleteTodo(spawned.id)
+      settleCompanionReminder(spawned.id)
+    }
+    next.repeatNextId = null
+  }
   store.saveTodo(next)
   companionScheduler?.poke()
   if (done) {

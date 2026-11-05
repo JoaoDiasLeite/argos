@@ -16,6 +16,7 @@
  * offsets across days, so a DST change never shifts a date by an hour.
  */
 import type { CompanionIntent, ParsedCapture } from './companion-types'
+import { findRepeat, firstOccurrence, maskRepeat } from './companion-repeat-pure'
 
 export type { CompanionIntent, ParsedCapture } from './companion-types'
 
@@ -489,13 +490,26 @@ export function parseCapture(text: string, opts: ParseOptions): ParsedCapture {
     }
   }
 
-  const comps = scan(text, ctx)
-  const resolved = resolve(comps, ctx)
-  const matchedSpan: [number, number] | null = comps.length
-    ? [comps[0].start, Math.max(...comps.map((c) => c.end))]
-    : null
-  const title = titleFrom(text, comps)
   const intent: CompanionIntent = QUERY_RE.test(text) || text.trim().endsWith('?') ? 'query' : 'todo'
+  // "todos os dias", "todas as segundas": masked out before the grammar runs (same length,
+  // so its spans still index `text`), and the date it reads is then aligned to the rule.
+  const repeatMatch = intent === 'todo' ? findRepeat(text) : null
+  const scanned = repeatMatch ? maskRepeat(text, repeatMatch) : text
+  const comps = scan(scanned, ctx)
+  const resolved = resolve(comps, ctx)
+  let repeat: ParsedCapture['repeat'] = null
+  if (repeatMatch) {
+    const first = firstOccurrence(repeatMatch, resolved.when, now.getTime())
+    resolved.when = first.when
+    repeat = first.repeat
+    // "todos os dias" alone is a whole date: today, then every day.
+    if (comps.length === 0) resolved.confidence = 1
+  }
+  const spans = repeatMatch ? [...comps.map((c) => [c.start, c.end]), [repeatMatch.start, repeatMatch.end]] : comps.map((c) => [c.start, c.end])
+  const matchedSpan: [number, number] | null = spans.length
+    ? [Math.min(...spans.map((x) => x[0])), Math.max(...spans.map((x) => x[1]))]
+    : null
+  const title = titleFrom(scanned, comps)
 
   if (intent === 'query') {
     const from = resolved.week ?? startOfDay(resolved.when ? new Date(resolved.when.at) : now)
@@ -520,6 +534,7 @@ export function parseCapture(text: string, opts: ParseOptions): ParsedCapture {
     remindAt: remindersFor(resolved.when, isExplicitReminder, ctx, leadMinutes),
     isExplicitReminder,
     confidence: resolved.confidence,
-    matchedSpan
+    matchedSpan,
+    ...(repeat ? { repeat } : {})
   }
 }

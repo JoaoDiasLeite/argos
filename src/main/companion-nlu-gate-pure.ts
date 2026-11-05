@@ -189,6 +189,9 @@ export function parsedFromModel(raw: unknown, local: ParsedCapture, opts: ParseO
     }
   }
 
+  // A repeat is the grammar's to read ("todos os dias"); the model only places the date.
+  // With none from the model, the repeat's own first day stands.
+  if (!when && local.repeat) when = local.when
   const title = answer.title.replace(/\s+/g, ' ').trim().slice(0, 500) || local.title
   // The grammar's "lembra-me" check is exact; the model may add one it read in English.
   const isExplicitReminder = answer.isExplicitReminder || local.isExplicitReminder
@@ -201,6 +204,7 @@ export function parsedFromModel(raw: unknown, local: ParsedCapture, opts: ParseO
     // Not the grammar's certainty: what the receipt shows is "read by the model, check it".
     confidence: 1,
     matchedSpan: null,
-    fromModel: when !== null
+    fromModel: when !== null && when !== local.when,
+    ...(local.repeat ? { repeat: local.repeat } : {})
   }
 }

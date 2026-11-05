@@ -12,12 +12,13 @@ import type {
   CompanionList,
   CompanionNote,
   CompanionPrefs,
+  CompanionRepeatEvery,
   CompanionSprintLink,
   CompanionTodo
 } from '../types'
 import { useLanguage, useT } from '../i18n'
 import { useLingering } from '../hooks/useLingering'
-import { chipLabel, rowWhen, toLocalInputValue, untilPhrase, whenPhrase } from '../companion/format'
+import { chipLabel, repeatLabel, rowWhen, toLocalInputValue, untilPhrase, whenPhrase } from '../companion/format'
 import {
   GROUP_ORDER,
   defaultNewReminder,
@@ -32,6 +33,7 @@ import {
   withDue,
   type CompanionGroupKey
 } from './companion-groups'
+import Select from '../components/Select'
 import './CompanionView.css'
 
 const api = window.electronAPI.companion
@@ -239,6 +241,16 @@ export default function CompanionView({ onOpenSprint }: { onOpenSprint?: () => v
           <CheckBox todo={todo} onToggle={() => toggleDone(todo)} />
         )}
         <span className="cmp-row-title">{todo.title}</span>
+        {todo.repeat && todo.dueAt != null && !confirming && (
+          <span
+            className="cmp-row-repeat"
+            role="img"
+            aria-label={t('companion.repeat.glyph', { rule: repeatLabel(todo.repeat, todo.dueAt, t) })}
+            title={t('companion.repeat.glyph', { rule: repeatLabel(todo.repeat, todo.dueAt, t) })}
+          >
+            <RepeatIcon />
+          </span>
+        )}
         {confirming ? (
           <span className="cmp-confirm" onClick={(e) => e.stopPropagation()}>
             <span>{t('companion.panel.confirm.delete')}</span>
@@ -567,6 +579,14 @@ function NoteRow({
   )
 }
 
+function RepeatIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3" />
+    </svg>
+  )
+}
+
 function TrashIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -729,7 +749,18 @@ function TodoDetail({
     const cur = latest.current
     const curPrecision = cur.dueAt != null ? (cur.duePrecision ?? 'minute') : undefined
     if (next.dueAt === (cur.dueAt ?? null) && next.duePrecision === curPrecision) return
-    void api.update(withDue(cur, next, { ...rules, now: Date.now() }))
+    const moved = withDue(cur, next, { ...rules, now: Date.now() })
+    // A monthly repeat follows the day it was moved to.
+    if (moved.repeat?.every === 'month' && moved.dueAt != null) moved.repeat = { every: 'month', monthDay: new Date(moved.dueAt).getDate() }
+    void api.update(moved)
+  }
+
+  // ── Repeat (needs a date to step from) ──
+  const setRepeat = (every: CompanionRepeatEvery | ''): void => {
+    const cur = latest.current
+    if (cur.dueAt == null) return
+    const repeat = every === '' ? null : every === 'month' ? { every, monthDay: new Date(cur.dueAt).getDate() } : { every }
+    void api.update({ ...cur, repeat })
   }
 
   // ── Reminders ──
@@ -849,6 +880,22 @@ function TodoDetail({
               {t('companion.panel.detail.clearDate')}
             </button>
           </div>
+        )}
+        {todo.dueAt != null && !owned && (
+          <label className="cmp-field">
+            <span className="cmp-label">{t('companion.panel.detail.repeat')}</span>
+            <Select
+              value={todo.repeat?.every ?? ''}
+              onChange={(e) => setRepeat(e.target.value as CompanionRepeatEvery | '')}
+            >
+              <option value="">{t('companion.repeat.none')}</option>
+              <option value="day">{t('companion.repeat.day')}</option>
+              <option value="weekday">{t('companion.repeat.weekday')}</option>
+              <option value="week">{t('companion.repeat.week')}</option>
+              <option value="month">{repeatLabel({ every: 'month' }, todo.dueAt, t)}</option>
+            </Select>
+            {todo.repeat && <span className="help">{t('companion.panel.detail.repeatHelp')}</span>}
+          </label>
         )}
       </div>
 

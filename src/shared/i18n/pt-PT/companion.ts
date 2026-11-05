@@ -32,6 +32,14 @@ const companion: Record<keyof typeof en, string> = {
   'receipt.undo': 'Desfazer',
   'receipt.undone': 'Desfeito',
   'receipt.byModel': 'data lida pelo modelo',
+  'receipt.repeat': 'Repete: {rule}. Quando a marcares como feita, aparece a seguinte.',
+
+  'repeat.day': 'Todos os dias',
+  'repeat.weekday': 'De segunda a sexta',
+  'repeat.week': 'Todas as semanas',
+  'repeat.month': 'Todos os meses, dia {day}',
+  'repeat.none': 'Não se repete',
+  'repeat.glyph': 'Repete: {rule}',
 
   'query.title': 'Na lista',
   'query.range': '{from} a {to}',
@@ -105,6 +113,8 @@ const companion: Record<keyof typeof en, string> = {
   'panel.detail.time': 'Hora',
   'panel.detail.optional': 'opcional',
   'panel.detail.clearDate': 'Sem data',
+  'panel.detail.repeat': 'Repetir',
+  'panel.detail.repeatHelp': 'Quando a marcares como feita, aparece a seguinte; se a desmarcares, essa desaparece.',
   'panel.detail.dayHelp': 'Sem hora, o aviso é às {time} desse dia.',
   'panel.detail.reminders': 'Avisos',
   'panel.detail.noReminders': 'Sem avisos.',

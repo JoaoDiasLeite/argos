@@ -16,6 +16,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { readJsonFile, writeJsonFileAtomic } from './json-file'
 import type { CompanionNote, CompanionState, CompanionTodo } from './companion-types'
+import { cleanRepeat } from './companion-repeat-pure'
 
 export interface CompanionStore {
   listTodos(): CompanionTodo[]
@@ -39,7 +40,7 @@ const numbers = (v: unknown): number[] => (Array.isArray(v) ? v.filter(isNumber)
 export function normalizeTodo(raw: unknown): CompanionTodo | null {
   if (!isObject(raw) || typeof raw.id !== 'string' || typeof raw.title !== 'string') return null
   const source = raw.source === 'voice' || raw.source === 'argos' ? raw.source : 'text'
-  return {
+  const todo: CompanionTodo = {
     ...(raw as Partial<CompanionTodo>),
     id: raw.id,
     title: raw.title,
@@ -49,6 +50,12 @@ export function normalizeTodo(raw: unknown): CompanionTodo | null {
     createdAt: isNumber(raw.createdAt) ? raw.createdAt : 0,
     source
   }
+  // Only with a date to step from; anything malformed is simply no repeat.
+  const repeat = isNumber(raw.dueAt) ? cleanRepeat(raw.repeat) : null
+  if (repeat) todo.repeat = repeat
+  else delete todo.repeat
+  if (typeof raw.repeatNextId !== 'string') delete todo.repeatNextId
+  return todo
 }
 
 export function normalizeNote(raw: unknown): CompanionNote | null {

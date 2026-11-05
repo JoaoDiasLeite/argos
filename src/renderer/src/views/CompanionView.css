@@ -152,6 +152,8 @@
   white-space: nowrap;
 }
 .cmp-row-when.late { color: var(--warn); }
+/* A repeating todo: a small loop beside its time. */
+.cmp-row-repeat { flex-shrink: 0; display: inline-flex; color: var(--text-2); }
 
 /* A checkbox you press: 8 px would read as a button, so it keeps the 4 px of a box. */
 .cmp-check {
