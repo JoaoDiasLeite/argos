@@ -76,6 +76,7 @@ function normalizeState(raw: unknown): CompanionState {
   const state: CompanionState = {}
   if (isNumber(raw.dndUntil) || raw.dndUntil === null) state.dndUntil = raw.dndUntil
   if (isNumber(raw.lastCatchUpAt) || raw.lastCatchUpAt === null) state.lastCatchUpAt = raw.lastCatchUpAt
+  if (isNumber(raw.lastWeekSummaryAt) || raw.lastWeekSummaryAt === null) state.lastWeekSummaryAt = raw.lastWeekSummaryAt
   if (isObject(raw.positions)) {
     // Saved for the old 220×220 window: shifted so the dog comes back where he sat.
     const legacy = raw.positionsVersion !== POSITIONS_VERSION

@@ -59,6 +59,21 @@ export interface CompanionState {
   positions?: Record<string, { x: number; y: number }>
   /** 2 since the 128×152 window; absent means saved for the 220×220 one and shifted on read. */
   positionsVersion?: number
+  /** When the week's summary was last said (plan §13.3, T1), so Friday says it once. */
+  lastWeekSummaryAt?: number | null
+}
+
+/** The week in one line (plan §13.3, T1): the bubble's Friday word, and the panel's. */
+export interface CompanionWeekSummary {
+  /** Local midnight of the week's Monday, and of next Monday. */
+  from: number
+  to: number
+  /** Ticked this week. */
+  done: number
+  /** Open and past their time. */
+  late: number
+  /** Open and still to come this week. */
+  open: number
 }
 
 export const POSITIONS_VERSION = 2
@@ -225,7 +240,7 @@ export type CompanionPetState =
 /** Which way the walk sheet faces; it is drawn facing right and mirrored for left. */
 export type CompanionPetFacing = 'left' | 'right'
 
-export type CompanionBubbleMode = 'input' | 'reminder' | 'catchup' | 'confirm' | 'terminal' | 'plan'
+export type CompanionBubbleMode = 'input' | 'reminder' | 'catchup' | 'confirm' | 'terminal' | 'plan' | 'week'
 
 /**
  * Where the bubble sits against the pet, so it can draw its tail: above the dog (or below,
@@ -260,6 +275,7 @@ export type CompanionBubblePayload =
   | { mode: 'confirm'; payload: CompanionCaptureResult }
   | { mode: 'terminal'; payload: { alert: CompanionTerminalAlert } }
   | { mode: 'plan'; payload: { alert: CompanionPlanAlert } }
+  | { mode: 'week'; payload: { summary: CompanionWeekSummary } }
 
 export interface CompanionList {
   todos: CompanionTodo[]

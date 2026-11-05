@@ -82,6 +82,12 @@ const companion: Record<keyof typeof en, string> = {
   'plan.open': 'Ver uso',
   'plan.later': 'OK',
   'plan.help': 'Enter abre · Esc fecha',
+  'week.title': 'A semana',
+  'week.line': '{done} feitas · {late} atrasadas · {open} por fazer',
+  'week.copy': 'Copiar',
+  'week.copied': 'Copiado',
+  'week.ok': 'OK',
+  'week.help': 'Enter copia · Esc fecha',
 
   'catchup.title.one': '1 lembrete passou',
   'catchup.title.other': '{n} lembretes passaram',

@@ -229,6 +229,7 @@ import { buildWhenPrompt, MODEL_TIMEOUT_MS, needsModel, parsedFromModel } from '
 import { listForView, planCapture, todayQuery } from './companion-capture-pure'
 import { isQuiet, parseQuietCommand, tomorrowAt } from './companion-quiet-pure'
 import { isSaveThisCommand, parseSpanCommand } from './companion-focus-pure'
+import { weekSummary, weekSummaryDue } from './companion-week-pure'
 import { activeSprint, activeSprintView, linkedItem, promote, sprintLinks, unlink, withSprintDone } from './companion-promote-pure'
 import {
   applyCompanionPrefs,
@@ -259,7 +260,7 @@ import {
   throwBall,
   toggleCompanion
 } from './companion-window'
-import type { CompanionCaptureResult, CompanionList, CompanionPrefs, CompanionPromoteResult, CompanionPlanAlert, CompanionTerminalAlert, CompanionTodo, CompanionStateView, CompanionVoicePhase, ParsedCapture } from './companion-types'
+import type { CompanionCaptureResult, CompanionList, CompanionPrefs, CompanionPromoteResult, CompanionPlanAlert, CompanionTerminalAlert, CompanionTodo, CompanionStateView, CompanionVoicePhase, CompanionWeekSummary, ParsedCapture } from './companion-types'
 import { MAX_CLIP_BYTES } from './companion-voice-pure'
 import { cancelVoiceInstall, disposeVoice, installVoiceModels, prepareVoice, setVoiceProgressListener, transcribe, voiceStatus } from './companion-voice'
 import { currentLanguage, t } from './i18n'
@@ -786,6 +787,9 @@ app.whenReady().then(async () => {
       showNextCompanionAlert()
     }
   })
+  // Friday from five on (plan §13.3, T1): the week in one line, once.
+  setInterval(checkWeekSummary, 60_000)
+  checkWeekSummary()
   // Keep the "run at login" entry (Windows registry, or the XDG autostart file on
   // Linux) in sync with config on every startup (covers the case where it was
   // changed outside this app, or the app was reinstalled or updated to a new
@@ -928,6 +932,7 @@ type CompanionAlert =
   /** `at`: when it was queued, so one that waited behind reminders too long is dropped. */
   | { mode: 'terminal'; alert: CompanionTerminalAlert; at: number }
   | { mode: 'plan'; alert: CompanionPlanAlert }
+  | { mode: 'week'; summary: CompanionWeekSummary }
 const companionAlerts: CompanionAlert[] = []
 /** The todo whose reminder bubble is up, so done/snooze/dismiss on it moves the queue on. */
 let companionReminderId: string | null = null
@@ -951,6 +956,11 @@ function queueCompanionAlerts(alerts: CompanionAlert[]): void {
       if (a.mode === 'terminal') continue
       if (a.mode === 'plan') {
         notifyCompanion(a.alert.account, a.alert.detail)
+        continue
+      }
+      if (a.mode === 'week') {
+        const { done, late, open } = a.summary
+        notifyCompanion(t('main.companion.week.title'), t('main.companion.week.body', { done, late, open }))
         continue
       }
       for (const r of a.mode === 'reminder' ? [a.reminder] : a.reminders) notifyCompanion(r.title, '')
@@ -1137,12 +1147,36 @@ function showNextCompanionAlert(): void {
   setPetState('alert')
   if (next.mode === 'plan') {
     openBubble({ mode: 'plan', payload: { alert: next.alert } })
+  } else if (next.mode === 'week') {
+    openBubble({ mode: 'week', payload: { summary: next.summary } })
   } else if (next.mode === 'reminder') {
     companionReminderId = next.reminder.todoId
     const queued = companionAlerts.filter((a) => a.mode === 'reminder').length
     openBubble({ mode: 'reminder', payload: { reminder: next.reminder, queued } })
   } else {
     openBubble({ mode: 'catchup', payload: { reminders: next.reminders, reason: next.reason } })
+  }
+}
+
+/**
+ * The week in one line (plan §13.3, T1): on Friday from five, once a week, with the pet
+ * up it goes in his bubble (with Copy for the standup); hidden or quiet, as a notification.
+ */
+function checkWeekSummary(): void {
+  try {
+    const store = companionStore()
+    const now = Date.now()
+    if (!weekSummaryDue(now, store.getState().lastWeekSummaryAt)) return
+    store.setState({ lastWeekSummaryAt: now })
+    const summary = weekSummary(store.listTodos(), now)
+    if (isCompanionVisible() && companionQuietUntil() === null) {
+      queueCompanionAlerts([{ mode: 'week', summary }])
+    } else if (Notification.isSupported()) {
+      const { done, late, open } = summary
+      new Notification({ title: t('main.companion.week.title'), body: t('main.companion.week.body', { done, late, open }) }).show()
+    }
+  } catch (e) {
+    console.error('[companion] week summary failed:', e)
   }
 }
 

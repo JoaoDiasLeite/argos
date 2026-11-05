@@ -7,7 +7,8 @@ import type {
   CompanionReminder,
   CompanionSnoozeRequest,
   CompanionTerminalAlert,
-  CompanionTodo
+  CompanionTodo,
+  CompanionWeekSummary
 } from '../types'
 import { plural } from '../../../shared/i18n'
 import { SNOOZE_CAP } from '../../../shared/companion'
@@ -163,6 +164,8 @@ export default function Bubble() {
         return <TerminalView key={view.payload.alert.key + view.payload.alert.kind + session} alert={view.payload.alert} />
       case 'plan':
         return <PlanView key={view.payload.alert.key + session} alert={view.payload.alert} />
+      case 'week':
+        return <WeekView key={session} summary={view.payload.summary} />
     }
   })()
 
@@ -856,6 +859,46 @@ function PlanView({ alert }: { alert: CompanionPlanAlert }) {
         </button>
       </div>
       <div className="help">{t('companion.plan.help')}</div>
+    </>
+  )
+}
+
+// ─── The week in one line (plan §13.3, T1) ─────────────────────────────────────
+
+/** Friday's word: done, late, still to come, with Copy for the standup. Enter copies, Esc closes. */
+function WeekView({ summary }: { summary: CompanionWeekSummary }) {
+  const t = useT()
+  const [copied, setCopied] = useState(false)
+  const line = t('companion.week.line', { done: summary.done, late: summary.late, open: summary.open })
+
+  const copy = (): void => {
+    navigator.clipboard
+      .writeText(line)
+      .then(() => setCopied(true))
+      .catch(() => {})
+  }
+
+  useWindowKey((e) => {
+    if (e.key === 'Escape') api.bubbleClose()
+    else if (e.key === 'Enter' && (e.target === document.body || e.target === null)) {
+      e.preventDefault()
+      copy()
+    }
+  })
+
+  return (
+    <>
+      <span className="eyebrow">{t('companion.week.title')}</span>
+      <div className="bq-title">{line}</div>
+      <div className="bq-actions">
+        <button type="button" className="btn-primary" onClick={copy}>
+          {t(copied ? 'companion.week.copied' : 'companion.week.copy')}
+        </button>
+        <button type="button" className="btn-secondary" onClick={() => api.bubbleClose()}>
+          {t('companion.week.ok')}
+        </button>
+      </div>
+      <div className="help">{t('companion.week.help')}</div>
     </>
   )
 }

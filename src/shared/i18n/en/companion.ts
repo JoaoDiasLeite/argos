@@ -93,6 +93,13 @@ export default {
   'plan.open': 'See usage',
   'plan.later': 'OK',
   'plan.help': 'Enter opens · Esc closes',
+  // Friday's word on the week (plan §13.3, T1).
+  'week.title': 'The week',
+  'week.line': '{done} done · {late} late · {open} still to come',
+  'week.copy': 'Copy',
+  'week.copied': 'Copied',
+  'week.ok': 'OK',
+  'week.help': 'Enter copies · Esc closes',
 
   'catchup.title.one': '1 reminder passed',
   'catchup.title.other': '{n} reminders passed',

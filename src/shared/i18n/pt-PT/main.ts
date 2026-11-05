@@ -12,6 +12,8 @@ const main: Record<keyof typeof en, string> = {
   'companion.ball': 'Atira a bola',
   'companion.focusTitle': 'Foco, {n} min',
   'companion.timerTitle': 'Temporizador, {n} min',
+  'companion.week.title': 'A semana, pelo Argos',
+  'companion.week.body': '{done} feitas, {late} atrasadas, {open} por fazer.',
   'companion.terminal.untitled': 'Chat sem nome',
   'companion.quietHour': 'Silêncio por 1 hora',
   'companion.quietTomorrow': 'Silêncio até amanhã',
