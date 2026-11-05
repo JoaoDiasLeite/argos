@@ -499,7 +499,7 @@ is a todo that is done in neither.
 |---|---|---|---|---|
 | 1 | Tray: "Companheiro" toggle + "O que tenho hoje" | high | none | **v1** |
 | 2 | Main-window **Companion** panel (list, edit, promote) | high | one sidebar entry | **v1** |
-| 3 | A chat terminal finished / needs input → pet reacts | high | none (the hook exists, `src/main/notify-hook.ts:21`) | **v2** |
+| 3 | A chat terminal finished / needs input → pet reacts | high | none (the hook exists, `src/main/notify-hook.ts:21`) | **built in 3.1.0** (`companion-terminal-pure.ts`): embedded chats' busy→idle and OSC 9, plus the hook in place of its toast; one word per turn |
 | 4 | Promote to sprint, from the panel and the bubble | high | one button | **v2** |
 | 5 | Plan usage crossed 85 % → pet mentions it once | medium | none; `plan-alerts-pure.ts` already decides when | **v2**, reusing the existing latch so it cannot double-fire |
 | 6 | Standup draft from the week's done todos | medium | a button in the panel | **v3** |
@@ -650,6 +650,7 @@ config:set-companion(partial)       → { companion, registeredShortcut, registe
 
 send: companion:bubble-size  companion:bubble-close  companion:drag-start  companion:drag-end
       companion:hit-rect  companion:summon  companion:open-main  companion:pet-menu
+      companion:terminal-open(key)
       companion:voice-prepare  companion:voice-phase
 ```
 
@@ -701,7 +702,7 @@ These close the open questions below and override the defaults where they differ
    off (default) → it appears only when summoned or for a reminder.
 5. **Obsidian export: yes, as an option**, with the target configurable — pick the vault
    folder and an optional subfolder in it (default `Argos/`). Notes only, export not sync.
-6. **Recurrence:** not for now.
+6. **Recurrence:** not for now. Built in 3.1.0 after all (`companion-repeat-pure.ts`): one occurrence at a time, the next added when one is ticked done.
 7. **Argos events through the pet:** not for now; may come later (§7 items 3 and 5).
 8. **Reminders while Argos is closed:** caught up on next launch in one bubble — agreed.
 
