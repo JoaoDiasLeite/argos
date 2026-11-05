@@ -30,7 +30,7 @@ Nobody has write access besides the maintainer. Work from a fork:
 
 ## Checks
 
-Requires Node.js 20.
+Requires Node.js 22 and npm 11 (`npm install -g npm@11`).
 
 ```bash
 npm install
