@@ -7,10 +7,12 @@ splits the frames by the gaps between them, scales them all by one factor so the
 the size of the walk sheet's (94 px tall), puts the paws on the same bottom line, and
 writes an N x 96 by 96 PNG with hard alpha like the sheets already in the app.
 
-    python scripts/companion-sheet.py <input image> <output png> <frames> [--keep 1,3,4]
+    python scripts/companion-sheet.py <input image> <output png> <frames> [--keep 1,3,4] [--match idle.png]
 
 `--keep` writes only those frames (1-based, in the order given): for when the generator
-spoiled one and the cycle still reads without it.
+spoiled one and the cycle still reads without it. `--match <sheet>` brings the brightness
+in line with a sheet already in the app (one gain over the dog's pixels, hue and
+saturation untouched): the generators drift darker between images.
 
 Needs Pillow, numpy and scipy. Check the result at 3x before it goes in: a frame the
 generator drew much bigger or smaller than the others still comes out odd.
@@ -92,6 +94,19 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
     return dog
 
 
+def match_colours(sheet: Image.Image, reference: str) -> Image.Image:
+    """The sheet's dog lifted to the reference sheet's brightness: one gain on every channel, so hue and saturation keep their balance."""
+    ref = np.array(Image.open(reference).convert('RGBA')).astype(float)
+    out = np.array(sheet.convert('RGBA')).astype(float)
+    ref_px = ref[..., :3][ref[..., 3] > 128]
+    mask = out[..., 3] > 128
+    out_px = out[..., :3][mask]
+    gain = ref_px.max(1).mean() / max(1.0, out_px.max(1).mean())
+    out[..., :3][mask] = np.clip(out_px * gain, 0, 255)
+    print(f'colour gain {gain:.3f}')
+    return Image.fromarray(out.astype(np.uint8))
+
+
 def split_frames(dog: np.ndarray, frames: int) -> list[tuple[int, int]]:
     ys = np.where(dog.any(1))[0]
     H = ys.max() - ys.min() + 1
@@ -154,6 +169,8 @@ def main() -> None:
         f = Image.fromarray(arr)
         sheet.paste(f, (i * FRAME + (FRAME - w) // 2, PAW_Y - h + 1), f)
         print(f'frame {i + 1}: {w}x{h} at {s:.3f}')
+    if '--match' in sys.argv:
+        sheet = match_colours(sheet, sys.argv[sys.argv.index('--match') + 1])
     sheet.save(out)
     sheet.resize((FRAME * frames * 3, FRAME * 3), Image.NEAREST).save(out.replace('.png', '.preview.png'))
     print('wrote', out, 'and its 3x preview')
