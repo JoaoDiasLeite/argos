@@ -18,6 +18,7 @@ import {
 import { voiceShortcutCandidates } from './companion-voice-pure'
 import { WALK_ARRIVE_MS, WALK_STAND_MS, canWalk, nextWalkDelay, planWalk, stepToward, type WalkPlan } from './companion-walk-pure'
 import { DOZE_AFTER_MS, canDoze, cursorNearPet, type DozeConditions } from './companion-doze-pure'
+import { fallY, isFall, type Fall } from './companion-fall-pure'
 import { restingPetState } from './companion-quiet-pure'
 import { VOICE_SHORTCUT_DEFAULTS } from './companion-types'
 import type {
@@ -77,6 +78,8 @@ let happyTimer: ReturnType<typeof setTimeout> | null = null
 /** The walk under way (x kept fractional, the window gets the rounded value), and the next one's timer. */
 let walk: (WalkPlan & { x: number; last: number; startAt: number; arriveAt: number | null }) | null = null
 let walkTimer: ReturnType<typeof setTimeout> | null = null
+/** The drop under way after he was let go above the floor (plan §13.3, M4). */
+let fall: (Fall & { x: number; startAt: number }) | null = null
 /** Counts down to a doze while he sits idle (plan §13.3, M1). */
 let dozeTimer: ReturnType<typeof setTimeout> | null = null
 let bubble: CompanionBubblePayload | null = null
@@ -168,6 +171,7 @@ function createPetWindow(): BrowserWindow {
     stopPolling()
     drag = null
     walk = null
+    fall = null
     cancelWalkTimer()
     if (petWindow === win) petWindow = null
   })
@@ -255,6 +259,7 @@ function settleDisplays(): void {
   if (petStranded(petWindow.getBounds(), areas)) {
     stopWalk()
     drag = null
+    fall = null
     placePet(petWindow)
   }
   placeBubble()
@@ -326,7 +331,8 @@ function poll(): void {
   const over = petHitTest(cursor, b)
   setIgnore(!over)
   if (petState === 'dozing' && cursorNearPet(cursor, b)) wakePet()
-  if (walk) stepWalk(petWindow, over)
+  if (fall) stepFall(petWindow)
+  else if (walk) stepWalk(petWindow, over)
 }
 
 function startPolling(ms = POLL_MS): void {
@@ -343,6 +349,8 @@ function stopPolling(): void {
 export function startPetDrag(): void {
   if (!alive(petWindow) || !petWindow.isVisible()) return
   stopWalk()
+  // Caught mid-air: the fall ends where he is.
+  fall = null
   wakePet()
   cancelDoze()
   const [x, y] = petWindow.getPosition()
@@ -350,7 +358,7 @@ export function startPetDrag(): void {
   startPolling(DRAG_POLL_MS)
 }
 
-/** Drop: snap to the nearer side of that display and remember it for the display. */
+/** Drop: dock to a side or fall to the floor of that display, and remember it for the display. */
 export function endPetDrag(): void {
   if (!drag) return
   drag = null
@@ -361,11 +369,31 @@ export function endPetDrag(): void {
   // its work area, which also settles a drag across displays of different scale.
   const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
   const pos = snapToEdge({ x: b.x, y: b.y }, display.workArea)
-  petWindow.setPosition(pos.x, pos.y)
+  if (isFall(b.y, pos.y) && !reducedMotion()) {
+    // On his feet for the drop; stepFall sits him down on landing.
+    petWindow.setPosition(pos.x, b.y)
+    fall = { fromY: b.y, toY: pos.y, x: pos.x, startAt: Date.now() }
+    setPetState('standing')
+    startPolling(WALK_POLL_MS)
+  } else {
+    petWindow.setPosition(pos.x, pos.y)
+  }
   placeBubble()
   savePetPosition(display.id, pos)
   scheduleWalk()
   scheduleDoze()
+}
+
+/** One poll tick of a fall: the window down the curve, and sit on landing. */
+function stepFall(win: BrowserWindow): void {
+  if (!fall) return
+  const { y, done } = fallY(fall, Date.now() - fall.startAt)
+  win.setPosition(fall.x, y)
+  placeBubble()
+  if (!done) return
+  fall = null
+  if (!drag) startPolling(POLL_MS)
+  if (petState === 'standing') setPetState(restingState())
 }
 
 /** Remember where the pet is on this display (a drop, or the end of a walk). */
@@ -435,7 +463,8 @@ function walkAllowed(cursorOverPet: boolean, withDnd: boolean): boolean {
 /** The walk timer: stand up and go, if nothing says sit; otherwise try again later. */
 function tryWalk(): void {
   walkTimer = null
-  if (!alive(petWindow) || walk) return
+  // Mid-fall the landing rolls the next walk.
+  if (!alive(petWindow) || walk || fall) return
   const b = petWindow.getBounds()
   const over = petHitTest(screen.getCursorScreenPoint(), b)
   const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
@@ -534,6 +563,7 @@ function hidePet(): void {
   stopWalk()
   stopPolling()
   drag = null
+  fall = null
   // Quietly: nothing queued should pop the pet straight back up.
   hideBubbleWindow(false)
   if (alive(petWindow) && petWindow.isVisible()) {

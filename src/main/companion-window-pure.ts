@@ -64,20 +64,25 @@ export function isInsideArea(pos: Point, size: number, workArea: Rect): boolean 
   )
 }
 
+/** A drop with the window within this of a side edge docks there (plan §13.3, M4). */
+export const DOCK_ZONE = 48
+
 /**
- * Where a dropped pet comes to rest. Dropped in the lower third of the work area he lands
- * on the floor where he was let go, PET_MARGIN up from the bottom, so he can walk from
- * there. Higher up he docks against the nearer left or right edge, PET_MARGIN in, keeping
- * his height (clamped inside): docked, not free-floating, and not walking.
+ * Where a dropped pet comes to rest. Let go within DOCK_ZONE of a side edge, above the
+ * lower third of the work area, he docks against that edge, PET_MARGIN in, keeping his
+ * height (clamped inside): docked, not free-floating, and not walking. Anywhere else he
+ * ends on the floor under where he was let go, PET_MARGIN up from the bottom, so he can
+ * walk from there; companion-window.ts drops him there along companion-fall-pure's curve.
  */
 export function snapToEdge(pos: Point, workArea: Rect, size = PET_SIZE, margin = PET_MARGIN): Point {
   const bottom = workArea.y + workArea.height
-  if (pos.y + size >= bottom - workArea.height / 3) {
+  const right = workArea.x + workArea.width
+  const nearLeft = pos.x - workArea.x <= DOCK_ZONE
+  const nearRight = right - (pos.x + size) <= DOCK_ZONE
+  if (pos.y + size >= bottom - workArea.height / 3 || (!nearLeft && !nearRight)) {
     return clampToArea({ x: pos.x, y: bottom - size - margin }, size, workArea)
   }
-  const centre = pos.x + size / 2
-  const left = centre < workArea.x + workArea.width / 2
-  const x = left ? workArea.x + margin : workArea.x + workArea.width - size - margin
+  const x = nearLeft ? workArea.x + margin : right - size - margin
   return clampToArea({ x, y: pos.y }, size, workArea)
 }
 

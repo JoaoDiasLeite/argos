@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  DOCK_ZONE,
   PET_MARGIN,
   PET_SIZE,
   bubblePlacement,
@@ -34,16 +35,23 @@ describe('defaultPetPosition', () => {
 })
 
 describe('snapToEdge', () => {
-  it('goes to the left edge when dropped in the left half, keeping its height', () => {
-    expect(snapToEdge({ x: 500, y: 300 }, area)).toEqual({ x: 12, y: 300 })
+  it('docks to the left edge when dropped near it, keeping its height', () => {
+    expect(snapToEdge({ x: 30, y: 300 }, area)).toEqual({ x: 12, y: 300 })
+    expect(snapToEdge({ x: DOCK_ZONE, y: 300 }, area)).toEqual({ x: 12, y: 300 })
   })
 
-  it('goes to the right edge when dropped in the right half', () => {
-    expect(snapToEdge({ x: 1200, y: 300 }, area)).toEqual({ x: 1920 - 220 - 12, y: 300 })
+  it('docks to the right edge when dropped near it', () => {
+    expect(snapToEdge({ x: 1660, y: 300 }, area)).toEqual({ x: 1920 - 220 - 12, y: 300 })
   })
 
-  it('lands a drop in the lower third on the floor, where it was let go', () => {
+  it('falls to the floor from the middle of the screen, under where it was let go', () => {
+    expect(snapToEdge({ x: 500, y: 300 }, area)).toEqual({ x: 500, y: 1040 - 220 - 12 })
+    expect(snapToEdge({ x: DOCK_ZONE + 1, y: 300 }, area)).toEqual({ x: DOCK_ZONE + 1, y: 1040 - 220 - 12 })
+  })
+
+  it('lands a drop in the lower third on the floor, where it was let go, even near a side', () => {
     expect(snapToEdge({ x: 900, y: 600 }, area)).toEqual({ x: 900, y: 1040 - 220 - 12 })
+    expect(snapToEdge({ x: 20, y: 700 }, area)).toEqual({ x: 20, y: 1040 - 220 - 12 })
   })
 
   it('lands a drop half off the bottom on the floor, inside the sides', () => {
@@ -55,8 +63,9 @@ describe('snapToEdge', () => {
   })
 
   it('snaps on a display with a negative origin', () => {
-    expect(snapToEdge({ x: -1200, y: 400 }, left)).toEqual({ x: -1280 + 12, y: 400 })
-    expect(snapToEdge({ x: -300, y: 400 }, left)).toEqual({ x: -220 - 12, y: 400 })
+    expect(snapToEdge({ x: -1260, y: 400 }, left)).toEqual({ x: -1280 + 12, y: 400 })
+    expect(snapToEdge({ x: -240, y: 400 }, left)).toEqual({ x: -220 - 12, y: 400 })
+    expect(snapToEdge({ x: -700, y: 400 }, left)).toEqual({ x: -700, y: 100 + 984 - 220 - 12 })
   })
 })
 
