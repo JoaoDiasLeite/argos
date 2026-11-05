@@ -31,14 +31,26 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
     mx = np.maximum(np.maximum(r, g), b)
     mn = np.minimum(np.minimum(r, g), b)
     greyish = ((mx - mn) < 28) & (mx > 150)
-    lab, _ = ndimage.label(greyish)
+    # The checkerboard: the grey that reaches the border, read through a slight dilation so
+    # an anti-aliased seam does not cut a gap under the belly off from the outside.
+    lab, _ = ndimage.label(ndimage.binary_dilation(greyish, iterations=2))
     border = set(np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))) - {0}
     background = np.isin(lab, list(border))
-    core = ~greyish
-    # Specks of colour off the dog (JPEG noise, a stray streak) are not the dog.
-    lab2, n2 = ndimage.label(core)
-    sizes = ndimage.sum(core, lab2, range(1, n2 + 1))
-    core = np.isin(lab2, [i + 1 for i, s in enumerate(sizes) if s > 3000])
+    # What only the real dog has: the dark outline and the strong orange. A pale "ghost"
+    # copy the generator smears behind him has neither, and nor does the checkerboard.
+    strong = (mx < 90) | ((mx - mn) > 100)
+    lab2, n2 = ndimage.label(strong)
+    sizes = ndimage.sum(strong, lab2, range(1, n2 + 1))
+    # Every size below is relative to the dog, since a generator hands back a 1024 px dog
+    # and a screenshot a 250 px one: H is the tallest strong piece, the dog's body.
+    objs = ndimage.find_objects(lab2)
+    H = max(o[0].stop - o[0].start for o in objs if o is not None)
+    strong = np.isin(lab2, [i + 1 for i, s in enumerate(sizes) if s > 0.02 * H * H])
+    # Closed into a silhouette, which takes the cream muzzle, chest and paws inside the
+    # outline with it; the checkerboard showing through a gap stays out.
+    k = max(3, int(H * 0.03))
+    silhouette = ndimage.binary_fill_holes(ndimage.binary_closing(strong, np.ones((k, k))))
+    core = silhouette & ~greyish
     body = ndimage.binary_fill_holes(core)
     # A motion streak the generator drew: near-white, long and flat. Painted over with the
     # nearest colour where it crosses the body, dropped where it sticks out of it.
@@ -48,7 +60,7 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
         if sl is None:
             continue
         h, w = sl[0].stop - sl[0].start, sl[1].stop - sl[1].start
-        if w < 120 or h * 3 > w:
+        if w < 0.15 * H or h * 3 > w:
             continue
         comp = lab_s == i + 1
         core &= ~comp
@@ -67,7 +79,8 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
     sizes3 = ndimage.sum(enclosed, lab3, range(1, n3 + 1))
     for i, s in enumerate(sizes3):
         comp = lab3 == i + 1
-        if s < 600:
+        if s < (0.05 * H) ** 2:
+            # An eye highlight, the white of an open mouth.
             dog |= comp & body
         else:
             inside = comp & body
@@ -80,7 +93,9 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
 
 
 def split_frames(dog: np.ndarray, frames: int) -> list[tuple[int, int]]:
-    cols = dog.sum(0) > 30
+    ys = np.where(dog.any(1))[0]
+    H = ys.max() - ys.min() + 1
+    cols = dog.sum(0) > 0.1 * H
     ranges: list[list[int]] = []
     start = None
     for x, v in enumerate(cols):
@@ -93,7 +108,7 @@ def split_frames(dog: np.ndarray, frames: int) -> list[tuple[int, int]]:
         ranges.append([start, len(cols)])
     merged = [ranges[0]]
     for a, b in ranges[1:]:
-        if a - merged[-1][1] < 15:
+        if a - merged[-1][1] < 0.05 * H:
             merged[-1][1] = b
         else:
             merged.append([a, b])
