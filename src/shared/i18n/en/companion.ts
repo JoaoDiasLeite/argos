@@ -72,6 +72,13 @@ export default {
   'snooze.pickLabel': 'Snooze until',
   'snooze.ok': 'OK',
 
+  // A chat terminal finished or needs you (companion-terminal-pure.ts).
+  'terminal.finished': 'Finished, over to you',
+  'terminal.waiting': 'Needs you',
+  'terminal.open': 'Open',
+  'terminal.later': 'Later',
+  'terminal.help': 'Enter opens · Esc closes',
+
   'catchup.title.one': '1 reminder passed',
   'catchup.title.other': '{n} reminders passed',
   'catchup.launch': 'while Argos was closed',

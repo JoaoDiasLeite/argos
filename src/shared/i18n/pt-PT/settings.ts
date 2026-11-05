@@ -110,6 +110,8 @@ const settings: Record<keyof typeof en, string> = {
   'companion.stay.hint': 'Desligado: o Argos esconde-se depois de guardares e só volta para lembretes.',
   'companion.walk.label': 'Passear pelo ecrã',
   'companion.walk.hint': 'Com o Argos no ecrã, de vez em quando dá uns passos ao longo do fundo.',
+  'companion.terminalAlerts.label': 'Avisar quando um chat acaba',
+  'companion.terminalAlerts.hint': 'Com o Argos no ecrã, um chat que acabou ou precisa de ti enquanto estás noutra janela aparece no balão dele em vez de uma notificação.',
   'companion.leadTime.label': 'Aviso antes da hora',
   'companion.leadTime.hint': 'Para tudo o que tem hora, como "amanhã às 14h".',
   'companion.leadTime.atTime': 'Na hora',

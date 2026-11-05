@@ -201,6 +201,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     dragEnd: () => ipcRenderer.send('companion:drag-end'),
     hitRect: (rect: unknown) => ipcRenderer.send('companion:hit-rect', rect),
     openMain: () => ipcRenderer.send('companion:open-main'),
+    terminalOpen: (key: string) => ipcRenderer.send('companion:terminal-open', key),
     summon: () => ipcRenderer.send('companion:summon'),
     petMenu: () => ipcRenderer.send('companion:pet-menu'),
     onShown: (cb: () => void) => {

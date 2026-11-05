@@ -1480,6 +1480,8 @@ declare global {
         /** An extra element of the pet that should take clicks, in window DIPs; null clears. */
         hitRect: (rect: CompanionRect | null) => void
         openMain: () => void
+        /** "Abrir" on a terminal bubble: that chat in the main window. */
+        terminalOpen: (key: string) => void
         /** A click on the dog: the bubble opens for typing (or closes if it is). */
         summon: () => void
         /** Right-click on the dog: main pops the native menu at the cursor. */

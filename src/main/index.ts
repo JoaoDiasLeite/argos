@@ -216,6 +216,7 @@ import { startCompanionScheduler, type CompanionScheduler } from './companion-sc
 import { snooze, type DueReminder, type SnoozeOption } from './companion-schedule-pure'
 import { parseCapture, remindersForWhen } from './companion-nlu-pure'
 import { nextTodo } from './companion-repeat-pure'
+import { TERMINAL_ALERT_MS, TERMINAL_STALE_MS, chatSessionId, hookKey, shouldTell, terminalKey } from './companion-terminal-pure'
 import { buildWhenPrompt, MODEL_TIMEOUT_MS, needsModel, parsedFromModel } from './companion-nlu-gate-pure'
 import { listForView, planCapture, todayQuery } from './companion-capture-pure'
 import { isQuiet, parseQuietCommand, tomorrowAt } from './companion-quiet-pure'
@@ -248,7 +249,7 @@ import {
   startPetDrag,
   toggleCompanion
 } from './companion-window'
-import type { CompanionCaptureResult, CompanionList, CompanionPrefs, CompanionPromoteResult, CompanionRect, CompanionTodo, CompanionStateView, CompanionVoicePhase, ParsedCapture } from './companion-types'
+import type { CompanionCaptureResult, CompanionList, CompanionPrefs, CompanionPromoteResult, CompanionRect, CompanionTerminalAlert, CompanionTodo, CompanionStateView, CompanionVoicePhase, ParsedCapture } from './companion-types'
 import { MAX_CLIP_BYTES } from './companion-voice-pure'
 import { cancelVoiceInstall, disposeVoice, installVoiceModels, prepareVoice, setVoiceProgressListener, transcribe, voiceStatus } from './companion-voice'
 import { currentLanguage, t } from './i18n'
@@ -268,6 +269,7 @@ import { readJsonFile } from './json-file'
 import {
   PROTOCOL,
   SessionTarget,
+  type NotifyPayload,
   extractDeepLink,
   hookSettingsBlock,
   notifyHookCommand,
@@ -331,7 +333,8 @@ if (!notifyMode && !opsMcpMode) {
       // doing. That is what the click is for.
       const relayed = notifyPayloadFrom(additionalData)
       if (relayed) {
-        showHookNotification(relayed, () => openDeepLink(relayed.link))
+        // With Argos on screen he says it in his bubble; otherwise the toast, as before.
+        if (!tellCompanionAboutHook(relayed)) showHookNotification(relayed, () => openDeepLink(relayed.link))
         return
       }
       // Windows delivers `argos://` through a second launch's argv.
@@ -913,6 +916,8 @@ ipcMain.on('overlay:open-session', (_, sessionId: string) => {
 type CompanionAlert =
   | { mode: 'reminder'; reminder: DueReminder }
   | { mode: 'catchup'; reminders: DueReminder[]; reason: 'launch' | 'dnd' }
+  /** `at`: when it was queued, so one that waited behind reminders too long is dropped. */
+  | { mode: 'terminal'; alert: CompanionTerminalAlert; at: number }
 const companionAlerts: CompanionAlert[] = []
 /** The todo whose reminder bubble is up, so done/snooze/dismiss on it moves the queue on. */
 let companionReminderId: string | null = null
@@ -920,14 +925,117 @@ let companionReminderId: string | null = null
 function queueCompanionAlerts(alerts: CompanionAlert[]): void {
   companionAlerts.push(...alerts)
   try {
+    // A reminder does not wait behind word of a terminal: that bubble gives way, and the
+    // bubble-closed hook puts the reminder up.
+    if (alerts.some((a) => a.mode !== 'terminal') && currentBubble()?.mode === 'terminal') closeBubble()
     showNextCompanionAlert()
   } catch (e) {
     // No pet window (it failed to create): fall back to plain notifications.
     console.error('[companion] could not show the bubble:', e)
     for (const a of companionAlerts.splice(0)) {
+      if (a.mode === 'terminal') continue
       for (const r of a.mode === 'reminder' ? [a.reminder] : a.reminders) notifyCompanion(r.title, '')
     }
   }
+}
+
+// ─── Terminal alerts (companion-terminal-pure.ts, plan §7 item 3) ───────────────
+
+/** Per embedded terminal, the Claude session it runs, so a hook about it lands on its key. */
+const terminalClaudeSessions = new Map<string, string>()
+/** What the pet already said about each chat this turn; cleared when it gets busy again. */
+const toldTerminals = new Map<string, CompanionTerminalAlert['kind']>()
+/** What "Abrir" does, per alert key. */
+const terminalOpeners = new Map<string, () => void>()
+let terminalAlertTimer: ReturnType<typeof setTimeout> | null = null
+
+/** On, the pet up and not quiet. Hidden or quiet, he does not pop up for a terminal. */
+function companionTakesTerminalAlerts(): boolean {
+  return getConfig().companion.terminalAlerts && isCompanionVisible() && companionQuietUntil() === null
+}
+
+/**
+ * Have the pet say a terminal alert. False when he is not taking them, so the caller does
+ * what it did before (the toast). True also when it was skipped as already said.
+ */
+function tellCompanionTerminal(alert: CompanionTerminalAlert, open: () => void): boolean {
+  if (!companionTakesTerminalAlerts()) return false
+  if (!shouldTell(toldTerminals.get(alert.key), alert.kind)) return true
+  toldTerminals.set(alert.key, alert.kind)
+  terminalOpeners.set(alert.key, open)
+  const up = currentBubble()
+  if (up?.mode === 'terminal' && up.payload.alert.key === alert.key) {
+    showTerminalBubble(alert)
+    return true
+  }
+  const entry: CompanionAlert = { mode: 'terminal', alert, at: Date.now() }
+  const i = companionAlerts.findIndex((a) => a.mode === 'terminal' && a.alert.key === alert.key)
+  if (i >= 0) companionAlerts[i] = entry
+  else companionAlerts.push(entry)
+  showNextCompanionAlert()
+  return true
+}
+
+/** Up without focus, and gone on its own after TERMINAL_ALERT_MS if nobody answers. */
+function showTerminalBubble(alert: CompanionTerminalAlert): void {
+  setPetState('alert')
+  openBubble({ mode: 'terminal', payload: { alert } })
+  if (terminalAlertTimer) clearTimeout(terminalAlertTimer)
+  terminalAlertTimer = setTimeout(() => {
+    terminalAlertTimer = null
+    const up = currentBubble()
+    if (up?.mode === 'terminal' && up.payload.alert.key === alert.key) closeBubble()
+  }, TERMINAL_ALERT_MS)
+}
+
+/** The chat got busy again (you answered it): what was said about its last turn is stale. */
+function forgetTerminalAlert(key: string): void {
+  toldTerminals.delete(key)
+  terminalOpeners.delete(key)
+  for (let i = companionAlerts.length - 1; i >= 0; i--) {
+    const a = companionAlerts[i]
+    if (a.mode === 'terminal' && a.alert.key === key) companionAlerts.splice(i, 1)
+  }
+  const up = currentBubble()
+  if (up?.mode === 'terminal' && up.payload.alert.key === key) closeBubble()
+}
+
+/** A chat's name from its session file, for the bubble's title. */
+function chatName(sessionId: string): string {
+  try {
+    const s = readJsonFile<{ name?: unknown }>(path.join(sessionsDir, `${sessionId}.json`))
+    if (typeof s.name === 'string' && s.name.trim()) return s.name.trim()
+  } catch {
+    /* no file yet: the chat was never saved */
+  }
+  return t('main.companion.terminal.untitled')
+}
+
+function openChat(sessionId: string): void {
+  showMainWindow()
+  sendToMainWindow('app:open-session', sessionId)
+}
+
+/**
+ * An embedded chat finished its turn, or its CLI asked for you (OSC 9). Said only while
+ * the main window is away: looking at Argos, you see the chat's own dot.
+ */
+function companionTerminalIdle(terminalId: string, kind: CompanionTerminalAlert['kind']): void {
+  const sessionId = chatSessionId(terminalId)
+  if (!sessionId || !mainWindowInactive()) return
+  tellCompanionTerminal({ key: terminalKey(terminalId), kind, title: chatName(sessionId), detail: '' }, () => openChat(sessionId))
+}
+
+/** A Claude Code hook notification, for the pet to say. False: show the toast as before. */
+function tellCompanionAboutHook(p: NotifyPayload): boolean {
+  const target = p.link ? parseDeepLink(p.link) : null
+  const key = hookKey(target?.sessionId ?? null, terminalClaudeSessions, p.title)
+  const sessionId = key.startsWith('term:') ? chatSessionId(key.slice('term:'.length)) : null
+  // An embedded chat with the main window in front of you: no bubble, no toast either.
+  if (sessionId && !mainWindowInactive() && companionTakesTerminalAlerts()) return true
+  return tellCompanionTerminal({ key, kind: p.urgent ? 'waiting' : 'finished', title: p.title, detail: p.body }, () =>
+    sessionId ? openChat(sessionId) : openDeepLink(p.link)
+  )
 }
 
 /**
@@ -938,8 +1046,14 @@ function queueCompanionAlerts(alerts: CompanionAlert[]): void {
 function showNextCompanionAlert(): void {
   companionReminderId = null
   if (currentBubble() || companionQuietUntil() !== null) return
-  const next = companionAlerts.shift()
+  let next = companionAlerts.shift()
+  // Word of a terminal that waited too long behind reminders is old news.
+  while (next?.mode === 'terminal' && Date.now() - next.at > TERMINAL_STALE_MS) next = companionAlerts.shift()
   if (!next) return
+  if (next.mode === 'terminal') {
+    showTerminalBubble(next.alert)
+    return
+  }
   setPetState('alert')
   if (next.mode === 'reminder') {
     companionReminderId = next.reminder.todoId
@@ -1359,6 +1473,13 @@ ipcMain.on('companion:summon', () => {
   else if (open.mode === 'input') closeBubble()
 })
 ipcMain.on('companion:open-main', () => openCompanionPanel())
+// "Abrir" on a terminal bubble: that chat in the main window.
+ipcMain.on('companion:terminal-open', (_, key: unknown) => {
+  if (typeof key !== 'string' || !key || key.length > 1000) return
+  const open = terminalOpeners.get(key)
+  closeBubble()
+  open?.()
+})
 // A right-click on the dog: the native menu at the cursor (the pet window never takes focus).
 ipcMain.on('companion:pet-menu', () => popupPetMenu(Menu.buildFromTemplate(companionPetMenuTemplate())))
 
@@ -2731,9 +2852,13 @@ function onTerminalBusy(id: string, busy: boolean): void {
     const change = noteTerminalBusy(busyTerminalSet, id, busy)
     if (change.kind === 'none') return
     updateRunIndicators()
-    if (change.kind === 'started') return
+    if (change.kind === 'started') {
+      forgetTerminalAlert(terminalKey(id))
+      return
+    }
     // flagAttention is a no-op while the window has focus.
     flagAttention('success')
+    companionTerminalIdle(id, 'finished')
   } catch {
     /* indicators are decorative */
   }
@@ -2782,6 +2907,7 @@ ipcMain.handle(
         send('terminal:exit', { id: tid, exitCode })
         // terminal.ts forgets an exited pty's busy state without an idle transition.
         dropBusyTerminal(tid)
+        terminalClaudeSessions.delete(tid)
         // One ops run per CLI launch: the pty going away ends it.
         void endTerminalOps(tid, exitCode === 0 ? { ok: true } : { ok: false, error: `the terminal exited with code ${exitCode}` })
       },
@@ -2793,8 +2919,18 @@ ipcMain.handle(
       },
       // The CLI asking for the user back, read out of its own output — see
       // terminal-osc-pure.ts. `waiting` separates "it needs you" from "it is done".
-      (tid, waiting) => send('terminal:notify', { id: tid, waiting })
+      (tid, waiting) => {
+        send('terminal:notify', { id: tid, waiting })
+        try {
+          companionTerminalIdle(tid, waiting ? 'waiting' : 'finished')
+        } catch {
+          /* the pet is decorative here too */
+        }
+      }
     )
+    // A Claude chat's session id, so Claude Code's hook about it lands on this terminal.
+    const claudeSid = opts?.resumeSessionId || opts?.pinSessionId
+    if (r.ok && claudeSid && (opts.provider ?? 'claude') === 'claude') terminalClaudeSessions.set(id, claudeSid)
     // A session opened for a terminal that then failed to start would otherwise stay open
     // with no pty to end it.
     if (!r.ok && terminalOps.has(id)) void endTerminalOps(id, { ok: false, error: r.error ?? 'the terminal did not start' })
@@ -2821,6 +2957,7 @@ const TERMINAL_CLOSED = { ok: false, aborted: true, error: 'the terminal was clo
 ipcMain.handle('terminal:kill', (_, id: string) => {
   const r = killTerminal(id)
   dropBusyTerminal(id)
+  terminalClaudeSessions.delete(id)
   void endTerminalOps(id, TERMINAL_CLOSED)
   return r
 })
@@ -2844,7 +2981,11 @@ ipcMain.handle(
     provider: 'claude' | 'codex' | 'gemini',
     resumeSessionId?: string,
     pinSessionId?: string
-  ) => startCliInTerminal(id, provider, resumeSessionId, pinSessionId)
+  ) => {
+    const sid = resumeSessionId || pinSessionId
+    if (provider === 'claude' && typeof sid === 'string' && sid) terminalClaudeSessions.set(id, sid)
+    return startCliInTerminal(id, provider, resumeSessionId, pinSessionId)
+  }
 )
 
 // ─── Remote shell (Remote Session SSH terminal, over the SFTP connection) ──────

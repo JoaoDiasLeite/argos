@@ -5,6 +5,7 @@ import type {
   CompanionCaptureResult,
   CompanionReminder,
   CompanionSnoozeRequest,
+  CompanionTerminalAlert,
   CompanionTodo
 } from '../types'
 import { plural } from '../../../shared/i18n'
@@ -156,6 +157,8 @@ export default function Bubble() {
         return <ReminderView key={view.payload.reminder.todoId + session} reminder={view.payload.reminder} queued={view.payload.queued} />
       case 'catchup':
         return <CatchUp key={session} reminders={view.payload.reminders} reason={view.payload.reason} />
+      case 'terminal':
+        return <TerminalView key={view.payload.alert.key + view.payload.alert.kind + session} alert={view.payload.alert} />
     }
   })()
 
@@ -743,6 +746,45 @@ function CatchUp({ reminders, reason }: { reminders: CompanionReminder[]; reason
           {t('companion.catchup.seeAll')}
         </button>
       </div>
+    </>
+  )
+}
+
+// ─── A chat terminal finished, or needs you ────────────────────────────────────
+
+/** Main closes it on its own after a while; Enter opens the chat, Esc closes. */
+function TerminalView({ alert }: { alert: CompanionTerminalAlert }) {
+  const t = useT()
+  const shownAt = useRef(Date.now())
+  const open = (): void => api.terminalOpen(alert.key)
+
+  useWindowKey((e) => {
+    if (e.key === 'Escape') api.bubbleClose()
+    else if (e.key === 'Enter' && (e.target === document.body || e.target === null)) {
+      if (Date.now() - shownAt.current < ENTER_GUARD_MS) return
+      e.preventDefault()
+      open()
+    }
+  })
+
+  return (
+    <>
+      <div className="bq-meta">
+        <span className={`bq-chip${alert.kind === 'waiting' ? ' bq-warn' : ''}`}>
+          {t(alert.kind === 'waiting' ? 'companion.terminal.waiting' : 'companion.terminal.finished')}
+        </span>
+      </div>
+      <div className="bq-title bq-clamp">{alert.title}</div>
+      {alert.detail && <div className="help bq-clamp">{alert.detail}</div>}
+      <div className="bq-actions">
+        <button type="button" className="btn-primary" onClick={open}>
+          {t('companion.terminal.open')}
+        </button>
+        <button type="button" className="btn-secondary" onClick={() => api.bubbleClose()}>
+          {t('companion.terminal.later')}
+        </button>
+      </div>
+      <div className="help">{t('companion.terminal.help')}</div>
     </>
   )
 }

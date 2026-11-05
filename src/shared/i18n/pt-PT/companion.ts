@@ -66,6 +66,12 @@ const companion: Record<keyof typeof en, string> = {
   'snooze.pickLabel': 'Adiar até',
   'snooze.ok': 'OK',
 
+  'terminal.finished': 'Terminou, é contigo',
+  'terminal.waiting': 'Precisa de ti',
+  'terminal.open': 'Abrir',
+  'terminal.later': 'Depois',
+  'terminal.help': 'Enter abre · Esc fecha',
+
   'catchup.title.one': '1 lembrete passou',
   'catchup.title.other': '{n} lembretes passaram',
   'catchup.launch': 'enquanto o Argos esteve fechado',

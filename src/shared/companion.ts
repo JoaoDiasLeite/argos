@@ -113,6 +113,22 @@ export interface CompanionPrefs {
   obsidianVault: string
   /** The folder inside the vault, '/'-separated; '' = the vault's root. */
   obsidianFolder: string
+  /**
+   * "Avisar quando um terminal acaba": with the pet on screen, a chat that finished or is
+   * waiting on you (while the main window is away) is said in his bubble instead of a toast.
+   */
+  terminalAlerts: boolean
+}
+
+/** A chat terminal that finished its turn, or is waiting on an answer (an approval). */
+export interface CompanionTerminalAlert {
+  /** One per conversation: a newer word about the same chat replaces the older one. */
+  key: string
+  kind: 'finished' | 'waiting'
+  /** The chat's name, or "[project] conversation" from the hook. */
+  title: string
+  /** What the CLI said, when it said something; '' otherwise. */
+  detail: string
 }
 
 /**
@@ -172,7 +188,7 @@ export type CompanionPetState =
 /** Which way the walk sheet faces; it is drawn facing right and mirrored for left. */
 export type CompanionPetFacing = 'left' | 'right'
 
-export type CompanionBubbleMode = 'input' | 'reminder' | 'catchup' | 'confirm'
+export type CompanionBubbleMode = 'input' | 'reminder' | 'catchup' | 'confirm' | 'terminal'
 
 /**
  * Where the bubble sits against the pet, so it can draw its tail: above the dog (or below,
@@ -200,6 +216,7 @@ export type CompanionBubblePayload =
   | { mode: 'reminder'; payload: { reminder: CompanionReminder; queued: number } }
   | { mode: 'catchup'; payload: { reminders: CompanionReminder[]; reason: 'launch' | 'dnd' } }
   | { mode: 'confirm'; payload: CompanionCaptureResult }
+  | { mode: 'terminal'; payload: { alert: CompanionTerminalAlert } }
 
 export interface CompanionList {
   todos: CompanionTodo[]

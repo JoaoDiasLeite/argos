@@ -9,6 +9,7 @@ const main: Record<keyof typeof en, string> = {
   'tray.quit': 'Sair do Argos',
 
   'companion.today': 'O que tenho hoje',
+  'companion.terminal.untitled': 'Chat sem nome',
   'companion.quietHour': 'Silêncio por 1 hora',
   'companion.quietTomorrow': 'Silêncio até amanhã',
   'companion.quietOff': 'Desligar silêncio (até {until})',

@@ -139,7 +139,8 @@ const COMPANION_DEFAULTS: CompanionPrefs = {
   walk: true,
   askModel: true,
   obsidianVault: '',
-  obsidianFolder: DEFAULT_OBSIDIAN_FOLDER
+  obsidianFolder: DEFAULT_OBSIDIAN_FOLDER,
+  terminalAlerts: true
 }
 
 const configPath = path.join(app.getPath('userData'), 'config.json')
@@ -279,7 +280,8 @@ function cleanCompanionPrefs(base: CompanionPrefs, patch: unknown): CompanionPre
       typeof p.obsidianVault === 'string' && (p.obsidianVault.trim() === '' || path.isAbsolute(p.obsidianVault.trim()))
         ? p.obsidianVault.trim()
         : base.obsidianVault,
-    obsidianFolder: typeof p.obsidianFolder === 'string' ? (cleanSubfolder(p.obsidianFolder) ?? base.obsidianFolder) : base.obsidianFolder
+    obsidianFolder: typeof p.obsidianFolder === 'string' ? (cleanSubfolder(p.obsidianFolder) ?? base.obsidianFolder) : base.obsidianFolder,
+    terminalAlerts: typeof p.terminalAlerts === 'boolean' ? p.terminalAlerts : base.terminalAlerts
   }
 }
 

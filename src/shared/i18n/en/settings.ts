@@ -110,6 +110,8 @@ export default {
   'companion.stay.hint': 'Off: Argos hides after you save and comes back only for reminders.',
   'companion.walk.label': 'Walk around the screen',
   'companion.walk.hint': 'With Argos on screen, every now and then he takes a few steps along the bottom.',
+  'companion.terminalAlerts.label': 'Tell me when a chat finishes',
+  'companion.terminalAlerts.hint': 'With Argos on screen, a chat that finished or needs you while you are in another window is said in his bubble instead of a notification.',
   'companion.leadTime.label': 'Remind before the time',
   'companion.leadTime.hint': 'For anything with a time, like "tomorrow at 2pm".',
   'companion.leadTime.atTime': 'At the time',
