@@ -50,6 +50,8 @@ const companion: Record<keyof typeof en, string> = {
   'quiet.off': 'Voltei',
   'panel.quiet': 'Em silêncio até {when}',
   'panel.quietOff': 'Desligar',
+  'focus.until': 'Foco até {when}',
+  'focus.help': 'Os lembretes esperam até lá; o Argos avisa quando acabar.',
 
   'reminder.late': 'atrasado {span}',
   'reminder.done': 'Feito',

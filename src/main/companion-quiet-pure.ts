@@ -27,7 +27,7 @@ const HOUR_MS = 60 * 60_000
 const MINUTE_MS = 60_000
 
 /** Lowercase, accents off, spaces collapsed, a trailing "." or "!" dropped. */
-function normalize(text: string): string {
+export function normalize(text: string): string {
   return text
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
@@ -53,7 +53,7 @@ export function tomorrowAt(now: number, hour: number): number {
 }
 
 /** "1h", "30m", "2 horas", "1h30", "uma hora", "meia hora", "por 20 min" → ms; else null. */
-function parseDuration(tail: string): number | null {
+export function parseDuration(tail: string): number | null {
   const s = tail.replace(/^(por|durante|for) /, '')
   if (/^(uma|1) hora$|^(an|one|1) hour$/.test(s)) return HOUR_MS
   if (/^meia hora$|^half an hour$/.test(s)) return 30 * MINUTE_MS

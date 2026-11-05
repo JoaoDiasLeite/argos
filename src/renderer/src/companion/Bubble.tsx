@@ -150,8 +150,8 @@ export default function Bubble() {
           />
         )
       case 'confirm':
-        return view.payload.kind === 'quiet' ? (
-          <QuietReceipt key={session} until={view.payload.quietUntil ?? null} />
+        return view.payload.kind === 'quiet' || view.payload.kind === 'focus' ? (
+          <QuietReceipt key={session} until={view.payload.quietUntil ?? null} focus={view.payload.kind === 'focus'} />
         ) : (
           <Receipt key={session} result={view.payload} />
         )
@@ -521,8 +521,11 @@ function Receipt({ result }: { result: CompanionCaptureResult }) {
 
 // ─── Quiet receipt (plan §3.3) ─────────────────────────────────────────────────
 
-/** After "shh 1h" / "acorda": one line saying so, then the bubble closes on its own. */
-function QuietReceipt({ until }: { until: number | null }) {
+/**
+ * After "shh 1h" / "acorda": one line saying so, then the bubble closes on its own. A
+ * focus (plan §13.3, T2) is the same quiet with a reminder at its end, and says so.
+ */
+function QuietReceipt({ until, focus = false }: { until: number | null; focus?: boolean }) {
   const t = useT()
   const { locale } = useLanguage()
 
@@ -541,9 +544,9 @@ function QuietReceipt({ until }: { until: number | null }) {
         <>
           <span className="bq-quiet-line">
             <MoonIcon />
-            {t('companion.quiet.until', { when: untilPhrase(until, Date.now(), locale, t) })}
+            {t(focus ? 'companion.focus.until' : 'companion.quiet.until', { when: untilPhrase(until, Date.now(), locale, t) })}
           </span>
-          <span className="help">{t('companion.quiet.help')}</span>
+          <span className="help">{t(focus ? 'companion.focus.help' : 'companion.quiet.help')}</span>
         </>
       ) : (
         <span className="bq-quiet-line">{t('companion.quiet.off')}</span>

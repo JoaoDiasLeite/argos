@@ -56,6 +56,9 @@ export default {
   'quiet.off': "I'm back",
   'panel.quiet': 'Quiet until {when}',
   'panel.quietOff': 'Turn off',
+  // "foca 25": quiet with an end, and a word from Argos when it comes (plan §13.3, T2).
+  'focus.until': 'Focus until {when}',
+  'focus.help': 'Reminders wait until then; Argos says when time is up.',
 
   'reminder.late': 'late {span}',
   'reminder.done': 'Done',

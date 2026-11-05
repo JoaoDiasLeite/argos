@@ -10,6 +10,8 @@ const main: Record<keyof typeof en, string> = {
 
   'companion.today': 'O que tenho hoje',
   'companion.ball': 'Atira a bola',
+  'companion.focusTitle': 'Foco, {n} min',
+  'companion.timerTitle': 'Temporizador, {n} min',
   'companion.terminal.untitled': 'Chat sem nome',
   'companion.quietHour': 'Silêncio por 1 hora',
   'companion.quietTomorrow': 'Silêncio até amanhã',

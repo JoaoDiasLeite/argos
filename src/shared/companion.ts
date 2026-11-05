@@ -297,7 +297,8 @@ export type CompanionPromoteResult =
  * is a `shh` command (plan §3.3): quiet mode was set, nothing else.
  */
 export interface CompanionCaptureResult {
-  kind: 'todo' | 'note' | 'query' | 'needs-title' | 'cancelled' | 'quiet'
+  /** 'focus' (plan §13.3, T2): quiet until `quietUntil`, with `todo` the reminder that ends it. */
+  kind: 'todo' | 'note' | 'query' | 'needs-title' | 'cancelled' | 'quiet' | 'focus'
   todo?: CompanionTodo
   note?: CompanionNote
   results?: CompanionTodo[]

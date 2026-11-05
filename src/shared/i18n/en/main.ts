@@ -10,6 +10,9 @@ export default {
   // The companion's entries in the tray and in the right-click menu on the pet.
   'companion.today': 'What do I have today',
   'companion.ball': 'Throw the ball',
+  // The reminder a "foca 25" or "timer 5 min" leaves behind.
+  'companion.focusTitle': 'Focus, {n} min',
+  'companion.timerTitle': 'Timer, {n} min',
   'companion.terminal.untitled': 'Untitled chat',
   'companion.quietHour': 'Quiet for 1 hour',
   'companion.quietTomorrow': 'Quiet until tomorrow',

@@ -228,6 +228,7 @@ import {
 import { buildWhenPrompt, MODEL_TIMEOUT_MS, needsModel, parsedFromModel } from './companion-nlu-gate-pure'
 import { listForView, planCapture, todayQuery } from './companion-capture-pure'
 import { isQuiet, parseQuietCommand, tomorrowAt } from './companion-quiet-pure'
+import { isSaveThisCommand, parseSpanCommand } from './companion-focus-pure'
 import { activeSprint, activeSprintView, linkedItem, promote, sprintLinks, unlink, withSprintDone } from './companion-promote-pure'
 import {
   applyCompanionPrefs,
@@ -1262,6 +1263,9 @@ function companionChanged(): void {
 const isId = (v: unknown): v is string => typeof v === 'string' && v !== '' && v.length <= 200
 const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
+/** The parse of a line that was a command, not a capture (quiet, focus, timer). */
+const EMPTY_PARSED: ParsedCapture = { intent: 'todo', title: '', when: null, remindAt: [], isExplicitReminder: false, confidence: 1, matchedSpan: null }
+
 ipcMain.handle('companion:list', () => companionList())
 /** Captures waiting on the model for their date, by the bubble's capture id, so Esc can cancel one. */
 const companionModelCaptures = new Map<string, AbortController>()
@@ -1269,18 +1273,44 @@ const companionModelCaptures = new Map<string, AbortController>()
 ipcMain.handle('companion:capture', async (e, payload: unknown): Promise<CompanionCaptureResult | null> => {
   const p = payload as { text?: unknown; source?: unknown; id?: unknown } | null
   if (!p || typeof p.text !== 'string' || !p.text.trim() || p.text.length > 2000) return null
-  const text = p.text
+  let text = p.text
   const source = p.source === 'voice' ? 'voice' : 'text'
   const prefs = getConfig().companion
   // "shh 1h", "silêncio até amanhã", "acorda": the whole line is a quiet command (plan §3.3).
   const quiet = parseQuietCommand(text, { now: Date.now(), morningHour: prefs.morningHour })
   if (quiet) {
     const quietUntil = setCompanionQuiet('off' in quiet ? null : quiet.untilMs)
-    return {
-      kind: 'quiet',
-      quietUntil,
-      parsed: { intent: 'todo', title: '', when: null, remindAt: [], isExplicitReminder: false, confidence: 1, matchedSpan: null }
+    return { kind: 'quiet', quietUntil, parsed: EMPTY_PARSED }
+  }
+  // "foca 25" / "timer 5 min" (plan §13.3, T2 and T5): a reminder that many minutes out,
+  // and for a focus, quiet until just before it, so it arrives as a plain reminder.
+  const span = parseSpanCommand(text)
+  if (span) {
+    const now = Date.now()
+    const endsAt = now + span.ms
+    const minutes = Math.round(span.ms / 60_000)
+    const todo: CompanionTodo = {
+      id: randomUUID(),
+      title: t(span.kind === 'focus' ? 'main.companion.focusTitle' : 'main.companion.timerTitle', { n: minutes }),
+      dueAt: endsAt,
+      duePrecision: 'minute',
+      remindAt: [endsAt],
+      done: false,
+      createdAt: now,
+      source
     }
+    companionStore().saveTodo(todo)
+    companionScheduler?.poke()
+    companionChanged()
+    if (span.kind === 'timer') return { kind: 'todo', todo, parsed: EMPTY_PARSED }
+    const quietUntil = setCompanionQuiet(endsAt - 1000)
+    return { kind: 'focus', todo, quietUntil, parsed: EMPTY_PARSED }
+  }
+  // "guarda isto" (plan §13.3, T4): what is on the clipboard, as a note. Nothing there: nothing saved.
+  if (isSaveThisCommand(text)) {
+    const clip = clipboard.readText().trim()
+    if (!clip) return null
+    text = `nota: ${clip.slice(0, 2000)}`
   }
   let parsed = parseCapture(text, { now: Date.now(), leadMinutes: prefs.leadMinutes, morningHour: prefs.morningHour })
   // Layer 2 (plan §5.1): the grammar is unsure, so this one line goes to the model — only
