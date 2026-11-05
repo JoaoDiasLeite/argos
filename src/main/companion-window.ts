@@ -9,6 +9,7 @@ import {
   bubblePlacement,
   clampBubbleSize,
   petHitTest,
+  petStranded,
   restoredPetPosition,
   snapToEdge,
   type Point,
@@ -170,7 +171,42 @@ function createPetWindow(): BrowserWindow {
   hardenWebContents(win)
   loadEntry(win, 'pet')
   petWindow = win
+  watchDisplays()
   return win
+}
+
+// ─── Displays coming and going (plan §13.3, M3) ────────────────────────────────
+
+/** Metrics changes come in bursts (a dock, a scale change): one look after the last. */
+const DISPLAY_SETTLE_MS = 300
+let displayTimer: ReturnType<typeof setTimeout> | null = null
+let displaysWatched = false
+
+/** Once per process: a monitor unplugged, plugged in or rescaled re-places a stranded pet. */
+function watchDisplays(): void {
+  if (displaysWatched) return
+  displaysWatched = true
+  const onChange = (): void => {
+    if (displayTimer) clearTimeout(displayTimer)
+    displayTimer = setTimeout(settleDisplays, DISPLAY_SETTLE_MS)
+  }
+  screen.on('display-added', onChange)
+  screen.on('display-removed', onChange)
+  screen.on('display-metrics-changed', onChange)
+}
+
+/** The pet left nowhere by a display change goes to the display with the cursor. */
+function settleDisplays(): void {
+  displayTimer = null
+  if (!alive(petWindow) || !petWindow.isVisible()) return
+  const areas = screen.getAllDisplays().map((d) => d.workArea)
+  if (petStranded(petWindow.getBounds(), areas)) {
+    stopWalk()
+    drag = null
+    placePet(petWindow)
+  }
+  placeBubble()
+  scheduleWalk()
 }
 
 function createBubbleWindow(): BrowserWindow {

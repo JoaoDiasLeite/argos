@@ -103,6 +103,19 @@ export function dogRect(pet: Rect): Rect {
   }
 }
 
+/**
+ * True when the dog is wholly inside none of these work areas: the display under him
+ * went away, shrank or moved (plan §13.3, M3), so he has to be placed again. The dog,
+ * not the window: a taskbar moving under the transparent part of the window is not a
+ * reason to move him.
+ */
+export function petStranded(pet: Rect, workAreas: Rect[]): boolean {
+  const dog = dogRect(pet)
+  return !workAreas.some(
+    (a) => dog.x >= a.x && dog.y >= a.y && dog.x + dog.width <= a.x + a.width && dog.y + dog.height <= a.y + a.height
+  )
+}
+
 /** Inside a rect whose corners are rounded by `radius`. */
 export function inRoundedRect(p: Point, r: Rect, radius = HIT_RADIUS): boolean {
   if (p.x < r.x || p.y < r.y || p.x > r.x + r.width || p.y > r.y + r.height) return false

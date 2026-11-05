@@ -9,6 +9,7 @@ import {
   dogRect,
   inRoundedRect,
   petHitTest,
+  petStranded,
   restoredPetPosition,
   snapToEdge,
   type Rect
@@ -112,6 +113,26 @@ describe('hit test', () => {
 
   it('is false off the window entirely', () => {
     expect(petHitTest({ x: 0, y: 0 }, p)).toBe(false)
+  })
+})
+
+describe('petStranded', () => {
+  it('is fine while the dog sits inside one of the displays', () => {
+    expect(petStranded(pet(1000, 500), [area, left])).toBe(false)
+    expect(petStranded(pet(-600, 400), [area, left])).toBe(false)
+  })
+
+  it('is stranded when the display under him is gone', () => {
+    expect(petStranded(pet(-600, 400), [area])).toBe(true)
+  })
+
+  it('is stranded when the work area shrank under the dog, but not under the window', () => {
+    // The dog sits in the window's bottom 130 px: a taskbar that grew to 100 px pushes the
+    // work area's bottom to 980, above the dog's paws at 1028.
+    const floor = pet(900, 1040 - 220 - 12)
+    expect(petStranded(floor, [{ ...area, height: 980 }])).toBe(true)
+    // The window's top 90 px are transparent: losing them is nothing (the dog's head is at 898).
+    expect(petStranded(floor, [{ ...area, y: 890, height: 150 }])).toBe(false)
   })
 })
 
