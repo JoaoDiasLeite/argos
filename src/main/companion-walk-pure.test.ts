@@ -183,10 +183,10 @@ describe('planWalk', () => {
 })
 
 describe('stepToward', () => {
-  it('moves 60 px/s in either direction', () => {
-    expect(stepToward(100, 400, 1000)).toBe(160)
-    expect(stepToward(100, 0, 500)).toBe(70)
-    expect(stepToward(100, 400, 33)).toBeCloseTo(101.98)
+  it('moves 40 px/s in either direction', () => {
+    expect(stepToward(100, 400, 1000)).toBe(140)
+    expect(stepToward(100, 0, 500)).toBe(80)
+    expect(stepToward(100, 400, 33)).toBeCloseTo(101.32)
   })
 
   it('never goes past the target and stays there', () => {

@@ -151,6 +151,8 @@ export type CompanionPetState =
   | 'happy'
   | 'shh'
   | 'walking'
+  /** On his feet for a moment before a walk and after it (the walk sheet's first frame). */
+  | 'standing'
 
 /** Which way the walk sheet faces; it is drawn facing right and mirrored for left. */
 export type CompanionPetFacing = 'left' | 'right'

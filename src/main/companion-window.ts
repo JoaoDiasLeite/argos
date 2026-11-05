@@ -16,7 +16,7 @@ import {
   type Size
 } from './companion-window-pure'
 import { voiceShortcutCandidates } from './companion-voice-pure'
-import { canWalk, nextWalkDelay, planWalk, stepToward, type WalkPlan } from './companion-walk-pure'
+import { WALK_ARRIVE_MS, WALK_STAND_MS, canWalk, nextWalkDelay, planWalk, stepToward, type WalkPlan } from './companion-walk-pure'
 import { restingPetState } from './companion-quiet-pure'
 import { VOICE_SHORTCUT_DEFAULTS } from './companion-types'
 import type {
@@ -76,7 +76,7 @@ let petState: CompanionPetState = 'idle'
 let petFacing: CompanionPetFacing = 'right'
 let happyTimer: ReturnType<typeof setTimeout> | null = null
 /** The walk under way (x kept fractional, the window gets the rounded value), and the next one's timer. */
-let walk: (WalkPlan & { x: number; last: number }) | null = null
+let walk: (WalkPlan & { x: number; last: number; startAt: number; arriveAt: number | null }) | null = null
 let walkTimer: ReturnType<typeof setTimeout> | null = null
 let bubble: CompanionBubblePayload | null = null
 let bubbleAnchor: CompanionBubbleAnchor = { side: 'above', tailX: 0 }
@@ -355,10 +355,12 @@ function tryWalk(): void {
     scheduleWalk()
     return
   }
-  walk = { ...plan, x: plan.fromX, last: Date.now() }
+  const now = Date.now()
+  walk = { ...plan, x: plan.fromX, last: now, startAt: now + WALK_STAND_MS, arriveAt: null }
   petFacing = plan.facing
   sendToPet('companion:pet-facing', plan.facing)
-  setPetState('walking')
+  // He gets up first; stepWalk sets him walking once WALK_STAND_MS has passed.
+  setPetState('standing')
   startPolling(WALK_POLL_MS)
 }
 
@@ -370,12 +372,25 @@ function stepWalk(win: BrowserWindow, cursorOverPet: boolean): void {
     return
   }
   const now = Date.now()
+  // Standing up, or standing on arrival: no steps.
+  if (now < walk.startAt) {
+    walk.last = now
+    return
+  }
+  if (walk.arriveAt !== null) {
+    if (now >= walk.arriveAt) stopWalk()
+    return
+  }
+  if (petState === 'standing') setPetState('walking')
   // A stalled event loop resumes at walking pace instead of jumping.
   walk.x = stepToward(walk.x, walk.toX, Math.min(now - walk.last, 200))
   walk.last = now
   const [, y] = win.getPosition()
   win.setPosition(Math.round(walk.x), y)
-  if (walk.x === walk.toX) stopWalk()
+  if (walk.x === walk.toX) {
+    walk.arriveAt = now + WALK_ARRIVE_MS
+    setPetState('standing')
+  }
 }
 
 /** Sit down where he is, remember it for this display, and roll the next walk. */
@@ -383,7 +398,7 @@ function stopWalk(): void {
   if (!walk) return
   walk = null
   if (pollTimer && !drag) startPolling(POLL_MS)
-  if (petState === 'walking') setPetState(restingState())
+  if (petState === 'walking' || petState === 'standing') setPetState(restingState())
   if (alive(petWindow)) {
     const b = petWindow.getBounds()
     const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
@@ -445,7 +460,7 @@ function hidePet(): void {
 export function setPetState(state: CompanionPetState): void {
   petState = state
   // Anything else the pet is told to do ends a walk (and rolls the next one).
-  if (state !== 'walking') {
+  if (state !== 'walking' && state !== 'standing') {
     stopWalk()
     scheduleWalk()
   }

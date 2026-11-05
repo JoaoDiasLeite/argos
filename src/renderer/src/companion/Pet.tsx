@@ -30,6 +30,8 @@ interface Sprite {
   src: string
   frames: number
   fps: number
+  /** Frames in the sheet when it holds more than are played (standing shows walk's first). */
+  sheetFrames?: number
 }
 
 const IDLE: Sprite = { src: SHEETS.idle, frames: 8, fps: 4 }
@@ -48,7 +50,9 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   // Looking up for three beats, then a slow half-closed blink.
   thinking: { src: SHEETS.think, frames: 4, fps: 2 },
   // Drawn facing right; mirrored on the wrapper for a walk to the left (main moves the window).
-  walking: { src: SHEETS.walk, frames: 4, fps: 8 }
+  walking: { src: SHEETS.walk, frames: 4, fps: 8 },
+  // On his feet before and after a walk: the walk sheet's first frame, held.
+  standing: { src: SHEETS.walk, frames: 1, fps: 1, sheetFrames: 4 }
 }
 
 const FRAME = 96
@@ -68,7 +72,8 @@ const PET_STATES: readonly CompanionPetState[] = [
   'alert',
   'happy',
   'shh',
-  'walking'
+  'walking',
+  'standing'
 ]
 
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
@@ -124,10 +129,10 @@ export default function Pet() {
   }, [state])
 
   // With reduced motion a walk is never shown: he is drawn sitting (main does not walk then either).
-  const shown: CompanionPetState = state === 'walking' && reducedMotion ? 'idle' : state
+  const shown: CompanionPetState = (state === 'walking' || state === 'standing') && reducedMotion ? 'idle' : state
   const sprite = SPRITES[shown]
   const animated = sprite.frames > 1
-  const mirrored = shown === 'walking' && facing === 'left'
+  const mirrored = (shown === 'walking' || shown === 'standing') && facing === 'left'
 
   // Screen coordinates: while main drags the window the dog stays under the cursor, so
   // client coordinates barely move even on a long drag.
@@ -166,10 +171,14 @@ export default function Pet() {
       >
         {/* The mirror is on a wrapper so the sprite's own steps() animation keeps running. */}
         <div className={`pet-facing${mirrored ? ' pet-facing-left' : ''}`}>
+          {/* Keyed by pose so each sheet starts on its first frame, in step with the
+              walk's bob in pet.css, instead of carrying on from the last sheet's clock. */}
           <div
+            key={shown}
             className={`pet-sprite${animated ? ' pet-sheet' : ''}`}
             style={{
               backgroundImage: `url("${sprite.src}")`,
+              ...(sprite.sheetFrames ? { backgroundSize: `${sprite.sheetFrames * FRAME}px ${FRAME}px` } : {}),
               ...(animated
                 ? {
                     backgroundSize: `${sprite.frames * FRAME}px ${FRAME}px`,

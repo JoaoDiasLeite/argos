@@ -12,15 +12,22 @@ import type { CompanionPetState } from './companion-types'
 import { PET_MARGIN, PET_SIZE, type Rect } from './companion-window-pure'
 
 /** A walk starts this long after the last one, or the last interaction, at random. */
-export const WALK_MIN_DELAY_MS = 3 * 60_000
-export const WALK_MAX_DELAY_MS = 8 * 60_000
+export const WALK_MIN_DELAY_MS = 60_000
+export const WALK_MAX_DELAY_MS = 3 * 60_000
 
 /** How far one walk goes, at random within this range, unless a corner comes first. */
 export const WALK_MIN_PX = 150
 export const WALK_MAX_PX = 400
 
-/** Pixels per second. */
-export const WALK_SPEED = 60
+/**
+ * Pixels per second. 40 keeps the feet roughly on the ground: four frames at 8 fps make
+ * a stride of about 20 px, where 60 had him skating.
+ */
+export const WALK_SPEED = 40
+
+/** He stands up this long before he sets off, and stands this long on arrival before sitting. */
+export const WALK_STAND_MS = 400
+export const WALK_ARRIVE_MS = 300
 
 /** The window's bottom within this of the work area's bottom counts as on the floor. */
 export const FLOOR_TOLERANCE = 40
@@ -47,8 +54,8 @@ export interface WalkConditions {
   reducedMotion: boolean
 }
 
-/** Idle (or dozing: waking up for a stroll is fine), or already walking. */
-const WALKABLE_STATES: readonly CompanionPetState[] = ['idle', 'dozing', 'walking']
+/** Idle (or dozing: waking up for a stroll is fine), or already up for one. */
+const WALKABLE_STATES: readonly CompanionPetState[] = ['idle', 'dozing', 'standing', 'walking']
 
 export function canWalk(c: WalkConditions): boolean {
   return (
@@ -66,7 +73,7 @@ export function canWalk(c: WalkConditions): boolean {
   )
 }
 
-/** Milliseconds to the next walk, uniformly in [3 min, 8 min]. `rng` returns [0, 1). */
+/** Milliseconds to the next walk, uniformly in [1 min, 3 min]. `rng` returns [0, 1). */
 export function nextWalkDelay(rng: () => number = Math.random): number {
   return Math.round(WALK_MIN_DELAY_MS + rng() * (WALK_MAX_DELAY_MS - WALK_MIN_DELAY_MS))
 }
