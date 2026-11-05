@@ -55,6 +55,56 @@ export function isOverdue(todo: CompanionTodo, now: number): boolean {
   return todo.dueAt < now
 }
 
+// ─── The status strip (plan §13.2) ─────────────────────────────────────────────
+
+/** Local midnights of the seven days of the week `now` falls in, Monday first. */
+export function weekDays(now: number): number[] {
+  const start = new Date(startOfLocalDay(now))
+  const sinceMonday = (start.getDay() + 6) % 7
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() - sinceMonday + i)
+    return d.getTime()
+  })
+}
+
+export interface WeekDay {
+  /** Local midnight. */
+  day: number
+  /** Open todos due that day. */
+  open: number
+  /** One of them is overdue. */
+  late: boolean
+  today: boolean
+}
+
+/** The week strip: how many open todos each day of this week carries, and whether one is late. */
+export function weekCounts(todos: CompanionTodo[], now: number): WeekDay[] {
+  const today = startOfLocalDay(now)
+  return weekDays(now).map((day) => {
+    const open = todos.filter((x) => !x.done && x.dueAt != null && startOfLocalDay(x.dueAt) === day)
+    return { day, open: open.length, late: open.some((x) => isOverdue(x, now)), today: day === today }
+  })
+}
+
+/**
+ * What comes next: the earliest open todo still ahead. A timed one counts from its
+ * minute, a day-precision one from its day, so "sexta" is next all Friday long.
+ */
+export function nextUp(todos: CompanionTodo[], now: number): CompanionTodo | null {
+  let best: CompanionTodo | null = null
+  for (const x of todos) {
+    if (x.done || x.dueAt == null) continue
+    const ahead = x.duePrecision === 'day' ? dayOffset(x.dueAt, now) >= 0 : x.dueAt >= now
+    if (ahead && (!best || byDue(x, best) < 0)) best = x
+  }
+  return best
+}
+
+/** Ticked today, for the fold's caption. */
+export function doneToday(todos: CompanionTodo[], now: number): number {
+  return todos.filter((x) => x.done && x.doneAt != null && dayOffset(x.doneAt, now) === 0).length
+}
+
 /**
  * The row's right-hand column. Today and tomorrow are already said by the section, so a
  * row there shows only its time ("14:00", or nothing for a day-precision todo); further

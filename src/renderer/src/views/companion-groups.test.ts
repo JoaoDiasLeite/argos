@@ -3,13 +3,17 @@ import type { CompanionTodo } from '../../../shared/companion'
 import { makeT } from '../../../shared/i18n'
 import {
   defaultNewReminder,
+  doneToday,
   dueFromInputs,
   groupOf,
   groupTodos,
   isOverdue,
+  nextUp,
   reminderLabel,
   rowTimeLabel,
   sprintRange,
+  weekCounts,
+  weekDays,
   withDue
 } from './companion-groups'
 
@@ -213,5 +217,52 @@ describe('sprintRange', () => {
   it('reads day and short month at each end', () => {
     expect(sprintRange('2026-10-28', '2026-11-08', 'pt-PT')).toBe('28 out – 8 nov')
     expect(sprintRange('2026-10-28', '2026-11-08', 'en-GB')).toBe('28 Oct – 8 Nov')
+  })
+})
+
+describe('the status strip', () => {
+  it('lists the week Monday first, whatever day it is', () => {
+    const days = weekDays(now).map((d) => new Date(d).getDate())
+    expect(days).toEqual([2, 3, 4, 5, 6, 7, 8])
+    // Sunday 8 Nov belongs to the same week.
+    expect(weekDays(at(8, 23, 59)).map((d) => new Date(d).getDate())).toEqual([2, 3, 4, 5, 6, 7, 8])
+    expect(weekDays(now).every((d) => new Date(d).getHours() === 0)).toBe(true)
+  })
+
+  it('counts open todos per day and flags a late one', () => {
+    const todos = [
+      todo({ dueAt: at(2, 9), duePrecision: 'minute' }),
+      todo({ dueAt: at(2, 18), duePrecision: 'minute' }),
+      todo({ dueAt: at(4, 9), duePrecision: 'minute' }),
+      todo({ dueAt: at(4, 9), duePrecision: 'minute', done: true }),
+      todo({ dueAt: at(12, 9), duePrecision: 'minute' }),
+      todo({})
+    ]
+    const week = weekCounts(todos, now)
+    expect(week.map((d) => d.open)).toEqual([2, 0, 1, 0, 0, 0, 0])
+    expect(week.map((d) => d.late)).toEqual([true, false, false, false, false, false, false])
+    expect(week.map((d) => d.today)).toEqual([true, false, false, false, false, false, false])
+  })
+
+  it('picks the earliest open todo still ahead as next up', () => {
+    const past = todo({ dueAt: at(2, 9), duePrecision: 'minute' })
+    const soon = todo({ dueAt: at(2, 14), duePrecision: 'minute' })
+    const later = todo({ dueAt: at(3, 9), duePrecision: 'minute' })
+    const done = todo({ dueAt: at(2, 11), duePrecision: 'minute', done: true })
+    expect(nextUp([later, done, soon, past], now)?.id).toBe(soon.id)
+    expect(nextUp([past, done], now)).toBeNull()
+    // A day-precision todo is next all its day long.
+    const day = todo({ dueAt: at(2), duePrecision: 'day' })
+    expect(nextUp([soon, day], now)?.id).toBe(day.id)
+  })
+
+  it('counts what was ticked today', () => {
+    const todos = [
+      todo({ done: true, doneAt: at(2, 8) }),
+      todo({ done: true, doneAt: at(1, 20) }),
+      todo({ done: true }),
+      todo({})
+    ]
+    expect(doneToday(todos, now)).toBe(1)
   })
 })

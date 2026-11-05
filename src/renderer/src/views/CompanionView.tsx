@@ -1,6 +1,9 @@
-// The companion's list in the main window (docs/COMPANION_PLAN.md §12 item 7): tasks in
-// Hoje / Amanhã / Mais tarde / Sem data, notes newest first, and the selected task's
-// detail in a column that slides open on the right (SYSTEM-DESIGN.md §7, §9).
+// The companion panel in the main window (docs/COMPANION_PLAN.md §13.2, wireframe
+// companion-panel.html): a status strip that reads the day (Argos, one sentence, the
+// week, quiet and stay-on-screen), tasks in Hoje / Amanhã / Mais tarde / Sem data with
+// only the groups that have rows, notes in a column beside them when the window is wide
+// enough (tabs when it is not), and the selected task's detail in a column that slides
+// open on the right (SYSTEM-DESIGN.md §7, §9).
 //
 // Everything goes through the same IPC as the pet's bubble: `capture` for the quick-add
 // line (one parser for both), `update` / `done` / `delete` for edits, and `onChanged`
@@ -17,19 +20,34 @@ import type {
   CompanionTodo
 } from '../types'
 import { useLanguage, useT } from '../i18n'
+import { plural } from '../../../shared/i18n'
 import { useLingering } from '../hooks/useLingering'
-import { chipLabel, repeatLabel, rowWhen, toLocalInputValue, untilPhrase, whenPhrase } from '../companion/format'
+import {
+  chipLabel,
+  dayOffset,
+  formatShortDate,
+  formatTime,
+  repeatLabel,
+  rowWhen,
+  toLocalInputValue,
+  untilPhrase,
+  weekdayShort,
+  whenPhrase
+} from '../companion/format'
 import {
   GROUP_ORDER,
   defaultNewReminder,
+  doneToday,
   dueFromInputs,
   groupTodos,
   isOverdue,
+  nextUp,
   reminderLabel,
   rowTimeLabel,
   sprintRange,
   toDateInput,
   toTimeInput,
+  weekCounts,
   withDue,
   type CompanionGroupKey
 } from './companion-groups'
@@ -37,6 +55,37 @@ import Select from '../components/Select'
 import './CompanionView.css'
 
 const api = window.electronAPI.companion
+
+/** The pet's idle sheet (8 frames of 96 px), drawn at half size in the strip. */
+const IDLE_SHEET = new URL('../companion/sprites/idle.png', import.meta.url).href
+
+/** The lines offered when the list is empty, in the order they are shown. */
+const EXAMPLE_KEYS = [
+  'companion.panel.example.1',
+  'companion.panel.example.2',
+  'companion.panel.example.3',
+  'companion.panel.example.4',
+  'companion.panel.example.5',
+  'companion.panel.example.6'
+] as const
+
+/** Notes sit beside the tasks from here; with the detail open, only from WIDE_WITH_DETAIL. */
+const WIDE = 1000
+const WIDE_WITH_DETAIL = 1400
+
+const QUIET_HOUR_MS = 60 * 60_000
+
+/** Live `(min-width: Npx)`. */
+function useMinWidth(px: number): boolean {
+  const [on, setOn] = useState(() => window.matchMedia(`(min-width: ${px}px)`).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${px}px)`)
+    const onChange = (): void => setOn(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [px])
+  return on
+}
 
 const DEFAULT_PREFS: CompanionPrefs = {
   stayOnScreen: false,
@@ -86,6 +135,10 @@ export default function CompanionView({ onOpenSprint }: { onOpenSprint?: () => v
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [showDone, setShowDone] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  /** An example line picked from the empty state, for the quick-add box. */
+  const [seed, setSeed] = useState<{ text: string; n: number } | null>(null)
+  const wide = useMinWidth(WIDE)
+  const xwide = useMinWidth(WIDE_WITH_DETAIL)
   const colRef = useRef<HTMLElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const rowRefs = useRef(new Map<string, HTMLDivElement>())
@@ -120,6 +173,13 @@ export default function CompanionView({ onOpenSprint }: { onOpenSprint?: () => v
   const activeSprint = list?.activeSprint ?? null
   const groups = useMemo(() => groupTodos(todos, now), [todos, now])
   const openCount = todos.length - groups.done.length
+  const next = useMemo(() => nextUp(todos, now), [todos, now])
+  const week = useMemo(() => weekCounts(todos, now), [todos, now])
+
+  // Notes beside the tasks on a wide window; with the detail open they need more room.
+  const notesBeside = wide && (!selectedId || xwide)
+  const showTasks = notesBeside || tab === 'todos'
+  const showNotes = notesBeside || tab === 'notes'
 
   // The keyboard's order: the sections top to bottom, then the done ones if unfolded.
   const order = useMemo(
@@ -127,7 +187,7 @@ export default function CompanionView({ onOpenSprint }: { onOpenSprint?: () => v
     [groups, showDone]
   )
 
-  const selected = tab === 'todos' ? (todos.find((x) => x.id === selectedId) ?? null) : null
+  const selected = showTasks ? (todos.find((x) => x.id === selectedId) ?? null) : null
   const { shown, open } = useLingering(selected)
 
   // A selection that vanished (deleted from the pet, or aged out of the done list).
@@ -186,7 +246,7 @@ export default function CompanionView({ onOpenSprint }: { onOpenSprint?: () => v
   }
 
   const onListKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
-    if (isField(e.target) || tab !== 'todos') return
+    if (isField(e.target) || !showTasks) return
     if (confirmId) {
       if (e.key === 'Enter') {
         e.preventDefault()
@@ -277,50 +337,122 @@ export default function CompanionView({ onOpenSprint }: { onOpenSprint?: () => v
     someday: t('companion.panel.group.someday')
   }
 
+  // ── The strip: the day in one sentence, what comes next, the week ──
+  const lateCount = groups.today.filter((x) => isOverdue(x, now)).length
+  const doneTodayCount = doneToday(todos, now)
+  const sentence = !list
+    ? ''
+    : openCount === 0
+      ? t('companion.panel.day.empty')
+      : groups.today.length === 0
+        ? doneTodayCount > 0
+          ? plural(t, 'companion.panel.day.allDone', doneTodayCount)
+          : t('companion.panel.day.none')
+        : lateCount > 0
+          ? `${plural(t, 'companion.panel.day.count', groups.today.length)}, ${plural(t, 'companion.panel.day.lateCount', lateCount)}.`
+          : `${plural(t, 'companion.panel.day.count', groups.today.length)}.`
+  const nextWhen =
+    next?.dueAt != null
+      ? next.duePrecision !== 'day' && dayOffset(next.dueAt, now) === 0
+        ? formatTime(next.dueAt, locale)
+        : whenPhrase(next.dueAt, next.duePrecision ?? 'minute', now, locale, t)
+      : ''
+  const secondLine = [
+    next ? t('companion.panel.next', { when: nextWhen, title: next.title }) : null,
+    shortcut === null ? null : shortcut ? t('companion.panel.sub', { shortcut }) : t('companion.panel.subNoShortcut')
+  ]
+    .filter((s): s is string => !!s)
+    .join(' · ')
+  const quietUntil = list?.dndUntil != null && list.dndUntil > now ? list.dndUntil : null
+
+  const setStay = async (stayOnScreen: boolean): Promise<void> => {
+    try {
+      const res = await window.electronAPI.setCompanionPrefs({ stayOnScreen })
+      setPrefs(res.companion)
+    } catch {
+      // the settings view reports config errors; here the switch just stays put
+    }
+  }
+
+  const tabs = (
+    <div className="seg-control cmp-tabs" role="tablist" aria-label={t('companion.panel.tabs.aria')}>
+      {(['todos', 'notes'] as const).map((k) => (
+        <button
+          key={k}
+          type="button"
+          role="tab"
+          aria-selected={tab === k}
+          className={tab === k ? 'on' : ''}
+          onClick={() => {
+            setTab(k)
+            select(null)
+          }}
+        >
+          {t(k === 'todos' ? 'companion.panel.tab.todos' : 'companion.panel.tab.notes')}
+          <em>{k === 'todos' ? openCount : notes.length}</em>
+        </button>
+      ))}
+    </div>
+  )
+
   return (
     <div className="view cmp">
-      <div className="cmp-head">
-        <h1>{t('companion.panel.title')}</h1>
-        {shortcut !== null && (
-          <p className="cmp-sub">
-            {shortcut ? t('companion.panel.sub', { shortcut }) : t('companion.panel.subNoShortcut')}
-          </p>
+      <header className="cmp-strip">
+        <div className="cmp-argos" aria-hidden="true" style={{ backgroundImage: `url("${IDLE_SHEET}")` }} />
+        <div className="cmp-strip-text">
+          <p className="cmp-strip-line">{sentence}</p>
+          {secondLine && <p className="cmp-sub">{secondLine}</p>}
+        </div>
+        {list && (
+          <ol className="cmp-week" aria-label={t('companion.panel.week.aria')}>
+            {week.map((d) => (
+              <li
+                key={d.day}
+                className={`cmp-day${d.today ? ' today' : ''}${d.late ? ' late' : ''}`}
+                aria-label={t('companion.panel.week.day', { day: formatShortDate(d.day, locale), n: d.open })}
+                title={t('companion.panel.week.day', { day: formatShortDate(d.day, locale), n: d.open })}
+              >
+                <span className="cmp-day-name">{weekdayShort(d.day, locale)}</span>
+                <span className={`cmp-day-n cmp-num${d.open === 0 ? ' none' : ''}`}>{d.open > 0 ? d.open : '·'}</span>
+              </li>
+            ))}
+          </ol>
         )}
-        {list?.dndUntil != null && list.dndUntil > now && (
-          <p className="cmp-sub cmp-quiet">
-            {t('companion.panel.quiet', { when: untilPhrase(list.dndUntil, now, locale, t) })}
-            {' · '}
-            <button type="button" className="btn-text" onClick={() => void api.dnd(null)}>
-              {t('companion.panel.quietOff')}
+        <div className="cmp-strip-actions">
+          {quietUntil ? (
+            <span className="cmp-quiet">
+              {t('companion.panel.quiet', { when: untilPhrase(quietUntil, now, locale, t) })}
+              {' · '}
+              <button type="button" className="btn-text" onClick={() => void api.dnd(null)}>
+                {t('companion.panel.quietOff')}
+              </button>
+            </span>
+          ) : (
+            <button type="button" className="btn-ghost small cmp-quiet-btn" onClick={() => void api.dnd(Date.now() + QUIET_HOUR_MS)}>
+              <MoonIcon />
+              {t('companion.panel.quiet1h')}
             </button>
-          </p>
-        )}
-      </div>
+          )}
+          <label className="cmp-stay">
+            <span>{t('companion.panel.stay')}</span>
+            <span className="toggle-switch">
+              <input type="checkbox" checked={prefs.stayOnScreen} onChange={(e) => void setStay(e.target.checked)} aria-label={t('companion.panel.stay')} />
+              <span className="toggle-track">
+                <span className="toggle-thumb" />
+              </span>
+            </span>
+          </label>
+        </div>
+      </header>
 
       <div className="cmp-page">
-        <div className="cmp-list">
-          <div className="seg-control" role="tablist" aria-label={t('companion.panel.tabs.aria')}>
-            {(['todos', 'notes'] as const).map((k) => (
-              <button
-                key={k}
-                type="button"
-                role="tab"
-                aria-selected={tab === k}
-                className={tab === k ? 'on' : ''}
-                onClick={() => {
-                  setTab(k)
-                  select(null)
-                }}
-              >
-                {t(k === 'todos' ? 'companion.panel.tab.todos' : 'companion.panel.tab.notes')}
-                <em>{k === 'todos' ? openCount : notes.length}</em>
-              </button>
-            ))}
-          </div>
+        <div className={`cmp-main${notesBeside ? ' beside' : ''}`}>
+          {!notesBeside && tabs}
 
-          {tab === 'todos' ? (
-            <>
-              <QuickAdd key="todos" mode="todos" onTodo={(id) => select(id)} />
+          {showTasks && (
+            <div className="cmp-tasks">
+              <QuickAdd key="todos" mode="todos" seed={seed} onTodo={(id) => select(id)} />
+              {list && openCount === 0 && <Examples onPick={(text) => setSeed((s) => ({ text, n: (s?.n ?? 0) + 1 }))} />}
               <div
                 className="cmp-sections"
                 ref={listRef}
@@ -329,40 +461,45 @@ export default function CompanionView({ onOpenSprint }: { onOpenSprint?: () => v
                 aria-label={t('companion.panel.list.aria')}
                 onKeyDown={onListKey}
               >
+                {/* Only groups with rows are drawn; Today always, as the day's anchor, unless
+                    the whole list is empty and the examples say so already. */}
                 {list &&
-                  GROUP_ORDER.map((k) => (
+                  GROUP_ORDER.filter((k) => (k === 'today' && openCount > 0) || groups[k].length > 0).map((k) => (
                     <section key={k} className="cmp-sect">
                       <span className="eyebrow">
                         {groupLabel[k]} · <span className="cmp-num">{groups[k].length}</span>
                       </span>
-                      {groups[k].length === 0 ? (
-                        <p className="help cmp-empty">{t(`companion.panel.empty.${k}`)}</p>
-                      ) : (
-                        groups[k].map(row)
-                      )}
+                      {groups[k].length === 0 ? <p className="help cmp-empty">{t('companion.panel.empty.today')}</p> : groups[k].map(row)}
                     </section>
                   ))}
                 {list && groups.done.length > 0 && (
-                  <section className="cmp-sect">
+                  <section className="cmp-sect cmp-done">
                     <button
                       type="button"
-                      className="cmp-done-toggle eyebrow"
+                      className="divider-caption cmp-done-toggle"
                       aria-expanded={showDone}
                       onClick={() => setShowDone((v) => !v)}
                     >
+                      <span>{t('companion.panel.done', { n: groups.done.length })}</span>
                       <svg className={showDone ? 'open' : ''} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M9 6l6 6-6 6" />
+                        <path d="M6 9l6 6 6-6" />
                       </svg>
-                      {t('companion.panel.done', { n: groups.done.length })}
                     </button>
                     {showDone && groups.done.map(row)}
                   </section>
                 )}
               </div>
               {list && openCount > 0 && <p className="help cmp-keys">{t('companion.panel.list.help')}</p>}
-            </>
-          ) : (
-            <>
+            </div>
+          )}
+
+          {showNotes && (
+            <aside className={`cmp-notes-col${notesBeside ? ' beside' : ''}`} aria-label={t('companion.panel.tab.notes')}>
+              {notesBeside && (
+                <span className="eyebrow">
+                  {t('companion.panel.tab.notes')} · <span className="cmp-num">{notes.length}</span>
+                </span>
+              )}
               <QuickAdd key="notes" mode="notes" />
               <div className="cmp-notes">
                 {list && notes.length === 0 && <p className="help cmp-empty">{t('companion.panel.notes.empty')}</p>}
@@ -378,7 +515,8 @@ export default function CompanionView({ onOpenSprint }: { onOpenSprint?: () => v
                   />
                 ))}
               </div>
-            </>
+              {prefs.obsidianVault && <p className="help">{t('companion.panel.notes.obsidian')}</p>}
+            </aside>
           )}
         </div>
 
@@ -405,6 +543,32 @@ export default function CompanionView({ onOpenSprint }: { onOpenSprint?: () => v
 }
 
 // ─── Pieces ────────────────────────────────────────────────────────────────────
+
+/** The empty list's offer: lines he understands, each a click away from the box. */
+function Examples({ onPick }: { onPick: (text: string) => void }) {
+  const t = useT()
+  return (
+    <div className="cmp-examples">
+      <span className="eyebrow">{t('companion.panel.examples.title')}</span>
+      <div className="cmp-example-row">
+        {EXAMPLE_KEYS.map((k) => (
+          <button key={k} type="button" className="cmp-example" onClick={() => onPick(t(k))}>
+            {t(k)}
+          </button>
+        ))}
+      </div>
+      <p className="help">{t('companion.panel.examples.help')}</p>
+    </div>
+  )
+}
+
+function MoonIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
+    </svg>
+  )
+}
 
 function CheckBox({ todo, onToggle }: { todo: CompanionTodo; onToggle: () => void }) {
   const t = useT()
@@ -608,14 +772,32 @@ interface Pending {
  * amanhã às 14h" means the same thing in both; a bare date keeps its chip and asks what
  * it is for, as the bubble does (plan §5.4).
  */
-function QuickAdd({ mode, onTodo }: { mode: Tab; onTodo?: (id: string) => void }) {
+function QuickAdd({
+  mode,
+  seed,
+  onTodo
+}: {
+  mode: Tab
+  /** A line to put in the box (an example picked from the empty state); `n` makes each pick new. */
+  seed?: { text: string; n: number } | null
+  onTodo?: (id: string) => void
+}) {
   const t = useT()
   const { locale } = useLanguage()
   const [text, setText] = useState('')
   const [pending, setPending] = useState<Pending | null>(null)
   const [isQuery, setIsQuery] = useState(false)
   const busy = useRef(false)
+  const input = useRef<HTMLInputElement>(null)
   const now = Date.now()
+
+  useEffect(() => {
+    if (!seed) return
+    setText(seed.text)
+    setPending(null)
+    setIsQuery(false)
+    input.current?.focus()
+  }, [seed])
 
   const submit = async (): Promise<void> => {
     const typed = text.trim()
@@ -651,6 +833,7 @@ function QuickAdd({ mode, onTodo }: { mode: Tab; onTodo?: (id: string) => void }
       <div className="cmp-add-row">
         {pending && <span className="cmp-add-chip">{chipLabel(pending.at, pending.precision, now, locale, t)}</span>}
         <input
+          ref={input}
           className="cmp-add-input"
           aria-label={label}
           placeholder={placeholder}

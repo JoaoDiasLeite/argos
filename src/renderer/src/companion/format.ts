@@ -35,11 +35,14 @@ export function formatTime(at: number, locale: string | undefined): string {
  * pt-PT's abbreviated weekday is the full "terça", cut to the three letters people write.
  */
 export function formatShortDate(at: number, locale: string | undefined): string {
-  const strip = (s: string): string => s.replace(/\.$/, '')
-  let weekday = strip(new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(at))
-  if (locale?.startsWith('pt')) weekday = weekday.slice(0, 3)
-  const month = strip(new Intl.DateTimeFormat(locale, { month: 'short' }).format(at))
-  return `${weekday} ${new Date(at).getDate()} ${month}`
+  const month = new Intl.DateTimeFormat(locale, { month: 'short' }).format(at).replace(/\.$/, '')
+  return `${weekdayShort(at, locale)} ${new Date(at).getDate()} ${month}`
+}
+
+/** "ter" / "Tue": the weekday as people write it, three letters in Portuguese. */
+export function weekdayShort(at: number, locale: string | undefined): string {
+  const weekday = new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(at).replace(/\.$/, '')
+  return locale?.startsWith('pt') ? weekday.slice(0, 3) : weekday
 }
 
 const capitalize = (s: string): string => s.charAt(0).toLocaleUpperCase() + s.slice(1)

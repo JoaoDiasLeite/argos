@@ -1,49 +1,170 @@
 /* ── CompanionView.css ───────────────────────────────────────────────────────
-   The companion panel (COMPANION_PLAN.md §12 item 7): a page header, the list on the
-   left and the selected task's column sliding open on the right (.slide-col). Rows flat
-   at 4 px, buttons 8 px, times in the sans font with tabular figures. Classes are
-   prefixed `cmp-`. ──────────────────────────────────────────────────────────── */
+   The companion panel (COMPANION_PLAN.md §13.2, wireframe companion-panel.html): a
+   status strip across the top, tasks capped at 680 px with notes in a column beside
+   them on a wide window, and the selected task's column sliding open on the right
+   (.slide-col). Rows flat at 4 px, buttons 8 px, times in the sans font with tabular
+   figures. Classes are prefixed `cmp-`. ───────────────────────────────────────── */
 
-/* ── Page header ── */
-.cmp-head {
-  padding: 18px 24px 14px;
+/* ── Status strip: Argos, the day in a sentence, the week, quiet and stay ── */
+.cmp-strip {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 24px 12px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
-.cmp-head h1 {
-  font-size: 22px;
+.cmp-strip button, .cmp-strip label { -webkit-app-region: no-drag; }
+
+/* The pet's idle sheet at half size: 8 frames of 48 px, the same steps() as pet.css. */
+.cmp-argos {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  background-repeat: no-repeat;
+  background-size: 384px 48px;
+  image-rendering: pixelated;
+  animation: cmp-sheet 2s steps(8) infinite;
+}
+@keyframes cmp-sheet {
+  from { background-position: 0 0; }
+  to { background-position: -384px 0; }
+}
+@media (prefers-reduced-motion: reduce) { .cmp-argos { animation: none; } }
+
+.cmp-strip-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cmp-strip-line {
+  font-size: 15px;
   font-weight: 650;
   letter-spacing: -0.01em;
-  line-height: 1.2;
+  line-height: 1.3;
+  color: var(--text-0);
 }
 .cmp-sub {
-  margin-top: 4px;
   font-size: 12px;
   color: var(--text-2);
-}
-/* Quiet mode's line: muted, its "Desligar" clickable through the header's drag region. */
-.cmp-quiet .btn-text {
-  font-size: 12px;
-  -webkit-app-region: no-drag;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* ── Page body: list | column ── */
+/* The week: seven days, Monday first, the count of open todos on each. */
+.cmp-week {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px;
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+.cmp-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 40px;
+  padding: 5px 0;
+  border-radius: var(--radius-surface);
+}
+.cmp-day-name {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.cmp-day-n { font-size: 13px; font-weight: 650; color: var(--text-1); }
+.cmp-day-n.none { color: var(--border-light); }
+.cmp-day.today { background: var(--bg-2); }
+.cmp-day.today .cmp-day-name { color: var(--accent); }
+.cmp-day.today .cmp-day-n { color: var(--text-0); }
+.cmp-day.late .cmp-day-n { color: var(--warn); }
+@media (max-width: 1180px) { .cmp-week { display: none; } }
+
+.cmp-strip-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.cmp-quiet-btn { gap: 6px; }
+/* Quiet mode's line: muted, its "Desligar" beside it. */
+.cmp-quiet { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.cmp-quiet .btn-text { font-size: 12px; }
+/* "Stay on screen": a quiet-button frame around the label and the switch. */
+.cmp-stay {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  color: var(--text-1);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ── Page body: tasks | notes | column ── */
 .cmp-page {
   flex: 1;
   min-height: 0;
   display: flex;
 }
-
-.cmp-list {
+/* Tabs over one column while narrow; two columns side by side when wide. */
+.cmp-main {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cmp-main.beside {
+  display: grid;
+  grid-template-columns: minmax(0, 680px) minmax(300px, 1fr);
+}
+.cmp-tabs { margin: 14px 24px 0; flex-shrink: 0; }
+
+.cmp-tasks, .cmp-notes-col {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
   padding: 14px 24px 28px;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
+.cmp-notes-col.beside {
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+}
+
+/* ── Empty list: lines he understands ── */
+.cmp-examples { display: flex; flex-direction: column; gap: 8px; padding: 2px 0 6px; }
+.cmp-example-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.cmp-example {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  font-size: 12.5px;
+  color: var(--text-1);
+  cursor: pointer;
+}
+.cmp-example:hover { border-color: var(--border-light); color: var(--text-0); }
 
 .cmp-num { font-variant-numeric: tabular-nums; }
 
@@ -100,19 +221,17 @@
 .cmp-empty { padding: 2px 0; }
 .cmp-keys { margin-top: -4px; }
 
+/* The folded done list: a divider caption you press (§7), its chevron turning up when open. */
+.cmp-done { border-top: none; padding-top: 4px; }
 .cmp-done-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  width: fit-content;
-  padding: 2px 6px 2px 0;
-  border-radius: var(--radius);
+  width: 100%;
+  padding: 4px 0;
   background: transparent;
   cursor: pointer;
 }
 .cmp-done-toggle:hover { color: var(--text-1); }
 .cmp-done-toggle svg { transition: transform 120ms ease; }
-.cmp-done-toggle svg.open { transform: rotate(90deg); }
+.cmp-done-toggle svg.open { transform: rotate(180deg); }
 @media (prefers-reduced-motion: reduce) { .cmp-done-toggle svg { transition: none; } }
 
 /* ── Row: check, title, time ── */

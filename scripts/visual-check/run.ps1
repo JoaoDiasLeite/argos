@@ -66,6 +66,15 @@ if (Test-Path $seedSprints) {
   Copy-Item -Path (Join-Path $seedSprints '*.json') -Destination (Join-Path $userDataDir 'sprints') -Force
 }
 
+# The companion's todos and notes (todos.json / notes.json, as src/main/companion-store.ts
+# stores them). Not checked in: their dates only make sense relative to the day of the
+# check, so generate them on the spot and delete them after.
+$seedCompanion = Join-Path $scriptDir 'seed\companion'
+if (Test-Path $seedCompanion) {
+  New-Item -ItemType Directory -Force -Path (Join-Path $userDataDir 'companion') | Out-Null
+  Copy-Item -Path (Join-Path $seedCompanion '*.json') -Destination (Join-Path $userDataDir 'companion') -Force
+}
+
 if (-not $SkipBuild) {
   Write-Host "== Building app (electron-vite build)"
   Push-Location $repoRoot
