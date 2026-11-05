@@ -63,9 +63,8 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   // One full stride over six frames, drawn facing right; mirrored on the wrapper for a walk
   // to the left (main moves the window).
   walking: { src: SHEETS.walk, frames: 6, fps: 8 },
-  // A gallop: reach, push, all four paws off the ground, and back (five of the six drawn
-  // frames; the generator smeared one, scripts/companion-sheet.py --keep left it out).
-  running: { src: SHEETS.run, frames: 5, fps: 10 },
+  // A gallop: reach, land, gather, push, all four paws off the ground, and out again.
+  running: { src: SHEETS.run, frames: 6, fps: 10 },
   // On his feet before and after a walk: the walk sheet's first frame, held.
   standing: { src: SHEETS.walk, frames: 1, fps: 1, sheetFrames: 6 },
   // Back to a side wall (drawn with the wall on the left), mirrored for the right wall.
