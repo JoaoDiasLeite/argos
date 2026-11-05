@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { acctOf, hasHistory, idFor, isUnstarted, nextChatAfterClose, originOf, provOf, sessionProvider, visibleSessions, AccountDefaults } from './account-scope'
+import { accountSwitched, acctOf, hasHistory, idFor, isUnstarted, nextChatAfterClose, originOf, provOf, sessionProvider, visibleSessions, AccountDefaults } from './account-scope'
 import { ModelInfo, Session } from '../types'
 
 // Minimal model catalog — only the fields provOf reads (id, provider).
@@ -276,5 +276,43 @@ describe('hasHistory', () => {
   })
   it('does not count the id a fresh chat reserves for its terminal', () => {
     expect(hasHistory(makeSession({ id: 'p', ...blank, terminalSessionId: 'reserved' }))).toBe(false)
+  })
+})
+
+describe('accountSwitched', () => {
+  const base: AccountDefaults = { defaultAccountId: 'a', codexDefaultAccountId: 'cx', geminiDefaultAccountId: 'g' }
+
+  it('ignores the startup fill of each provider', () => {
+    expect(accountSwitched({}, { defaultAccountId: 'a' })).toBe(false)
+    expect(accountSwitched({}, { codexDefaultAccountId: 'cx' })).toBe(false)
+    expect(accountSwitched({}, { geminiDefaultAccountId: 'g' })).toBe(false)
+    expect(accountSwitched({ defaultAccountId: '' }, { defaultAccountId: 'a' })).toBe(false)
+  })
+
+  it('ignores re-picking the same account', () => {
+    expect(accountSwitched(base, { ...base })).toBe(false)
+  })
+
+  it('sees a claude switch', () => {
+    expect(accountSwitched(base, { ...base, defaultAccountId: 'b' })).toBe(true)
+  })
+
+  it('sees a codex switch', () => {
+    expect(accountSwitched(base, { ...base, codexDefaultAccountId: 'cy' })).toBe(true)
+  })
+
+  it('sees a gemini switch', () => {
+    expect(accountSwitched(base, { ...base, geminiDefaultAccountId: 'h' })).toBe(true)
+  })
+
+  it('ignores one provider filling in while the others stay put', () => {
+    expect(
+      accountSwitched({ defaultAccountId: 'a' }, { defaultAccountId: 'a', codexDefaultAccountId: 'cx' })
+    ).toBe(false)
+  })
+
+  it('does not count an id going missing as a switch', () => {
+    expect(accountSwitched(base, { ...base, defaultAccountId: undefined })).toBe(false)
+    expect(accountSwitched(base, { ...base, geminiDefaultAccountId: '' })).toBe(false)
   })
 })

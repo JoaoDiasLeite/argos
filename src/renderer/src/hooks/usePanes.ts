@@ -67,6 +67,13 @@ export function usePanes() {
     setState((prev) => setSizesImpl(prev, sizes))
   }, [])
 
+  // Back to a single empty pane, layout and sizes included. Unlike `openInFocused('')`,
+  // which closes the chats but keeps the split for the next ones, this is for when the
+  // split itself belongs to what was left behind — an account switch (see App.tsx).
+  const resetPanes = useCallback(() => {
+    setState(emptyState())
+  }, [])
+
   // Reads the persisted state and applies it, filtered down to sessions that still
   // exist. Doesn't depend on the current pane state — it replaces it outright — so
   // it returns the restored state directly, letting the caller decide what to do
@@ -124,6 +131,7 @@ export function usePanes() {
     setFocus,
     setLayout,
     setSizes,
+    resetPanes,
     restore
   }
 }

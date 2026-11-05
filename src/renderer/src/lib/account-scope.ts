@@ -27,6 +27,24 @@ export interface AccountDefaults {
   geminiDefaultAccountId?: string
 }
 
+/**
+ * Whether the default account of any provider moved from one account to another.
+ *
+ * Only a change between two known accounts counts. The ids arrive asynchronously at
+ * startup (unknown → id), and that is the app learning where it already was, not the
+ * user going anywhere: treating it as a switch would wipe the panes it just restored.
+ * Re-picking the account already in use is not a switch either, and neither is a provider
+ * whose id goes missing (a hidden provider, a failed read) — nothing was picked there.
+ */
+export function accountSwitched(prev: AccountDefaults, next: AccountDefaults): boolean {
+  const moved = (a?: string, b?: string): boolean => !!a && !!b && a !== b
+  return (
+    moved(prev.defaultAccountId, next.defaultAccountId) ||
+    moved(prev.codexDefaultAccountId, next.codexDefaultAccountId) ||
+    moved(prev.geminiDefaultAccountId, next.geminiDefaultAccountId)
+  )
+}
+
 // Which account a chat is filed under. Fallbacks mirror how an unbound chat actually
 // RUNS (see useSessionPane), so a chat is never filed under an account it
 // wouldn't run on. A legacy chat with no accountId/codexAccountId/geminiAccountId runs

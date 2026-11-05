@@ -28,7 +28,8 @@ const CHANGELOG: Entry[] = [
           'Repeating todos for Argos: "standup todos os dias às 9h30", "relatório todas as sextas às 17h", "de segunda a sexta", "renda todos os meses dia 1" (or "every day", "every friday"). Ticking one done adds the next; unticking it takes that one back. The panel shows a loop on the row and a Repeat picker in the detail.',
           'Argos tells you when a chat finishes or needs you: with him on screen and Argos’s window in the background, a chat whose turn ended or that waits on an approval comes up in his bubble, with Open to jump to it. Claude Code’s hook notifications go there too instead of a toast. Settings → Companion can switch it off.',
           'Argos says when a plan window passes 85% or 95%: with him on screen, the warning the app already gave as a notification comes up in his bubble instead, with See usage. Settings → Companion can switch it off.',
-          'Argos walks more often, slower and with a step, stands up before a walk, and a drop near the bottom of the screen puts him on the floor.'
+          'Argos walks more often, slower and with a step, stands up before a walk, and a drop near the bottom of the screen puts him on the floor.',
+          'Chat comes back the way you left it: going to Home, Projects or Usage and pressing Chat again shows the same panes, split, sizes and focus. Switching account still clears them, landing on the welcome pane.'
         ]
       }
     ]

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
 import {
   Session,
   ChatPopoutSpec,
@@ -46,7 +46,17 @@ import AccountsModal from './components/AccountsModal'
 import ShortcutsModal from './components/ShortcutsModal'
 import { modLabel } from './lib/shortcuts'
 import { UiPrefs, UiPrefsPatch } from './types'
-import { provOf, acctOf, originOf, nextChatAfterClose, isUnstarted, hasHistory, sessionProvider, AccountDefaults } from './lib/account-scope'
+import {
+  provOf,
+  acctOf,
+  accountSwitched,
+  originOf,
+  nextChatAfterClose,
+  isUnstarted,
+  hasHistory,
+  sessionProvider,
+  AccountDefaults
+} from './lib/account-scope'
 import type {
   HomeAttention,
   HomeRunning,
@@ -232,6 +242,7 @@ export default function App() {
     closePane,
     setFocus,
     setSizes,
+    resetPanes,
     restore
   } = usePanes()
 
@@ -529,26 +540,63 @@ export default function App() {
     return status
   }, [])
 
+  // Which providers' default account has actually been read. The ids start out as the
+  // placeholder 'default' and are only filled in once the lists arrive, so until then a
+  // change is the app finding out where it already was — see the account-switch effect.
+  // State, not a ref: a read that returns 'default' itself changes no id, and the effect
+  // still has to learn that 'default' is now a real account a later pick moves away from.
+  const [defaultsKnown, setDefaultsKnown] = useState({ claude: false, codex: false, gemini: false })
+  const markDefaultKnown = useCallback((p: ProviderId) => {
+    setDefaultsKnown((prev) => (prev[p] ? prev : { ...prev, [p]: true }))
+  }, [])
+
   const refreshAccounts = useCallback(async () => {
     const list = await window.electronAPI.accountsList()
+    markDefaultKnown('claude')
     setAccounts(list.accounts)
     setDefaultAccountId(list.defaultAccountId)
     return list
-  }, [])
+  }, [markDefaultKnown])
 
   const refreshProviderAccounts = useCallback(async () => {
     const [codex, gemini] = await Promise.all([
       window.electronAPI.providerAccountsList('codex'),
       isProviderHidden('gemini') ? null : window.electronAPI.providerAccountsList('gemini')
     ])
+    markDefaultKnown('codex')
     setCodexAccounts(codex.accounts)
     setCodexDefaultAccountId(codex.defaultAccountId)
     // A hidden provider keeps no accounts, so no picker or sidebar group offers it.
     if (gemini) {
+      markDefaultKnown('gemini')
       setGeminiAccounts(gemini.accounts)
       setGeminiDefaultAccountId(gemini.defaultAccountId)
     }
-  }, [])
+  }, [markDefaultKnown])
+
+  // Switching account closes every pane and drops the split, landing on the welcome pane.
+  // The open chats belong to the account just left: keeping them on screen would leave the
+  // sidebar scoped to that account (it follows the active chat) and the next chat opening
+  // into a layout arranged for another account's work. Anything else — leaving the chat
+  // view and coming back — keeps the panes exactly as they were (see goToView).
+  //
+  // Watching the default ids rather than hooking each way of switching covers all of them
+  // at once: the sidebar picker, the command palette and the accounts dialog all end in
+  // these three states. A layout effect, so the frame with the new account and the old
+  // panes is never painted. The terminals are not killed; their chats stay in the sidebar
+  // of the account they belong to.
+  const prevDefaultsRef = useRef<AccountDefaults>({})
+  useLayoutEffect(() => {
+    const known = defaultsKnown
+    const next: AccountDefaults = {
+      defaultAccountId: known.claude ? defaultAccountId : undefined,
+      codexDefaultAccountId: known.codex ? codexDefaultAccountId : undefined,
+      geminiDefaultAccountId: known.gemini ? geminiDefaultAccountId : undefined
+    }
+    const prev = prevDefaultsRef.current
+    prevDefaultsRef.current = next
+    if (accountSwitched(prev, next)) resetPanes()
+  }, [defaultsKnown, defaultAccountId, codexDefaultAccountId, geminiDefaultAccountId, resetPanes])
 
   // Mount: load sessions, auth, models, config
   useEffect(() => {
@@ -892,7 +940,7 @@ export default function App() {
   // reattaches where it was. Going somewhere else to check usage or a project is not a
   // reason to lose a split you arranged. The welcome pane shows only when no pane is open.
   // The one thing that does clear them is switching account, because those chats belong
-  // to the account you just left.
+  // to the account you just left (see the account-switch effect).
   const goToView = (v: View) => {
     // Chat pressed while already in Chat: nothing to navigate to, so the click shows or
     // hides the chat list — the way to get it back once it is collapsed.
@@ -995,8 +1043,9 @@ export default function App() {
   // Account selection is app-level: it sets the DEFAULT account used for new chats.
   // Existing sessions keep their own accountId forever (a chat is permanently bound to
   // the account that created it — its Claude Code resume id only exists there). The one
-  // exception: an unstarted draft (see isUnstarted) follows the switch, so an empty chat
-  // inherits the account you just picked.
+  // exception: an unstarted draft (see isUnstarted) follows the switch. The switch closes
+  // its pane (see the account-switch effect), but New chat on the welcome pane reuses that
+  // draft (see blankDraft), so it has to start on the account you just picked.
   const switchDefaultAccount = async (accountId: string) => {
     const { accounts: next, defaultAccountId: nextDefault } =
       await window.electronAPI.accountsSetDefault(accountId)
@@ -1067,59 +1116,50 @@ export default function App() {
 
   // Picking an account in the sidebar picker switches the whole view onto it, not just
   // the default for new chats: the row/list are scoped to the ACTIVE chat's account
-  // (see selectedProvider below), so without this a pick on a different account looked
-  // like it did nothing. So after setting the default (above) we move to a chat on that
-  // account — the most recent one already there, else the active empty draft repurposed
-  // onto it, else a fresh chat bound to it.
+  // (see selectedProvider below), so a pick that left a chat from another account on
+  // screen looked like it did nothing. So picking a different account lands on the welcome
+  // pane, where New chat inherits the account just picked — the same place every other
+  // way of switching ends up (see the account-switch effect). It doesn't reopen a chat from
+  // the account you left, and doesn't fabricate one either (picking an account is not
+  // pressing New chat).
   const pickAccount = async (provider: ProviderId, accountId: string) => {
-    // The chat this lands on is the active one in every branch below that keeps a chat at
-    // all (it either stays put or has the active draft rebound onto the picked account);
-    // the remaining branch goes to the welcome pane, where there is no chat to greet.
-    bumpNewChatNonce(activeIdRef.current)
+    // Decided before switching, against the defaults as they are now: whether the chat on
+    // screen already runs on the picked account, i.e. whether the sidebar was showing it.
+    const defaults: AccountDefaults = { defaultAccountId, codexDefaultAccountId, geminiDefaultAccountId }
+    const active = sessions.find((s) => s.id === activeIdRef.current)
+    const alreadyThere = !!active && sessionProvider(active) === provider && acctOf(active, defaults) === accountId
+
     await switchDefaultProviderAccount(provider, accountId)
 
-    // Resolve chats with the just-picked account as this provider's default — state from
-    // switchDefaultProviderAccount hasn't flushed yet, and an unbound legacy chat must
-    // resolve the same way its terminal will (see account-scope.ts / useSessionPane).
-    const effectiveDefaults: AccountDefaults = {
-      defaultAccountId: provider === 'claude' ? accountId : defaultAccountId,
-      codexDefaultAccountId: provider === 'codex' ? accountId : codexDefaultAccountId,
-      geminiDefaultAccountId: provider === 'gemini' ? accountId : geminiDefaultAccountId
-    }
-    // The model a fresh chat here should use: keep the current default within the default
-    // provider, else that provider's top model (matching the default-model switch above).
-    const providerModel =
-      provider === defaultProvider ? defaultModel : firstModelForProvider(provider) ?? defaultModel
-    const list = provider === 'codex' ? codexAccounts : provider === 'gemini' ? geminiAccounts : accounts
-    const name = list.find((a) => a.id === accountId)?.name
-    const acctFields =
-      provider === 'codex'
-        ? { codexAccountId: accountId, codexAccountName: name }
-        : provider === 'gemini'
-          ? { geminiAccountId: accountId, geminiAccountName: name }
-          : { accountId, accountName: name }
-
-    // Already on this account with an unstarted draft (the switch may have rebound it) —
-    // that IS the new-chat page, so stay put.
-    const active = sessions.find((s) => s.id === activeIdRef.current)
-    if (
-      active &&
-      isUnstarted(active) &&
-      sessionProvider(active) === provider &&
-      acctOf(active, effectiveDefaults) === accountId
-    ) {
+    // Nothing moved, so nothing closes: the panes stay as they are, the same as coming back
+    // to Chat from another view. An unstarted draft there is the new-chat page, so it asks
+    // its setup question afresh.
+    if (alreadyThere) {
+      if (isUnstarted(active)) bumpNewChatNonce(active.id)
       setView('chat')
       return
     }
-    // Otherwise don't reopen a chat from the account you just switched away from — but
-    // don't fabricate one either (picking an account is not pressing New chat). An
-    // untouched draft is simply rebound onto the picked account; anything else steps
-    // aside for the welcome pane, where New chat will inherit the account just picked.
+    // An untouched draft is let go of rather than deleted, and the welcome pane's New chat
+    // reuses it (see blankDraft) — so rebind it onto the picked account and that provider's
+    // model now, or it would start on the account you just left. switchDefaultProviderAccount
+    // already rebound the account within the provider; this also covers crossing providers.
     if (active && isUnstarted(active)) {
+      const providerModel =
+        provider === defaultProvider ? defaultModel : firstModelForProvider(provider) ?? defaultModel
+      const list = provider === 'codex' ? codexAccounts : provider === 'gemini' ? geminiAccounts : accounts
+      const name = list.find((a) => a.id === accountId)?.name
+      const acctFields =
+        provider === 'codex'
+          ? { codexAccountId: accountId, codexAccountName: name }
+          : provider === 'gemini'
+            ? { geminiAccountId: accountId, geminiAccountName: name }
+            : { accountId, accountName: name }
       setSessions((prev) => prev.map((s) => (s.id === active.id ? { ...s, model: providerModel, ...acctFields } : s)))
-    } else {
-      setActiveId('')
     }
+    // The effect already does this when the pick changed a default, but a pick can move
+    // you without changing one: the picked account was the default all along while the
+    // chat on screen ran on another account or provider.
+    resetPanes()
     setView('chat')
   }
 
