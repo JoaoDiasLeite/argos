@@ -217,6 +217,8 @@ export type CompanionPetState =
   | 'running'
   /** On his feet for a moment before a walk and after it (the walk sheet's first frame). */
   | 'standing'
+  /** Docked against a side edge above the floor (plan §13.1): back to the wall. */
+  | 'leaning'
 
 /** Which way the walk sheet faces; it is drawn facing right and mirrored for left. */
 export type CompanionPetFacing = 'left' | 'right'

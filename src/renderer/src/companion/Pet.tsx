@@ -55,7 +55,9 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   // The run (plan §13.4): the walk sheet at a faster clip until run.png is drawn.
   running: { src: SHEETS.walk, frames: 4, fps: 12 },
   // On his feet before and after a walk: the walk sheet's first frame, held.
-  standing: { src: SHEETS.walk, frames: 1, fps: 1, sheetFrames: 4 }
+  standing: { src: SHEETS.walk, frames: 1, fps: 1, sheetFrames: 4 },
+  // Back to a side wall (plan §13.4): idle until lean.png is drawn, mirrored for the right wall.
+  leaning: IDLE
 }
 
 const FRAME = 96
@@ -80,11 +82,14 @@ const PET_STATES: readonly CompanionPetState[] = [
   'shh',
   'walking',
   'running',
-  'standing'
+  'standing',
+  'leaning'
 ]
 
 /** The gaits: drawn facing right and mirrored for the left, never shown with reduced motion. */
 const ON_THE_MOVE: readonly CompanionPetState[] = ['walking', 'running', 'standing']
+/** Drawn facing right and mirrored for the left: the gaits, and the lean (wall on the left). */
+const MIRRORABLE: readonly CompanionPetState[] = [...ON_THE_MOVE, 'leaning']
 
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
 
@@ -159,7 +164,7 @@ export default function Pet() {
   const shown: CompanionPetState = ON_THE_MOVE.includes(state) && reducedMotion ? 'idle' : state
   const sprite = SPRITES[shown]
   const animated = sprite.frames > 1
-  const mirrored = ON_THE_MOVE.includes(shown) && facing === 'left'
+  const mirrored = MIRRORABLE.includes(shown) && facing === 'left'
 
   // Screen coordinates: while main drags the window the dog stays under the cursor, so
   // client coordinates barely move even on a long drag.

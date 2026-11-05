@@ -7,6 +7,7 @@ import {
   clampBubbleSize,
   clampToArea,
   defaultPetPosition,
+  dockSide,
   dogRect,
   inRoundedRect,
   petHitTest,
@@ -54,13 +55,17 @@ describe('snapToEdge', () => {
     expect(snapToEdge({ x: DOCK_ZONE + 1, y: 300 }, area)).toEqual({ x: DOCK_ZONE + 1, y: FLOOR })
   })
 
-  it('lands a drop in the lower third on the floor, where it was let go, even near a side', () => {
+  it('lands a drop in the lower third on the floor, where it was let go', () => {
     expect(snapToEdge({ x: 900, y: 600 }, area)).toEqual({ x: 900, y: FLOOR })
-    expect(snapToEdge({ x: 20, y: 700 }, area)).toEqual({ x: 20, y: FLOOR })
   })
 
-  it('lands a drop half off the bottom on the floor, inside the sides', () => {
-    expect(snapToEdge({ x: 1800, y: 1000 }, area)).toEqual({ x: 1920 - W, y: FLOOR })
+  it('tucks a drop near the bottom corners into the corner', () => {
+    expect(snapToEdge({ x: 20, y: 700 }, area)).toEqual({ x: 12, y: FLOOR })
+    expect(snapToEdge({ x: 1920 - W - 30, y: 1000 }, area)).toEqual({ x: 1920 - W - 12, y: FLOOR })
+  })
+
+  it('lands a drop half off the bottom-right in that corner', () => {
+    expect(snapToEdge({ x: 1800, y: 1000 }, area)).toEqual({ x: 1920 - W - 12, y: FLOOR })
   })
 
   it('clamps a drop above the top back inside', () => {
@@ -71,6 +76,20 @@ describe('snapToEdge', () => {
     expect(snapToEdge({ x: -1260, y: 400 }, left)).toEqual({ x: -1280 + 12, y: 400 })
     expect(snapToEdge({ x: -W - 20, y: 400 }, left)).toEqual({ x: -W - 12, y: 400 })
     expect(snapToEdge({ x: -700, y: 400 }, left)).toEqual({ x: -700, y: 100 + 984 - H - 12 })
+  })
+})
+
+describe('dockSide', () => {
+  it('is the wall a pet docked above the floor has his back to', () => {
+    expect(dockSide(snapToEdge({ x: 30, y: 300 }, area), area)).toBe('left')
+    expect(dockSide(snapToEdge({ x: 1920 - W - 30, y: 300 }, area), area)).toBe('right')
+    expect(dockSide({ x: -1280 + 12, y: 400 }, left)).toBe('left')
+  })
+
+  it('is nothing on the floor, corners included, or out in the open', () => {
+    expect(dockSide({ x: 12, y: FLOOR }, area)).toBeNull()
+    expect(dockSide({ x: 1920 - W - 12, y: FLOOR }, area)).toBeNull()
+    expect(dockSide({ x: 500, y: 300 }, area)).toBeNull()
   })
 })
 

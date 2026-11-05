@@ -96,11 +96,27 @@ export function snapToEdge(pos: Point, workArea: Rect, size = PET_SIZE, margin =
   const right = workArea.x + workArea.width
   const nearLeft = pos.x - workArea.x <= DOCK_ZONE
   const nearRight = right - (pos.x + size.width) <= DOCK_ZONE
-  if (pos.y + size.height >= bottom - workArea.height / 3 || (!nearLeft && !nearRight)) {
-    return clampToArea({ x: pos.x, y: bottom - size.height - margin }, size, workArea)
+  const sideX = nearLeft ? workArea.x + margin : right - size.width - margin
+  if (pos.y + size.height >= bottom - workArea.height / 3) {
+    // The floor; near a side he tucks into the corner (plan §13.1, leaning).
+    return clampToArea({ x: nearLeft || nearRight ? sideX : pos.x, y: bottom - size.height - margin }, size, workArea)
   }
-  const x = nearLeft ? workArea.x + margin : right - size.width - margin
-  return clampToArea({ x, y: pos.y }, size, workArea)
+  if (!nearLeft && !nearRight) return clampToArea({ x: pos.x, y: bottom - size.height - margin }, size, workArea)
+  return clampToArea({ x: sideX, y: pos.y }, size, workArea)
+}
+
+export type DockSide = 'left' | 'right'
+
+/**
+ * Which wall a resting pet has his back to (plan §13.1, leaning): docked against a side
+ * edge above the floor. On the floor, corner or not, he sits as usual.
+ */
+export function dockSide(pos: Point, workArea: Rect, size = PET_SIZE, margin = PET_MARGIN, floorTolerance = 40): DockSide | null {
+  const bottom = workArea.y + workArea.height
+  if (bottom - (pos.y + size.height) <= floorTolerance) return null
+  if (pos.x <= workArea.x + margin) return 'left'
+  if (pos.x + size.width >= workArea.x + workArea.width - margin) return 'right'
+  return null
 }
 
 /**

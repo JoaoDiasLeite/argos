@@ -9,6 +9,7 @@ import {
   clampBubbleSize,
   clampToArea,
   defaultPetPosition,
+  dockSide,
   dogRect,
   petHitTest,
   petStranded,
@@ -404,6 +405,7 @@ export function endPetDrag(): void {
     startPolling(WALK_POLL_MS)
   } else {
     petWindow.setPosition(pos.x, pos.y)
+    settlePose()
   }
   placeBubble()
   savePetPosition(display.id, pos)
@@ -465,13 +467,36 @@ function dndOn(): boolean {
   return restingState() === 'shh'
 }
 
-/** What he sits back to after a bubble, a walk or the happy beat: the crescent while muted (plan §3.3). */
+/**
+ * What he sits back to after a bubble, a walk or the happy beat: the crescent while muted
+ * (plan §3.3), his back to the wall while docked up a side edge (plan §13.1), else idle.
+ */
 function restingState(): CompanionPetState {
+  let state: CompanionPetState = 'idle'
   try {
-    return restingPetState(companionStore().getState().dndUntil, Date.now())
+    state = restingPetState(companionStore().getState().dndUntil, Date.now())
   } catch {
-    return 'idle'
+    // unreadable state.json: not muted
   }
+  return state === 'idle' && leaningOn() ? 'leaning' : state
+}
+
+/** The wall he is docked against, if any; the lean faces away from it (the sheet has the wall on the left). */
+function leaningOn(): 'left' | 'right' | null {
+  if (!alive(petWindow)) return null
+  const b = petWindow.getBounds()
+  const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
+  return dockSide({ x: b.x, y: b.y }, display.workArea, { width: b.width, height: b.height })
+}
+
+/** After a drop or a placement: lean if docked up a side, facing away from the wall, else sit. */
+function settlePose(): void {
+  const side = leaningOn()
+  if (side) {
+    petFacing = side === 'left' ? 'right' : 'left'
+    sendToPet('companion:pet-facing', petFacing)
+  }
+  if (petState === 'idle' || petState === 'leaning' || petState === 'standing') setPetState(restingState())
 }
 
 /** `withDnd` reads state.json, so only when a walk starts; while walking dnd arrives as `shh`. */
@@ -657,6 +682,7 @@ function placePet(win: BrowserWindow): void {
   const size = petSize()
   const pos = restoredPetPosition(saved, display.workArea, size)
   win.setBounds({ x: pos.x, y: pos.y, width: size.width, height: size.height })
+  settlePose()
 }
 
 /**
@@ -784,7 +810,7 @@ export function popupPetMenu(menu: Menu): void {
 export function petThePet(): void {
   if (!isCompanionVisible() || bubble) return
   wakePet()
-  if (petState !== 'idle' && petState !== 'shh') return
+  if (petState !== 'idle' && petState !== 'leaning' && petState !== 'shh') return
   setPetState('happy')
 }
 
