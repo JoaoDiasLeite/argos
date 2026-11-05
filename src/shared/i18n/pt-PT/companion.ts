@@ -72,6 +72,8 @@ const companion: Record<keyof typeof en, string> = {
 
   'terminal.finished': 'Terminou, é contigo',
   'terminal.waiting': 'Precisa de ti',
+  'ops.finished': 'Intervenção terminada',
+  'ops.waiting': 'A intervenção precisa de ti',
   'terminal.open': 'Abrir',
   'terminal.later': 'Depois',
   'terminal.help': 'Enter abre · Esc fecha',

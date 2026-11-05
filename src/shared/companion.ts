@@ -160,6 +160,8 @@ export interface CompanionTerminalAlert {
   title: string
   /** What the CLI said, when it said something; '' otherwise. */
   detail: string
+  /** An ops intervention's terminal (plan §13.3, T3): the bubble names it as one. */
+  ops?: boolean
 }
 
 /**

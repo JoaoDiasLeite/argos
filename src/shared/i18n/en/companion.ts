@@ -81,6 +81,9 @@ export default {
   // A chat terminal finished or needs you (companion-terminal-pure.ts).
   'terminal.finished': 'Finished, over to you',
   'terminal.waiting': 'Needs you',
+  // The same bubble for an ops intervention's terminal (plan §13.3, T3).
+  'ops.finished': 'Intervention finished',
+  'ops.waiting': 'The intervention needs you',
   'terminal.open': 'Open',
   'terminal.later': 'Later',
   'terminal.help': 'Enter opens · Esc closes',

@@ -1082,7 +1082,26 @@ function openChat(sessionId: string): void {
 function companionTerminalIdle(terminalId: string, kind: CompanionTerminalAlert['kind']): void {
   const sessionId = chatSessionId(terminalId)
   if (!sessionId || !mainWindowInactive()) return
-  tellCompanionTerminal({ key: terminalKey(terminalId), kind, title: chatName(sessionId), detail: '' }, () => openChat(sessionId))
+  tellCompanionTerminal({ key: terminalKey(terminalId), kind, title: chatName(sessionId), detail: '', ops: isOpsTerminal(terminalId) }, () =>
+    openChat(sessionId)
+  )
+}
+
+/** A terminal running an ops intervention right now (plan §13.3, T3). */
+function isOpsTerminal(terminalId: string): boolean {
+  const ops = terminalOps.get(terminalId)
+  return !!ops && !ops.ctx.ended
+}
+
+/**
+ * An ops run asked for the operator (a secret, a command to run by hand): with the main
+ * window away, the pet says the intervention needs you. The ops session id is the
+ * terminal's id (openTerminalOps), so the alert lands on that chat's key.
+ */
+function tellCompanionOpsWaiting(terminalId: string, detail: string): void {
+  const sessionId = chatSessionId(terminalId)
+  if (!sessionId || !mainWindowInactive()) return
+  tellCompanionTerminal({ key: terminalKey(terminalId), kind: 'waiting', title: chatName(sessionId), detail, ops: true }, () => openChat(sessionId))
 }
 
 /** A Claude Code hook notification, for the pet to say. False: show the toast as before. */
@@ -2483,6 +2502,7 @@ function requestOpsSecret(
     signal.addEventListener('abort', onAbort, { once: true })
     send('ops:secret-request', { appSessionId, requestId, hostId: req.hostId, hostName: req.hostName, prompt: req.prompt })
     flagAttention('approval')
+    tellCompanionOpsWaiting(appSessionId, req.prompt)
   })
 }
 
@@ -2528,6 +2548,7 @@ function requestOpsOperator(
       ...(req.expect !== undefined ? { expect: req.expect } : {})
     })
     flagAttention('approval')
+    tellCompanionOpsWaiting(appSessionId, req.why || req.cmd)
   })
 }
 

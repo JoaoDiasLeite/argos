@@ -800,7 +800,9 @@ function TerminalView({ alert }: { alert: CompanionTerminalAlert }) {
     <>
       <div className="bq-meta">
         <span className={`bq-chip${alert.kind === 'waiting' ? ' bq-warn' : ''}`}>
-          {t(alert.kind === 'waiting' ? 'companion.terminal.waiting' : 'companion.terminal.finished')}
+          {alert.ops
+            ? t(alert.kind === 'waiting' ? 'companion.ops.waiting' : 'companion.ops.finished')
+            : t(alert.kind === 'waiting' ? 'companion.terminal.waiting' : 'companion.terminal.finished')}
         </span>
       </div>
       <div className="bq-title bq-clamp">{alert.title}</div>
