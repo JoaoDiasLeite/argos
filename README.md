@@ -71,7 +71,7 @@ servers.
 
 ## Development
 
-Requires Node.js 20.
+Requires Node.js 22 and npm 11 (`npm install -g npm@11`).
 
 ```bash
 npm install
