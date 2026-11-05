@@ -17,6 +17,7 @@ import {
 } from './companion-window-pure'
 import { voiceShortcutCandidates } from './companion-voice-pure'
 import { WALK_ARRIVE_MS, WALK_STAND_MS, canWalk, nextWalkDelay, planWalk, stepToward, type WalkPlan } from './companion-walk-pure'
+import { DOZE_AFTER_MS, canDoze, cursorNearPet, type DozeConditions } from './companion-doze-pure'
 import { restingPetState } from './companion-quiet-pure'
 import { VOICE_SHORTCUT_DEFAULTS } from './companion-types'
 import type {
@@ -76,6 +77,8 @@ let happyTimer: ReturnType<typeof setTimeout> | null = null
 /** The walk under way (x kept fractional, the window gets the rounded value), and the next one's timer. */
 let walk: (WalkPlan & { x: number; last: number; startAt: number; arriveAt: number | null }) | null = null
 let walkTimer: ReturnType<typeof setTimeout> | null = null
+/** Counts down to a doze while he sits idle (plan §13.3, M1). */
+let dozeTimer: ReturnType<typeof setTimeout> | null = null
 let bubble: CompanionBubblePayload | null = null
 let bubbleAnchor: CompanionBubbleAnchor = { side: 'above', tailX: 0 }
 let bubbleSize: Size = DEFAULT_BUBBLE_SIZE
@@ -175,6 +178,55 @@ function createPetWindow(): BrowserWindow {
   return win
 }
 
+// ─── Dozing (plan §13.3, M1) ───────────────────────────────────────────────────
+
+function cancelDoze(): void {
+  if (dozeTimer) clearTimeout(dozeTimer)
+  dozeTimer = null
+}
+
+/** Idle → the clock to a doze starts over; anything else → no clock. */
+function scheduleDoze(): void {
+  cancelDoze()
+  if (petState !== 'idle' || !isCompanionVisible()) return
+  dozeTimer = setTimeout(tryDoze, DOZE_AFTER_MS)
+}
+
+function dozeConditions(cursorNear: boolean): DozeConditions {
+  return {
+    visible: isCompanionVisible(),
+    petState,
+    bubbleOpen: bubble !== null,
+    alertsPending: hooks.hasPendingAlerts?.() ?? false,
+    dnd: dndOn(),
+    cursorNear,
+    dragging: drag !== null,
+    voiceBusy: voicePhase !== 'idle'
+  }
+}
+
+/** The doze timer: curl up if nothing is going on, else wait another while. */
+function tryDoze(): void {
+  dozeTimer = null
+  if (!alive(petWindow)) return
+  const near = cursorNearPet(screen.getCursorScreenPoint(), petWindow.getBounds())
+  if (!canDoze(dozeConditions(near))) {
+    scheduleDoze()
+    return
+  }
+  // Straight to the state, not setPetState: a doze ends no walk and starts no clock.
+  petState = 'dozing'
+  sendToPet('companion:pet-state', petState)
+}
+
+/** The cursor came near, or something happened: a dozing dog sits up, and the clock restarts. */
+function wakePet(): void {
+  if (petState !== 'dozing') return
+  petState = restingState()
+  sendToPet('companion:pet-state', petState)
+  scheduleDoze()
+}
+
 // ─── Displays coming and going (plan §13.3, M3) ────────────────────────────────
 
 /** Metrics changes come in bursts (a dock, a scale change): one look after the last. */
@@ -270,8 +322,10 @@ function poll(): void {
     setIgnore(false)
     return
   }
-  const over = petHitTest(cursor, petWindow.getBounds())
+  const b = petWindow.getBounds()
+  const over = petHitTest(cursor, b)
   setIgnore(!over)
+  if (petState === 'dozing' && cursorNearPet(cursor, b)) wakePet()
   if (walk) stepWalk(petWindow, over)
 }
 
@@ -289,6 +343,8 @@ function stopPolling(): void {
 export function startPetDrag(): void {
   if (!alive(petWindow) || !petWindow.isVisible()) return
   stopWalk()
+  wakePet()
+  cancelDoze()
   const [x, y] = petWindow.getPosition()
   drag = { cursor: screen.getCursorScreenPoint(), window: { x, y } }
   startPolling(DRAG_POLL_MS)
@@ -309,6 +365,7 @@ export function endPetDrag(): void {
   placeBubble()
   savePetPosition(display.id, pos)
   scheduleWalk()
+  scheduleDoze()
 }
 
 /** Remember where the pet is on this display (a drop, or the end of a walk). */
@@ -466,6 +523,7 @@ function showPet(): BrowserWindow {
     startPolling()
     hooks.onVisibilityChanged?.()
     scheduleWalk()
+    scheduleDoze()
   }
   return win
 }
@@ -483,6 +541,9 @@ function hidePet(): void {
     hooks.onVisibilityChanged?.()
   }
   cancelWalkTimer()
+  cancelDoze()
+  // Hidden while dozing: he comes back sitting up.
+  if (petState === 'dozing') petState = restingState()
 }
 
 export function setPetState(state: CompanionPetState): void {
@@ -503,9 +564,11 @@ export function setPetState(state: CompanionPetState): void {
       if (petState !== 'happy') return
       petState = restingState()
       if (petState !== 'idle') sendToPet('companion:pet-state', petState)
+      scheduleDoze()
     }, HAPPY_MS + 100)
   }
   sendToPet('companion:pet-state', state)
+  scheduleDoze()
 }
 
 export function currentPetFacing(): CompanionPetFacing {
@@ -534,6 +597,7 @@ export function showCompanion(opts: { focusInput?: boolean } = {}): void {
 export function popupPetMenu(menu: Menu): void {
   if (!alive(petWindow) || !petWindow.isVisible()) return
   stopWalk()
+  wakePet()
   menu.popup({ window: petWindow })
 }
 
