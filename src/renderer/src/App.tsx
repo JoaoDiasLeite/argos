@@ -458,8 +458,9 @@ export default function App() {
   // have to ask "is this chat on screen?" rather than "is it the focused one?".
   const visibleIdsRef = useRef(visibleIds)
   visibleIdsRef.current = visibleIds
-  // What is actually being read. The panes stay mounted behind Home and Projects, so a
-  // chat in one is "visible" there without anyone looking at it — unread asks this instead.
+  // What is actually being read. The pane state outlives the chat view (the panes are
+  // unmounted behind Home and Projects, but kept to come back to), so a chat in one is
+  // "visible" there without anyone looking at it — unread asks this instead.
   const seenIds = useMemo(() => (view === 'chat' ? visibleIds : new Set<string>()), [view, visibleIds])
   const seenIdsRef = useRef(seenIds)
   seenIdsRef.current = seenIds
@@ -885,22 +886,18 @@ export default function App() {
   // not something anyone asked for. A chat is created when you press New terminal, and
   // only then.
   //
-  // What you get instead: the welcome pane, whatever was last active. A terminal is a live
-  // CLI process, and dropping back into one you left running — at whatever prompt or
-  // half-typed command it sits on — is not what pressing Chat in the rail asks for. The
-  // terminal keeps running and stays one click away in the sidebar; the rail entry means
-  // "New terminal, or pick one". An untouched draft is let go of rather than deleted: it
-  // stays available for the next New terminal to reuse (see blankDraft).
+  // What you get back is exactly what you left: the same panes, in the same layout and
+  // order, at the same sizes, with the same one focused. Leaving the view unmounts the
+  // panes but not their state, and the terminals kept running meanwhile, so each one
+  // reattaches where it was. Going somewhere else to check usage or a project is not a
+  // reason to lose a split you arranged. The welcome pane shows only when no pane is open.
+  // The one thing that does clear them is switching account, because those chats belong
+  // to the account you just left.
   const goToView = (v: View) => {
     // Chat pressed while already in Chat: nothing to navigate to, so the click shows or
     // hides the chat list — the way to get it back once it is collapsed.
     if (v === 'chat' && view === 'chat') {
       toggleSidebar()
-      return
-    }
-    if (v === 'chat' && view !== 'chat') {
-      setActiveId('')
-      setView('chat')
       return
     }
     setView(v)
