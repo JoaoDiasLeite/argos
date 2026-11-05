@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   FLOOR_TOLERANCE,
+  LAP_PX,
   areaOf,
+  planLap,
+  planRunTo,
+  speedOf,
   neighbourArea,
   walkLaneAcross,
   WALK_MAX_DELAY_MS,
@@ -246,6 +250,51 @@ describe('walking across displays', () => {
     const lane = walkLaneAcross(pet(2000, y), [AREA, RIGHT_LOWER])!
     expect(lane).toEqual({ minX: 1920 + PET_MARGIN, maxX: 3200 - W - PET_MARGIN, leftDrop: null, rightDrop: null })
     expect(planWalk(pet(2000, AREA.height - H - PET_MARGIN), [AREA, RIGHT_LOWER])).toBeNull()
+  })
+})
+
+describe('running', () => {
+  const W = PET_SIZE.width
+  const H = PET_SIZE.height
+  const RIGHT_LOWER: Rect = { x: 1920, y: 0, width: 1280, height: 1440 }
+  const RIGHT_ALIGNED: Rect = { x: 1920, y: 56, width: 1280, height: 984 }
+
+  it('runs toward a target along the lane, facing it', () => {
+    expect(planRunTo(pet(800), [AREA], 1200)).toEqual({ fromX: 800, toX: 1200, facing: 'right', gait: 'run' })
+    expect(planRunTo(pet(800), [AREA], 100)).toEqual({ fromX: 800, toX: 100, facing: 'left', gait: 'run' })
+  })
+
+  it('stops at the wall when the target is past it', () => {
+    expect(planRunTo(pet(800), [AREA], 5000)).toEqual({ fromX: 800, toX: walkLane(AREA).maxX, facing: 'right', gait: 'run' })
+    expect(planRunTo(pet(800), [AREA, RIGHT_ALIGNED], 2500)).toEqual({ fromX: 800, toX: 2500, facing: 'right', gait: 'run' })
+  })
+
+  it('runs over the edge when the target is on a lower neighbour', () => {
+    expect(planRunTo(pet(800), [AREA, RIGHT_LOWER], 2500)).toEqual({
+      fromX: 800,
+      toX: 1920 - W / 2,
+      facing: 'right',
+      gait: 'run',
+      dropTo: 1440 - H - PET_MARGIN
+    })
+  })
+
+  it('is nothing when he is there already, or not on the floor', () => {
+    expect(planRunTo(pet(800), [AREA], 800)).toBeNull()
+    expect(planRunTo(pet(800, 300), [AREA], 1200)).toBeNull()
+  })
+
+  it('laps one time in four, the roomier way, when there is room for half a lap', () => {
+    expect(planLap(pet(800), [AREA], () => 0.9)).toBeNull()
+    expect(planLap(pet(800), [AREA], () => 0.1)).toEqual({ fromX: 800, toX: 800 + LAP_PX, facing: 'right', gait: 'run' })
+    expect(planLap(pet(1500), [AREA], () => 0.1)).toEqual({ fromX: 1500, toX: 1500 - LAP_PX, facing: 'left', gait: 'run' })
+    const tight: Rect = { x: 0, y: 0, width: W + 2 * PET_MARGIN + 150, height: 1040 }
+    expect(planLap(pet(PET_MARGIN + 75), [tight], () => 0.1)).toBeNull()
+  })
+
+  it('runs three and a half times as fast as it walks', () => {
+    expect(stepToward(100, 1000, 1000, speedOf('run'))).toBe(240)
+    expect(stepToward(100, 1000, 1000, speedOf('walk'))).toBe(140)
   })
 })
 

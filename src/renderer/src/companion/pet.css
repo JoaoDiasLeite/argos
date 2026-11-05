@@ -61,6 +61,8 @@ html, body, #root { background: transparent; }
 /* walking: up 2 px on every other frame (the sheet's 8 fps, so a 250 ms beat), which gives
    the steps some weight. Starts with the sheet: Pet.tsx remounts the sprite per pose. */
 .pet-walking .pet-body { animation: pet-step 250ms steps(1, end) infinite; }
+/* running: the same step at the run's 12 fps, so the bob keeps time with the sheet. */
+.pet-running .pet-body { animation: pet-step 167ms steps(1, end) infinite; }
 @keyframes pet-step {
   0% { transform: translateY(0); }
   50% { transform: translateY(-2px); }

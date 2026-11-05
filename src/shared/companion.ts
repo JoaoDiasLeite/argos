@@ -211,6 +211,8 @@ export type CompanionPetState =
   | 'happy'
   | 'shh'
   | 'walking'
+  /** The run gait (plan §13.1): following you to another screen, after the ball, a lap of joy. */
+  | 'running'
   /** On his feet for a moment before a walk and after it (the walk sheet's first frame). */
   | 'standing'
 

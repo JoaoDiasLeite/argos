@@ -27,6 +27,17 @@ export const WALK_MAX_PX = 400
  */
 export const WALK_SPEED = 40
 
+/** Running (plan §13.1): three and a half times the walk, 1920 px in about 14 s. */
+export const RUN_SPEED = 140
+
+export type Gait = 'walk' | 'run'
+
+export const speedOf = (gait: Gait): number => (gait === 'run' ? RUN_SPEED : WALK_SPEED)
+
+/** A lap of joy after a "done" (plan §13.1): this far, one time in four. */
+export const LAP_PX = 200
+export const LAP_CHANCE = 0.25
+
 /** He stands up this long before he sets off, and stands this long on arrival before sitting. */
 export const WALK_STAND_MS = 400
 export const WALK_ARRIVE_MS = 300
@@ -57,7 +68,7 @@ export interface WalkConditions {
 }
 
 /** Idle (or dozing: waking up for a stroll is fine), or already up for one. */
-const WALKABLE_STATES: readonly CompanionPetState[] = ['idle', 'dozing', 'standing', 'walking']
+const WALKABLE_STATES: readonly CompanionPetState[] = ['idle', 'dozing', 'standing', 'walking', 'running']
 
 export function canWalk(c: WalkConditions): boolean {
   return (
@@ -187,8 +198,47 @@ export interface WalkPlan {
   fromX: number
   toX: number
   facing: Facing
+  /** Walking unless said otherwise. */
+  gait?: Gait
   /** Set when the walk ends over the edge of a lower neighbour: the window's y to fall to. */
   dropTo?: number
+}
+
+/**
+ * A run toward an x along the lane: as far as the lane goes that way, or over the edge of
+ * a lower neighbour when the target lies beyond it. Null when he is not on the floor,
+ * has nowhere to go, or is there already.
+ */
+export function planRunTo(pet: Rect, areas: Rect[], targetX: number): WalkPlan | null {
+  const home = areaOf(pet, areas)
+  if (!home || !onFloor(pet, home)) return null
+  const lane = walkLaneAcross(pet, areas)
+  if (!lane) return null
+  const fromX = Math.round(pet.x)
+  const facing: Facing = targetX < fromX ? 'left' : 'right'
+  const drop = facing === 'left' ? lane.leftDrop : lane.rightDrop
+  if (drop && (facing === 'left' ? targetX < lane.minX : targetX > lane.maxX)) {
+    return { fromX, toX: drop.atX, facing, gait: 'run', dropTo: drop.toY }
+  }
+  const toX = Math.round(Math.min(lane.maxX, Math.max(lane.minX, targetX)))
+  if (Math.abs(toX - fromX) < 1) return null
+  return { fromX, toX, facing, gait: 'run' }
+}
+
+/** A lap after a "done": LAP_PX the way with more room, at a run; null without the room for half of it. */
+export function planLap(pet: Rect, areas: Rect[], rng: () => number = Math.random): WalkPlan | null {
+  if (rng() >= LAP_CHANCE) return null
+  const home = areaOf(pet, areas)
+  if (!home || !onFloor(pet, home)) return null
+  const lane = walkLaneAcross(pet, areas)
+  if (!lane) return null
+  const fromX = Math.round(pet.x)
+  const roomLeft = Math.max(0, fromX - lane.minX)
+  const roomRight = Math.max(0, lane.maxX - fromX)
+  const facing: Facing = roomRight >= roomLeft ? 'right' : 'left'
+  const step = Math.min(LAP_PX, facing === 'right' ? roomRight : roomLeft)
+  if (step < LAP_PX / 2) return null
+  return { fromX, toX: facing === 'right' ? fromX + step : fromX - step, facing, gait: 'run' }
 }
 
 /**
