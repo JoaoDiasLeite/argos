@@ -15,8 +15,9 @@ import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { readJsonFile, writeJsonFileAtomic } from './json-file'
-import type { CompanionNote, CompanionState, CompanionTodo } from './companion-types'
+import { POSITIONS_VERSION, type CompanionNote, type CompanionState, type CompanionTodo } from './companion-types'
 import { cleanRepeat } from './companion-repeat-pure'
+import { migrateLegacyPosition } from './companion-window-pure'
 
 export interface CompanionStore {
   listTodos(): CompanionTodo[]
@@ -76,11 +77,15 @@ function normalizeState(raw: unknown): CompanionState {
   if (isNumber(raw.dndUntil) || raw.dndUntil === null) state.dndUntil = raw.dndUntil
   if (isNumber(raw.lastCatchUpAt) || raw.lastCatchUpAt === null) state.lastCatchUpAt = raw.lastCatchUpAt
   if (isObject(raw.positions)) {
+    // Saved for the old 220×220 window: shifted so the dog comes back where he sat.
+    const legacy = raw.positionsVersion !== POSITIONS_VERSION
     const positions: Record<string, { x: number; y: number }> = {}
     for (const [k, v] of Object.entries(raw.positions)) {
-      if (isObject(v) && isNumber(v.x) && isNumber(v.y)) positions[k] = { x: v.x, y: v.y }
+      if (isObject(v) && isNumber(v.x) && isNumber(v.y)) positions[k] = legacy ? migrateLegacyPosition({ x: v.x, y: v.y }) : { x: v.x, y: v.y }
     }
     state.positions = positions
+    // Current once read: the next write carries it, so the shift happens once.
+    state.positionsVersion = POSITIONS_VERSION
   }
   return state
 }

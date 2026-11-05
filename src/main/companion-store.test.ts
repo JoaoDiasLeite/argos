@@ -46,13 +46,23 @@ describe('createCompanionStore', () => {
     const store = createCompanionStore(sub)
     store.saveTodo(TODO)
     store.saveNote(NOTE)
-    store.setState({ dndUntil: 5, positions: { '1': { x: 10, y: 20 } } })
+    store.setState({ dndUntil: 5, positions: { '1': { x: 10, y: 20 } }, positionsVersion: 2 })
 
     // A fresh store over the same folder reads it all back from disk.
     const again = createCompanionStore(sub)
     expect(again.listTodos()).toEqual([TODO])
     expect(again.listNotes()).toEqual([NOTE])
-    expect(again.getState()).toEqual({ dndUntil: 5, positions: { '1': { x: 10, y: 20 } } })
+    expect(again.getState()).toEqual({ dndUntil: 5, positions: { '1': { x: 10, y: 20 } }, positionsVersion: 2 })
+  })
+
+  it('shifts positions saved for the old 220×220 window so the dog stays put', () => {
+    fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ positions: { '1': { x: 100, y: 200 } } }))
+    const store = createCompanionStore(dir)
+    // The dog sat at (150, 290) in the old window; the new one puts him there from (146, 268).
+    expect(store.getState()).toEqual({ positions: { '1': { x: 146, y: 268 } }, positionsVersion: 2 })
+    // Saved again, it carries the version and is not shifted twice.
+    store.setState({ dndUntil: 1 })
+    expect(createCompanionStore(dir).getState().positions).toEqual({ '1': { x: 146, y: 268 } })
   })
 
   it('upserts by id, keeping the order', () => {

@@ -20,7 +20,7 @@ import { WALK_ARRIVE_MS, WALK_STAND_MS, canWalk, nextWalkDelay, planWalk, stepTo
 import { DOZE_AFTER_MS, canDoze, cursorNearPet, type DozeConditions } from './companion-doze-pure'
 import { fallY, isFall, type Fall } from './companion-fall-pure'
 import { restingPetState } from './companion-quiet-pure'
-import { VOICE_SHORTCUT_DEFAULTS } from './companion-types'
+import { POSITIONS_VERSION, VOICE_SHORTCUT_DEFAULTS } from './companion-types'
 import type {
   CompanionBubbleAnchor,
   CompanionBubblePayload,
@@ -142,8 +142,8 @@ export function sendToBubble(channel: string, payload?: unknown): void {
 
 function createPetWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: PET_SIZE,
-    height: PET_SIZE,
+    width: PET_SIZE.width,
+    height: PET_SIZE.height,
     show: false,
     frame: false,
     transparent: true,
@@ -400,7 +400,7 @@ function stepFall(win: BrowserWindow): void {
 function savePetPosition(displayId: number, pos: Point): void {
   try {
     const positions = { ...(companionStore().getState().positions ?? {}), [String(displayId)]: pos }
-    companionStore().setState({ positions })
+    companionStore().setState({ positions, positionsVersion: POSITIONS_VERSION })
   } catch (e) {
     console.error('[companion] could not save the pet position:', e)
   }
@@ -537,7 +537,7 @@ function placePet(win: BrowserWindow): void {
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   const saved = companionStore().getState().positions?.[String(display.id)]
   const pos = restoredPetPosition(saved, display.workArea)
-  win.setBounds({ x: pos.x, y: pos.y, width: PET_SIZE, height: PET_SIZE })
+  win.setBounds({ x: pos.x, y: pos.y, width: PET_SIZE.width, height: PET_SIZE.height })
 }
 
 /** Show the pet without taking focus. Placed afresh only when it was hidden. */

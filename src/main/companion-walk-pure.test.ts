@@ -16,8 +16,8 @@ import {
 import { PET_MARGIN, PET_SIZE, defaultPetPosition, snapToEdge, type Rect } from './companion-window-pure'
 
 const AREA: Rect = { x: 0, y: 0, width: 1920, height: 1040 }
-const FLOOR_Y = AREA.height - PET_SIZE - PET_MARGIN
-const pet = (x: number, y = FLOOR_Y): Rect => ({ x, y, width: PET_SIZE, height: PET_SIZE })
+const FLOOR_Y = AREA.height - PET_SIZE.height - PET_MARGIN
+const pet = (x: number, y = FLOOR_Y): Rect => ({ x, y, width: PET_SIZE.width, height: PET_SIZE.height })
 
 /** An rng that returns the given values in turn (then repeats the last). */
 const seq =
@@ -83,8 +83,8 @@ describe('onFloor', () => {
   it('is the default corner and anything within the tolerance of the bottom', () => {
     const d = defaultPetPosition(AREA)
     expect(onFloor(pet(d.x, d.y), AREA)).toBe(true)
-    expect(onFloor(pet(0, AREA.height - PET_SIZE - FLOOR_TOLERANCE), AREA)).toBe(true)
-    expect(onFloor(pet(0, AREA.height - PET_SIZE - FLOOR_TOLERANCE - 1), AREA)).toBe(false)
+    expect(onFloor(pet(0, AREA.height - PET_SIZE.height - FLOOR_TOLERANCE), AREA)).toBe(true)
+    expect(onFloor(pet(0, AREA.height - PET_SIZE.height - FLOOR_TOLERANCE - 1), AREA)).toBe(false)
   })
 
   it('is not a pet docked half way up a side edge', () => {
@@ -146,14 +146,14 @@ describe('planWalk', () => {
     // On a narrow display both sides are short: the longer one, cut at the corner.
     const narrow: Rect = { x: 0, y: 0, width: 600, height: 800 }
     const lane = walkLane(narrow)
-    const y = narrow.height - PET_SIZE - PET_MARGIN
-    // 100 px of room on the left, 256 on the right.
+    const y = narrow.height - PET_SIZE.height - PET_MARGIN
+    // 100 px of room on the left, 348 on the right.
     expect(planWalk(pet(lane.minX + 100, y), narrow, seq(0.999999, 0.9))).toEqual({
       fromX: lane.minX + 100,
       toX: lane.maxX,
       facing: 'right'
     })
-    // Asked left for 400 with only 100 there: the 256 on the right instead.
+    // Asked left for 400 with only 100 there: the 348 on the right instead.
     expect(planWalk(pet(lane.minX + 100, y), narrow, seq(0.999999, 0.1))).toEqual({
       fromX: lane.minX + 100,
       toX: lane.maxX,
@@ -166,10 +166,10 @@ describe('planWalk', () => {
       const lane = walkLane(area)
       for (let i = 0; i < 300; i++) {
         const x = lane.minX + Math.round(Math.random() * (lane.maxX - lane.minX))
-        const p = planWalk(pet(x, area.y + area.height - PET_SIZE - PET_MARGIN), area)
+        const p = planWalk(pet(x, area.y + area.height - PET_SIZE.height - PET_MARGIN), area)
         if (!p) continue
         expect(p.toX).toBeGreaterThanOrEqual(area.x)
-        expect(p.toX + PET_SIZE).toBeLessThanOrEqual(area.x + area.width)
+        expect(p.toX + PET_SIZE.width).toBeLessThanOrEqual(area.x + area.width)
         expect(p.toX).toBeGreaterThanOrEqual(lane.minX)
         expect(p.toX).toBeLessThanOrEqual(lane.maxX)
       }
@@ -177,8 +177,8 @@ describe('planWalk', () => {
   })
 
   it('has nowhere to go on a display only as wide as the pet', () => {
-    const tiny: Rect = { x: 0, y: 0, width: PET_SIZE + 2 * PET_MARGIN, height: 600 }
-    expect(planWalk(pet(PET_MARGIN, 600 - PET_SIZE - PET_MARGIN), tiny, () => 0.5)).toBeNull()
+    const tiny: Rect = { x: 0, y: 0, width: PET_SIZE.width + 2 * PET_MARGIN, height: 600 }
+    expect(planWalk(pet(PET_MARGIN, 600 - PET_SIZE.height - PET_MARGIN), tiny, () => 0.5)).toBeNull()
   })
 })
 

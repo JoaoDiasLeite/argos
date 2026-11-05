@@ -1,20 +1,21 @@
-/* The pet window: 220×220, transparent. Main's hit area is the 120×130 rect at the
-   bottom centre (x 50..170, y 90..220); the sprite and every badge stay inside it. */
+/* The pet window: 128×152, transparent. Main's hit area is the 120×130 rect at the
+   bottom centre (x 4..124, y 22..152); the sprite and every badge stay inside it, and
+   the 9 px hop has its room above. */
 html, body, #root { background: transparent; }
 
 .pet {
   position: absolute;
   inset: 0;
-  width: 220px;
-  height: 220px;
+  width: 128px;
+  height: 152px;
   overflow: hidden;
   user-select: none;
 }
 
 .pet-body {
   position: absolute;
-  left: 62px;
-  top: 110px;
+  left: 16px;
+  top: 42px;
   width: 96px;
   height: 96px;
   cursor: grab;
@@ -77,8 +78,8 @@ html, body, #root { background: transparent; }
 
 .pet-zs {
   /* Over the curled dog's head (doze.png lies low in its frame). */
-  left: 140px;
-  top: 118px;
+  left: 94px;
+  top: 50px;
   width: 30px;
   height: 26px;
   font-family: var(--font-mono);
@@ -102,7 +103,7 @@ html, body, #root { background: transparent; }
 
 .pet-dots {
   left: 50%;
-  top: 96px;
+  top: 28px;
   transform: translateX(-50%);
   display: flex;
   gap: 5px;
@@ -119,8 +120,8 @@ html, body, #root { background: transparent; }
 @keyframes pet-pulse { 50% { opacity: 0.25; } }
 
 .pet-bang {
-  left: 130px;
-  top: 96px;
+  left: 84px;
+  top: 28px;
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -132,8 +133,8 @@ html, body, #root { background: transparent; }
 }
 
 .pet-moon {
-  left: 140px;
-  top: 124px;
+  left: 94px;
+  top: 56px;
   width: 22px;
   height: 22px;
   border-radius: 50%;

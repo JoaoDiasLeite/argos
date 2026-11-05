@@ -85,9 +85,9 @@ export function onFloor(pet: Rect, workArea: Rect): boolean {
 }
 
 /** The x range the window may occupy while walking: PET_MARGIN in from both sides. */
-export function walkLane(workArea: Rect, size = PET_SIZE, margin = PET_MARGIN): { minX: number; maxX: number } {
+export function walkLane(workArea: Rect, width = PET_SIZE.width, margin = PET_MARGIN): { minX: number; maxX: number } {
   const minX = workArea.x + margin
-  return { minX, maxX: Math.max(minX, workArea.x + workArea.width - size - margin) }
+  return { minX, maxX: Math.max(minX, workArea.x + workArea.width - width - margin) }
 }
 
 export interface WalkPlan {

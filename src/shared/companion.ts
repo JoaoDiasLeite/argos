@@ -55,9 +55,13 @@ export interface CompanionState {
   dndUntil?: number | null
   /** When the last catch-up ran, so a wake from sleep only reports what it missed. */
   lastCatchUpAt?: number | null
-  /** Pet position per display, keyed by display id. */
+  /** Pet position per display, keyed by display id: the window's top-left. */
   positions?: Record<string, { x: number; y: number }>
+  /** 2 since the 128×152 window; absent means saved for the 220×220 one and shifted on read. */
+  positionsVersion?: number
 }
+
+export const POSITIONS_VERSION = 2
 
 export type CompanionIntent = 'todo' | 'note' | 'query'
 

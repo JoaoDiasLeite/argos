@@ -3,10 +3,10 @@ import type { CompanionPetFacing, CompanionPetState } from '../types'
 import { useT } from '../i18n'
 import './pet.css'
 
-// Argos on the desktop (docs/COMPANION_PLAN.md §2.3, §9.5). The 220×220 pet window is
-// transparent and click-through except over the dog: main hit-tests a 120×130 rect at
-// its bottom centre (companion-window-pure DOG_SIZE), so the sprite and every badge
-// stay inside that rect.
+// Argos on the desktop (docs/COMPANION_PLAN.md §2.3, §9.5, §13.1). The 128×152 pet
+// window is transparent and click-through except over the dog: main hit-tests a 120×130
+// rect at its bottom centre (companion-window-pure DOG_SIZE), so the sprite and every
+// badge stay inside that rect.
 //
 // Each state is a horizontal PNG sheet of 96×96 frames played with CSS steps(). Every
 // frame shares one alignment (paws on the same bottom line), so switching sheets never

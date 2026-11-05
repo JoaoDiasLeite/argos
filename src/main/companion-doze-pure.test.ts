@@ -13,7 +13,7 @@ const QUIET: DozeConditions = {
   voiceBusy: false
 }
 
-const pet: Rect = { x: 1000, y: 500, width: PET_SIZE, height: PET_SIZE }
+const pet: Rect = { x: 1000, y: 500, width: PET_SIZE.width, height: PET_SIZE.height }
 
 describe('canDoze', () => {
   it('dozes when idle with nothing going on', () => {

@@ -18,8 +18,14 @@ export interface Size {
 
 export type Rect = CompanionRect
 
-/** The pet window is square; the dog is drawn in its bottom-centre. */
-export const PET_SIZE = 220
+/**
+ * The pet window is just big enough for the dog (plan §13.1): his 120×130 hit rect at
+ * the bottom centre, the 9 px hop, and the badges over his head.
+ */
+export const PET_SIZE: Size = { width: 128, height: 152 }
+
+/** The 220×220 window before 3.1.0, whose saved positions are shifted once (see below). */
+export const LEGACY_PET_SIZE: Size = { width: 220, height: 220 }
 
 /** Gap between the pet window and the edge of the work area. */
 export const PET_MARGIN = 12
@@ -41,27 +47,38 @@ const clamp = (v: number, min: number, max: number): number => Math.min(Math.max
 /** Bottom-right of the work area, PET_MARGIN in. */
 export function defaultPetPosition(workArea: Rect, size = PET_SIZE, margin = PET_MARGIN): Point {
   return {
-    x: Math.round(workArea.x + workArea.width - size - margin),
-    y: Math.round(workArea.y + workArea.height - size - margin)
+    x: Math.round(workArea.x + workArea.width - size.width - margin),
+    y: Math.round(workArea.y + workArea.height - size.height - margin)
   }
 }
 
 /** The window at `pos` moved the least it takes to sit wholly inside the work area. */
-export function clampToArea(pos: Point, size: number, workArea: Rect): Point {
+export function clampToArea(pos: Point, size: Size, workArea: Rect): Point {
   return {
-    x: Math.round(clamp(pos.x, workArea.x, workArea.x + workArea.width - size)),
-    y: Math.round(clamp(pos.y, workArea.y, workArea.y + workArea.height - size))
+    x: Math.round(clamp(pos.x, workArea.x, workArea.x + workArea.width - size.width)),
+    y: Math.round(clamp(pos.y, workArea.y, workArea.y + workArea.height - size.height))
   }
 }
 
 /** True when the whole window at `pos` is inside the work area. */
-export function isInsideArea(pos: Point, size: number, workArea: Rect): boolean {
+export function isInsideArea(pos: Point, size: Size, workArea: Rect): boolean {
   return (
     pos.x >= workArea.x &&
     pos.y >= workArea.y &&
-    pos.x + size <= workArea.x + workArea.width &&
-    pos.y + size <= workArea.y + workArea.height
+    pos.x + size.width <= workArea.x + workArea.width &&
+    pos.y + size.height <= workArea.y + workArea.height
   )
+}
+
+/**
+ * A position saved for the 220×220 window, moved so the dog stays where he was: the
+ * dog's offset inside the window changed from (50, 90) to (4, 22), so the window's
+ * top-left moves by the difference.
+ */
+export function migrateLegacyPosition(pos: Point): Point {
+  const dx = (LEGACY_PET_SIZE.width - DOG_SIZE.width) / 2 - (PET_SIZE.width - DOG_SIZE.width) / 2
+  const dy = LEGACY_PET_SIZE.height - DOG_SIZE.height - (PET_SIZE.height - DOG_SIZE.height)
+  return { x: Math.round(pos.x + dx), y: Math.round(pos.y + dy) }
 }
 
 /** A drop with the window within this of a side edge docks there (plan §13.3, M4). */
@@ -78,11 +95,11 @@ export function snapToEdge(pos: Point, workArea: Rect, size = PET_SIZE, margin =
   const bottom = workArea.y + workArea.height
   const right = workArea.x + workArea.width
   const nearLeft = pos.x - workArea.x <= DOCK_ZONE
-  const nearRight = right - (pos.x + size) <= DOCK_ZONE
-  if (pos.y + size >= bottom - workArea.height / 3 || (!nearLeft && !nearRight)) {
-    return clampToArea({ x: pos.x, y: bottom - size - margin }, size, workArea)
+  const nearRight = right - (pos.x + size.width) <= DOCK_ZONE
+  if (pos.y + size.height >= bottom - workArea.height / 3 || (!nearLeft && !nearRight)) {
+    return clampToArea({ x: pos.x, y: bottom - size.height - margin }, size, workArea)
   }
-  const x = nearLeft ? workArea.x + margin : right - size - margin
+  const x = nearLeft ? workArea.x + margin : right - size.width - margin
   return clampToArea({ x, y: pos.y }, size, workArea)
 }
 
