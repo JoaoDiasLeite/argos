@@ -28,13 +28,14 @@ interface Pattern {
 /**
  * Longest and most specific first: "de segunda a sexta" before any weekday, a weekday
  * before "todas as semanas". Bare "daily" / "weekly" / "monthly" are left out on purpose:
- * "daily às 10h" is the stand-up meeting, not a repeat.
+ * "daily às 10h" is the stand-up meeting, not a repeat. Likewise bare "dias úteis" needs
+ * its "todos os" / "nos" / "aos": "em 5 dias úteis" is a deadline, not a repeat.
  */
 const PATTERNS: readonly Pattern[] = [
   {
     every: 'weekday',
     re: new RegExp(
-      String.raw`${B}(?:(?:tod[oa]s\s+os|nos|aos)\s+)?dias\s+[úu]teis${E}|${B}de\s+segunda\s+a\s+sexta(?:[-\s]feira)?${E}|${B}(?:every\s+(?:weekday|working\s+day|work\s+day)|on\s+weekdays)${E}`,
+      String.raw`${B}(?:tod[oa]s\s+os|nos|aos)\s+dias\s+[úu]teis${E}|${B}de\s+segunda\s+a\s+sexta(?:[-\s]feira)?${E}|${B}(?:every\s+(?:weekday|working\s+day|work\s+day)|on\s+weekdays)${E}`,
       'iu'
     )
   },
@@ -157,9 +158,25 @@ function step(at: number, repeat: CompanionRepeat): number {
  */
 export function nextOccurrence(todo: CompanionTodo, now: number): number | null {
   if (!todo.repeat || todo.dueAt == null) return null
-  let at = step(todo.dueAt, todo.repeat)
+  // Every step keeps the source's wall time: stepping from a previous step would carry a
+  // DST shift forward for good (01:30 pushed to 02:30 by a spring-forward stays 02:30).
+  const src = new Date(todo.dueAt)
+  const h = src.getHours()
+  const min = src.getMinutes()
+  const wall = (at: number): number => {
+    const d = new Date(at)
+    d.setHours(h, min, 0, 0)
+    return d.getTime()
+  }
+  // A day whose wall time a spring-forward skips is skipped too: saving that occurrence an
+  // hour late would make the late time the source of every one after it.
+  const lands = (at: number): boolean => {
+    const d = new Date(at)
+    return d.getHours() === h && d.getMinutes() === min
+  }
+  let at = wall(step(todo.dueAt, todo.repeat))
   // A month is the longest step, so this is bounded by the gap since dueAt.
-  for (let i = 0; at <= now && i < 10_000; i++) at = step(at, todo.repeat)
+  for (let i = 0; (at <= now || !lands(at)) && i < 10_000; i++) at = wall(step(at, todo.repeat))
   return at
 }
 
@@ -185,7 +202,8 @@ export function nextTodo(
     ...(todo.notes ? { notes: todo.notes } : {}),
     dueAt: at,
     duePrecision: precision,
-    remindAt: remindersFor({ at, precision }, explicit),
+    // Reminders the user removed stay removed on the next occurrence.
+    remindAt: todo.remindAt.length === 0 ? [] : remindersFor({ at, precision }, explicit),
     done: false,
     createdAt: now,
     source: todo.source,

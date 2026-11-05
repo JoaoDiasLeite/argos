@@ -1363,7 +1363,9 @@ ipcMain.handle('companion:done', (_, id: unknown, done: unknown) => {
       store.deleteTodo(spawned.id)
       settleCompanionReminder(spawned.id)
     }
-    next.repeatNextId = null
+    // The link is kept while the spawned one lives on (ticked or promoted), so ticking this
+    // one again does not add a second copy of it.
+    if (!spawned || (!spawned.done && !spawned.sprintItemId)) next.repeatNextId = null
   }
   store.saveTodo(next)
   companionScheduler?.poke()

@@ -237,6 +237,28 @@ describe('parsedFromModel', () => {
     const r = parsedFromModel({ title: 'x', when: { at: '2026-11-02T00:00', precision: 'day' }, isExplicitReminder: false }, localParse, OPTS)
     expect(r).not.toBeNull()
   })
+
+  it('aligns a monthly repeat to the model’s date', () => {
+    const text = 'pagar a renda todos os meses no fim do mês'
+    const r = parsedFromModel(
+      { title: 'Pagar a renda', when: { at: '2026-11-30T00:00', precision: 'day' }, isExplicitReminder: false },
+      parseCapture(text, OPTS),
+      OPTS
+    )!
+    expect(local(r.when!.at).slice(0, 10)).toBe('2026-11-30')
+    expect(r.repeat).toEqual({ every: 'month', monthDay: 30 })
+  })
+
+  it('moves a workday repeat the model put on a weekend to Monday', () => {
+    const text = 'rever tickets de segunda a sexta depois do almoço'
+    const r = parsedFromModel(
+      { title: 'Rever tickets', when: { at: '2026-11-07T14:00', precision: 'minute' }, isExplicitReminder: false },
+      parseCapture(text, OPTS),
+      OPTS
+    )!
+    expect(local(r.when!.at)).toBe('2026-11-09 14:00')
+    expect(r.repeat).toEqual({ every: 'weekday' })
+  })
 })
 
 describe('planCapture with a model answer', () => {

@@ -53,6 +53,12 @@ describe('reading a repeat', () => {
     expect(read('rever tickets de segunda a sexta', new Date(2026, 10, 7, 10, 0)).when).toBe('2026-11-09')
   })
 
+  it('reads "dias úteis" as a repeat only with "todos os" / "nos" / "aos": otherwise it is a deadline', () => {
+    expect(read('entregar o relatório em 5 dias úteis').every).toBeNull()
+    expect(read('prazo de 3 dias úteis').every).toBeNull()
+    expect(read('nos dias úteis às 8h').every).toBe('weekday')
+  })
+
   it('reads "daily" and "weekly" as words, not repeats: the meeting is called that', () => {
     expect(read('daily às 10h').every).toBeNull()
     expect(read('preparar a weekly amanhã').every).toBeNull()
@@ -108,6 +114,24 @@ describe('the next occurrence', () => {
     expect(local(nextOccurrence(todo({ dueAt: day, duePrecision: 'day', repeat: { every: 'day' } }), at(2026, 11, 2, 8))!)).toBe('2026-11-03 00:00')
   })
 
+  // Lisbon (the machine TZ these run under) springs forward on 2027-03-28 at 01:00. In a
+  // zone without that change these still hold: the wall time simply never moves.
+  it('keeps the wall time across a DST change', () => {
+    const nine = at(2027, 3, 27, 9)
+    const sun = nextOccurrence(todo({ dueAt: nine, repeat: { every: 'day' } }), nine + 60_000)!
+    expect(local(sun)).toBe('2027-03-28 09:00')
+    expect(local(nextOccurrence(todo({ dueAt: sun, repeat: { every: 'day' } }), sun + 60_000)!)).toBe('2027-03-29 09:00')
+  })
+
+  it('skips a day whose wall time the spring-forward removes, rather than drift an hour', () => {
+    const early = at(2027, 3, 27, 1, 30)
+    const next = nextOccurrence(todo({ dueAt: early, repeat: { every: 'day' } }), early + 60_000)!
+    const d = new Date(next)
+    expect([d.getHours(), d.getMinutes()]).toEqual([1, 30])
+    expect(next).toBeLessThanOrEqual(at(2027, 3, 29, 1, 30))
+    expect(local(nextOccurrence(todo({ dueAt: next, repeat: { every: 'day' } }), next + 60_000)!).slice(11)).toBe('01:30')
+  })
+
   it('is null without a repeat or a date', () => {
     expect(nextOccurrence(todo({ dueAt: at(2026, 11, 2) }), NOW.getTime())).toBeNull()
     expect(nextOccurrence(todo({ repeat: { every: 'day' } }), NOW.getTime())).toBeNull()
@@ -143,6 +167,12 @@ describe('the next todo', () => {
     const due = at(2026, 11, 2, 9)
     const next = nextTodo(todo({ dueAt: due, remindAt: [due], repeat: { every: 'day' } }), due + 60_000, 'n1', rules)!
     expect(next.remindAt.map(local)).toEqual(['2026-11-03 09:00'])
+  })
+
+  it('stays without reminders when the user removed them all', () => {
+    const due = at(2026, 11, 2, 9)
+    const next = nextTodo(todo({ dueAt: due, remindAt: [], repeat: { every: 'day' } }), due + 60_000, 'n1', rules)!
+    expect(next.remindAt).toEqual([])
   })
 })
 

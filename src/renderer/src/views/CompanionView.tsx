@@ -761,6 +761,16 @@ function TodoDetail({
     const cur = latest.current
     if (cur.dueAt == null) return
     const repeat = every === '' ? null : every === 'month' ? { every, monthDay: new Date(cur.dueAt).getDate() } : { every }
+    // A workday repeat starts on a workday: a Saturday or Sunday due moves to Monday, same
+    // wall time, its reminder moving with it as if the date were edited.
+    const due = new Date(cur.dueAt)
+    const weekend = due.getDay() === 0 || due.getDay() === 6
+    if (every === 'weekday' && weekend) {
+      const monday = new Date(due.getFullYear(), due.getMonth(), due.getDate() + (due.getDay() === 6 ? 2 : 1), due.getHours(), due.getMinutes())
+      const moved = withDue(cur, { dueAt: monday.getTime(), duePrecision: cur.duePrecision ?? 'minute' }, { ...rules, now: Date.now() })
+      void api.update({ ...moved, repeat })
+      return
+    }
     void api.update({ ...cur, repeat })
   }
 

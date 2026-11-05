@@ -10,6 +10,7 @@
  */
 import { z } from 'zod'
 import { parseCapture, remindersForWhen, type ParseOptions } from './companion-nlu-pure'
+import { firstOccurrence } from './companion-repeat-pure'
 import type { ParsedCapture } from './companion-types'
 
 /** Below this the grammar's own answer is a guess between two readings (plan §5.1). */
@@ -190,8 +191,16 @@ export function parsedFromModel(raw: unknown, local: ParsedCapture, opts: ParseO
   }
 
   // A repeat is the grammar's to read ("todos os dias"); the model only places the date.
-  // With none from the model, the repeat's own first day stands.
-  if (!when && local.repeat) when = local.when
+  // With none from the model, the repeat's own first day stands; with one, the repeat is
+  // aligned to it again (a month's day follows the model's date, a workday moves off a
+  // weekend). The weekday is left out of the match: the model's date is already the day.
+  let repeat = local.repeat
+  if (!when && repeat) when = local.when
+  else if (when && repeat) {
+    const first = firstOccurrence({ every: repeat.every, weekday: null, start: 0, end: 0 }, when, now.getTime())
+    when = first.when
+    repeat = first.repeat
+  }
   const title = answer.title.replace(/\s+/g, ' ').trim().slice(0, 500) || local.title
   // The grammar's "lembra-me" check is exact; the model may add one it read in English.
   const isExplicitReminder = answer.isExplicitReminder || local.isExplicitReminder
@@ -205,6 +214,6 @@ export function parsedFromModel(raw: unknown, local: ParsedCapture, opts: ParseO
     confidence: 1,
     matchedSpan: null,
     fromModel: when !== null && when !== local.when,
-    ...(local.repeat ? { repeat: local.repeat } : {})
+    ...(repeat ? { repeat } : {})
   }
 }
