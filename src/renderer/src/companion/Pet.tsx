@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react'
-import type { CompanionPetFacing, CompanionPetState } from '../types'
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
+import type { CompanionPetFacing, CompanionPetSize, CompanionPetState } from '../types'
+import { PET_SCALE } from '../../../shared/companion'
 import { useT } from '../i18n'
 import './pet.css'
 
@@ -99,6 +100,8 @@ export default function Pet() {
   const t = useT()
   const [state, setState] = useState<CompanionPetState>('idle')
   const [facing, setFacing] = useState<CompanionPetFacing>('right')
+  // The size setting: main sizes the window, this scales everything drawn in it to match.
+  const [size, setSize] = useState<CompanionPetSize>('normal')
   const reducedMotion = useReducedMotion()
   const down = useRef<{ x: number; y: number } | null>(null)
   /** The hold timer while the pointer is down and still, and whether it went off. */
@@ -118,18 +121,24 @@ export default function Pet() {
     const acceptFacing = (f: unknown): void => {
       if (f === 'left' || f === 'right') setFacing(f)
     }
+    const acceptSize = (s: unknown): void => {
+      if (s === 'small' || s === 'normal' || s === 'large') setSize(s)
+    }
     api
       .state()
       .then((s) => {
         acceptFacing(s.petFacing)
+        acceptSize(s.prefs.size)
         accept(s.petState)
       })
       .catch(() => {})
     const offState = api.onPetState(accept)
     const offFacing = api.onPetFacing(acceptFacing)
+    const offSize = api.onPetSize(acceptSize)
     return () => {
       offState()
       offFacing()
+      offSize()
     }
   }, [])
 
@@ -182,8 +191,9 @@ export default function Pet() {
     api.dragEnd()
   }
 
+  const scale = PET_SCALE[size]
   return (
-    <div className={`pet pet-${shown}`}>
+    <div className={`pet pet-${shown}${scale !== 1 ? ' pet-scaled' : ''}`} style={{ '--pet-scale': scale } as CSSProperties}>
       <div
         className="pet-body"
         role="button"

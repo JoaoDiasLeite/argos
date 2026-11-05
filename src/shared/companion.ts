@@ -91,9 +91,17 @@ export interface ParsedCapture {
 // ---- preferences -------------------------------------------------------------------
 
 /** `config.companion`. */
+/** How big Argos is on the desktop (plan §13.3, N2): the window and the sprite scale together. */
+export type CompanionPetSize = 'small' | 'normal' | 'large'
+
+/** The scale of the 128×152 window and its 96 px sprite for each size. */
+export const PET_SCALE: Record<CompanionPetSize, number> = { small: 2 / 3, normal: 1, large: 4 / 3 }
+
 export interface CompanionPrefs {
   /** "Ficar no ecrã": the pet stays up all day. Off = only when summoned or reminding. */
   stayOnScreen: boolean
+  /** "Tamanho do Argos". */
+  size: CompanionPetSize
   /** Preferred summon accelerator. '' = automatic (Ctrl+Alt+A with a fallback). */
   shortcut: string
   /** Minutes before a timed item that its reminder fires (plan §5.3). */

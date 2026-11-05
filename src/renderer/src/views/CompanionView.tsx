@@ -89,6 +89,7 @@ function useMinWidth(px: number): boolean {
 
 const DEFAULT_PREFS: CompanionPrefs = {
   stayOnScreen: false,
+  size: 'normal',
   shortcut: '',
   leadMinutes: 10,
   morningHour: 9,

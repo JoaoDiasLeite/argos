@@ -5,11 +5,13 @@ import { hardenWebContents } from './window-security'
 import { getConfig } from './config'
 import { companionStore } from './companion-store'
 import {
-  PET_SIZE,
   bubblePlacement,
   clampBubbleSize,
+  clampToArea,
+  dogRect,
   petHitTest,
   petStranded,
+  petWindowSize,
   restoredPetPosition,
   snapToEdge,
   type Point,
@@ -20,11 +22,12 @@ import { WALK_ARRIVE_MS, WALK_STAND_MS, canWalk, nextWalkDelay, planWalk, stepTo
 import { DOZE_AFTER_MS, canDoze, cursorNearPet, type DozeConditions } from './companion-doze-pure'
 import { fallY, isFall, type Fall } from './companion-fall-pure'
 import { restingPetState } from './companion-quiet-pure'
-import { POSITIONS_VERSION, VOICE_SHORTCUT_DEFAULTS } from './companion-types'
+import { PET_SCALE, POSITIONS_VERSION, VOICE_SHORTCUT_DEFAULTS } from './companion-types'
 import type {
   CompanionBubbleAnchor,
   CompanionBubblePayload,
   CompanionPetFacing,
+  CompanionPetSize,
   CompanionPetState,
   CompanionPrefs,
   CompanionVoicePhase
@@ -103,6 +106,11 @@ export function setCompanionWindowHooks(next: CompanionWindowHooks): void {
 
 const prefs = (): CompanionPrefs => getConfig().companion
 
+/** The pet window for the size setting (plan §13.3, N2). */
+const petSize = (size: CompanionPetSize = prefs().size): Size => petWindowSize(PET_SCALE[size])
+/** The size the live window was built or last resized for. */
+let appliedSize: CompanionPetSize | null = null
+
 const alive = (win: BrowserWindow | null): win is BrowserWindow => !!win && !win.isDestroyed()
 
 /** The accelerator that actually got registered ('' if none was available). */
@@ -141,9 +149,11 @@ export function sendToBubble(channel: string, payload?: unknown): void {
 }
 
 function createPetWindow(): BrowserWindow {
+  const size = petSize()
+  appliedSize = prefs().size
   const win = new BrowserWindow({
-    width: PET_SIZE.width,
-    height: PET_SIZE.height,
+    width: size.width,
+    height: size.height,
     show: false,
     frame: false,
     transparent: true,
@@ -368,7 +378,7 @@ export function endPetDrag(): void {
   // The display the dog was dropped on, by the window's centre; positions are clamped to
   // its work area, which also settles a drag across displays of different scale.
   const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
-  const pos = snapToEdge({ x: b.x, y: b.y }, display.workArea)
+  const pos = snapToEdge({ x: b.x, y: b.y }, display.workArea, { width: b.width, height: b.height })
   if (isFall(b.y, pos.y) && !reducedMotion()) {
     // On his feet for the drop; stepFall sits him down on landing.
     petWindow.setPosition(pos.x, b.y)
@@ -536,8 +546,33 @@ function cancelIdleHide(): void {
 function placePet(win: BrowserWindow): void {
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   const saved = companionStore().getState().positions?.[String(display.id)]
-  const pos = restoredPetPosition(saved, display.workArea)
-  win.setBounds({ x: pos.x, y: pos.y, width: PET_SIZE.width, height: PET_SIZE.height })
+  const size = petSize()
+  const pos = restoredPetPosition(saved, display.workArea, size)
+  win.setBounds({ x: pos.x, y: pos.y, width: size.width, height: size.height })
+}
+
+/**
+ * The size setting changed: the window grows or shrinks around the dog's paws, so he
+ * stays standing where he was, and the renderer scales the sprite to match.
+ */
+function resizePet(size: CompanionPetSize): void {
+  if (appliedSize === size) return
+  appliedSize = size
+  if (!alive(petWindow)) return
+  stopWalk()
+  fall = null
+  const b = petWindow.getBounds()
+  const dog = dogRect(b)
+  const feet = { x: dog.x + dog.width / 2, y: dog.y + dog.height }
+  const next = petSize(size)
+  const nextDog = dogRect({ x: 0, y: 0, ...next })
+  const display = screen.getDisplayNearestPoint(feet)
+  const pos = clampToArea({ x: feet.x - nextDog.width / 2 - nextDog.x, y: feet.y - nextDog.height - nextDog.y }, next, display.workArea)
+  petWindow.setBounds({ x: pos.x, y: pos.y, width: next.width, height: next.height })
+  sendToPet('companion:pet-size', size)
+  if (petWindow.isVisible()) savePetPosition(display.id, pos)
+  placeBubble()
+  scheduleWalk()
 }
 
 /** Show the pet without taking focus. Placed afresh only when it was hidden. */
@@ -751,6 +786,7 @@ export function applyCompanionPrefs(next: CompanionPrefs): void {
   for (const win of [petWindow, bubbleWindow]) {
     if (alive(win)) win.setContentProtection(next.hideFromCapture)
   }
+  resizePet(next.size)
   if (!next.walk || !next.stayOnScreen) stopWalk()
   if (next.stayOnScreen) {
     showPet()

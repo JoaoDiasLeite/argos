@@ -13,6 +13,7 @@ import type {
   CompanionCaptureResult,
   CompanionList,
   CompanionPetFacing,
+  CompanionPetSize,
   CompanionPetState,
   CompanionPrefs,
   CompanionPromoteResult,
@@ -1493,6 +1494,8 @@ declare global {
         onPetState: (cb: (state: CompanionPetState) => void) => () => void
         /** Which way the walk faces; sent before each `walking` state. */
         onPetFacing: (cb: (facing: CompanionPetFacing) => void) => () => void
+        /** The size setting changed: the sprite scales with the window main already resized. */
+        onPetSize: (cb: (size: CompanionPetSize) => void) => () => void
         /** The capture with this id is waiting on the model for its date (plan §5.1, layer 2). */
         onCaptureThinking: (cb: (id: string) => void) => () => void
         onChanged: (cb: (list: CompanionList) => void) => () => void

@@ -10,7 +10,13 @@ html, body, #root { background: transparent; }
   height: 152px;
   overflow: hidden;
   user-select: none;
+  /* The size setting (Pet.tsx sets --pet-scale): main sized the window by the same
+     factor, so everything drawn here scales from the top-left corner into it. */
+  transform: scale(var(--pet-scale, 1));
+  transform-origin: 0 0;
 }
+/* The sheets are smooth art at 96 px, not hard pixels: a scaled dog is smoothed, not blocky. */
+.pet-scaled .pet-sprite { image-rendering: auto; }
 
 .pet-body {
   position: absolute;

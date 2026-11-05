@@ -11,6 +11,7 @@ import {
   inRoundedRect,
   petHitTest,
   petStranded,
+  petWindowSize,
   restoredPetPosition,
   snapToEdge,
   type Rect
@@ -108,6 +109,17 @@ describe('hit test', () => {
 
   it('puts the dog bottom-centre, 120x130', () => {
     expect(dogRect(p)).toEqual({ x: 1004, y: 522, width: 120, height: 130 })
+  })
+
+  it('scales the dog with a window of another size', () => {
+    const large = petWindowSize(4 / 3)
+    expect(large).toEqual({ width: 171, height: 203 })
+    const d = dogRect({ x: 1000, y: 500, ...large })
+    expect(d.width).toBeCloseTo(160.3, 1)
+    expect(d.height).toBeCloseTo(173.6, 1)
+    // Still bottom-centre: the same gaps as at 1×, scaled.
+    expect(d.x - 1000).toBeCloseTo(5.3, 1)
+    expect(d.y + d.height).toBeCloseTo(500 + large.height, 5)
   })
 
   it('takes the click over the dog', () => {

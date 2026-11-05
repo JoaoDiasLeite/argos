@@ -954,6 +954,23 @@ export default function SettingsView({
                       (walk) => updateCompanion({ walk }),
                       companionBusy
                     )}
+                  <div className="srow">
+                    <div className="srow-text">
+                      <span className="srow-label">{t('settings.companion.size.label')}</span>
+                      <span className="help">{t('settings.companion.size.hint')}</span>
+                    </div>
+                    <Select
+                      className="settings-select"
+                      value={companion.size}
+                      disabled={companionBusy}
+                      onChange={(e) => updateCompanion({ size: e.target.value as CompanionPrefs['size'] })}
+                      aria-label={t('settings.companion.size.label')}
+                    >
+                      <option value="small">{t('settings.companion.size.small')}</option>
+                      <option value="normal">{t('settings.companion.size.normal')}</option>
+                      <option value="large">{t('settings.companion.size.large')}</option>
+                    </Select>
+                  </div>
                   {toggleRow(
                     t('settings.companion.terminalAlerts.label'),
                     t('settings.companion.terminalAlerts.hint'),

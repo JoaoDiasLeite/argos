@@ -115,13 +115,24 @@ export function restoredPetPosition(saved: Point | undefined, workArea: Rect, si
   return defaultPetPosition(workArea, size)
 }
 
-/** The dog's rect on screen, for a pet window with these bounds. */
+/** The window for a size setting (plan §13.3, N2): PET_SIZE scaled, whole pixels. */
+export function petWindowSize(scale: number): Size {
+  return { width: Math.round(PET_SIZE.width * scale), height: Math.round(PET_SIZE.height * scale) }
+}
+
+/**
+ * The dog's rect on screen, for a pet window with these bounds. In proportion to the
+ * window, so a scaled window (petWindowSize) carries its own hit area: at 1× the dog is
+ * DOG_SIZE at the bottom centre.
+ */
 export function dogRect(pet: Rect): Rect {
+  const sx = pet.width / PET_SIZE.width
+  const sy = pet.height / PET_SIZE.height
   return {
-    x: pet.x + (pet.width - DOG_SIZE.width) / 2,
-    y: pet.y + pet.height - DOG_SIZE.height,
-    width: DOG_SIZE.width,
-    height: DOG_SIZE.height
+    x: pet.x + ((PET_SIZE.width - DOG_SIZE.width) / 2) * sx,
+    y: pet.y + (PET_SIZE.height - DOG_SIZE.height) * sy,
+    width: DOG_SIZE.width * sx,
+    height: DOG_SIZE.height * sy
   }
 }
 

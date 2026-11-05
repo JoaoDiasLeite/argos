@@ -130,6 +130,7 @@ interface AppConfig {
 
 const COMPANION_DEFAULTS: CompanionPrefs = {
   stayOnScreen: false,
+  size: 'normal',
   shortcut: '',
   leadMinutes: 10,
   morningHour: 9,
@@ -268,6 +269,7 @@ function cleanCompanionPrefs(base: CompanionPrefs, patch: unknown): CompanionPre
     typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : fallback
   return {
     stayOnScreen: typeof p.stayOnScreen === 'boolean' ? p.stayOnScreen : base.stayOnScreen,
+    size: p.size === 'small' || p.size === 'normal' || p.size === 'large' ? p.size : base.size,
     shortcut: typeof p.shortcut === 'string' ? p.shortcut.trim() : base.shortcut,
     leadMinutes: int(p.leadMinutes, 0, 24 * 60, base.leadMinutes),
     morningHour: int(p.morningHour, 0, 23, base.morningHour),

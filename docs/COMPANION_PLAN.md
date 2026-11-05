@@ -874,11 +874,14 @@ window's top-left: shift them by (46, 68) once on load; a position that no longe
 is already rejected by `restoredPetPosition`. The walk lane becomes `right − 128 − 12`.
 The bubble centres on the body, so it does not move.
 
-**The size of the dog itself.** Not CSS scaling: the art is pixel art at 96 px and a
-non-integer factor blurs it. The stills in `resources/companion/` are 1024², so the sheets
-are re-rasterised at **64 px** (and 128 px) and a setting "Argos size: small / normal /
-large" swaps the sheet set and the window size together. On a 150 % display the 96 px dog
-is 144 physical px, which is why he looks big on a 4K.
+**The size of the dog itself.** A setting "Argos size: small / normal / large" that scales
+the window and the sprite together (2/3, 1, 4/3), keeping his paws where they were. As
+built it is CSS scaling after all: the sheets turned out to be smooth illustration at
+96 px rather than hard pixel art, so a non-integer factor smooths cleanly, and the stills
+in `resources/companion/` do not cover every frame (idle has 8, the stills 2), so
+re-rasterising was never an option. Dedicated 64 / 128 px sheets can replace the scaling
+later without touching the geometry. On a 150 % display the 96 px dog is 144 physical px,
+which is why he looks big on a 4K.
 
 **Walking across every screen.** Three ways; one chosen.
 
