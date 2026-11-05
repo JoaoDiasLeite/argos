@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   FLOOR_TOLERANCE,
+  areaOf,
+  neighbourArea,
+  walkLaneAcross,
   WALK_MAX_DELAY_MS,
   WALK_MAX_PX,
   WALK_MIN_DELAY_MS,
@@ -179,6 +182,70 @@ describe('planWalk', () => {
   it('has nowhere to go on a display only as wide as the pet', () => {
     const tiny: Rect = { x: 0, y: 0, width: PET_SIZE.width + 2 * PET_MARGIN, height: 600 }
     expect(planWalk(pet(PET_MARGIN, 600 - PET_SIZE.height - PET_MARGIN), tiny, () => 0.5)).toBeNull()
+  })
+})
+
+describe('walking across displays', () => {
+  const W = PET_SIZE.width
+  const H = PET_SIZE.height
+  // Beside AREA (bottom at 1040): a display whose floor lines up, one lower, one higher, and one not touching.
+  const RIGHT_ALIGNED: Rect = { x: 1920, y: 56, width: 1280, height: 984 }
+  const RIGHT_LOWER: Rect = { x: 1920, y: 0, width: 1280, height: 1440 }
+  const RIGHT_HIGHER: Rect = { x: 1920, y: 0, width: 1280, height: 800 }
+  const RIGHT_GAP: Rect = { x: 2000, y: 0, width: 1280, height: 1040 }
+  const LEFT_ALIGNED: Rect = { x: -1280, y: 56, width: 1280, height: 984 }
+
+  it('finds the display under the pet, or the nearest', () => {
+    expect(areaOf(pet(800), [AREA, RIGHT_ALIGNED])).toBe(AREA)
+    expect(areaOf(pet(2000), [AREA, RIGHT_ALIGNED])).toBe(RIGHT_ALIGNED)
+    expect(areaOf(pet(5000), [AREA, RIGHT_ALIGNED])).toBe(RIGHT_ALIGNED)
+    expect(areaOf(pet(0), [])).toBeNull()
+  })
+
+  it('knows a neighbour from a display that does not touch', () => {
+    expect(neighbourArea(AREA, [AREA, RIGHT_ALIGNED], 'right')).toBe(RIGHT_ALIGNED)
+    expect(neighbourArea(AREA, [AREA, RIGHT_GAP], 'right')).toBeNull()
+    expect(neighbourArea(AREA, [AREA, LEFT_ALIGNED], 'left')).toBe(LEFT_ALIGNED)
+    expect(neighbourArea(AREA, [AREA, LEFT_ALIGNED], 'right')).toBeNull()
+  })
+
+  it('extends the lane over neighbours whose floors line up, both ways', () => {
+    const lane = walkLaneAcross(pet(800), [LEFT_ALIGNED, AREA, RIGHT_ALIGNED])!
+    expect(lane).toEqual({ minX: -1280 + PET_MARGIN, maxX: 3200 - W - PET_MARGIN, leftDrop: null, rightDrop: null })
+    // From AREA's own corner he walks straight on into the next display.
+    const corner = walkLane(AREA).maxX
+    expect(planWalk(pet(corner), [AREA, RIGHT_ALIGNED], seq(0.5, 0.9))).toEqual({ fromX: corner, toX: corner + 275, facing: 'right' })
+  })
+
+  it('walks to the edge of a lower neighbour and drops onto its floor', () => {
+    const lane = walkLaneAcross(pet(800), [AREA, RIGHT_LOWER])!
+    expect(lane.maxX).toBe(walkLane(AREA).maxX)
+    expect(lane.rightDrop).toEqual({ atX: 1920 - W / 2, toY: 1440 - H - PET_MARGIN })
+    // 80 px of lane left on the right and asked for 400 that way: over the edge he goes.
+    expect(planWalk(pet(1700), [AREA, RIGHT_LOWER], seq(0.999999, 0.9))).toEqual({
+      fromX: 1700,
+      toX: 1920 - W / 2,
+      facing: 'right',
+      dropTo: 1440 - H - PET_MARGIN
+    })
+    // With the room, an ordinary walk that way.
+    expect(planWalk(pet(800), [AREA, RIGHT_LOWER], seq(0, 0.9))).toEqual({ fromX: 800, toX: 800 + WALK_MIN_PX, facing: 'right' })
+  })
+
+  it('turns around at a higher neighbour, and at a gap', () => {
+    const corner = walkLane(AREA).maxX
+    for (const other of [RIGHT_HIGHER, RIGHT_GAP]) {
+      expect(walkLaneAcross(pet(corner), [AREA, other])).toEqual({ minX: PET_MARGIN, maxX: corner, leftDrop: null, rightDrop: null })
+      expect(planWalk(pet(corner), [AREA, other], seq(0.5, 0.9))).toEqual({ fromX: corner, toX: corner - 275, facing: 'left' })
+    }
+  })
+
+  it('only walks from the floor of the display he is on', () => {
+    // On RIGHT_LOWER's floor, not AREA's: the lane is RIGHT_LOWER's, and AREA is a wall above.
+    const y = 1440 - H - PET_MARGIN
+    const lane = walkLaneAcross(pet(2000, y), [AREA, RIGHT_LOWER])!
+    expect(lane).toEqual({ minX: 1920 + PET_MARGIN, maxX: 3200 - W - PET_MARGIN, leftDrop: null, rightDrop: null })
+    expect(planWalk(pet(2000, AREA.height - H - PET_MARGIN), [AREA, RIGHT_LOWER])).toBeNull()
   })
 })
 

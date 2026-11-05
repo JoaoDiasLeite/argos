@@ -1,12 +1,14 @@
 /**
- * When and where Argos goes for a little walk (docs/COMPANION_PLAN.md §11, batch L), kept
- * apart from companion-window.ts so it can be tested without Electron. Coordinates are
- * DIPs of the virtual screen, like companion-window-pure.ts.
+ * When and where Argos goes for a little walk (docs/COMPANION_PLAN.md §11, batch L; §13.1
+ * for other screens), kept apart from companion-window.ts so it can be tested without
+ * Electron. Coordinates are DIPs of the virtual screen, like companion-window-pure.ts.
  *
- * Argos is a dog on the floor: he walks horizontally along the bottom of his display's
- * work area. snapToEdge() keeps the height a drop left him at, so he can also be docked
- * half way up a side edge; there he does not walk (planWalk() answers null) rather than
- * float along the wall or slide down it.
+ * Argos is a dog on the floor: he walks horizontally along the bottom of the work area,
+ * and on into a neighbouring display whose floor lines up with his. Where the neighbour's
+ * floor is lower he walks to the edge and drops onto it; where it is higher, or there is
+ * no neighbour, he turns around. snapToEdge() keeps the height a drop left him at, so he
+ * can also be docked half way up a side edge; there he does not walk (planWalk() answers
+ * null) rather than float along the wall or slide down it.
  */
 import type { CompanionPetState } from './companion-types'
 import { PET_MARGIN, PET_SIZE, type Rect } from './companion-window-pure'
@@ -90,28 +92,129 @@ export function walkLane(workArea: Rect, width = PET_SIZE.width, margin = PET_MA
   return { minX, maxX: Math.max(minX, workArea.x + workArea.width - width - margin) }
 }
 
+// ─── Across displays (plan §13.1) ──────────────────────────────────────────────
+
+/** Two displays count as side by side when one starts where the other ends, within this. */
+export const ADJACENT_TOLERANCE = 2
+
+/** The window's y when it sits on the floor of this work area. */
+export function floorY(area: Rect, height: number, margin = PET_MARGIN): number {
+  return area.y + area.height - height - margin
+}
+
+/** The work area under the window's centre, else the nearest to it; null with none at all. */
+export function areaOf(pet: Rect, areas: Rect[]): Rect | null {
+  const cx = pet.x + pet.width / 2
+  const cy = pet.y + pet.height / 2
+  let best: Rect | null = null
+  let bestD = Infinity
+  for (const a of areas) {
+    if (cx >= a.x && cx < a.x + a.width && cy >= a.y && cy < a.y + a.height) return a
+    const dx = Math.max(a.x - cx, 0, cx - (a.x + a.width))
+    const dy = Math.max(a.y - cy, 0, cy - (a.y + a.height))
+    const d = dx * dx + dy * dy
+    if (d < bestD) {
+      bestD = d
+      best = a
+    }
+  }
+  return best
+}
+
+/** The display touching `area` on that side and overlapping it vertically, if any. */
+export function neighbourArea(area: Rect, areas: Rect[], side: Facing): Rect | null {
+  const edge = side === 'right' ? area.x + area.width : area.x
+  for (const b of areas) {
+    if (b === area) continue
+    const bEdge = side === 'right' ? b.x : b.x + b.width
+    if (Math.abs(bEdge - edge) > ADJACENT_TOLERANCE) continue
+    const overlap = Math.min(area.y + area.height, b.y + b.height) - Math.max(area.y, b.y)
+    if (overlap > 0) return b
+  }
+  return null
+}
+
+/** Where a lane ends at a lower neighbour: he walks on until his centre is over the edge, then falls. */
+export interface Drop {
+  /** The window's x with its centre on the boundary. */
+  atX: number
+  /** The window's y on the floor he lands on. */
+  toY: number
+}
+
+export interface Lane {
+  minX: number
+  maxX: number
+  leftDrop: Drop | null
+  rightDrop: Drop | null
+}
+
+/**
+ * The lane from the pet's display out to each side, over every neighbour whose floor is
+ * within FLOOR_TOLERANCE of his. A neighbour with a lower floor ends the lane with a drop;
+ * a higher one, or none, is a wall. Null when no display is under him.
+ */
+export function walkLaneAcross(pet: Rect, areas: Rect[], margin = PET_MARGIN): Lane | null {
+  const home = areaOf(pet, areas)
+  if (!home) return null
+  const floor = floorY(home, pet.height, margin)
+  const reach = (side: Facing): { end: Rect; drop: Drop | null } => {
+    const seen = new Set<Rect>([home])
+    let cur = home
+    for (;;) {
+      const next = neighbourArea(cur, areas, side)
+      if (!next || seen.has(next)) return { end: cur, drop: null }
+      const diff = floorY(next, pet.height, margin) - floor
+      if (Math.abs(diff) <= FLOOR_TOLERANCE) {
+        seen.add(next)
+        cur = next
+        continue
+      }
+      if (diff > 0) {
+        const boundary = side === 'right' ? cur.x + cur.width : cur.x
+        return { end: cur, drop: { atX: Math.round(boundary - pet.width / 2), toY: floorY(next, pet.height, margin) } }
+      }
+      return { end: cur, drop: null }
+    }
+  }
+  const l = reach('left')
+  const r = reach('right')
+  const minX = l.end.x + margin
+  return { minX, maxX: Math.max(minX, r.end.x + r.end.width - pet.width - margin), leftDrop: l.drop, rightDrop: r.drop }
+}
+
 export interface WalkPlan {
   fromX: number
   toX: number
   facing: Facing
+  /** Set when the walk ends over the edge of a lower neighbour: the window's y to fall to. */
+  dropTo?: number
 }
 
 /**
- * One walk from where the pet is: 150–400 px, left or right at random. A direction
- * without the room goes the other way when that has more (so at a corner he turns
- * around), and the distance is cut at the corner either way, so the window never leaves
- * the lane. Null when he is not on the floor or has nowhere to go.
+ * One walk from where the pet is: 150–400 px, left or right at random, along the lane
+ * across the displays whose floors line up. A direction without the room goes the other
+ * way when that has more (so at a wall he turns around), unless that way ends over a lower
+ * display: then he walks to the edge and drops. The distance is cut at the wall either
+ * way, so the window never leaves the lane. Null when he is not on the floor or has
+ * nowhere to go.
  */
-export function planWalk(pet: Rect, workArea: Rect, rng: () => number = Math.random): WalkPlan | null {
-  if (!onFloor(pet, workArea)) return null
-  const { minX, maxX } = walkLane(workArea, pet.width)
+export function planWalk(pet: Rect, areas: Rect | Rect[], rng: () => number = Math.random): WalkPlan | null {
+  const list = Array.isArray(areas) ? areas : [areas]
+  const home = areaOf(pet, list)
+  if (!home || !onFloor(pet, home)) return null
+  const lane = walkLaneAcross(pet, list)
+  if (!lane) return null
   const fromX = Math.round(pet.x)
-  const roomLeft = Math.max(0, fromX - minX)
-  const roomRight = Math.max(0, maxX - fromX)
+  const roomLeft = Math.max(0, fromX - lane.minX)
+  const roomRight = Math.max(0, lane.maxX - fromX)
   const distance = Math.round(WALK_MIN_PX + rng() * (WALK_MAX_PX - WALK_MIN_PX))
   let facing: Facing = rng() < 0.5 ? 'left' : 'right'
   const room = (f: Facing): number => (f === 'left' ? roomLeft : roomRight)
+  const drop = (f: Facing): Drop | null => (f === 'left' ? lane.leftDrop : lane.rightDrop)
   if (room(facing) < distance) {
+    const d = drop(facing)
+    if (d) return { fromX, toX: d.atX, facing, dropTo: d.toY }
     const other: Facing = facing === 'left' ? 'right' : 'left'
     if (room(other) > room(facing)) facing = other
   }

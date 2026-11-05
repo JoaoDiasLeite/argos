@@ -403,6 +403,10 @@ function stepFall(win: BrowserWindow): void {
   if (!done) return
   fall = null
   if (!drag) startPolling(POLL_MS)
+  // Landed, maybe on another display: remember where, then sit (which rolls the next walk).
+  const b = win.getBounds()
+  const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
+  savePetPosition(display.id, { x: b.x, y: b.y })
   if (petState === 'standing') setPetState(restingState())
 }
 
@@ -477,9 +481,10 @@ function tryWalk(): void {
   if (!alive(petWindow) || walk || fall) return
   const b = petWindow.getBounds()
   const over = petHitTest(screen.getCursorScreenPoint(), b)
-  const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
-  // Not on the floor (docked half way up a side): planWalk says null and he stays put.
-  const plan = walkAllowed(over, true) ? planWalk(b, display.workArea) : null
+  // The lane runs over every display whose floor lines up with his (plan §13.1). Not on
+  // the floor (docked half way up a side): planWalk says null and he stays put.
+  const areas = screen.getAllDisplays().map((d) => d.workArea)
+  const plan = walkAllowed(over, true) ? planWalk(b, areas) : null
   if (!plan) {
     scheduleWalk()
     return
@@ -517,6 +522,13 @@ function stepWalk(win: BrowserWindow, cursorOverPet: boolean): void {
   const [, y] = win.getPosition()
   win.setPosition(Math.round(walk.x), y)
   if (walk.x === walk.toX) {
+    // Over the edge of a lower display: down onto its floor, where stepFall sits him.
+    if (walk.dropTo != null) {
+      fall = { fromY: y, toY: walk.dropTo, x: Math.round(walk.x), startAt: now }
+      walk = null
+      setPetState('standing')
+      return
+    }
     walk.arriveAt = now + WALK_ARRIVE_MS
     setPetState('standing')
   }
