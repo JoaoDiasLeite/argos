@@ -11,6 +11,7 @@ import {
   defaultPetPosition,
   dockSide,
   dogRect,
+  floorUnder,
   petHitTest,
   petStranded,
   petWindowSize,
@@ -570,7 +571,7 @@ export function startPetDrag(): void {
   startPolling(DRAG_POLL_MS)
 }
 
-/** Drop: dock to a side or fall to the floor of that display, and remember it for the display. */
+/** Drop: dock to a side or sit on the floor of that display, and remember it for the display. */
 export function endPetDrag(): void {
   if (!drag) return
   drag = null
@@ -587,16 +588,8 @@ export function endPetDrag(): void {
     return
   }
   const pos = snapToEdge({ x: b.x, y: b.y }, display.workArea, { width: b.width, height: b.height })
-  if (isFall(b.y, pos.y) && !reducedMotion()) {
-    // On his feet for the drop; stepFall sits him down on landing.
-    petWindow.setPosition(pos.x, b.y)
-    fall = { fromY: b.y, toY: pos.y, x: pos.x, startAt: Date.now() }
-    setPetState('standing')
-    startPolling(WALK_POLL_MS)
-  } else {
-    petWindow.setPosition(pos.x, pos.y)
-    settlePose()
-  }
+  petWindow.setPosition(pos.x, pos.y)
+  settlePose()
   placeBubble()
   savePetPosition(display.id, pos)
   scheduleWalk()
@@ -649,7 +642,7 @@ function dropToFloor(): void {
   if (!alive(petWindow)) return
   const b = petWindow.getBounds()
   const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
-  const pos = snapToEdge({ x: b.x, y: b.y }, display.workArea, { width: b.width, height: b.height })
+  const pos = floorUnder({ x: b.x, y: b.y }, display.workArea, { width: b.width, height: b.height })
   if (isFall(b.y, pos.y) && !reducedMotion()) {
     petWindow.setPosition(pos.x, b.y)
     fall = { fromY: b.y, toY: pos.y, x: pos.x, startAt: Date.now() }

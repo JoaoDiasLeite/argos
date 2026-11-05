@@ -81,28 +81,33 @@ export function migrateLegacyPosition(pos: Point): Point {
   return { x: Math.round(pos.x + dx), y: Math.round(pos.y + dy) }
 }
 
-/** A drop with the window within this of a side edge docks there (plan §13.3, M4). */
+/** A drop on the floor within this of a side edge tucks into the corner (plan §13.1, leaning). */
 export const DOCK_ZONE = 48
 
 /**
- * Where a dropped pet comes to rest. Let go within DOCK_ZONE of a side edge, above the
- * lower third of the work area, he docks against that edge, PET_MARGIN in, keeping his
- * height (clamped inside): docked, not free-floating, and not walking. Anywhere else he
- * ends on the floor under where he was let go, PET_MARGIN up from the bottom, so he can
- * walk from there; companion-window.ts drops him there along companion-fall-pure's curve.
+ * Where a dropped pet comes to rest. Let go in the lower third of the work area he sits
+ * on the floor under where he was let go, PET_MARGIN up from the bottom, so he can walk
+ * from there; within DOCK_ZONE of a side he tucks into that corner. Let go higher up he
+ * docks against the nearer side edge, PET_MARGIN in, keeping his height (clamped inside):
+ * docked, not free-floating, and not walking. He never falls from a drop; a fall is for
+ * walking off the edge of a higher display, or a perch whose window went.
  */
 export function snapToEdge(pos: Point, workArea: Rect, size = PET_SIZE, margin = PET_MARGIN): Point {
   const bottom = workArea.y + workArea.height
   const right = workArea.x + workArea.width
-  const nearLeft = pos.x - workArea.x <= DOCK_ZONE
-  const nearRight = right - (pos.x + size.width) <= DOCK_ZONE
-  const sideX = nearLeft ? workArea.x + margin : right - size.width - margin
   if (pos.y + size.height >= bottom - workArea.height / 3) {
-    // The floor; near a side he tucks into the corner (plan §13.1, leaning).
-    return clampToArea({ x: nearLeft || nearRight ? sideX : pos.x, y: bottom - size.height - margin }, size, workArea)
+    const nearLeft = pos.x - workArea.x <= DOCK_ZONE
+    const nearRight = right - (pos.x + size.width) <= DOCK_ZONE
+    const x = nearLeft ? workArea.x + margin : nearRight ? right - size.width - margin : pos.x
+    return clampToArea({ x, y: bottom - size.height - margin }, size, workArea)
   }
-  if (!nearLeft && !nearRight) return clampToArea({ x: pos.x, y: bottom - size.height - margin }, size, workArea)
-  return clampToArea({ x: sideX, y: pos.y }, size, workArea)
+  const left = pos.x + size.width / 2 < workArea.x + workArea.width / 2
+  return clampToArea({ x: left ? workArea.x + margin : right - size.width - margin, y: pos.y }, size, workArea)
+}
+
+/** The floor of the work area straight under `pos`: where he lands when the window he sat on went. */
+export function floorUnder(pos: Point, workArea: Rect, size = PET_SIZE, margin = PET_MARGIN): Point {
+  return clampToArea({ x: pos.x, y: workArea.y + workArea.height - size.height - margin }, size, workArea)
 }
 
 export type DockSide = 'left' | 'right'
