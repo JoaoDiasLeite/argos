@@ -10,9 +10,10 @@ writes an N x 96 by 96 PNG with hard alpha like the sheets already in the app.
     python scripts/companion-sheet.py <input image> <output png> <frames> [--keep 1,3,4] [--match idle.png]
 
 `--keep` writes only those frames (1-based, in the order given): for when the generator
-spoiled one and the cycle still reads without it. `--match <sheet>` brings the brightness
-in line with a sheet already in the app (one gain over the dog's pixels, hue and
-saturation untouched): the generators drift darker between images.
+spoiled one and the cycle still reads without it. `--match <sheet>` brings the colours
+in line with a sheet already in the app (the orange, the cream and the outline each
+carried onto the reference's): the generators drift between images. Given a finished
+96 px sheet as input, only that recolouring is done.
 
 Needs Pillow, numpy and scipy. Check the result at 3x before it goes in: a frame the
 generator drew much bigger or smaller than the others still comes out odd.
@@ -94,16 +95,51 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
     return dog
 
 
+def colour_classes(px: np.ndarray) -> dict[str, np.ndarray]:
+    """The dog's three paints, by hue and value: the orange coat, the cream, the dark outline."""
+    mx = px.max(1)
+    mn = px.min(1)
+    sat = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1), 0)
+    val = mx / 255.0
+    return {
+        'orange': (sat > 0.45) & (val > 0.6) & (px[:, 0] > px[:, 2]),
+        'cream': (sat < 0.3) & (val > 0.75),
+        'dark': val < 0.35
+    }
+
+
 def match_colours(sheet: Image.Image, reference: str) -> Image.Image:
-    """The sheet's dog lifted to the reference sheet's brightness: one gain on every channel, so hue and saturation keep their balance."""
+    """
+    The sheet's paints brought onto the reference sheet's: for each channel, the gain and
+    offset that carry the mean orange, cream and outline of this sheet onto the reference's
+    (least squares over the three), applied to every pixel of the dog.
+    """
     ref = np.array(Image.open(reference).convert('RGBA')).astype(float)
     out = np.array(sheet.convert('RGBA')).astype(float)
     ref_px = ref[..., :3][ref[..., 3] > 128]
     mask = out[..., 3] > 128
     out_px = out[..., :3][mask]
-    gain = ref_px.max(1).mean() / max(1.0, out_px.max(1).mean())
-    out[..., :3][mask] = np.clip(out_px * gain, 0, 255)
-    print(f'colour gain {gain:.3f}')
+    rc, oc = colour_classes(ref_px), colour_classes(out_px)
+    names = [n for n in rc if rc[n].sum() > 20 and oc[n].sum() > 20]
+    if len(names) < 2:
+        return sheet
+    src = np.array([out_px[oc[n]].mean(0) for n in names])
+    dst = np.array([ref_px[rc[n]].mean(0) for n in names])
+    fixed = out_px.copy()
+    for c in range(3):
+        gain, offset = np.polyfit(src[:, c], dst[:, c], 1)
+        fixed[:, c] = out_px[:, c] * gain + offset
+    # The coat is most of the dog and what the eye compares first: whatever the three-way
+    # fit left of the gap in the orange is closed on the orange alone, fading out at its edge.
+    if 'orange' in names:
+        fc = colour_classes(fixed)
+        residual = ref_px[rc['orange']].mean(0) - fixed[fc['orange']].mean(0)
+        mx = fixed.max(1)
+        sat = np.where(mx > 0, (mx - fixed.min(1)) / np.maximum(mx, 1), 0)
+        weight = np.clip((sat - 0.3) / 0.15, 0, 1) * (mx > 150) * (fixed[:, 0] > fixed[:, 2])
+        fixed += residual * weight[:, None]
+    out[..., :3][mask] = np.clip(fixed, 0, 255)
+    print('colours matched on', ', '.join(names))
     return Image.fromarray(out.astype(np.uint8))
 
 
@@ -151,6 +187,12 @@ def main() -> None:
     # A PNG with real transparency is laid over white first: the cutter reads a background
     # of white and grey, and transparent black would otherwise read as outline.
     src_im = Image.open(src).convert('RGBA')
+    if src_im.height == FRAME and src_im.width % FRAME == 0 and '--match' in sys.argv:
+        # Already a sheet: only the colours are brought in line.
+        sheet = match_colours(src_im, sys.argv[sys.argv.index('--match') + 1])
+        sheet.save(out)
+        print('wrote', out, 'recoloured')
+        return
     alpha = np.array(src_im)[..., 3]
     flat = Image.new('RGBA', src_im.size, (255, 255, 255, 255))
     flat.alpha_composite(src_im)
