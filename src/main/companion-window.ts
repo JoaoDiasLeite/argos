@@ -35,6 +35,7 @@ import {
 import { DOZE_AFTER_MS, canDoze, cursorNearPet, type DozeConditions } from './companion-doze-pure'
 import { FOLLOW_POLL_MS, followUpdate, shouldFollow, type FollowWatch } from './companion-follow-pure'
 import { fallY, isFall, type Fall } from './companion-fall-pure'
+import { BALL_SIZE, ballAt, fetchX, planThrow, type Throw } from './companion-ball-pure'
 import { restingPetState } from './companion-quiet-pure'
 import { PET_SCALE, POSITIONS_VERSION, VOICE_SHORTCUT_DEFAULTS } from './companion-types'
 import type {
@@ -77,6 +78,9 @@ const DEFAULT_BUBBLE_SIZE: Size = { width: 320, height: 120 }
 
 let petWindow: BrowserWindow | null = null
 let bubbleWindow: BrowserWindow | null = null
+let ballWindow: BrowserWindow | null = null
+/** Fetch (plan §13.3, P2): the throw in the air, then the run out to it and back home. */
+let game: { phase: 'throw' | 'fetch' | 'return'; throw: Throw; startAt: number; homeX: number } | null = null
 let registeredShortcut = ''
 let registeredVoiceShortcut = ''
 /** What the bubble is doing with the microphone; while busy, a blur does not close it. */
@@ -136,7 +140,7 @@ export function companionShortcut(): string {
   return registeredShortcut
 }
 
-function loadEntry(win: BrowserWindow, hash: 'pet' | 'bubble'): void {
+function loadEntry(win: BrowserWindow, hash: 'pet' | 'bubble' | 'ball'): void {
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/companion.html#${hash}`)
   } else {
@@ -333,6 +337,112 @@ function createBubbleWindow(): BrowserWindow {
   return win
 }
 
+/** The ball: as the pet window, but never takes a click. Made on the first throw. */
+function createBallWindow(): BrowserWindow {
+  const win = new BrowserWindow({
+    width: BALL_SIZE,
+    height: BALL_SIZE,
+    show: false,
+    frame: false,
+    transparent: true,
+    hasShadow: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    focusable: false,
+    alwaysOnTop: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      contextIsolation: true
+    }
+  })
+  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setContentProtection(prefs().hideFromCapture)
+  win.setIgnoreMouseEvents(true, { forward: true })
+  win.on('closed', () => {
+    if (ballWindow === win) ballWindow = null
+  })
+  hardenWebContents(win)
+  loadEntry(win, 'ball')
+  ballWindow = win
+  return win
+}
+
+// ─── Fetch (plan §13.3, P2) ────────────────────────────────────────────────────
+
+/**
+ * The pet's menu: throw the ball along the floor the roomier way. He stands and watches
+ * it land, runs out to it, and brings it back to where he was, wagging. Nothing while he
+ * is busy, docked up a side, or not allowed a walk.
+ */
+export function throwBall(): void {
+  if (!alive(petWindow) || !petWindow.isVisible() || walk || fall || drag || game || bubble) return
+  stopWalk()
+  const b = petWindow.getBounds()
+  if (!walkAllowed(false, true)) return
+  const t = planThrow(b, screen.getAllDisplays().map((d) => d.workArea))
+  if (!t) return
+  const ball = alive(ballWindow) ? ballWindow : createBallWindow()
+  game = { phase: 'throw', throw: t, startAt: Date.now(), homeX: b.x }
+  petFacing = t.facing
+  sendToPet('companion:pet-facing', petFacing)
+  setPetState('standing')
+  ball.setBounds({ x: t.fromX, y: t.fromY, width: BALL_SIZE, height: BALL_SIZE })
+  ball.showInactive()
+  startPolling(WALK_POLL_MS)
+}
+
+/** One poll tick while the ball flies; on landing he sets off after it. */
+function stepThrow(): void {
+  if (!game || game.phase !== 'throw' || !alive(petWindow)) return
+  const { x, y, done } = ballAt(game.throw, Date.now() - game.startAt)
+  if (alive(ballWindow)) ballWindow.setPosition(x, y)
+  if (!done) return
+  const b = petWindow.getBounds()
+  const plan = planRunTo(b, screen.getAllDisplays().map((d) => d.workArea), fetchX(game.throw, b))
+  if (!plan) {
+    endGame()
+    return
+  }
+  game.phase = 'fetch'
+  startPlan(plan)
+}
+
+/** The run out or back ended: picked up, the ball goes and he runs home; home, a wag. */
+function settleGame(arrived: boolean): void {
+  if (!game || game.phase === 'throw') return
+  if (!arrived || !alive(petWindow)) {
+    endGame()
+    return
+  }
+  if (game.phase === 'fetch') {
+    if (alive(ballWindow)) ballWindow.hide()
+    const plan = planRunTo(petWindow.getBounds(), screen.getAllDisplays().map((d) => d.workArea), game.homeX)
+    if (!plan) {
+      endGame(true)
+      return
+    }
+    game.phase = 'return'
+    // startPlan from inside stopWalk: the walk it clears is already null here.
+    startPlan(plan)
+    return
+  }
+  endGame(true)
+}
+
+/** The game is over, with a wag when he brought the ball back. */
+function endGame(pleased = false): void {
+  game = null
+  if (alive(ballWindow)) ballWindow.hide()
+  if (pleased && petState !== 'happy') setPetState('happy')
+  else if (petState === 'standing') setPetState(restingState())
+  if (pollTimer && !drag && !walk && !fall) startPolling(POLL_MS)
+}
+
 // ─── Click-through and drag ────────────────────────────────────────────────────
 
 function setIgnore(ignore: boolean): void {
@@ -361,6 +471,7 @@ function poll(): void {
   if (petState === 'dozing' && cursorNearPet(cursor, b)) wakePet()
   if (fall) stepFall(petWindow)
   else if (walk) stepWalk(petWindow, over)
+  else if (game?.phase === 'throw') stepThrow()
 }
 
 function startPolling(ms = POLL_MS): void {
@@ -377,8 +488,9 @@ function stopPolling(): void {
 export function startPetDrag(): void {
   if (!alive(petWindow) || !petWindow.isVisible()) return
   stopWalk()
-  // Caught mid-air: the fall ends where he is.
+  // Caught mid-air: the fall ends where he is, and so does the game.
   fall = null
+  if (game) endGame()
   wakePet()
   cancelDoze()
   const [x, y] = petWindow.getPosition()
@@ -608,6 +720,7 @@ function stopWalk(arrived = false): void {
   }
   if (arrived) settleFollow()
   else followingTo = null
+  settleGame(arrived)
   scheduleWalk()
 }
 
@@ -734,6 +847,7 @@ function hidePet(): void {
   stopPolling()
   drag = null
   fall = null
+  if (game) endGame()
   // Quietly: nothing queued should pop the pet straight back up.
   hideBubbleWindow(false)
   if (alive(petWindow) && petWindow.isVisible()) {
@@ -920,7 +1034,7 @@ export function setBubbleSize(size: Size): void {
 
 /** Apply saved prefs to live windows: capture exclusion, and "stay on screen". */
 export function applyCompanionPrefs(next: CompanionPrefs): void {
-  for (const win of [petWindow, bubbleWindow]) {
+  for (const win of [petWindow, bubbleWindow, ballWindow]) {
     if (alive(win)) win.setContentProtection(next.hideFromCapture)
   }
   resizePet(next.size)

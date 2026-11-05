@@ -9,10 +9,12 @@ import { I18nProvider } from '../i18n'
 import { applyTheme } from '../lib/theme'
 import Pet from './Pet'
 import Bubble from './Bubble'
+import Ball from './Ball'
 
-// The companion's two windows (docs/COMPANION_PLAN.md §9.1–9.2): one page, told apart by
-// the hash main loads it with — '#pet' for Argos, '#bubble' for the bubble beside him.
-// No markdown or highlighting here: the entry stays small so the bubble paints at once.
+// The companion's windows (docs/COMPANION_PLAN.md §9.1–9.2, §13.3 P2): one page, told
+// apart by the hash main loads it with — '#pet' for Argos, '#bubble' for the bubble
+// beside him, '#ball' for the ball he fetches. No markdown or highlighting here: the
+// entry stays small so the bubble paints at once.
 
 /** The user's palette and theme, followed live like the overlay does. */
 function Themed({ children }: { children: React.ReactNode }) {
@@ -29,7 +31,7 @@ function Themed({ children }: { children: React.ReactNode }) {
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <I18nProvider>
-      <Themed>{location.hash === '#bubble' ? <Bubble /> : <Pet />}</Themed>
+      <Themed>{location.hash === '#bubble' ? <Bubble /> : location.hash === '#ball' ? <Ball /> : <Pet />}</Themed>
     </I18nProvider>
   </React.StrictMode>
 )

@@ -255,6 +255,7 @@ import {
   setVoicePhase,
   showCompanion,
   startPetDrag,
+  throwBall,
   toggleCompanion
 } from './companion-window'
 import type { CompanionCaptureResult, CompanionList, CompanionPrefs, CompanionPromoteResult, CompanionPlanAlert, CompanionTerminalAlert, CompanionTodo, CompanionStateView, CompanionVoicePhase, ParsedCapture } from './companion-types'
@@ -1212,6 +1213,7 @@ function companionPetMenuTemplate(): MenuItemConstructorOptions[] {
         ]
   return [
     { label: t('main.companion.today'), click: showCompanionToday },
+    { label: t('main.companion.ball'), click: throwBall },
     { type: 'separator' },
     ...quietItems,
     { type: 'separator' },

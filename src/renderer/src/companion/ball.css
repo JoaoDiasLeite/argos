@@ -1,0 +1,13 @@
+/* The ball window: 20×20, transparent but for the ball (companion-ball-pure BALL_SIZE). */
+html, body, #root { background: transparent; }
+
+.ball {
+  position: absolute;
+  inset: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  /* A shaded edge, so it reads as a ball on any wallpaper. */
+  box-shadow: inset -3px -3px 0 rgba(0, 0, 0, 0.28), inset 2px 2px 0 rgba(255, 255, 255, 0.35);
+}
