@@ -93,6 +93,16 @@ of the tests.
 Releases are cut by pushing a `vX.Y.Z` tag; `.github/workflows/release.yml` builds the
 Windows and Linux installers and publishes them. See `CLAUDE.md` for the full process.
 
+## Maintainer and contributors
+
+Argos was created and is maintained by [João Dias Leite](https://github.com/JoaoDiasLeite),
+who reviews and merges every change and cuts the releases.
+
+Contributions arrive by fork and pull request; see [CONTRIBUTING.md](CONTRIBUTING.md).
+Everyone whose work is merged keeps authorship of their commits and appears on the
+[contributors page](https://github.com/JoaoDiasLeite/argos/graphs/contributors).
+Security problems go through [SECURITY.md](SECURITY.md), not the issue tracker.
+
 ## License
 
 [MIT](LICENSE) © 2026 João Dias Leite

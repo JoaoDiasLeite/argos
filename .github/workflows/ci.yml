@@ -1,0 +1,81 @@
+# Runs on every pull request and on pushes to main. The four jobs below are
+# the required status checks on main (typecheck, test, build, dco); keep the
+# job names stable. The token is read-only and the workflow never runs code
+# from a pull request with secrets or write access: it uses pull_request,
+# not pull_request_target, and no step interpolates PR-controlled text.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+  # Windows is the primary platform and some tests assert Windows path
+  # semantics (project-move-pure.test.ts), so the suite runs there.
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+  # Developer Certificate of Origin: every commit in the pull request must
+  # carry a "Signed-off-by: Name <email>" trailer (git commit -s). Merge
+  # commits are skipped. The commit range comes from the event payload via
+  # environment variables, never interpolated into the script.
+  dco:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Check Signed-off-by on every commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          missing=0
+          for sha in $(git rev-list --no-merges "$BASE_SHA".."$HEAD_SHA"); do
+            if ! git log -1 --format=%B "$sha" | grep -Eq '^Signed-off-by: .+ <[^>]+@[^>]+>$'; then
+              echo "::error::commit $sha has no Signed-off-by trailer (use git commit -s)"
+              missing=1
+            fi
+          done
+          exit "$missing"

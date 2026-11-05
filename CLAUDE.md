@@ -25,8 +25,12 @@ Rules:
 - **Every commit in a split must compile on its own.** Run `npm run typecheck` against each
   commit's staged tree (e.g. `git stash push --keep-index --include-untracked`), not only
   the final one.
-- **Commit, don't push**, unless asked. Commits land on `main` directly in this repo; release
-  commits follow the release process below.
+- **Sign off every commit** (`git commit -s`). CI rejects pull requests with a commit that
+  lacks the `Signed-off-by:` trailer. This is the DCO sign-off, not Claude attribution.
+- **Commit on a branch, don't push**, unless asked. `main` only accepts changes through a
+  pull request with passing checks (typecheck, test, build, dco) and is merged with squash,
+  so the PR title becomes the commit title on `main`. Work on a `feat/…`, `fix/…` or
+  `chore/…` branch; release commits follow the release process below.
 - Finish by showing `git log --oneline -N` for the commits just made.
 
 ## Release process
@@ -41,11 +45,12 @@ Starting a new in-progress version (right after the previous release):
 2. Add a new entry to the top of the `CHANGELOG` array in
    `src/renderer/src/components/ChangelogModal.tsx`, with `tag: 'new'` (renders as
    "Unreleased").
-3. Commit as `chore: begin X.Y.Z (unreleased)`.
+3. Commit as `chore: begin X.Y.Z (unreleased)` on a branch and merge it through a PR.
 
 Cutting the release once the version's work is merged to `main`:
 1. In `ChangelogModal.tsx`, flip the new version's `tag` from `'new'` to `'latest'`,
    and remove the `tag` field from the previous entry (it no longer needs a badge).
-2. Commit as `chore(release): X.Y.Z`.
-3. Push the commit, then create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+2. Commit as `chore(release): X.Y.Z` on a branch and merge it through a PR.
+3. On the merged `main`, create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+   Only the repository admin can push `v*` tags (tag ruleset).
 4. The GitHub Actions workflow takes it from there — no local build/publish step needed.
