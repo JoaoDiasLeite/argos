@@ -34,6 +34,17 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
     mx = np.maximum(np.maximum(r, g), b)
     mn = np.minimum(np.minimum(r, g), b)
     greyish = ((mx - mn) < 28) & (mx > 150)
+    # A flat key colour behind him (the green or magenta the prompt asks for): whatever the
+    # border is painted, and everything near that colour, is background like the grey.
+    border = np.concatenate([rgb[0], rgb[-1], rgb[:, 0], rgb[:, -1]])
+    key = np.median(border, axis=0)
+    if key.max() - key.min() > 60:
+        keyed = np.sqrt(((rgb - key) ** 2).sum(-1)) < 80
+        greyish = greyish | keyed
+        rgb[keyed] = 255
+        r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+        mx = np.maximum(np.maximum(r, g), b)
+        mn = np.minimum(np.minimum(r, g), b)
     # What only the real dog has: the dark outline and the strong orange. A pale "ghost"
     # copy the generator smears behind him has neither, and nor does the checkerboard.
     strong = (mx < 90) | ((mx - mn) > 100)
