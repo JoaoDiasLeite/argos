@@ -69,8 +69,10 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   standing: { src: SHEETS.walk, frames: 1, fps: 1, sheetFrames: 6 },
   // Back to a side wall (drawn with the wall on the left), mirrored for the right wall.
   leaning: { src: SHEETS.lean, frames: 1, fps: 1 },
-  // Turned toward the cursor (drawn looking right, mirrored for the left): a look, then a lean in.
-  looking: { src: SHEETS.look, frames: 2, fps: 2 },
+  // Turned toward the cursor. look.png is two poses, not a loop: a look to the left, then
+  // a look to the right. The second is held (mirrored for a cursor on the left); played
+  // as a loop he looked both ways, ears up and down, the whole time the cursor was near.
+  looking: { src: SHEETS.look, frames: 1, fps: 1, sheetFrames: 2, frame: 1 },
   // The day's routine (plan §13.4): the wag stands in for stretch.png, the doze for sleep.png.
   // The morning stretch: a play bow, a yawn, and sat again; the yawn alone at six.
   stretching: { src: SHEETS.stretch, frames: 3, fps: 1 },
@@ -118,11 +120,12 @@ const PET_STATES: readonly CompanionPetState[] = [
   'perched'
 ]
 
-/** Now and then while just sitting (plan §13.3, U3): a scratch, or a glance the other way. */
+/** Now and then while just sitting (plan §13.3, U3): a scratch. (A glance the other way
+ * was tried too and read as turning his back on you.) */
 const FIDGET_MIN_MS = 20_000
 const FIDGET_MAX_MS = 60_000
 const FIDGET_MS = 1500
-type Fidget = 'scratching' | 'glance'
+type Fidget = 'scratching'
 
 /** The gaits: drawn facing right and mirrored for the left, never shown with reduced motion. */
 const ON_THE_MOVE: readonly CompanionPetState[] = ['walking', 'running', 'standing']
@@ -209,7 +212,7 @@ export default function Pet() {
     const schedule = (): void => {
       timer = window.setTimeout(
         () => {
-          setFidget(Math.random() < 0.5 ? 'scratching' : 'glance')
+          setFidget('scratching')
           timer = window.setTimeout(() => {
             setFidget(null)
             schedule()
@@ -224,14 +227,12 @@ export default function Pet() {
 
   // With reduced motion a walk is never shown: he is drawn sitting (main does not walk then either).
   const base: CompanionPetState = ON_THE_MOVE.includes(state) && reducedMotion ? 'idle' : state
-  const glancing = base === 'idle' && fidget === 'glance'
-  const shown: CompanionPetState = base === 'idle' && fidget === 'scratching' ? 'scratching' : glancing ? 'looking' : base
+  const shown: CompanionPetState = base === 'idle' && fidget === 'scratching' ? 'scratching' : base
   // Which sleep tonight: picked afresh whenever his state changes.
   const sleepSheet = useMemo(() => SLEEP_SHEETS[Math.floor(Math.random() * SLEEP_SHEETS.length)], [state])
   const sprite: Sprite = shown === 'sleeping' ? { ...SPRITES.sleeping, src: sleepSheet } : SPRITES[shown]
   const animated = sprite.frames > 1
-  // A glance is the other way from where he faces.
-  const mirrored = glancing ? facing === 'right' : MIRRORABLE.includes(shown) && facing === 'left'
+  const mirrored = MIRRORABLE.includes(shown) && facing === 'left'
 
   // Screen coordinates: while main drags the window the dog stays under the cursor, so
   // client coordinates barely move even on a long drag.

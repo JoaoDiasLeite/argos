@@ -14,6 +14,7 @@ import {
   petStranded,
   petWindowSize,
   restoredPetPosition,
+  floorUnder,
   snapToEdge,
   type Rect
 } from './companion-window-pure'
@@ -41,26 +42,28 @@ describe('defaultPetPosition', () => {
 })
 
 describe('snapToEdge', () => {
-  it('docks to the left edge when dropped near it, keeping its height', () => {
+  it('docks to the left edge when dropped on the left half, keeping its height', () => {
     expect(snapToEdge({ x: 30, y: 300 }, area)).toEqual({ x: 12, y: 300 })
-    expect(snapToEdge({ x: DOCK_ZONE, y: 300 }, area)).toEqual({ x: 12, y: 300 })
+    expect(snapToEdge({ x: 500, y: 300 }, area)).toEqual({ x: 12, y: 300 })
   })
 
-  it('docks to the right edge when dropped near it', () => {
+  it('docks to the right edge when dropped on the right half', () => {
     expect(snapToEdge({ x: 1920 - W - 30, y: 300 }, area)).toEqual({ x: 1920 - W - 12, y: 300 })
+    expect(snapToEdge({ x: 1000, y: 300 }, area)).toEqual({ x: 1920 - W - 12, y: 300 })
   })
 
-  it('falls to the floor from the middle of the screen, under where it was let go', () => {
-    expect(snapToEdge({ x: 500, y: 300 }, area)).toEqual({ x: 500, y: FLOOR })
-    expect(snapToEdge({ x: DOCK_ZONE + 1, y: 300 }, area)).toEqual({ x: DOCK_ZONE + 1, y: FLOOR })
+  it('never falls: a drop above the lower third keeps its height', () => {
+    expect(snapToEdge({ x: 960 - W / 2, y: 100 }, area).y).toBe(100)
   })
 
   it('lands a drop in the lower third on the floor, where it was let go', () => {
     expect(snapToEdge({ x: 900, y: 600 }, area)).toEqual({ x: 900, y: FLOOR })
+    expect(snapToEdge({ x: DOCK_ZONE + 1, y: 700 }, area)).toEqual({ x: DOCK_ZONE + 1, y: FLOOR })
   })
 
   it('tucks a drop near the bottom corners into the corner', () => {
     expect(snapToEdge({ x: 20, y: 700 }, area)).toEqual({ x: 12, y: FLOOR })
+    expect(snapToEdge({ x: DOCK_ZONE, y: 700 }, area)).toEqual({ x: 12, y: FLOOR })
     expect(snapToEdge({ x: 1920 - W - 30, y: 1000 }, area)).toEqual({ x: 1920 - W - 12, y: FLOOR })
   })
 
@@ -75,7 +78,20 @@ describe('snapToEdge', () => {
   it('snaps on a display with a negative origin', () => {
     expect(snapToEdge({ x: -1260, y: 400 }, left)).toEqual({ x: -1280 + 12, y: 400 })
     expect(snapToEdge({ x: -W - 20, y: 400 }, left)).toEqual({ x: -W - 12, y: 400 })
-    expect(snapToEdge({ x: -700, y: 400 }, left)).toEqual({ x: -700, y: 100 + 984 - H - 12 })
+    expect(snapToEdge({ x: -800, y: 400 }, left)).toEqual({ x: -1280 + 12, y: 400 })
+    expect(snapToEdge({ x: -600, y: 400 }, left)).toEqual({ x: -W - 12, y: 400 })
+    expect(snapToEdge({ x: -700, y: 900 }, left)).toEqual({ x: -700, y: 100 + 984 - H - 12 })
+  })
+})
+
+describe('floorUnder', () => {
+  it('is the floor straight under the window', () => {
+    expect(floorUnder({ x: 500, y: 300 }, area)).toEqual({ x: 500, y: FLOOR })
+    expect(floorUnder({ x: -700, y: 400 }, left)).toEqual({ x: -700, y: 100 + 984 - H - 12 })
+  })
+
+  it('keeps the window inside the work area', () => {
+    expect(floorUnder({ x: 1900, y: 300 }, area)).toEqual({ x: 1920 - W, y: FLOOR })
   })
 })
 
