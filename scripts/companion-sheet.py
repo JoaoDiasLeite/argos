@@ -107,6 +107,17 @@ def match_colours(sheet: Image.Image, reference: str) -> Image.Image:
     return Image.fromarray(out.astype(np.uint8))
 
 
+def clean_mask(dog: np.ndarray) -> np.ndarray:
+    """A colour-cut mask without its specks and pinholes, so the edge comes out even."""
+    ys = np.where(dog.any(1))[0]
+    H = ys.max() - ys.min() + 1
+    k = max(3, int(H * 0.012))
+    if k % 2 == 0:
+        k += 1
+    smooth = ndimage.median_filter(dog, size=k)
+    return ndimage.binary_fill_holes(smooth) & ~(ndimage.binary_fill_holes(smooth) & ~smooth & ~ndimage.binary_dilation(smooth, iterations=k))
+
+
 def split_frames(dog: np.ndarray, frames: int) -> list[tuple[int, int]]:
     ys = np.where(dog.any(1))[0]
     H = ys.max() - ys.min() + 1
@@ -140,10 +151,15 @@ def main() -> None:
     # A PNG with real transparency is laid over white first: the cutter reads a background
     # of white and grey, and transparent black would otherwise read as outline.
     src_im = Image.open(src).convert('RGBA')
+    alpha = np.array(src_im)[..., 3]
     flat = Image.new('RGBA', src_im.size, (255, 255, 255, 255))
     flat.alpha_composite(src_im)
     rgb = np.array(flat.convert('RGB'))
-    dog = cut_dog(rgb)
+    if (alpha < 128).mean() > 0.05:
+        # The file carries its own transparency (a PNG from the generator): that is the dog.
+        dog = alpha >= 128
+    else:
+        dog = clean_mask(cut_dog(rgb))
     crops = []
     found = split_frames(dog, frames)
     for a, b in [found[k] for k in keep]:
@@ -163,10 +179,13 @@ def main() -> None:
     for i, c in enumerate(crops):
         s = min(scale, fit[i])
         w, h = max(1, round(c.shape[1] * s)), max(1, round(c.shape[0] * s))
-        f = Image.fromarray(c).resize((w, h), Image.LANCZOS)
-        arr = np.array(f)
-        arr[..., 3] = np.where(arr[..., 3] >= 128, 255, 0)
-        f = Image.fromarray(arr)
+        pre = c.astype(float)
+        pre[..., :3] *= pre[..., 3:4] / 255.0
+        small = np.array(Image.fromarray(pre.astype(np.uint8)).resize((w, h), Image.LANCZOS)).astype(float)
+        a = small[..., 3:4]
+        small[..., :3] = np.where(a > 0, small[..., :3] * 255.0 / np.maximum(a, 1), 0)
+        small[..., 3] = np.where(small[..., 3] >= 128, 255, 0)
+        f = Image.fromarray(np.clip(small, 0, 255).astype(np.uint8))
         sheet.paste(f, (i * FRAME + (FRAME - w) // 2, PAW_Y - h + 1), f)
         print(f'frame {i + 1}: {w}x{h} at {s:.3f}')
     if '--match' in sys.argv:
