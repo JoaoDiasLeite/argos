@@ -27,7 +27,8 @@ const SHEETS = {
   run: new URL('./sprites/run.png', import.meta.url).href,
   lean: new URL('./sprites/lean.png', import.meta.url).href,
   perch: new URL('./sprites/perch.png', import.meta.url).href,
-  look: new URL('./sprites/look.png', import.meta.url).href
+  look: new URL('./sprites/look.png', import.meta.url).href,
+  stretch: new URL('./sprites/stretch.png', import.meta.url).href
 }
 
 interface Sprite {
@@ -37,6 +38,8 @@ interface Sprite {
   fps: number
   /** Frames in the sheet when it holds more than are played (standing shows walk's first). */
   sheetFrames?: number
+  /** With `frames: 1`, which frame of the sheet is held (0-based); the first otherwise. */
+  frame?: number
 }
 
 const IDLE: Sprite = { src: SHEETS.idle, frames: 8, fps: 4 }
@@ -66,8 +69,9 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   // Turned toward the cursor (drawn looking right, mirrored for the left): a look, then a lean in.
   looking: { src: SHEETS.look, frames: 2, fps: 2 },
   // The day's routine (plan §13.4): the wag stands in for stretch.png, the doze for sleep.png.
-  stretching: { src: SHEETS.wag, frames: 4, fps: 4 },
-  yawning: { src: SHEETS.wag, frames: 4, fps: 4 },
+  // The morning stretch: a play bow, a yawn, and sat again; the yawn alone at six.
+  stretching: { src: SHEETS.stretch, frames: 3, fps: 1 },
+  yawning: { src: SHEETS.stretch, frames: 1, fps: 1, sheetFrames: 3, frame: 1 },
   sleeping: { src: SHEETS.doze, frames: 2, fps: 1 },
   // A fidget (plan §13.4): the wag stands in for scratch.png.
   scratching: { src: SHEETS.wag, frames: 4, fps: 8 },
@@ -282,6 +286,7 @@ export default function Pet() {
             style={{
               backgroundImage: `url("${sprite.src}")`,
               ...(sprite.sheetFrames ? { backgroundSize: `${sprite.sheetFrames * FRAME}px ${FRAME}px` } : {}),
+              ...(sprite.frame ? { backgroundPosition: `${-sprite.frame * FRAME}px 0` } : {}),
               ...(animated
                 ? {
                     backgroundSize: `${sprite.frames * FRAME}px ${FRAME}px`,
