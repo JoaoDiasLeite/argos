@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import type { CompanionPetFacing, CompanionPetSize, CompanionPetState } from '../types'
 import { PET_SCALE } from '../../../shared/companion'
 import { useT } from '../i18n'
@@ -23,7 +23,15 @@ const SHEETS = {
   shh: new URL('./sprites/shh.png', import.meta.url).href,
   listen: new URL('./sprites/listen.png', import.meta.url).href,
   think: new URL('./sprites/think.png', import.meta.url).href,
-  walk: new URL('./sprites/walk.png', import.meta.url).href
+  walk: new URL('./sprites/walk.png', import.meta.url).href,
+  run: new URL('./sprites/run.png', import.meta.url).href,
+  lean: new URL('./sprites/lean.png', import.meta.url).href,
+  perch: new URL('./sprites/perch.png', import.meta.url).href,
+  look: new URL('./sprites/look.png', import.meta.url).href,
+  stretch: new URL('./sprites/stretch.png', import.meta.url).href,
+  sleep1: new URL('./sprites/sleep1.png', import.meta.url).href,
+  sleep2: new URL('./sprites/sleep2.png', import.meta.url).href,
+  scratch: new URL('./sprites/scratch.png', import.meta.url).href
 }
 
 interface Sprite {
@@ -33,6 +41,8 @@ interface Sprite {
   fps: number
   /** Frames in the sheet when it holds more than are played (standing shows walk's first). */
   sheetFrames?: number
+  /** With `frames: 1`, which frame of the sheet is held (0-based); the first otherwise. */
+  frame?: number
 }
 
 const IDLE: Sprite = { src: SHEETS.idle, frames: 8, fps: 4 }
@@ -50,27 +60,34 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   listening: { src: SHEETS.listen, frames: 2, fps: 3 },
   // Looking up for three beats, then a slow half-closed blink.
   thinking: { src: SHEETS.think, frames: 4, fps: 2 },
-  // Drawn facing right; mirrored on the wrapper for a walk to the left (main moves the window).
-  walking: { src: SHEETS.walk, frames: 4, fps: 8 },
-  // The run (plan §13.4): the walk sheet at a faster clip until run.png is drawn.
-  running: { src: SHEETS.walk, frames: 4, fps: 12 },
+  // One full stride over six frames, drawn facing right; mirrored on the wrapper for a walk
+  // to the left (main moves the window).
+  walking: { src: SHEETS.walk, frames: 6, fps: 8 },
+  // A gallop: reach, push, all four paws off the ground, and back (five of the six drawn
+  // frames; the generator smeared one, scripts/companion-sheet.py --keep left it out).
+  running: { src: SHEETS.run, frames: 5, fps: 10 },
   // On his feet before and after a walk: the walk sheet's first frame, held.
-  standing: { src: SHEETS.walk, frames: 1, fps: 1, sheetFrames: 4 },
-  // Back to a side wall (plan §13.4): idle until lean.png is drawn, mirrored for the right wall.
-  leaning: IDLE,
-  // Turned toward the cursor (plan §13.4): idle, mirrored to face it, until look.png is drawn.
-  looking: IDLE,
+  standing: { src: SHEETS.walk, frames: 1, fps: 1, sheetFrames: 6 },
+  // Back to a side wall (drawn with the wall on the left), mirrored for the right wall.
+  leaning: { src: SHEETS.lean, frames: 1, fps: 1 },
+  // Turned toward the cursor (drawn looking right, mirrored for the left): a look, then a lean in.
+  looking: { src: SHEETS.look, frames: 2, fps: 2 },
   // The day's routine (plan §13.4): the wag stands in for stretch.png, the doze for sleep.png.
-  stretching: { src: SHEETS.wag, frames: 4, fps: 4 },
-  yawning: { src: SHEETS.wag, frames: 4, fps: 4 },
-  sleeping: { src: SHEETS.doze, frames: 2, fps: 1 },
-  // A fidget (plan §13.4): the wag stands in for scratch.png.
-  scratching: { src: SHEETS.wag, frames: 4, fps: 8 },
-  // On a window's top edge (plan §13.4): idle until perch.png is drawn.
-  perched: IDLE
+  // The morning stretch: a play bow, a yawn, and sat again; the yawn alone at six.
+  stretching: { src: SHEETS.stretch, frames: 3, fps: 1 },
+  yawning: { src: SHEETS.stretch, frames: 1, fps: 1, sheetFrames: 3, frame: 1 },
+  // Flat out for the night, one slow breath; Pet picks sleep1 or sleep2 each time he lies down.
+  sleeping: { src: SHEETS.sleep1, frames: 2, fps: 1 },
+  // A fidget: the hind leg up to the ear, two scratches with the ear flapping, and down.
+  scratching: { src: SHEETS.scratch, frames: 4, fps: 8 },
+  // On a window's top edge: a look down over it, then straight ahead, slowly.
+  perched: { src: SHEETS.perch, frames: 2, fps: 0.5 }
 }
 
 const FRAME = 96
+
+/** The two ways he sleeps, one picked at random each night (the paws lie differently in each). */
+const SLEEP_SHEETS = [SHEETS.sleep1, SHEETS.sleep2]
 
 /** `happy` is a 1 s beat (two hops, two wags); then the pet sits back down. */
 const HAPPY_MS = 1000
@@ -210,7 +227,9 @@ export default function Pet() {
   const base: CompanionPetState = ON_THE_MOVE.includes(state) && reducedMotion ? 'idle' : state
   const glancing = base === 'idle' && fidget === 'glance'
   const shown: CompanionPetState = base === 'idle' && fidget === 'scratching' ? 'scratching' : glancing ? 'looking' : base
-  const sprite = SPRITES[shown]
+  // Which sleep tonight: picked afresh whenever his state changes.
+  const sleepSheet = useMemo(() => SLEEP_SHEETS[Math.floor(Math.random() * SLEEP_SHEETS.length)], [state])
+  const sprite: Sprite = shown === 'sleeping' ? { ...SPRITES.sleeping, src: sleepSheet } : SPRITES[shown]
   const animated = sprite.frames > 1
   // A glance is the other way from where he faces.
   const mirrored = glancing ? facing === 'right' : MIRRORABLE.includes(shown) && facing === 'left'
@@ -277,9 +296,11 @@ export default function Pet() {
             style={{
               backgroundImage: `url("${sprite.src}")`,
               ...(sprite.sheetFrames ? { backgroundSize: `${sprite.sheetFrames * FRAME}px ${FRAME}px` } : {}),
+              ...(sprite.frame ? { backgroundPosition: `${-sprite.frame * FRAME}px 0` } : {}),
               ...(animated
                 ? {
-                    backgroundSize: `${sprite.frames * FRAME}px ${FRAME}px`,
+                    backgroundSize: `${(sprite.sheetFrames ?? sprite.frames) * FRAME}px ${FRAME}px`,
+                    ['--sheet-x' as string]: `${-(sprite.frame ?? 0) * FRAME}px`,
                     ['--sheet-w' as string]: `${sprite.frames * FRAME}px`,
                     ['--sheet-steps' as string]: sprite.frames,
                     ['--sheet-dur' as string]: `${sprite.frames / sprite.fps}s`

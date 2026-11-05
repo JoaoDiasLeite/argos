@@ -45,9 +45,10 @@ html, body, #root { background: transparent; }
 .pet-sheet {
   animation: pet-sheet var(--sheet-dur, 1s) steps(var(--sheet-steps, 1)) infinite;
 }
+/* --sheet-x: where the played frames start, for a sheet that holds more than one run. */
 @keyframes pet-sheet {
-  from { background-position: 0 0; }
-  to { background-position: calc(-1 * var(--sheet-w, 96px)) 0; }
+  from { background-position: var(--sheet-x, 0px) 0; }
+  to { background-position: calc(var(--sheet-x, 0px) - var(--sheet-w, 96px)) 0; }
 }
 
 /* ── What the sheets don't draw ── */

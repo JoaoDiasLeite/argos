@@ -22,8 +22,8 @@ export const WALK_MIN_PX = 150
 export const WALK_MAX_PX = 400
 
 /**
- * Pixels per second. 40 keeps the feet roughly on the ground: four frames at 8 fps make
- * a stride of about 20 px, where 60 had him skating.
+ * Pixels per second. 40 keeps the feet roughly on the ground: six frames at 8 fps make
+ * a stride of 30 px, where 60 had him skating.
  */
 export const WALK_SPEED = 40
 

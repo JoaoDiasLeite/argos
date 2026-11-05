@@ -123,6 +123,12 @@ stills: the sheets are what the dog looks like at 96 px now, and the new ones mu
 beside them without a visible change of hand. Every sheet is drawn **facing right**; the
 app mirrors it for the left, so never draw a left-facing version.
 
+**Ask for a flat key colour behind him, not transparency.** The chat generators hand back a
+checkerboard baked into a JPEG, which the cutter has to guess the dog out of (a near-white
+muzzle looks like the checkerboard's white). A solid green (`#00FF00`) nothing on the dog
+comes near is keyed out cleanly: add `on a flat solid bright green background (#00FF00),
+no checkerboard, no transparency` to every prompt below.
+
 | State | File | `<FRAMES>` | `<ANIMATION>` | Until it exists |
 |---|---|---|---|---|
 | `running` | `run.png` | 6 | running to the right at full tilt, a four-beat gallop: front legs reach, back legs push, one frame with all four paws off the ground, ears streaming back, tail straight out, mouth open and happy | `walk.png` at 12 fps |
@@ -133,8 +139,19 @@ app mirrors it for the left, so never draw a left-facing version.
 | `sleeping` | `sleep.png` | 2 | lying flat on its side asleep, legs out, eyes closed, slow breathing (the chest rises 1 px), the tail curled round | `doze.png` |
 | `scratching` | `scratch.png` | 4 | sitting, one hind leg up scratching behind the folded ear, the ear flapping with it, eyes squeezed shut | `wag.png` |
 
-Frame rates the app plays them at: run 10, look 2, stretch 2, sleep 1, scratch 8 fps;
-lean and perch are held frames.
+**All seven were drawn on 2026-11-05** (Gemini, from the idle frame as reference, over a
+green key) and cut with the script below: `run.png` (five of the six frames; one came
+smeared), `lean.png`, `perch.png`, `look.png`, `stretch.png` (frames 1–3 for the stretch,
+frame 2 held for the yawn), `sleep1.png` and `sleep2.png` (two ways of lying, one picked
+each night) and `scratch.png`. Frame rates the app plays them at: run 10, look 2, stretch
+1, sleep 1, scratch 8 fps; lean and perch are held frames.
+
+**From the generator to the app:** `python scripts/companion-sheet.py <image> <sheet.png>
+<frames>` cuts the dog out of the baked-in checkerboard (a JPEG is fine), splits the frames
+by the gaps between them, scales them to the walk dog's 94 px, puts the paws on the walk
+sheet's bottom line and writes the PNG with hard alpha, plus a `.preview.png` at 3× to
+look at. A spoiled frame (a motion-blur band, as the first run sheet had) is left out with
+`--keep 1,3,4,5,6` and the frame count in `Pet.tsx` follows.
 
 ## Checklist before the art goes in the app
 
