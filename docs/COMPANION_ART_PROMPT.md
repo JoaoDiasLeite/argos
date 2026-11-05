@@ -136,6 +136,13 @@ app mirrors it for the left, so never draw a left-facing version.
 Frame rates the app plays them at: run 10, look 2, stretch 2, sleep 1, scratch 8 fps;
 lean and perch are held frames.
 
+**From the generator to the app:** `python scripts/companion-sheet.py <image> <sheet.png>
+<frames>` cuts the dog out of the baked-in checkerboard (a JPEG is fine), splits the frames
+by the gaps between them, scales them to the walk dog's 94 px, puts the paws on the walk
+sheet's bottom line and writes the PNG with hard alpha, plus a `.preview.png` at 3× to
+look at. A spoiled frame (a motion-blur band, as the first run sheet had) is left out with
+`--keep 1,3,4,5,6` and the frame count in `Pet.tsx` follows.
+
 ## Checklist before the art goes in the app
 
 - [ ] Every frame is 96×96, with the dog on the same bottom line,
