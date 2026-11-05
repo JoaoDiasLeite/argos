@@ -115,6 +115,27 @@ sits on the same bottom line in every frame. Animation: <ANIMATION>
 | `happy` | 6 | small hop with the tail wagging fast, eyes closed in a smile, tongue out |
 | `shh` | 2 | lying down, chin on its paws, eyes closed, a tiny crescent moon above, nearly still |
 
+## Prompt 3: the phase 2 sheets (plan §13.4)
+
+Same Prompt 2, same reference. **Use a frame of the sheets already in the app as the
+reference** (`src/renderer/src/companion/sprites/idle.png`, first frame), not the 1024²
+stills: the sheets are what the dog looks like at 96 px now, and the new ones must sit
+beside them without a visible change of hand. Every sheet is drawn **facing right**; the
+app mirrors it for the left, so never draw a left-facing version.
+
+| State | File | `<FRAMES>` | `<ANIMATION>` | Until it exists |
+|---|---|---|---|---|
+| `running` | `run.png` | 6 | running to the right at full tilt, a four-beat gallop: front legs reach, back legs push, one frame with all four paws off the ground, ears streaming back, tail straight out, mouth open and happy | `walk.png` at 12 fps |
+| `leaning` | `lean.png` | 1 | sitting with its back against a wall on the LEFT edge of the frame, body turned three-quarters to the right, one hind leg stretched out, relaxed, eyes half closed; the wall itself is not drawn | `idle.png` |
+| `perched` | `perch.png` | 2 | sitting on a narrow ledge at the very bottom of the frame with both front paws over the edge and the hind legs tucked, looking down then straight ahead; the ledge itself is not drawn | `idle.png` |
+| `looking` | `look.png` | 2 | sitting, head turned to the right towards something off-frame, ears up; frame 2 leans the head a little further with the eyes wide | mirrored `idle` |
+| `stretching` | `stretch.png` | 3 | the morning stretch: a play bow with the front legs out flat and the rump up, tail high, then a yawn with the mouth wide open, then back to sitting | `wag.png` |
+| `sleeping` | `sleep.png` | 2 | lying flat on its side asleep, legs out, eyes closed, slow breathing (the chest rises 1 px), the tail curled round | `doze.png` |
+| `scratching` | `scratch.png` | 4 | sitting, one hind leg up scratching behind the folded ear, the ear flapping with it, eyes squeezed shut | `wag.png` |
+
+Frame rates the app plays them at: run 10, look 2, stretch 2, sleep 1, scratch 8 fps;
+lean and perch are held frames.
+
 ## Checklist before the art goes in the app
 
 - [ ] Every frame is 96×96, with the dog on the same bottom line,
