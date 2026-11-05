@@ -59,6 +59,21 @@ export interface CompanionState {
   positions?: Record<string, { x: number; y: number }>
   /** 2 since the 128×152 window; absent means saved for the 220×220 one and shifted on read. */
   positionsVersion?: number
+  /** When the week's summary was last said (plan §13.3, T1), so Friday says it once. */
+  lastWeekSummaryAt?: number | null
+}
+
+/** The week in one line (plan §13.3, T1): the bubble's Friday word, and the panel's. */
+export interface CompanionWeekSummary {
+  /** Local midnight of the week's Monday, and of next Monday. */
+  from: number
+  to: number
+  /** Ticked this week. */
+  done: number
+  /** Open and past their time. */
+  late: number
+  /** Open and still to come this week. */
+  open: number
 }
 
 export const POSITIONS_VERSION = 2
@@ -119,6 +134,11 @@ export interface CompanionPrefs {
   /** "Seguir-me entre ecrãs": with stayOnScreen on, he goes to the display the cursor has settled on. */
   follow: boolean
   /**
+   * "Silêncio com o Assistente de Concentração" (plan §13.3, V): in Focus Assist, a
+   * full-screen app or a presentation he keeps quiet, and reminders go as notifications.
+   */
+  focusAssist: boolean
+  /**
    * "Perguntar ao modelo quando não percebo a data" (plan §5.1, layer 2): when the
    * grammar is unsure, that one line goes to the account's model. On by default.
    */
@@ -160,6 +180,8 @@ export interface CompanionTerminalAlert {
   title: string
   /** What the CLI said, when it said something; '' otherwise. */
   detail: string
+  /** An ops intervention's terminal (plan §13.3, T3): the bubble names it as one. */
+  ops?: boolean
 }
 
 /**
@@ -219,11 +241,21 @@ export type CompanionPetState =
   | 'standing'
   /** Docked against a side edge above the floor (plan §13.1): back to the wall. */
   | 'leaning'
+  /** The cursor is near (plan §13.3, U1): sat, turned toward it. */
+  | 'looking'
+  /** The day's routine (plan §13.3, U2): a stretch at the morning hour, a yawn at six, asleep at night. */
+  | 'stretching'
+  | 'yawning'
+  | 'sleeping'
+  /** A fidget while idle (plan §13.3, U3), the renderer's own; main never sets it. */
+  | 'scratching'
+  /** Sat on the top edge of a window (plan §13.3, R). */
+  | 'perched'
 
 /** Which way the walk sheet faces; it is drawn facing right and mirrored for left. */
 export type CompanionPetFacing = 'left' | 'right'
 
-export type CompanionBubbleMode = 'input' | 'reminder' | 'catchup' | 'confirm' | 'terminal' | 'plan'
+export type CompanionBubbleMode = 'input' | 'reminder' | 'catchup' | 'confirm' | 'terminal' | 'plan' | 'week'
 
 /**
  * Where the bubble sits against the pet, so it can draw its tail: above the dog (or below,
@@ -258,6 +290,7 @@ export type CompanionBubblePayload =
   | { mode: 'confirm'; payload: CompanionCaptureResult }
   | { mode: 'terminal'; payload: { alert: CompanionTerminalAlert } }
   | { mode: 'plan'; payload: { alert: CompanionPlanAlert } }
+  | { mode: 'week'; payload: { summary: CompanionWeekSummary } }
 
 export interface CompanionList {
   todos: CompanionTodo[]
@@ -297,7 +330,8 @@ export type CompanionPromoteResult =
  * is a `shh` command (plan §3.3): quiet mode was set, nothing else.
  */
 export interface CompanionCaptureResult {
-  kind: 'todo' | 'note' | 'query' | 'needs-title' | 'cancelled' | 'quiet'
+  /** 'focus' (plan §13.3, T2): quiet until `quietUntil`, with `todo` the reminder that ends it. */
+  kind: 'todo' | 'note' | 'query' | 'needs-title' | 'cancelled' | 'quiet' | 'focus'
   todo?: CompanionTodo
   note?: CompanionNote
   results?: CompanionTodo[]

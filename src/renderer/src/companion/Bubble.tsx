@@ -7,7 +7,8 @@ import type {
   CompanionReminder,
   CompanionSnoozeRequest,
   CompanionTerminalAlert,
-  CompanionTodo
+  CompanionTodo,
+  CompanionWeekSummary
 } from '../types'
 import { plural } from '../../../shared/i18n'
 import { SNOOZE_CAP } from '../../../shared/companion'
@@ -150,8 +151,8 @@ export default function Bubble() {
           />
         )
       case 'confirm':
-        return view.payload.kind === 'quiet' ? (
-          <QuietReceipt key={session} until={view.payload.quietUntil ?? null} />
+        return view.payload.kind === 'quiet' || view.payload.kind === 'focus' ? (
+          <QuietReceipt key={session} until={view.payload.quietUntil ?? null} focus={view.payload.kind === 'focus'} />
         ) : (
           <Receipt key={session} result={view.payload} />
         )
@@ -163,6 +164,8 @@ export default function Bubble() {
         return <TerminalView key={view.payload.alert.key + view.payload.alert.kind + session} alert={view.payload.alert} />
       case 'plan':
         return <PlanView key={view.payload.alert.key + session} alert={view.payload.alert} />
+      case 'week':
+        return <WeekView key={session} summary={view.payload.summary} />
     }
   })()
 
@@ -521,8 +524,11 @@ function Receipt({ result }: { result: CompanionCaptureResult }) {
 
 // ─── Quiet receipt (plan §3.3) ─────────────────────────────────────────────────
 
-/** After "shh 1h" / "acorda": one line saying so, then the bubble closes on its own. */
-function QuietReceipt({ until }: { until: number | null }) {
+/**
+ * After "shh 1h" / "acorda": one line saying so, then the bubble closes on its own. A
+ * focus (plan §13.3, T2) is the same quiet with a reminder at its end, and says so.
+ */
+function QuietReceipt({ until, focus = false }: { until: number | null; focus?: boolean }) {
   const t = useT()
   const { locale } = useLanguage()
 
@@ -541,9 +547,9 @@ function QuietReceipt({ until }: { until: number | null }) {
         <>
           <span className="bq-quiet-line">
             <MoonIcon />
-            {t('companion.quiet.until', { when: untilPhrase(until, Date.now(), locale, t) })}
+            {t(focus ? 'companion.focus.until' : 'companion.quiet.until', { when: untilPhrase(until, Date.now(), locale, t) })}
           </span>
-          <span className="help">{t('companion.quiet.help')}</span>
+          <span className="help">{t(focus ? 'companion.focus.help' : 'companion.quiet.help')}</span>
         </>
       ) : (
         <span className="bq-quiet-line">{t('companion.quiet.off')}</span>
@@ -797,7 +803,9 @@ function TerminalView({ alert }: { alert: CompanionTerminalAlert }) {
     <>
       <div className="bq-meta">
         <span className={`bq-chip${alert.kind === 'waiting' ? ' bq-warn' : ''}`}>
-          {t(alert.kind === 'waiting' ? 'companion.terminal.waiting' : 'companion.terminal.finished')}
+          {alert.ops
+            ? t(alert.kind === 'waiting' ? 'companion.ops.waiting' : 'companion.ops.finished')
+            : t(alert.kind === 'waiting' ? 'companion.terminal.waiting' : 'companion.terminal.finished')}
         </span>
       </div>
       <div className="bq-title bq-clamp">{alert.title}</div>
@@ -851,6 +859,46 @@ function PlanView({ alert }: { alert: CompanionPlanAlert }) {
         </button>
       </div>
       <div className="help">{t('companion.plan.help')}</div>
+    </>
+  )
+}
+
+// ─── The week in one line (plan §13.3, T1) ─────────────────────────────────────
+
+/** Friday's word: done, late, still to come, with Copy for the standup. Enter copies, Esc closes. */
+function WeekView({ summary }: { summary: CompanionWeekSummary }) {
+  const t = useT()
+  const [copied, setCopied] = useState(false)
+  const line = t('companion.week.line', { done: summary.done, late: summary.late, open: summary.open })
+
+  const copy = (): void => {
+    navigator.clipboard
+      .writeText(line)
+      .then(() => setCopied(true))
+      .catch(() => {})
+  }
+
+  useWindowKey((e) => {
+    if (e.key === 'Escape') api.bubbleClose()
+    else if (e.key === 'Enter' && (e.target === document.body || e.target === null)) {
+      e.preventDefault()
+      copy()
+    }
+  })
+
+  return (
+    <>
+      <span className="eyebrow">{t('companion.week.title')}</span>
+      <div className="bq-title">{line}</div>
+      <div className="bq-actions">
+        <button type="button" className="btn-primary" onClick={copy}>
+          {t(copied ? 'companion.week.copied' : 'companion.week.copy')}
+        </button>
+        <button type="button" className="btn-secondary" onClick={() => api.bubbleClose()}>
+          {t('companion.week.ok')}
+        </button>
+      </div>
+      <div className="help">{t('companion.week.help')}</div>
     </>
   )
 }

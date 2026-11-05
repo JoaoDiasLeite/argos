@@ -17,6 +17,7 @@ import {
   restoredPetPosition,
   snapToEdge,
   type Point,
+  type Rect,
   type Size
 } from './companion-window-pure'
 import { voiceShortcutCandidates } from './companion-voice-pure'
@@ -32,9 +33,13 @@ import {
   stepToward,
   type WalkPlan
 } from './companion-walk-pure'
-import { DOZE_AFTER_MS, canDoze, cursorNearPet, type DozeConditions } from './companion-doze-pure'
+import { DOZE_AFTER_MS, canDoze, cursorNearPet, cursorSideOf, type DozeConditions } from './companion-doze-pure'
 import { FOLLOW_POLL_MS, followUpdate, shouldFollow, type FollowWatch } from './companion-follow-pure'
+import { ROUTINE_POSE_MS, dayKey, isNight, routineMoment, type RoutineMoment } from './companion-routine-pure'
 import { fallY, isFall, type Fall } from './companion-fall-pure'
+import { BALL_SIZE, ballAt, fetchX, planThrow, type Throw } from './companion-ball-pure'
+import { PERCH_POLL_MS, isOverTitleBar, perchFollow, perchPosition } from './companion-perch-pure'
+import { foregroundWindow, windowBounds } from './companion-win32'
 import { restingPetState } from './companion-quiet-pure'
 import { PET_SCALE, POSITIONS_VERSION, VOICE_SHORTCUT_DEFAULTS } from './companion-types'
 import type {
@@ -77,6 +82,9 @@ const DEFAULT_BUBBLE_SIZE: Size = { width: 320, height: 120 }
 
 let petWindow: BrowserWindow | null = null
 let bubbleWindow: BrowserWindow | null = null
+let ballWindow: BrowserWindow | null = null
+/** Fetch (plan §13.3, P2): the throw in the air, then the run out to it and back home. */
+let game: { phase: 'throw' | 'fetch' | 'return'; throw: Throw; startAt: number; homeX: number } | null = null
 let registeredShortcut = ''
 let registeredVoiceShortcut = ''
 /** What the bubble is doing with the microphone; while busy, a blur does not close it. */
@@ -99,6 +107,13 @@ let walkTimer: ReturnType<typeof setTimeout> | null = null
 let fall: (Fall & { x: number; startAt: number }) | null = null
 /** Counts down to a doze while he sits idle (plan §13.3, M1). */
 let dozeTimer: ReturnType<typeof setTimeout> | null = null
+/** Perched on a window (plan §13.3, R): its handle, where it was last seen, and the watch on it. */
+let perch: { hwnd: unknown; last: Rect } | null = null
+let perchTimer: ReturnType<typeof setInterval> | null = null
+/** The day's routine (plan §13.3, U2): the clock, and which moments are done today. */
+let routineTimer: ReturnType<typeof setInterval> | null = null
+const routineDone: Partial<Record<RoutineMoment, string>> = {}
+const ROUTINE_POLL_MS = 30_000
 /** "Follow me" (plan §13.3, O2): the cursor's whereabouts, and the display he is on his way to. */
 let followTimer: ReturnType<typeof setInterval> | null = null
 let followWatch: FollowWatch | null = null
@@ -136,7 +151,7 @@ export function companionShortcut(): string {
   return registeredShortcut
 }
 
-function loadEntry(win: BrowserWindow, hash: 'pet' | 'bubble'): void {
+function loadEntry(win: BrowserWindow, hash: 'pet' | 'bubble' | 'ball'): void {
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/companion.html#${hash}`)
   } else {
@@ -246,14 +261,73 @@ function tryDoze(): void {
     scheduleDoze()
     return
   }
-  // Straight to the state, not setPetState: a doze ends no walk and starts no clock.
-  petState = 'dozing'
+  // Straight to the state, not setPetState: a doze ends no walk and starts no clock. At
+  // night, with him up all day, he lies down properly (plan §13.3, U2).
+  petState = isNight(Date.now(), prefs().morningHour) && prefs().stayOnScreen ? 'sleeping' : 'dozing'
   sendToPet('companion:pet-state', petState)
+}
+
+/** Dozing, or asleep for the night: both end the same way. */
+const asleep = (): boolean => petState === 'dozing' || petState === 'sleeping'
+
+// ─── The day's routine (plan §13.3, U2) ────────────────────────────────────────
+
+function startRoutine(): void {
+  stopRoutine()
+  routineTimer = setInterval(routineTick, ROUTINE_POLL_MS)
+}
+
+function stopRoutine(): void {
+  if (routineTimer) clearInterval(routineTimer)
+  routineTimer = null
+}
+
+/** In the five minutes after the morning hour a stretch, after six a yawn, each once a day, when he is just sitting. */
+function routineTick(): void {
+  if (!alive(petWindow) || !petWindow.isVisible()) return
+  if (walk || fall || drag || game || bubble || (petState !== 'idle' && petState !== 'looking')) return
+  const now = Date.now()
+  const moment = routineMoment(now, prefs().morningHour)
+  if (!moment || routineDone[moment] === dayKey(now)) return
+  routineDone[moment] = dayKey(now)
+  const pose: CompanionPetState = moment === 'stretch' ? 'stretching' : 'yawning'
+  setPetState(pose)
+  setTimeout(() => {
+    if (petState === pose) setPetState(restingState())
+  }, ROUTINE_POSE_MS)
+}
+
+/**
+ * The cursor near a sitting dog (plan §13.3, U1): he turns to face it, and turns back when
+ * it goes. Only between idle and looking, so nothing else he is doing is cut short; the
+ * doze clock keeps running underneath (canDoze says no while the cursor is near).
+ */
+function lookAtCursor(cursor: Point, b: Rect): void {
+  if (drag || walk || fall || game) return
+  const near = !petHitTest(cursor, b) && cursorNearPet(cursor, b)
+  if (petState === 'idle' && near) {
+    petState = 'looking'
+    petFacing = cursorSideOf(cursor, b)
+    sendToPet('companion:pet-facing', petFacing)
+    sendToPet('companion:pet-state', petState)
+  } else if (petState === 'looking') {
+    if (!near) {
+      petState = restingState()
+      sendToPet('companion:pet-state', petState)
+      scheduleDoze()
+      return
+    }
+    const side = cursorSideOf(cursor, b)
+    if (side !== petFacing) {
+      petFacing = side
+      sendToPet('companion:pet-facing', petFacing)
+    }
+  }
 }
 
 /** The cursor came near, or something happened: a dozing dog sits up, and the clock restarts. */
 function wakePet(): void {
-  if (petState !== 'dozing') return
+  if (!asleep()) return
   petState = restingState()
   sendToPet('companion:pet-state', petState)
   scheduleDoze()
@@ -333,6 +407,112 @@ function createBubbleWindow(): BrowserWindow {
   return win
 }
 
+/** The ball: as the pet window, but never takes a click. Made on the first throw. */
+function createBallWindow(): BrowserWindow {
+  const win = new BrowserWindow({
+    width: BALL_SIZE,
+    height: BALL_SIZE,
+    show: false,
+    frame: false,
+    transparent: true,
+    hasShadow: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    focusable: false,
+    alwaysOnTop: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      contextIsolation: true
+    }
+  })
+  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setContentProtection(prefs().hideFromCapture)
+  win.setIgnoreMouseEvents(true, { forward: true })
+  win.on('closed', () => {
+    if (ballWindow === win) ballWindow = null
+  })
+  hardenWebContents(win)
+  loadEntry(win, 'ball')
+  ballWindow = win
+  return win
+}
+
+// ─── Fetch (plan §13.3, P2) ────────────────────────────────────────────────────
+
+/**
+ * The pet's menu: throw the ball along the floor the roomier way. He stands and watches
+ * it land, runs out to it, and brings it back to where he was, wagging. Nothing while he
+ * is busy, docked up a side, or not allowed a walk.
+ */
+export function throwBall(): void {
+  if (!alive(petWindow) || !petWindow.isVisible() || walk || fall || drag || game || bubble) return
+  stopWalk()
+  const b = petWindow.getBounds()
+  if (!walkAllowed(false, true)) return
+  const t = planThrow(b, screen.getAllDisplays().map((d) => d.workArea))
+  if (!t) return
+  const ball = alive(ballWindow) ? ballWindow : createBallWindow()
+  game = { phase: 'throw', throw: t, startAt: Date.now(), homeX: b.x }
+  petFacing = t.facing
+  sendToPet('companion:pet-facing', petFacing)
+  setPetState('standing')
+  ball.setBounds({ x: t.fromX, y: t.fromY, width: BALL_SIZE, height: BALL_SIZE })
+  ball.showInactive()
+  startPolling(WALK_POLL_MS)
+}
+
+/** One poll tick while the ball flies; on landing he sets off after it. */
+function stepThrow(): void {
+  if (!game || game.phase !== 'throw' || !alive(petWindow)) return
+  const { x, y, done } = ballAt(game.throw, Date.now() - game.startAt)
+  if (alive(ballWindow)) ballWindow.setPosition(x, y)
+  if (!done) return
+  const b = petWindow.getBounds()
+  const plan = planRunTo(b, screen.getAllDisplays().map((d) => d.workArea), fetchX(game.throw, b))
+  if (!plan) {
+    endGame()
+    return
+  }
+  game.phase = 'fetch'
+  startPlan(plan)
+}
+
+/** The run out or back ended: picked up, the ball goes and he runs home; home, a wag. */
+function settleGame(arrived: boolean): void {
+  if (!game || game.phase === 'throw') return
+  if (!arrived || !alive(petWindow)) {
+    endGame()
+    return
+  }
+  if (game.phase === 'fetch') {
+    if (alive(ballWindow)) ballWindow.hide()
+    const plan = planRunTo(petWindow.getBounds(), screen.getAllDisplays().map((d) => d.workArea), game.homeX)
+    if (!plan) {
+      endGame(true)
+      return
+    }
+    game.phase = 'return'
+    // startPlan from inside stopWalk: the walk it clears is already null here.
+    startPlan(plan)
+    return
+  }
+  endGame(true)
+}
+
+/** The game is over, with a wag when he brought the ball back. */
+function endGame(pleased = false): void {
+  game = null
+  if (alive(ballWindow)) ballWindow.hide()
+  if (pleased && petState !== 'happy') setPetState('happy')
+  else if (petState === 'standing') setPetState(restingState())
+  if (pollTimer && !drag && !walk && !fall) startPolling(POLL_MS)
+}
+
 // ─── Click-through and drag ────────────────────────────────────────────────────
 
 function setIgnore(ignore: boolean): void {
@@ -358,9 +538,11 @@ function poll(): void {
   const b = petWindow.getBounds()
   const over = petHitTest(cursor, b)
   setIgnore(!over)
-  if (petState === 'dozing' && cursorNearPet(cursor, b)) wakePet()
+  if (asleep() && cursorNearPet(cursor, b)) wakePet()
+  lookAtCursor(cursor, b)
   if (fall) stepFall(petWindow)
   else if (walk) stepWalk(petWindow, over)
+  else if (game?.phase === 'throw') stepThrow()
 }
 
 function startPolling(ms = POLL_MS): void {
@@ -377,8 +559,10 @@ function stopPolling(): void {
 export function startPetDrag(): void {
   if (!alive(petWindow) || !petWindow.isVisible()) return
   stopWalk()
-  // Caught mid-air: the fall ends where he is.
+  // Caught mid-air: the fall ends where he is, and so does the game; lifted off a window too.
   fall = null
+  if (game) endGame()
+  unperch()
   wakePet()
   cancelDoze()
   const [x, y] = petWindow.getPosition()
@@ -396,9 +580,77 @@ export function endPetDrag(): void {
   // The display the dog was dropped on, by the window's centre; positions are clamped to
   // its work area, which also settles a drag across displays of different scale.
   const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
+  // Let go over the title bar of the window in front: he sits on its top edge (plan §13.3, R).
+  const front = foregroundWindow()
+  if (front && isOverTitleBar(b, front.bounds)) {
+    startPerch(front.hwnd, front.bounds, b)
+    return
+  }
   const pos = snapToEdge({ x: b.x, y: b.y }, display.workArea, { width: b.width, height: b.height })
   if (isFall(b.y, pos.y) && !reducedMotion()) {
     // On his feet for the drop; stepFall sits him down on landing.
+    petWindow.setPosition(pos.x, b.y)
+    fall = { fromY: b.y, toY: pos.y, x: pos.x, startAt: Date.now() }
+    setPetState('standing')
+    startPolling(WALK_POLL_MS)
+  } else {
+    petWindow.setPosition(pos.x, pos.y)
+    settlePose()
+  }
+  placeBubble()
+  savePetPosition(display.id, pos)
+  scheduleWalk()
+  scheduleDoze()
+}
+
+// ─── Perching (plan §13.3, R) ──────────────────────────────────────────────────
+
+/** Sit on the window's top edge and keep an eye on it. Nothing is saved: the place is the window's, not the display's. */
+function startPerch(hwnd: unknown, bounds: Rect, b: Rect): void {
+  unperch()
+  if (!alive(petWindow)) return
+  perch = { hwnd, last: bounds }
+  const pos = perchPosition(b, bounds, { width: b.width, height: b.height })
+  petWindow.setPosition(pos.x, pos.y)
+  placeBubble()
+  setPetState('perched')
+  perchTimer = setInterval(perchTick, PERCH_POLL_MS)
+}
+
+function unperch(): void {
+  if (perchTimer) clearInterval(perchTimer)
+  perchTimer = null
+  perch = null
+}
+
+/** The window moved: along with it. Minimised, closed or hidden: down to the floor. */
+function perchTick(): void {
+  if (!perch || !alive(petWindow) || !petWindow.isVisible()) {
+    unperch()
+    return
+  }
+  if (drag) return
+  const bounds = windowBounds(perch.hwnd)
+  if (!bounds) {
+    unperch()
+    dropToFloor()
+    return
+  }
+  if (bounds.x === perch.last.x && bounds.y === perch.last.y) return
+  const [x, y] = petWindow.getPosition()
+  const pos = perchFollow({ x, y }, perch.last, bounds)
+  perch.last = bounds
+  petWindow.setPosition(pos.x, pos.y)
+  placeBubble()
+}
+
+/** From wherever he is, down to the floor of his display (the window he sat on went). */
+function dropToFloor(): void {
+  if (!alive(petWindow)) return
+  const b = petWindow.getBounds()
+  const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
+  const pos = snapToEdge({ x: b.x, y: b.y }, display.workArea, { width: b.width, height: b.height })
+  if (isFall(b.y, pos.y) && !reducedMotion()) {
     petWindow.setPosition(pos.x, b.y)
     fall = { fromY: b.y, toY: pos.y, x: pos.x, startAt: Date.now() }
     setPetState('standing')
@@ -467,6 +719,24 @@ function dndOn(): boolean {
   return restingState() === 'shh'
 }
 
+/** Windows asked for quiet (plan §13.3, V1): Focus Assist, a full-screen app, a presentation. */
+let systemQuiet = false
+
+/** index.ts's watcher: on, he lies down with the crescent; off, he sits up unless muted himself. */
+export function setSystemQuiet(on: boolean): void {
+  if (on === systemQuiet) return
+  systemQuiet = on
+  if (on) {
+    if (petState === 'idle' || petState === 'looking' || petState === 'leaning' || petState === 'perched' || asleep()) setPetState('shh')
+  } else if (petState === 'shh') {
+    setPetState(restingState())
+  }
+}
+
+export function isSystemQuiet(): boolean {
+  return systemQuiet
+}
+
 /**
  * What he sits back to after a bubble, a walk or the happy beat: the crescent while muted
  * (plan §3.3), his back to the wall while docked up a side edge (plan §13.1), else idle.
@@ -478,7 +748,10 @@ function restingState(): CompanionPetState {
   } catch {
     // unreadable state.json: not muted
   }
-  return state === 'idle' && leaningOn() ? 'leaning' : state
+  if (systemQuiet) state = 'shh'
+  if (state !== 'idle') return state
+  if (perch) return 'perched'
+  return leaningOn() ? 'leaning' : state
 }
 
 /** The wall he is docked against, if any; the lean faces away from it (the sheet has the wall on the left). */
@@ -608,6 +881,7 @@ function stopWalk(arrived = false): void {
   }
   if (arrived) settleFollow()
   else followingTo = null
+  settleGame(arrived)
   scheduleWalk()
 }
 
@@ -723,6 +997,7 @@ function showPet(): BrowserWindow {
     scheduleWalk()
     scheduleDoze()
     startFollowing()
+    startRoutine()
   }
   return win
 }
@@ -734,6 +1009,7 @@ function hidePet(): void {
   stopPolling()
   drag = null
   fall = null
+  if (game) endGame()
   // Quietly: nothing queued should pop the pet straight back up.
   hideBubbleWindow(false)
   if (alive(petWindow) && petWindow.isVisible()) {
@@ -743,8 +1019,10 @@ function hidePet(): void {
   cancelWalkTimer()
   cancelDoze()
   stopFollowing()
+  stopRoutine()
+  unperch()
   // Hidden while dozing: he comes back sitting up.
-  if (petState === 'dozing') petState = restingState()
+  if (asleep()) petState = restingState()
 }
 
 export function setPetState(state: CompanionPetState): void {
@@ -810,7 +1088,7 @@ export function popupPetMenu(menu: Menu): void {
 export function petThePet(): void {
   if (!isCompanionVisible() || bubble) return
   wakePet()
-  if (petState !== 'idle' && petState !== 'leaning' && petState !== 'shh') return
+  if (petState !== 'idle' && petState !== 'looking' && petState !== 'leaning' && petState !== 'perched' && petState !== 'shh') return
   setPetState('happy')
 }
 
@@ -920,7 +1198,7 @@ export function setBubbleSize(size: Size): void {
 
 /** Apply saved prefs to live windows: capture exclusion, and "stay on screen". */
 export function applyCompanionPrefs(next: CompanionPrefs): void {
-  for (const win of [petWindow, bubbleWindow]) {
+  for (const win of [petWindow, bubbleWindow, ballWindow]) {
     if (alive(win)) win.setContentProtection(next.hideFromCapture)
   }
   resizePet(next.size)

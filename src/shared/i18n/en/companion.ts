@@ -56,6 +56,9 @@ export default {
   'quiet.off': "I'm back",
   'panel.quiet': 'Quiet until {when}',
   'panel.quietOff': 'Turn off',
+  // "foca 25": quiet with an end, and a word from Argos when it comes (plan §13.3, T2).
+  'focus.until': 'Focus until {when}',
+  'focus.help': 'Reminders wait until then; Argos says when time is up.',
 
   'reminder.late': 'late {span}',
   'reminder.done': 'Done',
@@ -78,6 +81,9 @@ export default {
   // A chat terminal finished or needs you (companion-terminal-pure.ts).
   'terminal.finished': 'Finished, over to you',
   'terminal.waiting': 'Needs you',
+  // The same bubble for an ops intervention's terminal (plan §13.3, T3).
+  'ops.finished': 'Intervention finished',
+  'ops.waiting': 'The intervention needs you',
   'terminal.open': 'Open',
   'terminal.later': 'Later',
   'terminal.help': 'Enter opens · Esc closes',
@@ -87,6 +93,13 @@ export default {
   'plan.open': 'See usage',
   'plan.later': 'OK',
   'plan.help': 'Enter opens · Esc closes',
+  // Friday's word on the week (plan §13.3, T1).
+  'week.title': 'The week',
+  'week.line': '{done} done · {late} late · {open} still to come',
+  'week.copy': 'Copy',
+  'week.copied': 'Copied',
+  'week.ok': 'OK',
+  'week.help': 'Enter copies · Esc closes',
 
   'catchup.title.one': '1 reminder passed',
   'catchup.title.other': '{n} reminders passed',

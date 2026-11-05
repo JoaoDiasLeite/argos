@@ -51,6 +51,12 @@ Valid `-View` names: `chat`, `projects`, `planner`,
   launcher sends `app:open-cc-session`, the channel a notification click uses. The
   conversation has to exist on disk — create a disposable project under
   `~/.claude/projects/` for it and delete it afterwards.
+- **The companion panel** (`-View companion`) reads `seed/companion/todos.json` and
+  `notes.json` when they exist (the shapes `src/main/companion-store.ts` stores). They are
+  not checked in: their dates only mean something relative to the day of the check, so
+  generate them with a one-off Node script, capture, and delete the folder. Give the
+  fixtures no `remindAt` in the past, or a reminder bubble pops up at launch and the
+  capture lands on it (a small black window) instead of the main window.
 - `scripts/visual-check/seed/` holds a pre-built `config.json` (onboarding
   already marked done, dark theme) and four terminal chats in `sessions/demo*.json`
   (`hasTerminalActivity: true`, a folder, no messages), so the sidebar has rows and a

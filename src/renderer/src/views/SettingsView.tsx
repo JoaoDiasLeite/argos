@@ -980,6 +980,13 @@ export default function SettingsView({
                     </Select>
                   </div>
                   {toggleRow(
+                    t('settings.companion.focusAssist.label'),
+                    t('settings.companion.focusAssist.hint'),
+                    companion.focusAssist,
+                    (focusAssist) => updateCompanion({ focusAssist }),
+                    companionBusy
+                  )}
+                  {toggleRow(
                     t('settings.companion.terminalAlerts.label'),
                     t('settings.companion.terminalAlerts.hint'),
                     companion.terminalAlerts,

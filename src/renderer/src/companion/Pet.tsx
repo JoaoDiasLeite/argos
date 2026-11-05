@@ -57,7 +57,17 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   // On his feet before and after a walk: the walk sheet's first frame, held.
   standing: { src: SHEETS.walk, frames: 1, fps: 1, sheetFrames: 4 },
   // Back to a side wall (plan §13.4): idle until lean.png is drawn, mirrored for the right wall.
-  leaning: IDLE
+  leaning: IDLE,
+  // Turned toward the cursor (plan §13.4): idle, mirrored to face it, until look.png is drawn.
+  looking: IDLE,
+  // The day's routine (plan §13.4): the wag stands in for stretch.png, the doze for sleep.png.
+  stretching: { src: SHEETS.wag, frames: 4, fps: 4 },
+  yawning: { src: SHEETS.wag, frames: 4, fps: 4 },
+  sleeping: { src: SHEETS.doze, frames: 2, fps: 1 },
+  // A fidget (plan §13.4): the wag stands in for scratch.png.
+  scratching: { src: SHEETS.wag, frames: 4, fps: 8 },
+  // On a window's top edge (plan §13.4): idle until perch.png is drawn.
+  perched: IDLE
 }
 
 const FRAME = 96
@@ -83,13 +93,25 @@ const PET_STATES: readonly CompanionPetState[] = [
   'walking',
   'running',
   'standing',
-  'leaning'
+  'leaning',
+  'looking',
+  'stretching',
+  'yawning',
+  'sleeping',
+  'scratching',
+  'perched'
 ]
+
+/** Now and then while just sitting (plan §13.3, U3): a scratch, or a glance the other way. */
+const FIDGET_MIN_MS = 20_000
+const FIDGET_MAX_MS = 60_000
+const FIDGET_MS = 1500
+type Fidget = 'scratching' | 'glance'
 
 /** The gaits: drawn facing right and mirrored for the left, never shown with reduced motion. */
 const ON_THE_MOVE: readonly CompanionPetState[] = ['walking', 'running', 'standing']
-/** Drawn facing right and mirrored for the left: the gaits, and the lean (wall on the left). */
-const MIRRORABLE: readonly CompanionPetState[] = [...ON_THE_MOVE, 'leaning']
+/** Drawn facing right and mirrored for the left: the gaits, the lean (wall on the left), the look. */
+const MIRRORABLE: readonly CompanionPetState[] = [...ON_THE_MOVE, 'leaning', 'looking']
 
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
 
@@ -160,11 +182,38 @@ export default function Pet() {
     return () => clearTimeout(timer)
   }, [state])
 
+  // The fidgets are the renderer's own: only over a plain idle, never with reduced motion.
+  const [fidget, setFidget] = useState<Fidget | null>(null)
+  useEffect(() => {
+    if (state !== 'idle' || reducedMotion) {
+      setFidget(null)
+      return
+    }
+    let timer = 0
+    const schedule = (): void => {
+      timer = window.setTimeout(
+        () => {
+          setFidget(Math.random() < 0.5 ? 'scratching' : 'glance')
+          timer = window.setTimeout(() => {
+            setFidget(null)
+            schedule()
+          }, FIDGET_MS)
+        },
+        FIDGET_MIN_MS + Math.random() * (FIDGET_MAX_MS - FIDGET_MIN_MS)
+      )
+    }
+    schedule()
+    return () => window.clearTimeout(timer)
+  }, [state, reducedMotion])
+
   // With reduced motion a walk is never shown: he is drawn sitting (main does not walk then either).
-  const shown: CompanionPetState = ON_THE_MOVE.includes(state) && reducedMotion ? 'idle' : state
+  const base: CompanionPetState = ON_THE_MOVE.includes(state) && reducedMotion ? 'idle' : state
+  const glancing = base === 'idle' && fidget === 'glance'
+  const shown: CompanionPetState = base === 'idle' && fidget === 'scratching' ? 'scratching' : glancing ? 'looking' : base
   const sprite = SPRITES[shown]
   const animated = sprite.frames > 1
-  const mirrored = MIRRORABLE.includes(shown) && facing === 'left'
+  // A glance is the other way from where he faces.
+  const mirrored = glancing ? facing === 'right' : MIRRORABLE.includes(shown) && facing === 'left'
 
   // Screen coordinates: while main drags the window the dog stays under the cursor, so
   // client coordinates barely move even on a long drag.
@@ -247,7 +296,7 @@ export default function Pet() {
 
 /** What sits over the head: z's, three dots, "!", the crescent. */
 function Badge({ state }: { state: CompanionPetState }) {
-  if (state === 'dozing') {
+  if (state === 'dozing' || state === 'sleeping') {
     return (
       <span className="pet-badge pet-zs" aria-hidden="true">
         <i>z</i>

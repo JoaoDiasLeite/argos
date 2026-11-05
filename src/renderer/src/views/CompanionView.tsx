@@ -98,6 +98,7 @@ const DEFAULT_PREFS: CompanionPrefs = {
   voiceShortcut: '',
   walk: true,
   follow: false,
+  focusAssist: true,
   askModel: true,
   obsidianVault: '',
   obsidianFolder: 'Argos',

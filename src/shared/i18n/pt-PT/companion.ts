@@ -50,6 +50,8 @@ const companion: Record<keyof typeof en, string> = {
   'quiet.off': 'Voltei',
   'panel.quiet': 'Em silêncio até {when}',
   'panel.quietOff': 'Desligar',
+  'focus.until': 'Foco até {when}',
+  'focus.help': 'Os lembretes esperam até lá; o Argos avisa quando acabar.',
 
   'reminder.late': 'atrasado {span}',
   'reminder.done': 'Feito',
@@ -70,6 +72,8 @@ const companion: Record<keyof typeof en, string> = {
 
   'terminal.finished': 'Terminou, é contigo',
   'terminal.waiting': 'Precisa de ti',
+  'ops.finished': 'Intervenção terminada',
+  'ops.waiting': 'A intervenção precisa de ti',
   'terminal.open': 'Abrir',
   'terminal.later': 'Depois',
   'terminal.help': 'Enter abre · Esc fecha',
@@ -78,6 +82,12 @@ const companion: Record<keyof typeof en, string> = {
   'plan.open': 'Ver uso',
   'plan.later': 'OK',
   'plan.help': 'Enter abre · Esc fecha',
+  'week.title': 'A semana',
+  'week.line': '{done} feitas · {late} atrasadas · {open} por fazer',
+  'week.copy': 'Copiar',
+  'week.copied': 'Copiado',
+  'week.ok': 'OK',
+  'week.help': 'Enter copia · Esc fecha',
 
   'catchup.title.one': '1 lembrete passou',
   'catchup.title.other': '{n} lembretes passaram',

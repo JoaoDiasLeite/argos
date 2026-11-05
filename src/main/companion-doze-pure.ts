@@ -45,7 +45,13 @@ export function canDoze(c: DozeConditions): boolean {
 
 /** A dozing dog sits up when something comes his way. */
 export function shouldWake(c: DozeConditions): boolean {
-  return c.petState === 'dozing' && (c.cursorNear || c.bubbleOpen || c.alertsPending || c.dragging || !c.visible)
+  return (c.petState === 'dozing' || c.petState === 'sleeping') && (c.cursorNear || c.bubbleOpen || c.alertsPending || c.dragging || !c.visible)
+}
+
+/** Which side of the dog the cursor is on, for him to look that way (plan §13.3, U1). */
+export function cursorSideOf(cursor: Point, pet: Rect): 'left' | 'right' {
+  const d = dogRect(pet)
+  return cursor.x < d.x + d.width / 2 ? 'left' : 'right'
 }
 
 /** Whether the cursor is within `radius` of the dog's rect (not the window's). */

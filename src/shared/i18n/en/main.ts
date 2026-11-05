@@ -9,6 +9,13 @@ export default {
 
   // The companion's entries in the tray and in the right-click menu on the pet.
   'companion.today': 'What do I have today',
+  'companion.ball': 'Throw the ball',
+  // The reminder a "foca 25" or "timer 5 min" leaves behind.
+  'companion.focusTitle': 'Focus, {n} min',
+  'companion.timerTitle': 'Timer, {n} min',
+  // Friday's word on the week, as a notification when the pet is not up (plan §13.3, T1).
+  'companion.week.title': 'The week, from Argos',
+  'companion.week.body': '{done} done, {late} late, {open} still to come.',
   'companion.terminal.untitled': 'Untitled chat',
   'companion.quietHour': 'Quiet for 1 hour',
   'companion.quietTomorrow': 'Quiet until tomorrow',
