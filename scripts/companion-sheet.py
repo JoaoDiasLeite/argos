@@ -34,11 +34,6 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
     mx = np.maximum(np.maximum(r, g), b)
     mn = np.minimum(np.minimum(r, g), b)
     greyish = ((mx - mn) < 28) & (mx > 150)
-    # The checkerboard: the grey that reaches the border, read through a slight dilation so
-    # an anti-aliased seam does not cut a gap under the belly off from the outside.
-    lab, _ = ndimage.label(ndimage.binary_dilation(greyish, iterations=2))
-    border = set(np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))) - {0}
-    background = np.isin(lab, list(border))
     # What only the real dog has: the dark outline and the strong orange. A pale "ghost"
     # copy the generator smears behind him has neither, and nor does the checkerboard.
     strong = (mx < 90) | ((mx - mn) > 100)
@@ -53,7 +48,25 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
     # outline with it; the checkerboard showing through a gap stays out.
     k = max(3, int(H * 0.03))
     silhouette = ndimage.binary_fill_holes(ndimage.binary_closing(strong, np.ones((k, k))))
+    # Outside the silhouette the grey is the checkerboard. Inside, a pale paint (a near-white
+    # muzzle, the white of an eye) reads as grey too, but it is flat where a pocket of
+    # checkerboard the closing swallowed alternates light and dark: by its spread, it stays.
+    # The cream that sits at the edge of the outline (the muzzle, the chest) is neither
+    # grey nor strong, and the closing can miss it where the outline is thin: any paint
+    # touching the silhouette and within reach of it is the dog too; a ghost smeared
+    # further off is not.
+    near = ndimage.distance_transform_edt(~silhouette) < 0.12 * H
+    lab_t, n_t = ndimage.label(~greyish & near)
+    touching = np.unique(lab_t[silhouette & (lab_t > 0)])
+    silhouette = silhouette | np.isin(lab_t, touching[touching > 0])
+    background = greyish & ~silhouette
     core = silhouette & ~greyish
+    pale = greyish & silhouette
+    lab_p, n_p = ndimage.label(pale)
+    for i in range(1, n_p + 1):
+        comp = lab_p == i
+        if mx[comp].std() < 12:
+            core |= comp
     body = ndimage.binary_fill_holes(core)
     # A motion streak the generator drew: near-white, long and flat. Painted over with the
     # nearest colour where it crosses the body, dropped where it sticks out of it.
