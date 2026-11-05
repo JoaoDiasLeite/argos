@@ -1,0 +1,46 @@
+# Code owners are asked to review every pull request that touches these
+# paths, and the "main code owners" ruleset makes that review mandatory.
+# Areas not listed here (companion, planner, views, i18n, ...) are open to
+# contribution with the maintainer's ordinary review.
+
+# Governance, CI and release
+/.github/                       @JoaoDiasLeite
+/package.json                   @JoaoDiasLeite
+/package-lock.json              @JoaoDiasLeite
+/electron.vite.config.ts        @JoaoDiasLeite
+/build/                         @JoaoDiasLeite
+/LICENSE                        @JoaoDiasLeite
+/SECURITY.md                    @JoaoDiasLeite
+/CONTRIBUTING.md                @JoaoDiasLeite
+/CLAUDE.md                      @JoaoDiasLeite
+
+# Process boundary and IPC surface
+/src/main/index.ts              @JoaoDiasLeite
+/src/preload/                   @JoaoDiasLeite
+/src/main/window-security.ts    @JoaoDiasLeite
+/src/shared/                    @JoaoDiasLeite
+
+# Updates and release feeds
+/src/main/updater.ts            @JoaoDiasLeite
+/src/main/updater-log*.ts       @JoaoDiasLeite
+
+# Credentials, encryption and remote access
+/src/main/auth.ts               @JoaoDiasLeite
+/src/main/accounts.ts           @JoaoDiasLeite
+/src/main/provider-accounts.ts  @JoaoDiasLeite
+/src/main/store.ts              @JoaoDiasLeite
+/src/main/config.ts             @JoaoDiasLeite
+/src/main/ssh*.ts               @JoaoDiasLeite
+/src/main/sftp*.ts              @JoaoDiasLeite
+/src/main/remote-shell*.ts      @JoaoDiasLeite
+/src/main/profile-transfer*.ts  @JoaoDiasLeite
+/src/main/terminal.ts           @JoaoDiasLeite
+
+# Ops gate, policy, audit and the built-in runbook
+/src/main/ops-*                 @JoaoDiasLeite
+/src/main/ai-policy.ts          @JoaoDiasLeite
+/src/main/mcp.ts                @JoaoDiasLeite
+/resources/runbooks/            @JoaoDiasLeite
+
+# Agent providers
+/src/main/providers/            @JoaoDiasLeite
