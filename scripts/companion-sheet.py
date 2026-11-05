@@ -34,12 +34,15 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
     mx = np.maximum(np.maximum(r, g), b)
     mn = np.minimum(np.minimum(r, g), b)
     greyish = ((mx - mn) < 28) & (mx > 150)
+    keyed = np.zeros(greyish.shape, bool)
     # A flat key colour behind him (the green or magenta the prompt asks for): whatever the
     # border is painted, and everything near that colour, is background like the grey.
     border = np.concatenate([rgb[0], rgb[-1], rgb[:, 0], rgb[:, -1]])
     key = np.median(border, axis=0)
     if key.max() - key.min() > 60:
-        keyed = np.sqrt(((rgb - key) ** 2).sum(-1)) < 80
+        # Every paint sits far from a saturated key (the dark outline is the nearest, ~250 away
+        # from pure green); an edge pixel the JPEG blended with it sits half way, and goes.
+        keyed = np.sqrt(((rgb.astype(int) - key) ** 2).sum(-1)) < 160
         greyish = greyish | keyed
         rgb[keyed] = 255
         # Despill: the key's channel never leads on the dog, so an edge pixel the JPEG blended
@@ -78,7 +81,7 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
     silhouette = silhouette | np.isin(lab_t, touching[touching > 0])
     background = greyish & ~silhouette
     core = silhouette & ~greyish
-    pale = greyish & silhouette
+    pale = greyish & silhouette & ~keyed
     lab_p, n_p = ndimage.label(pale)
     for i in range(1, n_p + 1):
         comp = lab_p == i
@@ -122,7 +125,8 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
                 ys, xs = np.where(inside)
                 rgb[ys, xs] = rgb[idx[0][ys, xs], idx[1][ys, xs]]
                 dog |= inside
-    return dog
+    # Whatever was the key colour is never the dog, however the silhouette fell around it.
+    return dog & ~keyed
 
 
 def colour_classes(px: np.ndarray) -> dict[str, np.ndarray]:
