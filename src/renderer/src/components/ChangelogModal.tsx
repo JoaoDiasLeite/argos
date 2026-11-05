@@ -18,6 +18,21 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '3.1.0',
+    date: '2026-11-05',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Repeating todos for Argos: "standup todos os dias às 9h30", "relatório todas as sextas às 17h", "de segunda a sexta", "renda todos os meses dia 1" (or "every day", "every friday"). Ticking one done adds the next; unticking it takes that one back. The panel shows a loop on the row and a Repeat picker in the detail.',
+          'Argos tells you when a chat finishes or needs you: with him on screen and Argos’s window in the background, a chat whose turn ended or that waits on an approval comes up in his bubble, with Open to jump to it. Claude Code’s hook notifications go there too instead of a toast. Settings → Companion can switch it off.',
+          'Argos walks more often, slower and with a step, stands up before a walk, and a drop near the bottom of the screen puts him on the floor.'
+        ]
+      }
+    ]
+  },
+  {
     version: '3.0.0',
     date: '2026-11-04',
     tag: 'latest',
