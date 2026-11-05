@@ -57,7 +57,10 @@ html, body, #root { background: transparent; }
 .pet-happy .pet-body { animation: pet-hop 300ms ease-out 2; }
 /* dozing: slow breathing, about 2 px at the top while the paws stay put. On the body,
    not the sprite: the sprite's own animation is the frame sheet. */
-.pet-dozing .pet-body { transform-origin: 50% 100%; animation: pet-breathe 4s ease-in-out infinite; }
+.pet-dozing .pet-body, .pet-sleeping .pet-body { transform-origin: 50% 100%; animation: pet-breathe 4s ease-in-out infinite; }
+/* sleeping: the night's doze, a little slower and greyer still. */
+.pet-sleeping .pet-body { animation-duration: 5s; }
+.pet-sleeping .pet-sprite { filter: saturate(0.8); }
 /* walking: up 2 px on every other frame (the sheet's 8 fps, so a 250 ms beat), which gives
    the steps some weight. Starts with the sheet: Pet.tsx remounts the sprite per pose. */
 .pet-walking .pet-body { animation: pet-step 250ms steps(1, end) infinite; }

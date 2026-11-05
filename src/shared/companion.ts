@@ -238,6 +238,10 @@ export type CompanionPetState =
   | 'leaning'
   /** The cursor is near (plan §13.3, U1): sat, turned toward it. */
   | 'looking'
+  /** The day's routine (plan §13.3, U2): a stretch at the morning hour, a yawn at six, asleep at night. */
+  | 'stretching'
+  | 'yawning'
+  | 'sleeping'
 
 /** Which way the walk sheet faces; it is drawn facing right and mirrored for left. */
 export type CompanionPetFacing = 'left' | 'right'

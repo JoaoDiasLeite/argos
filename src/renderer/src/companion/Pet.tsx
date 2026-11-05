@@ -59,7 +59,11 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   // Back to a side wall (plan §13.4): idle until lean.png is drawn, mirrored for the right wall.
   leaning: IDLE,
   // Turned toward the cursor (plan §13.4): idle, mirrored to face it, until look.png is drawn.
-  looking: IDLE
+  looking: IDLE,
+  // The day's routine (plan §13.4): the wag stands in for stretch.png, the doze for sleep.png.
+  stretching: { src: SHEETS.wag, frames: 4, fps: 4 },
+  yawning: { src: SHEETS.wag, frames: 4, fps: 4 },
+  sleeping: { src: SHEETS.doze, frames: 2, fps: 1 }
 }
 
 const FRAME = 96
@@ -86,7 +90,10 @@ const PET_STATES: readonly CompanionPetState[] = [
   'running',
   'standing',
   'leaning',
-  'looking'
+  'looking',
+  'stretching',
+  'yawning',
+  'sleeping'
 ]
 
 /** The gaits: drawn facing right and mirrored for the left, never shown with reduced motion. */
@@ -250,7 +257,7 @@ export default function Pet() {
 
 /** What sits over the head: z's, three dots, "!", the crescent. */
 function Badge({ state }: { state: CompanionPetState }) {
-  if (state === 'dozing') {
+  if (state === 'dozing' || state === 'sleeping') {
     return (
       <span className="pet-badge pet-zs" aria-hidden="true">
         <i>z</i>

@@ -45,7 +45,7 @@ export function canDoze(c: DozeConditions): boolean {
 
 /** A dozing dog sits up when something comes his way. */
 export function shouldWake(c: DozeConditions): boolean {
-  return c.petState === 'dozing' && (c.cursorNear || c.bubbleOpen || c.alertsPending || c.dragging || !c.visible)
+  return (c.petState === 'dozing' || c.petState === 'sleeping') && (c.cursorNear || c.bubbleOpen || c.alertsPending || c.dragging || !c.visible)
 }
 
 /** Which side of the dog the cursor is on, for him to look that way (plan §13.3, U1). */

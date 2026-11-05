@@ -35,6 +35,7 @@ import {
 } from './companion-walk-pure'
 import { DOZE_AFTER_MS, canDoze, cursorNearPet, cursorSideOf, type DozeConditions } from './companion-doze-pure'
 import { FOLLOW_POLL_MS, followUpdate, shouldFollow, type FollowWatch } from './companion-follow-pure'
+import { ROUTINE_POSE_MS, dayKey, isNight, routineMoment, type RoutineMoment } from './companion-routine-pure'
 import { fallY, isFall, type Fall } from './companion-fall-pure'
 import { BALL_SIZE, ballAt, fetchX, planThrow, type Throw } from './companion-ball-pure'
 import { restingPetState } from './companion-quiet-pure'
@@ -104,6 +105,10 @@ let walkTimer: ReturnType<typeof setTimeout> | null = null
 let fall: (Fall & { x: number; startAt: number }) | null = null
 /** Counts down to a doze while he sits idle (plan §13.3, M1). */
 let dozeTimer: ReturnType<typeof setTimeout> | null = null
+/** The day's routine (plan §13.3, U2): the clock, and which moments are done today. */
+let routineTimer: ReturnType<typeof setInterval> | null = null
+const routineDone: Partial<Record<RoutineMoment, string>> = {}
+const ROUTINE_POLL_MS = 30_000
 /** "Follow me" (plan §13.3, O2): the cursor's whereabouts, and the display he is on his way to. */
 let followTimer: ReturnType<typeof setInterval> | null = null
 let followWatch: FollowWatch | null = null
@@ -251,9 +256,40 @@ function tryDoze(): void {
     scheduleDoze()
     return
   }
-  // Straight to the state, not setPetState: a doze ends no walk and starts no clock.
-  petState = 'dozing'
+  // Straight to the state, not setPetState: a doze ends no walk and starts no clock. At
+  // night, with him up all day, he lies down properly (plan §13.3, U2).
+  petState = isNight(Date.now(), prefs().morningHour) && prefs().stayOnScreen ? 'sleeping' : 'dozing'
   sendToPet('companion:pet-state', petState)
+}
+
+/** Dozing, or asleep for the night: both end the same way. */
+const asleep = (): boolean => petState === 'dozing' || petState === 'sleeping'
+
+// ─── The day's routine (plan §13.3, U2) ────────────────────────────────────────
+
+function startRoutine(): void {
+  stopRoutine()
+  routineTimer = setInterval(routineTick, ROUTINE_POLL_MS)
+}
+
+function stopRoutine(): void {
+  if (routineTimer) clearInterval(routineTimer)
+  routineTimer = null
+}
+
+/** In the five minutes after the morning hour a stretch, after six a yawn, each once a day, when he is just sitting. */
+function routineTick(): void {
+  if (!alive(petWindow) || !petWindow.isVisible()) return
+  if (walk || fall || drag || game || bubble || (petState !== 'idle' && petState !== 'looking')) return
+  const now = Date.now()
+  const moment = routineMoment(now, prefs().morningHour)
+  if (!moment || routineDone[moment] === dayKey(now)) return
+  routineDone[moment] = dayKey(now)
+  const pose: CompanionPetState = moment === 'stretch' ? 'stretching' : 'yawning'
+  setPetState(pose)
+  setTimeout(() => {
+    if (petState === pose) setPetState(restingState())
+  }, ROUTINE_POSE_MS)
 }
 
 /**
@@ -286,7 +322,7 @@ function lookAtCursor(cursor: Point, b: Rect): void {
 
 /** The cursor came near, or something happened: a dozing dog sits up, and the clock restarts. */
 function wakePet(): void {
-  if (petState !== 'dozing') return
+  if (!asleep()) return
   petState = restingState()
   sendToPet('companion:pet-state', petState)
   scheduleDoze()
@@ -497,7 +533,7 @@ function poll(): void {
   const b = petWindow.getBounds()
   const over = petHitTest(cursor, b)
   setIgnore(!over)
-  if (petState === 'dozing' && cursorNearPet(cursor, b)) wakePet()
+  if (asleep() && cursorNearPet(cursor, b)) wakePet()
   lookAtCursor(cursor, b)
   if (fall) stepFall(petWindow)
   else if (walk) stepWalk(petWindow, over)
@@ -866,6 +902,7 @@ function showPet(): BrowserWindow {
     scheduleWalk()
     scheduleDoze()
     startFollowing()
+    startRoutine()
   }
   return win
 }
@@ -887,8 +924,9 @@ function hidePet(): void {
   cancelWalkTimer()
   cancelDoze()
   stopFollowing()
+  stopRoutine()
   // Hidden while dozing: he comes back sitting up.
-  if (petState === 'dozing') petState = restingState()
+  if (asleep()) petState = restingState()
 }
 
 export function setPetState(state: CompanionPetState): void {
