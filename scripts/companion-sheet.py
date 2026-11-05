@@ -46,8 +46,8 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
         # with the green keeps its orange rather than a green tint.
         lead = int(np.argmax(key))
         others = [c for c in range(3) if c != lead]
-        cap = np.maximum(rgb[..., others[0]], rgb[..., others[1]])
-        rgb[..., lead] = np.minimum(rgb[..., lead], cap)
+        cap = (rgb[..., others[0]].astype(int) + rgb[..., others[1]].astype(int)) // 2
+        rgb[..., lead] = np.minimum(rgb[..., lead].astype(int), cap).astype(rgb.dtype)
         r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
         mx = np.maximum(np.maximum(r, g), b)
         mn = np.minimum(np.minimum(r, g), b)
