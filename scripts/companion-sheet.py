@@ -122,7 +122,12 @@ def split_frames(dog: np.ndarray, frames: int) -> list[tuple[int, int]]:
 def main() -> None:
     src, out, frames = sys.argv[1], sys.argv[2], int(sys.argv[3])
     keep = [int(k) - 1 for k in sys.argv[sys.argv.index('--keep') + 1].split(',')] if '--keep' in sys.argv else list(range(frames))
-    rgb = np.array(Image.open(src).convert('RGB'))
+    # A PNG with real transparency is laid over white first: the cutter reads a background
+    # of white and grey, and transparent black would otherwise read as outline.
+    src_im = Image.open(src).convert('RGBA')
+    flat = Image.new('RGBA', src_im.size, (255, 255, 255, 255))
+    flat.alpha_composite(src_im)
+    rgb = np.array(flat.convert('RGB'))
     dog = cut_dog(rgb)
     crops = []
     found = split_frames(dog, frames)
