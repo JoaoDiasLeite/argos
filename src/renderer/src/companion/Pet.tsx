@@ -28,7 +28,8 @@ const SHEETS = {
   lean: new URL('./sprites/lean.png', import.meta.url).href,
   perch: new URL('./sprites/perch.png', import.meta.url).href,
   look: new URL('./sprites/look.png', import.meta.url).href,
-  stretch: new URL('./sprites/stretch.png', import.meta.url).href
+  stretch: new URL('./sprites/stretch.png', import.meta.url).href,
+  sleep: new URL('./sprites/sleep.png', import.meta.url).href
 }
 
 interface Sprite {
@@ -72,7 +73,8 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   // The morning stretch: a play bow, a yawn, and sat again; the yawn alone at six.
   stretching: { src: SHEETS.stretch, frames: 3, fps: 1 },
   yawning: { src: SHEETS.stretch, frames: 1, fps: 1, sheetFrames: 3, frame: 1 },
-  sleeping: { src: SHEETS.doze, frames: 2, fps: 1 },
+  // Flat out for the night, one slow breath.
+  sleeping: { src: SHEETS.sleep, frames: 2, fps: 1 },
   // A fidget (plan §13.4): the wag stands in for scratch.png.
   scratching: { src: SHEETS.wag, frames: 4, fps: 8 },
   // On a window's top edge: a look down over it, then straight ahead, slowly.
