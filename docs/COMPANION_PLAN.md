@@ -12,10 +12,11 @@ batch that depends on them starts._
 §9.4 describe what was built; the rest is the design as written before it, with the spike
 results and §10's decisions folded in where they changed it.
 
-**Phase 2 (2026-11-05): §13.** Repeating todos, terminal and plan alerts landed in 3.1.0.
-§13 plans what comes next: a window the size of the dog, walking across every screen,
-running, leaning, the panel redrawn, and the smaller ideas João picked from the
-brainstorm. Batches M to V.
+**Phase 2 (2026-11-05): §13, built the same day.** Repeating todos, terminal and plan
+alerts landed in 3.1.0, and so did batches M to V: a window the size of the dog, walking
+across every screen, running, leaning and perching, the panel redrawn, and the smaller
+ideas João picked from the brainstorm. What is still open is the art (§13.4, every pose
+plays a stand-in sheet until its own is drawn) and T6, dropped (§13.3).
 
 ## 1. What this is, in one paragraph
 
@@ -975,7 +976,7 @@ N, O, P, Q, T, U, R, V.
 | **T3** | `feat(companion): say when an intervention finishes or needs me` | `index.ts` (the ops intervention events → the terminal-alert queue with kind `ops`), `Bubble.tsx` `TerminalView` label, i18n | terminal-pure: `ops:<id>` keys dedup |
 | **T4** | `feat(companion): "guarda isto" keeps the clipboard as a note` | `companion-nlu-pure.ts` (the phrase), `index.ts` (`clipboard.readText()` → note, Obsidian export as any note) | nlu test |
 | **T5** | `feat(companion): timers` | `companion-nlu-pure.ts` ("timer 5 min", "temporizador 5 min"), a todo with `timer: true` whose bubble shows the countdown | nlu + schedule tests |
-| **T6** | `feat(companion): sprint items due today in the day's list` | `index.ts` (`companion:today` merges sprint items with a due date of today, read-only), `Bubble.tsx` query view, panel Today group | store/query test |
+| ~~**T6**~~ | ~~`feat(companion): sprint items due today in the day's list`~~ | Dropped: a sprint item has no due date of its own (`sprints.ts` `SprintItem`), only the sprint's range, so there is nothing to put in a day. A promoted todo already carries its date and its sprint status. | — |
 | **U1** | `feat(companion): look at the cursor` | `companion-window.ts` (cursor within 150 px → `facing` toward it; `look.png` 2 frames or `idle` fallback) | — |
 | **U2** | `feat(companion): a routine for the day` | `companion-routine-pure.ts` (stretch at `morningHour`, yawn at 18:00, lie down from 22:00 with stay-on-screen), `stretch.png` / `sleep.png` with `doze` fallback | pure: the hour → the pose |
 | **U3** | `feat(companion): more to do while idle` | `Pet.tsx` (every 20–60 s one of scratch / look around / wag; `wag.png` exists, `scratch.png` fallback to idle) | — |
@@ -983,8 +984,19 @@ N, O, P, Q, T, U, R, V.
 | **V1** | `feat(companion): quiet with focus assist` | `companion-win32.ts` (`SHQueryUserNotificationState`), scheduler gate | pure: the state → quiet |
 | **V2** | `feat(companion): a toast over full-screen apps` | `companion-win32.ts` (`QUNS_RUNNING_D3D_FULL_SCREEN` / `QUNS_PRESENTATION_MODE`), `index.ts` (reminder → `Notification` when full-screen) | pure |
 
-**Changelog.** 3.1.0 is still unreleased (`ChangelogModal.tsx`, `tag: 'new'`), so M, S, N
-and O go into its entry; P onward opens 3.2.0.
+**Changelog.** 3.1.0 was still unreleased (`ChangelogModal.tsx`, `tag: 'new'`) when all of
+this landed, so every batch went into its entry.
+
+**As built, where it differs from the table.** R perches on a drop over the title bar of
+the window in front (the pet window never takes focus, so the foreground window is the one
+João last clicked), through `koffi` with `DwmGetWindowAttribute` for the real bounds;
+`companion-win32.ts` answers null wherever koffi cannot load, and every feature on it stays
+off. V1 and V2 share one `SHQueryUserNotificationState` poll every 5 s, behind the
+"Quiet with Focus Assist" preference. P2 is thrown from the pet's right-click menu: the
+desktop around him is click-through, so a double-click on the floor cannot reach him.
+U3 is the renderer's own (a scratch or a glance every 20–60 s over a plain idle); U1 and
+U2 are main's. T2's focus is quiet until a second before the end, so the reminder that
+ends it arrives as a plain reminder rather than a catch-up.
 
 ### 13.4 Art to produce (`COMPANION_ART_PROMPT.md` format, 96×96, 9 colours)
 
