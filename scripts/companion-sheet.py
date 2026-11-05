@@ -75,7 +75,7 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
     # grey nor strong, and the closing can miss it where the outline is thin: any paint
     # touching the silhouette and within reach of it is the dog too; a ghost smeared
     # further off is not.
-    near = ndimage.distance_transform_edt(~silhouette) < 0.12 * H
+    near = ndimage.distance_transform_edt(~silhouette) < 0.3 * H
     lab_t, n_t = ndimage.label(~greyish & near)
     touching = np.unique(lab_t[silhouette & (lab_t > 0)])
     silhouette = silhouette | np.isin(lab_t, touching[touching > 0])
