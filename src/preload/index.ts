@@ -203,6 +203,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     terminalOpen: (key: string) => ipcRenderer.send('companion:terminal-open', key),
     planOpen: () => ipcRenderer.send('companion:plan-open'),
     summon: () => ipcRenderer.send('companion:summon'),
+    pet: () => ipcRenderer.send('companion:pet'),
     petMenu: () => ipcRenderer.send('companion:pet-menu'),
     onShown: (cb: () => void) => {
       const fn = () => cb()

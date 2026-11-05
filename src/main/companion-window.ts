@@ -631,6 +631,17 @@ export function popupPetMenu(menu: Menu): void {
   menu.popup({ window: petWindow })
 }
 
+/**
+ * A long press on the dog (plan §13.3, M5): a wag, as for a todo done, and nothing opens.
+ * Not while he is busy with a bubble or saying something; a dozing dog wakes for it.
+ */
+export function petThePet(): void {
+  if (!isCompanionVisible() || bubble) return
+  wakePet()
+  if (petState !== 'idle' && petState !== 'shh') return
+  setPetState('happy')
+}
+
 /** Down, bubble and all, whatever "stay on screen" says. */
 export function hideCompanion(): void {
   hidePet()

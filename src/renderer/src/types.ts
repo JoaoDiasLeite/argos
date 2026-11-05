@@ -1483,6 +1483,8 @@ declare global {
         planOpen: () => void
         /** A click on the dog: the bubble opens for typing (or closes if it is). */
         summon: () => void
+        /** A long press on the dog: he wags, nothing opens. */
+        pet: () => void
         /** Right-click on the dog: main pops the native menu at the cursor. */
         petMenu: () => void
         onShown: (cb: () => void) => () => void

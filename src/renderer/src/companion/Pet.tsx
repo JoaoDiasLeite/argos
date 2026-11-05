@@ -63,6 +63,9 @@ const HAPPY_MS = 1000
 /** A pointer that travels further than this between down and up was a drag, not a click. */
 const CLICK_SLOP = 4
 
+/** Held down this long without moving: petting him, not a click and not a drag (plan §13.3, M5). */
+const HOLD_MS = 600
+
 const PET_STATES: readonly CompanionPetState[] = [
   'idle',
   'dozing',
@@ -98,6 +101,15 @@ export default function Pet() {
   const [facing, setFacing] = useState<CompanionPetFacing>('right')
   const reducedMotion = useReducedMotion()
   const down = useRef<{ x: number; y: number } | null>(null)
+  /** The hold timer while the pointer is down and still, and whether it went off. */
+  const hold = useRef<number | null>(null)
+  const held = useRef(false)
+
+  const clearHold = (): void => {
+    if (hold.current !== null) window.clearTimeout(hold.current)
+    hold.current = null
+  }
+  useEffect(() => clearHold, [])
 
   useEffect(() => {
     const accept = (s: unknown): void => {
@@ -140,16 +152,31 @@ export default function Pet() {
     if (e.button !== 0) return
     e.currentTarget.setPointerCapture(e.pointerId)
     down.current = { x: e.screenX, y: e.screenY }
+    held.current = false
+    clearHold()
+    hold.current = window.setTimeout(() => {
+      hold.current = null
+      held.current = true
+      api.pet()
+    }, HOLD_MS)
     api.dragStart()
+  }
+  // Moving further than a click's slop makes it a drag: no petting on the way.
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>): void => {
+    const start = down.current
+    if (!start || hold.current === null) return
+    if (Math.hypot(e.screenX - start.x, e.screenY - start.y) > CLICK_SLOP) clearHold()
   }
   const onPointerUp = (e: PointerEvent<HTMLDivElement>): void => {
     const start = down.current
     down.current = null
+    clearHold()
     if (!start) return
     api.dragEnd()
-    if (Math.hypot(e.screenX - start.x, e.screenY - start.y) <= CLICK_SLOP) api.summon()
+    if (!held.current && Math.hypot(e.screenX - start.x, e.screenY - start.y) <= CLICK_SLOP) api.summon()
   }
   const onPointerCancel = (): void => {
+    clearHold()
     if (!down.current) return
     down.current = null
     api.dragEnd()
@@ -162,6 +189,7 @@ export default function Pet() {
         role="button"
         aria-label={t('companion.pet.label')}
         onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
         onContextMenu={(e) => {

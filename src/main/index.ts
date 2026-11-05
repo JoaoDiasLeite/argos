@@ -242,6 +242,7 @@ import {
   isCompanionBubble,
   isCompanionVisible,
   openBubble,
+  petThePet,
   popupPetMenu,
   registerCompanionShortcut,
   registerVoiceShortcut,
@@ -1528,6 +1529,8 @@ ipcMain.on('companion:summon', () => {
   if (!open) showCompanion({ focusInput: true })
   else if (open.mode === 'input') closeBubble()
 })
+// A long press on the dog: a wag, and nothing opens.
+ipcMain.on('companion:pet', () => petThePet())
 ipcMain.on('companion:open-main', () => openCompanionPanel())
 // "Abrir" on a terminal bubble: that chat in the main window.
 ipcMain.on('companion:terminal-open', (_, key: unknown) => {
