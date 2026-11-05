@@ -41,7 +41,13 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm test
+      # On the Windows runner, parallel vitest workers race on vite's temp
+      # ssr cache under the 8.3 short-name temp dir (ENOENT on .tmp-* files),
+      # so the suites run one at a time from a long-path temp folder.
+      - run: npm test -- --no-file-parallelism
+        env:
+          TMP: ${{ runner.temp }}
+          TEMP: ${{ runner.temp }}
 
   build:
     runs-on: ubuntu-latest
