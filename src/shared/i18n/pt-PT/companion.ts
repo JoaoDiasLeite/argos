@@ -72,6 +72,11 @@ const companion: Record<keyof typeof en, string> = {
   'terminal.later': 'Depois',
   'terminal.help': 'Enter abre · Esc fecha',
 
+  'plan.title': 'Plano {account} nos {pct}%',
+  'plan.open': 'Ver uso',
+  'plan.later': 'OK',
+  'plan.help': 'Enter abre · Esc fecha',
+
   'catchup.title.one': '1 lembrete passou',
   'catchup.title.other': '{n} lembretes passaram',
   'catchup.launch': 'enquanto o Argos esteve fechado',

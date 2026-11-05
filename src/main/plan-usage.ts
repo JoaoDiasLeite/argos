@@ -482,8 +482,7 @@ function fmtResetShort(iso?: string): string {
   return t('main.planUsage.reset.hours', { h: Math.floor(mins / 60), m: mins % 60 })
 }
 
-function checkThresholds(report: PlanUsageReport, showMain: () => void): void {
-  if (!Notification.isSupported()) return
+function checkThresholds(report: PlanUsageReport, handlers: PlanUsageWatcherHandlers): void {
   for (const acc of report.accounts) {
     // Only fresh, real numbers drive notifications — never stale carry-over.
     if (acc.status !== 'ok' || acc.stale) continue
@@ -496,9 +495,19 @@ function checkThresholds(report: PlanUsageReport, showMain: () => void): void {
       const reset = fmtResetShort(w.resetsAt)
       const params = { window: windowLabelForTooltip(w.key), pct: w.utilization.toFixed(0), reset }
       const body = reset ? t('main.planUsage.alert.bodyWithReset', params) : t('main.planUsage.alert.body', params)
+      const told = handlers.tell?.({
+        accountKey: acc.accountKey,
+        windowKey: w.key,
+        account: acc.accountName,
+        pct: Math.round(w.utilization),
+        body
+      })
+      if (told) continue
+      // The pet is not taking it: the notification, as before.
+      if (!Notification.isSupported()) continue
       try {
         const n = new Notification({ title: t('main.planUsage.alert.title', { account: acc.accountName }), body })
-        n.on('click', () => showMain())
+        n.on('click', () => handlers.showMain())
         n.show()
       } catch {
         // Notifications are best-effort — never let one throw into the watcher.
@@ -510,6 +519,8 @@ function checkThresholds(report: PlanUsageReport, showMain: () => void): void {
 export interface PlanUsageWatcherHandlers {
   broadcast: (report: PlanUsageReport) => void
   showMain: () => void
+  /** Have the companion say a threshold alert. True: he took it, so no notification. */
+  tell?: (alert: { accountKey: string; windowKey: string; account: string; pct: number; body: string }) => boolean
 }
 
 let watcherHandlers: PlanUsageWatcherHandlers | null = null
@@ -529,7 +540,7 @@ function afterFetch(report: PlanUsageReport): void {
   } catch {
     /* renderer may be loading */
   }
-  checkThresholds(report, watcherHandlers.showMain)
+  checkThresholds(report, watcherHandlers)
 }
 
 /** Run a fetch and push the result through the shared post-fetch path. */

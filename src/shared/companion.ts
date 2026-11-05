@@ -118,6 +118,23 @@ export interface CompanionPrefs {
    * waiting on you (while the main window is away) is said in his bubble instead of a toast.
    */
   terminalAlerts: boolean
+  /**
+   * "Avisar quando o plano passa os 85 %": with the pet on screen, a plan window crossing
+   * 85 % or 95 % (plan-alerts-pure.ts) is said in his bubble instead of a notification.
+   */
+  planAlerts: boolean
+}
+
+/** A plan window (5 h or week) of one account crossed a threshold (plan-alerts-pure.ts). */
+export interface CompanionPlanAlert {
+  /** `plan:<accountKey>:<windowKey>`: a newer word about the same window replaces the older one. */
+  key: string
+  /** The account's name, as the usage view shows it. */
+  account: string
+  /** Whole percent used. */
+  pct: number
+  /** "Week window 87% used · resets in 2h 10m", composed by main like the notification body. */
+  detail: string
 }
 
 /** A chat terminal that finished its turn, or is waiting on an answer (an approval). */
@@ -188,7 +205,7 @@ export type CompanionPetState =
 /** Which way the walk sheet faces; it is drawn facing right and mirrored for left. */
 export type CompanionPetFacing = 'left' | 'right'
 
-export type CompanionBubbleMode = 'input' | 'reminder' | 'catchup' | 'confirm' | 'terminal'
+export type CompanionBubbleMode = 'input' | 'reminder' | 'catchup' | 'confirm' | 'terminal' | 'plan'
 
 /**
  * Where the bubble sits against the pet, so it can draw its tail: above the dog (or below,
@@ -217,6 +234,7 @@ export type CompanionBubblePayload =
   | { mode: 'catchup'; payload: { reminders: CompanionReminder[]; reason: 'launch' | 'dnd' } }
   | { mode: 'confirm'; payload: CompanionCaptureResult }
   | { mode: 'terminal'; payload: { alert: CompanionTerminalAlert } }
+  | { mode: 'plan'; payload: { alert: CompanionPlanAlert } }
 
 export interface CompanionList {
   todos: CompanionTodo[]

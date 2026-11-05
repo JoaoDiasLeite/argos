@@ -961,6 +961,13 @@ export default function SettingsView({
                     (terminalAlerts) => updateCompanion({ terminalAlerts }),
                     companionBusy
                   )}
+                  {toggleRow(
+                    t('settings.companion.planAlerts.label'),
+                    t('settings.companion.planAlerts.hint'),
+                    companion.planAlerts,
+                    (planAlerts) => updateCompanion({ planAlerts }),
+                    companionBusy
+                  )}
                   <div className="srow">
                     <div className="srow-text">
                       <span className="srow-label">{t('settings.companion.leadTime.label')}</span>

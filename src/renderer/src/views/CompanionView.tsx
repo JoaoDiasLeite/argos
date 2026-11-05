@@ -50,7 +50,8 @@ const DEFAULT_PREFS: CompanionPrefs = {
   askModel: true,
   obsidianVault: '',
   obsidianFolder: 'Argos',
-  terminalAlerts: true
+  terminalAlerts: true,
+  planAlerts: true
 }
 
 /** Text-field saves wait this long after the last keystroke. */

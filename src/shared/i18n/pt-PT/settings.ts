@@ -112,6 +112,8 @@ const settings: Record<keyof typeof en, string> = {
   'companion.walk.hint': 'Com o Argos no ecrã, de vez em quando dá uns passos ao longo do fundo.',
   'companion.terminalAlerts.label': 'Avisar quando um chat acaba',
   'companion.terminalAlerts.hint': 'Com o Argos no ecrã, um chat que acabou ou precisa de ti enquanto estás noutra janela aparece no balão dele em vez de uma notificação.',
+  'companion.planAlerts.label': 'Avisar quando o plano passa os 85%',
+  'companion.planAlerts.hint': 'Com o Argos no ecrã, uma janela do plano a passar os 85% ou os 95% aparece no balão dele em vez de uma notificação.',
   'companion.leadTime.label': 'Aviso antes da hora',
   'companion.leadTime.hint': 'Para tudo o que tem hora, como "amanhã às 14h".',
   'companion.leadTime.atTime': 'Na hora',

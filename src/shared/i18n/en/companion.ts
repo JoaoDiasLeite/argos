@@ -79,6 +79,12 @@ export default {
   'terminal.later': 'Later',
   'terminal.help': 'Enter opens · Esc closes',
 
+  // A plan window crossed 85% or 95% (plan-alerts-pure.ts); `detail` comes composed from main.
+  'plan.title': '{account} plan at {pct}%',
+  'plan.open': 'See usage',
+  'plan.later': 'OK',
+  'plan.help': 'Enter opens · Esc closes',
+
   'catchup.title.one': '1 reminder passed',
   'catchup.title.other': '{n} reminders passed',
   'catchup.launch': 'while Argos was closed',

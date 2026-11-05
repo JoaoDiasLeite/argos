@@ -501,7 +501,7 @@ is a todo that is done in neither.
 | 2 | Main-window **Companion** panel (list, edit, promote) | high | one sidebar entry | **v1** |
 | 3 | A chat terminal finished / needs input → pet reacts | high | none (the hook exists, `src/main/notify-hook.ts:21`) | **built in 3.1.0** (`companion-terminal-pure.ts`): embedded chats' busy→idle and OSC 9, plus the hook in place of its toast; one word per turn |
 | 4 | Promote to sprint, from the panel and the bubble | high | one button | **v2** |
-| 5 | Plan usage crossed 85 % → pet mentions it once | medium | none; `plan-alerts-pure.ts` already decides when | **v2**, reusing the existing latch so it cannot double-fire |
+| 5 | Plan usage crossed 85 % → pet mentions it once | medium | none; `plan-alerts-pure.ts` already decides when | **built in 3.1.0**: `checkThresholds` (`plan-usage.ts`) offers each alert to the pet first (`tell` handler) and keeps the notification as the fallback; the latch is unchanged, so it cannot double-fire |
 | 6 | Standup draft from the week's done todos | medium | a button in the panel | **v3** |
 | 7 | Ops intervention finished → pet says so | low | the workspace already shows it | **no** |
 | 8 | Pet comments on commits / cheers on green CI | low | high | **no.** This is where Clippy actually went wrong. |

@@ -257,7 +257,7 @@ import {
   startPetDrag,
   toggleCompanion
 } from './companion-window'
-import type { CompanionCaptureResult, CompanionList, CompanionPrefs, CompanionPromoteResult, CompanionRect, CompanionTerminalAlert, CompanionTodo, CompanionStateView, CompanionVoicePhase, ParsedCapture } from './companion-types'
+import type { CompanionCaptureResult, CompanionList, CompanionPrefs, CompanionPromoteResult, CompanionPlanAlert, CompanionRect, CompanionTerminalAlert, CompanionTodo, CompanionStateView, CompanionVoicePhase, ParsedCapture } from './companion-types'
 import { MAX_CLIP_BYTES } from './companion-voice-pure'
 import { cancelVoiceInstall, disposeVoice, installVoiceModels, prepareVoice, setVoiceProgressListener, transcribe, voiceStatus } from './companion-voice'
 import { currentLanguage, t } from './i18n'
@@ -754,10 +754,9 @@ app.whenReady().then(async () => {
   // threshold notifications from the main process so they surface while tray-resident.
   startPlanUsageWatcher({
     broadcast: (r) => sendToMainWindow('plan:update', r),
-    showMain: () => {
-      showMainWindow()
-      sendToMainWindow('app:open-view', 'usage')
-    }
+    showMain: showUsageView,
+    tell: (a) =>
+      tellCompanionPlan({ key: `plan:${a.accountKey}:${a.windowKey}`, account: a.account, pct: a.pct, detail: a.body })
   })
   // The companion: its windows are created on first show; the summon shortcut and the
   // reminder timer start now, and "stay on screen" puts the pet up straight away.
@@ -926,6 +925,7 @@ type CompanionAlert =
   | { mode: 'catchup'; reminders: DueReminder[]; reason: 'launch' | 'dnd' }
   /** `at`: when it was queued, so one that waited behind reminders too long is dropped. */
   | { mode: 'terminal'; alert: CompanionTerminalAlert; at: number }
+  | { mode: 'plan'; alert: CompanionPlanAlert }
 const companionAlerts: CompanionAlert[] = []
 /** The todo whose reminder bubble is up, so done/snooze/dismiss on it moves the queue on. */
 let companionReminderId: string | null = null
@@ -947,6 +947,10 @@ function queueCompanionAlerts(alerts: CompanionAlert[]): void {
     console.error('[companion] could not show the bubble:', e)
     for (const a of companionAlerts.splice(0)) {
       if (a.mode === 'terminal') continue
+      if (a.mode === 'plan') {
+        notifyCompanion(a.alert.account, a.alert.detail)
+        continue
+      }
       for (const r of a.mode === 'reminder' ? [a.reminder] : a.reminders) notifyCompanion(r.title, '')
     }
   }
@@ -1017,6 +1021,42 @@ function forgetTerminalAlert(key: string): void {
   if (up?.mode === 'terminal' && up.payload.alert.key === key) closeBubble()
 }
 
+// ─── Plan alerts (plan-alerts-pure.ts decides the 85 % / 95 % thresholds) ───────
+
+/** On, the pet up and not quiet. Otherwise the plan watcher shows its notification. */
+function companionTakesPlanAlerts(): boolean {
+  return getConfig().companion.planAlerts && isCompanionVisible() && companionQuietUntil() === null
+}
+
+/**
+ * Have the pet say a plan threshold alert. False when he is not taking them, so the watcher
+ * shows the notification. It waits ahead of terminal alerts, is never stale, and stays up
+ * until answered (it matters, like a reminder).
+ */
+function tellCompanionPlan(alert: CompanionPlanAlert): boolean {
+  if (!companionTakesPlanAlerts()) return false
+  const up = currentBubble()
+  if (up?.mode === 'plan' && up.payload.alert.key === alert.key) {
+    openBubble({ mode: 'plan', payload: { alert } })
+    return true
+  }
+  // The same window crossing again (85 % then 95 %): the newer number replaces the queued one.
+  const i = companionAlerts.findIndex((a) => a.mode === 'plan' && a.alert.key === alert.key)
+  if (i >= 0) {
+    companionAlerts[i] = { mode: 'plan', alert }
+    showNextCompanionAlert()
+  } else {
+    queueCompanionAlerts([{ mode: 'plan', alert }])
+  }
+  return true
+}
+
+/** The main window on the usage view: a plan notification's click and the bubble's "Abrir". */
+function showUsageView(): void {
+  showMainWindow()
+  sendToMainWindow('app:open-view', 'usage')
+}
+
 /** A chat's name from its session file, for the bubble's title. */
 function chatName(sessionId: string): string {
   try {
@@ -1074,7 +1114,9 @@ function showNextCompanionAlert(): void {
     return
   }
   setPetState('alert')
-  if (next.mode === 'reminder') {
+  if (next.mode === 'plan') {
+    openBubble({ mode: 'plan', payload: { alert: next.alert } })
+  } else if (next.mode === 'reminder') {
     companionReminderId = next.reminder.todoId
     const queued = companionAlerts.filter((a) => a.mode === 'reminder').length
     openBubble({ mode: 'reminder', payload: { reminder: next.reminder, queued } })
@@ -1500,6 +1542,11 @@ ipcMain.on('companion:terminal-open', (_, key: unknown) => {
   const open = terminalOpeners.get(key)
   closeBubble()
   open?.()
+})
+// "Abrir" on a plan alert bubble: the usage view in the main window.
+ipcMain.on('companion:plan-open', () => {
+  closeBubble()
+  showUsageView()
 })
 // A right-click on the dog: the native menu at the cursor (the pet window never takes focus).
 ipcMain.on('companion:pet-menu', () => popupPetMenu(Menu.buildFromTemplate(companionPetMenuTemplate())))

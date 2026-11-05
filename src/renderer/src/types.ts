@@ -1482,6 +1482,8 @@ declare global {
         openMain: () => void
         /** "Abrir" on a terminal bubble: that chat in the main window. */
         terminalOpen: (key: string) => void
+        /** "Abrir" on a plan alert bubble: the usage view in the main window. */
+        planOpen: () => void
         /** A click on the dog: the bubble opens for typing (or closes if it is). */
         summon: () => void
         /** Right-click on the dog: main pops the native menu at the cursor. */

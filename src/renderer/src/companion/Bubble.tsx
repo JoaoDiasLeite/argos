@@ -3,6 +3,7 @@ import type {
   CompanionBubbleAnchor,
   CompanionBubblePayload,
   CompanionCaptureResult,
+  CompanionPlanAlert,
   CompanionReminder,
   CompanionSnoozeRequest,
   CompanionTerminalAlert,
@@ -159,6 +160,8 @@ export default function Bubble() {
         return <CatchUp key={session} reminders={view.payload.reminders} reason={view.payload.reason} />
       case 'terminal':
         return <TerminalView key={view.payload.alert.key + view.payload.alert.kind + session} alert={view.payload.alert} />
+      case 'plan':
+        return <PlanView key={view.payload.alert.key + session} alert={view.payload.alert} />
     }
   })()
 
@@ -785,6 +788,46 @@ function TerminalView({ alert }: { alert: CompanionTerminalAlert }) {
         </button>
       </div>
       <div className="help">{t('companion.terminal.help')}</div>
+    </>
+  )
+}
+
+// ─── A plan is nearly used up ──────────────────────────────────────────────────
+
+/** Stays up until answered (it matters, like a reminder); Enter opens the usage view, Esc closes. */
+function PlanView({ alert }: { alert: CompanionPlanAlert }) {
+  const t = useT()
+  const shownAt = useRef(Date.now())
+  const open = (): void => {
+    api.planOpen()
+    api.bubbleClose()
+  }
+
+  useWindowKey((e) => {
+    if (e.key === 'Escape') api.bubbleClose()
+    else if (e.key === 'Enter' && (e.target === document.body || e.target === null)) {
+      if (Date.now() - shownAt.current < ENTER_GUARD_MS) return
+      e.preventDefault()
+      open()
+    }
+  })
+
+  return (
+    <>
+      <div className="bq-meta">
+        <span className={`bq-chip${alert.pct >= 95 ? ' bq-warn' : ''}`}>{alert.pct}%</span>
+      </div>
+      <div className="bq-title bq-clamp">{t('companion.plan.title', { account: alert.account, pct: alert.pct })}</div>
+      {alert.detail && <div className="help bq-clamp">{alert.detail}</div>}
+      <div className="bq-actions">
+        <button type="button" className="btn-primary" onClick={open}>
+          {t('companion.plan.open')}
+        </button>
+        <button type="button" className="btn-secondary" onClick={() => api.bubbleClose()}>
+          {t('companion.plan.later')}
+        </button>
+      </div>
+      <div className="help">{t('companion.plan.help')}</div>
     </>
   )
 }
