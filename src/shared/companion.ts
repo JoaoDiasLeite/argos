@@ -242,6 +242,8 @@ export type CompanionPetState =
   | 'stretching'
   | 'yawning'
   | 'sleeping'
+  /** A fidget while idle (plan §13.3, U3), the renderer's own; main never sets it. */
+  | 'scratching'
 
 /** Which way the walk sheet faces; it is drawn facing right and mirrored for left. */
 export type CompanionPetFacing = 'left' | 'right'

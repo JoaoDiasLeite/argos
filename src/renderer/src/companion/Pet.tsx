@@ -63,7 +63,9 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   // The day's routine (plan §13.4): the wag stands in for stretch.png, the doze for sleep.png.
   stretching: { src: SHEETS.wag, frames: 4, fps: 4 },
   yawning: { src: SHEETS.wag, frames: 4, fps: 4 },
-  sleeping: { src: SHEETS.doze, frames: 2, fps: 1 }
+  sleeping: { src: SHEETS.doze, frames: 2, fps: 1 },
+  // A fidget (plan §13.4): the wag stands in for scratch.png.
+  scratching: { src: SHEETS.wag, frames: 4, fps: 8 }
 }
 
 const FRAME = 96
@@ -93,8 +95,15 @@ const PET_STATES: readonly CompanionPetState[] = [
   'looking',
   'stretching',
   'yawning',
-  'sleeping'
+  'sleeping',
+  'scratching'
 ]
+
+/** Now and then while just sitting (plan §13.3, U3): a scratch, or a glance the other way. */
+const FIDGET_MIN_MS = 20_000
+const FIDGET_MAX_MS = 60_000
+const FIDGET_MS = 1500
+type Fidget = 'scratching' | 'glance'
 
 /** The gaits: drawn facing right and mirrored for the left, never shown with reduced motion. */
 const ON_THE_MOVE: readonly CompanionPetState[] = ['walking', 'running', 'standing']
@@ -170,11 +179,38 @@ export default function Pet() {
     return () => clearTimeout(timer)
   }, [state])
 
+  // The fidgets are the renderer's own: only over a plain idle, never with reduced motion.
+  const [fidget, setFidget] = useState<Fidget | null>(null)
+  useEffect(() => {
+    if (state !== 'idle' || reducedMotion) {
+      setFidget(null)
+      return
+    }
+    let timer = 0
+    const schedule = (): void => {
+      timer = window.setTimeout(
+        () => {
+          setFidget(Math.random() < 0.5 ? 'scratching' : 'glance')
+          timer = window.setTimeout(() => {
+            setFidget(null)
+            schedule()
+          }, FIDGET_MS)
+        },
+        FIDGET_MIN_MS + Math.random() * (FIDGET_MAX_MS - FIDGET_MIN_MS)
+      )
+    }
+    schedule()
+    return () => window.clearTimeout(timer)
+  }, [state, reducedMotion])
+
   // With reduced motion a walk is never shown: he is drawn sitting (main does not walk then either).
-  const shown: CompanionPetState = ON_THE_MOVE.includes(state) && reducedMotion ? 'idle' : state
+  const base: CompanionPetState = ON_THE_MOVE.includes(state) && reducedMotion ? 'idle' : state
+  const glancing = base === 'idle' && fidget === 'glance'
+  const shown: CompanionPetState = base === 'idle' && fidget === 'scratching' ? 'scratching' : glancing ? 'looking' : base
   const sprite = SPRITES[shown]
   const animated = sprite.frames > 1
-  const mirrored = MIRRORABLE.includes(shown) && facing === 'left'
+  // A glance is the other way from where he faces.
+  const mirrored = glancing ? facing === 'right' : MIRRORABLE.includes(shown) && facing === 'left'
 
   // Screen coordinates: while main drags the window the dog stays under the cursor, so
   // client coordinates barely move even on a long drag.
