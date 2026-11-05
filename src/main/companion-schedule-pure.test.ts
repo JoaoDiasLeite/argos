@@ -28,7 +28,15 @@ describe('pendingReminders', () => {
   it('returns what has come round and nothing still to come', () => {
     const due = pendingReminders([todo('a', [now]), todo('b', [now + MIN]), todo('c', [now - 30_000])], now)
     expect(ids(due)).toEqual(['c', 'a'])
-    expect(due[1]).toEqual({ todoId: 'a', title: 'todo a', at: now, late: false, lateMinutes: 0 })
+    expect(due[1]).toEqual({ todoId: 'a', title: 'todo a', at: now, late: false, lateMinutes: 0, snoozes: 0 })
+  })
+
+  it('carries how often the todo has been snoozed', () => {
+    let t = markFired(todo('a', [now - 30 * MIN]), [now - 30 * MIN])
+    t = snooze(t, now - 30 * MIN, { minutes: 10 })
+    t = markFired(t, [now - 20 * MIN])
+    t = snooze(t, now - 20 * MIN, { minutes: 10 })
+    expect(pendingReminders([t], now)[0]).toMatchObject({ at: now - 10 * MIN, snoozes: 2 })
   })
 
   it('never returns a reminder that already fired', () => {

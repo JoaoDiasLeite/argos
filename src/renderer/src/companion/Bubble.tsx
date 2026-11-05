@@ -10,6 +10,7 @@ import type {
   CompanionTodo
 } from '../types'
 import { plural } from '../../../shared/i18n'
+import { SNOOZE_CAP } from '../../../shared/companion'
 import { useLanguage, useT } from '../i18n'
 import {
   chipLabel,
@@ -567,6 +568,8 @@ function ReminderView({ reminder, queued }: { reminder: CompanionReminder; queue
   const pickInput = useRef<HTMLInputElement>(null)
   const now = Date.now()
   const id = reminder.todoId
+  // Snoozed enough times: +10 min goes, and the menu only offers days (plan §3.2).
+  const tired = reminder.snoozes >= SNOOZE_CAP
 
   useEffect(() => {
     if (menu) firstItem.current?.focus()
@@ -606,6 +609,7 @@ function ReminderView({ reminder, queued }: { reminder: CompanionReminder; queue
         {reminder.late && (
           <span className="bq-chip bq-warn">{t('companion.reminder.late', { span: lateSpan(reminder.lateMinutes, t) })}</span>
         )}
+        {tired && <span className="bq-chip">{t('companion.reminder.snoozed', { n: reminder.snoozes })}</span>}
         <span className="help">
           {dayWord(reminder.at, now, locale, t)} · <span className="num">{formatTime(reminder.at, locale)}</span>
         </span>
@@ -615,14 +619,10 @@ function ReminderView({ reminder, queued }: { reminder: CompanionReminder; queue
         <button type="button" className="btn-primary" onClick={done}>
           {t('companion.reminder.done')}
         </button>
-        <div className="bq-split">
-          <button type="button" className="btn-secondary" onClick={() => snooze({ minutes: 10 })}>
-            {t('companion.reminder.snooze10')}
-          </button>
+        {tired ? (
           <button
             type="button"
-            className="btn-secondary bq-split-more"
-            aria-label={t('companion.reminder.snoozeMore')}
+            className="btn-secondary"
             aria-haspopup="menu"
             aria-expanded={menu}
             onClick={() => {
@@ -630,22 +630,45 @@ function ReminderView({ reminder, queued }: { reminder: CompanionReminder; queue
               setMenu((m) => !m)
             }}
           >
-            <Chevron up={menu} />
+            {t('companion.reminder.move')}
           </button>
-        </div>
+        ) : (
+          <div className="bq-split">
+            <button type="button" className="btn-secondary" onClick={() => snooze({ minutes: 10 })}>
+              {t('companion.reminder.snooze10')}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary bq-split-more"
+              aria-label={t('companion.reminder.snoozeMore')}
+              aria-haspopup="menu"
+              aria-expanded={menu}
+              onClick={() => {
+                setPicking(false)
+                setMenu((m) => !m)
+              }}
+            >
+              <Chevron up={menu} />
+            </button>
+          </div>
+        )}
         <button type="button" className="btn-secondary" onClick={() => api.openMain()}>
           {t('companion.reminder.open')}
         </button>
       </div>
       {menu && (
         <div className="bq-menu" role="menu">
-          <button ref={firstItem} type="button" role="menuitem" onClick={() => snooze({ minutes: 10 })}>
-            {t('companion.snooze.10m')}
-          </button>
-          <button type="button" role="menuitem" onClick={() => snooze({ minutes: 60 })}>
-            {t('companion.snooze.1h')}
-          </button>
-          <button type="button" role="menuitem" onClick={() => snooze({ tomorrowMorning: true })}>
+          {!tired && (
+            <>
+              <button ref={firstItem} type="button" role="menuitem" onClick={() => snooze({ minutes: 10 })}>
+                {t('companion.snooze.10m')}
+              </button>
+              <button type="button" role="menuitem" onClick={() => snooze({ minutes: 60 })}>
+                {t('companion.snooze.1h')}
+              </button>
+            </>
+          )}
+          <button ref={tired ? firstItem : undefined} type="button" role="menuitem" onClick={() => snooze({ tomorrowMorning: true })}>
             {t('companion.snooze.tomorrow')}
           </button>
           <button

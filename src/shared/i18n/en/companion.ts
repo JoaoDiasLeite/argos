@@ -62,6 +62,9 @@ export default {
   'reminder.snooze10': '+10 min',
   'reminder.snoozeMore': 'More ways to snooze',
   'reminder.open': 'Open',
+  /** In +10 min's place once the todo has been snoozed SNOOZE_CAP times: the menu offers days only. */
+  'reminder.move': 'Move it…',
+  'reminder.snoozed': 'snoozed {n} times',
   'reminder.help': 'Enter marks it done · Esc closes',
   'reminder.queued.one': '1 more waiting',
   'reminder.queued.other': '{n} more waiting',

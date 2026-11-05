@@ -30,6 +30,8 @@ export interface DueReminder {
   late: boolean
   /** Whole minutes past `at`; 0 when on time. */
   lateMinutes: number
+  /** How often this todo has been snoozed so far (plan §3.2: at SNOOZE_CAP the bubble offers a new date). */
+  snoozes: number
 }
 
 /** A todo the scheduler speaks for: not done, and not handed to a sprint item. */
@@ -53,7 +55,8 @@ export function pendingReminders(todos: CompanionTodo[], now: number): DueRemind
         title: todo.title,
         at,
         late: past > LATE_AFTER_MS,
-        lateMinutes: Math.floor(past / 60_000)
+        lateMinutes: Math.floor(past / 60_000),
+        snoozes: snoozeCount(todo)
       })
     }
   }

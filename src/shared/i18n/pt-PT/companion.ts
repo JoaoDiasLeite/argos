@@ -56,6 +56,8 @@ const companion: Record<keyof typeof en, string> = {
   'reminder.snooze10': '+10 min',
   'reminder.snoozeMore': 'Mais formas de adiar',
   'reminder.open': 'Abrir',
+  'reminder.move': 'Mudar a data…',
+  'reminder.snoozed': 'adiado {n} vezes',
   'reminder.help': 'Enter marca como feito · Esc fecha',
   'reminder.queued.one': 'mais 1 à espera',
   'reminder.queued.other': 'mais {n} à espera',

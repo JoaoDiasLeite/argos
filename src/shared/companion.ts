@@ -224,7 +224,12 @@ export interface CompanionReminder {
   at: number
   late: boolean
   lateMinutes: number
+  /** How often it has been snoozed; at SNOOZE_CAP the bubble offers a new date instead. */
+  snoozes: number
 }
+
+/** Snoozed this often, a reminder stops offering +10 min and asks for a day (plan §3.2). */
+export const SNOOZE_CAP = 5
 
 /** The payload of `companion:bubble-mode`, per mode. */
 export type CompanionBubblePayload =
