@@ -114,14 +114,11 @@ export function inRoundedRect(p: Point, r: Rect, radius = HIT_RADIUS): boolean {
 }
 
 /**
- * Whether the cursor is over something of the pet's that should take the click: the dog,
- * or the one extra element the renderer reported (in the window's own DIPs). Anywhere
- * else the window lets clicks through to what is behind it.
+ * Whether the cursor is over the dog, which takes the click. Anywhere else the window
+ * lets clicks through to what is behind it.
  */
-export function petHitTest(cursor: Point, pet: Rect, extra: Rect | null): boolean {
-  if (inRoundedRect(cursor, dogRect(pet))) return true
-  if (!extra) return false
-  return inRoundedRect(cursor, { ...extra, x: pet.x + extra.x, y: pet.y + extra.y }, 8)
+export function petHitTest(cursor: Point, pet: Rect): boolean {
+  return inRoundedRect(cursor, dogRect(pet))
 }
 
 export function clampBubbleSize(size: Size): Size {

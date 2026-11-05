@@ -16,7 +16,6 @@ import type {
   CompanionPetState,
   CompanionPrefs,
   CompanionPromoteResult,
-  CompanionRect,
   CompanionSnoozeRequest,
   CompanionStateView,
   CompanionTodo,
@@ -1477,8 +1476,6 @@ declare global {
         bubbleClose: () => void
         dragStart: () => void
         dragEnd: () => void
-        /** An extra element of the pet that should take clicks, in window DIPs; null clears. */
-        hitRect: (rect: CompanionRect | null) => void
         openMain: () => void
         /** "Abrir" on a terminal bubble: that chat in the main window. */
         terminalOpen: (key: string) => void

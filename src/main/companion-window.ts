@@ -12,7 +12,6 @@ import {
   restoredPetPosition,
   snapToEdge,
   type Point,
-  type Rect,
   type Size
 } from './companion-window-pure'
 import { voiceShortcutCandidates } from './companion-voice-pure'
@@ -67,8 +66,6 @@ let captureThinking = false
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let ignoring = true
-/** The one extra element the renderer said should take clicks, in window DIPs. */
-let extraHitRect: Rect | null = null
 let drag: { cursor: Point; window: Point } | null = null
 let hideTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -237,7 +234,7 @@ function poll(): void {
     setIgnore(false)
     return
   }
-  const over = petHitTest(cursor, petWindow.getBounds(), extraHitRect)
+  const over = petHitTest(cursor, petWindow.getBounds())
   setIgnore(!over)
   if (walk) stepWalk(petWindow, over)
 }
@@ -347,7 +344,7 @@ function tryWalk(): void {
   walkTimer = null
   if (!alive(petWindow) || walk) return
   const b = petWindow.getBounds()
-  const over = petHitTest(screen.getCursorScreenPoint(), b, extraHitRect)
+  const over = petHitTest(screen.getCursorScreenPoint(), b)
   const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
   // Not on the floor (docked half way up a side): planWalk says null and he stays put.
   const plan = walkAllowed(over, true) ? planWalk(b, display.workArea) : null
@@ -405,11 +402,6 @@ function stopWalk(): void {
     savePetPosition(display.id, { x: b.x, y: b.y })
   }
   scheduleWalk()
-}
-
-/** The renderer's extra hit area (a menu, a badge), in window DIPs; null clears it. */
-export function setPetHitRect(rect: Rect | null): void {
-  extraHitRect = rect
 }
 
 // ─── Showing and hiding ────────────────────────────────────────────────────────

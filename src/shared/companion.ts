@@ -300,7 +300,7 @@ export interface CompanionStateView {
   bubble: (CompanionBubblePayload & { anchor: CompanionBubbleAnchor }) | null
 }
 
-/** A rectangle in the pet window's own DIPs (`companion:hit-rect`). */
+/** A rectangle in DIPs of the virtual screen: window bounds and work areas. */
 export interface CompanionRect {
   x: number
   y: number

@@ -199,7 +199,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     bubbleClose: () => ipcRenderer.send('companion:bubble-close'),
     dragStart: () => ipcRenderer.send('companion:drag-start'),
     dragEnd: () => ipcRenderer.send('companion:drag-end'),
-    hitRect: (rect: unknown) => ipcRenderer.send('companion:hit-rect', rect),
     openMain: () => ipcRenderer.send('companion:open-main'),
     terminalOpen: (key: string) => ipcRenderer.send('companion:terminal-open', key),
     planOpen: () => ipcRenderer.send('companion:plan-open'),

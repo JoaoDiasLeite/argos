@@ -97,12 +97,12 @@ describe('hit test', () => {
   })
 
   it('takes the click over the dog', () => {
-    expect(petHitTest({ x: 1110, y: 650 }, p, null)).toBe(true)
+    expect(petHitTest({ x: 1110, y: 650 }, p)).toBe(true)
   })
 
   it('lets clicks through on the transparent part of the window', () => {
-    expect(petHitTest({ x: 1010, y: 510 }, p, null)).toBe(false)
-    expect(petHitTest({ x: 1110, y: 560 }, p, null)).toBe(false)
+    expect(petHitTest({ x: 1010, y: 510 }, p)).toBe(false)
+    expect(petHitTest({ x: 1110, y: 560 }, p)).toBe(false)
   })
 
   it('lets a click through at the very corner of the rounded rect', () => {
@@ -110,14 +110,8 @@ describe('hit test', () => {
     expect(inRoundedRect({ x: 1074, y: 591 }, dogRect(p))).toBe(true)
   })
 
-  it('also takes clicks on the extra element the renderer reported, in window DIPs', () => {
-    const extra = { x: 10, y: 10, width: 60, height: 30 }
-    expect(petHitTest({ x: 1030, y: 520 }, p, extra)).toBe(true)
-    expect(petHitTest({ x: 1030, y: 560 }, p, extra)).toBe(false)
-  })
-
   it('is false off the window entirely', () => {
-    expect(petHitTest({ x: 0, y: 0 }, p, null)).toBe(false)
+    expect(petHitTest({ x: 0, y: 0 }, p)).toBe(false)
   })
 })
 

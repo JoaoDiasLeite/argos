@@ -250,14 +250,13 @@ import {
   setBubbleSize,
   setCaptureThinking,
   setCompanionWindowHooks,
-  setPetHitRect,
   setPetState,
   setVoicePhase,
   showCompanion,
   startPetDrag,
   toggleCompanion
 } from './companion-window'
-import type { CompanionCaptureResult, CompanionList, CompanionPrefs, CompanionPromoteResult, CompanionPlanAlert, CompanionRect, CompanionTerminalAlert, CompanionTodo, CompanionStateView, CompanionVoicePhase, ParsedCapture } from './companion-types'
+import type { CompanionCaptureResult, CompanionList, CompanionPrefs, CompanionPromoteResult, CompanionPlanAlert, CompanionTerminalAlert, CompanionTodo, CompanionStateView, CompanionVoicePhase, ParsedCapture } from './companion-types'
 import { MAX_CLIP_BYTES } from './companion-voice-pure'
 import { cancelVoiceInstall, disposeVoice, installVoiceModels, prepareVoice, setVoiceProgressListener, transcribe, voiceStatus } from './companion-voice'
 import { currentLanguage, t } from './i18n'
@@ -1259,11 +1258,6 @@ function companionChanged(): void {
 
 const isId = (v: unknown): v is string => typeof v === 'string' && v !== '' && v.length <= 200
 const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
-const asRect = (v: unknown): CompanionRect | null => {
-  const r = v as Partial<CompanionRect> | null
-  if (!r || !isFiniteNumber(r.x) || !isFiniteNumber(r.y) || !isFiniteNumber(r.width) || !isFiniteNumber(r.height)) return null
-  return r.width > 0 && r.height > 0 ? { x: r.x, y: r.y, width: r.width, height: r.height } : null
-}
 
 ipcMain.handle('companion:list', () => companionList())
 /** Captures waiting on the model for their date, by the bubble's capture id, so Esc can cancel one. */
@@ -1527,7 +1521,6 @@ ipcMain.on('companion:bubble-size', (_, size: unknown) => {
 ipcMain.on('companion:bubble-close', () => closeBubble())
 ipcMain.on('companion:drag-start', () => startPetDrag())
 ipcMain.on('companion:drag-end', () => endPetDrag())
-ipcMain.on('companion:hit-rect', (_, rect: unknown) => setPetHitRect(asRect(rect)))
 // A click on the dog: open the bubble for typing, or close it if it already is. A
 // reminder or catch-up that is up stays until it is answered.
 ipcMain.on('companion:summon', () => {
