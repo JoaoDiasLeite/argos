@@ -29,7 +29,8 @@ const SHEETS = {
   perch: new URL('./sprites/perch.png', import.meta.url).href,
   look: new URL('./sprites/look.png', import.meta.url).href,
   stretch: new URL('./sprites/stretch.png', import.meta.url).href,
-  sleep: new URL('./sprites/sleep.png', import.meta.url).href
+  sleep1: new URL('./sprites/sleep1.png', import.meta.url).href,
+  sleep2: new URL('./sprites/sleep2.png', import.meta.url).href
 }
 
 interface Sprite {
@@ -73,9 +74,8 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   // The morning stretch: a play bow, a yawn, and sat again; the yawn alone at six.
   stretching: { src: SHEETS.stretch, frames: 3, fps: 1 },
   yawning: { src: SHEETS.stretch, frames: 1, fps: 1, sheetFrames: 3, frame: 1 },
-  // Flat out for the night, one slow breath: two pairs of frames in the sheet, and Pet picks
-  // one of them each time he lies down (SLEEP_PAIRS).
-  sleeping: { src: SHEETS.sleep, frames: 2, fps: 1, sheetFrames: 4 },
+  // Flat out for the night, one slow breath; Pet picks sleep1 or sleep2 each time he lies down.
+  sleeping: { src: SHEETS.sleep1, frames: 2, fps: 1 },
   // A fidget (plan §13.4): the wag stands in for scratch.png.
   scratching: { src: SHEETS.wag, frames: 4, fps: 8 },
   // On a window's top edge: a look down over it, then straight ahead, slowly.
@@ -84,8 +84,8 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
 
 const FRAME = 96
 
-/** Where each pair of sleeping frames starts in sleep.png. */
-const SLEEP_PAIRS = [0, 2]
+/** The two ways he sleeps, one picked at random each night (the paws lie differently in each). */
+const SLEEP_SHEETS = [SHEETS.sleep1, SHEETS.sleep2]
 
 /** `happy` is a 1 s beat (two hops, two wags); then the pet sits back down. */
 const HAPPY_MS = 1000
@@ -225,9 +225,9 @@ export default function Pet() {
   const base: CompanionPetState = ON_THE_MOVE.includes(state) && reducedMotion ? 'idle' : state
   const glancing = base === 'idle' && fidget === 'glance'
   const shown: CompanionPetState = base === 'idle' && fidget === 'scratching' ? 'scratching' : glancing ? 'looking' : base
-  // Which pair of sleeping frames tonight: picked afresh whenever his state changes.
-  const sleepPair = useMemo(() => SLEEP_PAIRS[Math.floor(Math.random() * SLEEP_PAIRS.length)], [state])
-  const sprite: Sprite = shown === 'sleeping' ? { ...SPRITES.sleeping, frame: sleepPair } : SPRITES[shown]
+  // Which sleep tonight: picked afresh whenever his state changes.
+  const sleepSheet = useMemo(() => SLEEP_SHEETS[Math.floor(Math.random() * SLEEP_SHEETS.length)], [state])
+  const sprite: Sprite = shown === 'sleeping' ? { ...SPRITES.sleeping, src: sleepSheet } : SPRITES[shown]
   const animated = sprite.frames > 1
   // A glance is the other way from where he faces.
   const mirrored = glancing ? facing === 'right' : MIRRORABLE.includes(shown) && facing === 'left'
