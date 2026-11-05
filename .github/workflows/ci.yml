@@ -3,6 +3,9 @@
 # job names stable. The token is read-only and the workflow never runs code
 # from a pull request with secrets or write access: it uses pull_request,
 # not pull_request_target, and no step interpolates PR-controlled text.
+# Node 22 and npm 11 match the maintainer's machine and Dependabot: npm 10 (bundled
+# with Node 20 and 22) rejects the package-lock those write, and electron 42 needs
+# Node >= 22.12 anyway.
 name: CI
 
 on:
@@ -25,8 +28,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
+      - run: npm install -g npm@11
       - run: npm ci
       - run: npm run typecheck
 
@@ -38,8 +42,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
+      - run: npm install -g npm@11
       - run: npm ci
       - run: npm test
 
@@ -49,8 +54,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
+      - run: npm install -g npm@11
       - run: npm ci
       - run: npm run build
 
