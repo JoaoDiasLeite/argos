@@ -9,6 +9,7 @@ writes an N x 96 by 96 PNG with hard alpha like the sheets already in the app.
 
     python scripts/companion-sheet.py <input image> <output png> <frames> [--keep 1,3,4] [--match idle.png]
 
+`--sharpen` on a finished sheet applies the same light sharpening the cut does.
 `--keep` writes only those frames (1-based, in the order given): for when the generator
 spoiled one and the cycle still reads without it. `--match <sheet>` brings the colours
 in line with a sheet already in the app (the orange, the cream and the outline each
@@ -19,7 +20,7 @@ Needs Pillow, numpy and scipy. Check the result at 3x before it goes in: a frame
 generator drew much bigger or smaller than the others still comes out odd.
 """
 import sys
-from PIL import Image
+from PIL import Image, ImageFilter
 import numpy as np
 from scipy import ndimage
 
@@ -192,6 +193,21 @@ def match_colours(sheet: Image.Image, reference: str) -> Image.Image:
     return Image.fromarray(out.astype(np.uint8))
 
 
+# The originals' edge contrast (mean |Laplacian| over the dog) is about 74; a soft
+# screenshot cut with Lanczos lands near 67, and this much unsharp mask brings it back.
+SHARPEN_PERCENT = 20
+
+
+def sharpen(img: Image.Image) -> Image.Image:
+    """A light unsharp mask that never lifts a pixel above its brightest neighbour, so no highlight blows to white."""
+    before = np.array(img.convert('RGBA')).astype(int)
+    after = np.array(img.convert('RGBA').filter(ImageFilter.UnsharpMask(radius=1, percent=SHARPEN_PERCENT, threshold=0))).astype(int)
+    cap = ndimage.maximum_filter(before[..., :3], size=(3, 3, 1))
+    after[..., :3] = np.minimum(after[..., :3], cap)
+    after[..., 3] = before[..., 3]
+    return Image.fromarray(np.clip(after, 0, 255).astype(np.uint8))
+
+
 def clean_mask(dog: np.ndarray) -> np.ndarray:
     """A colour-cut mask without its specks and pinholes, so the edge comes out even. Only
     a small hole is filled: the gap between the legs is a hole too, and it stays open."""
@@ -241,11 +257,15 @@ def main() -> None:
     # A PNG with real transparency is laid over white first: the cutter reads a background
     # of white and grey, and transparent black would otherwise read as outline.
     src_im = Image.open(src).convert('RGBA')
-    if src_im.height == FRAME and src_im.width % FRAME == 0 and '--match' in sys.argv:
-        # Already a sheet: only the colours are brought in line.
-        sheet = match_colours(src_im, sys.argv[sys.argv.index('--match') + 1])
+    if src_im.height == FRAME and src_im.width % FRAME == 0 and ('--match' in sys.argv or '--sharpen' in sys.argv):
+        # Already a sheet: only the colours are brought in line, and/or the edges sharpened.
+        sheet = src_im
+        if '--sharpen' in sys.argv:
+            sheet = sharpen(sheet)
+        if '--match' in sys.argv:
+            sheet = match_colours(sheet, sys.argv[sys.argv.index('--match') + 1])
         sheet.save(out)
-        print('wrote', out, 'recoloured')
+        print('wrote', out, 'touched up')
         return
     alpha = np.array(src_im)[..., 3]
     flat = Image.new('RGBA', src_im.size, (255, 255, 255, 255))
@@ -280,10 +300,11 @@ def main() -> None:
     for i, c in enumerate(crops):
         s = min(scale, fit[i])
         w, h = max(1, round(c.shape[1] * s)), max(1, round(c.shape[0] * s))
-        # Pillow premultiplies an RGBA image itself while resampling, so the colour of an
-        # edge pixel comes from the dog only; doing it by hand as well boosted edge colours
-        # to white. Area averaging, not Lanczos: a sharp outline against transparency rings.
-        small = np.array(Image.fromarray(c).resize((w, h), Image.BOX))
+        # Lanczos is safe now that the transparent area carries the dog's own colours (no
+        # foreign colour to ring into the edge), and a touch of sharpening brings a
+        # screenshot's softness back to the originals' edge contrast.
+        f = sharpen(Image.fromarray(c).resize((w, h), Image.LANCZOS))
+        small = np.array(f)
         small[..., 3] = np.where(small[..., 3] >= 128, 255, 0)
         f = Image.fromarray(small)
         sheet.paste(f, (i * FRAME + (FRAME - w) // 2, PAW_Y - h + 1), f)
