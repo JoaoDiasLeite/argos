@@ -123,6 +123,12 @@ stills: the sheets are what the dog looks like at 96 px now, and the new ones mu
 beside them without a visible change of hand. Every sheet is drawn **facing right**; the
 app mirrors it for the left, so never draw a left-facing version.
 
+**Ask for a flat key colour behind him, not transparency.** The chat generators hand back a
+checkerboard baked into a JPEG, which the cutter has to guess the dog out of (a near-white
+muzzle looks like the checkerboard's white). A solid green (`#00FF00`) nothing on the dog
+comes near is keyed out cleanly: add `on a flat solid bright green background (#00FF00),
+no checkerboard, no transparency` to every prompt below.
+
 | State | File | `<FRAMES>` | `<ANIMATION>` | Until it exists |
 |---|---|---|---|---|
 | `running` | `run.png` | 6 | running to the right at full tilt, a four-beat gallop: front legs reach, back legs push, one frame with all four paws off the ground, ears streaming back, tail straight out, mouth open and happy | `walk.png` at 12 fps |
