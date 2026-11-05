@@ -43,12 +43,16 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
         # Every paint sits far from a saturated key (the dark outline is the nearest, ~250 away
         # from pure green); an edge pixel the JPEG blended with it sits half way, and goes.
         keyed = np.sqrt(((rgb.astype(int) - key) ** 2).sum(-1)) < 160
+        # A whitish tint of the key (the JPEG's blend of the key with white) is the key too:
+        # light, with the key's channel leading. No paint on the dog leads in green.
+        lead = int(np.argmax(key))
+        others = [c for c in range(3) if c != lead]
+        tint = (rgb[..., lead].astype(int) > np.maximum(rgb[..., others[0]], rgb[..., others[1]]).astype(int) + 6) & (rgb.min(-1) > 120)
+        keyed = keyed | tint
         greyish = greyish | keyed
         rgb[keyed] = 255
         # Despill: the key's channel never leads on the dog, so an edge pixel the JPEG blended
         # with the green keeps its orange rather than a green tint.
-        lead = int(np.argmax(key))
-        others = [c for c in range(3) if c != lead]
         cap = (rgb[..., others[0]].astype(int) + rgb[..., others[1]].astype(int)) // 2
         rgb[..., lead] = np.minimum(rgb[..., lead].astype(int), cap).astype(rgb.dtype)
         r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
@@ -83,9 +87,12 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
     core = silhouette & ~greyish
     pale = greyish & silhouette & ~keyed
     lab_p, n_p = ndimage.label(pale)
+    outside = background | keyed
     for i in range(1, n_p + 1):
         comp = lab_p == i
-        if mx[comp].std() < 12:
+        # Flat, and not touching the outside: a pocket of the background's mush between the
+        # legs is flat too, but it borders the key; a muzzle or an eye borders paint.
+        if mx[comp].std() < 12 and not (ndimage.binary_dilation(comp) & outside).any():
             core |= comp
     body = ndimage.binary_fill_holes(core)
     # A motion streak the generator drew: near-white, long and flat. Painted over with the
@@ -125,8 +132,11 @@ def cut_dog(rgb: np.ndarray) -> np.ndarray:
                 ys, xs = np.where(inside)
                 rgb[ys, xs] = rgb[idx[0][ys, xs], idx[1][ys, xs]]
                 dog |= inside
-    # Whatever was the key colour is never the dog, however the silhouette fell around it.
-    return dog & ~keyed
+    # Whatever was the key colour is never the dog, however the silhouette fell around it;
+    # nor is a near-white halo along the outline, which a screenshot's resampling leaves
+    # between the outline and the background (the cream paints are darker than that).
+    halo = (mn > 205) & ndimage.binary_dilation(background | keyed, iterations=4)
+    return dog & ~keyed & ~halo
 
 
 def colour_classes(px: np.ndarray) -> dict[str, np.ndarray]:
@@ -159,10 +169,15 @@ def match_colours(sheet: Image.Image, reference: str) -> Image.Image:
         return sheet
     src = np.array([out_px[oc[n]].mean(0) for n in names])
     dst = np.array([ref_px[rc[n]].mean(0) for n in names])
+    # A monotone curve per channel through the paints (0→0 and 255→255 at the ends), not a
+    # straight line: a line steep enough to lift the outline pushes the cream past white.
     fixed = out_px.copy()
     for c in range(3):
-        gain, offset = np.polyfit(src[:, c], dst[:, c], 1)
-        fixed[:, c] = out_px[:, c] * gain + offset
+        order = np.argsort(src[:, c])
+        knots_in = np.concatenate([[0.0], src[order, c], [255.0]])
+        knots_out = np.concatenate([[0.0], dst[order, c], [255.0]])
+        knots_out = np.maximum.accumulate(knots_out)
+        fixed[:, c] = np.interp(out_px[:, c], knots_in, knots_out)
     # The coat is most of the dog and what the eye compares first: whatever the three-way
     # fit left of the gap in the orange is closed on the orange alone, fading out at its edge.
     if 'orange' in names:
@@ -178,14 +193,19 @@ def match_colours(sheet: Image.Image, reference: str) -> Image.Image:
 
 
 def clean_mask(dog: np.ndarray) -> np.ndarray:
-    """A colour-cut mask without its specks and pinholes, so the edge comes out even."""
+    """A colour-cut mask without its specks and pinholes, so the edge comes out even. Only
+    a small hole is filled: the gap between the legs is a hole too, and it stays open."""
     ys = np.where(dog.any(1))[0]
     H = ys.max() - ys.min() + 1
     k = max(3, int(H * 0.012))
     if k % 2 == 0:
         k += 1
     smooth = ndimage.median_filter(dog, size=k)
-    return ndimage.binary_fill_holes(smooth) & ~(ndimage.binary_fill_holes(smooth) & ~smooth & ~ndimage.binary_dilation(smooth, iterations=k))
+    holes = ndimage.binary_fill_holes(smooth) & ~smooth
+    lab, n = ndimage.label(holes)
+    sizes = ndimage.sum(holes, lab, range(1, n + 1))
+    small = np.isin(lab, [i + 1 for i, s in enumerate(sizes) if s < (0.02 * H) ** 2])
+    return smooth | small
 
 
 def split_frames(dog: np.ndarray, frames: int) -> list[tuple[int, int]]:
@@ -247,6 +267,11 @@ def main() -> None:
         rgba = np.zeros((y1 - y0, x1 - x0, 4), np.uint8)
         rgba[..., :3] = rgb[y0:y1, x0:x1]
         rgba[..., 3] = dog[y0:y1, x0:x1] * 255
+        # The background's colour must not bleed into the edge while resampling: every
+        # transparent pixel takes the colour of the nearest pixel of the dog.
+        inside = rgba[..., 3] > 0
+        _, idx = ndimage.distance_transform_edt(~inside, return_indices=True)
+        rgba[..., :3] = rgba[..., :3][idx[0], idx[1]]
         crops.append(rgba)
     fit = [min(TARGET_H / c.shape[0], (FRAME - 2) / c.shape[1]) for c in crops]
     scale = float(np.median(fit))
@@ -255,13 +280,12 @@ def main() -> None:
     for i, c in enumerate(crops):
         s = min(scale, fit[i])
         w, h = max(1, round(c.shape[1] * s)), max(1, round(c.shape[0] * s))
-        pre = c.astype(float)
-        pre[..., :3] *= pre[..., 3:4] / 255.0
-        small = np.array(Image.fromarray(pre.astype(np.uint8)).resize((w, h), Image.LANCZOS)).astype(float)
-        a = small[..., 3:4]
-        small[..., :3] = np.where(a > 0, small[..., :3] * 255.0 / np.maximum(a, 1), 0)
+        # Pillow premultiplies an RGBA image itself while resampling, so the colour of an
+        # edge pixel comes from the dog only; doing it by hand as well boosted edge colours
+        # to white. Area averaging, not Lanczos: a sharp outline against transparency rings.
+        small = np.array(Image.fromarray(c).resize((w, h), Image.BOX))
         small[..., 3] = np.where(small[..., 3] >= 128, 255, 0)
-        f = Image.fromarray(np.clip(small, 0, 255).astype(np.uint8))
+        f = Image.fromarray(small)
         sheet.paste(f, (i * FRAME + (FRAME - w) // 2, PAW_Y - h + 1), f)
         print(f'frame {i + 1}: {w}x{h} at {s:.3f}')
     if '--match' in sys.argv:
