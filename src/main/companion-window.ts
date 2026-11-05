@@ -719,6 +719,24 @@ function dndOn(): boolean {
   return restingState() === 'shh'
 }
 
+/** Windows asked for quiet (plan §13.3, V1): Focus Assist, a full-screen app, a presentation. */
+let systemQuiet = false
+
+/** index.ts's watcher: on, he lies down with the crescent; off, he sits up unless muted himself. */
+export function setSystemQuiet(on: boolean): void {
+  if (on === systemQuiet) return
+  systemQuiet = on
+  if (on) {
+    if (petState === 'idle' || petState === 'looking' || petState === 'leaning' || petState === 'perched' || asleep()) setPetState('shh')
+  } else if (petState === 'shh') {
+    setPetState(restingState())
+  }
+}
+
+export function isSystemQuiet(): boolean {
+  return systemQuiet
+}
+
 /**
  * What he sits back to after a bubble, a walk or the happy beat: the crescent while muted
  * (plan §3.3), his back to the wall while docked up a side edge (plan §13.1), else idle.
@@ -730,6 +748,7 @@ function restingState(): CompanionPetState {
   } catch {
     // unreadable state.json: not muted
   }
+  if (systemQuiet) state = 'shh'
   if (state !== 'idle') return state
   if (perch) return 'perched'
   return leaningOn() ? 'leaning' : state

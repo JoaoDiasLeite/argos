@@ -134,6 +134,11 @@ export interface CompanionPrefs {
   /** "Seguir-me entre ecrãs": with stayOnScreen on, he goes to the display the cursor has settled on. */
   follow: boolean
   /**
+   * "Silêncio com o Assistente de Concentração" (plan §13.3, V): in Focus Assist, a
+   * full-screen app or a presentation he keeps quiet, and reminders go as notifications.
+   */
+  focusAssist: boolean
+  /**
    * "Perguntar ao modelo quando não percebo a data" (plan §5.1, layer 2): when the
    * grammar is unsure, that one line goes to the account's model. On by default.
    */

@@ -230,6 +230,7 @@ import { listForView, planCapture, todayQuery } from './companion-capture-pure'
 import { isQuiet, parseQuietCommand, tomorrowAt } from './companion-quiet-pure'
 import { isSaveThisCommand, parseSpanCommand } from './companion-focus-pure'
 import { weekSummary, weekSummaryDue } from './companion-week-pure'
+import { QUNS, userNotificationState } from './companion-win32'
 import { activeSprint, activeSprintView, linkedItem, promote, sprintLinks, unlink, withSprintDone } from './companion-promote-pure'
 import {
   applyCompanionPrefs,
@@ -243,7 +244,9 @@ import {
   hideCompanion,
   isCompanionBubble,
   isCompanionVisible,
+  isSystemQuiet,
   openBubble,
+  setSystemQuiet,
   petThePet,
   popupPetMenu,
   registerCompanionShortcut,
@@ -790,6 +793,7 @@ app.whenReady().then(async () => {
   // Friday from five on (plan §13.3, T1): the week in one line, once.
   setInterval(checkWeekSummary, 60_000)
   checkWeekSummary()
+  startSystemQuietWatcher()
   // Keep the "run at login" entry (Windows registry, or the XDG autostart file on
   // Linux) in sync with config on every startup (covers the case where it was
   // changed outside this app, or the app was reinstalled or updated to a new
@@ -952,19 +956,7 @@ function queueCompanionAlerts(alerts: CompanionAlert[]): void {
   } catch (e) {
     // No pet window (it failed to create): fall back to plain notifications.
     console.error('[companion] could not show the bubble:', e)
-    for (const a of companionAlerts.splice(0)) {
-      if (a.mode === 'terminal') continue
-      if (a.mode === 'plan') {
-        notifyCompanion(a.alert.account, a.alert.detail)
-        continue
-      }
-      if (a.mode === 'week') {
-        const { done, late, open } = a.summary
-        notifyCompanion(t('main.companion.week.title'), t('main.companion.week.body', { done, late, open }))
-        continue
-      }
-      for (const r of a.mode === 'reminder' ? [a.reminder] : a.reminders) notifyCompanion(r.title, '')
-    }
+    notifyQueuedAlerts()
   }
 }
 
@@ -980,7 +972,53 @@ let terminalAlertTimer: ReturnType<typeof setTimeout> | null = null
 
 /** On, the pet up and not quiet. Hidden or quiet, he does not pop up for a terminal. */
 function companionTakesTerminalAlerts(): boolean {
-  return getConfig().companion.terminalAlerts && isCompanionVisible() && companionQuietUntil() === null
+  return getConfig().companion.terminalAlerts && isCompanionVisible() && companionQuietUntil() === null && !isSystemQuiet()
+}
+
+// ─── Windows' own quiet (plan §13.3, V) ─────────────────────────────────────────
+
+const SYSTEM_QUIET_POLL_MS = 5000
+/** Focus Assist's quiet hours, a busy app, a full-screen game or a presentation. */
+const QUIET_STATES = new Set<number>([QUNS.BUSY, QUNS.RUNNING_D3D_FULL_SCREEN, QUNS.PRESENTATION_MODE, QUNS.QUIET_TIME, QUNS.APP])
+/** The screen is full: a bubble would be over a game or a slide, so reminders go as notifications. */
+const FULL_SCREEN_STATES = new Set<number>([QUNS.RUNNING_D3D_FULL_SCREEN, QUNS.PRESENTATION_MODE, QUNS.APP])
+let screenIsFull = false
+
+/** Every few seconds, Windows' word on notifications; with the preference off, nothing is asked. */
+function startSystemQuietWatcher(): void {
+  const tick = (): void => {
+    if (!getConfig().companion.focusAssist) {
+      screenIsFull = false
+      setSystemQuiet(false)
+      return
+    }
+    const state = userNotificationState()
+    const quiet = state !== null && QUIET_STATES.has(state)
+    screenIsFull = state !== null && FULL_SCREEN_STATES.has(state)
+    const was = isSystemQuiet()
+    setSystemQuiet(quiet)
+    // Lifted: what waited comes out.
+    if (was && !quiet) showNextCompanionAlert()
+  }
+  setInterval(tick, SYSTEM_QUIET_POLL_MS)
+  tick()
+}
+
+/** Queued reminders, catch-ups, plan and week alerts as plain notifications (the pet cannot say them). */
+function notifyQueuedAlerts(): void {
+  for (const a of companionAlerts.splice(0)) {
+    if (a.mode === 'terminal') continue
+    if (a.mode === 'plan') {
+      notifyCompanion(a.alert.account, a.alert.detail)
+      continue
+    }
+    if (a.mode === 'week') {
+      const { done, late, open } = a.summary
+      notifyCompanion(t('main.companion.week.title'), t('main.companion.week.body', { done, late, open }))
+      continue
+    }
+    for (const r of a.mode === 'reminder' ? [a.reminder] : a.reminders) notifyCompanion(r.title, '')
+  }
 }
 
 /**
@@ -1135,7 +1173,12 @@ function showNextCompanionAlert(): void {
   // A bubble still up keeps its reminder id, so settleCompanionReminder can close it.
   if (currentBubble()) return
   companionReminderId = null
-  if (companionQuietUntil() !== null) return
+  // The screen is full (plan §13.3, V2): a reminder is a notification, not a bubble over a game.
+  if (screenIsFull) {
+    notifyQueuedAlerts()
+    return
+  }
+  if (companionQuietUntil() !== null || isSystemQuiet()) return
   let next = companionAlerts.shift()
   // Word of a terminal that waited too long behind reminders is old news.
   while (next?.mode === 'terminal' && Date.now() - next.at > TERMINAL_STALE_MS) next = companionAlerts.shift()
