@@ -12,6 +12,11 @@ batch that depends on them starts._
 §9.4 describe what was built; the rest is the design as written before it, with the spike
 results and §10's decisions folded in where they changed it.
 
+**Phase 2 (2026-11-05): §13.** Repeating todos, terminal and plan alerts landed in 3.1.0.
+§13 plans what comes next: a window the size of the dog, walking across every screen,
+running, leaning, the panel redrawn, and the smaller ideas João picked from the
+brainstorm. Batches M to V.
+
 ## 1. What this is, in one paragraph
 
 A small original character lives on the desktop, outside the Argos window, always on top
@@ -762,6 +767,8 @@ the corners and sits again. Settings toggle "Passear pelo ecrã", on by default.
 As built: he walks only when the window's bottom is within 40 px of the work area's
 bottom (the default corner counts); docked higher up a side edge he stays put rather than
 float or slide down the wall. The lane is `workArea.x + 12` to `right − 220 − 12`.
+3.1.0 made it more often and slower than agreed: every 1–3 min, 40 px/s, with a 400 ms
+stand before setting off and 300 ms on arrival (`companion-walk-pure.ts`).
 
 A and B are disjoint and can run in parallel. C depends on A+B's types; D depends on C's
 IPC; E depends on C. F–J are independent of each other once E has landed. Spikes to run
@@ -846,3 +853,153 @@ inline SVG icons, no emoji, both themes.
    quick launcher and the separator: `Companheiro` (a checkmark when visible) and `O que
    tenho hoje`, plus `Silêncio por 1 hora` under them. Draw it as the real Windows 11 context
    menu, not a styled panel.
+
+---
+
+## 13. Phase 2 (João, 2026-11-05)
+
+_Decided from the brainstorm of 2026-11-05, read against `3.1.0` / `6b76e53`. João's
+brief: "avançar com tudo", plus a panel that is better than four empty sections on an
+ultrawide. Everything here keeps the rules of §8 (nothing leaves the machine) and §7
+(no commenting on commits, no cheering CI)._
+
+### 13.1 The four analyses, decided
+
+**A window the size of the dog.** The pet window is 220×220 for a 96 px dog. What has to
+fit: the body (96), the 24 px hit radius around it (`DOG_SIZE` 120×130), the 9 px hop and
+the badges above the head (zzz, "!", the moon). That is **128×152**, body at (16, 42).
+Fewer pixels for the compositor (48 400 → 19 456), less overlap with other always-on-top
+windows, and drag/snap maths where window ≈ dog. Saved positions in `state.json` are the
+window's top-left: shift them by (46, 68) once on load; a position that no longer fits
+is already rejected by `restoredPetPosition`. The walk lane becomes `right − 128 − 12`.
+The bubble centres on the body, so it does not move.
+
+**The size of the dog itself.** Not CSS scaling: the art is pixel art at 96 px and a
+non-integer factor blurs it. The stills in `resources/companion/` are 1024², so the sheets
+are re-rasterised at **64 px** (and 128 px) and a setting "Argos size: small / normal /
+large" swaps the sheet set and the window size together. On a 150 % display the 96 px dog
+is 144 physical px, which is why he looks big on a 4K.
+
+**Walking across every screen.** Three ways; one chosen.
+
+| | How | Why not / why |
+|---|---|---|
+| A · one giant window over the virtual desktop | draw him at any coordinate | with mixed DPI Windows scales the window by the display holding most of it and the other side is wrong; an ARGB buffer the size of all displays composited every frame; always on top of everything everywhere. **No.** |
+| B · the small window keeps moving | what exists, with the lane extended to the chain of neighbouring floors (`getAllDisplays`, adjacent bounds) | contained in `companion-walk-pure.ts`; DIP coordinates stay coherent across displays. Crossing a DPI boundary fires `WM_DPICHANGED` and may flicker for a frame on a transparent window. **First.** |
+| C · one window per display, hand-off at the edge | N pet windows, one visible; at the edge position the neighbour, `showInactive`, hide the current | no DPI issue, hand-off in one frame; N renderers and pose/facing to sync; risk of one frame with two dogs. **Fallback if B flickers on João's setup.** |
+
+Floors at different heights (a 4K at 150 % beside a 1080p at 100 %, aligned at the top,
+differ by ~360 DIP): floors within the existing 40 px `FLOOR_TOLERANCE` → walk straight
+on; neighbour lower → **fall** (standing pose moving down fast, a small bounce on landing;
+no new art); neighbour higher → turn around. No stairs; to go up, João drags him.
+Whatever the approach, the companion must listen to `screen.on('display-added' |
+'display-removed' | 'display-metrics-changed')` and re-place the pet; today nothing does,
+so unplugging the monitor he is on leaves him nowhere.
+
+**Follow me.** With "stay on screen" on, when the cursor or the active window has been on
+another display for ~20 s, he goes there. Its own preference, off by default. It is the
+first natural trigger for running.
+
+**Running.** The only thing here that needs new art: `run.png`, 6 frames at 10 fps, in the
+format of `COMPANION_ART_PROMPT.md`, ~**140 px/s** (3.5× the walk), mirrored like `walk`.
+Until the sheet exists, `walk.png` at 12 fps stands in. When he runs: follow-me across
+screens (1920 px is 14 s running; past ~2 s he runs to the edge and appears on the other
+side), the ball (below), and now and then a short lap after a "done". Not to be summoned
+(the bubble opens where he is) and not for reminders (they appear on the right display at
+once, as today).
+
+**Leaning.** Two readings, both wanted, in this order. (a) **Edges, corners, taskbar**:
+`snapToEdge` today lands on the floor or docks to a side edge at the dragged height, where
+he floats mid-wall in the idle pose. A one-frame `lean.png` (sitting sideways, back to the
+wall) for side docks, corners as explicit targets, and the side of a vertical taskbar.
+(b) **Windows**: perched on the title bar of the foreground window, Shimeji-style, moving
+with it when dragged, falling to the floor when it is minimised or closed. Needs Win32
+(`GetForegroundWindow` + `DwmGetWindowAttribute(DWMWA_EXTENDED_FRAME_BOUNDS)`, so the real
+bounds without the shadow) through `koffi`, polling at ~100 ms while perched, ignoring
+Argos's own windows and full-screen ones, and a `perch.png` frame. Only with "stay on
+screen". The most alive feature and the most expensive; last, after P and Q prove the
+appetite.
+
+### 13.2 The panel, redrawn (§12 item 10, `docs/wireframes/companion-panel.html`)
+
+What is wrong today: on a wide window the list stretches edge to edge, four empty
+sections each say "nothing" and the only context is "Summon Argos with Ctrl+Alt+A".
+
+- **A status strip instead of the title.** Argos's idle sheet at 48 px (the same CSS
+  `steps()` animation as the pet), one sentence that reads the day ("3 for today, one of
+  them late." / "Nothing for today. Next up: tomorrow 14:00, call Rui." / "Nothing on the
+  list."), the shortcut as the second line, a seven-day strip (Mon–Sun, the count of open
+  todos per day, today on `--bg-2`, a day with a late item in `--warn`), and two controls
+  at the right: **Quiet for 1 h** and the **Stay on screen** toggle, so the two things
+  people reach Settings for are here.
+- **Content capped.** Tasks in `minmax(0, 680px)`; notes in their own column beside them
+  (`--bg-1`, 1 px `--border` on the left, newest first, its own "Write a note…" line) so
+  the width is used and the tabs go. Under 1000 px the notes fold back into a segmented
+  control. The detail column still slides in at the far right when a row is selected and,
+  under 1400 px, takes the notes' place.
+- **Only groups with rows are drawn**, Today always. A `Done today · 2` folded caption at
+  the bottom (§7 style) replaces `Feitas (n)`.
+- **An empty list is one designed state**: the sentence above, the add line, and six
+  example lines under "Things he understands" that put themselves in the box when
+  clicked, covering a timed todo, a weekly repeat, a monthly one, a day with time, a
+  relative time and a note. No four sections saying nothing.
+- **The add line** keeps the date chip and gains the microphone when dictation is on.
+
+### 13.3 Batches
+
+Each is one topic and compiles alone; art-dependent ones ship with a fallback sheet and
+the real sheet lands as a `style(companion)` commit when João produces it. Order: M, S,
+N, O, P, Q, T, U, R, V.
+
+| | Batch | Files | Tests |
+|---|---|---|---|
+| **M1** | `feat(companion): doze after a while idle` | `companion-window.ts` (90 s idle timer → `dozing`; wakes on cursor within 150 px, a bubble, an alert, a drag), `companion-doze-pure.ts` | `companion-doze-pure.test.ts` — never while a bubble, alert, quiet, walk or drag; wakes on each |
+| **M2** | `refactor(companion): drop the unused hit-rect ipc` | `preload/index.ts`, `index.ts`, `companion-window.ts`, `types.ts` | typecheck |
+| **M3** | `fix(companion): follow displays being added, removed or rescaled` | `companion-window.ts` (`screen.on(...)` → re-place with `placePet`; a pet left on a vanished display goes to the display nearest the cursor) | `companion-window-pure.test.ts` — a saved position on a gone display is rejected |
+| **M4** | `feat(companion): land on the floor when dropped high` | `companion-fall-pure.ts` (y over time: fast descent, one 6 px bounce), `companion-window.ts` (after drag-end above the floor, when not docked to a side) | pure: reaches the floor, ends still, respects reduced motion (teleport) |
+| **M5** | `feat(companion): hold to pet him` | `Pet.tsx` (600 ms press without 4 px of movement → `pet` IPC), `index.ts` (`happy` for 1.5 s, no bubble) | — |
+| **M6** | `feat(companion): offer to move the date after five snoozes` | `companion-store.ts` (`snoozeCount` per todo), `Bubble.tsx` reminder view (a fifth +10 min shows "Move it to…" with Tomorrow morning / Pick…), i18n | store test: the count resets when the due date changes |
+| **S** | `feat(companion): the panel shows the day at a glance` | `CompanionView.tsx` + `.css` (status strip, week strip, notes column, capped width, only non-empty groups, empty state with examples), `companion-groups.ts` (per-day counts, the day sentence), i18n en + pt-PT | `companion-groups.test.ts` for the day sentence and the week counts; visual check both themes at 1000 / 1400 / 2000 px |
+| **N1** | `feat(companion): a window the size of the dog` | `companion-window-pure.ts` (`PET_SIZE` 128×152, `DOG_SIZE` offsets), `pet.css` (body at 16, 42), `companion-walk-pure.ts` lane, `companion-store.ts` (shift saved positions once) | window-pure tests updated; walk lane test |
+| **N2** | `feat(companion): choose the size of argos` | `sprites/64/*.png` + `sprites/128/*.png` (re-rasterised from `resources/companion/` with a script in `scripts/`), `Pet.tsx` (sheet set by size), `companion-window-pure.ts` (window size by size), prefs `size`, Settings row | pure: window size per setting |
+| **O1** | `feat(companion): walk across every screen` | `companion-walk-pure.ts` (the lane as a chain of floors from `getAllDisplays`; cross / fall / turn at a boundary), `companion-window.ts` | walk-pure: aligned floors chain; lower neighbour falls; higher neighbour turns; a gap between displays turns |
+| **O2** | `feat(companion): follow me to the screen i am on` | `companion-window.ts` (cursor display watched every 2 s; 20 s on another display → go there), pref `follow`, Settings row | pure: the 20 s rule with injected `now` |
+| **P1** | `feat(companion): run` | `Pet.tsx` (`running` state; `run.png` or `walk.png` at 12 fps as fallback), `companion-walk-pure.ts` (speed by gait), `shared/companion.ts` | walk-pure: gait picked by distance |
+| **P2** | `feat(companion): fetch the ball` | `Pet.tsx` (a CSS ball drawn inside the pet window, which widens for the throw), `companion-ball-pure.ts`, `companion-window.ts` (double-click on the floor near him) | pure: the ball's arc and where he stops |
+| **Q** | `feat(companion): lean on edges, corners and the taskbar` | `companion-window-pure.ts` (`snapToEdge` → corners, vertical taskbar side), `Pet.tsx` (`leaning` state, `lean.png` or `idle` fallback), `shared/companion.ts` | window-pure: each drop zone → its dock |
+| **T1** | `feat(companion): the week in one line` | `companion-week-pure.ts` (done / late / open this week), a bubble view on Friday 17:00 with Copy, the panel's status strip | pure: counts with injected `now` |
+| **T2** | `feat(companion): focus timer` | `companion-nlu-pure.ts` ("foca 25", "focus 25"), `companion-focus-pure.ts`, bubble view with the countdown, quiet mode for the span, `happy` at the end | nlu + pure tests |
+| **T3** | `feat(companion): say when an intervention finishes or needs me` | `index.ts` (the ops intervention events → the terminal-alert queue with kind `ops`), `Bubble.tsx` `TerminalView` label, i18n | terminal-pure: `ops:<id>` keys dedup |
+| **T4** | `feat(companion): "guarda isto" keeps the clipboard as a note` | `companion-nlu-pure.ts` (the phrase), `index.ts` (`clipboard.readText()` → note, Obsidian export as any note) | nlu test |
+| **T5** | `feat(companion): timers` | `companion-nlu-pure.ts` ("timer 5 min", "temporizador 5 min"), a todo with `timer: true` whose bubble shows the countdown | nlu + schedule tests |
+| **T6** | `feat(companion): sprint items due today in the day's list` | `index.ts` (`companion:today` merges sprint items with a due date of today, read-only), `Bubble.tsx` query view, panel Today group | store/query test |
+| **U1** | `feat(companion): look at the cursor` | `companion-window.ts` (cursor within 150 px → `facing` toward it; `look.png` 2 frames or `idle` fallback) | — |
+| **U2** | `feat(companion): a routine for the day` | `companion-routine-pure.ts` (stretch at `morningHour`, yawn at 18:00, lie down from 22:00 with stay-on-screen), `stretch.png` / `sleep.png` with `doze` fallback | pure: the hour → the pose |
+| **U3** | `feat(companion): more to do while idle` | `Pet.tsx` (every 20–60 s one of scratch / look around / wag; `wag.png` exists, `scratch.png` fallback to idle) | — |
+| **R** | `feat(companion): perch on the active window` | `koffi` dependency, `companion-win32.ts` (foreground window bounds), `companion-perch-pure.ts`, `companion-window.ts`, `perch.png` | pure: follows the window's moves, falls when it goes; the native call is manual |
+| **V1** | `feat(companion): quiet with focus assist` | `companion-win32.ts` (`SHQueryUserNotificationState`), scheduler gate | pure: the state → quiet |
+| **V2** | `feat(companion): a toast over full-screen apps` | `companion-win32.ts` (`QUNS_RUNNING_D3D_FULL_SCREEN` / `QUNS_PRESENTATION_MODE`), `index.ts` (reminder → `Notification` when full-screen) | pure |
+
+**Changelog.** 3.1.0 is still unreleased (`ChangelogModal.tsx`, `tag: 'new'`), so M, S, N
+and O go into its entry; P onward opens 3.2.0.
+
+### 13.4 Art to produce (`COMPANION_ART_PROMPT.md` format, 96×96, 9 colours)
+
+| Sheet | Frames | Used by | Until then |
+|---|---|---|---|
+| `run.png` | 6 | P1, P2, O2 | `walk.png` at 12 fps |
+| `lean.png` | 1 | Q | `idle.png` |
+| `perch.png` | 1–2 | R | `idle.png` |
+| `look.png` | 2 (left, right) | U1 | mirrored `idle` |
+| `stretch.png` | 3 | U2 | `wag.png` |
+| `sleep.png` | 2 (lying) | U2 | `doze.png` |
+| `scratch.png` | 4 | U3 | `wag.png` |
+| `sprites/64/*`, `sprites/128/*` | all | N2 | normal size only |
+
+### 13.5 Guardrails that stay
+
+Nothing leaves the machine; the only line that may is the one the model reads (§8).
+`prefers-reduced-motion` turns off walking, running, falling and the ball, as it turns off
+walking today. Walking, running, leaning and perching only with "stay on screen". Every
+new pose is a sheet in the art prompt's format, keyed by pose in `Pet.tsx` so it restarts
+on its first frame. Nothing about commits, CI or the editor (§7, item 8).

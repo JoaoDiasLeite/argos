@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Companion panel, the day at a glance</title>
+</head>
+<body>
+<style>
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;background:#0d0c0b;padding:24px;display:flex;flex-direction:column;gap:24px}
+.num{font-variant-numeric:tabular-nums}
+.eyebrow{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#7c766e;font-weight:600}
+.row{display:flex;align-items:center;gap:10px;min-height:36px;padding:6px 10px;border-radius:4px;font-size:13px;color:#b3ada4}
+.row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#efece8}
+.row .w{font-size:12px;color:#7c766e;white-space:nowrap}
+.row .w.late{color:#d9a83c}
+.chk{width:16px;height:16px;border:1.5px solid #48423a;border-radius:4px;flex-shrink:0}
+.chip{padding:1px 7px;border-radius:3px;background:#252320;border:1px solid #302c28;font-size:11px;color:#b3ada4}
+.quiet{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:1px solid #48423a;border-radius:8px;font-size:12.5px;color:#b3ada4}
+.toggle{width:30px;height:16px;border-radius:8px;background:#df7a52;position:relative}
+.toggle::after{content:"";position:absolute;top:2px;right:2px;width:12px;height:12px;border-radius:50%;background:#141312}
+.day{display:flex;flex-direction:column;align-items:center;gap:4px;width:44px;padding:6px 0;border-radius:4px}
+.day .d{font-size:11px;color:#7c766e;text-transform:uppercase;letter-spacing:.06em}
+.day .n{font-size:13px;color:#b3ada4;font-weight:650}
+.day.today{background:#252320}.day.today .d{color:#df7a52}.day.today .n{color:#efece8}
+.day.late .n{color:#d9a83c}
+.ex{display:inline-flex;align-items:center;height:28px;padding:0 10px;border:1px solid #302c28;border-radius:8px;background:#1c1b19;font-size:12.5px;color:#b3ada4}
+</style>
+
+<!-- 1 · The panel with a day in it. Tasks left (capped), notes beside them, the detail column slides in on the right when a row is selected and takes the notes' place under 1400 px. -->
+<div style="width: 1400px; height: 760px; box-sizing: border-box; background: #141312; color: #efece8; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #302c28">
+
+  <!-- status strip: Argos, the day in one sentence, the week, quick controls -->
+  <div style="display: flex; align-items: center; gap: 18px; padding: 16px 24px 14px; border-bottom: 1px solid #302c28">
+    <svg width="48" height="48" viewBox="0 0 24 24" aria-hidden="true" style="flex-shrink:0; image-rendering: pixelated">
+      <rect x="7" y="9" width="10" height="9" fill="#df7a52"/><rect x="5" y="7" width="3" height="5" fill="#df7a52"/><rect x="16" y="7" width="3" height="5" fill="#df7a52"/>
+      <rect x="9" y="11" width="6" height="5" fill="#f7e6d0"/><rect x="10" y="12" width="1" height="1" fill="#141312"/><rect x="13" y="12" width="1" height="1" fill="#141312"/>
+      <rect x="8" y="18" width="2" height="4" fill="#df7a52"/><rect x="14" y="18" width="2" height="4" fill="#df7a52"/><rect x="17" y="15" width="3" height="2" fill="#df7a52"/>
+    </svg>
+    <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1">
+      <div style="font-size: 15px; font-weight: 650; letter-spacing: -0.01em">3 for today, one of them late.</div>
+      <div style="font-size: 12px; color: #b3ada4">Next up: <span class="num">14:00</span> Call the Câmara about the licence · Ctrl+Alt+A summons him anywhere in Windows.</div>
+    </div>
+    <div style="display: flex; gap: 2px; padding: 0 8px; border-left: 1px solid #302c28; border-right: 1px solid #302c28">
+      <div class="day"><span class="d">Mon</span><span class="n">2</span></div>
+      <div class="day"><span class="d">Tue</span><span class="n">1</span></div>
+      <div class="day today late"><span class="d">Wed</span><span class="n">3</span></div>
+      <div class="day"><span class="d">Thu</span><span class="n">1</span></div>
+      <div class="day"><span class="d">Fri</span><span class="n">2</span></div>
+      <div class="day"><span class="d">Sat</span><span class="n" style="color:#48423a">·</span></div>
+      <div class="day"><span class="d">Sun</span><span class="n" style="color:#48423a">·</span></div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0">
+      <span class="quiet"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>Quiet for 1 h</span>
+      <span class="quiet">Stay on screen <span class="toggle"></span></span>
+    </div>
+  </div>
+
+  <div style="flex: 1; display: grid; grid-template-columns: minmax(0, 680px) minmax(300px, 1fr); min-height: 0">
+
+    <!-- tasks -->
+    <div style="display: flex; flex-direction: column; gap: 12px; padding: 14px 24px 28px; overflow: hidden">
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <div style="display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; background: #1c1b19; border: 1px solid #48423a; border-radius: 4px">
+          <span style="flex: 1; font-size: 13.5px; color: #efece8">send the invoice to Sofia friday 17h</span>
+          <span class="chip num">Fri 7 Nov · 17:00</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </div>
+        <span style="font-size: 11.5px; color: #7c766e">Enter adds it · the date is read from what you type · "every friday" repeats it</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column">
+        <div style="display: flex; flex-direction: column; gap: 2px; padding: 0 0 10px">
+          <span class="eyebrow">Today · <span class="num">3</span></span>
+          <div class="row"><span class="chk"></span><span class="t">Reply to the auditors about the backups</span><span class="w late num">late 1 h</span></div>
+          <div class="row" style="background:#252320"><span class="chk"></span><span class="t">Call the Câmara about the licence</span><span class="w num">14:00</span></div>
+          <div class="row"><span class="chk"></span><span class="t">Standup notes</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7c766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3"/></svg><span class="w num">17:30</span></div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-top: 1px solid #302c28">
+          <span class="eyebrow">Tomorrow · <span class="num">1</span></span>
+          <div class="row"><span class="chk"></span><span class="t">Renew the wildcard certificate on proxmox-02</span><span class="w num">09:00</span></div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-top: 1px solid #302c28">
+          <span class="eyebrow">Later · <span class="num">2</span></span>
+          <div class="row"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#df7a52" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin:0 2px"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></svg><span class="t">Migrate the Rails host to Rocky 9</span><span class="w num">Fri 7 Nov</span></div>
+          <div class="row"><span class="chk"></span><span class="t">Dentist</span><span class="w num">Tue 11 Nov · 10:30</span></div>
+        </div>
+        <!-- empty groups are not drawn; "No date" only appears when it has rows -->
+        <div style="display: flex; align-items: center; gap: 12px; padding: 14px 0 0; margin-top: 10px; border-top: 1px solid #302c28; font-size: 11.5px; color: #7c766e">
+          <span style="flex:1; height:1px"></span>
+          <span>Done today · 2</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          <span style="flex:1; height:1px"></span>
+        </div>
+      </div>
+      <span style="font-size: 11.5px; color: #7c766e">Arrows move · Space ticks it · Delete removes</span>
+    </div>
+
+    <!-- notes beside the tasks -->
+    <div style="display: flex; flex-direction: column; gap: 12px; padding: 14px 24px 28px; border-left: 1px solid #302c28; background: #1c1b19; min-width: 0">
+      <span class="eyebrow">Notes · <span class="num">4</span></span>
+      <div style="display: flex; align-items: center; height: 38px; padding: 0 12px; background: #141312; border: 1px solid #302c28; border-radius: 4px; font-size: 13.5px; color: #7c766e">Write a note…</div>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <div style="display: flex; gap: 14px; padding: 8px 10px; border-radius: 4px"><span style="flex:1; font-size:13px; line-height:1.5; color:#b3ada4">Rocky test box: puma restarts hourly since the OpenSSL bump; check memory before blaming the gem.</span><span style="font-size:12px; color:#7c766e; white-space:nowrap">11:20</span></div>
+        <div style="display: flex; gap: 14px; padding: 8px 10px; border-radius: 4px"><span style="flex:1; font-size:13px; line-height:1.5; color:#b3ada4">Sofia prefers the invoice as one PDF, not per project.</span><span style="font-size:12px; color:#7c766e; white-space:nowrap">Yesterday</span></div>
+        <div style="display: flex; gap: 14px; padding: 8px 10px; border-radius: 4px"><span style="flex:1; font-size:13px; line-height:1.5; color:#b3ada4">The wildcard cert lives in the vault under infra/tls.</span><span style="font-size:12px; color:#7c766e; white-space:nowrap">Mon</span></div>
+        <div style="display: flex; gap: 14px; padding: 8px 10px; border-radius: 4px"><span style="flex:1; font-size:13px; line-height:1.5; color:#b3ada4">Ask Rui whether the Câmara wants the plan in A3.</span><span style="font-size:12px; color:#7c766e; white-space:nowrap">Mon</span></div>
+      </div>
+      <span style="font-size: 11.5px; color: #7c766e">Notes also go to the Obsidian vault as Markdown.</span>
+    </div>
+  </div>
+</div>
+
+<!-- 2 · Empty. One sentence from Argos and things you can type, not four sections saying nothing. -->
+<div style="width: 1400px; height: 420px; box-sizing: border-box; background: #141312; color: #efece8; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #302c28">
+  <div style="display: flex; align-items: center; gap: 18px; padding: 16px 24px 14px; border-bottom: 1px solid #302c28">
+    <svg width="48" height="48" viewBox="0 0 24 24" aria-hidden="true" style="flex-shrink:0">
+      <rect x="7" y="9" width="10" height="9" fill="#df7a52"/><rect x="5" y="7" width="3" height="5" fill="#df7a52"/><rect x="16" y="7" width="3" height="5" fill="#df7a52"/>
+      <rect x="9" y="11" width="6" height="5" fill="#f7e6d0"/><rect x="10" y="12" width="1" height="1" fill="#141312"/><rect x="13" y="12" width="1" height="1" fill="#141312"/>
+      <rect x="8" y="18" width="2" height="4" fill="#df7a52"/><rect x="14" y="18" width="2" height="4" fill="#df7a52"/><rect x="17" y="15" width="3" height="2" fill="#df7a52"/>
+    </svg>
+    <div style="display: flex; flex-direction: column; gap: 4px; flex: 1">
+      <div style="font-size: 15px; font-weight: 650; letter-spacing: -0.01em">Nothing on the list.</div>
+      <div style="font-size: 12px; color: #b3ada4">Ctrl+Alt+A summons him anywhere in Windows.</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px"><span class="quiet">Quiet for 1 h</span><span class="quiet">Stay on screen <span class="toggle"></span></span></div>
+  </div>
+  <div style="display: grid; grid-template-columns: minmax(0, 680px) minmax(300px, 1fr); flex: 1; min-height: 0">
+    <div style="display: flex; flex-direction: column; gap: 14px; padding: 14px 24px">
+      <div style="display: flex; align-items: center; height: 38px; padding: 0 12px; background: #1c1b19; border: 1px solid #302c28; border-radius: 4px; font-size: 13.5px; color: #7c766e">Add… e.g. call Rui tomorrow at 2pm</div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <span class="eyebrow">Things he understands</span>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px">
+          <span class="ex">call Rui tomorrow at 2pm</span>
+          <span class="ex">report every friday at 5pm</span>
+          <span class="ex">rent on the 1st of every month</span>
+          <span class="ex">dentist on the 11th at 10:30</span>
+          <span class="ex">in 20 minutes check the oven</span>
+          <span class="ex">note: the cert is in the vault</span>
+        </div>
+        <span style="font-size: 11.5px; color: #7c766e">Click one to put it in the box. Dates are read on your computer, in Portuguese or English.</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 12px; padding: 14px 24px; border-left: 1px solid #302c28; background: #1c1b19">
+      <span class="eyebrow">Notes · <span class="num">0</span></span>
+      <div style="display: flex; align-items: center; height: 38px; padding: 0 12px; background: #141312; border: 1px solid #302c28; border-radius: 4px; font-size: 13.5px; color: #7c766e">Write a note…</div>
+      <span style="font-size: 11.5px; color: #7c766e">What you write here is kept as a note, and in the Obsidian vault when that is on.</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>
