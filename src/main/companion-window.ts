@@ -148,6 +148,18 @@ let appliedSize: CompanionPetSize | null = null
 
 const alive = (win: BrowserWindow | null): win is BrowserWindow => !!win && !win.isDestroyed()
 
+/**
+ * Move the pet window, always with its size. A bare setPosition on this transparent window
+ * at a fractional display scale (125 %) lets Windows round the size on every move, and over
+ * a drag's hundreds of moves the window grew to several times the dog. Everything here is
+ * worked out from the window's bounds, so the dog, drawn at its size in the top-left corner,
+ * then sat in mid-air or halfway down a window, and the hit area no longer covered him.
+ */
+function movePet(win: BrowserWindow, x: number, y: number): void {
+  const size = petSize(appliedSize ?? undefined)
+  win.setBounds({ x: Math.round(x), y: Math.round(y), width: size.width, height: size.height })
+}
+
 /** The accelerator that actually got registered ('' if none was available). */
 export function companionShortcut(): string {
   return registeredShortcut
@@ -472,7 +484,7 @@ export function throwBall(): void {
 function stepThrow(): void {
   if (!game || game.phase !== 'throw' || !alive(petWindow)) return
   const { x, y, done } = ballAt(game.throw, Date.now() - game.startAt)
-  if (alive(ballWindow)) ballWindow.setPosition(x, y)
+  if (alive(ballWindow)) ballWindow.setBounds({ x: Math.round(x), y: Math.round(y), width: BALL_SIZE, height: BALL_SIZE })
   if (!done) return
   const b = petWindow.getBounds()
   const plan = planRunTo(b, screen.getAllDisplays().map((d) => d.workArea), fetchX(game.throw, b))
@@ -532,7 +544,7 @@ function poll(): void {
   if (drag) {
     const x = drag.window.x + cursor.x - drag.cursor.x
     const y = drag.window.y + cursor.y - drag.cursor.y
-    petWindow.setPosition(Math.round(x), Math.round(y))
+    movePet(petWindow, Math.round(x), Math.round(y))
     placeBubble()
     setIgnore(false)
     return
@@ -607,7 +619,7 @@ export function endPetDrag(): void {
     const onto = windows[landing.index]
     const x = perchPosition(b, onto.bounds, { width: b.width, height: b.height }).x
     if (isFall(b.y, landing.y) && !reducedMotion()) {
-      petWindow.setPosition(x, b.y)
+      movePet(petWindow, x, b.y)
       fall = { fromY: b.y, toY: landing.y, x, startAt: Date.now(), onto: onto.hwnd }
       setPetState('standing')
       startPolling(WALK_POLL_MS)
@@ -619,12 +631,12 @@ export function endPetDrag(): void {
   }
   if (isFall(b.y, pos.y) && !reducedMotion()) {
     // On his feet for the drop; stepFall sits him down on landing.
-    petWindow.setPosition(pos.x, b.y)
+    movePet(petWindow, pos.x, b.y)
     fall = { fromY: b.y, toY: pos.y, x: pos.x, startAt: Date.now() }
     setPetState('standing')
     startPolling(WALK_POLL_MS)
   } else {
-    petWindow.setPosition(pos.x, pos.y)
+    movePet(petWindow, pos.x, pos.y)
     settlePose()
   }
   placeBubble()
@@ -641,7 +653,7 @@ function startPerch(hwnd: unknown, bounds: Rect, b: Rect): void {
   if (!alive(petWindow)) return
   perch = { hwnd, last: bounds }
   const pos = perchPosition(b, bounds, { width: b.width, height: b.height })
-  petWindow.setPosition(pos.x, pos.y)
+  movePet(petWindow, pos.x, pos.y)
   placeBubble()
   setPetState('perched')
   perchTimer = setInterval(perchTick, PERCH_POLL_MS)
@@ -670,7 +682,7 @@ function perchTick(): void {
   const [x, y] = petWindow.getPosition()
   const pos = perchFollow({ x, y }, perch.last, bounds)
   perch.last = bounds
-  petWindow.setPosition(pos.x, pos.y)
+  movePet(petWindow, pos.x, pos.y)
   placeBubble()
 }
 
@@ -681,12 +693,12 @@ function dropToFloor(): void {
   const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
   const pos = floorUnder({ x: b.x, y: b.y }, display.workArea, { width: b.width, height: b.height })
   if (isFall(b.y, pos.y) && !reducedMotion()) {
-    petWindow.setPosition(pos.x, b.y)
+    movePet(petWindow, pos.x, b.y)
     fall = { fromY: b.y, toY: pos.y, x: pos.x, startAt: Date.now() }
     setPetState('standing')
     startPolling(WALK_POLL_MS)
   } else {
-    petWindow.setPosition(pos.x, pos.y)
+    movePet(petWindow, pos.x, pos.y)
     settlePose()
   }
   placeBubble()
@@ -699,7 +711,7 @@ function dropToFloor(): void {
 function stepFall(win: BrowserWindow): void {
   if (!fall) return
   const { y, done } = fallY(fall, Date.now() - fall.startAt)
-  win.setPosition(fall.x, y)
+  movePet(win, fall.x, y)
   placeBubble()
   if (!done) return
   const onto = fall.onto
@@ -889,7 +901,7 @@ function stepWalk(win: BrowserWindow, cursorOverPet: boolean): void {
   walk.x = stepToward(walk.x, walk.toX, Math.min(now - walk.last, 200), speedOf(walk.gait ?? 'walk'))
   walk.last = now
   const [, y] = win.getPosition()
-  win.setPosition(Math.round(walk.x), y)
+  movePet(win, walk.x, y)
   if (walk.x === walk.toX) {
     // Over the edge of a lower display: down onto its floor, where stepFall sits him.
     if (walk.dropTo != null) {
