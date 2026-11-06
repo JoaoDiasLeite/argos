@@ -16,6 +16,8 @@ import {
   restoredPetPosition,
   floorUnder,
   sideBleed,
+  spriteRect,
+  topBleed,
   snapToEdge,
   type Rect
 } from './companion-window-pure'
@@ -74,8 +76,13 @@ describe('snapToEdge', () => {
     expect(snapToEdge({ x: 1800, y: 1000 }, area)).toEqual({ x: 1920 - W + B, y: FLOOR })
   })
 
-  it('clamps a drop above the top back inside', () => {
-    expect(snapToEdge({ x: 10, y: -80 }, area).y).toBe(0)
+  it('clamps a drop above the top back inside, his head against the top edge', () => {
+    const top = topBleed(PET_SIZE)
+    expect(top).toBe(56)
+    const pos = snapToEdge({ x: 10, y: -80 }, area)
+    expect(pos).toEqual({ x: -B, y: -top })
+    expect(spriteRect({ ...pos, width: W, height: H })).toMatchObject({ x: 0, y: 0 })
+    expect(restoredPetPosition(pos, area)).toEqual(pos)
   })
 
   it('snaps on a display with a negative origin', () => {

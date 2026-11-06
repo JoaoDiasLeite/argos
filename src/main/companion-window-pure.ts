@@ -48,10 +48,23 @@ export function sideBleed(size: Pick<Size, 'width'>): number {
   return Math.round(((PET_SIZE.width - SPRITE_SIZE.width) / 2) * (size.width / PET_SIZE.width))
 }
 
-/** The area the pet window may occupy: the work area, widened by sideBleed on both sides. */
-export function petArea(workArea: Rect, size: Pick<Size, 'width'>): Rect {
+/**
+ * How far the window may hang past the top of the work area: the transparent strip over
+ * the sprite (room for the hop and the badges), scaled with the window. Docked in a top
+ * corner, the dog's head then touches the top of the screen.
+ */
+export function topBleed(size: Pick<Size, 'height'>): number {
+  return Math.round((PET_SIZE.height - SPRITE_SIZE.height) * (size.height / PET_SIZE.height))
+}
+
+/**
+ * The area the pet window may occupy: the work area, widened by sideBleed on both sides
+ * and raised by topBleed, so the dog (not the window) is what meets each edge.
+ */
+export function petArea(workArea: Rect, size: Size): Rect {
   const bleed = sideBleed(size)
-  return { x: workArea.x - bleed, y: workArea.y, width: workArea.width + 2 * bleed, height: workArea.height }
+  const top = topBleed(size)
+  return { x: workArea.x - bleed, y: workArea.y - top, width: workArea.width + 2 * bleed, height: workArea.height + top }
 }
 
 /** The hit area is a generous rounded rect, not a per-pixel test (plan §9.1). */
@@ -116,13 +129,14 @@ export const DOCK_ZONE = 48
  * (companion-perch-pure's landingBelow).
  */
 export function snapToEdge(pos: Point, workArea: Rect, size = PET_SIZE, margin = PET_MARGIN): Point {
+  const lowerThird = workArea.height / 3
   workArea = petArea(workArea, size)
   const bottom = workArea.y + workArea.height
   const right = workArea.x + workArea.width
   const nearLeft = pos.x - workArea.x <= DOCK_ZONE
   const nearRight = right - (pos.x + size.width) <= DOCK_ZONE
   const sideX = nearLeft ? workArea.x + margin : right - size.width - margin
-  if (pos.y + size.height >= bottom - workArea.height / 3) {
+  if (pos.y + size.height >= bottom - lowerThird) {
     // The floor; near a side he tucks into the corner (plan §13.1, leaning).
     return clampToArea({ x: nearLeft || nearRight ? sideX : pos.x, y: bottom - size.height - margin }, size, workArea)
   }
