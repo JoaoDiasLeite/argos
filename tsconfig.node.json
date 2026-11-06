@@ -3,6 +3,9 @@
   "include": ["electron.vite.config.*", "src/main/**/*", "src/preload/**/*", "src/shared/**/*"],
   "compilerOptions": {
     "composite": true,
+    // electron-vite bundles main and preload, and @vitejs/plugin-react publishes its types
+    // only through "exports", which the base config's "node" resolution cannot read.
+    "moduleResolution": "bundler",
     // Composite projects can't set `noEmit`, and without an outDir tsc writes .js/.d.ts
     // next to the sources — Vite resolves .jsx before .tsx, so stray emit silently shadows
     // the real files (and vitest picks up duplicated *.test.js). electron-vite does the
