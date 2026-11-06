@@ -21,7 +21,14 @@ const CHANGELOG: Entry[] = [
     version: '3.4.0',
     date: '2026-11-06',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'Argos no longer disappears when you drag him to the top of the screen. Let go over a maximised window, he sat on its top edge, which is the top of the screen, and ended up out of sight; now he falls to the floor instead, and does the same if the window he sits on is maximised or moved to the top.'
+        ]
+      }
+    ]
   },
   {
     version: '3.3.0',
