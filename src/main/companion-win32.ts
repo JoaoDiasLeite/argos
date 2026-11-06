@@ -31,8 +31,26 @@ const DWMWA_EXTENDED_FRAME_BOUNDS = 9
  */
 const DWMWA_CLOAKED = 14
 
+/** GetWindow's next window down the z-order; GetWindowLongPtrW's extended style; a tool window's bit in it. */
+const GW_HWNDNEXT = 2
+const GWL_EXSTYLE = -20
+const WS_EX_TOOLWINDOW = 0x80
+
+/** The desktop and the taskbars: on screen and visible, but nothing he can stand on or be hidden by. */
+const SHELL_CLASSES = new Set(['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd'])
+
+/** At most this many windows are read per call, front to back: a drop needs the ones in front, not all. */
+const MAX_WINDOWS = 64
+
 interface Win32 {
   GetForegroundWindow: () => unknown
+  GetTopWindow: (hwnd: unknown) => unknown
+  GetWindow: (hwnd: unknown, cmd: number) => unknown
+  GetWindowLongPtrW: (hwnd: unknown, index: number) => number | bigint
+  GetWindowTextLengthW: (hwnd: unknown) => number
+  GetClassNameW: (hwnd: unknown, buf: Buffer, max: number) => number
+  /** The handle as a number, to compare with BrowserWindow.getNativeWindowHandle(). */
+  address: (hwnd: unknown) => number | bigint
   IsWindow: (hwnd: unknown) => boolean
   IsWindowVisible: (hwnd: unknown) => boolean
   IsIconic: (hwnd: unknown) => boolean
@@ -58,6 +76,12 @@ function load(): Win32 | null {
     koffi.struct('ARGOS_RECT', { left: 'long', top: 'long', right: 'long', bottom: 'long' })
     win32 = {
       GetForegroundWindow: user32.func('void * __stdcall GetForegroundWindow()'),
+      GetTopWindow: user32.func('void * __stdcall GetTopWindow(void *hwnd)'),
+      GetWindow: user32.func('void * __stdcall GetWindow(void *hwnd, uint32_t cmd)'),
+      GetWindowLongPtrW: user32.func('intptr_t __stdcall GetWindowLongPtrW(void *hwnd, int index)'),
+      GetWindowTextLengthW: user32.func('int __stdcall GetWindowTextLengthW(void *hwnd)'),
+      GetClassNameW: user32.func('int __stdcall GetClassNameW(void *hwnd, _Out_ uint8_t *buf, int max)'),
+      address: (hwnd: unknown) => koffi.address(hwnd),
       IsWindow: user32.func('bool __stdcall IsWindow(void *hwnd)'),
       IsWindowVisible: user32.func('bool __stdcall IsWindowVisible(void *hwnd)'),
       IsIconic: user32.func('bool __stdcall IsIconic(void *hwnd)'),
@@ -109,6 +133,37 @@ export function foregroundWindow(): { hwnd: unknown; bounds: CompanionRect } | n
   } catch {
     return null
   }
+}
+
+/**
+ * The windows on screen, front to back, that a falling Argos could land on or be hidden
+ * behind: visible, drawn (not cloaked), not minimised, with a title, not a tool window
+ * (tooltips, menus, the touch keyboard), not the desktop or a taskbar, and not one of
+ * `skip` (the companion's own windows, by native handle; Argos's main window counts).
+ * Maximised windows stay in: they hide every edge behind them. Empty where the calls are
+ * unavailable.
+ */
+export function windowsOnScreen(skip: readonly bigint[] = []): { hwnd: unknown; bounds: CompanionRect }[] {
+  const w = load()
+  if (!w) return []
+  const out: { hwnd: unknown; bounds: CompanionRect }[] = []
+  try {
+    const name = Buffer.alloc(512)
+    let hwnd = w.GetTopWindow(null)
+    for (let seen = 0; hwnd && seen < 1000 && out.length < MAX_WINDOWS; seen++, hwnd = w.GetWindow(hwnd, GW_HWNDNEXT)) {
+      if (!w.IsWindowVisible(hwnd) || w.IsIconic(hwnd)) continue
+      if (Number(w.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)) & WS_EX_TOOLWINDOW) continue
+      if (w.GetWindowTextLengthW(hwnd) <= 0) continue
+      const n = w.GetClassNameW(hwnd, name, 256)
+      if (SHELL_CLASSES.has(name.toString('utf16le', 0, n * 2))) continue
+      if (skip.includes(BigInt(w.address(hwnd)))) continue
+      const bounds = windowBounds(hwnd)
+      if (bounds) out.push({ hwnd, bounds })
+    }
+  } catch {
+    return out
+  }
+  return out
 }
 
 /** Windows' word on notifications (QUNS), or null where it cannot be asked. */
