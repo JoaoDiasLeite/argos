@@ -23,6 +23,13 @@ export const QUNS = {
 
 /** DWMWA_EXTENDED_FRAME_BOUNDS: the window as drawn, without the invisible resize border. */
 const DWMWA_EXTENDED_FRAME_BOUNDS = 9
+/**
+ * DWMWA_CLOAKED: non-zero for a window that has WS_VISIBLE but is not drawn. Windows
+ * keeps a few of these about (the touch keyboard host, Game Bar, apps on another
+ * virtual desktop), and they can be the foreground window: dropped "on" one, Argos sat
+ * in mid-air where its invisible top edge was.
+ */
+const DWMWA_CLOAKED = 14
 
 interface Win32 {
   GetForegroundWindow: () => unknown
@@ -32,6 +39,7 @@ interface Win32 {
   IsZoomed: (hwnd: unknown) => boolean
   GetWindowThreadProcessId: (hwnd: unknown, pid: [number]) => number
   DwmGetWindowAttribute: (hwnd: unknown, attr: number, rect: Record<string, number>, cb: number) => number
+  DwmGetWindowCloaked: (hwnd: unknown, attr: number, cloaked: [number], cb: number) => number
   SHQueryUserNotificationState: (state: [number]) => number
 }
 
@@ -56,6 +64,7 @@ function load(): Win32 | null {
       IsZoomed: user32.func('bool __stdcall IsZoomed(void *hwnd)'),
       GetWindowThreadProcessId: user32.func('uint32_t __stdcall GetWindowThreadProcessId(void *hwnd, _Out_ uint32_t *pid)'),
       DwmGetWindowAttribute: dwmapi.func('int __stdcall DwmGetWindowAttribute(void *hwnd, uint32_t attr, _Out_ ARGOS_RECT *rect, uint32_t cb)'),
+      DwmGetWindowCloaked: dwmapi.func('DwmGetWindowAttribute', 'int', ['void *', 'uint32_t', '_Out_ uint32_t *', 'uint32_t']),
       SHQueryUserNotificationState: shell32.func('int __stdcall SHQueryUserNotificationState(_Out_ int *state)')
     }
   } catch (e) {
@@ -65,12 +74,14 @@ function load(): Win32 | null {
   return win32
 }
 
-/** The window's drawn bounds in DIPs, or null when it is gone, hidden or minimised. */
+/** The window's drawn bounds in DIPs, or null when it is gone, hidden, cloaked or minimised. */
 export function windowBounds(hwnd: unknown): CompanionRect | null {
   const w = load()
   if (!w || !hwnd) return null
   try {
     if (!w.IsWindow(hwnd) || !w.IsWindowVisible(hwnd) || w.IsIconic(hwnd)) return null
+    const cloaked: [number] = [0]
+    if (w.DwmGetWindowCloaked(hwnd, DWMWA_CLOAKED, cloaked, 4) === 0 && cloaked[0] !== 0) return null
     const rect = { left: 0, top: 0, right: 0, bottom: 0 }
     if (w.DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, rect, 16) !== 0) return null
     if (rect.right <= rect.left || rect.bottom <= rect.top) return null
