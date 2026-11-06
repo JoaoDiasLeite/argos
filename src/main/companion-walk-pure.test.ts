@@ -20,10 +20,12 @@ import {
   walkLane,
   type WalkConditions
 } from './companion-walk-pure'
-import { PET_MARGIN, PET_SIZE, defaultPetPosition, snapToEdge, type Rect } from './companion-window-pure'
+import { PET_MARGIN, PET_SIZE, defaultPetPosition, sideBleed, snapToEdge, spriteRect, type Rect } from './companion-window-pure'
 
 const AREA: Rect = { x: 0, y: 0, width: 1920, height: 1040 }
 const FLOOR_Y = AREA.height - PET_SIZE.height - PET_MARGIN
+/** How far the window hangs past a wall so the dog reaches it. */
+const BLEED = sideBleed(PET_SIZE)
 const pet = (x: number, y = FLOOR_Y): Rect => ({ x, y, width: PET_SIZE.width, height: PET_SIZE.height })
 
 /** An rng that returns the given values in turn (then repeats the last). */
@@ -151,7 +153,7 @@ describe('planWalk', () => {
     const p = planWalk(pet(maxX - 100), AREA, seq(0.999999, 0.9))!
     expect(p.facing).toBe('left')
     // On a narrow display both sides are short: the longer one, cut at the corner.
-    const narrow: Rect = { x: 0, y: 0, width: 600, height: 800 }
+    const narrow: Rect = { x: 0, y: 0, width: 600 - 2 * BLEED, height: 800 }
     const lane = walkLane(narrow)
     const y = narrow.height - PET_SIZE.height - PET_MARGIN
     // 100 px of room on the left, 348 on the right.
@@ -175,17 +177,19 @@ describe('planWalk', () => {
         const x = lane.minX + Math.round(Math.random() * (lane.maxX - lane.minX))
         const p = planWalk(pet(x, area.y + area.height - PET_SIZE.height - PET_MARGIN), area)
         if (!p) continue
-        expect(p.toX).toBeGreaterThanOrEqual(area.x)
-        expect(p.toX + PET_SIZE.width).toBeLessThanOrEqual(area.x + area.width)
+        // The window hangs past the edge; the dog never does.
+        const dog = spriteRect(pet(p.toX))
+        expect(dog.x).toBeGreaterThanOrEqual(area.x)
+        expect(dog.x + dog.width).toBeLessThanOrEqual(area.x + area.width)
         expect(p.toX).toBeGreaterThanOrEqual(lane.minX)
         expect(p.toX).toBeLessThanOrEqual(lane.maxX)
       }
     }
   })
 
-  it('has nowhere to go on a display only as wide as the pet', () => {
-    const tiny: Rect = { x: 0, y: 0, width: PET_SIZE.width + 2 * PET_MARGIN, height: 600 }
-    expect(planWalk(pet(PET_MARGIN, 600 - PET_SIZE.height - PET_MARGIN), tiny, () => 0.5)).toBeNull()
+  it('has nowhere to go on a display only as wide as the dog', () => {
+    const tiny: Rect = { x: 0, y: 0, width: PET_SIZE.width - 2 * BLEED + 2 * PET_MARGIN, height: 600 }
+    expect(planWalk(pet(PET_MARGIN - BLEED, 600 - PET_SIZE.height - PET_MARGIN), tiny, () => 0.5)).toBeNull()
   })
 })
 
@@ -215,7 +219,7 @@ describe('walking across displays', () => {
 
   it('extends the lane over neighbours whose floors line up, both ways', () => {
     const lane = walkLaneAcross(pet(800), [LEFT_ALIGNED, AREA, RIGHT_ALIGNED])!
-    expect(lane).toEqual({ minX: -1280 + PET_MARGIN, maxX: 3200 - W - PET_MARGIN, leftDrop: null, rightDrop: null })
+    expect(lane).toEqual({ minX: -1280 + PET_MARGIN - BLEED, maxX: 3200 - W - PET_MARGIN + BLEED, leftDrop: null, rightDrop: null })
     // From AREA's own corner he walks straight on into the next display.
     const corner = walkLane(AREA).maxX
     expect(planWalk(pet(corner), [AREA, RIGHT_ALIGNED], seq(0.5, 0.9))).toEqual({ fromX: corner, toX: corner + 275, facing: 'right' })
@@ -239,7 +243,7 @@ describe('walking across displays', () => {
   it('turns around at a higher neighbour, and at a gap', () => {
     const corner = walkLane(AREA).maxX
     for (const other of [RIGHT_HIGHER, RIGHT_GAP]) {
-      expect(walkLaneAcross(pet(corner), [AREA, other])).toEqual({ minX: PET_MARGIN, maxX: corner, leftDrop: null, rightDrop: null })
+      expect(walkLaneAcross(pet(corner), [AREA, other])).toEqual({ minX: PET_MARGIN - BLEED, maxX: corner, leftDrop: null, rightDrop: null })
       expect(planWalk(pet(corner), [AREA, other], seq(0.5, 0.9))).toEqual({ fromX: corner, toX: corner - 275, facing: 'left' })
     }
   })
@@ -248,7 +252,7 @@ describe('walking across displays', () => {
     // On RIGHT_LOWER's floor, not AREA's: the lane is RIGHT_LOWER's, and AREA is a wall above.
     const y = 1440 - H - PET_MARGIN
     const lane = walkLaneAcross(pet(2000, y), [AREA, RIGHT_LOWER])!
-    expect(lane).toEqual({ minX: 1920 + PET_MARGIN, maxX: 3200 - W - PET_MARGIN, leftDrop: null, rightDrop: null })
+    expect(lane).toEqual({ minX: 1920 + PET_MARGIN - BLEED, maxX: 3200 - W - PET_MARGIN + BLEED, leftDrop: null, rightDrop: null })
     expect(planWalk(pet(2000, AREA.height - H - PET_MARGIN), [AREA, RIGHT_LOWER])).toBeNull()
   })
 })

@@ -1,6 +1,7 @@
-/* The pet window: 128×152, transparent. Main's hit area is the 120×130 rect at the
-   bottom centre (x 4..124, y 22..152); the sprite and every badge stay inside it, and
-   the 9 px hop has its room above. */
+/* The pet window: 128×152, transparent. The sprite sits on the window's bottom edge, so
+   main can stand the window on the taskbar and the dog's paws touch it. Main's hit area
+   is the 120×116 rect at the bottom centre (x 4..124, y 36..152), around the sprite;
+   the badges and the 9 px hop have their room above. */
 html, body, #root { background: transparent; }
 
 .pet {
@@ -21,7 +22,7 @@ html, body, #root { background: transparent; }
 .pet-body {
   position: absolute;
   left: 16px;
-  top: 42px;
+  top: 56px;
   width: 96px;
   height: 96px;
   cursor: grab;
@@ -91,7 +92,7 @@ html, body, #root { background: transparent; }
 .pet-zs {
   /* Over the curled dog's head (doze.png lies low in its frame). */
   left: 94px;
-  top: 50px;
+  top: 64px;
   width: 30px;
   height: 26px;
   font-family: var(--font-mono);
@@ -115,7 +116,7 @@ html, body, #root { background: transparent; }
 
 .pet-dots {
   left: 50%;
-  top: 28px;
+  top: 42px;
   transform: translateX(-50%);
   display: flex;
   gap: 5px;
@@ -133,7 +134,7 @@ html, body, #root { background: transparent; }
 
 .pet-bang {
   left: 84px;
-  top: 28px;
+  top: 42px;
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -146,7 +147,7 @@ html, body, #root { background: transparent; }
 
 .pet-moon {
   left: 94px;
-  top: 56px;
+  top: 70px;
   width: 22px;
   height: 22px;
   border-radius: 50%;

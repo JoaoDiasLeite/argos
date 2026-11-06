@@ -12,6 +12,7 @@ import {
   dockSide,
   dogRect,
   floorUnder,
+  petArea,
   petHitTest,
   petStranded,
   petWindowSize,
@@ -1043,7 +1044,7 @@ function resizePet(size: CompanionPetSize): void {
   const next = petSize(size)
   const nextDog = dogRect({ x: 0, y: 0, ...next })
   const display = screen.getDisplayNearestPoint(feet)
-  const pos = clampToArea({ x: feet.x - nextDog.width / 2 - nextDog.x, y: feet.y - nextDog.height - nextDog.y }, next, display.workArea)
+  const pos = clampToArea({ x: feet.x - nextDog.width / 2 - nextDog.x, y: feet.y - nextDog.height - nextDog.y }, next, petArea(display.workArea, next))
   petWindow.setBounds({ x: pos.x, y: pos.y, width: next.width, height: next.height })
   sendToPet('companion:pet-size', size)
   if (petWindow.isVisible()) savePetPosition(display.id, pos)
