@@ -235,6 +235,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('companion:pet-size', fn)
       return () => ipcRenderer.removeListener('companion:pet-size', fn)
     },
+    onPetCharacter: (cb: (character: unknown) => void) => {
+      const fn = (_: unknown, character: unknown) => cb(character)
+      ipcRenderer.on('companion:pet-character', fn)
+      return () => ipcRenderer.removeListener('companion:pet-character', fn)
+    },
     onCaptureThinking: (cb: (id: unknown) => void) => {
       const fn = (_: unknown, id: unknown) => cb(id)
       ipcRenderer.on('companion:capture-thinking', fn)

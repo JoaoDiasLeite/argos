@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   CCAccountStatus,
+  CompanionCharacter,
   CompanionPrefs,
   ClaudeHooks,
   ClaudePermissions,
@@ -962,6 +963,22 @@ export default function SettingsView({
                       (follow) => updateCompanion({ follow }),
                       companionBusy
                     )}
+                  <div className="srow">
+                    <div className="srow-text">
+                      <span className="srow-label">{t('settings.companion.character.label')}</span>
+                      <span className="help">{t('settings.companion.character.hint')}</span>
+                    </div>
+                    <Select
+                      className="settings-select"
+                      value={companion.character}
+                      disabled={companionBusy}
+                      onChange={(e) => updateCompanion({ character: e.target.value as CompanionCharacter })}
+                      aria-label={t('settings.companion.character.label')}
+                    >
+                      <option value="dog">{t('settings.companion.character.dog')}</option>
+                      <option value="ferret">{t('settings.companion.character.ferret')}</option>
+                    </Select>
+                  </div>
                   <div className="srow">
                     <div className="srow-text">
                       <span className="srow-label">{t('settings.companion.size.label')}</span>

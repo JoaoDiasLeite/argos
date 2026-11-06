@@ -105,6 +105,15 @@ export interface ParsedCapture {
 
 // ---- preferences -------------------------------------------------------------------
 
+/** Which animal is drawn on the desktop. Same states and sheet layout for every one. */
+export type CompanionCharacter = 'dog' | 'ferret'
+
+export const COMPANION_CHARACTERS: readonly CompanionCharacter[] = ['dog', 'ferret']
+
+export function isCompanionCharacter(v: unknown): v is CompanionCharacter {
+  return COMPANION_CHARACTERS.includes(v as CompanionCharacter)
+}
+
 /** `config.companion`. */
 /** How big Argos is on the desktop (plan §13.3, N2): the window and the sprite scale together. */
 export type CompanionPetSize = 'small' | 'normal' | 'large'
@@ -113,6 +122,8 @@ export type CompanionPetSize = 'small' | 'normal' | 'large'
 export const PET_SCALE: Record<CompanionPetSize, number> = { small: 2 / 3, normal: 1, large: 4 / 3 }
 
 export interface CompanionPrefs {
+  /** The animal on the desktop. 'dog' by default. */
+  character: CompanionCharacter
   /** "Ficar no ecrã": the pet stays up all day. Off = only when summoned or reminding. */
   stayOnScreen: boolean
   /** "Tamanho do Argos". */
