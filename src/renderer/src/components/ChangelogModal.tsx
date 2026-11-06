@@ -21,7 +21,14 @@ const CHANGELOG: Entry[] = [
     version: '3.2.0',
     date: '2026-11-05',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'Argos no longer sits in mid-air after a drop. Windows keeps a few windows it never draws (the touch keyboard host, Game Bar, apps on another desktop) and could call one of them the window in front; let go at the height of its invisible top edge, Argos perched on it. Those windows no longer count.'
+        ]
+      }
+    ]
   },
   {
     version: '3.1.0',
