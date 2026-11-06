@@ -21,7 +21,14 @@ const CHANGELOG: Entry[] = [
     version: '3.3.0',
     date: '2026-11-06',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'Argos keeps his size when you drag him. On a screen scaled to 125% his invisible window grew a little with every move, until it was several times the dog: he then sat in mid-air or halfway down a window after a drop, and clicks on him went through to the desktop.'
+        ]
+      }
+    ]
   },
   {
     version: '3.2.0',
