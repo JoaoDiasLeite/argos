@@ -23,6 +23,12 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'Features',
+        items: [
+          'Let go high up, Argos falls until something catches him: the top edge of the first window below, where he sits and rides along with it, or else the floor. A window in front of another hides that one’s edge, and Argos’s own window counts. Let go near a side edge he still leans on it, and a drop on a dragged-out lean no longer snaps him back to the wall.'
+        ]
+      },
+      {
         title: 'Fixes',
         items: [
           'Argos no longer sits in mid-air after a drop. Windows keeps a few windows it never draws (the touch keyboard host, Game Bar, apps on another desktop) and could call one of them the window in front; let go at the height of its invisible top edge, Argos perched on it. Those windows no longer count.'

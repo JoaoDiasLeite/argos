@@ -39,8 +39,8 @@ import { FOLLOW_POLL_MS, followUpdate, shouldFollow, type FollowWatch } from './
 import { ROUTINE_POSE_MS, dayKey, isNight, routineMoment, type RoutineMoment } from './companion-routine-pure'
 import { fallY, isFall, type Fall } from './companion-fall-pure'
 import { BALL_SIZE, ballAt, fetchX, planThrow, type Throw } from './companion-ball-pure'
-import { PERCH_POLL_MS, isOverTitleBar, perchFollow, perchPosition } from './companion-perch-pure'
-import { foregroundWindow, windowBounds } from './companion-win32'
+import { PERCH_POLL_MS, isOverTitleBar, landingBelow, perchFollow, perchPosition } from './companion-perch-pure'
+import { foregroundWindow, windowBounds, windowsOnScreen } from './companion-win32'
 import { restingPetState } from './companion-quiet-pure'
 import { PET_SCALE, POSITIONS_VERSION, VOICE_SHORTCUT_DEFAULTS } from './companion-types'
 import type {
@@ -105,7 +105,8 @@ let happyTimer: ReturnType<typeof setTimeout> | null = null
 let walk: (WalkPlan & { x: number; last: number; startAt: number; arriveAt: number | null }) | null = null
 let walkTimer: ReturnType<typeof setTimeout> | null = null
 /** The drop under way after he was let go above the floor (plan §13.3, M4). */
-let fall: (Fall & { x: number; startAt: number }) | null = null
+/** `onto`: the window whose top edge ends the fall; he perches on it on landing. */
+let fall: (Fall & { x: number; startAt: number; onto?: unknown }) | null = null
 /** Counts down to a doze while he sits idle (plan §13.3, M1). */
 let dozeTimer: ReturnType<typeof setTimeout> | null = null
 /** Perched on a window (plan §13.3, R): its handle, where it was last seen, and the watch on it. */
@@ -571,7 +572,18 @@ export function startPetDrag(): void {
   startPolling(DRAG_POLL_MS)
 }
 
-/** Drop: dock to a side or sit on the floor of that display, and remember it for the display. */
+/** The companion's own windows, by native handle: nothing to land on or be hidden behind. */
+function ownHandles(): bigint[] {
+  const out: bigint[] = []
+  for (const w of [petWindow, bubbleWindow, ballWindow]) {
+    if (!alive(w)) continue
+    const h = w.getNativeWindowHandle()
+    out.push(h.length >= 8 ? h.readBigUInt64LE(0) : BigInt(h.readUInt32LE(0)))
+  }
+  return out
+}
+
+/** Drop: perch, dock to a side, or fall onto the first window below or the floor; remember it for the display. */
 export function endPetDrag(): void {
   if (!drag) return
   drag = null
@@ -588,8 +600,33 @@ export function endPetDrag(): void {
     return
   }
   const pos = snapToEdge({ x: b.x, y: b.y }, display.workArea, { width: b.width, height: b.height })
-  petWindow.setPosition(pos.x, pos.y)
-  settlePose()
+  // Falling (not docked to a side): the top edge of a window on the way down catches him.
+  const windows = pos.y > b.y ? windowsOnScreen(ownHandles()) : []
+  const landing = landingBelow(b, windows.map((w) => w.bounds), pos.y)
+  if (landing) {
+    const onto = windows[landing.index]
+    const x = perchPosition(b, onto.bounds, { width: b.width, height: b.height }).x
+    if (isFall(b.y, landing.y) && !reducedMotion()) {
+      petWindow.setPosition(x, b.y)
+      fall = { fromY: b.y, toY: landing.y, x, startAt: Date.now(), onto: onto.hwnd }
+      setPetState('standing')
+      startPolling(WALK_POLL_MS)
+      placeBubble()
+    } else {
+      startPerch(onto.hwnd, onto.bounds, { ...b, x })
+    }
+    return
+  }
+  if (isFall(b.y, pos.y) && !reducedMotion()) {
+    // On his feet for the drop; stepFall sits him down on landing.
+    petWindow.setPosition(pos.x, b.y)
+    fall = { fromY: b.y, toY: pos.y, x: pos.x, startAt: Date.now() }
+    setPetState('standing')
+    startPolling(WALK_POLL_MS)
+  } else {
+    petWindow.setPosition(pos.x, pos.y)
+    settlePose()
+  }
   placeBubble()
   savePetPosition(display.id, pos)
   scheduleWalk()
@@ -665,8 +702,17 @@ function stepFall(win: BrowserWindow): void {
   win.setPosition(fall.x, y)
   placeBubble()
   if (!done) return
+  const onto = fall.onto
   fall = null
   if (!drag) startPolling(POLL_MS)
+  if (onto) {
+    // Landed on a window's top edge: sit on it, as if let go there. Gone meanwhile: on down.
+    const bounds = windowBounds(onto)
+    const b = win.getBounds()
+    if (bounds) startPerch(onto, bounds, b)
+    else dropToFloor()
+    return
+  }
   // Landed, maybe on another display: remember where, then sit (which rolls the next walk).
   const b = win.getBounds()
   const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
