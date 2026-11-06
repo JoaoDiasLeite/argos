@@ -23,6 +23,12 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'Features',
+        items: [
+          'Argos can be a ferret: Settings → Companion → Companion picks the animal, and the one on your desktop changes on the spot. The dog stays the default. The ferret has its own sitting, walking, talking, thinking, listening, alert, wag, doze and quiet poses; for the rest (running, leaning, perching, the day’s routine) it borrows its nearest pose until it gets its own.'
+        ]
+      },
+      {
         title: 'Fixes',
         items: [
           'Argos keeps his size when you drag him. On a screen scaled to 125% his invisible window grew a little with every move, until it was several times the dog: he then sat in mid-air or halfway down a window after a drop, and clicks on him went through to the desktop.'
