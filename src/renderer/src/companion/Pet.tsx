@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
-import type { CompanionPetFacing, CompanionPetSize, CompanionPetState } from '../types'
+import type { CompanionCharacter, CompanionPetFacing, CompanionPetSize, CompanionPetState } from '../types'
 import { PET_SCALE } from '../../../shared/companion'
 import { useT } from '../i18n'
 import './pet.css'
@@ -14,7 +14,7 @@ import './pet.css'
 // shifts the dog. pet.css carries what the frames don't: hops, breathing, the badges.
 
 // Literal URLs, so Vite fingerprints each sheet into the build.
-const SHEETS = {
+const DOG_SHEETS = {
   idle: new URL('./sprites/idle.png', import.meta.url).href,
   talking: new URL('./sprites/talking.png', import.meta.url).href,
   wag: new URL('./sprites/wag.png', import.meta.url).href,
@@ -45,10 +45,10 @@ interface Sprite {
   frame?: number
 }
 
-const IDLE: Sprite = { src: SHEETS.idle, frames: 8, fps: 4 }
+const SHEETS = DOG_SHEETS
 
-const SPRITES: Record<CompanionPetState, Sprite> = {
-  idle: IDLE,
+const DOG_SPRITES: Record<CompanionPetState, Sprite> = {
+  idle: { src: SHEETS.idle, frames: 8, fps: 4 },
   // Closed, ajar, open, ajar, closed, "oh": reads as speech rather than a flapping jaw.
   talking: { src: SHEETS.talking, frames: 6, fps: 6 },
   // Tail up, middle, down, middle: two wags in the happy beat.
@@ -85,10 +85,61 @@ const SPRITES: Record<CompanionPetState, Sprite> = {
   perched: { src: SHEETS.perch, frames: 2, fps: 0.5 }
 }
 
-const FRAME = 96
+// The ferret pack has the first nine sheets only (same 96×96 cells and paw line, but a
+// four-frame walk). The states drawn later for the dog borrow its nearest pose until the
+// ferret gets sheets of its own.
+const FERRET_SHEETS = {
+  idle: new URL('./sprites/ferret/idle.png', import.meta.url).href,
+  talking: new URL('./sprites/ferret/talking.png', import.meta.url).href,
+  wag: new URL('./sprites/ferret/wag.png', import.meta.url).href,
+  alert: new URL('./sprites/ferret/alert.png', import.meta.url).href,
+  doze: new URL('./sprites/ferret/doze.png', import.meta.url).href,
+  shh: new URL('./sprites/ferret/shh.png', import.meta.url).href,
+  listen: new URL('./sprites/ferret/listen.png', import.meta.url).href,
+  think: new URL('./sprites/ferret/think.png', import.meta.url).href,
+  walk: new URL('./sprites/ferret/walk.png', import.meta.url).href
+}
 
-/** The two ways he sleeps, one picked at random each night (the paws lie differently in each). */
-const SLEEP_SHEETS = [SHEETS.sleep1, SHEETS.sleep2]
+const FERRET_IDLE: Sprite = { src: FERRET_SHEETS.idle, frames: 8, fps: 4 }
+/** Its sitting pose held still: the stand-in for the dog's lean, look and perch. */
+const FERRET_STILL: Sprite = { src: FERRET_SHEETS.idle, frames: 1, fps: 1, sheetFrames: 8 }
+
+const FERRET_SPRITES: Record<CompanionPetState, Sprite> = {
+  idle: FERRET_IDLE,
+  talking: { src: FERRET_SHEETS.talking, frames: 6, fps: 6 },
+  happy: { src: FERRET_SHEETS.wag, frames: 4, fps: 8 },
+  alert: { src: FERRET_SHEETS.alert, frames: 2, fps: 3 },
+  dozing: { src: FERRET_SHEETS.doze, frames: 2, fps: 1 },
+  shh: { src: FERRET_SHEETS.shh, frames: 1, fps: 1 },
+  listening: { src: FERRET_SHEETS.listen, frames: 2, fps: 3 },
+  thinking: { src: FERRET_SHEETS.think, frames: 4, fps: 2 },
+  walking: { src: FERRET_SHEETS.walk, frames: 4, fps: 8 },
+  // No gallop drawn: the walk, quicker.
+  running: { src: FERRET_SHEETS.walk, frames: 4, fps: 12 },
+  standing: { src: FERRET_SHEETS.walk, frames: 1, fps: 1, sheetFrames: 4 },
+  leaning: FERRET_STILL,
+  looking: FERRET_STILL,
+  // The tail wag, slowed, for the stretch; the think sheet's half-closed blink for the yawn.
+  stretching: { src: FERRET_SHEETS.wag, frames: 4, fps: 2 },
+  yawning: { src: FERRET_SHEETS.think, frames: 1, fps: 1, sheetFrames: 4, frame: 3 },
+  sleeping: { src: FERRET_SHEETS.doze, frames: 2, fps: 1 },
+  scratching: { src: FERRET_SHEETS.wag, frames: 4, fps: 8 },
+  perched: FERRET_IDLE
+}
+
+interface Look {
+  sprites: Record<CompanionPetState, Sprite>
+  /** The ways it sleeps, one picked at random each night. */
+  sleep: readonly string[]
+}
+
+const LOOKS: Record<CompanionCharacter, Look> = {
+  // The paws lie differently in each of the dog's two sleeps.
+  dog: { sprites: DOG_SPRITES, sleep: [SHEETS.sleep1, SHEETS.sleep2] },
+  ferret: { sprites: FERRET_SPRITES, sleep: [FERRET_SHEETS.doze] }
+}
+
+const FRAME = 96
 
 /** `happy` is a 1 s beat (two hops, two wags); then the pet sits back down. */
 const HAPPY_MS = 1000
@@ -154,6 +205,7 @@ export default function Pet() {
   const [facing, setFacing] = useState<CompanionPetFacing>('right')
   // The size setting: main sizes the window, this scales everything drawn in it to match.
   const [size, setSize] = useState<CompanionPetSize>('normal')
+  const [character, setCharacter] = useState<CompanionCharacter>('dog')
   const reducedMotion = useReducedMotion()
   const down = useRef<{ x: number; y: number } | null>(null)
   /** The hold timer while the pointer is down and still, and whether it went off. */
@@ -176,9 +228,13 @@ export default function Pet() {
     const acceptSize = (s: unknown): void => {
       if (s === 'small' || s === 'normal' || s === 'large') setSize(s)
     }
+    const acceptCharacter = (c: unknown): void => {
+      if (typeof c === 'string' && c in LOOKS) setCharacter(c as CompanionCharacter)
+    }
     api
       .state()
       .then((s) => {
+        acceptCharacter(s.prefs.character)
         acceptFacing(s.petFacing)
         acceptSize(s.prefs.size)
         accept(s.petState)
@@ -187,10 +243,12 @@ export default function Pet() {
     const offState = api.onPetState(accept)
     const offFacing = api.onPetFacing(acceptFacing)
     const offSize = api.onPetSize(acceptSize)
+    const offCharacter = api.onPetCharacter(acceptCharacter)
     return () => {
       offState()
       offFacing()
       offSize()
+      offCharacter()
     }
   }, [])
 
@@ -228,9 +286,10 @@ export default function Pet() {
   // With reduced motion a walk is never shown: he is drawn sitting (main does not walk then either).
   const base: CompanionPetState = ON_THE_MOVE.includes(state) && reducedMotion ? 'idle' : state
   const shown: CompanionPetState = base === 'idle' && fidget === 'scratching' ? 'scratching' : base
-  // Which sleep tonight: picked afresh whenever his state changes.
-  const sleepSheet = useMemo(() => SLEEP_SHEETS[Math.floor(Math.random() * SLEEP_SHEETS.length)], [state])
-  const sprite: Sprite = shown === 'sleeping' ? { ...SPRITES.sleeping, src: sleepSheet } : SPRITES[shown]
+  const look = LOOKS[character]
+  // Which sleep tonight: picked afresh whenever his state (or the animal) changes.
+  const sleepSheet = useMemo(() => look.sleep[Math.floor(Math.random() * look.sleep.length)], [state, look])
+  const sprite: Sprite = shown === 'sleeping' ? { ...look.sprites.sleeping, src: sleepSheet } : look.sprites[shown]
   const animated = sprite.frames > 1
   const mirrored = MIRRORABLE.includes(shown) && facing === 'left'
 
