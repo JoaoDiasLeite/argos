@@ -37,6 +37,18 @@ export function perchPosition(pet: Rect, win: Rect, size: Size): { x: number; y:
   return { x, y: Math.round(win.y - size.height) }
 }
 
+/**
+ * Whether a pet window at these bounds shows the dog: the top of his head, at its
+ * centre, inside one of the work areas. Sat on a window whose top edge is the top of the
+ * screen (a maximised one) he would be drawn above it, out of sight, so he does not
+ * perch there.
+ */
+export function perchOnScreen(pet: Rect, areas: readonly Rect[]): boolean {
+  const dog = dogRect(pet)
+  const x = dog.x + dog.width / 2
+  return areas.some((a) => x >= a.x && x < a.x + a.width && dog.y >= a.y && dog.y < a.y + a.height)
+}
+
 /** The window moved: the pet keeps its place on the edge. */
 export function perchFollow(pos: { x: number; y: number }, from: Rect, to: Rect): { x: number; y: number } {
   return { x: pos.x + (to.x - from.x), y: pos.y + (to.y - from.y) }
@@ -53,10 +65,11 @@ export interface Landing {
  * stacks them) those whose top edge lies below his paws, less PERCH_ABOVE, and above the
  * floor he would otherwise reach (`floorY` is the pet window's y there), and that span
  * his centre within the overhang. The highest edge wins, unless a window in front of it
- * covers that spot, in which case he falls past it to the next. Null when nothing catches
- * him before the floor.
+ * covers that spot, in which case he falls past it to the next. Given the work areas, an
+ * edge he would sit on out of sight (perchOnScreen) does not catch him either. Null when
+ * nothing catches him before the floor.
  */
-export function landingBelow(pet: Rect, windows: Rect[], floorY: number): Landing | null {
+export function landingBelow(pet: Rect, windows: Rect[], floorY: number, areas?: readonly Rect[]): Landing | null {
   const dog = dogRect(pet)
   const paws = dog.y + dog.height
   const centre = dog.x + dog.width / 2
@@ -67,6 +80,7 @@ export function landingBelow(pet: Rect, windows: Rect[], floorY: number): Landin
     const y = Math.round(win.y - pet.height)
     if (y >= floorY) return
     if (best && y >= best.y) return
+    if (areas && !perchOnScreen({ ...pet, y }, areas)) return
     const spotX = Math.min(Math.max(centre, win.x), win.x + win.width - 1)
     for (let i = 0; i < index; i++) {
       const w = windows[i]

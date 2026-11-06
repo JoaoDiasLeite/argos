@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { PERCH_ABOVE, PERCH_BELOW, PERCH_OVERHANG, isOverTitleBar, landingBelow, perchFollow, perchPosition } from './companion-perch-pure'
+import {
+  PERCH_ABOVE,
+  PERCH_BELOW,
+  PERCH_OVERHANG,
+  isOverTitleBar,
+  landingBelow,
+  perchFollow,
+  perchOnScreen,
+  perchPosition
+} from './companion-perch-pure'
 import { PET_SIZE, dogRect, type Rect } from './companion-window-pure'
 
 const win: Rect = { x: 400, y: 300, width: 800, height: 600 }
@@ -83,5 +92,46 @@ describe('landingBelow', () => {
     const centreOffset = dog.x + dog.width / 2
     expect(landingBelow(pet(win.x - PERCH_OVERHANG - centreOffset, 50), [win], FLOOR)).not.toBeNull()
     expect(landingBelow(pet(win.x - PERCH_OVERHANG - centreOffset - 1, 50), [win], FLOOR)).toBeNull()
+  })
+})
+
+describe('perchOnScreen', () => {
+  const area: Rect = { x: 0, y: 0, width: 1920, height: 1040 }
+  const maximised: Rect = { x: 0, y: 0, width: 1920, height: 1040 }
+  const sat = (w: Rect): Rect => ({ ...pet(600, 0), ...perchPosition(pet(600, 0), w, PET_SIZE) })
+
+  it('is true sat on a window lower down the screen', () => {
+    expect(perchOnScreen(sat(win), [area])).toBe(true)
+  })
+
+  it('is false sat on a maximised window, above the top of the screen', () => {
+    expect(perchOnScreen(sat(maximised), [area])).toBe(false)
+  })
+
+  it('is true when another display above shows him', () => {
+    const above: Rect = { x: 0, y: -1080, width: 1920, height: 1080 }
+    expect(perchOnScreen(sat(maximised), [area, above])).toBe(true)
+  })
+
+  it('needs the top of his head on screen, not just his paws', () => {
+    const dogTop = dogRect(pet(0, 0)).y
+    const justFits: Rect = { ...win, y: PET_SIZE.height - dogTop }
+    expect(perchOnScreen(sat(justFits), [area])).toBe(true)
+    expect(perchOnScreen(sat({ ...justFits, y: justFits.y - 1 }), [area])).toBe(false)
+  })
+})
+
+describe('landingBelow with work areas', () => {
+  const FLOOR = 1040 - PET_SIZE.height - 12
+  const area: Rect = { x: 0, y: 0, width: 1920, height: 1040 }
+  const maximised: Rect = { x: 0, y: 0, width: 1920, height: 1040 }
+
+  it('falls past a maximised window to the next edge, or the floor', () => {
+    // Let go with his paws just below the top of the screen, over the maximised window.
+    const dropped = pet(600, 20 - PET_SIZE.height)
+    expect(landingBelow(dropped, [maximised], FLOOR)).toEqual({ index: 0, y: -PET_SIZE.height })
+    expect(landingBelow(dropped, [maximised], FLOOR, [area])).toBeNull()
+    expect(landingBelow(dropped, [maximised, win], FLOOR, [area])).toBeNull()
+    expect(landingBelow(dropped, [win, maximised], FLOOR, [area])).toEqual({ index: 0, y: win.y - PET_SIZE.height })
   })
 })
