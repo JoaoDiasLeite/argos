@@ -28,6 +28,29 @@ function Themed({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+/**
+ * Undo the page zoom these windows inherit. Chromium zooms every window of one origin
+ * together, so the main window's UI size (app:set-zoom, 0.9 at 'sm') zoomed the pet too:
+ * the dog was drawn 90 % size from the window's top-left and stood short of its bottom
+ * edge, above the taskbar, and the bubble measured itself in the wrong unit. A root zoom
+ * of the inverse puts one CSS px back at one DIP, which is what main's geometry speaks.
+ * A zoom change resizes the viewport, so 'resize' is the cue to look again.
+ */
+function cancelPageZoom(): void {
+  const apply = (): void => {
+    window.electronAPI.companion
+      .zoom()
+      .then((z) => {
+        if (Number.isFinite(z) && z > 0) document.documentElement.style.zoom = String(1 / z)
+      })
+      .catch(() => {})
+  }
+  apply()
+  window.addEventListener('resize', apply)
+}
+
+cancelPageZoom()
+
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <I18nProvider>

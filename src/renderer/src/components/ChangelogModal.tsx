@@ -25,7 +25,8 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Fixes',
         items: [
-          'Argos no longer disappears when you drag him to the top of the screen. Let go over a maximised window, he sat on its top edge, which is the top of the screen, and ended up out of sight; now he falls to the floor instead, and does the same if the window he sits on is maximised or moved to the top.'
+          'Argos no longer disappears when you drag him to the top of the screen. Let go over a maximised window, he sat on its top edge, which is the top of the screen, and ended up out of sight; now he falls to the floor instead, and does the same if the window he sits on is maximised or moved to the top.',
+          'Argos stands on the taskbar and sits on windows, instead of hovering a little above them, and reaches the sides and the top of the screen when he leans in a corner. With the interface set to a smaller text size he was also drawn smaller than his window, which left a gap under his paws and made his speech bubble the wrong size.'
         ]
       }
     ]

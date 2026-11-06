@@ -5,7 +5,7 @@
  * (landingBelow), or the floor does. The geometry is pure; companion-win32.ts says where
  * the windows are. DIPs throughout.
  */
-import { dogRect, type Rect, type Size } from './companion-window-pure'
+import { PET_SIZE, dogRect, type Rect, type Size } from './companion-window-pure'
 
 /** The dog's paws this far above or below the window's top edge count as a drop on it. */
 export const PERCH_ABOVE = 48
@@ -13,6 +13,17 @@ export const PERCH_BELOW = 56
 
 /** He may hang this far past either side of the window. */
 export const PERCH_OVERHANG = 24
+
+/**
+ * How far the paws sink into the window's top edge, at 1× (scaled with the window). Paws
+ * exactly on the edge read as hovering over it; a few pixels down, he sits on it.
+ */
+export const PERCH_SINK = 10
+
+/** The pet window's y sat on a window whose top edge is at `top`: paws PERCH_SINK into it. */
+export function perchY(top: number, size: Pick<Size, 'height'>): number {
+  return Math.round(top - size.height + (PERCH_SINK * size.height) / PET_SIZE.height)
+}
 
 /** How often a perched pet checks on its window. */
 export const PERCH_POLL_MS = 100
@@ -27,14 +38,14 @@ export function isOverTitleBar(pet: Rect, win: Rect): boolean {
 }
 
 /**
- * The pet window's position sat on the window's top edge: paws on the edge, where he
- * was let go horizontally, kept within the overhang of either side.
+ * The pet window's position sat on the window's top edge: paws just into it (PERCH_SINK),
+ * where he was let go horizontally, kept within the overhang of either side.
  */
 export function perchPosition(pet: Rect, win: Rect, size: Size): { x: number; y: number } {
   const minX = win.x - PERCH_OVERHANG - (pet.width - dogRect(pet).width) / 2
   const maxX = win.x + win.width + PERCH_OVERHANG - size.width + (pet.width - dogRect(pet).width) / 2
   const x = Math.round(Math.min(Math.max(pet.x, minX), Math.max(minX, maxX)))
-  return { x, y: Math.round(win.y - size.height) }
+  return { x, y: perchY(win.y, size) }
 }
 
 /**
@@ -77,7 +88,7 @@ export function landingBelow(pet: Rect, windows: Rect[], floorY: number, areas?:
   windows.forEach((win, index) => {
     if (win.y < paws - PERCH_ABOVE) return
     if (centre < win.x - PERCH_OVERHANG || centre > win.x + win.width + PERCH_OVERHANG) return
-    const y = Math.round(win.y - pet.height)
+    const y = perchY(win.y, pet)
     if (y >= floorY) return
     if (best && y >= best.y) return
     if (areas && !perchOnScreen({ ...pet, y }, areas)) return

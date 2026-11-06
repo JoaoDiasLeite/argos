@@ -11,7 +11,7 @@
  * null) rather than float along the wall or slide down it.
  */
 import type { CompanionPetState } from './companion-types'
-import { PET_MARGIN, PET_SIZE, type Rect } from './companion-window-pure'
+import { PET_MARGIN, PET_SIZE, sideBleed, type Rect } from './companion-window-pure'
 
 /** A walk starts this long after the last one, or the last interaction, at random. */
 export const WALK_MIN_DELAY_MS = 60_000
@@ -97,10 +97,14 @@ export function onFloor(pet: Rect, workArea: Rect): boolean {
   return gap >= 0 && gap <= FLOOR_TOLERANCE
 }
 
-/** The x range the window may occupy while walking: PET_MARGIN in from both sides. */
+/**
+ * The x range the window may occupy while walking: PET_MARGIN in from both sides, the
+ * window hanging past them by its transparent strip (sideBleed) so the dog reaches them.
+ */
 export function walkLane(workArea: Rect, width = PET_SIZE.width, margin = PET_MARGIN): { minX: number; maxX: number } {
-  const minX = workArea.x + margin
-  return { minX, maxX: Math.max(minX, workArea.x + workArea.width - width - margin) }
+  const bleed = sideBleed({ width })
+  const minX = workArea.x + margin - bleed
+  return { minX, maxX: Math.max(minX, workArea.x + workArea.width - width - margin + bleed) }
 }
 
 // ─── Across displays (plan §13.1) ──────────────────────────────────────────────
@@ -190,8 +194,10 @@ export function walkLaneAcross(pet: Rect, areas: Rect[], margin = PET_MARGIN): L
   }
   const l = reach('left')
   const r = reach('right')
-  const minX = l.end.x + margin
-  return { minX, maxX: Math.max(minX, r.end.x + r.end.width - pet.width - margin), leftDrop: l.drop, rightDrop: r.drop }
+  // The window hangs past the ends (sideBleed) so the dog reaches them.
+  const bleed = sideBleed(pet)
+  const minX = l.end.x + margin - bleed
+  return { minX, maxX: Math.max(minX, r.end.x + r.end.width - pet.width - margin + bleed), leftDrop: l.drop, rightDrop: r.drop }
 }
 
 export interface WalkPlan {
