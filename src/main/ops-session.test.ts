@@ -1275,14 +1275,20 @@ describe('ask_operator', () => {
 
   it('a stop while the operator is asked answers it as declined', async () => {
     let abortRun: () => void = () => undefined
+    // Resolved once the operator is actually being asked: the ask is logged first, and on
+    // a slow machine that write outlasted a fixed wait, so the stop came before the ask and
+    // nothing ever answered it.
+    let asking: () => void = () => undefined
+    const asked = new Promise<void>((r) => (asking = r))
     const { call, abort } = await start({}, undefined, {
       askOperator: () =>
         new Promise((resolve) => {
           abortRun = () => resolve(null)
+          asking()
         })
     })
     const pending = call('ask_operator', { cmd: 'id', why: 'who am I' })
-    await new Promise((r) => setTimeout(r, 10))
+    await asked
     abort.abort()
     abortRun()
     expect((await pending).text).toBe('The operator declined to run it.')
