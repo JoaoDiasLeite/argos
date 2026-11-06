@@ -264,10 +264,13 @@ describe('hosts', () => {
 
 describe('secrets', () => {
   it('round-trips with the right passphrase', async () => {
-    const enc = await encryptSecrets({ ssh: { h1: { password: 'pw' } }, apiKey: 'sk-1' }, 'correct horse')
+    const secrets = { ssh: { h1: { password: 'hunter2-not-in-the-clear' } }, apiKey: 'sk-1' }
+    const enc = await encryptSecrets(secrets, 'correct horse')
     expect(enc.kdf).toBe('scrypt')
-    expect(enc.data).not.toContain('pw')
-    expect(await decryptSecrets(enc, 'correct horse')).toEqual({ ssh: { h1: { password: 'pw' } }, apiKey: 'sk-1' })
+    // The plaintext is nowhere in the ciphertext's bytes. (Not a search of the base64
+    // text: random base64 holds any two letters, 'pw' included, a few runs in a hundred.)
+    expect(Buffer.from(enc.data, 'base64').includes('hunter2-not-in-the-clear')).toBe(false)
+    expect(await decryptSecrets(enc, 'correct horse')).toEqual(secrets)
   })
 
   it('returns null for a wrong passphrase or a tampered envelope', async () => {
