@@ -99,8 +99,12 @@ export default {
   'connection.accounts.withDefault': '{count} · default: {name}',
 
   // System
-  'companion.intro': 'Argos, the dog on your desktop: how you summon it and when it reminds you.',
+  'companion.intro': 'Argos, the companion on your desktop: which animal it is, how you summon it and when it reminds you.',
   'companion.loading': 'Loading the companion preferences',
+  'companion.character.label': 'Companion',
+  'companion.character.hint': 'The animal Argos appears as on your desktop.',
+  'companion.character.dog': 'Dog',
+  'companion.character.ferret': 'Ferret',
   'companion.shortcut.label': 'Shortcut to summon Argos',
   'companion.shortcut.hint': 'Works anywhere in Windows, even with Argos hidden.',
   'companion.shortcut.registered': 'Registered: {shortcut}',

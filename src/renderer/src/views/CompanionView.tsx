@@ -88,6 +88,7 @@ function useMinWidth(px: number): boolean {
 }
 
 const DEFAULT_PREFS: CompanionPrefs = {
+  character: 'dog',
   stayOnScreen: false,
   size: 'normal',
   shortcut: '',

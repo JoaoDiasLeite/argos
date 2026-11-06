@@ -12,6 +12,7 @@ import type {
   CompanionBubblePayload,
   CompanionCaptureResult,
   CompanionList,
+  CompanionCharacter,
   CompanionPetFacing,
   CompanionPetSize,
   CompanionPetState,
@@ -1496,6 +1497,8 @@ declare global {
         onPetFacing: (cb: (facing: CompanionPetFacing) => void) => () => void
         /** The size setting changed: the sprite scales with the window main already resized. */
         onPetSize: (cb: (size: CompanionPetSize) => void) => () => void
+        /** The animal changed in Settings; the pet swaps its sheets. */
+        onPetCharacter: (cb: (character: CompanionCharacter) => void) => () => void
         /** The capture with this id is waiting on the model for its date (plan §5.1, layer 2). */
         onCaptureThinking: (cb: (id: string) => void) => () => void
         onChanged: (cb: (list: CompanionList) => void) => () => void

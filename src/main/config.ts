@@ -4,7 +4,7 @@ import * as path from 'path'
 import * as os from 'os'
 import { readJsonFile } from './json-file'
 import { UiPrefs, UiPrefsPatch, applyUiPatch, migrateUiPrefs, resolveUiPrefs } from './ui-prefs-pure'
-import type { CompanionPrefs } from './companion-types'
+import { isCompanionCharacter, type CompanionPrefs } from './companion-types'
 import { cleanSubfolder, DEFAULT_OBSIDIAN_FOLDER } from './companion-obsidian-pure'
 // i18n.ts reads getConfig() from here: a cycle, but both sides only call each other at
 // run time, never while the modules load.
@@ -129,6 +129,7 @@ interface AppConfig {
 }
 
 const COMPANION_DEFAULTS: CompanionPrefs = {
+  character: 'dog',
   stayOnScreen: false,
   size: 'normal',
   shortcut: '',
@@ -270,6 +271,7 @@ function cleanCompanionPrefs(base: CompanionPrefs, patch: unknown): CompanionPre
   const int = (v: unknown, min: number, max: number, fallback: number): number =>
     typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : fallback
   return {
+    character: isCompanionCharacter(p.character) ? p.character : base.character,
     stayOnScreen: typeof p.stayOnScreen === 'boolean' ? p.stayOnScreen : base.stayOnScreen,
     size: p.size === 'small' || p.size === 'normal' || p.size === 'large' ? p.size : base.size,
     shortcut: typeof p.shortcut === 'string' ? p.shortcut.trim() : base.shortcut,

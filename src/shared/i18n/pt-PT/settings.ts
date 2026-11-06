@@ -99,8 +99,12 @@ const settings: Record<keyof typeof en, string> = {
   'connection.accounts.withDefault': '{count} · predefinida: {name}',
 
   // System
-  'companion.intro': 'O Argos, o cão no teu ambiente de trabalho: como o chamas e quando te avisa.',
+  'companion.intro': 'O Argos, o companheiro no teu ambiente de trabalho: que animal é, como o chamas e quando te avisa.',
   'companion.loading': 'A carregar as preferências do companheiro',
+  'companion.character.label': 'Companheiro',
+  'companion.character.hint': 'O animal com que o Argos aparece no teu ambiente de trabalho.',
+  'companion.character.dog': 'Cão',
+  'companion.character.ferret': 'Furão',
   'companion.shortcut.label': 'Atalho para chamar o Argos',
   'companion.shortcut.hint': 'Funciona em qualquer parte do Windows, mesmo com o Argos escondido.',
   'companion.shortcut.registered': 'Registado: {shortcut}',

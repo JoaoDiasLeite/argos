@@ -1241,6 +1241,8 @@ export function applyCompanionPrefs(next: CompanionPrefs): void {
     if (alive(win)) win.setContentProtection(next.hideFromCapture)
   }
   resizePet(next.size)
+  // The pet swaps its sheets live; a window opened later reads it from companion:state.
+  sendToPet('companion:pet-character', next.character)
   if (!next.walk || !next.stayOnScreen) stopWalk()
   if (next.stayOnScreen) {
     showPet()
