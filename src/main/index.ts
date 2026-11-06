@@ -1634,6 +1634,10 @@ ipcMain.handle('companion:dnd', (_, untilMs: unknown) => {
   if (untilMs !== null && !isFiniteNumber(untilMs)) return null
   return setCompanionQuiet(untilMs)
 })
+// The page zoom a companion window inherited from the main window's UI size: Chromium
+// zooms every window of one origin together. The companion page cancels it (main.tsx).
+ipcMain.handle('companion:zoom', (e) => e.sender.getZoomFactor())
+
 ipcMain.handle('companion:state', (): CompanionStateView => ({
   dndUntil: companionStore().getState().dndUntil ?? null,
   shortcut: companionShortcut(),

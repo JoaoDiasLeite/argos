@@ -1,6 +1,6 @@
 {
   "name": "argos",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "Desktop workspace for coding-agent CLIs — Claude Code, Codex and Gemini, across local, WSL and SSH sessions",
   "author": "João Dias Leite <joaofilipe.diasleite@gmail.com>",
   "license": "MIT",
@@ -114,15 +114,15 @@
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",
     "@types/ssh2": "^1.15.5",
-    "@vitejs/plugin-react": "^4.2.1",
+    "@vitejs/plugin-react": "^6.2.1",
     "electron": "^42.11.18",
     "electron-builder": "^26.15.3",
-    "electron-vite": "^2.0.0",
+    "electron-vite": "^6.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "typescript": "^5.3.3",
-    "vite": "^5.0.12",
-    "vitest": "^4.1.10"
+    "vite": "^8.3.6",
+    "vitest": "^4.1.12"
   },
   "allowScripts": {
     "node-pty@1.1.0": true,

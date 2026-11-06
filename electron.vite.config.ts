@@ -1,12 +1,11 @@
 import { resolve } from 'path'
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
     build: {
-      rollupOptions: {
+      rolldownOptions: {
         input: {
           index: resolve('src/main/index.ts'),
           // The ops MCP relay a terminal CLI starts under ELECTRON_RUN_AS_NODE: its own
@@ -20,9 +19,7 @@ export default defineConfig({
       }
     }
   },
-  preload: {
-    plugins: [externalizeDepsPlugin()]
-  },
+  preload: {},
   renderer: {
     resolve: {
       alias: {
@@ -31,7 +28,7 @@ export default defineConfig({
     },
     plugins: [react()],
     build: {
-      rollupOptions: {
+      rolldownOptions: {
         input: {
           // Main window + quick-launcher overlay + approval toast auxiliary
           // windows (see src/main/overlay.ts, toast.ts).

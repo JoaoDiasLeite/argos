@@ -12,6 +12,7 @@ import {
   dockSide,
   dogRect,
   floorUnder,
+  petArea,
   petHitTest,
   petStranded,
   petWindowSize,
@@ -39,7 +40,7 @@ import { FOLLOW_POLL_MS, followUpdate, shouldFollow, type FollowWatch } from './
 import { ROUTINE_POSE_MS, dayKey, isNight, routineMoment, type RoutineMoment } from './companion-routine-pure'
 import { fallY, isFall, type Fall } from './companion-fall-pure'
 import { BALL_SIZE, ballAt, fetchX, planThrow, type Throw } from './companion-ball-pure'
-import { PERCH_POLL_MS, isOverTitleBar, landingBelow, perchFollow, perchPosition } from './companion-perch-pure'
+import { PERCH_POLL_MS, isOverTitleBar, landingBelow, perchFollow, perchOnScreen, perchPosition } from './companion-perch-pure'
 import { foregroundWindow, windowBounds, windowsOnScreen } from './companion-win32'
 import { restingPetState } from './companion-quiet-pure'
 import { PET_SCALE, POSITIONS_VERSION, VOICE_SHORTCUT_DEFAULTS } from './companion-types'
@@ -605,16 +606,18 @@ export function endPetDrag(): void {
   // The display the dog was dropped on, by the window's centre; positions are clamped to
   // its work area, which also settles a drag across displays of different scale.
   const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
-  // Let go over the title bar of the window in front: he sits on its top edge (plan §13.3, R).
+  // Let go over the title bar of the window in front: he sits on its top edge (plan §13.3, R),
+  // unless that edge is the top of the screen and he would sit out of sight.
+  const areas = workAreas()
   const front = foregroundWindow()
-  if (front && isOverTitleBar(b, front.bounds)) {
+  if (front && isOverTitleBar(b, front.bounds) && perchOnScreen(perchBounds(b, front.bounds), areas)) {
     startPerch(front.hwnd, front.bounds, b)
     return
   }
   const pos = snapToEdge({ x: b.x, y: b.y }, display.workArea, { width: b.width, height: b.height })
   // Falling (not docked to a side): the top edge of a window on the way down catches him.
   const windows = pos.y > b.y ? windowsOnScreen(ownHandles()) : []
-  const landing = landingBelow(b, windows.map((w) => w.bounds), pos.y)
+  const landing = landingBelow(b, windows.map((w) => w.bounds), pos.y, areas)
   if (landing) {
     const onto = windows[landing.index]
     const x = perchPosition(b, onto.bounds, { width: b.width, height: b.height }).x
@@ -646,6 +649,15 @@ export function endPetDrag(): void {
 }
 
 // ─── Perching (plan §13.3, R) ──────────────────────────────────────────────────
+
+function workAreas(): Rect[] {
+  return screen.getAllDisplays().map((d) => d.workArea)
+}
+
+/** The pet window's bounds sat on this window's top edge. */
+function perchBounds(b: Rect, win: Rect): Rect {
+  return { ...b, ...perchPosition(b, win, { width: b.width, height: b.height }) }
+}
 
 /** Sit on the window's top edge and keep an eye on it. Nothing is saved: the place is the window's, not the display's. */
 function startPerch(hwnd: unknown, bounds: Rect, b: Rect): void {
@@ -681,6 +693,12 @@ function perchTick(): void {
   if (bounds.x === perch.last.x && bounds.y === perch.last.y) return
   const [x, y] = petWindow.getPosition()
   const pos = perchFollow({ x, y }, perch.last, bounds)
+  // Maximised, or moved up to the top of the screen: the edge he sat on is out of sight.
+  if (!perchOnScreen({ ...petWindow.getBounds(), ...pos }, workAreas())) {
+    unperch()
+    dropToFloor()
+    return
+  }
   perch.last = bounds
   movePet(petWindow, pos.x, pos.y)
   placeBubble()
@@ -721,7 +739,7 @@ function stepFall(win: BrowserWindow): void {
     // Landed on a window's top edge: sit on it, as if let go there. Gone meanwhile: on down.
     const bounds = windowBounds(onto)
     const b = win.getBounds()
-    if (bounds) startPerch(onto, bounds, b)
+    if (bounds && perchOnScreen(perchBounds(b, bounds), workAreas())) startPerch(onto, bounds, b)
     else dropToFloor()
     return
   }
@@ -1026,7 +1044,7 @@ function resizePet(size: CompanionPetSize): void {
   const next = petSize(size)
   const nextDog = dogRect({ x: 0, y: 0, ...next })
   const display = screen.getDisplayNearestPoint(feet)
-  const pos = clampToArea({ x: feet.x - nextDog.width / 2 - nextDog.x, y: feet.y - nextDog.height - nextDog.y }, next, display.workArea)
+  const pos = clampToArea({ x: feet.x - nextDog.width / 2 - nextDog.x, y: feet.y - nextDog.height - nextDog.y }, next, petArea(display.workArea, next))
   petWindow.setBounds({ x: pos.x, y: pos.y, width: next.width, height: next.height })
   sendToPet('companion:pet-size', size)
   if (petWindow.isVisible()) savePetPosition(display.id, pos)

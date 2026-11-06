@@ -1474,6 +1474,8 @@ declare global {
         /** Mute until this instant; null lifts it. Resolves to the stored value. */
         dnd: (untilMs: number | null) => Promise<number | null>
         state: () => Promise<CompanionStateView>
+        /** This window's page zoom, inherited from the main window's UI size (same origin). */
+        zoom: () => Promise<number>
         bubbleSize: (width: number, height: number) => void
         bubbleClose: () => void
         dragStart: () => void

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { BALL_SIZE, FLIGHT_MS, THROW_MIN_PX, THROW_PX, ballAt, fetchX, planThrow, throwDurationMs } from './companion-ball-pure'
-import { PET_MARGIN, PET_SIZE, defaultPetPosition, type Rect } from './companion-window-pure'
+import { PET_MARGIN, PET_SIZE, defaultPetPosition, sideBleed, type Rect } from './companion-window-pure'
 
 const AREA: Rect = { x: 0, y: 0, width: 1920, height: 1040 }
 const FLOOR_Y = AREA.height - PET_SIZE.height - PET_MARGIN
@@ -21,8 +21,9 @@ describe('planThrow', () => {
     const t = planThrow(pet(d.x, d.y), [AREA])!
     expect(t.facing).toBe('left')
     expect(t.fromX - t.toX).toBe(THROW_PX)
-    const tight: Rect = { x: 0, y: 0, width: PET_SIZE.width + 2 * PET_MARGIN + THROW_MIN_PX - 1, height: 1040 }
-    expect(planThrow(pet(PET_MARGIN), [tight])).toBeNull()
+    const bleed = sideBleed(PET_SIZE)
+    const tight: Rect = { x: 0, y: 0, width: PET_SIZE.width - 2 * bleed + 2 * PET_MARGIN + THROW_MIN_PX - 1, height: 1040 }
+    expect(planThrow(pet(PET_MARGIN - bleed), [tight])).toBeNull()
   })
 })
 

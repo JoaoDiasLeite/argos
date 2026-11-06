@@ -19,19 +19,53 @@ export interface Size {
 export type Rect = CompanionRect
 
 /**
- * The pet window is just big enough for the dog (plan §13.1): his 120×130 hit rect at
- * the bottom centre, the 9 px hop, and the badges over his head.
+ * The pet window is just big enough for the dog (plan §13.1): his 120×116 hit rect at
+ * the bottom centre, the 9 px hop, and the badges over his head. The 96×96 sprite sits
+ * on the window's bottom edge, so his paws are where the window ends.
  */
 export const PET_SIZE: Size = { width: 128, height: 152 }
 
 /** The 220×220 window before 3.1.0, whose saved positions are shifted once (see below). */
 export const LEGACY_PET_SIZE: Size = { width: 220, height: 220 }
 
-/** Gap between the pet window and the edge of the work area. */
-export const PET_MARGIN = 12
+/**
+ * Gap between the dog and the edge of the work area: none, so he stands on the taskbar
+ * and leans on the screen's sides.
+ */
+export const PET_MARGIN = 0
 
-/** Where the dog is drawn inside the pet window: bottom-centre, this big. */
-export const DOG_SIZE: Size = { width: 120, height: 130 }
+/** The hit rect inside the pet window: bottom-centre, this big. */
+export const DOG_SIZE: Size = { width: 120, height: 116 }
+
+/** The sprite inside the window: bottom-centre, its paws on the window's bottom edge. */
+export const SPRITE_SIZE: Size = { width: 96, height: 96 }
+
+/**
+ * How far the window may hang past a side of the work area: the transparent strip beside
+ * the sprite, scaled with the window. That way the dog, not his window, touches the edge.
+ */
+export function sideBleed(size: Pick<Size, 'width'>): number {
+  return Math.round(((PET_SIZE.width - SPRITE_SIZE.width) / 2) * (size.width / PET_SIZE.width))
+}
+
+/**
+ * How far the window may hang past the top of the work area: the transparent strip over
+ * the sprite (room for the hop and the badges), scaled with the window. Docked in a top
+ * corner, the dog's head then touches the top of the screen.
+ */
+export function topBleed(size: Pick<Size, 'height'>): number {
+  return Math.round((PET_SIZE.height - SPRITE_SIZE.height) * (size.height / PET_SIZE.height))
+}
+
+/**
+ * The area the pet window may occupy: the work area, widened by sideBleed on both sides
+ * and raised by topBleed, so the dog (not the window) is what meets each edge.
+ */
+export function petArea(workArea: Rect, size: Size): Rect {
+  const bleed = sideBleed(size)
+  const top = topBleed(size)
+  return { x: workArea.x - bleed, y: workArea.y - top, width: workArea.width + 2 * bleed, height: workArea.height + top }
+}
 
 /** The hit area is a generous rounded rect, not a per-pixel test (plan §9.1). */
 export const HIT_RADIUS = 24
@@ -46,6 +80,7 @@ const clamp = (v: number, min: number, max: number): number => Math.min(Math.max
 
 /** Bottom-right of the work area, PET_MARGIN in. */
 export function defaultPetPosition(workArea: Rect, size = PET_SIZE, margin = PET_MARGIN): Point {
+  workArea = petArea(workArea, size)
   return {
     x: Math.round(workArea.x + workArea.width - size.width - margin),
     y: Math.round(workArea.y + workArea.height - size.height - margin)
@@ -94,12 +129,14 @@ export const DOCK_ZONE = 48
  * (companion-perch-pure's landingBelow).
  */
 export function snapToEdge(pos: Point, workArea: Rect, size = PET_SIZE, margin = PET_MARGIN): Point {
+  const lowerThird = workArea.height / 3
+  workArea = petArea(workArea, size)
   const bottom = workArea.y + workArea.height
   const right = workArea.x + workArea.width
   const nearLeft = pos.x - workArea.x <= DOCK_ZONE
   const nearRight = right - (pos.x + size.width) <= DOCK_ZONE
   const sideX = nearLeft ? workArea.x + margin : right - size.width - margin
-  if (pos.y + size.height >= bottom - workArea.height / 3) {
+  if (pos.y + size.height >= bottom - lowerThird) {
     // The floor; near a side he tucks into the corner (plan §13.1, leaning).
     return clampToArea({ x: nearLeft || nearRight ? sideX : pos.x, y: bottom - size.height - margin }, size, workArea)
   }
@@ -109,6 +146,7 @@ export function snapToEdge(pos: Point, workArea: Rect, size = PET_SIZE, margin =
 
 /** The floor of the work area straight under `pos`: where he lands when the window he sat on went. */
 export function floorUnder(pos: Point, workArea: Rect, size = PET_SIZE, margin = PET_MARGIN): Point {
+  workArea = petArea(workArea, size)
   return clampToArea({ x: pos.x, y: workArea.y + workArea.height - size.height - margin }, size, workArea)
 }
 
@@ -119,6 +157,7 @@ export type DockSide = 'left' | 'right'
  * edge above the floor. On the floor, corner or not, he sits as usual.
  */
 export function dockSide(pos: Point, workArea: Rect, size = PET_SIZE, margin = PET_MARGIN, floorTolerance = 40): DockSide | null {
+  workArea = petArea(workArea, size)
   const bottom = workArea.y + workArea.height
   if (bottom - (pos.y + size.height) <= floorTolerance) return null
   if (pos.x <= workArea.x + margin) return 'left'
@@ -126,14 +165,20 @@ export function dockSide(pos: Point, workArea: Rect, size = PET_SIZE, margin = P
   return null
 }
 
+/** A saved position this close above the floor was the floor, under an older margin. */
+const FLOOR_SNAP = 40
+
 /**
  * Where to show the pet: the position saved for this display while it is still wholly
  * inside the work area (a resolution change or a moved taskbar can strand it), else the
- * default corner.
+ * default corner. A position just above the floor goes down onto it: it was saved when
+ * the dog stood a margin up from the taskbar.
  */
 export function restoredPetPosition(saved: Point | undefined, workArea: Rect, size = PET_SIZE): Point {
-  if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) && isInsideArea(saved, size, workArea)) {
-    return { x: saved.x, y: saved.y }
+  const area = petArea(workArea, size)
+  if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) && isInsideArea(saved, size, area)) {
+    const floor = area.y + area.height - size.height
+    return { x: saved.x, y: floor - saved.y <= FLOOR_SNAP ? floor : saved.y }
   }
   return defaultPetPosition(workArea, size)
 }
@@ -159,14 +204,26 @@ export function dogRect(pet: Rect): Rect {
   }
 }
 
+/** The sprite's rect on screen, for a pet window with these bounds (scaled like dogRect). */
+export function spriteRect(pet: Rect): Rect {
+  const sx = pet.width / PET_SIZE.width
+  const sy = pet.height / PET_SIZE.height
+  return {
+    x: pet.x + ((PET_SIZE.width - SPRITE_SIZE.width) / 2) * sx,
+    y: pet.y + (PET_SIZE.height - SPRITE_SIZE.height) * sy,
+    width: SPRITE_SIZE.width * sx,
+    height: SPRITE_SIZE.height * sy
+  }
+}
+
 /**
  * True when the dog is wholly inside none of these work areas: the display under him
- * went away, shrank or moved (plan §13.3, M3), so he has to be placed again. The dog,
- * not the window: a taskbar moving under the transparent part of the window is not a
- * reason to move him.
+ * went away, shrank or moved (plan §13.3, M3), so he has to be placed again. The sprite,
+ * not the window or the hit rect: the window hangs past the sides by design (sideBleed),
+ * and a taskbar moving under its transparent part is not a reason to move him.
  */
 export function petStranded(pet: Rect, workAreas: Rect[]): boolean {
-  const dog = dogRect(pet)
+  const dog = spriteRect(pet)
   return !workAreas.some(
     (a) => dog.x >= a.x && dog.y >= a.y && dog.x + dog.width <= a.x + a.width && dog.y + dog.height <= a.y + a.height
   )

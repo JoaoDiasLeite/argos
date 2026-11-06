@@ -195,6 +195,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     dismiss: (id: string) => ipcRenderer.invoke('companion:dismiss', id),
     dnd: (untilMs: number | null) => ipcRenderer.invoke('companion:dnd', untilMs),
     state: () => ipcRenderer.invoke('companion:state'),
+    zoom: () => ipcRenderer.invoke('companion:zoom'),
     bubbleSize: (width: number, height: number) => ipcRenderer.send('companion:bubble-size', { width, height }),
     bubbleClose: () => ipcRenderer.send('companion:bubble-close'),
     dragStart: () => ipcRenderer.send('companion:drag-start'),
