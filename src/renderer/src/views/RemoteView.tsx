@@ -614,19 +614,19 @@ export default function RemoteView({
             : null
 
     const lastChecked = Math.max(p.conn?.at ?? 0, p.claude?.at ?? 0)
+    const cwd = selDistro ? wslPaths[selDistro.name] ?? '' : ''
+    const acct = selDistro ? accountFor(selDistro.name) : undefined
     const claudeValue = p.claude ? (
       p.claude.ok ? (
-        // TODO(port): the logged-in account; the check only returns `claude --version`.
-        <span>{p.claude.message}</span>
+        // The check only returns `claude --version`; the account comes from the distro's
+        // .claude.json, read with the sources.
+        <span>{acct?.email ? `${p.claude.message} · ${acct.email}` : p.claude.message}</span>
       ) : (
         <span className="rv-dd-err">{t('remote.col.checkFailed')}</span>
       )
     ) : (
       <span className="rv-dd-muted">{t('remote.col.notChecked')}</span>
     )
-
-    const cwd = selDistro ? wslPaths[selDistro.name] ?? '' : ''
-    const acct = selDistro ? accountFor(selDistro.name) : undefined
 
     const connect = () => (selDistro ? onOpenWslSession(selDistro.name, true) : onOpenSession(selHost!, true))
     const newTerminal = () => (selDistro ? onConnectWsl(selDistro.name, cwd || undefined) : onConnect(selHost!))
