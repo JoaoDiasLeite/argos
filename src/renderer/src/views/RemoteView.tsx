@@ -358,6 +358,9 @@ export default function RemoteView({
 
   const hostValid = !!editing && !!editing.name.trim() && !!editing.host.trim() && !!editing.username.trim()
 
+  // A saved secret exists for the auth type being edited (the main process drops the other).
+  const canRemoveSecret = !!editing?.id && hosts.some((h) => h.id === editing.id && h.hasSecret && h.authType === editing.authType)
+
   const openEditor = (h: SshHostInput) => {
     editorOpenedAt.current = Date.now()
     setWriteError(null)
@@ -1072,9 +1075,14 @@ export default function RemoteView({
                 <input
                   className="text-input"
                   type="password"
-                  placeholder={editing.id ? t('remote.form.unchanged') : ''}
+                  placeholder={editing.password === null ? t('remote.form.removed') : editing.id ? t('remote.form.unchanged') : ''}
                   onChange={(e) => setEditing({ ...editing, password: e.target.value })}
                 />
+                {canRemoveSecret && editing.password === undefined && (
+                  <button type="button" className="btn-ghost small" onClick={() => setEditing({ ...editing, password: null })}>
+                    {t('remote.form.removePassword')}
+                  </button>
+                )}
               </div>
             )}
             {editing.authType === 'key' && (
@@ -1111,9 +1119,14 @@ export default function RemoteView({
                   <input
                     className="text-input"
                     type="password"
-                    placeholder={editing.id ? t('remote.form.unchanged') : ''}
+                    placeholder={editing.passphrase === null ? t('remote.form.removed') : editing.id ? t('remote.form.unchanged') : ''}
                     onChange={(e) => setEditing({ ...editing, passphrase: e.target.value })}
                   />
+                  {canRemoveSecret && editing.passphrase === undefined && (
+                    <button type="button" className="btn-ghost small" onClick={() => setEditing({ ...editing, passphrase: null })}>
+                      {t('remote.form.removePassphrase')}
+                    </button>
+                  )}
                 </div>
               </>
             )}

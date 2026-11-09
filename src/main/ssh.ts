@@ -5,7 +5,7 @@ import { Client, ConnectConfig } from 'ssh2'
 import { randomUUID } from 'crypto'
 import { verifyHostKey } from './ssh-trust'
 import { t } from './i18n'
-import { cleanHostFields, decodeHostsFile, refuseOverwriteMessage, type HostsRead } from './ssh-host-pure'
+import { cleanHostFields, decodeHostsFile, mergeSecrets, refuseOverwriteMessage, type HostsRead } from './ssh-host-pure'
 
 export type SshAuthType = 'password' | 'key' | 'agent'
 
@@ -21,6 +21,13 @@ export interface SshHost {
   passphrase?: string
   remotePath?: string
   claudePath?: string
+}
+
+/** What the renderer sends: `undefined` keeps a stored secret, `null` clears it. */
+export type SshHostInput = Omit<SshHost, 'id' | 'password' | 'passphrase'> & {
+  id?: string
+  password?: string | null
+  passphrase?: string | null
 }
 
 /** Host with secrets stripped — safe to hand to the renderer. */
@@ -97,20 +104,16 @@ function genId(): string {
   return `ssh_${randomUUID()}`
 }
 
-export function saveHost(raw: SshHost): HostsWriteResult {
-  const input = cleanHostFields(raw)
+export function saveHost(raw: SshHostInput): HostsWriteResult {
+  const { password: _p, passphrase: _pp, ...fields } = cleanHostFields(raw)
   return updateHosts((hosts) => {
-    const idx = input.id ? hosts.findIndex((h) => h.id === input.id) : -1
+    const idx = fields.id ? hosts.findIndex((h) => h.id === fields.id) : -1
+    const prev = idx >= 0 ? hosts[idx] : undefined
+    const secrets = mergeSecrets(prev, raw)
     if (idx >= 0) {
-      const prev = hosts[idx]
-      // Preserve existing secrets if the renderer didn't supply new ones (it never receives them).
-      hosts[idx] = {
-        ...input,
-        password: input.password || prev.password,
-        passphrase: input.passphrase || prev.passphrase
-      }
+      hosts[idx] = { ...fields, id: fields.id as string, ...secrets }
     } else {
-      hosts.push({ ...input, id: input.id || genId() })
+      hosts.push({ ...fields, id: fields.id || genId(), ...secrets })
     }
     return hosts
   })

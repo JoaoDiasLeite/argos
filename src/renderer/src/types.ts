@@ -737,9 +737,10 @@ export interface SshHostInput {
   port: number
   username: string
   authType: SshAuthType
-  password?: string
+  /** undefined keeps the stored secret, null clears it, a non-empty string replaces it. */
+  password?: string | null
   privateKeyPath?: string
-  passphrase?: string
+  passphrase?: string | null
   remotePath?: string
   claudePath?: string
 }

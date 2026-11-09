@@ -38,6 +38,33 @@ export function cleanHostFields<T extends HostText>(input: T): T {
   return out
 }
 
+export interface HostSecrets {
+  password?: string
+  passphrase?: string
+}
+
+/**
+ * The secrets a saved host ends up with. For each field: `undefined` (or an empty string)
+ * keeps the stored value, `null` clears it, a non-empty string replaces it. A secret the
+ * chosen auth type does not use is dropped, so switching auth type leaves nothing stale.
+ */
+export function mergeSecrets(
+  prev: HostSecrets | undefined,
+  input: { authType: 'password' | 'key' | 'agent'; password?: string | null; passphrase?: string | null }
+): HostSecrets {
+  const pick = (next: string | null | undefined, old: string | undefined): string | undefined =>
+    next === null ? undefined : next ? next : old
+  const out: HostSecrets = {}
+  if (input.authType === 'password') {
+    const v = pick(input.password, prev?.password)
+    if (v) out.password = v
+  } else if (input.authType === 'key') {
+    const v = pick(input.passphrase, prev?.passphrase)
+    if (v) out.passphrase = v
+  }
+  return out
+}
+
 /**
  * Reading the saved hosts file. A failed read must never look like "no hosts": the write
  * paths do read-modify-write, so mistaking a transient decrypt failure for an empty list
