@@ -101,6 +101,41 @@ export function reduceThreadNames(entries: Iterable<unknown>): Map<string, strin
   return names
 }
 
+/**
+ * One `session_index.jsonl` line, the shape Codex writes on a rename: `{ id, thread_name,
+ * updated_at }`, newline included.
+ */
+export function threadNameLine(id: string, name: string, at: Date): string {
+  return JSON.stringify({ id, thread_name: name, updated_at: at.toISOString() }) + '\n'
+}
+
+/** The names of `ids` from a reduced index, as a plain record; undefined when none is named. */
+export function pickThreadNames(names: Map<string, string>, ids: Iterable<string>): Record<string, string> | undefined {
+  const out: Record<string, string> = {}
+  for (const id of ids) {
+    const name = names.get(id)
+    if (name) out[id] = name
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+/**
+ * The imported names to append to a home's index: add-only, so an id the local index
+ * already names keeps its local name, and an empty imported name is not written.
+ */
+export function missingThreadNames(
+  local: Map<string, string>,
+  imported: Record<string, string> | undefined
+): [id: string, name: string][] {
+  const out: [string, string][] = []
+  for (const [id, raw] of Object.entries(imported ?? {})) {
+    const name = typeof raw === 'string' ? raw.trim() : ''
+    if (!id || !name || local.has(id)) continue
+    out.push([id, name])
+  }
+  return out
+}
+
 /** The `input_text` / `output_text` parts of a Codex message, joined. */
 export function codexContentText(content: unknown): string {
   if (typeof content === 'string') return content

@@ -31,7 +31,8 @@ import {
   splitHostSecrets,
   stripLocalStoreKeys,
   type BundleHeader,
-  type BundleLine
+  type BundleLine,
+  type ProjectLine
 } from './profile-transfer-pure'
 
 const FROM_HOME = 'C:\\Users\\JoãoLeite'
@@ -361,6 +362,22 @@ describe('bundle stream', () => {
     expect(() => parseLine('{"type":"project","index":0}')).toThrow(BundleError)
     expect(() => parseLine('{"type":"chat"}')).toThrow(BundleError)
     expect(parseLine('{"type":"profile"}')).toEqual({ type: 'profile', json: {}, dirs: {}, sshHosts: [] })
+  })
+
+  it("carries a codex project line's thread names, and drops a malformed map", async () => {
+    const codex: BundleLine = {
+      ...(project as ProjectLine),
+      sourceId: 'codex',
+      provider: 'codex',
+      threadNames: { 'id-1': 'Fix the build', 'id-2': 'Olá ção' }
+    }
+    const { lines } = await readAll(await writeBundle([HEADER, profile, codex]))
+    expect(lines).toEqual([profile, codex])
+    const base = encodeLine(project).trim().slice(0, -1)
+    expect(parseLine(`${base},"threadNames":{"a":1}}`)).toEqual(project)
+    expect(parseLine(`${base},"threadNames":["a"]}`)).toEqual(project)
+    expect(parseLine(`${base},"threadNames":"a"}`)).toEqual(project)
+    expect(parseLine(`${base},"threadNames":{}}`)).toEqual(project)
   })
 
   it('counts transcripts the same way for export and preview', () => {

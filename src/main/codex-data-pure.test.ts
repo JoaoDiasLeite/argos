@@ -7,7 +7,10 @@ import {
   groupRolloutsByCwd,
   parseRolloutFileName,
   pathBasename,
-  reduceThreadNames
+  missingThreadNames,
+  pickThreadNames,
+  reduceThreadNames,
+  threadNameLine
 } from './codex-data-pure'
 
 describe('encodeProjectPath', () => {
@@ -173,5 +176,31 @@ describe('groupRolloutsByCwd', () => {
 
   it('is empty for an empty scan', () => {
     expect(groupRolloutsByCwd([])).toEqual([])
+  })
+})
+
+describe('thread names across machines', () => {
+  it('writes the line Codex writes on a rename', () => {
+    const line = threadNameLine('id-1', 'Fix it', new Date('2026-11-09T10:00:00.000Z'))
+    expect(line).toBe('{"id":"id-1","thread_name":"Fix it","updated_at":"2026-11-09T10:00:00.000Z"}\n')
+    expect(reduceThreadNames([JSON.parse(line)]).get('id-1')).toBe('Fix it')
+  })
+
+  it('picks only the named ids asked for', () => {
+    const names = new Map([
+      ['a', 'A'],
+      ['b', 'B']
+    ])
+    expect(pickThreadNames(names, ['a', 'c'])).toEqual({ a: 'A' })
+    expect(pickThreadNames(names, ['c'])).toBeUndefined()
+  })
+
+  it('appends only the ids the local index does not name', () => {
+    const local = new Map([['a', 'Local A']])
+    expect(missingThreadNames(local, { a: 'Imported A', b: 'B', c: '  ', d: ' D ' })).toEqual([
+      ['b', 'B'],
+      ['d', 'D']
+    ])
+    expect(missingThreadNames(local, undefined)).toEqual([])
   })
 })

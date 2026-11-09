@@ -16,8 +16,16 @@ import type {
 import { PROFILE_FILE_EXTENSION } from '../shared/profile-transfer'
 import { t } from './i18n'
 import { getAllProjects, getSources, type ClaudeSource } from './claude-data'
-import { scanCodexArchived, scanCodexRollouts, defaultCodexHome, invalidateCodexScan } from './codex-data'
-import { encodeProjectPath } from './codex-data-pure'
+import {
+  appendThreadNames,
+  codexIndexPath,
+  scanCodexArchived,
+  scanCodexRollouts,
+  defaultCodexHome,
+  invalidateCodexScan,
+  threadNames
+} from './codex-data'
+import { encodeProjectPath, missingThreadNames, pickThreadNames } from './codex-data-pure'
 import { readHostsWithSecrets, updateHostsWith, type SshHost } from './ssh'
 import { getApiKey, setApiKey, loadAuthState } from './auth'
 import { loadAccounts } from './accounts'
@@ -178,6 +186,8 @@ interface ProjectFiles {
   root: string
   files: WalkedFile[]
   transcripts: number
+  /** Codex only: the session ids of the rollouts in `files`. */
+  sessionIds?: string[]
 }
 
 /** The files one project's transcripts occupy, Claude Code or Codex. */
@@ -188,15 +198,17 @@ async function projectFiles(src: ClaudeSource, encodedDir: string): Promise<Proj
       (f) => encodeProjectPath(f.cwd) === encodedDir
     )
     const files: WalkedFile[] = []
+    const sessionIds: string[] = []
     for (const f of facts) {
       try {
         const st = await fs.promises.stat(f.file)
         files.push({ abs: f.file, rel: path.relative(home, f.file).split(path.sep).join('/'), size: st.size })
+        sessionIds.push(f.sessionId)
       } catch {
         // rotated out from under the scan
       }
     }
-    return { root: home, files, transcripts: files.length }
+    return { root: home, files, transcripts: files.length, sessionIds }
   }
   const root = path.join(src.projectsDir, encodedDir)
   const files = await walkFiles(root)
@@ -360,10 +372,26 @@ export async function exportProfile(win: BrowserWindow | null, req: ExportReques
 
     // Each project, then its files, read one at a time as they are written.
     let transcripts = 0
+    // Codex thread names live in the home's session_index.jsonl, read once per source.
+    const namesBySource = new Map<string, Promise<Map<string, string>>>()
+    const codexNames = (c: CandidateWithSource): Promise<Map<string, string>> => {
+      const codex = c.source.codex
+      if (!codex) return Promise.resolve(new Map())
+      let names = namesBySource.get(c.candidate.sourceId)
+      if (!names) {
+        names = threadNames(codex).catch((e) => {
+          console.warn(`[profile] codex thread names unreadable, exported without them: ${errMsg(e)}`)
+          return new Map<string, string>()
+        })
+        namesBySource.set(c.candidate.sourceId, names)
+      }
+      return names
+    }
     for (const [index, c] of candidates.entries()) {
       const pf = await projectFiles(c.source, c.encodedDir)
       const projectTranscripts = pf.files.filter((f) => isTranscriptRel(f.rel, c.candidate.provider)).length
       transcripts += projectTranscripts
+      const names = pf.sessionIds?.length ? pickThreadNames(await codexNames(c), pf.sessionIds) : undefined
       await writer.write({
         type: 'project',
         index,
@@ -376,7 +404,8 @@ export async function exportProfile(win: BrowserWindow | null, req: ExportReques
         realPath: c.candidate.realPath,
         encodedDir: c.encodedDir,
         files: pf.files.length,
-        transcripts: projectTranscripts
+        transcripts: projectTranscripts,
+        ...(names ? { threadNames: names } : {})
       })
       for (const f of pf.files) {
         let buf: Buffer
@@ -858,6 +887,7 @@ export async function applyImport(req: ImportRequest): Promise<ImportResult> {
       if (!line) continue
       await applyLine(ctx, line, projects, skipped)
     }
+    await applyThreadNames(projects)
     reloadAfterImport()
     return { ok: true, backupDir, skipped }
   } catch (e) {
@@ -909,6 +939,28 @@ async function applyLine(ctx: ImportContext, line: BundleLine, projects: Map<num
       skipped.push(state.failure)
     } else {
       state.failure.reason = t('main.profile.skip.files', { count: state.failed, error: state.firstError })
+    }
+  }
+}
+
+/**
+ * Once every project's rollouts are written, name the imported Codex sessions in their
+ * destination home's `session_index.jsonl` — add-only, so a session already named here
+ * keeps its name. Grouped per home: the index is read once and appended to once.
+ * A failure only costs the names; the transcripts are already in place.
+ */
+async function applyThreadNames(projects: Map<number, ProjectState>): Promise<void> {
+  const byHome = new Map<string, Record<string, string>>()
+  for (const { plan } of projects.values()) {
+    if (plan.dest?.kind !== 'codex' || !plan.line.threadNames) continue
+    byHome.set(plan.dest.home, { ...byHome.get(plan.dest.home), ...plan.line.threadNames })
+  }
+  for (const [home, imported] of byHome) {
+    try {
+      const local = await threadNames({ indexPath: codexIndexPath(home) })
+      await appendThreadNames(home, missingThreadNames(local, imported))
+    } catch (e) {
+      console.warn(`[profile] codex thread names not imported into ${home}: ${errMsg(e)}`)
     }
   }
 }

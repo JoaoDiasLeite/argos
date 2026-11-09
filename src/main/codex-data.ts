@@ -12,7 +12,8 @@ import {
   groupRolloutsByCwd,
   parseRolloutFileName,
   reduceThreadNames,
-  rolloutDateSegments
+  rolloutDateSegments,
+  threadNameLine
 } from './codex-data-pure'
 import {
   deleteTranscript,
@@ -69,8 +70,13 @@ function makeSource(id: string, label: string, home: string): CodexSource {
     label,
     home,
     sessionsDir: path.join(home, 'sessions'),
-    indexPath: path.join(home, 'session_index.jsonl')
+    indexPath: codexIndexPath(home)
   }
+}
+
+/** Where a Codex home keeps its thread names. */
+export function codexIndexPath(home: string): string {
+  return path.join(home, 'session_index.jsonl')
 }
 
 /** The machine's own Codex home, honouring an externally set CODEX_HOME. */
@@ -307,7 +313,7 @@ export async function codexProjects(src: CodexSource): Promise<CCProject[]> {
  * a line on every rename and nothing bounds it. A missing file is a home where
  * nothing has been named yet, which is not an error.
  */
-async function threadNames(src: CodexSource): Promise<Map<string, string>> {
+export async function threadNames(src: Pick<CodexSource, 'indexPath'>): Promise<Map<string, string>> {
   const entries: unknown[] = []
   try {
     for await (const { obj } of iterJsonlEntries(src.indexPath)) entries.push(obj)
@@ -536,15 +542,21 @@ export async function codexRenameSession(
   const file = await rolloutFileFor(src, sessionId, false)
   if (!file) return { ok: false, error: 'not-found' }
   try {
-    await fs.promises.appendFile(
-      src.indexPath,
-      JSON.stringify({ id: sessionId, thread_name: title, updated_at: new Date().toISOString() }) +
-        '\n'
-    )
+    await fs.promises.appendFile(src.indexPath, threadNameLine(sessionId, title, new Date()))
     return { ok: true }
   } catch (e) {
     return { ok: false, error: 'failed', message: (e as Error).message }
   }
+}
+
+/**
+ * Name several sessions of a home at once, with the same line a rename writes. The
+ * caller decides which ids need it (see `missingThreadNames`); one append for all.
+ */
+export async function appendThreadNames(home: string, entries: [id: string, name: string][]): Promise<void> {
+  if (!entries.length) return
+  const at = new Date()
+  await fs.promises.appendFile(codexIndexPath(home), entries.map(([id, name]) => threadNameLine(id, name, at)).join(''))
 }
 
 export async function codexArchiveSession(
