@@ -86,10 +86,12 @@ import {
   listHosts,
   saveHost,
   deleteHost,
+  getHost,
   testConnection,
   testClaude,
-  SshHost
+  SshHostInput
 } from './ssh'
+import { connectionFieldsChanged } from './ssh-host-pure'
 import { listSshKeys, generateKey, readPublicKey } from './ssh-keys'
 import {
   sftpConnect,
@@ -2656,8 +2658,18 @@ ipcMain.handle('ops:pending', () => ({
 // ─── SSH hosts / remote ─────────────────────────────────────────────────────
 
 ipcMain.handle('ssh:list', () => listHosts())
-ipcMain.handle('ssh:save', (_, host: SshHost) => saveHost(host))
-ipcMain.handle('ssh:delete', (_, id: string) => deleteHost(id))
+// The pooled sftp connection was opened with the old host, port, user and secret, so a
+// change to any of them (or deleting the host) must close it; the next use reconnects.
+ipcMain.handle('ssh:save', (_, host: SshHostInput) => {
+  const prev = host.id ? getHost(host.id) : null
+  const res = saveHost(host)
+  if (res.ok && prev && connectionFieldsChanged(prev, host)) void sftpDisconnect(prev.id)
+  return res
+})
+ipcMain.handle('ssh:delete', (_, id: string) => {
+  void sftpDisconnect(id)
+  return deleteHost(id)
+})
 ipcMain.handle('ssh:test', (_, id: string) => testConnection(id))
 ipcMain.handle('ssh:test-claude', (_, id: string) => testClaude(id))
 ipcMain.handle('ssh:keys-list', () => listSshKeys())

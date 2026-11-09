@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mergeSecrets, cleanHostFields, cleanHostText, decodeHostsFile, refuseOverwriteMessage } from './ssh-host-pure'
+import { mergeSecrets, cleanHostFields, cleanHostText, decodeHostsFile, refuseOverwriteMessage, connectionFieldsChanged } from './ssh-host-pure'
 import { makeT } from '../shared/i18n'
 
 describe('cleanHostText', () => {
@@ -129,5 +129,33 @@ describe('mergeSecrets', () => {
   it('drops the secret the auth type does not use', () => {
     expect(mergeSecrets(prev, { authType: 'agent' })).toEqual({})
     expect(mergeSecrets(prev, { authType: 'key', password: 'typed' })).toEqual({ passphrase: 'oldpp' })
+  })
+})
+
+describe('connectionFieldsChanged', () => {
+  const prev = { host: 'h', port: 22, username: 'u', authType: 'key' as const, privateKeyPath: '/k' }
+
+  it('is false when nothing changed, or only non-connection fields did', () => {
+    expect(connectionFieldsChanged(prev, { ...prev })).toBe(false)
+    expect(connectionFieldsChanged(prev, { ...prev, name: 'x', remotePath: '/r', claudePath: 'c' } as never)).toBe(false)
+  })
+
+  it('treats a missing port as 22', () => {
+    expect(connectionFieldsChanged(prev, { ...prev, port: undefined })).toBe(false)
+  })
+
+  it('is true for each connection field', () => {
+    expect(connectionFieldsChanged(prev, { ...prev, host: 'h2' })).toBe(true)
+    expect(connectionFieldsChanged(prev, { ...prev, port: 2222 })).toBe(true)
+    expect(connectionFieldsChanged(prev, { ...prev, username: 'v' })).toBe(true)
+    expect(connectionFieldsChanged(prev, { ...prev, authType: 'agent' })).toBe(true)
+    expect(connectionFieldsChanged(prev, { ...prev, privateKeyPath: '/k2' })).toBe(true)
+  })
+
+  it('is true when a secret is replaced or cleared, false when untouched', () => {
+    expect(connectionFieldsChanged(prev, { ...prev, passphrase: 'new' })).toBe(true)
+    expect(connectionFieldsChanged(prev, { ...prev, password: null })).toBe(true)
+    expect(connectionFieldsChanged(prev, { ...prev, passphrase: undefined })).toBe(false)
+    expect(connectionFieldsChanged(prev, { ...prev, passphrase: '' })).toBe(false)
   })
 })
