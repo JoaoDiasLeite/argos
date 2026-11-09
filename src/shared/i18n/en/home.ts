@@ -44,6 +44,10 @@ export default {
   'recent.title': 'Pick up where you left off',
   'recent.showMore': 'Show {n} more',
 
+  'earlier.title.one': 'Earlier today · {n} finished',
+  'earlier.title.other': 'Earlier today · {n} finished',
+  'earlier.label': 'Earlier today',
+
   'projects.title': 'Recent projects',
   'projects.readingGit': 'Reading git status',
   'projects.noGit': 'no git',

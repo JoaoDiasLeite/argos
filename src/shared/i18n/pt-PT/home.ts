@@ -45,6 +45,10 @@ const home: Record<keyof typeof en, string> = {
   'recent.title': 'Continua onde paraste',
   'recent.showMore': 'Mostrar mais {n}',
 
+  'earlier.title.one': 'Hoje mais cedo · {n} terminado',
+  'earlier.title.other': 'Hoje mais cedo · {n} terminados',
+  'earlier.label': 'Hoje mais cedo',
+
   'projects.title': 'Projetos recentes',
   'projects.readingGit': 'A ler o estado do git',
   'projects.noGit': 'sem git',

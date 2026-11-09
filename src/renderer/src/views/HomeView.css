@@ -209,3 +209,11 @@
 
 /* The changes panel (compact density) is positioned against this, over the main column. */
 .home-view { position: relative; }
+
+/* Earlier today: a fold, closed until asked for. */
+.home-fold { display: flex; align-items: center; gap: 6px; width: 100%; padding: 0; background: none; border: 0; color: inherit; cursor: pointer; text-align: left; }
+.home-fold .eyebrow { margin: 0; }
+.home-fold svg { transition: transform 0.12s; transform: rotate(-90deg); flex: none; }
+.home-fold[aria-expanded='true'] svg { transform: none; }
+.home-earlier-state { flex: none; font-size: 12px; color: var(--text-2); }
+.home-earlier-state.error { color: var(--error); }

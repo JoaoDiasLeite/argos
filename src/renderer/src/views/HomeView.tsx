@@ -77,6 +77,21 @@ export interface HomeRecent {
   preview: string
 }
 
+/** A chat or an ops run that finished today: the "Earlier today" fold. */
+export type HomeEarlier =
+  | { kind: 'chat'; id: string; name: string; projectName?: string; at: number }
+  | {
+      kind: 'intervention'
+      runId: string
+      hostId?: string
+      hostName: string
+      runbook: string
+      headline?: string
+      ok?: boolean
+      aborted?: boolean
+      at: number
+    }
+
 export interface HomeStart {
   projectPath?: string
   projectName?: string
@@ -113,6 +128,7 @@ interface Props {
   repos: HomeRepo[]
   recentProjects: HomeProject[]
   recent: HomeRecent[]
+  earlier: HomeEarlier[]
   start: HomeStart
   startOptions: HomeStartOptions
   /** Null when no account is logged in for the default CLI. */
@@ -123,6 +139,8 @@ interface Props {
   onOpenSession: (id: string) => void
   onOpenServer: (id: string) => void
   onOpenIntervention: (id: string) => void
+  /** A finished run: the ops start screen, with its host chosen when it had one. */
+  onOpenRun: (hostId?: string) => void
   onOpenRepo: (key: string) => void
   /** Picks the changes viewer's frame: a modal when comfortable, a side panel when compact. */
   density: 'comfortable' | 'compact'
@@ -432,6 +450,8 @@ export default function HomeView({
   onOpenSession,
   onOpenServer,
   onOpenIntervention,
+  onOpenRun,
+  earlier,
   onOpenRepo,
   density
 }: Props) {
@@ -439,6 +459,7 @@ export default function HomeView({
   const { locale } = useLanguage()
   const [prompt, setPrompt] = useState('')
   const [recentOpen, setRecentOpen] = useState(false)
+  const [earlierOpen, setEarlierOpen] = useState(false)
   // One repo open at a time: two expanded file lists in a 460 px column would push
   // everything under them off screen.
   const [expandedRepo, setExpandedRepo] = useState<string | null>(null)
@@ -818,9 +839,45 @@ export default function HomeView({
             </section>
           )}
 
-          {/* TODO(port): "Earlier today · N finished" (finished chats and ops runs from
-              today, with exit codes and a Report link); the renderer has no cheap source
-              for it without new IPC. */}
+          {earlier.length > 0 && (
+            <section className="home-sec" aria-label={t('home.earlier.label')}>
+              <button
+                type="button"
+                className="home-fold"
+                aria-expanded={earlierOpen}
+                onClick={() => setEarlierOpen((o) => !o)}
+              >
+                <ChevronIcon />
+                <h2 className="eyebrow">{plural(t, 'home.earlier.title', earlier.length)}</h2>
+              </button>
+              {earlierOpen &&
+                earlier.map((e) =>
+                  e.kind === 'chat' ? (
+                    <div key={`c-${e.id}`} className="home-row" {...rowProps(() => onOpenSession(e.id))}>
+                      <span className="home-name">{e.name}</span>
+                      <span className="home-right">
+                        {[e.projectName, timeAgo(e.at, t)].filter(Boolean).join(' · ')}
+                      </span>
+                    </div>
+                  ) : (
+                    <div key={`i-${e.runId}`} className="home-row home-recent" {...rowProps(() => onOpenRun(e.hostId))}>
+                      <div className="home-recent-top">
+                        <span className="home-name">{[e.hostName, e.runbook].filter(Boolean).join(' · ')}</span>
+                        <span className={`home-earlier-state${e.ok === false && !e.aborted ? ' error' : ''}`}>
+                          {e.aborted
+                            ? t('ops.start.status.stopped')
+                            : e.ok === false
+                              ? t('ops.start.status.failed')
+                              : t('ops.start.status.finished')}
+                        </span>
+                        <span className="home-right">{timeAgo(e.at, t)}</span>
+                      </div>
+                      {e.headline && <span className="help home-preview">{e.headline}</span>}
+                    </div>
+                  )
+                )}
+            </section>
+          )}
         </aside>
       </div>
       {viewerRepo && (

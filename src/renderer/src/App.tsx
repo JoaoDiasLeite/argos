@@ -14,6 +14,7 @@ import {
   CcSessionTarget,
   LiveSession,
   OpsIntervention,
+  OpsRunListItem,
   OpsOperatorRequest,
   OpsSecretRequest,
   GitFile
@@ -64,6 +65,7 @@ import type {
   HomeRepo,
   HomeProject,
   HomeRecent,
+  HomeEarlier,
   HomeStart,
   HomePlan,
   HomeStartChoice,
@@ -446,6 +448,23 @@ export default function App() {
       .then((p) => setOperatorRequests((q) => mergeById(q, p.operatorAsks, byOperatorId)))
       .catch(() => undefined)
     return off
+  }, [])
+  // Today's finished ops runs, for Home's "Earlier today": read on mount, again when a run ends.
+  const [opsRunsToday, setOpsRunsToday] = useState<OpsRunListItem[]>([])
+  useEffect(() => {
+    const load = () =>
+      window.electronAPI
+        .opsRuns({ limit: 30 })
+        .then((r) => {
+          if (!r.ok) return
+          const today = new Date().toDateString()
+          setOpsRunsToday(r.runs.filter((x) => x.endedAt && new Date(x.startedAt).toDateString() === today))
+        })
+        .catch(() => undefined)
+    void load()
+    return window.electronAPI.onOpsEvent((data) => {
+      if (data?.line?.event?.kind === 'run.end') void load()
+    })
   }, [])
   useEffect(
     () =>
@@ -1337,11 +1356,15 @@ export default function App() {
       const lastAt = transcript.messages[length - 1]?.timestamp
       const movedAt = lastAt && lastAt > s.updatedAt ? lastAt : undefined
       const sessionIdChanged = s.claudeSessionId !== sessionId
+      // The last turn's text, on one line, for Home's "Pick up" rows.
+      const lastText = (transcript.messages[length - 1]?.text ?? '').replace(/\s+/g, ' ').trim()
+      const preview = lastText.length > 120 ? `${lastText.slice(0, 119).trimEnd()}…` : lastText
+      const previewChanged = preview !== (s.preview ?? '')
       const markUnread = grew && !s.unread && !seenIdsRef.current.has(s.id)
       // A tick where nothing moved would still produce a *new* session object every time
       // this runs — and this runs on a timer, which would re-save every terminal chat
       // forever for no reason.
-      if (!sessionIdChanged && !nameFromTitle && !nameFromPreview && !movedAt && !markUnread) continue
+      if (!sessionIdChanged && !nameFromTitle && !nameFromPreview && !movedAt && !markUnread && !previewChanged) continue
 
       setSessions((prev) =>
         prev.map((cur) => {
@@ -1352,6 +1375,7 @@ export default function App() {
             ...(nameFromTitle ? { name: nameFromTitle, nameFromPreview: undefined } : {}),
             ...(nameFromPreview ? { name: nameFromPreview, nameFromPreview: true } : {}),
             ...(movedAt ? { updatedAt: movedAt } : {}),
+            ...(previewChanged ? { preview } : {}),
             // The terminal wrote new turns while this chat wasn't on screen — reads
             // seenIdsRef (not seenIds) because syncTerminalChats has no deps and would
             // otherwise close over whichever panes were open when it was first created.
@@ -2082,8 +2106,7 @@ export default function App() {
 
   const homeRecent = useMemo<HomeRecent[]>(
     () =>
-      // Terminal chats, newest first. No preview yet: the transcript is the CLI's.
-      // TODO(B4): `session.preview` once the migration and the sync write one.
+      // Terminal chats, newest first; the preview is the last turn, written by the sync.
       sessions
         .filter((s) => s.hasTerminalActivity)
         .sort((a, b) => b.updatedAt - a.updatedAt)
@@ -2094,7 +2117,7 @@ export default function App() {
           name: chatDisplayName(s.name, t),
           projectName: s.projectPath ? resolveHomeProjectName(s.projectPath, s.wslDistro) : undefined,
           updatedAt: s.updatedAt,
-          preview: ''
+          preview: s.preview ?? ''
         })),
     [sessions, resolveHomeProjectName]
   )
@@ -2408,6 +2431,30 @@ export default function App() {
     name: g.title,
     detail: g.count > 1 ? plural(t, 'projects.sessions.count', g.count) : undefined
   }))
+  const homeEarlier = useMemo<HomeEarlier[]>(() => {
+    const today = new Date().toDateString()
+    const chats: HomeEarlier[] = sessions
+      .filter((s) => s.hasTerminalActivity && !displayRunningIds.has(s.id) && new Date(s.updatedAt).toDateString() === today)
+      .map((s) => ({
+        kind: 'chat',
+        id: s.id,
+        name: chatDisplayName(s.name, t),
+        projectName: s.projectPath ? resolveHomeProjectName(s.projectPath, s.wslDistro) : undefined,
+        at: s.updatedAt
+      }))
+    const runs: HomeEarlier[] = opsRunsToday.map((r) => ({
+      kind: 'intervention',
+      runId: r.runId,
+      hostId: r.scope?.kind === 'host' ? r.scope.hostId : undefined,
+      hostName: r.hostNames.join(', '),
+      runbook: r.runbook,
+      headline: r.headline,
+      ok: r.ok,
+      aborted: r.aborted,
+      at: new Date(r.endedAt ?? r.startedAt).getTime()
+    }))
+    return [...chats, ...runs].sort((a, b) => b.at - a.at).slice(0, 8)
+  }, [sessions, displayRunningIds, opsRunsToday, resolveHomeProjectName, t])
   const homeInterventionsRunning: HomeRunning[] = opsTabs
     .filter((t) => !t.ended)
     .map(({ intervention: iv, waiting, label }) => ({
@@ -2883,6 +2930,7 @@ export default function App() {
             repos={homeRepos}
             recentProjects={homeRecentProjects}
             recent={homeRecent}
+            earlier={homeEarlier}
             start={homeStart}
             startOptions={homeStartOptions}
             plan={homePlan}
@@ -2900,6 +2948,10 @@ export default function App() {
             onOpenIntervention={(id) => {
               const tab = opsTabs.find((t) => opsTerminalIdFor(t.intervention) === id)
               if (tab) selectOpsTab(tab.intervention)
+            }}
+            onOpenRun={(hostId) => {
+              setOpsStartHostId(hostId)
+              setView('ops')
             }}
             onOpenRepo={(key) => {
               setProjectFocus({ key, at: Date.now() })
