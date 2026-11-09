@@ -3,7 +3,8 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { Client, ConnectConfig } from 'ssh2'
 import { randomUUID } from 'crypto'
-import { verifyHostKey } from './ssh-trust'
+import { isEndpointKeyStored, trustedKnownHostsPath, verifyHostKey } from './ssh-trust'
+import { sshOptionPath } from './ssh-trust-pure'
 import { t } from './i18n'
 import { cleanHostFields, decodeHostsFile, mergeSecrets, refuseOverwriteMessage, type HostsRead } from './ssh-host-pure'
 
@@ -187,18 +188,36 @@ export function getHost(id: string): SshHost | null {
  * to spawn directly (distinct from the headless ssh2 connection `runRemote` uses for
  * one-shot `claude -p` calls). Password auth has no non-interactive flag here — the user
  * is prompted by `ssh` itself inside the terminal.
+ *
+ * The CLI checks the server against the keys Argos trusts, not `~/.ssh/known_hosts`: an
+ * endpoint whose full key is not stored yet goes through testConnection first (the same
+ * trust prompt as every other first use), and a server Argos does not trust is an error
+ * here rather than a terminal that opens anyway.
  */
-export function getSshTerminalCommand(
+export async function getSshTerminalCommand(
   hostId: string
-): { shell: string; args: string[]; remotePath?: string; claudePath?: string } | null {
+): Promise<{ shell: string; args: string[]; remotePath?: string; claudePath?: string } | null> {
   const h = getHost(hostId)
   if (!h) return null
+  const port = h.port || 22
+  if (!isEndpointKeyStored(h.host, port)) {
+    // The verifier records the key before authentication, so a check that then fails to
+    // log in (a password the terminal will ask for) still leaves the server trusted.
+    const check = await testConnection(hostId)
+    if (!isEndpointKeyStored(h.host, port)) {
+      throw new Error(check.ok ? t('main.ssh.notTrusted') : `${t('main.ssh.notTrusted')} (${check.message})`)
+    }
+  }
+  const knownHosts = await trustedKnownHostsPath()
+  if (!knownHosts) throw new Error(t('main.ssh.notTrusted'))
   const args: string[] = ['-t']
-  if (h.port && h.port !== 22) args.push('-p', String(h.port))
+  if (port !== 22) args.push('-p', String(port))
   if (h.authType === 'key' && h.privateKeyPath) {
     args.push('-i', h.privateKeyPath, '-o', 'IdentitiesOnly=yes')
   }
-  args.push('-o', 'StrictHostKeyChecking=accept-new')
+  // One argv element each, never shell-quoted; sshOptionPath only applies ssh's own
+  // option syntax (the userData path can hold spaces, `%` and non-ASCII characters).
+  args.push('-o', `UserKnownHostsFile=${sshOptionPath(knownHosts)}`, '-o', 'StrictHostKeyChecking=yes')
   args.push(`${h.username}@${h.host}`)
   return { shell: 'ssh', args, remotePath: h.remotePath, claudePath: h.claudePath }
 }

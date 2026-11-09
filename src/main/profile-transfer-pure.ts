@@ -7,6 +7,7 @@ import type { Readable, Writable } from 'stream'
 import { promisify } from 'util'
 import { encodeProjectPath } from './codex-data-pure'
 import { projectNameKey } from './project-move-pure'
+import { parseTrustEntry, type TrustEntry } from './ssh-trust-pure'
 
 /**
  * The parts of profile export/import that need no Electron and no disk: the bundle format,
@@ -683,9 +684,24 @@ export function mergeCompanionList(localText: string | null, importedText: strin
   return JSON.stringify([...local, ...added], null, 2)
 }
 
-/** Host-key trust: entries this machine has not seen are added; one it has verified stays. */
+/** A stored ssh-trust.json value: the legacy fingerprint string or the `{ fp, type, key }` form. */
+export type TrustValue = string | TrustEntry
+
+/**
+ * Host-key trust: entries this machine has not seen are added; one it has verified stays.
+ * The one exception fills in rather than replaces: a local fingerprint-only entry takes the
+ * imported type and key when the fingerprints are equal, since that key is the one already
+ * trusted here.
+ */
 export function mergeTrust(local: Record<string, unknown>, imported: Record<string, unknown>): Record<string, unknown> {
-  return { ...imported, ...local }
+  const merged: Record<string, unknown> = { ...imported, ...local }
+  for (const [endpoint, raw] of Object.entries(local)) {
+    const mine = parseTrustEntry(raw)
+    const theirs = parseTrustEntry(imported[endpoint])
+    if (!mine || mine.key || !theirs?.type || !theirs.key || theirs.fp !== mine.fp) continue
+    merged[endpoint] = { fp: mine.fp, type: theirs.type, key: theirs.key } satisfies TrustEntry
+  }
+  return merged
 }
 
 // ─── Chats ↔ projects ─────────────────────────────────────────────────────────

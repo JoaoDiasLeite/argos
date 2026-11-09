@@ -386,14 +386,14 @@ function pickShell(): { shell: string; kind: ShellKind } {
 // at a WSL folder still opens a terminal inside that distro (a local shell can't cd into a
 // UNC path, and the session lives in WSL, not Windows).
 
-export function createTerminal(
+export async function createTerminal(
   id: string,
   opts: CreateTerminalOptions,
   onData: (id: string, data: string) => void,
   onExit: (id: string, exitCode: number) => void,
   onBusy: (id: string, busy: boolean) => void,
   onNotify: (id: string, waiting: boolean) => void
-): {
+): Promise<{
   ok: boolean
   shell?: string
   cliLaunched?: boolean
@@ -401,7 +401,7 @@ export function createTerminal(
   buffer?: string
   error?: string
   promptOnCommandLine?: boolean
-} {
+}> {
   if (!isSafeId(id)) return { ok: false, error: t('main.terminal.invalidId', { id: String(id) }) }
   // An ops chat must never fall back to an ungated CLI: a malformed launch, or one in a
   // shell the relay cannot reach Argos from, is refused outright.
@@ -489,12 +489,23 @@ export function createTerminal(
       // details. Windows/WSL env (CLAUDE_CONFIG_DIR, CLAUDE_BIN, provider account env) is
       // meaningless on the remote box, so leave it unset; the remote's own PATH/login
       // resolves the CLI.
-      const ssh = getSshTerminalCommand(opts.remoteHostId)
+      // Async: a server whose key Argos has not stored yet is checked (and trusted, through
+      // the usual prompt) first. A refusal throws, and the catch below reports it.
+      const ssh = await getSshTerminalCommand(opts.remoteHostId)
       if (!ssh) {
         return {
           ok: false,
           error: t('main.terminal.noSshHost', { id: opts.remoteHostId })
         }
+      }
+      // Another create for this id (a remount, a redundant call) may have spawned while this
+      // one waited on the trust check: reuse it, or replace it, as the check above would have.
+      const raced = terminals.get(id)
+      if (raced) {
+        if (configs.get(id) === sig) {
+          return { ok: true, shell: shellKinds.get(id), cliLaunched: launched.has(id), reused: true, buffer: outputBuffers.get(id) ?? '' }
+        }
+        killTerminal(id)
       }
       shell = ssh.shell
       shellArgs = ssh.args

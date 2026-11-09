@@ -141,6 +141,7 @@ export default {
   'ssh.claudeNotFound': 'claude not found on this host ({path}). Install it: npm i -g @anthropic-ai/claude-code',
   'ssh.claudeNoOutput': 'claude produced no output',
   'ssh.timedOut': 'No answer from the server within 20 s',
+  'ssh.notTrusted': "The server's host key is not trusted; the terminal was not opened",
   'ssh.hostsSaveFailed': 'Could not save the hosts file: {error}',
   'ssh.hostsUnreadable':
     'The saved hosts file could not be read ({error}); refusing to overwrite it. Move {file} aside to start over.',

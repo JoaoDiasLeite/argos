@@ -3118,7 +3118,7 @@ function dropBusyTerminal(id: string): void {
 
 ipcMain.handle(
   'terminal:create',
-  (
+  async (
     _,
     id: string,
     opts: {
@@ -3145,7 +3145,7 @@ ipcMain.handle(
     const live = opts?.ops ? terminalOps.get(id) : undefined
     const fallback =
       live && !live.ctx.ended && live.resumeSessionId && live.resumeSessionId === opts.resumeSessionId ? live.resumeFallbackPrompt : undefined
-    const r = createTerminal(
+    const r = await createTerminal(
       id,
       { ...opts, resumeFallbackPrompt: fallback },
       (tid, data) => send('terminal:data', { id: tid, data }),

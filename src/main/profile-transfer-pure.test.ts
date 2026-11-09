@@ -260,6 +260,20 @@ describe('hosts', () => {
   it('keeps this machine trusted keys over imported ones', () => {
     expect(mergeTrust({ a: 'mine' }, { a: 'theirs', b: 'new' })).toEqual({ a: 'mine', b: 'new' })
   })
+
+  it('keeps a local entry of either shape over an imported one with another fingerprint', () => {
+    const theirs = { fp: 'SHA256:theirs', type: 'ssh-ed25519', key: 'AAAA' }
+    const mineObj = { fp: 'SHA256:mine', type: 'ssh-ed25519', key: 'BBBB' }
+    expect(mergeTrust({ a: 'SHA256:mine', b: mineObj }, { a: theirs, b: theirs, c: theirs })).toEqual({ a: 'SHA256:mine', b: mineObj, c: theirs })
+  })
+
+  it('fills a local fingerprint-only entry with the imported key of the same fingerprint', () => {
+    const theirs = { fp: 'SHA256:same', type: 'ssh-ed25519', key: 'AAAA' }
+    expect(mergeTrust({ a: 'SHA256:same' }, { a: theirs })).toEqual({ a: theirs })
+    expect(mergeTrust({ a: { fp: 'SHA256:same' } }, { a: theirs })).toEqual({ a: theirs })
+    // An imported fingerprint-only entry has nothing to add.
+    expect(mergeTrust({ a: 'SHA256:same' }, { a: 'SHA256:same' })).toEqual({ a: 'SHA256:same' })
+  })
 })
 
 describe('secrets', () => {
