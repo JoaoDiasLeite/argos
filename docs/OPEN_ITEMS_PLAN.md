@@ -1,8 +1,8 @@
-# Open items — the leftovers with margin, closed in 3.1.0
+# Open items — the leftovers with margin, closed in 3.5.0
 
 _Planned 2026-11-09 by Fable from the owner's brief "planeia tudo o que tens aqui
 [funcionalidades existentes com margem] e mete subagentes opus e sonnet a trabalhar nisso".
-Every file:line below was read on 2026-11-09 at `3.1.0` (unreleased) / `6b76e53`. One
+Every file:line below was read on 2026-11-09 at `3.1.0` (unreleased) / `6b76e53`, rebased onto 3.4.0 (`bb4b26d`) on the same day. One
 batch per commit, each compiling on its own; subagents never commit. Decisions marked
 **(Fable)** were taken without the owner, who was not available, and are the first thing
 to revisit if any of them reads wrong._

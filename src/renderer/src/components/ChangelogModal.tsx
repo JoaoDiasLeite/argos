@@ -18,6 +18,33 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '3.5.0',
+    date: '2026-11-09',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Home folds the chats and interventions that finished today under "Earlier today · N finished": a chat row opens the session, a run row opens that server on the operations start screen. The "Pick up where you left off" rows now show the last turn of each chat.',
+          'A popped-out chat keeps up with the main window: a rename reaches its title and header, the title carries a dot while the CLI works and a mark while it waits on you, and a chat that is out no longer keeps an unread dot. A chat finishing in a focused pop-out neither barks nor toasts.',
+          'The host form can remove a saved password or passphrase, and switching the auth type drops the secret the new one does not use.',
+          'On a machine without a keyring (Linux without a secret service), the host form and Settings → Connection say that passwords are stored unencrypted; nothing refuses to save.',
+          'Moving to another machine: the .argos file now carries the names of Codex chats, and Codex chats kept inside a WSL distro, which are also listed read-only in Projects as "Codex · <distro>".',
+          'The Claude Code check of a WSL distro shows the version and the logged-in account.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'Reloading the window (Ctrl+R, a crash) no longer loses an intervention’s pending approvals, sudo prompts and "Para correres tu" cards: they come back from the main process.',
+          'A new terminal on a stored host now checks the server against the key Argos already trusts, instead of accepting whatever it saw first: an unknown server goes through the usual trust prompt, and a refused one is an error rather than a terminal that opens anyway.',
+          'Editing a host’s address, port, user, auth or secret (or deleting it) closes its pooled SSH connection, so the next shell or run uses the new values.',
+          'The connection and Claude Code checks of an SSH host give up after 20 s instead of spinning forever when the remote command hangs.'
+        ]
+      }
+    ]
+  },
+  {
     version: '3.4.0',
     date: '2026-11-06',
     tag: 'latest',

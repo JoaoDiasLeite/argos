@@ -8,28 +8,28 @@ Add new follow-ups above the line as they come up.
 
 ## Open
 
-### From the port to the system design (docs/PORT_PLAN.md)
-
-- **Claude Code check returns only the version.** The target column (Servers, batch 1)
-  wants "2.1.4 · logged in as <account>"; the check only runs `claude --version`. Add the
-  logged-in account to the check result. (`// TODO(port)` in `RemoteView.tsx`.)
-- **Home has no ops runs, no finished-today list and no previews.** Wireframe 5B shows an
-  ops intervention as a running row (accent dot), "Earlier today · N finished" folded, and a
-  preview line under each resumable session. The renderer gets none of these today
-  (`TODO(port)` in `HomeView.tsx`; the preview is the older `TODO(B4)` in `App.tsx`). Needs a
-  small IPC: today's finished chats and ops runs, and the last message of a session.
-
-### Panes (asked for on 2026-10-06, after 2.2.3)
-
-- **Pop-out, after the first version.** A chat opens in its own window (`chat-popout.ts`),
-  terminal only, and the pane leaves the layout while it is out. Still to do: push the
-  chat's name/unread/status to the window when they change (it gets them once, on open);
-  answer that chat's approvals in its own window; let the toast's "window out of view"
-  check count a pop-out as in view.
+_Nothing open. The port leftovers and the pop-out follow-ups below shipped in 3.5.0_
+_(docs/OPEN_ITEMS_PLAN.md)._
 
 ---
 
 ## Done
+
+- **Home "Earlier today" and previews** (3.5.0): the side column folds today's finished chats
+  and ops runs (from `ops:runs`) under "Earlier today · N finished"; the terminal sync writes
+  each Claude chat's last turn into `session.preview`. No exit codes: the ledger has none and
+  the pty's is not stored. (`461253f`)
+
+- **Claude Code check shows the account** (3.5.0): `version · email`, from the distro's
+  `.claude.json` the sources already read. The check is WSL-only. (`0376a42`)
+
+- **Pop-out, after the first version** (3.5.0): `popout:update` pushes a rename to the window
+  (title + header); main keeps the title's busy/waiting mark from `terminal:busy`/`terminal:notify`;
+  a popped-out id counts as seen for unread; `chatInView(terminalId)` lets a focused pop-out
+  count as in view for that chat's companion line and hook toast. **Dropped:** answering
+  approvals in the pop-out. Argos's approval queue is fed only by ops runs, and an ops terminal
+  cannot be popped out, so there is nothing to answer there; a chat's own permission prompts
+  are the CLI's, inside the terminal the pop-out already shows. (`295503d`)
 
 - **Pop a chat out into its own window, first version.** The terminal bar's arrow-out
   button opens the chat in a `BrowserWindow` of its own (`chat-popout.ts`, `popout.html`)
