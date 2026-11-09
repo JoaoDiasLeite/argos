@@ -189,6 +189,9 @@ export function getSshTerminalCommand(
   return { shell: 'ssh', args, remotePath: h.remotePath, claudePath: h.claudePath }
 }
 
+/** Upper bound for a whole check (handshake + exec); readyTimeout only covers the handshake. */
+const CHECK_TIMEOUT_MS = 20_000
+
 /**
  * Does this host accept an SSH connection? Nothing more — it authenticates, reports how
  * long that took, and hangs up. This is what the Remote & WSL list's status dot reflects,
@@ -207,9 +210,11 @@ export function testConnection(id: string): Promise<{ ok: boolean; message: stri
     const done = (r: { ok: boolean; message: string }) => {
       if (settled) return
       settled = true
+      clearTimeout(timer)
       conn.end()
       resolve(r)
     }
+    const timer = setTimeout(() => done({ ok: false, message: t('main.ssh.timedOut') }), CHECK_TIMEOUT_MS)
     conn.on('ready', () =>
       done({
         ok: true,
@@ -240,9 +245,11 @@ export function testClaude(id: string): Promise<{ ok: boolean; message: string }
     const done = (r: { ok: boolean; message: string }) => {
       if (settled) return
       settled = true
+      clearTimeout(timer)
       conn.end()
       resolve(r)
     }
+    const timer = setTimeout(() => done({ ok: false, message: t('main.ssh.timedOut') }), CHECK_TIMEOUT_MS)
     conn.on('ready', () => {
       const claude = host.claudePath || 'claude'
       conn.exec(`${claude} --version`, (err, stream) => {
