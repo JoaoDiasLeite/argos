@@ -129,6 +129,8 @@ export default {
   'form.discoveredKey': 'Discovered key',
   'form.defaultKey': 'Default (agent / ssh config) or custom path below',
   'form.privateKeyPath': 'Private key path',
+  'form.passwordPlain': "This machine has no keyring, so the password is stored unencrypted in Argos's data folder.",
+  'form.passphrasePlain': "This machine has no keyring, so the passphrase is stored unencrypted in Argos's data folder.",
   'form.passphrase': 'Passphrase',
   'form.optional': 'optional',
   'form.remotePath': 'Remote project path',

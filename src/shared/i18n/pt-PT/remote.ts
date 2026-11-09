@@ -130,6 +130,8 @@ const remote: Record<keyof typeof en, string> = {
   'form.discoveredKey': 'Chave encontrada',
   'form.defaultKey': 'Predefinida (agente / ssh config) ou caminho personalizado abaixo',
   'form.privateKeyPath': 'Caminho da chave privada',
+  'form.passwordPlain': 'Esta máquina não tem porta-chaves, por isso a palavra-passe fica guardada sem cifra na pasta de dados do Argos.',
+  'form.passphrasePlain': 'Esta máquina não tem porta-chaves, por isso a frase-passe fica guardada sem cifra na pasta de dados do Argos.',
   'form.passphrase': 'Frase-passe',
   'form.optional': 'opcional',
   'form.remotePath': 'Caminho remoto do projeto',

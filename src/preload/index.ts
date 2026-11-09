@@ -406,6 +406,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sshKeysList: () => ipcRenderer.invoke('ssh:keys-list'),
   sshKeysGenerate: (name: string, comment?: string) =>
     ipcRenderer.invoke('ssh:keys-generate', name, comment),
+  sshSecretStorage: () => ipcRenderer.invoke('ssh:secret-storage'),
   sshKeysPublic: (privatePath: string) => ipcRenderer.invoke('ssh:keys-public', privatePath),
 
   // SFTP (Remote Session file browser)

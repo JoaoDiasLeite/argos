@@ -756,6 +756,12 @@ export interface SshKeyInfo {
 
 export type GenerateKeyResult = { ok: true; key: SshKeyInfo } | { ok: false; error: string }
 
+/** Whether saved secrets are really encrypted (`ssh:secret-storage`; see src/main/ssh.ts). */
+export interface SecretStorageState {
+  encrypted: boolean
+  backend?: string
+}
+
 /** sshSave / sshDelete: the updated list, or why nothing was written (see src/main/ssh.ts). */
 export type SshHostsWriteResult = { ok: true; hosts: SshHostPublic[] } | { ok: false; error: string }
 
@@ -1721,6 +1727,7 @@ declare global {
       sshTestClaude: (id: string) => Promise<{ ok: boolean; message: string }>
       sshKeysList: () => Promise<SshKeyInfo[]>
       sshKeysGenerate: (name: string, comment?: string) => Promise<GenerateKeyResult>
+      sshSecretStorage: () => Promise<SecretStorageState>
       sshKeysPublic: (privatePath: string) => Promise<string | null>
 
       // SFTP (Remote Session file browser)

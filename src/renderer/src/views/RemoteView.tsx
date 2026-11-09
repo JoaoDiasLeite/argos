@@ -200,6 +200,11 @@ export default function RemoteView({
   const [probes, setProbes] = useState<Record<string, Probes>>({})
   const [probing, setProbing] = useState<string | null>(null)
   const [keys, setKeys] = useState<SshKeyInfo[]>([])
+  // Optimistic until the main process answers, so the warning never flashes on a keyring machine.
+  const [secretsEncrypted, setSecretsEncrypted] = useState(true)
+  useEffect(() => {
+    window.electronAPI.sshSecretStorage().then((s) => setSecretsEncrypted(s.encrypted)).catch(() => {})
+  }, [])
   const [copied, setCopied] = useState<string | null>(null)
   const [newKeyName, setNewKeyName] = useState('')
   const [generating, setGenerating] = useState(false)
@@ -1078,6 +1083,7 @@ export default function RemoteView({
                   placeholder={editing.password === null ? t('remote.form.removed') : editing.id ? t('remote.form.unchanged') : ''}
                   onChange={(e) => setEditing({ ...editing, password: e.target.value })}
                 />
+                {!secretsEncrypted && <p className="help">{t('remote.form.passwordPlain')}</p>}
                 {canRemoveSecret && editing.password === undefined && (
                   <button type="button" className="btn-ghost small" onClick={() => setEditing({ ...editing, password: null })}>
                     {t('remote.form.removePassword')}
@@ -1122,6 +1128,7 @@ export default function RemoteView({
                     placeholder={editing.passphrase === null ? t('remote.form.removed') : editing.id ? t('remote.form.unchanged') : ''}
                     onChange={(e) => setEditing({ ...editing, passphrase: e.target.value })}
                   />
+                  {!secretsEncrypted && <p className="help">{t('remote.form.passphrasePlain')}</p>}
                   {canRemoveSecret && editing.passphrase === undefined && (
                     <button type="button" className="btn-ghost small" onClick={() => setEditing({ ...editing, passphrase: null })}>
                       {t('remote.form.removePassphrase')}

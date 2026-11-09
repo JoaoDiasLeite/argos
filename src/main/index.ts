@@ -89,6 +89,7 @@ import {
   getHost,
   testConnection,
   testClaude,
+  secretStorageState,
   SshHostInput
 } from './ssh'
 import { connectionFieldsChanged } from './ssh-host-pure'
@@ -2672,6 +2673,7 @@ ipcMain.handle('ssh:delete', (_, id: string) => {
 })
 ipcMain.handle('ssh:test', (_, id: string) => testConnection(id))
 ipcMain.handle('ssh:test-claude', (_, id: string) => testClaude(id))
+ipcMain.handle('ssh:secret-storage', () => secretStorageState())
 ipcMain.handle('ssh:keys-list', () => listSshKeys())
 ipcMain.handle('ssh:keys-generate', (_, name: string, comment?: string) => generateKey(name, comment))
 ipcMain.handle('ssh:keys-public', (_, privatePath: string) => readPublicKey(privatePath))

@@ -79,6 +79,20 @@ function updateHosts(mutate: (hosts: SshHost[]) => SshHost[]): HostsWriteResult 
   return { ok: true, hosts: listHosts() }
 }
 
+/** Whether saved secrets are really encrypted: on Linux without a keyring Electron reports
+ * encryption as available but uses a hard-coded key ('basic_text'). */
+export function secretStorageState(): { encrypted: boolean; backend?: string } {
+  const available = safeStorage.isEncryptionAvailable()
+  if (process.platform !== 'linux') return { encrypted: available }
+  let backend: string | undefined
+  try {
+    backend = safeStorage.getSelectedStorageBackend()
+  } catch {
+    backend = undefined
+  }
+  return { encrypted: available && backend !== 'basic_text', backend }
+}
+
 function writeHosts(hosts: SshHost[]): void {
   const json = JSON.stringify(hosts)
   const data = safeStorage.isEncryptionAvailable()

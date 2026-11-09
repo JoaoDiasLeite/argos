@@ -92,6 +92,9 @@ export default {
 
   // Connection
   'connection.lead': 'Which logins this app runs chats under. Claude and Codex each sign in through their own CLI; add them under Accounts.',
+  'connection.secrets.label': 'Secret storage',
+  'connection.secrets.encrypted': 'Encrypted with the OS keyring',
+  'connection.secrets.plain': 'Unencrypted: no keyring on this machine',
   'connection.accounts.label': 'Accounts',
   'connection.accounts.manage': 'Manage',
   'connection.accounts.count.one': '{n} account',

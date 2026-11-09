@@ -21,6 +21,7 @@ import {
   OpsDirs,
   OpsPrefs,
   ProviderAccountStatus,
+  SecretStorageState,
   SystemPrefs,
   UiPrefs,
   UiPrefsPatch,
@@ -667,6 +668,11 @@ export default function SettingsView({
     </div>
   )
 
+  const [secretStorage, setSecretStorage] = useState<SecretStorageState | null>(null)
+  useEffect(() => {
+    window.electronAPI.sshSecretStorage().then(setSecretStorage).catch(() => {})
+  }, [])
+
   const editRow = (label: string, value: string | undefined, onClick: () => void, action = t('common.edit')) => (
     <div className="srow">
       <div className="srow-text">
@@ -822,6 +828,16 @@ export default function SettingsView({
                 {t('settings.connection.lead')}
               </p>
               {editRow(t('settings.connection.accounts.label'), accountsValue, onManageAccounts, t('settings.connection.accounts.manage'))}
+              {secretStorage && (
+                <div className="srow">
+                  <div className="srow-text">
+                    <span className="srow-label">{t('settings.connection.secrets.label')}</span>
+                    <span className="help">
+                      {secretStorage.encrypted ? t('settings.connection.secrets.encrypted') : t('settings.connection.secrets.plain')}
+                    </span>
+                  </div>
+                </div>
+              )}
             </>
           )}
 
