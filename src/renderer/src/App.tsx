@@ -1284,7 +1284,8 @@ export default function App() {
         for (const archived of [false, true]) {
           const list = await window.electronAPI.ccListSessions(proj.sourceId, proj.encodedDir, archived)
           const meta = list.find((s) => s.sessionId === target.sessionId)
-          if (meta) {
+          // Only a Claude Code transcript resumes; a Codex one opens in Projects below.
+          if (meta && meta.provider !== 'codex') {
             await resumeCCSession(meta)
             return
           }

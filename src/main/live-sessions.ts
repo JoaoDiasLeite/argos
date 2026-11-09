@@ -198,6 +198,10 @@ export async function listLiveSessions(): Promise<LiveSession[]> {
   }
 
   for (const src of sources) {
+    // The registry is Claude Code's. A Codex source's sibling `sessions` dir is its
+    // rollout tree, and for a distro's Codex home the check below would read /proc over
+    // the share for nothing.
+    if (src.provider === 'codex') continue
     let entries = readEntries(registryDir(src.projectsDir))
       .map(parseRegistryEntry)
       .filter((e): e is RegistryEntry => e !== null)

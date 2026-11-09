@@ -183,7 +183,7 @@ export async function getWslClaudeRoots(): Promise<WslClaudeRoot[]> {
   const roots: WslClaudeRoot[] = []
   for (const d of distros) {
     if (SKIP_DISTROS.has(d.name) || hidden.has(d.name)) continue
-    const home = await wslHome(d.name)
+    const home = await sourceHome(d.name)
     if (!home) continue
     const unc = `${wslShareRoot(d.name)}${home.replace(/\//g, '\\')}`
     const projectsDir = `${unc}\\.claude\\projects`
@@ -196,6 +196,52 @@ export async function getWslClaudeRoots(): Promise<WslClaudeRoot[]> {
     }
   }
   return roots
+}
+
+/**
+ * $HOME per distro for the source probes, kept a minute. `getSources` asks for the
+ * Claude Code roots and the Codex homes back to back, and each `wslHome` boots a
+ * `wsl.exe`; without this every refresh paid that twice per distro. Only an answer is
+ * kept, so a distro that failed to start is asked again next time.
+ */
+const sourceHomeCache = new Map<string, { home: string; at: number }>()
+async function sourceHome(distro: string): Promise<string | null> {
+  const cached = sourceHomeCache.get(distro)
+  if (cached && Date.now() - cached.at < 60_000) return cached.home
+  const home = await wslHome(distro)
+  if (home) sourceHomeCache.set(distro, { home, at: Date.now() })
+  return home
+}
+
+export interface WslCodexHome {
+  distro: string
+  /** Windows-side UNC path to the distro's ~/.codex (a CODEX_HOME). */
+  home: string
+}
+
+/**
+ * For every reachable WSL distro that has Codex conversations, the Windows-side UNC
+ * path to its ~/.codex. A Codex chat started in a distro's shell writes there, so
+ * without this its transcripts exist on disk and nothing lists them. Same skipping as
+ * `getWslClaudeRoots`; a home without a `sessions` dir is no source.
+ */
+export async function getWslCodexHomes(): Promise<WslCodexHome[]> {
+  if (!isWindows) return []
+  const distros = await listDistros()
+  const hidden = new Set(getHiddenDistros())
+  const out: WslCodexHome[] = []
+  for (const d of distros) {
+    if (SKIP_DISTROS.has(d.name) || hidden.has(d.name)) continue
+    const home = await sourceHome(d.name)
+    if (!home) continue
+    const codexHome = `${wslShareRoot(d.name)}${home.replace(/\//g, '\\')}\\.codex`
+    try {
+      if (fs.existsSync(`${codexHome}\\sessions`)) out.push({ distro: d.name, home: codexHome })
+    } catch {
+      // not reachable — skip
+    }
+  }
+  return out
 }
 
 /** Claude Code requires a modern Node; older majors can't even parse the CLI bundle. */

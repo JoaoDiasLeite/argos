@@ -60,9 +60,15 @@ export interface CodexSource {
   home: string
   sessionsDir: string
   indexPath: string
+  /** 'wsl' for a home inside a distro (read over its `\\wsl.localhost` share). Such a
+   *  source is read and filed, never launched from: Argos starts Codex on Windows. */
+  kind?: 'local' | 'wsl'
+  distro?: string
 }
 
 export const CODEX_SOURCE_PREFIX = 'codex'
+/** Id prefix of a distro's Codex home: `codex-wsl:<distro>`. */
+export const CODEX_WSL_SOURCE_PREFIX = 'codex-wsl'
 
 function makeSource(id: string, label: string, home: string): CodexSource {
   return {
@@ -119,6 +125,18 @@ export function codexSources(accounts: CodexAccountHome[] = []): CodexSource[] {
     add(`${CODEX_SOURCE_PREFIX}:${account.id}`, `Codex · ${account.name}`, account.home)
   }
   return sources
+}
+
+/**
+ * The Codex homes found inside WSL distros (see `getWslCodexHomes`), as sources. The
+ * caller has already checked each one has a `sessions` dir.
+ */
+export function codexWslSources(homes: { distro: string; home: string }[]): CodexSource[] {
+  return homes.map((h) => ({
+    ...makeSource(`${CODEX_WSL_SOURCE_PREFIX}:${h.distro}`, `Codex · ${h.distro}`, h.home),
+    kind: 'wsl' as const,
+    distro: h.distro
+  }))
 }
 
 // ─── Header scan ────────────────────────────────────────────────────────────
@@ -295,7 +313,8 @@ export async function codexProjects(src: CodexSource): Promise<CCProject[]> {
     lastActive: g.lastActive,
     sourceId: src.id,
     sourceLabel: src.label,
-    kind: 'local' as const,
+    kind: src.kind ?? 'local',
+    distro: src.distro,
     provider: 'codex' as const,
     // Filing a project away is a per-source-and-directory preference in store.ts and
     // the caller applies it uniformly; leaving it false here would silently unfile
@@ -413,7 +432,8 @@ export async function codexSessions(
       createdAt: r.createdAt,
       updatedAt: body.lastMessageAt || r.mtime,
       sourceId: src.id,
-      kind: 'local',
+      kind: src.kind ?? 'local',
+      distro: src.distro,
       provider: 'codex',
       // Codex has no tag concept. An empty array, not undefined: the view maps over it.
       tags: [],

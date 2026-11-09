@@ -28,7 +28,7 @@ import {
   stripPreviewBlocks,
   withDecisions
 } from './ask-answers-pure'
-import { getWslClaudeRoots } from './wsl'
+import { getWslClaudeRoots, getWslCodexHomes } from './wsl'
 import {
   codexTagKey,
   getArchivedProjects,
@@ -46,6 +46,7 @@ import {
   codexProjects,
   codexSessions,
   codexSources,
+  codexWslSources,
   codexTranscript,
   invalidateCodexScan
 } from './codex-data'
@@ -67,7 +68,7 @@ export interface SourceAccount {
 export type SourceProvider = 'claude' | 'codex'
 
 export interface ClaudeSource {
-  id: string // 'local' | 'account:<id>' | 'wsl:<distro>' | 'codex' | 'codex:<id>'
+  id: string // 'local' | 'account:<id>' | 'wsl:<distro>' | 'codex' | 'codex:<id>' | 'codex-wsl:<distro>'
   label: string // 'Local' | distro name | 'Codex'
   kind: 'local' | 'wsl'
   distro?: string
@@ -129,7 +130,8 @@ function codexAsSource(src: CodexSource): ClaudeSource {
   return {
     id: src.id,
     label: src.label,
-    kind: 'local',
+    kind: src.kind ?? 'local',
+    distro: src.distro,
     projectsDir: src.sessionsDir,
     claudeJsonPath: src.indexPath,
     provider: 'codex',
@@ -192,6 +194,13 @@ export async function getSources(force = false): Promise<ClaudeSource[]> {
     }
   } catch {
     // WSL probing failed — local only
+  }
+  // Codex run from a distro's shell keeps its conversations in that distro's ~/.codex.
+  // Listed and filed like any Codex home; never launched from (see CodexSource.kind).
+  try {
+    for (const src of codexWslSources(await getWslCodexHomes())) sources.push(codexAsSource(src))
+  } catch {
+    // Same as above: a distro that cannot be read costs only its own rows.
   }
   sourceCache = { at: now, sources }
   return sources

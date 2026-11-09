@@ -422,6 +422,7 @@ describe('chat selection', () => {
     expect(chatSourceId({ projectPath: 'C:/p', provider: 'codex' }, defaults)).toBe('codex')
     expect(chatSourceId({ projectPath: 'C:/p', provider: 'codex', codexAccountId: 'pacc_1' }, defaults)).toBe('codex:pacc_1')
     expect(chatSourceId({ projectPath: '/home/x', wslDistro: 'Ubuntu' }, defaults)).toBe('wsl:Ubuntu')
+    expect(chatSourceId({ projectPath: '/home/x', wslDistro: 'Ubuntu', provider: 'codex' }, defaults)).toBe('codex-wsl:Ubuntu')
     expect(chatSourceId({ remoteHostId: 'h1' }, defaults)).toBeNull()
   })
 
@@ -448,6 +449,21 @@ describe('chat selection', () => {
       selectChats(records, selected, { includeRemote, windows: true, ...defaults }).map((r) => r.id as string)
     expect(ids(false)).toEqual(['a', 'c', 'f'])
     expect(ids(true)).toEqual(['a', 'c', 'd', 'f'])
+  })
+
+  it('sends a codex chat run in a distro with that distro codex source only', () => {
+    const records = [
+      { id: 'x', projectPath: '/home/jdl/dev', wslDistro: 'Ubuntu', provider: 'codex' },
+      { id: 'y', projectPath: '/home/jdl/dev', wslDistro: 'Ubuntu', provider: 'claude' }
+    ]
+    const pick = (sourceId: string): string[] =>
+      selectChats(records, [{ sourceId, kind: 'wsl' as const, realPath: '/home/jdl/dev' }], {
+        includeRemote: false,
+        windows: true,
+        ...defaults
+      }).map((r) => r.id as string)
+    expect(pick('codex-wsl:Ubuntu')).toEqual(['x'])
+    expect(pick('wsl:Ubuntu')).toEqual(['y'])
   })
 
   it('keys candidates by source and dir', () => {

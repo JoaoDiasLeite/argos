@@ -508,8 +508,8 @@ const safeAccountGroup = (raw: unknown): AccountGroupLike | undefined => {
   }
 }
 
-/** A WSL distro's Claude projects dir on this machine, or null when it is not installed. */
-function wslProjectsDir(ctx: ImportContext, distro: string): Promise<string | null> {
+/** A WSL distro's $HOME as a Windows-side UNC path, or null when it is not installed. */
+function wslUncHome(ctx: ImportContext, distro: string): Promise<string | null> {
   if (!isWindows) return Promise.resolve(null)
   let hit = ctx.wslDirs.get(distro)
   if (!hit) {
@@ -517,11 +517,23 @@ function wslProjectsDir(ctx: ImportContext, distro: string): Promise<string | nu
     hit = ctx.distros.then(async (installed) => {
       if (!installed.has(distro)) return null
       const home = await wslHome(distro)
-      return home ? `${wslShareRoot(distro)}${home.replace(/\//g, '\\')}\\.claude\\projects` : null
+      return home ? `${wslShareRoot(distro)}${home.replace(/\//g, '\\')}` : null
     })
     ctx.wslDirs.set(distro, hit)
   }
   return hit
+}
+
+/** A WSL distro's Claude projects dir on this machine, or null when it is not installed. */
+async function wslProjectsDir(ctx: ImportContext, distro: string): Promise<string | null> {
+  const home = await wslUncHome(ctx, distro)
+  return home ? `${home}\\.claude\\projects` : null
+}
+
+/** A WSL distro's Codex home (~/.codex) on this machine, or null when it is not installed. */
+async function wslCodexHome(ctx: ImportContext, distro: string): Promise<string | null> {
+  const home = await wslUncHome(ctx, distro)
+  return home ? `${home}\\.codex` : null
 }
 
 async function planProfile(header: BundleHeader, profile: ProfileLine): Promise<ImportContext> {
@@ -578,11 +590,15 @@ async function planProject(ctx: ImportContext, project: ProjectLine): Promise<Pl
   const toPath = wsl ? project.realPath : remap.value(project.realPath)
   const destName = wsl ? project.encodedDir : remap.encoded(project.encodedDir)
   const tooLong = project.provider !== 'codex' && destName.length > MAX_NAME_LENGTH
-  const wslRoot = wsl && project.distro ? await wslProjectsDir(ctx, project.distro) : null
+  const codex = project.provider === 'codex'
+  const wslRoot = wsl && project.distro ? await (codex ? wslCodexHome : wslProjectsDir)(ctx, project.distro) : null
 
   let dest: Dest | null = null
-  if (project.provider === 'codex') {
-    if (!wsl) {
+  if (codex) {
+    // A distro's Codex home has no accounts of its own: whoever is signed in there.
+    if (wsl) {
+      if (wslRoot) dest = { kind: 'codex', home: wslRoot }
+    } else {
       if (project.sourceId === 'codex') dest = { kind: 'codex', home: defaultCodexHome() }
       else {
         const acc = ctx.codexGroup?.accounts.find((a) => a.id === project.accountId)

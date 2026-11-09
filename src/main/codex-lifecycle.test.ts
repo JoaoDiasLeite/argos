@@ -10,6 +10,8 @@ import {
   codexRenameSession,
   codexSessions,
   codexUnarchiveSession,
+  codexProjects,
+  codexWslSources,
   invalidateCodexScan,
   scanCodexArchived,
   scanCodexRollouts,
@@ -188,5 +190,25 @@ describe('codexMoveSession', () => {
     fs.writeFileSync(file, '{"type":"response_item"}\n', 'utf-8')
     const res = await codexMoveSession(src, SESSION_A, 'C:\\dev\\other', t)
     expect(res).toMatchObject({ ok: false, error: 'failed' })
+  })
+})
+
+describe('codexWslSources', () => {
+  it('names a distro home as its own read-only source and carries the distro through', async () => {
+    const [wsl] = codexWslSources([{ distro: 'Ubuntu', home }])
+    expect(wsl).toMatchObject({
+      id: 'codex-wsl:Ubuntu',
+      label: 'Codex · Ubuntu',
+      kind: 'wsl',
+      distro: 'Ubuntu',
+      home,
+      sessionsDir: path.join(home, 'sessions'),
+      indexPath: path.join(home, 'session_index.jsonl')
+    })
+    writeRollout('2026-09-15T14-30-56', SESSION_A, '/home/jdl/dev')
+    const [project] = await codexProjects(wsl)
+    expect(project).toMatchObject({ sourceId: 'codex-wsl:Ubuntu', kind: 'wsl', distro: 'Ubuntu', realPath: '/home/jdl/dev' })
+    const [session] = await codexSessions(wsl, project.encodedDir)
+    expect(session).toMatchObject({ kind: 'wsl', distro: 'Ubuntu', provider: 'codex' })
   })
 })

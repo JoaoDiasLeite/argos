@@ -752,8 +752,11 @@ export function chatSourceId(
   defaults: { claudeAccountId: string; codexAccountId: string }
 ): string | null {
   if (isRemoteChat(record)) return null
-  if (typeof record.wslDistro === 'string' && record.wslDistro) return `wsl:${record.wslDistro}`
   const provider = typeof record.provider === 'string' ? record.provider : 'claude'
+  // Codex typed into a distro's shell writes to that distro's ~/.codex.
+  if (typeof record.wslDistro === 'string' && record.wslDistro) {
+    return provider === 'codex' ? `codex-wsl:${record.wslDistro}` : `wsl:${record.wslDistro}`
+  }
   if (provider === 'codex') {
     const id = typeof record.codexAccountId === 'string' && record.codexAccountId ? record.codexAccountId : defaults.codexAccountId
     return id === DEFAULT_ACCOUNT_ID ? 'codex' : `codex:${id}`
