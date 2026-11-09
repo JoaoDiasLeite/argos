@@ -1085,7 +1085,7 @@ export default function RemoteView({
                 />
                 {!secretsEncrypted && <p className="help">{t('remote.form.passwordPlain')}</p>}
                 {canRemoveSecret && editing.password === undefined && (
-                  <button type="button" className="btn-ghost small" onClick={() => setEditing({ ...editing, password: null })}>
+                  <button type="button" className="btn-ghost small rv-remove-secret" onClick={() => setEditing({ ...editing, password: null })}>
                     {t('remote.form.removePassword')}
                   </button>
                 )}
@@ -1130,7 +1130,7 @@ export default function RemoteView({
                   />
                   {!secretsEncrypted && <p className="help">{t('remote.form.passphrasePlain')}</p>}
                   {canRemoveSecret && editing.passphrase === undefined && (
-                    <button type="button" className="btn-ghost small" onClick={() => setEditing({ ...editing, passphrase: null })}>
+                    <button type="button" className="btn-ghost small rv-remove-secret" onClick={() => setEditing({ ...editing, passphrase: null })}>
                       {t('remote.form.removePassphrase')}
                     </button>
                   )}
