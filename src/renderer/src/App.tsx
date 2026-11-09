@@ -510,10 +510,14 @@ export default function App() {
   // What is actually being read. The pane state outlives the chat view (the panes are
   // unmounted behind Home and Projects, but kept to come back to), so a chat in one is
   // "visible" there without anyone looking at it — unread asks this instead.
-  const seenIds = useMemo(() => (view === 'chat' ? visibleIds : new Set<string>()), [view, visibleIds])
+  // A popped-out chat has its own window, whatever this one shows, so it counts as seen too.
+  const seenIds = useMemo(() => {
+    const base = view === 'chat' ? visibleIds : new Set<string>()
+    return poppedOut.size ? new Set([...base, ...poppedOut]) : base
+  }, [view, visibleIds, poppedOut])
   const seenIdsRef = useRef(seenIds)
   seenIdsRef.current = seenIds
-  const seenKey = view === 'chat' ? visibleKey : ''
+  const seenKey = useMemo(() => [...seenIds].sort().join('|'), [seenIds])
   // Mirror of panes for the pane-focus keyboard shortcuts, registered once on mount
   // (same pattern as sessionsRef/activeIdRef).
   const panesRef = useRef(panes)
@@ -1365,6 +1369,9 @@ export default function App() {
       // this runs — and this runs on a timer, which would re-save every terminal chat
       // forever for no reason.
       if (!sessionIdChanged && !nameFromTitle && !nameFromPreview && !movedAt && !markUnread && !previewChanged) continue
+      // A popped-out chat's window shows its name too.
+      const renamedTo = nameFromTitle ?? nameFromPreview
+      if (renamedTo && poppedOutRef.current.has(s.id)) void window.electronAPI.popoutUpdate(s.id, { name: renamedTo })
 
       setSessions((prev) =>
         prev.map((cur) => {
@@ -1475,7 +1482,10 @@ export default function App() {
         // Saved at once rather than on the next autosave tick, so the link and the name are
         // never lost on a restart and re-claimed from scratch — against a listing that by
         // then has other chats' threads in it too.
-        for (const s of touched) window.electronAPI.saveSession(s)
+        for (const s of touched) {
+          window.electronAPI.saveSession(s)
+          if (poppedOutRef.current.has(s.id)) void window.electronAPI.popoutUpdate(s.id, { name: s.name })
+        }
         return next
       })
     }
@@ -1531,6 +1541,7 @@ export default function App() {
     )
     if (!patched) return
     window.electronAPI.saveSession(patched)
+    if (poppedOutRef.current.has(id)) void window.electronAPI.popoutUpdate(id, { name })
     const ccId = patched.claudeSessionId || patched.terminalSessionId
     if (ccId && patched.projectPath) {
       const prefer = patched.wslDistro ? `wsl:${patched.wslDistro}` : undefined

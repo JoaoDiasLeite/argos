@@ -202,12 +202,15 @@ import {
 import { createOverlayWindow, hideOverlay, toggleOverlay, registerOverlayShortcut, reregisterOverlayShortcut, overlayShortcut } from './overlay'
 import { createToastWindow, showToast, hideToast, sendToToast } from './toast'
 import {
+  chatPopoutInView,
   chatPopoutSpec,
   chatPopoutWindows,
   closeChatPopout,
   focusChatPopout,
   openChatPopout,
   openChatPopouts,
+  refreshPopoutTitle,
+  updateChatPopout,
   type ChatPopoutSpec
 } from './chat-popout'
 import { noteTerminalBusy } from './run-indicators-pure'
@@ -437,6 +440,11 @@ function mainWindowInactive(): boolean {
     mainWindow.isMinimized() ||
     !mainWindow.isFocused()
   )
+}
+
+/** You are looking at this chat: the main window is active, or the chat's own pop-out is. */
+function chatInView(terminalId: string): boolean {
+  return !mainWindowInactive() || chatPopoutInView(terminalId)
 }
 
 // Taskbar progress: an indeterminate bar while any terminal is working, cleared to
@@ -909,8 +917,18 @@ const isPopoutSpec = (v: unknown): v is ChatPopoutSpec => {
 ipcMain.handle('popout:open', (_, spec: unknown) => {
   if (!isPopoutSpec(spec)) return false
   const backgroundColor = getConfig().ui.theme === 'light' ? '#f7f5f1' : '#141312'
-  openChatPopout(spec, backgroundColor, (sessionId) => sendToMainWindow('popout:closed', sessionId))
+  // Seeded with the chat's current run state, so the title is right before the next change.
+  openChatPopout(spec, backgroundColor, (sessionId) => sendToMainWindow('popout:closed', sessionId), {
+    busy: busyTerminals().includes(spec.terminalId),
+    waiting: waitingTerminals().includes(spec.terminalId)
+  })
   return true
+})
+ipcMain.handle('popout:update', (_, sessionId: unknown, patch: unknown) => {
+  if (typeof sessionId !== 'string' || !patch || typeof patch !== 'object') return false
+  const name = (patch as { name?: unknown }).name
+  if (typeof name !== 'string') return false
+  return updateChatPopout(sessionId, { name })
 })
 ipcMain.handle('popout:spec', (_, sessionId: unknown) => (typeof sessionId === 'string' ? chatPopoutSpec(sessionId) : null))
 ipcMain.handle('popout:focus', (_, sessionId: unknown) => (typeof sessionId === 'string' ? focusChatPopout(sessionId) : false))
@@ -1132,7 +1150,8 @@ function openChat(sessionId: string): void {
  */
 function companionTerminalIdle(terminalId: string, kind: CompanionTerminalAlert['kind']): void {
   const sessionId = chatSessionId(terminalId)
-  if (!sessionId || !mainWindowInactive()) return
+  // A chat in view, in the main window or its own pop-out, shows its own dot.
+  if (!sessionId || chatInView(terminalId)) return
   tellCompanionTerminal({ key: terminalKey(terminalId), kind, title: chatName(sessionId), detail: '', ops: isOpsTerminal(terminalId) }, () =>
     openChat(sessionId)
   )
@@ -1161,7 +1180,8 @@ function tellCompanionAboutHook(p: NotifyPayload): boolean {
   const key = hookKey(target?.sessionId ?? null, terminalClaudeSessions, p.title)
   const sessionId = key.startsWith('term:') ? chatSessionId(key.slice('term:'.length)) : null
   // An embedded chat while you are looking at Argos: the toast does what it always did.
-  if (sessionId && !mainWindowInactive()) return false
+  // The chat's own pop-out in front counts too, but only for that chat.
+  if (sessionId && chatInView(key.slice('term:'.length))) return false
   return tellCompanionTerminal({ key, kind: p.urgent ? 'waiting' : 'finished', title: p.title, detail: p.body }, () =>
     sessionId ? openChat(sessionId) : openDeepLink(p.link)
   )
@@ -3133,6 +3153,7 @@ ipcMain.handle(
         send('terminal:exit', { id: tid, exitCode })
         // terminal.ts forgets an exited pty's busy state without an idle transition.
         dropBusyTerminal(tid)
+        refreshPopoutTitle(tid, { busy: false, waiting: false })
         terminalClaudeSessions.delete(tid)
         forgetTerminalAlert(terminalKey(tid))
         // One ops run per CLI launch: the pty going away ends it.
@@ -3142,12 +3163,14 @@ ipcMain.handle(
       // a running dot, and a poll slow enough to be cheap would be too slow to be right.
       (tid, busy) => {
         send('terminal:busy', { id: tid, busy })
+        refreshPopoutTitle(tid, { busy })
         onTerminalBusy(tid, busy)
       },
       // The CLI asking for the user back, read out of its own output — see
       // terminal-osc-pure.ts. `waiting` separates "it needs you" from "it is done".
       (tid, waiting) => {
         send('terminal:notify', { id: tid, waiting })
+        refreshPopoutTitle(tid, { waiting })
         try {
           companionTerminalIdle(tid, waiting ? 'waiting' : 'finished')
         } catch {

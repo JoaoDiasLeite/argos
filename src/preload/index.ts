@@ -158,6 +158,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('popout:closed', fn)
     return () => ipcRenderer.removeListener('popout:closed', fn)
   },
+  popoutUpdate: (sessionId: string, patch: { name?: string }) => ipcRenderer.invoke('popout:update', sessionId, patch),
+  onPopoutSpecChanged: (cb: (spec: unknown) => void) => {
+    const fn = (_: unknown, spec: unknown) => cb(spec)
+    ipcRenderer.on('popout:spec-changed', fn)
+    return () => ipcRenderer.removeListener('popout:spec-changed', fn)
+  },
 
   // Config / models
   getConfig: () => ipcRenderer.invoke('config:get'),

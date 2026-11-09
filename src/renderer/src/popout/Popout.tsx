@@ -26,11 +26,19 @@ export default function Popout() {
       applyTheme(document.documentElement, ui)
       window.electronAPI.setZoom(zoomFor(ui))
     })
+    // A rename in the main window: main sends the new spec, the header follows. (The window
+    // title, with its busy/waiting mark, is main's to set.)
+    const offSpec = window.electronAPI.onPopoutSpecChanged((next) => {
+      if (next?.sessionId === sessionId) setSpec(next)
+    })
     window.electronAPI
       .popoutSpec(sessionId)
       .then(setSpec)
       .catch(() => setSpec(null))
-    return off
+    return () => {
+      off()
+      offSpec()
+    }
   }, [sessionId])
 
   if (spec === undefined) return null

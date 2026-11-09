@@ -1438,6 +1438,10 @@ declare global {
       popoutClose: (sessionId: string) => Promise<boolean>
       popoutList: () => Promise<string[]>
       onPopoutClosed: (cb: (sessionId: string) => void) => () => void
+      /** A popped-out chat was renamed: its window follows. False when the chat is not out. */
+      popoutUpdate: (sessionId: string, patch: { name?: string }) => Promise<boolean>
+      /** In a pop-out: main changed this window's spec (a rename). */
+      onPopoutSpecChanged: (cb: (spec: ChatPopoutSpec) => void) => () => void
 
       // Config / models
       getConfig: () => Promise<AppConfig>
