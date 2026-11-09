@@ -998,6 +998,25 @@ export type OpsReportKind = 'internal' | 'client' | 'handover'
  * the ledger's id for it: the `operator.asked` / `operator.answered` lines carry the same
  * one, so a card can close when its answer lands (a stop answers it as declined).
  */
+export interface OpsSecretRequest {
+  appSessionId: string
+  requestId: string
+  hostId: string
+  hostName: string
+  prompt: string
+}
+
+/**
+ * What `ops:pending` returns: every prompt main is still waiting on, so a reloaded
+ * renderer can rebuild its queues. `toastApprovalIds` are the approvals the toast shows.
+ */
+export interface OpsPending {
+  approvals: ApprovalRequest[]
+  secrets: OpsSecretRequest[]
+  operatorAsks: OpsOperatorRequest[]
+  toastApprovalIds: string[]
+}
+
 export interface OpsOperatorRequest {
   appSessionId: string
   runId: string
@@ -1762,15 +1781,15 @@ declare global {
         appSessionId: string
       ) => Promise<{ ok: true; events: OpsLiveEvent[] } | { ok: false; error: string }>
       /** An ops run needs a host's sudo password (masked prompt; never stored beyond the run). */
-      onOpsSecretRequest: (
-        cb: (data: { appSessionId: string; requestId: string; hostId: string; hostName: string; prompt: string }) => void
-      ) => () => void
+      onOpsSecretRequest: (cb: (data: OpsSecretRequest) => void) => () => void
       /** Answer a secret request; `value: null` declines. */
       respondOpsSecret: (payload: { requestId: string; value: string | null }) => Promise<{ ok: true }>
       /** The model's ask_operator: a command for the operator to run in their own session and paste back. */
       onOpsOperatorRequest: (cb: (data: OpsOperatorRequest) => void) => () => void
       /** Answer an operator request with the pasted output; `output: null` declines. */
       opsOperatorResponse: (payload: { requestId: string; output: string | null }) => Promise<{ ok: true }>
+      /** Every ops prompt still pending in main, as sent on its channel; pulled on mount after a reload. */
+      opsPending: () => Promise<OpsPending>
       /**
        * Open the ops run of a terminal (one run per CLI launch; run.end when the pty exits
        * or the terminal is closed). Idempotent while that run is open: the same terminal id

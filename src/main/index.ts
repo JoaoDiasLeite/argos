@@ -2494,7 +2494,9 @@ interface ApprovalDecision {
   /** Ops plans only: 0-based indices of the plan steps the operator skipped. */
   skipSteps?: number[]
 }
-const pendingApprovals = new Map<string, (d: ApprovalDecision) => void>()
+// Each entry keeps the request exactly as it was sent, so a reloaded renderer can pull
+// it back (`ops:pending`) instead of leaving the run waiting on a prompt nobody sees.
+const pendingApprovals = new Map<string, { req: Record<string, unknown>; finish: (d: ApprovalDecision) => void }>()
 
 let approvalSeq = 0
 function nextApprovalId(): string {
@@ -2519,9 +2521,9 @@ function requestToolApproval(
       resolve(decision)
     }
     const onAbort = () => finish({ allow: false })
-    pendingApprovals.set(approvalId, finish)
-    signal.addEventListener('abort', onAbort, { once: true })
     const req = { appSessionId, approvalId, tool, input, ...(ops ? { ops } : {}) }
+    pendingApprovals.set(approvalId, { req, finish })
+    signal.addEventListener('abort', onAbort, { once: true })
     send('agent:approval-request', req)
     if (mainWindowInactive()) {
       toastApprovals.add(approvalId)
@@ -2538,7 +2540,7 @@ ipcMain.handle(
     _,
     payload: { approvalId: string; allow: boolean; updatedInput?: Record<string, unknown>; stop?: boolean; skipSteps?: unknown }
   ) => {
-    const resolver = pendingApprovals.get(payload.approvalId)
+    const resolver = pendingApprovals.get(payload.approvalId)?.finish
     if (resolver) {
       pendingApprovals.delete(payload.approvalId)
       resolver({
@@ -2561,7 +2563,7 @@ ipcMain.handle(
 // Pending secret prompts of ops runs (the sudo password of a host, plan §4), keyed by a
 // request id. Main window only: a password never goes to the toast. The value lives in
 // the run's memory and is never logged.
-const pendingSecrets = new Map<string, (value: string | null) => void>()
+const pendingSecrets = new Map<string, { req: Record<string, unknown>; finish: (value: string | null) => void }>()
 let secretSeq = 0
 
 function requestOpsSecret(
@@ -2579,16 +2581,17 @@ function requestOpsSecret(
       resolve(value)
     }
     const onAbort = () => finish(null)
-    pendingSecrets.set(requestId, finish)
+    const payload = { appSessionId, requestId, hostId: req.hostId, hostName: req.hostName, prompt: req.prompt }
+    pendingSecrets.set(requestId, { req: payload, finish })
     signal.addEventListener('abort', onAbort, { once: true })
-    send('ops:secret-request', { appSessionId, requestId, hostId: req.hostId, hostName: req.hostName, prompt: req.prompt })
+    send('ops:secret-request', payload)
     flagAttention('approval')
     tellCompanionOpsWaiting(appSessionId, req.prompt)
   })
 }
 
 ipcMain.handle('ops:secret-response', (_, payload: { requestId: string; value: string | null }) => {
-  const resolver = payload && typeof payload.requestId === 'string' ? pendingSecrets.get(payload.requestId) : undefined
+  const resolver = payload && typeof payload.requestId === 'string' ? pendingSecrets.get(payload.requestId)?.finish : undefined
   if (resolver) resolver(typeof payload.value === 'string' ? payload.value : null)
   return { ok: true }
 })
@@ -2597,7 +2600,7 @@ ipcMain.handle('ops:secret-response', (_, payload: { requestId: string; value: s
 // for the operator to run it in their own session and paste the output. Keyed by a
 // request id; `askId` is the ledger's id for the same ask. Main window only: the answer
 // is a paste. A stopped run or a closed terminal resolves it as declined.
-const pendingOperatorAsks = new Map<string, (output: string | null) => void>()
+const pendingOperatorAsks = new Map<string, { req: Record<string, unknown>; finish: (output: string | null) => void }>()
 let operatorAskSeq = 0
 
 function requestOpsOperator(
@@ -2615,9 +2618,7 @@ function requestOpsOperator(
       resolve(output)
     }
     const onAbort = () => finish(null)
-    pendingOperatorAsks.set(requestId, finish)
-    signal.addEventListener('abort', onAbort, { once: true })
-    send('ops:operator-request', {
+    const payload = {
       appSessionId,
       runId: req.runId,
       requestId,
@@ -2627,17 +2628,30 @@ function requestOpsOperator(
       ...(req.hostId !== undefined ? { hostId: req.hostId } : {}),
       ...(req.hostName !== undefined ? { hostName: req.hostName } : {}),
       ...(req.expect !== undefined ? { expect: req.expect } : {})
-    })
+    }
+    pendingOperatorAsks.set(requestId, { req: payload, finish })
+    signal.addEventListener('abort', onAbort, { once: true })
+    send('ops:operator-request', payload)
     flagAttention('approval')
     tellCompanionOpsWaiting(appSessionId, req.why || req.cmd)
   })
 }
 
 ipcMain.handle('ops:operator-response', (_, payload: { requestId: string; output: string | null }) => {
-  const resolver = payload && typeof payload.requestId === 'string' ? pendingOperatorAsks.get(payload.requestId) : undefined
+  const resolver = payload && typeof payload.requestId === 'string' ? pendingOperatorAsks.get(payload.requestId)?.finish : undefined
   if (resolver) resolver(typeof payload.output === 'string' ? payload.output : null)
   return { ok: true }
 })
+
+// Every ops prompt still waiting, each exactly as it was sent on its channel. A renderer
+// that reloads (Ctrl+R, a crash, an HMR remount) lost its queues; it pulls them back from
+// here on mount. `toastApprovalIds` says which approvals the toast window is showing.
+ipcMain.handle('ops:pending', () => ({
+  approvals: [...pendingApprovals.values()].map((p) => p.req),
+  secrets: [...pendingSecrets.values()].map((p) => p.req),
+  operatorAsks: [...pendingOperatorAsks.values()].map((p) => p.req),
+  toastApprovalIds: [...toastApprovals]
+}))
 
 // ─── SSH hosts / remote ─────────────────────────────────────────────────────
 

@@ -457,6 +457,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   opsOperatorResponse: (payload: { requestId: string; output: string | null }) =>
     ipcRenderer.invoke('ops:operator-response', payload),
+  // Every ops prompt still pending in main, pulled on mount so a reload does not lose them.
+  opsPending: () => ipcRenderer.invoke('ops:pending'),
   // An ops terminal (plan §9 Phase 5): opens the run and returns the env + MCP config to launch the CLI with.
   // One intervention (docs/INTERVENTIONS_PLAN.md §2): runbook, scope, task, ticket, client, and
   // the diagnosis it follows when it was handed over from one.

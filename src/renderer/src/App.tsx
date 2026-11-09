@@ -15,6 +15,7 @@ import {
   LiveSession,
   OpsIntervention,
   OpsOperatorRequest,
+  OpsSecretRequest,
   GitFile
 } from './types'
 import Sidebar from './components/Sidebar'
@@ -88,6 +89,7 @@ import { SESSION_DRAG_TYPE, type DropPlan } from './lib/pane-drop'
 import { SshHostPublic, RemoteTarget } from './types'
 import { useT } from './i18n'
 import { NEW_CHAT_NAME, chatDisplayName } from './lib/chat-name'
+import { mergeById } from './lib/merge-by-id'
 import { plural, type MessageKey } from '../../shared/i18n'
 import './styles/App.css'
 // Pulled in directly (rather than left to each lazy view) so the `.view-loading`
@@ -415,8 +417,17 @@ export default function App() {
   }, [])
   const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([])
   // Sudo-password requests from ops runs, answered one at a time (head of the queue).
-  const [secretQueue, setSecretQueue] = useState<{ appSessionId: string; requestId: string; hostId: string; hostName: string; prompt: string }[]>([])
-  useEffect(() => window.electronAPI.onOpsSecretRequest((req) => setSecretQueue((q) => [...q, req])), [])
+  const [secretQueue, setSecretQueue] = useState<OpsSecretRequest[]>([])
+  useEffect(() => {
+    const bySecretId = (r: OpsSecretRequest): string => r.requestId
+    const off = window.electronAPI.onOpsSecretRequest((req) => setSecretQueue((q) => mergeById(q, [req], bySecretId)))
+    // A reload lost the queue: pull back what main still waits on (a push can race it).
+    window.electronAPI
+      .opsPending()
+      .then((p) => setSecretQueue((q) => mergeById(q, p.secrets, bySecretId)))
+      .catch(() => undefined)
+    return off
+  }, [])
   const answerSecret = (requestId: string, value: string | null) => {
     void window.electronAPI.respondOpsSecret({ requestId, value })
     setSecretQueue((q) => q.filter((r) => r.requestId !== requestId))
@@ -427,7 +438,15 @@ export default function App() {
   // request goes when the operator answers it, or when the ledger shows its answer (a
   // stopped run answers it as declined).
   const [operatorRequests, setOperatorRequests] = useState<OpsOperatorRequest[]>([])
-  useEffect(() => window.electronAPI.onOpsOperatorRequest((req) => setOperatorRequests((q) => [...q, req])), [])
+  useEffect(() => {
+    const byOperatorId = (r: OpsOperatorRequest): string => r.requestId
+    const off = window.electronAPI.onOpsOperatorRequest((req) => setOperatorRequests((q) => mergeById(q, [req], byOperatorId)))
+    window.electronAPI
+      .opsPending()
+      .then((p) => setOperatorRequests((q) => mergeById(q, p.operatorAsks, byOperatorId)))
+      .catch(() => undefined)
+    return off
+  }, [])
   useEffect(
     () =>
       window.electronAPI.onOpsEvent((data) => {
@@ -667,10 +686,22 @@ export default function App() {
 
   // Approval listeners — the queue is fed by ops runs (the gate in main), never by a chat.
   useEffect(() => {
+    const byApprovalId = (r: ApprovalRequest): string => r.approvalId
     const offApproval = window.electronAPI.onApprovalRequest((data: ApprovalRequest) => {
-      approvalSinceRef.current.set(data.approvalId, Date.now())
-      setApprovalQueue((prev) => [...prev, data])
+      if (!approvalSinceRef.current.has(data.approvalId)) approvalSinceRef.current.set(data.approvalId, Date.now())
+      setApprovalQueue((prev) => mergeById(prev, [data], byApprovalId))
     })
+    // A reload lost the queue while the runs kept waiting: pull back what main still holds.
+    // The wait is timed from now; the original request time did not survive the reload.
+    window.electronAPI
+      .opsPending()
+      .then((p) => {
+        for (const r of p.approvals) {
+          if (!approvalSinceRef.current.has(r.approvalId)) approvalSinceRef.current.set(r.approvalId, Date.now())
+        }
+        setApprovalQueue((prev) => mergeById(prev, p.approvals, byApprovalId))
+      })
+      .catch(() => undefined)
 
     // An approval answered elsewhere (e.g. the always-on-top toast while this
     // window was hidden) — drop it here so the modal doesn't linger unanswered.
