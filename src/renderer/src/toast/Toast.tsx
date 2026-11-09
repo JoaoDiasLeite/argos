@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ApprovalRequest } from '../types'
 import { applyTheme } from '../lib/theme'
+import { mergeById } from '../lib/merge-by-id'
 import { opsToastEyebrow, opsToastQuestion } from '../lib/ops-approval'
 import { rich } from '../lib/t-rich'
 import { useT } from '../i18n'
@@ -49,10 +50,19 @@ export default function Toast() {
     // Long-lived window, one mount-time palette read: follow the push instead.
     const offUi = window.electronAPI.onUiPrefs((ui) => applyTheme(document.documentElement, ui))
 
+    const byApprovalId = (r: ApprovalRequest): string => r.approvalId
     const offApproval = window.electronAPI.onToastApproval((data: ApprovalRequest) => {
       // Ignore duplicates (the same id could arrive twice on rapid re-shows).
-      setQueue((prev) => (prev.some((r) => r.approvalId === data.approvalId) ? prev : [...prev, data]))
+      setQueue((prev) => mergeById(prev, [data], byApprovalId))
     })
+    // A reloaded toast lost its queue: pull back the approvals main still has on the toast.
+    window.electronAPI
+      .opsPending()
+      .then((p) => {
+        const onToast = new Set(p.toastApprovalIds)
+        setQueue((prev) => mergeById(prev, p.approvals.filter((r) => onToast.has(r.approvalId)), byApprovalId))
+      })
+      .catch(() => undefined)
     const offResolved = window.electronAPI.onApprovalResolved((approvalId: string) => {
       setQueue((prev) => prev.filter((r) => r.approvalId !== approvalId))
     })

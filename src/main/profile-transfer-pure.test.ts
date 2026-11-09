@@ -31,7 +31,8 @@ import {
   splitHostSecrets,
   stripLocalStoreKeys,
   type BundleHeader,
-  type BundleLine
+  type BundleLine,
+  type ProjectLine
 } from './profile-transfer-pure'
 
 const FROM_HOME = 'C:\\Users\\JoãoLeite'
@@ -260,6 +261,20 @@ describe('hosts', () => {
   it('keeps this machine trusted keys over imported ones', () => {
     expect(mergeTrust({ a: 'mine' }, { a: 'theirs', b: 'new' })).toEqual({ a: 'mine', b: 'new' })
   })
+
+  it('keeps a local entry of either shape over an imported one with another fingerprint', () => {
+    const theirs = { fp: 'SHA256:theirs', type: 'ssh-ed25519', key: 'AAAA' }
+    const mineObj = { fp: 'SHA256:mine', type: 'ssh-ed25519', key: 'BBBB' }
+    expect(mergeTrust({ a: 'SHA256:mine', b: mineObj }, { a: theirs, b: theirs, c: theirs })).toEqual({ a: 'SHA256:mine', b: mineObj, c: theirs })
+  })
+
+  it('fills a local fingerprint-only entry with the imported key of the same fingerprint', () => {
+    const theirs = { fp: 'SHA256:same', type: 'ssh-ed25519', key: 'AAAA' }
+    expect(mergeTrust({ a: 'SHA256:same' }, { a: theirs })).toEqual({ a: theirs })
+    expect(mergeTrust({ a: { fp: 'SHA256:same' } }, { a: theirs })).toEqual({ a: theirs })
+    // An imported fingerprint-only entry has nothing to add.
+    expect(mergeTrust({ a: 'SHA256:same' }, { a: 'SHA256:same' })).toEqual({ a: 'SHA256:same' })
+  })
 })
 
 describe('secrets', () => {
@@ -349,6 +364,22 @@ describe('bundle stream', () => {
     expect(parseLine('{"type":"profile"}')).toEqual({ type: 'profile', json: {}, dirs: {}, sshHosts: [] })
   })
 
+  it("carries a codex project line's thread names, and drops a malformed map", async () => {
+    const codex: BundleLine = {
+      ...(project as ProjectLine),
+      sourceId: 'codex',
+      provider: 'codex',
+      threadNames: { 'id-1': 'Fix the build', 'id-2': 'Olá ção' }
+    }
+    const { lines } = await readAll(await writeBundle([HEADER, profile, codex]))
+    expect(lines).toEqual([profile, codex])
+    const base = encodeLine(project).trim().slice(0, -1)
+    expect(parseLine(`${base},"threadNames":{"a":1}}`)).toEqual(project)
+    expect(parseLine(`${base},"threadNames":["a"]}`)).toEqual(project)
+    expect(parseLine(`${base},"threadNames":"a"}`)).toEqual(project)
+    expect(parseLine(`${base},"threadNames":{}}`)).toEqual(project)
+  })
+
   it('counts transcripts the same way for export and preview', () => {
     expect(isTranscriptRel('a.jsonl', 'claude')).toBe(true)
     expect(isTranscriptRel('archived/a.jsonl', 'claude')).toBe(true)
@@ -391,6 +422,7 @@ describe('chat selection', () => {
     expect(chatSourceId({ projectPath: 'C:/p', provider: 'codex' }, defaults)).toBe('codex')
     expect(chatSourceId({ projectPath: 'C:/p', provider: 'codex', codexAccountId: 'pacc_1' }, defaults)).toBe('codex:pacc_1')
     expect(chatSourceId({ projectPath: '/home/x', wslDistro: 'Ubuntu' }, defaults)).toBe('wsl:Ubuntu')
+    expect(chatSourceId({ projectPath: '/home/x', wslDistro: 'Ubuntu', provider: 'codex' }, defaults)).toBe('codex-wsl:Ubuntu')
     expect(chatSourceId({ remoteHostId: 'h1' }, defaults)).toBeNull()
   })
 
@@ -417,6 +449,21 @@ describe('chat selection', () => {
       selectChats(records, selected, { includeRemote, windows: true, ...defaults }).map((r) => r.id as string)
     expect(ids(false)).toEqual(['a', 'c', 'f'])
     expect(ids(true)).toEqual(['a', 'c', 'd', 'f'])
+  })
+
+  it('sends a codex chat run in a distro with that distro codex source only', () => {
+    const records = [
+      { id: 'x', projectPath: '/home/jdl/dev', wslDistro: 'Ubuntu', provider: 'codex' },
+      { id: 'y', projectPath: '/home/jdl/dev', wslDistro: 'Ubuntu', provider: 'claude' }
+    ]
+    const pick = (sourceId: string): string[] =>
+      selectChats(records, [{ sourceId, kind: 'wsl' as const, realPath: '/home/jdl/dev' }], {
+        includeRemote: false,
+        windows: true,
+        ...defaults
+      }).map((r) => r.id as string)
+    expect(pick('codex-wsl:Ubuntu')).toEqual(['x'])
+    expect(pick('wsl:Ubuntu')).toEqual(['y'])
   })
 
   it('keys candidates by source and dir', () => {

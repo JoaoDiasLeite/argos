@@ -141,6 +141,8 @@ const main: Record<keyof typeof en, string> = {
   'ssh.claudeNotFound':
     'O claude não foi encontrado neste anfitrião ({path}). Instala-o: npm i -g @anthropic-ai/claude-code',
   'ssh.claudeNoOutput': 'O claude não produziu nenhuma saída',
+  'ssh.timedOut': 'O servidor não respondeu em 20 s',
+  'ssh.notTrusted': 'A chave do servidor não é de confiança; o terminal não foi aberto',
   'ssh.hostsSaveFailed': 'Não foi possível guardar o ficheiro de anfitriões: {error}',
   'ssh.hostsUnreadable':
     'Não foi possível ler o ficheiro de anfitriões guardado ({error}); não vai ser substituído. Move {file} para outro lado para começar de novo.',

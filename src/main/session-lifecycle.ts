@@ -5,6 +5,7 @@ import {
   projectRealPathById,
   resolveChatSource,
   resolveCodexFor,
+  resolveSource,
   safeSessionPath
 } from './claude-data'
 import {
@@ -143,6 +144,13 @@ export async function moveSession(
 ): Promise<LifecycleResult> {
   const codex = await resolveCodexFor(sourceId)
   if (codex) {
+    // Moving rewrites the recorded cwd and leaves the file in its own home, so the
+    // target has to be a folder on the same side: a Windows path written into a
+    // distro's rollout (or the reverse) names a folder that Codex there cannot open.
+    const to = await resolveSource(toSourceId)
+    if (!to || to.kind !== (codex.kind ?? 'local') || to.distro !== codex.distro) {
+      return { ok: false, error: 'not-found' }
+    }
     const toCwd = await projectRealPathById(toSourceId, toEncodedDir)
     if (!toCwd) return { ok: false, error: 'not-found' }
     return codexMoveSession(codex, sessionId, toCwd, t, archived)

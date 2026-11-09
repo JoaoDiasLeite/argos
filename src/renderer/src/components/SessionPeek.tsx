@@ -235,6 +235,9 @@ export default function SessionPeek({
     // A Codex "project" is a folder derived from transcripts, not a directory anything
     // can be filed into, so it is a destination only for conversations filed that way.
     .filter((p) => codex || p.provider !== 'codex')
+    // Moving a Codex conversation rewrites its cwd in place, so only a folder on the
+    // same side (Windows, or the same distro) is one its CLI can open.
+    .filter((p) => !codex || (p.kind === session.kind && (p.distro ?? '') === (session.distro ?? '')))
 
   return (
     <aside className="sp" ref={colRef} aria-label={t('sessions.peek.label')}>

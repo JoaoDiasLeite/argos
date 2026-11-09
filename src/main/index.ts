@@ -86,10 +86,13 @@ import {
   listHosts,
   saveHost,
   deleteHost,
+  getHost,
   testConnection,
   testClaude,
-  SshHost
+  secretStorageState,
+  SshHostInput
 } from './ssh'
+import { connectionFieldsChanged } from './ssh-host-pure'
 import { listSshKeys, generateKey, readPublicKey } from './ssh-keys'
 import {
   sftpConnect,
@@ -199,12 +202,15 @@ import {
 import { createOverlayWindow, hideOverlay, toggleOverlay, registerOverlayShortcut, reregisterOverlayShortcut, overlayShortcut } from './overlay'
 import { createToastWindow, showToast, hideToast, sendToToast } from './toast'
 import {
+  chatPopoutInView,
   chatPopoutSpec,
   chatPopoutWindows,
   closeChatPopout,
   focusChatPopout,
   openChatPopout,
   openChatPopouts,
+  refreshPopoutTitle,
+  updateChatPopout,
   type ChatPopoutSpec
 } from './chat-popout'
 import { noteTerminalBusy } from './run-indicators-pure'
@@ -434,6 +440,11 @@ function mainWindowInactive(): boolean {
     mainWindow.isMinimized() ||
     !mainWindow.isFocused()
   )
+}
+
+/** You are looking at this chat: the main window is active, or the chat's own pop-out is. */
+function chatInView(terminalId: string): boolean {
+  return !mainWindowInactive() || chatPopoutInView(terminalId)
 }
 
 // Taskbar progress: an indeterminate bar while any terminal is working, cleared to
@@ -906,8 +917,18 @@ const isPopoutSpec = (v: unknown): v is ChatPopoutSpec => {
 ipcMain.handle('popout:open', (_, spec: unknown) => {
   if (!isPopoutSpec(spec)) return false
   const backgroundColor = getConfig().ui.theme === 'light' ? '#f7f5f1' : '#141312'
-  openChatPopout(spec, backgroundColor, (sessionId) => sendToMainWindow('popout:closed', sessionId))
+  // Seeded with the chat's current run state, so the title is right before the next change.
+  openChatPopout(spec, backgroundColor, (sessionId) => sendToMainWindow('popout:closed', sessionId), {
+    busy: busyTerminals().includes(spec.terminalId),
+    waiting: waitingTerminals().includes(spec.terminalId)
+  })
   return true
+})
+ipcMain.handle('popout:update', (_, sessionId: unknown, patch: unknown) => {
+  if (typeof sessionId !== 'string' || !patch || typeof patch !== 'object') return false
+  const name = (patch as { name?: unknown }).name
+  if (typeof name !== 'string') return false
+  return updateChatPopout(sessionId, { name })
 })
 ipcMain.handle('popout:spec', (_, sessionId: unknown) => (typeof sessionId === 'string' ? chatPopoutSpec(sessionId) : null))
 ipcMain.handle('popout:focus', (_, sessionId: unknown) => (typeof sessionId === 'string' ? focusChatPopout(sessionId) : false))
@@ -1129,7 +1150,8 @@ function openChat(sessionId: string): void {
  */
 function companionTerminalIdle(terminalId: string, kind: CompanionTerminalAlert['kind']): void {
   const sessionId = chatSessionId(terminalId)
-  if (!sessionId || !mainWindowInactive()) return
+  // A chat in view, in the main window or its own pop-out, shows its own dot.
+  if (!sessionId || chatInView(terminalId)) return
   tellCompanionTerminal({ key: terminalKey(terminalId), kind, title: chatName(sessionId), detail: '', ops: isOpsTerminal(terminalId) }, () =>
     openChat(sessionId)
   )
@@ -1158,7 +1180,8 @@ function tellCompanionAboutHook(p: NotifyPayload): boolean {
   const key = hookKey(target?.sessionId ?? null, terminalClaudeSessions, p.title)
   const sessionId = key.startsWith('term:') ? chatSessionId(key.slice('term:'.length)) : null
   // An embedded chat while you are looking at Argos: the toast does what it always did.
-  if (sessionId && !mainWindowInactive()) return false
+  // The chat's own pop-out in front counts too, but only for that chat.
+  if (sessionId && chatInView(key.slice('term:'.length))) return false
   return tellCompanionTerminal({ key, kind: p.urgent ? 'waiting' : 'finished', title: p.title, detail: p.body }, () =>
     sessionId ? openChat(sessionId) : openDeepLink(p.link)
   )
@@ -2494,7 +2517,9 @@ interface ApprovalDecision {
   /** Ops plans only: 0-based indices of the plan steps the operator skipped. */
   skipSteps?: number[]
 }
-const pendingApprovals = new Map<string, (d: ApprovalDecision) => void>()
+// Each entry keeps the request exactly as it was sent, so a reloaded renderer can pull
+// it back (`ops:pending`) instead of leaving the run waiting on a prompt nobody sees.
+const pendingApprovals = new Map<string, { req: Record<string, unknown>; finish: (d: ApprovalDecision) => void }>()
 
 let approvalSeq = 0
 function nextApprovalId(): string {
@@ -2519,9 +2544,9 @@ function requestToolApproval(
       resolve(decision)
     }
     const onAbort = () => finish({ allow: false })
-    pendingApprovals.set(approvalId, finish)
-    signal.addEventListener('abort', onAbort, { once: true })
     const req = { appSessionId, approvalId, tool, input, ...(ops ? { ops } : {}) }
+    pendingApprovals.set(approvalId, { req, finish })
+    signal.addEventListener('abort', onAbort, { once: true })
     send('agent:approval-request', req)
     if (mainWindowInactive()) {
       toastApprovals.add(approvalId)
@@ -2538,7 +2563,7 @@ ipcMain.handle(
     _,
     payload: { approvalId: string; allow: boolean; updatedInput?: Record<string, unknown>; stop?: boolean; skipSteps?: unknown }
   ) => {
-    const resolver = pendingApprovals.get(payload.approvalId)
+    const resolver = pendingApprovals.get(payload.approvalId)?.finish
     if (resolver) {
       pendingApprovals.delete(payload.approvalId)
       resolver({
@@ -2561,7 +2586,7 @@ ipcMain.handle(
 // Pending secret prompts of ops runs (the sudo password of a host, plan §4), keyed by a
 // request id. Main window only: a password never goes to the toast. The value lives in
 // the run's memory and is never logged.
-const pendingSecrets = new Map<string, (value: string | null) => void>()
+const pendingSecrets = new Map<string, { req: Record<string, unknown>; finish: (value: string | null) => void }>()
 let secretSeq = 0
 
 function requestOpsSecret(
@@ -2579,16 +2604,17 @@ function requestOpsSecret(
       resolve(value)
     }
     const onAbort = () => finish(null)
-    pendingSecrets.set(requestId, finish)
+    const payload = { appSessionId, requestId, hostId: req.hostId, hostName: req.hostName, prompt: req.prompt }
+    pendingSecrets.set(requestId, { req: payload, finish })
     signal.addEventListener('abort', onAbort, { once: true })
-    send('ops:secret-request', { appSessionId, requestId, hostId: req.hostId, hostName: req.hostName, prompt: req.prompt })
+    send('ops:secret-request', payload)
     flagAttention('approval')
     tellCompanionOpsWaiting(appSessionId, req.prompt)
   })
 }
 
 ipcMain.handle('ops:secret-response', (_, payload: { requestId: string; value: string | null }) => {
-  const resolver = payload && typeof payload.requestId === 'string' ? pendingSecrets.get(payload.requestId) : undefined
+  const resolver = payload && typeof payload.requestId === 'string' ? pendingSecrets.get(payload.requestId)?.finish : undefined
   if (resolver) resolver(typeof payload.value === 'string' ? payload.value : null)
   return { ok: true }
 })
@@ -2597,7 +2623,7 @@ ipcMain.handle('ops:secret-response', (_, payload: { requestId: string; value: s
 // for the operator to run it in their own session and paste the output. Keyed by a
 // request id; `askId` is the ledger's id for the same ask. Main window only: the answer
 // is a paste. A stopped run or a closed terminal resolves it as declined.
-const pendingOperatorAsks = new Map<string, (output: string | null) => void>()
+const pendingOperatorAsks = new Map<string, { req: Record<string, unknown>; finish: (output: string | null) => void }>()
 let operatorAskSeq = 0
 
 function requestOpsOperator(
@@ -2615,9 +2641,7 @@ function requestOpsOperator(
       resolve(output)
     }
     const onAbort = () => finish(null)
-    pendingOperatorAsks.set(requestId, finish)
-    signal.addEventListener('abort', onAbort, { once: true })
-    send('ops:operator-request', {
+    const payload = {
       appSessionId,
       runId: req.runId,
       requestId,
@@ -2627,25 +2651,49 @@ function requestOpsOperator(
       ...(req.hostId !== undefined ? { hostId: req.hostId } : {}),
       ...(req.hostName !== undefined ? { hostName: req.hostName } : {}),
       ...(req.expect !== undefined ? { expect: req.expect } : {})
-    })
+    }
+    pendingOperatorAsks.set(requestId, { req: payload, finish })
+    signal.addEventListener('abort', onAbort, { once: true })
+    send('ops:operator-request', payload)
     flagAttention('approval')
     tellCompanionOpsWaiting(appSessionId, req.why || req.cmd)
   })
 }
 
 ipcMain.handle('ops:operator-response', (_, payload: { requestId: string; output: string | null }) => {
-  const resolver = payload && typeof payload.requestId === 'string' ? pendingOperatorAsks.get(payload.requestId) : undefined
+  const resolver = payload && typeof payload.requestId === 'string' ? pendingOperatorAsks.get(payload.requestId)?.finish : undefined
   if (resolver) resolver(typeof payload.output === 'string' ? payload.output : null)
   return { ok: true }
 })
 
+// Every ops prompt still waiting, each exactly as it was sent on its channel. A renderer
+// that reloads (Ctrl+R, a crash, an HMR remount) lost its queues; it pulls them back from
+// here on mount. `toastApprovalIds` says which approvals the toast window is showing.
+ipcMain.handle('ops:pending', () => ({
+  approvals: [...pendingApprovals.values()].map((p) => p.req),
+  secrets: [...pendingSecrets.values()].map((p) => p.req),
+  operatorAsks: [...pendingOperatorAsks.values()].map((p) => p.req),
+  toastApprovalIds: [...toastApprovals]
+}))
+
 // ─── SSH hosts / remote ─────────────────────────────────────────────────────
 
 ipcMain.handle('ssh:list', () => listHosts())
-ipcMain.handle('ssh:save', (_, host: SshHost) => saveHost(host))
-ipcMain.handle('ssh:delete', (_, id: string) => deleteHost(id))
+// The pooled sftp connection was opened with the old host, port, user and secret, so a
+// change to any of them (or deleting the host) must close it; the next use reconnects.
+ipcMain.handle('ssh:save', (_, host: SshHostInput) => {
+  const prev = host.id ? getHost(host.id) : null
+  const res = saveHost(host)
+  if (res.ok && prev && connectionFieldsChanged(prev, host)) void sftpDisconnect(prev.id)
+  return res
+})
+ipcMain.handle('ssh:delete', (_, id: string) => {
+  void sftpDisconnect(id)
+  return deleteHost(id)
+})
 ipcMain.handle('ssh:test', (_, id: string) => testConnection(id))
 ipcMain.handle('ssh:test-claude', (_, id: string) => testClaude(id))
+ipcMain.handle('ssh:secret-storage', () => secretStorageState())
 ipcMain.handle('ssh:keys-list', () => listSshKeys())
 ipcMain.handle('ssh:keys-generate', (_, name: string, comment?: string) => generateKey(name, comment))
 ipcMain.handle('ssh:keys-public', (_, privatePath: string) => readPublicKey(privatePath))
@@ -3070,7 +3118,7 @@ function dropBusyTerminal(id: string): void {
 
 ipcMain.handle(
   'terminal:create',
-  (
+  async (
     _,
     id: string,
     opts: {
@@ -3097,7 +3145,7 @@ ipcMain.handle(
     const live = opts?.ops ? terminalOps.get(id) : undefined
     const fallback =
       live && !live.ctx.ended && live.resumeSessionId && live.resumeSessionId === opts.resumeSessionId ? live.resumeFallbackPrompt : undefined
-    const r = createTerminal(
+    const r = await createTerminal(
       id,
       { ...opts, resumeFallbackPrompt: fallback },
       (tid, data) => send('terminal:data', { id: tid, data }),
@@ -3105,6 +3153,7 @@ ipcMain.handle(
         send('terminal:exit', { id: tid, exitCode })
         // terminal.ts forgets an exited pty's busy state without an idle transition.
         dropBusyTerminal(tid)
+        refreshPopoutTitle(tid, { busy: false, waiting: false })
         terminalClaudeSessions.delete(tid)
         forgetTerminalAlert(terminalKey(tid))
         // One ops run per CLI launch: the pty going away ends it.
@@ -3114,12 +3163,14 @@ ipcMain.handle(
       // a running dot, and a poll slow enough to be cheap would be too slow to be right.
       (tid, busy) => {
         send('terminal:busy', { id: tid, busy })
+        refreshPopoutTitle(tid, { busy })
         onTerminalBusy(tid, busy)
       },
       // The CLI asking for the user back, read out of its own output — see
       // terminal-osc-pure.ts. `waiting` separates "it needs you" from "it is done".
       (tid, waiting) => {
         send('terminal:notify', { id: tid, waiting })
+        refreshPopoutTitle(tid, { waiting })
         try {
           companionTerminalIdle(tid, waiting ? 'waiting' : 'finished')
         } catch {

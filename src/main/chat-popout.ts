@@ -26,7 +26,19 @@ export interface ChatPopoutSpec {
   pinSessionId?: string
 }
 
-const windows = new Map<string, { win: BrowserWindow; spec: ChatPopoutSpec }>()
+/** What the window's title shows besides the name: a run in progress, or the CLI asking for you. */
+interface PopoutStatus {
+  busy: boolean
+  waiting: boolean
+}
+
+const windows = new Map<string, { win: BrowserWindow; spec: ChatPopoutSpec; status: PopoutStatus }>()
+
+/** The window's title: the chat's name, prefixed `! ` while it waits on you, else `● ` while it runs. */
+function popoutTitle(spec: ChatPopoutSpec, status: PopoutStatus): string {
+  const prefix = status.waiting ? '! ' : status.busy ? '● ' : ''
+  return prefix + (spec.name || 'Chat')
+}
 
 function boundsPath(): string {
   return join(app.getPath('userData'), 'popout-bounds.json')
@@ -81,7 +93,12 @@ function restoredBounds(sessionId: string): Rectangle | undefined {
  * Opens the chat in its own window, or brings its existing window forward. `onClosed`
  * runs when the user closes it, so the main window can take the pane back.
  */
-export function openChatPopout(spec: ChatPopoutSpec, backgroundColor: string, onClosed: (sessionId: string) => void): void {
+export function openChatPopout(
+  spec: ChatPopoutSpec,
+  backgroundColor: string,
+  onClosed: (sessionId: string) => void,
+  status: PopoutStatus = { busy: false, waiting: false }
+): void {
   const open = windows.get(spec.sessionId)
   if (open && !open.win.isDestroyed()) {
     if (open.win.isMinimized()) open.win.restore()
@@ -93,7 +110,7 @@ export function openChatPopout(spec: ChatPopoutSpec, backgroundColor: string, on
     ...(bounds ?? { width: 960, height: 680 }),
     minWidth: 420,
     minHeight: 300,
-    title: spec.name || 'Chat',
+    title: popoutTitle(spec, status),
     autoHideMenuBar: true,
     backgroundColor,
     show: false,
@@ -103,7 +120,7 @@ export function openChatPopout(spec: ChatPopoutSpec, backgroundColor: string, on
       contextIsolation: true
     }
   })
-  windows.set(spec.sessionId, { win, spec })
+  windows.set(spec.sessionId, { win, spec, status: { ...status } })
   hardenWebContents(win)
   win.once('ready-to-show', () => win.show())
   // The page title would otherwise replace the chat's name with the HTML one.
@@ -112,7 +129,8 @@ export function openChatPopout(spec: ChatPopoutSpec, backgroundColor: string, on
     if (!win.isMinimized() && !win.isMaximized()) saveBounds(spec.sessionId, win.getBounds())
   })
   win.on('closed', () => {
-    windows.delete(spec.sessionId)
+    // A reopened pop-out of the same chat is a new entry; only drop this window's own.
+    if (windows.get(spec.sessionId)?.win === win) windows.delete(spec.sessionId)
     onClosed(spec.sessionId)
   })
 
@@ -150,6 +168,43 @@ export function closeChatPopout(sessionId: string): boolean {
   if (!open || open.win.isDestroyed()) return false
   open.win.destroy()
   return true
+}
+
+/**
+ * A popped-out chat was renamed in the main window: keep its spec, its window title and its
+ * terminal header in step. False when the chat is not out.
+ */
+export function updateChatPopout(sessionId: string, patch: Partial<Pick<ChatPopoutSpec, 'name'>>): boolean {
+  const open = windows.get(sessionId)
+  if (!open || open.win.isDestroyed()) return false
+  open.spec = { ...open.spec, ...patch }
+  open.win.setTitle(popoutTitle(open.spec, open.status))
+  open.win.webContents.send('popout:spec-changed', open.spec)
+  return true
+}
+
+/** The pop-out showing a terminal, or null when that terminal is not popped out. */
+export function chatPopoutForTerminal(terminalId: string): BrowserWindow | null {
+  for (const o of windows.values()) if (o.spec.terminalId === terminalId && !o.win.isDestroyed()) return o.win
+  return null
+}
+
+/** True when that terminal's pop-out is on screen and has focus: you are looking at the chat. */
+export function chatPopoutInView(terminalId: string): boolean {
+  const win = chatPopoutForTerminal(terminalId)
+  return !!win && win.isVisible() && !win.isMinimized() && win.isFocused()
+}
+
+/**
+ * A terminal's run state changed: if it is popped out, its window title follows (`● `
+ * running, `! ` waiting on you). A no-op for a terminal that is not out.
+ */
+export function refreshPopoutTitle(terminalId: string, patch: Partial<PopoutStatus>): void {
+  for (const o of windows.values()) {
+    if (o.spec.terminalId !== terminalId || o.win.isDestroyed()) continue
+    o.status = { ...o.status, ...patch }
+    o.win.setTitle(popoutTitle(o.spec, o.status))
+  }
 }
 
 /** The chats currently out, for a main window that reloads and has to learn them again. */

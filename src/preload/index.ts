@@ -158,6 +158,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('popout:closed', fn)
     return () => ipcRenderer.removeListener('popout:closed', fn)
   },
+  popoutUpdate: (sessionId: string, patch: { name?: string }) => ipcRenderer.invoke('popout:update', sessionId, patch),
+  onPopoutSpecChanged: (cb: (spec: unknown) => void) => {
+    const fn = (_: unknown, spec: unknown) => cb(spec)
+    ipcRenderer.on('popout:spec-changed', fn)
+    return () => ipcRenderer.removeListener('popout:spec-changed', fn)
+  },
 
   // Config / models
   getConfig: () => ipcRenderer.invoke('config:get'),
@@ -406,6 +412,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sshKeysList: () => ipcRenderer.invoke('ssh:keys-list'),
   sshKeysGenerate: (name: string, comment?: string) =>
     ipcRenderer.invoke('ssh:keys-generate', name, comment),
+  sshSecretStorage: () => ipcRenderer.invoke('ssh:secret-storage'),
   sshKeysPublic: (privatePath: string) => ipcRenderer.invoke('ssh:keys-public', privatePath),
 
   // SFTP (Remote Session file browser)
@@ -457,6 +464,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   opsOperatorResponse: (payload: { requestId: string; output: string | null }) =>
     ipcRenderer.invoke('ops:operator-response', payload),
+  // Every ops prompt still pending in main, pulled on mount so a reload does not lose them.
+  opsPending: () => ipcRenderer.invoke('ops:pending'),
   // An ops terminal (plan §9 Phase 5): opens the run and returns the env + MCP config to launch the CLI with.
   // One intervention (docs/INTERVENTIONS_PLAN.md §2): runbook, scope, task, ticket, client, and
   // the diagnosis it follows when it was handed over from one.

@@ -3,9 +3,10 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { Client, ConnectConfig } from 'ssh2'
 import { randomUUID } from 'crypto'
-import { verifyHostKey } from './ssh-trust'
+import { isEndpointKeyStored, trustedKnownHostsPath, verifyHostKey } from './ssh-trust'
+import { sshOptionPath } from './ssh-trust-pure'
 import { t } from './i18n'
-import { cleanHostFields, decodeHostsFile, refuseOverwriteMessage, type HostsRead } from './ssh-host-pure'
+import { cleanHostFields, decodeHostsFile, mergeSecrets, refuseOverwriteMessage, type HostsRead } from './ssh-host-pure'
 
 export type SshAuthType = 'password' | 'key' | 'agent'
 
@@ -21,6 +22,13 @@ export interface SshHost {
   passphrase?: string
   remotePath?: string
   claudePath?: string
+}
+
+/** What the renderer sends: `undefined` keeps a stored secret, `null` clears it. */
+export type SshHostInput = Omit<SshHost, 'id' | 'password' | 'passphrase'> & {
+  id?: string
+  password?: string | null
+  passphrase?: string | null
 }
 
 /** Host with secrets stripped — safe to hand to the renderer. */
@@ -72,6 +80,20 @@ function updateHosts(mutate: (hosts: SshHost[]) => SshHost[]): HostsWriteResult 
   return { ok: true, hosts: listHosts() }
 }
 
+/** Whether saved secrets are really encrypted: on Linux without a keyring Electron reports
+ * encryption as available but uses a hard-coded key ('basic_text'). */
+export function secretStorageState(): { encrypted: boolean; backend?: string } {
+  const available = safeStorage.isEncryptionAvailable()
+  if (process.platform !== 'linux') return { encrypted: available }
+  let backend: string | undefined
+  try {
+    backend = safeStorage.getSelectedStorageBackend()
+  } catch {
+    backend = undefined
+  }
+  return { encrypted: available && backend !== 'basic_text', backend }
+}
+
 function writeHosts(hosts: SshHost[]): void {
   const json = JSON.stringify(hosts)
   const data = safeStorage.isEncryptionAvailable()
@@ -97,20 +119,16 @@ function genId(): string {
   return `ssh_${randomUUID()}`
 }
 
-export function saveHost(raw: SshHost): HostsWriteResult {
-  const input = cleanHostFields(raw)
+export function saveHost(raw: SshHostInput): HostsWriteResult {
+  const { password: _p, passphrase: _pp, ...fields } = cleanHostFields(raw)
   return updateHosts((hosts) => {
-    const idx = input.id ? hosts.findIndex((h) => h.id === input.id) : -1
+    const idx = fields.id ? hosts.findIndex((h) => h.id === fields.id) : -1
+    const prev = idx >= 0 ? hosts[idx] : undefined
+    const secrets = mergeSecrets(prev, raw)
     if (idx >= 0) {
-      const prev = hosts[idx]
-      // Preserve existing secrets if the renderer didn't supply new ones (it never receives them).
-      hosts[idx] = {
-        ...input,
-        password: input.password || prev.password,
-        passphrase: input.passphrase || prev.passphrase
-      }
+      hosts[idx] = { ...fields, id: fields.id as string, ...secrets }
     } else {
-      hosts.push({ ...input, id: input.id || genId() })
+      hosts.push({ ...fields, id: fields.id || genId(), ...secrets })
     }
     return hosts
   })
@@ -170,21 +188,42 @@ export function getHost(id: string): SshHost | null {
  * to spawn directly (distinct from the headless ssh2 connection `runRemote` uses for
  * one-shot `claude -p` calls). Password auth has no non-interactive flag here — the user
  * is prompted by `ssh` itself inside the terminal.
+ *
+ * The CLI checks the server against the keys Argos trusts, not `~/.ssh/known_hosts`: an
+ * endpoint whose full key is not stored yet goes through testConnection first (the same
+ * trust prompt as every other first use), and a server Argos does not trust is an error
+ * here rather than a terminal that opens anyway.
  */
-export function getSshTerminalCommand(
+export async function getSshTerminalCommand(
   hostId: string
-): { shell: string; args: string[]; remotePath?: string; claudePath?: string } | null {
+): Promise<{ shell: string; args: string[]; remotePath?: string; claudePath?: string } | null> {
   const h = getHost(hostId)
   if (!h) return null
+  const port = h.port || 22
+  if (!isEndpointKeyStored(h.host, port)) {
+    // The verifier records the key before authentication, so a check that then fails to
+    // log in (a password the terminal will ask for) still leaves the server trusted.
+    const check = await testConnection(hostId)
+    if (!isEndpointKeyStored(h.host, port)) {
+      throw new Error(check.ok ? t('main.ssh.notTrusted') : `${t('main.ssh.notTrusted')} (${check.message})`)
+    }
+  }
+  const knownHosts = await trustedKnownHostsPath()
+  if (!knownHosts) throw new Error(t('main.ssh.notTrusted'))
   const args: string[] = ['-t']
-  if (h.port && h.port !== 22) args.push('-p', String(h.port))
+  if (port !== 22) args.push('-p', String(port))
   if (h.authType === 'key' && h.privateKeyPath) {
     args.push('-i', h.privateKeyPath, '-o', 'IdentitiesOnly=yes')
   }
-  args.push('-o', 'StrictHostKeyChecking=accept-new')
+  // One argv element each, never shell-quoted; sshOptionPath only applies ssh's own
+  // option syntax (the userData path can hold spaces, `%` and non-ASCII characters).
+  args.push('-o', `UserKnownHostsFile=${sshOptionPath(knownHosts)}`, '-o', 'StrictHostKeyChecking=yes')
   args.push(`${h.username}@${h.host}`)
   return { shell: 'ssh', args, remotePath: h.remotePath, claudePath: h.claudePath }
 }
+
+/** Upper bound for a whole check (handshake + exec); readyTimeout only covers the handshake. */
+const CHECK_TIMEOUT_MS = 20_000
 
 /**
  * Does this host accept an SSH connection? Nothing more — it authenticates, reports how
@@ -204,9 +243,11 @@ export function testConnection(id: string): Promise<{ ok: boolean; message: stri
     const done = (r: { ok: boolean; message: string }) => {
       if (settled) return
       settled = true
+      clearTimeout(timer)
       conn.end()
       resolve(r)
     }
+    const timer = setTimeout(() => done({ ok: false, message: t('main.ssh.timedOut') }), CHECK_TIMEOUT_MS)
     conn.on('ready', () =>
       done({
         ok: true,
@@ -237,9 +278,11 @@ export function testClaude(id: string): Promise<{ ok: boolean; message: string }
     const done = (r: { ok: boolean; message: string }) => {
       if (settled) return
       settled = true
+      clearTimeout(timer)
       conn.end()
       resolve(r)
     }
+    const timer = setTimeout(() => done({ ok: false, message: t('main.ssh.timedOut') }), CHECK_TIMEOUT_MS)
     conn.on('ready', () => {
       const claude = host.claudePath || 'claude'
       conn.exec(`${claude} --version`, (err, stream) => {

@@ -38,6 +38,60 @@ export function cleanHostFields<T extends HostText>(input: T): T {
   return out
 }
 
+export interface HostSecrets {
+  password?: string
+  passphrase?: string
+}
+
+/**
+ * The secrets a saved host ends up with. For each field: `undefined` (or an empty string)
+ * keeps the stored value, `null` clears it, a non-empty string replaces it. A secret the
+ * chosen auth type does not use is dropped, so switching auth type leaves nothing stale.
+ */
+export function mergeSecrets(
+  prev: HostSecrets | undefined,
+  input: { authType: 'password' | 'key' | 'agent'; password?: string | null; passphrase?: string | null }
+): HostSecrets {
+  const pick = (next: string | null | undefined, old: string | undefined): string | undefined =>
+    next === null ? undefined : next ? next : old
+  const out: HostSecrets = {}
+  if (input.authType === 'password') {
+    const v = pick(input.password, prev?.password)
+    if (v) out.password = v
+  } else if (input.authType === 'key') {
+    const v = pick(input.passphrase, prev?.passphrase)
+    if (v) out.passphrase = v
+  }
+  return out
+}
+
+interface ConnectionFields {
+  host: string
+  port?: number
+  username: string
+  authType: 'password' | 'key' | 'agent'
+  privateKeyPath?: string
+}
+
+/**
+ * Did an edit change what a pooled connection to the host was opened with? True when the
+ * address, port, user, auth type or key path differ, or a secret was cleared (`null`) or
+ * replaced (non-empty string). Text is compared after cleaning, as it is saved.
+ */
+export function connectionFieldsChanged(
+  prev: ConnectionFields,
+  next: ConnectionFields & { password?: string | null; passphrase?: string | null }
+): boolean {
+  const a = cleanHostFields({ name: '', ...prev })
+  const b = cleanHostFields({ name: '', ...next })
+  if (a.host !== b.host || a.username !== b.username) return true
+  if ((prev.port || 22) !== (next.port || 22)) return true
+  if (prev.authType !== next.authType) return true
+  if ((a.privateKeyPath ?? '') !== (b.privateKeyPath ?? '')) return true
+  const secretTouched = (v: string | null | undefined): boolean => v === null || (typeof v === 'string' && v !== '')
+  return secretTouched(next.password) || secretTouched(next.passphrase)
+}
+
 /**
  * Reading the saved hosts file. A failed read must never look like "no hosts": the write
  * paths do read-modify-write, so mistaking a transient decrypt failure for an empty list

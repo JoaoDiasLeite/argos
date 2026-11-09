@@ -7,6 +7,7 @@ import type { Readable, Writable } from 'stream'
 import { promisify } from 'util'
 import { encodeProjectPath } from './codex-data-pure'
 import { projectNameKey } from './project-move-pure'
+import { parseTrustEntry, type TrustEntry } from './ssh-trust-pure'
 
 /**
  * The parts of profile export/import that need no Electron and no disk: the bundle format,
@@ -116,6 +117,9 @@ export interface ProjectLine {
   encodedDir: string
   files: number
   transcripts: number
+  /** Codex only: session id → thread name from `session_index.jsonl`, for the sessions
+   *  whose rollouts travel on this line. Absent when none are named. */
+  threadNames?: Record<string, string>
 }
 
 export interface FileLine extends BundleFile {
@@ -164,6 +168,17 @@ export function validateHeader(parsed: unknown): BundleHeader {
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 
+/** An object of string → string kept as is; anything else (or an empty one) is dropped. */
+function stringRecord(v: unknown): Record<string, string> | undefined {
+  if (!isObj(v)) return undefined
+  const out: Record<string, string> = {}
+  for (const [k, val] of Object.entries(v)) {
+    if (typeof val !== 'string') return undefined
+    out[k] = val
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
 /** A body line, checked for the fields its type needs. Throws 'corrupt'. */
 export function parseLine(raw: string): BundleLine {
   let v: unknown
@@ -189,7 +204,11 @@ export function parseLine(raw: string): BundleLine {
       if (typeof v.index !== 'number' || typeof v.sourceId !== 'string' || typeof v.realPath !== 'string' || typeof v.encodedDir !== 'string') {
         throw new BundleError('corrupt')
       }
-      return v as unknown as ProjectLine
+      {
+        const { threadNames, ...rest } = v
+        const names = stringRecord(threadNames)
+        return { ...(rest as unknown as ProjectLine), ...(names ? { threadNames: names } : {}) }
+      }
     case 'file':
       if (typeof v.project !== 'number' || typeof v.rel !== 'string' || typeof v.text !== 'string') throw new BundleError('corrupt')
       return v as unknown as FileLine
@@ -683,9 +702,24 @@ export function mergeCompanionList(localText: string | null, importedText: strin
   return JSON.stringify([...local, ...added], null, 2)
 }
 
-/** Host-key trust: entries this machine has not seen are added; one it has verified stays. */
+/** A stored ssh-trust.json value: the legacy fingerprint string or the `{ fp, type, key }` form. */
+export type TrustValue = string | TrustEntry
+
+/**
+ * Host-key trust: entries this machine has not seen are added; one it has verified stays.
+ * The one exception fills in rather than replaces: a local fingerprint-only entry takes the
+ * imported type and key when the fingerprints are equal, since that key is the one already
+ * trusted here.
+ */
 export function mergeTrust(local: Record<string, unknown>, imported: Record<string, unknown>): Record<string, unknown> {
-  return { ...imported, ...local }
+  const merged: Record<string, unknown> = { ...imported, ...local }
+  for (const [endpoint, raw] of Object.entries(local)) {
+    const mine = parseTrustEntry(raw)
+    const theirs = parseTrustEntry(imported[endpoint])
+    if (!mine || mine.key || !theirs?.type || !theirs.key || theirs.fp !== mine.fp) continue
+    merged[endpoint] = { fp: mine.fp, type: theirs.type, key: theirs.key } satisfies TrustEntry
+  }
+  return merged
 }
 
 // ─── Chats ↔ projects ─────────────────────────────────────────────────────────
@@ -718,8 +752,11 @@ export function chatSourceId(
   defaults: { claudeAccountId: string; codexAccountId: string }
 ): string | null {
   if (isRemoteChat(record)) return null
-  if (typeof record.wslDistro === 'string' && record.wslDistro) return `wsl:${record.wslDistro}`
   const provider = typeof record.provider === 'string' ? record.provider : 'claude'
+  // Codex typed into a distro's shell writes to that distro's ~/.codex.
+  if (typeof record.wslDistro === 'string' && record.wslDistro) {
+    return provider === 'codex' ? `codex-wsl:${record.wslDistro}` : `wsl:${record.wslDistro}`
+  }
   if (provider === 'codex') {
     const id = typeof record.codexAccountId === 'string' && record.codexAccountId ? record.codexAccountId : defaults.codexAccountId
     return id === DEFAULT_ACCOUNT_ID ? 'codex' : `codex:${id}`

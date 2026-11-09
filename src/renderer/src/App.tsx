@@ -14,7 +14,9 @@ import {
   CcSessionTarget,
   LiveSession,
   OpsIntervention,
+  OpsRunListItem,
   OpsOperatorRequest,
+  OpsSecretRequest,
   GitFile
 } from './types'
 import Sidebar from './components/Sidebar'
@@ -63,6 +65,7 @@ import type {
   HomeRepo,
   HomeProject,
   HomeRecent,
+  HomeEarlier,
   HomeStart,
   HomePlan,
   HomeStartChoice,
@@ -88,6 +91,7 @@ import { SESSION_DRAG_TYPE, type DropPlan } from './lib/pane-drop'
 import { SshHostPublic, RemoteTarget } from './types'
 import { useT } from './i18n'
 import { NEW_CHAT_NAME, chatDisplayName } from './lib/chat-name'
+import { mergeById } from './lib/merge-by-id'
 import { plural, type MessageKey } from '../../shared/i18n'
 import './styles/App.css'
 // Pulled in directly (rather than left to each lazy view) so the `.view-loading`
@@ -415,8 +419,17 @@ export default function App() {
   }, [])
   const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([])
   // Sudo-password requests from ops runs, answered one at a time (head of the queue).
-  const [secretQueue, setSecretQueue] = useState<{ appSessionId: string; requestId: string; hostId: string; hostName: string; prompt: string }[]>([])
-  useEffect(() => window.electronAPI.onOpsSecretRequest((req) => setSecretQueue((q) => [...q, req])), [])
+  const [secretQueue, setSecretQueue] = useState<OpsSecretRequest[]>([])
+  useEffect(() => {
+    const bySecretId = (r: OpsSecretRequest): string => r.requestId
+    const off = window.electronAPI.onOpsSecretRequest((req) => setSecretQueue((q) => mergeById(q, [req], bySecretId)))
+    // A reload lost the queue: pull back what main still waits on (a push can race it).
+    window.electronAPI
+      .opsPending()
+      .then((p) => setSecretQueue((q) => mergeById(q, p.secrets, bySecretId)))
+      .catch(() => undefined)
+    return off
+  }, [])
   const answerSecret = (requestId: string, value: string | null) => {
     void window.electronAPI.respondOpsSecret({ requestId, value })
     setSecretQueue((q) => q.filter((r) => r.requestId !== requestId))
@@ -427,7 +440,32 @@ export default function App() {
   // request goes when the operator answers it, or when the ledger shows its answer (a
   // stopped run answers it as declined).
   const [operatorRequests, setOperatorRequests] = useState<OpsOperatorRequest[]>([])
-  useEffect(() => window.electronAPI.onOpsOperatorRequest((req) => setOperatorRequests((q) => [...q, req])), [])
+  useEffect(() => {
+    const byOperatorId = (r: OpsOperatorRequest): string => r.requestId
+    const off = window.electronAPI.onOpsOperatorRequest((req) => setOperatorRequests((q) => mergeById(q, [req], byOperatorId)))
+    window.electronAPI
+      .opsPending()
+      .then((p) => setOperatorRequests((q) => mergeById(q, p.operatorAsks, byOperatorId)))
+      .catch(() => undefined)
+    return off
+  }, [])
+  // Today's finished ops runs, for Home's "Earlier today": read on mount, again when a run ends.
+  const [opsRunsToday, setOpsRunsToday] = useState<OpsRunListItem[]>([])
+  useEffect(() => {
+    const load = () =>
+      window.electronAPI
+        .opsRuns({ limit: 30 })
+        .then((r) => {
+          if (!r.ok) return
+          const today = new Date().toDateString()
+          setOpsRunsToday(r.runs.filter((x) => x.endedAt && new Date(x.startedAt).toDateString() === today))
+        })
+        .catch(() => undefined)
+    void load()
+    return window.electronAPI.onOpsEvent((data) => {
+      if (data?.line?.event?.kind === 'run.end') void load()
+    })
+  }, [])
   useEffect(
     () =>
       window.electronAPI.onOpsEvent((data) => {
@@ -472,10 +510,14 @@ export default function App() {
   // What is actually being read. The pane state outlives the chat view (the panes are
   // unmounted behind Home and Projects, but kept to come back to), so a chat in one is
   // "visible" there without anyone looking at it — unread asks this instead.
-  const seenIds = useMemo(() => (view === 'chat' ? visibleIds : new Set<string>()), [view, visibleIds])
+  // A popped-out chat has its own window, whatever this one shows, so it counts as seen too.
+  const seenIds = useMemo(() => {
+    const base = view === 'chat' ? visibleIds : new Set<string>()
+    return poppedOut.size ? new Set([...base, ...poppedOut]) : base
+  }, [view, visibleIds, poppedOut])
   const seenIdsRef = useRef(seenIds)
   seenIdsRef.current = seenIds
-  const seenKey = view === 'chat' ? visibleKey : ''
+  const seenKey = useMemo(() => [...seenIds].sort().join('|'), [seenIds])
   // Mirror of panes for the pane-focus keyboard shortcuts, registered once on mount
   // (same pattern as sessionsRef/activeIdRef).
   const panesRef = useRef(panes)
@@ -667,10 +709,22 @@ export default function App() {
 
   // Approval listeners — the queue is fed by ops runs (the gate in main), never by a chat.
   useEffect(() => {
+    const byApprovalId = (r: ApprovalRequest): string => r.approvalId
     const offApproval = window.electronAPI.onApprovalRequest((data: ApprovalRequest) => {
-      approvalSinceRef.current.set(data.approvalId, Date.now())
-      setApprovalQueue((prev) => [...prev, data])
+      if (!approvalSinceRef.current.has(data.approvalId)) approvalSinceRef.current.set(data.approvalId, Date.now())
+      setApprovalQueue((prev) => mergeById(prev, [data], byApprovalId))
     })
+    // A reload lost the queue while the runs kept waiting: pull back what main still holds.
+    // The wait is timed from now; the original request time did not survive the reload.
+    window.electronAPI
+      .opsPending()
+      .then((p) => {
+        for (const r of p.approvals) {
+          if (!approvalSinceRef.current.has(r.approvalId)) approvalSinceRef.current.set(r.approvalId, Date.now())
+        }
+        setApprovalQueue((prev) => mergeById(prev, p.approvals, byApprovalId))
+      })
+      .catch(() => undefined)
 
     // An approval answered elsewhere (e.g. the always-on-top toast while this
     // window was hidden) — drop it here so the modal doesn't linger unanswered.
@@ -1230,7 +1284,8 @@ export default function App() {
         for (const archived of [false, true]) {
           const list = await window.electronAPI.ccListSessions(proj.sourceId, proj.encodedDir, archived)
           const meta = list.find((s) => s.sessionId === target.sessionId)
-          if (meta) {
+          // Only a Claude Code transcript resumes; a Codex one opens in Projects below.
+          if (meta && meta.provider !== 'codex') {
             await resumeCCSession(meta)
             return
           }
@@ -1306,11 +1361,18 @@ export default function App() {
       const lastAt = transcript.messages[length - 1]?.timestamp
       const movedAt = lastAt && lastAt > s.updatedAt ? lastAt : undefined
       const sessionIdChanged = s.claudeSessionId !== sessionId
+      // The last turn's text, on one line, for Home's "Pick up" rows.
+      const lastText = (transcript.messages[length - 1]?.text ?? '').replace(/\s+/g, ' ').trim()
+      const preview = lastText.length > 120 ? `${lastText.slice(0, 119).trimEnd()}…` : lastText
+      const previewChanged = preview !== (s.preview ?? '')
       const markUnread = grew && !s.unread && !seenIdsRef.current.has(s.id)
       // A tick where nothing moved would still produce a *new* session object every time
       // this runs — and this runs on a timer, which would re-save every terminal chat
       // forever for no reason.
-      if (!sessionIdChanged && !nameFromTitle && !nameFromPreview && !movedAt && !markUnread) continue
+      if (!sessionIdChanged && !nameFromTitle && !nameFromPreview && !movedAt && !markUnread && !previewChanged) continue
+      // A popped-out chat's window shows its name too.
+      const renamedTo = nameFromTitle ?? nameFromPreview
+      if (renamedTo && poppedOutRef.current.has(s.id)) void window.electronAPI.popoutUpdate(s.id, { name: renamedTo })
 
       setSessions((prev) =>
         prev.map((cur) => {
@@ -1321,6 +1383,7 @@ export default function App() {
             ...(nameFromTitle ? { name: nameFromTitle, nameFromPreview: undefined } : {}),
             ...(nameFromPreview ? { name: nameFromPreview, nameFromPreview: true } : {}),
             ...(movedAt ? { updatedAt: movedAt } : {}),
+            ...(previewChanged ? { preview } : {}),
             // The terminal wrote new turns while this chat wasn't on screen — reads
             // seenIdsRef (not seenIds) because syncTerminalChats has no deps and would
             // otherwise close over whichever panes were open when it was first created.
@@ -1420,7 +1483,10 @@ export default function App() {
         // Saved at once rather than on the next autosave tick, so the link and the name are
         // never lost on a restart and re-claimed from scratch — against a listing that by
         // then has other chats' threads in it too.
-        for (const s of touched) window.electronAPI.saveSession(s)
+        for (const s of touched) {
+          window.electronAPI.saveSession(s)
+          if (poppedOutRef.current.has(s.id)) void window.electronAPI.popoutUpdate(s.id, { name: s.name })
+        }
         return next
       })
     }
@@ -1476,6 +1542,7 @@ export default function App() {
     )
     if (!patched) return
     window.electronAPI.saveSession(patched)
+    if (poppedOutRef.current.has(id)) void window.electronAPI.popoutUpdate(id, { name })
     const ccId = patched.claudeSessionId || patched.terminalSessionId
     if (ccId && patched.projectPath) {
       const prefer = patched.wslDistro ? `wsl:${patched.wslDistro}` : undefined
@@ -2051,8 +2118,7 @@ export default function App() {
 
   const homeRecent = useMemo<HomeRecent[]>(
     () =>
-      // Terminal chats, newest first. No preview yet: the transcript is the CLI's.
-      // TODO(B4): `session.preview` once the migration and the sync write one.
+      // Terminal chats, newest first; the preview is the last turn, written by the sync.
       sessions
         .filter((s) => s.hasTerminalActivity)
         .sort((a, b) => b.updatedAt - a.updatedAt)
@@ -2063,7 +2129,7 @@ export default function App() {
           name: chatDisplayName(s.name, t),
           projectName: s.projectPath ? resolveHomeProjectName(s.projectPath, s.wslDistro) : undefined,
           updatedAt: s.updatedAt,
-          preview: ''
+          preview: s.preview ?? ''
         })),
     [sessions, resolveHomeProjectName]
   )
@@ -2377,6 +2443,30 @@ export default function App() {
     name: g.title,
     detail: g.count > 1 ? plural(t, 'projects.sessions.count', g.count) : undefined
   }))
+  const homeEarlier = useMemo<HomeEarlier[]>(() => {
+    const today = new Date().toDateString()
+    const chats: HomeEarlier[] = sessions
+      .filter((s) => s.hasTerminalActivity && !displayRunningIds.has(s.id) && new Date(s.updatedAt).toDateString() === today)
+      .map((s) => ({
+        kind: 'chat',
+        id: s.id,
+        name: chatDisplayName(s.name, t),
+        projectName: s.projectPath ? resolveHomeProjectName(s.projectPath, s.wslDistro) : undefined,
+        at: s.updatedAt
+      }))
+    const runs: HomeEarlier[] = opsRunsToday.map((r) => ({
+      kind: 'intervention',
+      runId: r.runId,
+      hostId: r.scope?.kind === 'host' ? r.scope.hostId : undefined,
+      hostName: r.hostNames.join(', '),
+      runbook: r.runbook,
+      headline: r.headline,
+      ok: r.ok,
+      aborted: r.aborted,
+      at: new Date(r.endedAt ?? r.startedAt).getTime()
+    }))
+    return [...chats, ...runs].sort((a, b) => b.at - a.at).slice(0, 8)
+  }, [sessions, displayRunningIds, opsRunsToday, resolveHomeProjectName, t])
   const homeInterventionsRunning: HomeRunning[] = opsTabs
     .filter((t) => !t.ended)
     .map(({ intervention: iv, waiting, label }) => ({
@@ -2852,6 +2942,7 @@ export default function App() {
             repos={homeRepos}
             recentProjects={homeRecentProjects}
             recent={homeRecent}
+            earlier={homeEarlier}
             start={homeStart}
             startOptions={homeStartOptions}
             plan={homePlan}
@@ -2869,6 +2960,10 @@ export default function App() {
             onOpenIntervention={(id) => {
               const tab = opsTabs.find((t) => opsTerminalIdFor(t.intervention) === id)
               if (tab) selectOpsTab(tab.intervention)
+            }}
+            onOpenRun={(hostId) => {
+              setOpsStartHostId(hostId)
+              setView('ops')
             }}
             onOpenRepo={(key) => {
               setProjectFocus({ key, at: Date.now() })

@@ -200,6 +200,11 @@ export default function RemoteView({
   const [probes, setProbes] = useState<Record<string, Probes>>({})
   const [probing, setProbing] = useState<string | null>(null)
   const [keys, setKeys] = useState<SshKeyInfo[]>([])
+  // Optimistic until the main process answers, so the warning never flashes on a keyring machine.
+  const [secretsEncrypted, setSecretsEncrypted] = useState(true)
+  useEffect(() => {
+    window.electronAPI.sshSecretStorage().then((s) => setSecretsEncrypted(s.encrypted)).catch(() => {})
+  }, [])
   const [copied, setCopied] = useState<string | null>(null)
   const [newKeyName, setNewKeyName] = useState('')
   const [generating, setGenerating] = useState(false)
@@ -357,6 +362,9 @@ export default function RemoteView({
   }
 
   const hostValid = !!editing && !!editing.name.trim() && !!editing.host.trim() && !!editing.username.trim()
+
+  // A saved secret exists for the auth type being edited (the main process drops the other).
+  const canRemoveSecret = !!editing?.id && hosts.some((h) => h.id === editing.id && h.hasSecret && h.authType === editing.authType)
 
   const openEditor = (h: SshHostInput) => {
     editorOpenedAt.current = Date.now()
@@ -611,19 +619,19 @@ export default function RemoteView({
             : null
 
     const lastChecked = Math.max(p.conn?.at ?? 0, p.claude?.at ?? 0)
+    const cwd = selDistro ? wslPaths[selDistro.name] ?? '' : ''
+    const acct = selDistro ? accountFor(selDistro.name) : undefined
     const claudeValue = p.claude ? (
       p.claude.ok ? (
-        // TODO(port): the logged-in account; the check only returns `claude --version`.
-        <span>{p.claude.message}</span>
+        // The check only returns `claude --version`; the account comes from the distro's
+        // .claude.json, read with the sources.
+        <span>{acct?.email ? `${p.claude.message} · ${acct.email}` : p.claude.message}</span>
       ) : (
         <span className="rv-dd-err">{t('remote.col.checkFailed')}</span>
       )
     ) : (
       <span className="rv-dd-muted">{t('remote.col.notChecked')}</span>
     )
-
-    const cwd = selDistro ? wslPaths[selDistro.name] ?? '' : ''
-    const acct = selDistro ? accountFor(selDistro.name) : undefined
 
     const connect = () => (selDistro ? onOpenWslSession(selDistro.name, true) : onOpenSession(selHost!, true))
     const newTerminal = () => (selDistro ? onConnectWsl(selDistro.name, cwd || undefined) : onConnect(selHost!))
@@ -1072,9 +1080,15 @@ export default function RemoteView({
                 <input
                   className="text-input"
                   type="password"
-                  placeholder={editing.id ? t('remote.form.unchanged') : ''}
+                  placeholder={editing.password === null ? t('remote.form.removed') : editing.id ? t('remote.form.unchanged') : ''}
                   onChange={(e) => setEditing({ ...editing, password: e.target.value })}
                 />
+                {!secretsEncrypted && <p className="help">{t('remote.form.passwordPlain')}</p>}
+                {canRemoveSecret && editing.password === undefined && (
+                  <button type="button" className="btn-ghost small" onClick={() => setEditing({ ...editing, password: null })}>
+                    {t('remote.form.removePassword')}
+                  </button>
+                )}
               </div>
             )}
             {editing.authType === 'key' && (
@@ -1111,9 +1125,15 @@ export default function RemoteView({
                   <input
                     className="text-input"
                     type="password"
-                    placeholder={editing.id ? t('remote.form.unchanged') : ''}
+                    placeholder={editing.passphrase === null ? t('remote.form.removed') : editing.id ? t('remote.form.unchanged') : ''}
                     onChange={(e) => setEditing({ ...editing, passphrase: e.target.value })}
                   />
+                  {!secretsEncrypted && <p className="help">{t('remote.form.passphrasePlain')}</p>}
+                  {canRemoveSecret && editing.passphrase === undefined && (
+                    <button type="button" className="btn-ghost small" onClick={() => setEditing({ ...editing, passphrase: null })}>
+                      {t('remote.form.removePassphrase')}
+                    </button>
+                  )}
                 </div>
               </>
             )}

@@ -92,6 +92,9 @@ const settings: Record<keyof typeof en, string> = {
 
   // Connection
   'connection.lead': 'As contas com que esta aplicação executa os chats. O Claude e o Codex iniciam sessão através da respetiva CLI; adiciona-as em Contas.',
+  'connection.secrets.label': 'Guarda de segredos',
+  'connection.secrets.encrypted': 'Cifrada com o porta-chaves do sistema',
+  'connection.secrets.plain': 'Sem cifra: esta máquina não tem porta-chaves',
   'connection.accounts.label': 'Contas',
   'connection.accounts.manage': 'Gerir',
   'connection.accounts.count.one': '{n} conta',
