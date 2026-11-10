@@ -21,7 +21,14 @@ const CHANGELOG: Entry[] = [
     version: '3.6.0',
     date: '2026-11-10',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'When Argos runs after you to another screen and the floor ends before he gets there, he now stays where the run stopped instead of jumping to the other screen.'
+        ]
+      }
+    ]
   },
   {
     version: '3.5.0',
