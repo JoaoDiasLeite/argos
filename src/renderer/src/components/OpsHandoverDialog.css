@@ -15,3 +15,25 @@
   line-height: 1.5;
   color: var(--text-1);
 }
+
+/* The base intervention or a runbook: two radios, the base first. */
+.ohd-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ohd-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+.ohd-option input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+.ohd-option > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}

@@ -23,6 +23,16 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'Features',
+        items: [
+          'A base intervention ships with Argos: everything the diagnosis reads plus the Jarvis commands that change a server (restart, reload, backups, permissions, the platform update step by step), each change asking you first. The start screen offers Despiste, Intervenção and Runbook.',
+          'A runbook of yours can be added to the base intervention ("Somar à intervenção base", on by default per runbook), so it only needs what is specific to it. The base applies only on the hosts the runbook covers, and a resume adds it again.',
+          'Handing a diagnosis over now offers the base intervention first, and each recommended action in the diagnosis says whether the base covers it.',
+          'After a run with a runbook that allows more than the base, Argos asks whether it should join the base and opens a prefilled GitHub issue with only the rules: never the server, the client or the run.',
+          'The diagnosis reads more: root-only nginx logs, the /var/www layout, Ruby, Node, OpenSSL and PM2 versions, certificate dates, SELinux, packages, disks, firewall and Docker state, and the Jarvis commands that change nothing.'
+        ]
+      },
+      {
         title: 'Fixes',
         items: [
           'When Argos runs after you to another screen and the floor ends before he gets there, he now stays where the run stopped instead of jumping to the other screen.'

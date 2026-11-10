@@ -46,6 +46,13 @@ describe('interventionPrompt', () => {
     )
   })
 
+  it('a runbook added to the base reads the base guidelines first', () => {
+    const baseDir = 'C:\\Program Files\\Argos\\resources\\runbooks\\intervention'
+    expect(interventionPrompt('restart puma', { baseDir })).toBe(
+      `Read the base intervention's RUNBOOK.md in ${baseDir}, then RUNBOOK.md in this folder, which adds to it and wins where it is stricter, before proposing a plan, then: restart puma`
+    )
+  })
+
   it('without a task, reads the runbook and waits', () => {
     const waits = 'Read RUNBOOK.md in this folder before proposing a plan, then wait for instructions.'
     expect(interventionPrompt('')).toBe(waits)

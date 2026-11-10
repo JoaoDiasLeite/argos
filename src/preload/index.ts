@@ -432,9 +432,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Ops runs (docs/OPS_AGENT_PLAN.md): runbook preview, reports, ledger checks, and the
   // live ledger lines of a run for the timeline. The renderer never writes the ledger.
-  opsLoadRunbook: (dir: string) => ipcRenderer.invoke('ops:load-runbook', dir),
+  opsLoadRunbook: (dir: string, opts?: { onBase?: boolean }) => ipcRenderer.invoke('ops:load-runbook', dir, opts),
   opsScanRunbooks: () => ipcRenderer.invoke('ops:scan-runbooks'),
   opsBuiltinRunbook: () => ipcRenderer.invoke('ops:builtin-runbook'),
+  // "Add to Argos": what an ended run's runbook adds to the base, and the issue proposing it.
+  opsBaseProposal: (runId: string) => ipcRenderer.invoke('ops:base-proposal', runId),
+  opsOpenBaseIssue: (runId: string) => ipcRenderer.invoke('ops:open-base-issue', runId),
   opsReport: (runId: string, kind: 'internal' | 'client' | 'handover', runbookPath?: string) =>
     ipcRenderer.invoke('ops:report', runId, kind, runbookPath),
   opsSaveReport: (runId: string, kind: 'internal' | 'client' | 'handover', runbookPath?: string) =>
@@ -480,6 +483,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       parentRunId?: string
       resumesRunId?: string
       relatedRunIds?: string[]
+      onBase?: boolean
     }
   ) => ipcRenderer.invoke('ops:terminal-session', terminalId, intervention),
   // The start screen's history: run summaries from the ledger, newest first.

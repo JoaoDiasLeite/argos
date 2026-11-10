@@ -388,6 +388,9 @@ export interface OpsRunListItem {
   runbook: string
   /** The runbook folder's path (run.start.runbook.path): what a resume loads again. */
   runbookPath: string
+  /** The runbook ran added to the base intervention (run.start.runbook.base): a resume
+   *  loads it on the base again, not alone. */
+  onBase?: true
   /** The hosts the run was about: its locked host, the hosts an open run touched, or (before interventions) every runbook host. */
   hostNames: string[]
   task?: string
@@ -441,6 +444,7 @@ export function runListItem(
     ...(s.endedAt !== undefined ? { endedAt: s.endedAt } : {}),
     runbook: s.runbook.name,
     runbookPath: s.runbook.path,
+    ...(s.runbook.base ? { onBase: true as const } : {}),
     hostNames: runHostIds(s).map(nameOf),
     ...(s.task !== undefined ? { task: s.task } : {}),
     ...(s.scope !== undefined ? { scope: s.scope } : {}),

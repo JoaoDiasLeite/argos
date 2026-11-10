@@ -72,6 +72,7 @@ const main: Record<keyof typeof en, string> = {
   'ipc.ops.notRunbookFile': 'Não é um ficheiro do runbook: {name}',
   'ipc.ops.noRunId': 'Não foi indicado nenhum id de execução.',
   'ipc.ops.invalidRunId': 'Id de execução inválido.',
+  'ipc.ops.nothingToPropose': 'Este runbook não acrescenta nada à intervenção base.',
   'ipc.ops.unknownReportKind': 'Tipo de relatório desconhecido: {kind}',
   'ipc.ops.reportHostsAnonymised':
     'Não foi possível carregar o runbook, por isso os anfitriões aparecem como [servidor]: {error}',

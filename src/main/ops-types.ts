@@ -123,6 +123,9 @@ export interface OpsRunbookRef {
   policySha256: string
   runbookMdSha256: string
   platform?: OpsPolicy['platform']
+  /** Set when this runbook ran added to the base intervention ("Somar à base"): the base
+   *  as it was loaded, so the ledger names both policies the gate enforced. */
+  base?: { name: string; path: string; policySha256: string; runbookMdSha256: string }
 }
 
 /**

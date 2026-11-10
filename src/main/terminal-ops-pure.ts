@@ -15,6 +15,10 @@ export interface OpsTerminalLaunch {
   env: Record<string, string> // ARGOS_OPS_PIPE, ARGOS_OPS_TOKEN
   /** Claude: a JSON file for --mcp-config. Codex: a complete config.toml. Gemini: a settings JSON. */
   mcpConfigPath: string
+  /** The intervention runs a runbook added to the base intervention: the CLI also gets the
+   *  base's folder (--add-dir) so it reads the base's RUNBOOK.md without a prompt. Only a
+   *  flag: main works the folder out itself, the renderer never names one. */
+  onBase?: boolean
 }
 
 /**
@@ -42,13 +46,16 @@ export const OPS_DISALLOWED_TOOLS = [
  * tools allowed without a CLI prompt (main asks instead), and the local tools gone.
  * Unquoted — quote with quoteArgs for the shell it goes through.
  */
-export function claudeOpsFlags(mcpConfigPath: string, settingsPath?: string): string[] {
+export function claudeOpsFlags(mcpConfigPath: string, settingsPath?: string, addDirs: string[] = []): string[] {
   return [
     '--mcp-config',
     mcpConfigPath,
     '--strict-mcp-config',
     // Before the two list flags below, which would take it as one more tool name.
     ...(settingsPath ? ['--settings', settingsPath] : []),
+    // The base intervention's folder, for its RUNBOOK.md. --add-dir is variadic too, so
+    // each folder gets its own flag and the next token is always another flag.
+    ...addDirs.flatMap((dir) => ['--add-dir', dir]),
     '--allowedTools',
     'mcp__ops__*',
     '--disallowedTools',
@@ -250,8 +257,9 @@ export function opsLaunchRefusal(
  *  — which then refuses, rather than starting an ungated CLI under an ops chat. */
 export function isOpsLaunch(v: unknown): v is OpsTerminalLaunch {
   if (!v || typeof v !== 'object') return false
-  const o = v as { env?: unknown; mcpConfigPath?: unknown }
+  const o = v as { env?: unknown; mcpConfigPath?: unknown; onBase?: unknown }
   if (typeof o.mcpConfigPath !== 'string' || !o.mcpConfigPath) return false
+  if (o.onBase !== undefined && typeof o.onBase !== 'boolean') return false
   if (!o.env || typeof o.env !== 'object') return false
   return Object.values(o.env as Record<string, unknown>).every((x) => typeof x === 'string')
 }

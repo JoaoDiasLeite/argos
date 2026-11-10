@@ -121,6 +121,9 @@ export function renderInternalReport(summary: OpsRunSummary): string {
   }
   if (s.cliSessionId) out.push(`- Claude session: \`${s.cliSessionId}\``)
   out.push(`- Runbook: \`${s.runbook.path}\` (policy sha256 \`${s.runbook.policySha256}\`)`)
+  if (s.runbook.base) {
+    out.push(`- Added to the base: \`${s.runbook.base.name}\` (policy sha256 \`${s.runbook.base.policySha256}\`)`)
+  }
   if (s.runbook.platform) out.push(`- Platform: ${s.runbook.platform}`)
   out.push(`- Started: ${s.startedAt}`)
   out.push(`- Ended: ${s.endedAt ?? 'not recorded'}`)

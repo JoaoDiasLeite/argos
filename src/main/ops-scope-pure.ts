@@ -63,7 +63,13 @@ export function hostApprovalContext(host: { name: string }, hostAddress: string,
  */
 export function interventionPrompt(
   task: string,
-  opts: { planRequired?: boolean; resume?: { runId: string; conversation: boolean }; related?: string[] } = {}
+  opts: {
+    planRequired?: boolean
+    resume?: { runId: string; conversation: boolean }
+    related?: string[]
+    /** The runbook runs added to the base intervention, whose folder this is. */
+    baseDir?: string
+  } = {}
 ): string {
   const line = oneLine(task)
   const resume = opts.resume
@@ -83,8 +89,11 @@ export function interventionPrompt(
       .join(' ')
   }
 
-  const lead =
-    opts.planRequired === false ? 'Read RUNBOOK.md in this folder before you start' : 'Read RUNBOOK.md in this folder before proposing a plan'
+  // A runbook added to the base: the base's guidelines first, the runbook's on top of them.
+  const read = opts.baseDir
+    ? `Read the base intervention's RUNBOOK.md in ${opts.baseDir}, then RUNBOOK.md in this folder, which adds to it and wins where it is stricter,`
+    : 'Read RUNBOOK.md in this folder'
+  const lead = opts.planRequired === false ? `${read} before you start` : `${read} before proposing a plan`
   const base = line ? `${lead}, then: ${line}` : `${lead}, then wait for instructions.`
   const resumeText = resume ? `This intervention resumes run ${resume.runId}. Call past_interventions with that runId first.` : ''
   return [resumeText, relatedText, base].filter(Boolean).join(' ')

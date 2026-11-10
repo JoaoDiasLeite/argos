@@ -17,6 +17,8 @@ export interface InterventionLabelInput {
   runbook: string
   /** The runbook is the read-only one built into Argos. */
   builtin: boolean
+  /** The runbook is the base intervention built into Argos. */
+  base?: boolean
   server: InterventionServer
   /** The runbook's policy has rules that change a server; unknown until it is loaded. */
   mutates?: boolean
@@ -62,7 +64,7 @@ export function interventionLabel(input: InterventionLabelInput, t: TFunction): 
   const { server, builtin } = input
   const title = serverTitle(server, t)
   const folder = baseName(input.runbook)
-  const tag = builtin ? t('ops.start.mode.despiste') : folder
+  const tag = builtin ? t('ops.start.mode.despiste') : input.base ? t('ops.start.mode.base') : folder
   const tagTone = !builtin && input.mutates ? 'warn' : 'neutral'
 
   const suffix = input.ended ? t('ops.tabs.stopped') : input.waiting ? t('ops.tabs.waiting') : ''
@@ -75,7 +77,7 @@ export function interventionLabel(input: InterventionLabelInput, t: TFunction): 
         : t('ops.label.severalServers')
   const lines = [
     `${serverLine}${suffix}`,
-    builtin ? t('ops.label.tipMode', { mode: tag }) : t('ops.label.tipRunbook', { name: folder }),
+    builtin || input.base ? t('ops.label.tipMode', { mode: tag }) : t('ops.label.tipRunbook', { name: folder }),
     input.client ? t('ops.label.tipClient', { name: input.client }) : '',
     input.ticket ? t('ops.label.tipTicket', { ticket: input.ticket }) : '',
     input.task ? t('ops.label.tipTask', { task: input.task }) : ''

@@ -30,6 +30,13 @@ describe('claudeOpsFlags', () => {
       DISALLOWED
     ])
   })
+
+  it('gives each extra folder its own --add-dir, before the variadic tool lists', () => {
+    const base = 'C:\\Program Files\\Argos\\resources\\runbooks\\intervention'
+    const flags = claudeOpsFlags(WIN_PATH, undefined, [base])
+    expect(flags).toEqual(['--mcp-config', WIN_PATH, '--strict-mcp-config', '--add-dir', base, '--allowedTools', 'mcp__ops__*', '--disallowedTools', DISALLOWED])
+    expect(claudeOpsFlags(WIN_PATH, undefined, [])).toEqual(claudeOpsFlags(WIN_PATH))
+  })
 })
 
 describe('quoteArgs for the ops flags', () => {
@@ -250,6 +257,8 @@ describe('isOpsLaunch', () => {
     expect(isOpsLaunch({ env: { ARGOS_OPS_TOKEN: 't' }, mcpConfigPath: '/x.json' })).toBe(true)
     expect(isOpsLaunch({ env: {}, mcpConfigPath: '' })).toBe(false)
     expect(isOpsLaunch({ env: { A: 1 }, mcpConfigPath: '/x.json' })).toBe(false)
+    expect(isOpsLaunch({ env: {}, mcpConfigPath: '/x.json', onBase: true })).toBe(true)
+    expect(isOpsLaunch({ env: {}, mcpConfigPath: '/x.json', onBase: 'yes' })).toBe(false)
     expect(isOpsLaunch({ mcpConfigPath: '/x.json' })).toBe(false)
     expect(isOpsLaunch(null)).toBe(false)
   })
