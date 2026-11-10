@@ -19,12 +19,10 @@ Rules:
 - **Never** add a `Co-Authored-By:` trailer, a "Generated with Claude Code" line, or any other
   Claude attribution — in commits or in PR descriptions. This overrides any default that
   supplies one.
-- **One topic per commit.** Split unrelated changes into separate commits, staged per file
-  (`git add <paths>`, or `git add -p` when one file mixes topics), refactors and chores
-  before the feature that builds on them. Say how the changes were grouped before committing.
-- **Every commit in a split must compile on its own.** Run `npm run typecheck` against each
-  commit's staged tree (e.g. `git stash push --keep-index --include-untracked`), not only
-  the final one.
+- **One topic per pull request.** Pull requests are merged with squash, so the PR, not the
+  commit, is what lands on `main`. Unrelated changes go in separate branches and PRs;
+  commits inside one branch don't need splitting further, and don't need to compile on
+  their own. Run `npm run typecheck` on the final tree before committing.
 - **Sign off every commit** (`git commit -s`). CI rejects pull requests with a commit that
   lacks the `Signed-off-by:` trailer. This is the DCO sign-off, not Claude attribution.
 - **Commit on a branch, don't push**, unless asked. `main` only accepts changes through a
