@@ -1,0 +1,274 @@
+Commands Jarvis serves (v3). In a command, replace each <...> with a value; [ ... ] is optional.
+
+Name: accounts/migrate
+What: Migrate accounts between servers
+Changes the server: yes
+Interactive: yes
+Command: /usr/local/sbin/jarvis run script accounts/migrate
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/accounts/migrate
+
+Name: app/monitor_service
+What: Put a service back under Monit
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script app/monitor_service --service=<puma|sidekiq|hypernova>
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/app/monitor_service?service=<puma|sidekiq|hypernova>
+
+Name: app/reload
+What: Reload application
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script app/reload
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/app/reload
+
+Name: app/restart
+What: Restart application
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script app/restart
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/app/restart
+
+Name: app/start
+What: Start application
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script app/start
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/app/start
+
+Name: app/stop
+What: Stop application
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script app/stop
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/app/stop
+
+Name: app/test_rails
+What: Test Rails
+Changes the server: no
+Interactive: no
+Command: /usr/local/sbin/jarvis run script app/test_rails
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/app/test_rails
+
+Name: assets/compile_engines
+What: Compile engine assets
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script assets/compile_engines
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/assets/compile_engines
+
+Name: backup/create
+What: Create update backup
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script backup/create [--target_version=<target_version>]
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/backup/create?target_version=<target_version>
+
+Name: backup/list
+What: List backups
+Changes the server: no
+Interactive: no
+Command: /usr/local/sbin/jarvis run script backup/list
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/backup/list
+
+Name: backup/restore
+What: Restore a backup
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script backup/restore [--backup=<backup>]
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/backup/restore?backup=<backup>
+
+Name: base_files/check_placeholders
+What: Check placeholders
+Changes the server: no
+Interactive: no
+Command: /usr/local/sbin/jarvis run script base_files/check_placeholders
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/base_files/check_placeholders
+
+Name: base_files/pre_copy_config
+What: Pre-copy 'config/' and 'db/seeds.rb'
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script base_files/pre_copy_config --lane=<current|next>
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/base_files/pre_copy_config?lane=<current|next>
+
+Name: base_files/replace_placeholders
+What: Replace placeholders
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script base_files/replace_placeholders
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/base_files/replace_placeholders
+
+Name: base_files/update
+What: Update base files
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script base_files/update
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/base_files/update
+
+Name: database/migrate
+What: Run database migrations
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script database/migrate
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/database/migrate
+
+Name: database/seed
+What: Run database seeds
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script database/seed
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/database/seed
+
+Name: diagnostics/installation_state
+What: Installation state
+Changes the server: no
+Interactive: no
+Command: /usr/local/sbin/jarvis run script diagnostics/installation_state
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/diagnostics/installation_state
+
+Name: diagnostics/published_versions
+What: List published versions (and check the target one)
+Changes the server: no
+Interactive: no
+Command: /usr/local/sbin/jarvis run script diagnostics/published_versions [--version=<version>] [--lane=<current|next>]
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/diagnostics/published_versions?version=<version>&lane=<current|next>
+
+Name: diagnostics/release_changes
+What: What the new release brings (engine migrations and base files)
+Changes the server: no
+Interactive: no
+Command: /usr/local/sbin/jarvis run script diagnostics/release_changes
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/diagnostics/release_changes
+
+Name: diagnostics/services
+What: Services and the HTTP request to the first account
+Changes the server: no
+Interactive: no
+Command: /usr/local/sbin/jarvis run script diagnostics/services
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/diagnostics/services
+
+Name: diagnostics/update_checkup
+What: Update checkup: the state after the update, against the diagnostic
+Changes the server: no
+Interactive: no
+Command: /usr/local/sbin/jarvis run script diagnostics/update_checkup --version=<version> --lane=<current|next>
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/diagnostics/update_checkup?version=<version>&lane=<current|next>
+
+Name: diagnostics/update_steps
+What: The production update: the command of each phase
+Changes the server: no
+Interactive: no
+Command: /usr/local/sbin/jarvis run script diagnostics/update_steps --user=<user>
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/diagnostics/update_steps?user=<user>
+
+Name: diagnostics/update_summary
+What: Update summary: what the update changes, its stresses and its plan
+Changes the server: no
+Interactive: no
+Command: /usr/local/sbin/jarvis run script diagnostics/update_summary --user=<user> --version=<version> --lane=<current|next> --from_version=<from_version> --from_lane=<current|next> [--brief=<true>]
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/diagnostics/update_summary?user=<user>&version=<version>&lane=<current|next>&from_version=<from_version>&from_lane=<current|next>&brief=<true>
+
+Name: release/get_files
+What: Get the release files
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script release/get_files --version=<version> --lane=<current|next>
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/release/get_files?version=<version>&lane=<current|next>
+
+Name: release/register_installation_version
+What: Register the installed version
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script release/register_installation_version --user=<user> --version=<version> --lane=<current|next>
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/release/register_installation_version?user=<user>&version=<version>&lane=<current|next>
+
+Name: ruby/check
+What: Check application's Ruby
+Changes the server: no
+Interactive: no
+Command: /usr/local/sbin/jarvis run script ruby/check --lane=<current|next>
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/ruby/check?lane=<current|next>
+
+Name: ruby/install
+What: Install lane's Ruby
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script ruby/install --lane=<current|next>
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/ruby/install?lane=<current|next>
+
+Name: ruby/install_build_packages
+What: Install the packages to build lane's Ruby
+Changes the server: yes
+Interactive: no
+Command: sudo /usr/local/sbin/jarvis run script ruby/install_build_packages --lane=<current|next>
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/ruby/install_build_packages?lane=<current|next>
+
+Name: ruby/install_bundler
+What: Install 'bundler'
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script ruby/install_bundler
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/ruby/install_bundler
+
+Name: ruby/install_gems
+What: Install gems
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script ruby/install_gems
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/ruby/install_gems
+
+Name: server_changes/apply
+What: Apply pending server changes
+Changes the server: yes
+Interactive: no
+Command: /usr/local/sbin/jarvis run script server_changes/apply
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/server_changes/apply
+
+Name: system/fix_ownerships
+What: Fix ownerships
+Changes the server: yes
+Interactive: no
+Command: sudo /usr/local/sbin/jarvis run script system/fix_ownerships --mode=<application|all>
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/system/fix_ownerships?mode=<application|all>
+
+Name: system/fix_permissions
+What: Fix permissions
+Changes the server: yes
+Interactive: no
+Command: sudo /usr/local/sbin/jarvis run script system/fix_permissions --mode=<application|all>
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/system/fix_permissions?mode=<application|all>
+
+Name: system/install_openssl
+What: Install 'OpenSSL 1.1.1'
+Changes the server: yes
+Interactive: no
+Command: sudo /usr/local/sbin/jarvis run script system/install_openssl
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/system/install_openssl
+
+Name: system/install_poppler_utils
+What: Install 'poppler-utils'
+Changes the server: yes
+Interactive: no
+Command: sudo /usr/local/sbin/jarvis run script system/install_poppler_utils
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/system/install_poppler_utils
+
+Name: system/install_wmcp_server
+What: Install 'wmcp-server'
+Changes the server: yes
+Interactive: yes
+Command: sudo /usr/local/sbin/jarvis run script system/install_wmcp_server
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/system/install_wmcp_server
+
+Name: system/renew_postgresql_certificates
+What: Renew the PostgreSQL certificates
+Changes the server: yes
+Interactive: yes
+Command: sudo /usr/local/sbin/jarvis run script system/renew_postgresql_certificates
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/system/renew_postgresql_certificates
+
+Name: update_app/production
+What: Update WMCP - Production
+Changes the server: yes
+Interactive: yes
+Command: /usr/local/sbin/jarvis run script update_app/production --user=<user> [--version=<version>] [--lane=<current|next>] [--client_checked=<true>]
+Code: https://jarvis.cityfy.pt/api/v3/wmcp/script/update_app/production?user=<user>&version=<version>&lane=<current|next>&client_checked=<true>

@@ -22,7 +22,8 @@
     "typecheck:node": "tsc -p tsconfig.node.json --noEmit",
     "typecheck:web": "tsc -p tsconfig.web.json --noEmit",
     "package": "node scripts/gen-icon.mjs && electron-vite build && electron-builder",
-    "release": "node scripts/gen-icon.mjs && electron-vite build && electron-builder --publish always"
+    "release": "node scripts/gen-icon.mjs && electron-vite build && electron-builder --publish always",
+    "pin:intervention": "node scripts/pin-intervention.mjs"
   },
   "build": {
     "appId": "com.argos.app",

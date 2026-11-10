@@ -170,6 +170,13 @@ patterns, `read.paths` plus a `read.deny` list, `limits`, and a `RUNBOOK.md` tha
 with `npm run pin:diagnosis`; the folder is `-text` in `.gitattributes` so hashes survive
 a Windows checkout. A runbook in `../runbooks` is pinned with the `node -e` hash above.)
 
+`resources/runbooks/intervention/` is the base intervention shipped with Argos: the
+diagnosis plus one rule per Jarvis catalog command. Its `policy.json` and `scripts/` are
+generated: never edit them, run `npm run pin:intervention` after every `pin:diagnosis` (and
+`npm run pin:intervention -- --fetch` to take a new Jarvis catalog), and edit only its
+`RUNBOOK.md` by hand. A runbook in `../runbooks` that adds to the base needs only the rules
+the base lacks.
+
 `../runbooks/proxmox-access/` is a complete read-only runbook (17 literal rules, no scripts).
 Copy its shape for a new read-only runbook without scripts. It runs as a non-root user: the commands that
 need privileges are literal `^sudo …$` rules and the rest run without `sudo`. `read.paths`

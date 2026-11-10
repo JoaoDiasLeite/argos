@@ -85,11 +85,17 @@ with `ask`), and `app/test_rails` (it boots the application). Certificates endin
 `resources/runbooks/intervention/`, shipped like the diagnosis (`extraResources`,
 `-text` in `.gitattributes`, `builtinRunbookDir('intervention')`).
 
-- **Policy = diagnosis + Jarvis catalog + update extras**, generated, never hand-edited:
-  `npm run pin:intervention` reads `resources/runbooks/diagnosis/policy.json`, fetches the
-  Jarvis catalog and writes `intervention/policy.json` plus `intervention/catalog.txt`
-  (the snapshot it came from). A test fails when `policy.json` is not what the generator
-  makes from those two files, so a hand edit or a stale pin cannot ship.
+- **Policy = diagnosis + Jarvis catalog**, generated, never hand-edited:
+  `npm run pin:intervention` (add `-- --fetch` to read the catalog from Jarvis first)
+  builds `intervention/policy.json` from `resources/runbooks/diagnosis/policy.json`,
+  `scripts/intervention/catalog.txt` (the snapshot) and `scripts/intervention/titles.json`
+  (the pt-PT title of every runnable catalog command; a new command cannot enter without
+  one), and copies the diagnosis scripts byte for byte. The sources sit under `scripts/`
+  so they do not ship. `ops-intervention-runbook.test.ts` fails when `policy.json` is not
+  what the generator makes, so a hand edit or a stale pin cannot ship; run
+  `pin:intervention` after every `pin:diagnosis`.
+- **Limits**: 10 min per command, 2 MB of output, one command at a time per host
+  (update steps run for minutes; changes never run side by side).
 - **One rule per catalog command**, never a generic `jarvis run script [a-z/_]+`:
   - "Changes the server: no" → `class: read`, `approval: auto`;
   - "yes" → `class: mutate`, `approval: ask`;
@@ -102,8 +108,13 @@ with `ask`), and `app/test_rails` (it boots the application). Certificates endin
     `<x>` → `[A-Za-z0-9._-]{1,64}`, `[ … ]` → optional;
   - every rule also accepts the update runbook's trailing `--step=[0-9]+[a-z]?`,
     `--verify_of=[0-9]+[a-z]?` and `--timing=true`.
-- **Update extra**: the `sudo -u wiremaze mv …/tmp/update_backup …/update_backup.<stamp>`
-  rule of `update-wmcp`, the only change the Argos runbooks make outside Jarvis.
+- **No update extra.** The `sudo -u wiremaze mv …/tmp/update_backup …` rule of
+  `update-wmcp` was left out in batch 2: it belonged to the API v2 procedure, and the
+  catalog's `backup/create`, `backup/list` and `backup/restore` now own the update's
+  backups. Every change in the base goes through Jarvis.
+- **No `curl` to Jarvis from the server**: the update never needs the runbook text, since
+  `diagnostics/update_steps` prints the procedure's commands, and the owner ruled out
+  external `curl`.
 - **No raw `systemctl restart`, `monit restart`, `nginx -s reload`**: the catalog already
   has `app/restart`, `app/reload`, `app/start`, `app/stop`, `app/monitor_service`, which
   know the platform's services. Decided 2026-11-10: the Jarvis commands are enough.
@@ -117,6 +128,11 @@ with `ask`), and `app/test_rails` (it boots the application). Certificates endin
   of a catalog `mutate` call shows the catalog's `What` and links its `Code` address.
   **Open:** whether the model should also read the code itself (needs a read-only
   `jarvis_code` MCP tool, since the ops CLI has no web access).
+
+**Done in batch 2** (2026-11-10): 105 rules (the diagnosis's 70, 24 Jarvis changes, 11
+Jarvis reads), 9 scripts; the 4 interactive commands have no rule and are named in
+`RUNBOOK.md`. `builtinRunbookDir(name)` takes `'diagnosis'` or `'intervention'`; nothing
+loads the intervention yet (batch 4 wires the start screen).
 
 ## 4. Start screen and hand-over
 
