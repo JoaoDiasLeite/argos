@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { z } from 'zod'
-import { OPS_BRIDGE_TOOLS, OPS_TOOL_RULES, opsToolDefs } from './ops-tool-defs-pure'
+import { OPS_BRIDGE_TOOLS, OPS_TOOL_RULES, OPS_WHY_MAX, opsToolDefs } from './ops-tool-defs-pure'
 
 const HOSTS = [{ id: 'h1', name: 'web-01', groups: ['web'] }]
 const describe_ = (name: string, planRequired?: boolean) =>
@@ -31,6 +31,20 @@ describe('opsToolDefs', () => {
     expect(shape('ask_operator').safeParse({ cmd: 'id' }).success).toBe(false)
     expect(describe_('ask_operator')).toMatch(/not instructions/)
     expect(describe_('ask_operator')).toMatch(/hostId: h1/)
+  })
+
+  it('asks run, script and write for a one-line why, and lets read and list leave it out', () => {
+    const shape = (name: string) => z.object(opsToolDefs(z, HOSTS).find((d) => d.name === name)!.shape)
+    expect(shape('run').safeParse({ hostId: 'h1', cmd: 'df -h', why: 'Ver o espaço livre.' }).success).toBe(true)
+    expect(shape('run').safeParse({ hostId: 'h1', cmd: 'df -h' }).success).toBe(false)
+    expect(shape('run').safeParse({ hostId: 'h1', cmd: 'df -h', why: '' }).success).toBe(false)
+    expect(shape('run').safeParse({ hostId: 'h1', cmd: 'df -h', why: 'x'.repeat(OPS_WHY_MAX + 1) }).success).toBe(false)
+    expect(shape('script').safeParse({ hostId: 'h1', name: 'a.sh' }).success).toBe(false)
+    expect(shape('script').safeParse({ hostId: 'h1', name: 'a.sh', why: 'w' }).success).toBe(true)
+    expect(shape('write').safeParse({ hostId: 'h1', path: '/a', content: '' }).success).toBe(false)
+    expect(shape('read').safeParse({ hostId: 'h1', path: '/a' }).success).toBe(true)
+    expect(shape('list').safeParse({ hostId: 'h1', path: '/a', why: 'w' }).success).toBe(true)
+    for (const name of ['run', 'script', 'read', 'list', 'write']) expect(describe_(name)).toMatch(/Give why: one sentence/)
   })
 
   it('offers past_interventions as a local read with an optional run id, and names it in the rules', () => {

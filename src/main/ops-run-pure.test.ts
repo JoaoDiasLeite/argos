@@ -5,8 +5,10 @@ import type { ExecResult } from './ops-exec-pure'
 import type { LoadedRunbook } from './ops-runbook-pure'
 import type { OpsGateResult, OpsHostRef, OpsPolicy } from './ops-types'
 import { makeT } from '../shared/i18n'
+import { OPS_WHY_MAX } from './ops-tool-defs-pure'
 import {
   callKey,
+  callWhy,
   execIsError,
   finishedEventFrom,
   headBytes,
@@ -112,6 +114,40 @@ describe('toApprovalContext', () => {
     expect(ctx.scriptSha256).toBe('f'.repeat(64))
     expect('rule' in ctx).toBe(false)
     expect('argv' in ctx).toBe(false)
+    expect('why' in ctx).toBe(false)
+  })
+
+  it("carries the model's why when there is one", () => {
+    const ctx = toApprovalContext(
+      { decision: 'ask', class: 'read', reason: 'r' },
+      { id: 'h1', name: 'web-01', host: 'x' },
+      'x',
+      'run',
+      'rb',
+      0,
+      'Ver o espaço livre.'
+    )
+    expect(ctx.why).toBe('Ver o espaço livre.')
+  })
+})
+
+describe('callWhy', () => {
+  it('trims and collapses the why, and ignores anything that is not text', () => {
+    expect(callWhy({ why: '  Ver   o\nespaço  ' })).toBe('Ver o espaço')
+    expect(callWhy({ why: '   ' })).toBeUndefined()
+    expect(callWhy({ why: 42 })).toBeUndefined()
+    expect(callWhy({})).toBeUndefined()
+    expect(callWhy(null)).toBeUndefined()
+  })
+
+  it('cuts a long why to OPS_WHY_MAX', () => {
+    const w = callWhy({ why: 'x'.repeat(OPS_WHY_MAX + 50) })!
+    expect(w).toHaveLength(OPS_WHY_MAX)
+    expect(w.endsWith('…')).toBe(true)
+  })
+
+  it('does not change the call key, so canUseTool and the handler still pair up', () => {
+    expect(mcpInputToOpsInput('run', { hostId: 'h1', cmd: 'df -h', why: 'w' })).toEqual({ tool: 'run', hostId: 'h1', cmd: 'df -h' })
   })
 })
 

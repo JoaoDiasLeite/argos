@@ -121,7 +121,7 @@ function CallRow({ row }: { row: OpsRow }) {
   const inner = (
     <>
       <span className={`ac-dot ${tone}${row.status === 'running' ? ' pulse' : ''}`} aria-hidden="true" />
-      <span className="ac-cmd" title={[text, row.title, row.reason].filter(Boolean).join('\n')}>
+      <span className="ac-cmd" title={[text, row.title, row.why, row.reason].filter(Boolean).join('\n')}>
         {text}
       </span>
       <span className={`ac-label ${tone}`}>{label}</span>
@@ -735,6 +735,11 @@ function WaitingCall({ ops, onDecide }: { ops: ApprovalOpsContext; onDecide: (al
         </span>
       </div>
       <div className="ac-wait-title">{title}</div>
+      {ops.why && (
+        <div className="ac-wait-reason">
+          <span className="ac-wait-why-label">{t('sessions.activity.wait.why')}</span> {ops.why}
+        </div>
+      )}
       {lines.length > 0 && <div className="ac-wait-cmd">{lines.join('\n')}</div>}
       {sudo && ops.reason && <div className="ac-wait-reason">{ops.reason}</div>}
       {ops.queuedBehind > 0 && (

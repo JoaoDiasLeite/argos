@@ -876,6 +876,9 @@ export interface ApprovalOpsContext {
   argv?: string[]
   path?: string
   scriptSha256?: string
+  /** The model's one-line intent for this call (the tool's `why`). Its own claim, so the
+   *  UI labels it as the model's words and always shows the exact command beside it. */
+  why?: string
   /** Calls already waiting on this host before this one. */
   queuedBehind: number
   /** The runbook folder's name. */

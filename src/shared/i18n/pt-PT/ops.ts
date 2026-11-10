@@ -68,6 +68,7 @@ const ops: Record<keyof typeof en, string> = {
   'approval.modal.denyStop': 'Recusar e parar a execução',
   'approval.modal.deny': 'Recusar',
   'approval.modal.allowOnce': 'Permitir uma vez',
+  'approval.modal.why': 'O modelo diz:',
   // components/SecretPrompt
   'secret.title': 'Palavra-passe sudo para {host}',
   'secret.aria': 'Palavra-passe sudo para {host}',

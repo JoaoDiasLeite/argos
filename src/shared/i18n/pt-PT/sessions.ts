@@ -113,6 +113,7 @@ const sessions: Record<keyof typeof en, string> = {
   'activity.wait.deny': 'Recusar',
   'activity.wait.changesHost': 'altera o anfitrião',
   'activity.wait.read': 'leitura',
+  'activity.wait.why': 'O modelo diz:',
   'activity.wait.queued.one': 'Em fila atrás de {n} chamada em {host}.',
   'activity.wait.queued.other': 'Em fila atrás de {n} chamadas em {host}.',
   'activity.wait.denyStop': 'Recusar e parar',

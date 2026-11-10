@@ -28,6 +28,12 @@ function OpsBody({ ops }: { ops: ApprovalOpsContext }) {
         <span className={`approval-ops-class ${ops.class}`}>{ops.class}</span>
       </div>
       {ops.title && <div className="approval-ops-title">{ops.title}</div>}
+      {/* The model's own words, labelled as such: the command below is what decides. */}
+      {ops.why && (
+        <div className="approval-ops-why">
+          <span className="approval-ops-why-label">{t('ops.approval.modal.why')}</span> {ops.why}
+        </div>
+      )}
       {lines.length > 0 && <pre className="approval-ops-exec">{lines.join('\n')}</pre>}
       <div className="approval-ops-rule">{ops.rule ? ops.rule : t('ops.approval.modal.noRule')}</div>
       {ops.reason && <div className="approval-desc">{ops.reason}</div>}

@@ -68,7 +68,7 @@ export function opsToastText(ops: ApprovalOpsContext, t: TFunction): { title: st
       })
     }
   }
-  const detail = ops.title || ops.reason
+  const detail = ops.title || ops.why || ops.reason
   const path = ops.path ?? ''
   switch (ops.tool) {
     case 'host':

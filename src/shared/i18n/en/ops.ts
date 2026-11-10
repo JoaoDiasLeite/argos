@@ -67,6 +67,7 @@ export default {
   'approval.modal.denyStop': 'Deny and stop the run',
   'approval.modal.deny': 'Deny',
   'approval.modal.allowOnce': 'Allow once',
+  'approval.modal.why': 'The model says:',
   // components/SecretPrompt
   'secret.title': 'sudo password for {host}',
   'secret.aria': 'sudo password for {host}',

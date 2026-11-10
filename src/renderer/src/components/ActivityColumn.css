@@ -321,7 +321,8 @@
   max-height: 140px;
   overflow-y: auto;
 }
-.ac-wait-reason { font-size: 12px; color: var(--text-1); line-height: 1.45; }
+.ac-wait-reason { font-size: 12px; color: var(--text-1); line-height: 1.45; overflow-wrap: anywhere; }
+.ac-wait-why-label { font-weight: 600; color: var(--text-2); }
 .ac-wait-actions { display: flex; gap: 8px; margin-top: 2px; }
 .ac-allow,
 .ac-deny {
