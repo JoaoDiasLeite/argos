@@ -121,6 +121,7 @@ import { createLedger, RUN_LIST_MAX, type OpsLedger, type OpsReportKind } from '
 import { HISTORY_RUN_ID_RE } from './ops-briefing-pure'
 import { earlierRunsInScope } from './ops-tools'
 import { handoverFileName } from './ops-handover-pure'
+import { foldNotes } from './ops-notes-pure'
 import { createExecutor, createSshBackend, type OpsExecutor } from './ops-exec'
 import { createFakeBackend } from './ops-backend-fake'
 import { loadRunbook, readScript, scanRunbookLibrary } from './ops-runbook'
@@ -2055,11 +2056,17 @@ ipcMain.handle('ops:save-report', async (_, runId: string, kind: OpsReportKind, 
   let names: string[]
   if (kind === 'handover') {
     const ev = start?.event.kind === 'run.start' ? start.event : undefined
+    // The server the run was scoped to, or its only one: it names a file without a client.
+    const scoped = ev?.scope?.kind === 'host' ? ev.scope.hostId : undefined
+    const host = scoped ? ev?.hosts.find((h) => h.id === scoped) : ev?.hosts.length === 1 ? ev.hosts[0] : undefined
+    const summary = lines.ok ? foldNotes(lines.lines, runId).summary : undefined
     const base = handoverFileName({
       startedAt: startAt ?? new Date().toISOString(),
       runbook: ev?.runbook.name ?? '',
       ...(ev?.client !== undefined ? { client: ev.client } : {}),
-      ...(ev?.task !== undefined ? { task: ev.task } : {})
+      ...(ev?.task !== undefined ? { task: ev.task } : {}),
+      ...(host?.name ? { host: host.name } : {}),
+      ...(summary ? { summary } : {})
     }).replace(/\.md$/, '')
     names = [`${base}.md`, ...Array.from({ length: 98 }, (_, i) => `${base}-${i + 2}.md`)]
   } else {
