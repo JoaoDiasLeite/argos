@@ -71,17 +71,65 @@ export function slug(text: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+/**
+ * A client or server name as it reads in Argos, in CamelCase: accents stripped, words
+ * joined, each word's first letter raised and the rest kept (`CM Felgueiras` → `CMFelgueiras`).
+ */
+export function camelName(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .split(/[^A-Za-z0-9]+/)
+    .filter((w) => w !== '')
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join('')
+}
+
 /** How many words of the task name the file. */
 const THEME_WORDS = 6
 
+/** How many words of the summary name the file, when there is no task. */
+const SUMMARY_WORDS = 5
+
+/** Leading articles a summary usually opens with, which say nothing about the incident. */
+const ARTICLES = new Set(['o', 'a', 'os', 'as', 'um', 'uma', 'the'])
+
 /**
- * `INC-<YYYY-MM-DD>-<cliente>-<tema>.md`, like the operator's own files. The theme is the
- * task's first words, or the runbook's name without a task; an empty part is left out.
- * The caller adds `-2`, `-3`… when the name is taken.
+ * The first words of the model's summary as a theme: parentheses dropped (a URL or a
+ * client name there is noise), a leading article skipped, and the words already in the
+ * file name's client part left out.
  */
-export function handoverFileName(s: { startedAt: string; client?: string; task?: string; runbook: string }): string {
-  const theme = slug((s.task ?? '').trim().split(/\s+/).slice(0, THEME_WORDS).join(' ')) || slug(s.runbook)
-  const parts = ['INC', lisbonDate(s.startedAt), slug(s.client ?? ''), theme].filter((p) => p !== '')
+function summaryTheme(summary: string, taken: string): string {
+  const seen = new Set(taken.split('-'))
+  const firstLine = summary.trim().split('\n')[0] ?? ''
+  const words = slug(firstLine.replace(/\([^)]*\)/g, ' '))
+    .split('-')
+    .filter((w) => w !== '' && !seen.has(w))
+  while (words.length && ARTICLES.has(words[0])) words.shift()
+  return words.slice(0, SUMMARY_WORDS).join('-')
+}
+
+/**
+ * `INC-<YYYY-MM-DD>-<Cliente>-<tema>.md`, like the operator's own files. Without a client
+ * the server the run was scoped to names it instead, in CamelCase as Argos names it. The theme is the task's first words,
+ * else the first words of the model's summary, else the runbook's name; an empty part is
+ * left out. The caller adds `-2`, `-3`… when the name is taken.
+ */
+export function handoverFileName(s: {
+  startedAt: string
+  client?: string
+  host?: string
+  task?: string
+  summary?: string
+  runbook: string
+}): string {
+  const name = camelName(s.client ?? '') ? (s.client ?? '') : (s.host ?? '')
+  const who = camelName(name)
+  const theme =
+    slug((s.task ?? '').trim().split(/\s+/).slice(0, THEME_WORDS).join(' ')) ||
+    summaryTheme(s.summary ?? '', slug(name)) ||
+    slug(s.runbook)
+  const parts = ['INC', lisbonDate(s.startedAt), who, theme].filter((p) => p !== '')
   return `${parts.join('-')}.md`
 }
 
