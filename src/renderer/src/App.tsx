@@ -32,7 +32,7 @@ import SecretPrompt from './components/SecretPrompt'
 import { opsTerminalIdFor } from './lib/ops-terminal'
 import OpsTabs, { type OpsTabItem } from './components/OpsTabs'
 import { distinctTitles, interventionLabel, type OpsLabelInfo } from './lib/intervention-label'
-import { samePath, useBuiltinRunbook } from './lib/builtin-runbook'
+import { samePath, useBaseRunbook, useBuiltinRunbook } from './lib/builtin-runbook'
 import { useSshHostNames } from './lib/ssh-host-names'
 import { markOpsEnded, markOpsRunning, summarizeOpsRunning, type OpsRunningSet } from './lib/ops-running'
 import { CLI_PROVIDERS, isProviderHidden } from './lib/cli-providers'
@@ -2389,6 +2389,7 @@ export default function App() {
   // saved hosts, and what only the workspace learns (the hosts an open one reached, whether
   // its runbook changes servers) is reported up by it, so a tab keeps it once left.
   const builtinRunbook = useBuiltinRunbook()
+  const baseRunbook = useBaseRunbook()
   const [opsLabelInfo, setOpsLabelInfo] = useState<Record<string, OpsLabelInfo>>({})
   const reportOpsLabelInfo = useCallback(
     (id: string, info: OpsLabelInfo) =>
@@ -2412,6 +2413,7 @@ export default function App() {
         {
           runbook: iv.runbookPath,
           builtin: samePath(iv.runbookPath, builtinRunbook),
+          base: samePath(iv.runbookPath, baseRunbook),
           server:
             iv.scope.kind === 'host'
               ? { kind: 'host', name: opsHostNames[iv.scope.hostId] }

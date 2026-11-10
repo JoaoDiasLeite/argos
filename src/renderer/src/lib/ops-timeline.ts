@@ -30,6 +30,8 @@ export interface OpsRow {
   reason: string
   rule?: string
   title?: string
+  /** The model's one-line intent, from the call's raw input (`why`). */
+  why?: string
   argv?: string[]
   path?: string
   answer?: 'allow' | 'deny' | 'stop'
@@ -314,6 +316,9 @@ export function foldOpsEvents(events: OpsLiveEvent[]): OpsRun[] {
         row.reason = str(e.reason) ?? ''
         row.rule = str(e.rule)
         row.title = str(e.title)
+        const raw = e.rawInput
+        const why = raw && typeof raw === 'object' ? str((raw as Record<string, unknown>).why)?.trim() : undefined
+        row.why = why || undefined
         row.argv = strArr(e.argv)
         row.path = str(e.path)
         row.at = ev.line.at

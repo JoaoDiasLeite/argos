@@ -98,6 +98,11 @@ describe('opsToastText', () => {
     expect(opsToastText({ ...base, tool: 'run' }, t).detail).toBe('r')
   })
 
+  it("uses the model's why as detail when the rule has no title", () => {
+    expect(opsToastText({ ...base, tool: 'run', why: 'Ver o espaço livre.' }, t).detail).toBe('Ver o espaço livre.')
+    expect(opsToastText({ ...base, tool: 'run', why: 'w', title: 'Estado' }, t).detail).toBe('Estado')
+  })
+
   it('names the runbook for a plan, with its size and what changes', () => {
     const plan: ApprovalOpsContext = {
       ...base,

@@ -117,10 +117,9 @@ let perchTimer: ReturnType<typeof setInterval> | null = null
 let routineTimer: ReturnType<typeof setInterval> | null = null
 const routineDone: Partial<Record<RoutineMoment, string>> = {}
 const ROUTINE_POLL_MS = 30_000
-/** "Follow me" (plan §13.3, O2): the cursor's whereabouts, and the display he is on his way to. */
+/** "Follow me" (plan §13.3, O2): the cursor's whereabouts. */
 let followTimer: ReturnType<typeof setInterval> | null = null
 let followWatch: FollowWatch | null = null
-let followingTo: number | null = null
 let bubble: CompanionBubblePayload | null = null
 let bubbleAnchor: CompanionBubbleAnchor = { side: 'above', tailX: 0 }
 let bubbleSize: Size = DEFAULT_BUBBLE_SIZE
@@ -747,7 +746,6 @@ function stepFall(win: BrowserWindow): void {
   const b = win.getBounds()
   const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
   savePetPosition(display.id, { x: b.x, y: b.y })
-  settleFollow()
   if (petState === 'standing') setPetState(restingState())
 }
 
@@ -935,8 +933,8 @@ function stepWalk(win: BrowserWindow, cursorOverPet: boolean): void {
 
 /**
  * Sit down where he is, remember it for this display, and roll the next walk. `arrived`
- * says the plan ran its course (not a bubble or the cursor cutting it short), which is
- * when a follow that the lane could not finish hops the rest of the way.
+ * says the plan ran its course (not a bubble or the cursor cutting it short). A run ends
+ * where it ends: a follow the floor could not finish leaves him at the edge it reached.
  */
 function stopWalk(arrived = false): void {
   if (!walk) return
@@ -948,8 +946,6 @@ function stopWalk(arrived = false): void {
     const display = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
     savePetPosition(display.id, { x: b.x, y: b.y })
   }
-  if (arrived) settleFollow()
-  else followingTo = null
   settleGame(arrived)
   scheduleWalk()
 }
@@ -960,7 +956,6 @@ function stopFollowing(): void {
   if (followTimer) clearInterval(followTimer)
   followTimer = null
   followWatch = null
-  followingTo = null
 }
 
 /** Watch the cursor while the pet is up all day with the preference on. */
@@ -987,29 +982,10 @@ function followTick(): void {
   followWatch = followUpdate(followWatch, cursorDisplay.id, petDisplay.id, now)
   if (!shouldFollow(followWatch, now) || !walkAllowed(petHitTest(cursor, b), true)) return
   followWatch = null
-  followingTo = cursorDisplay.id
-  // Along the lane toward that display's corner, as far as it goes; the rest is a hop on arrival.
+  // Along the lane toward that display's corner, as far as it goes, and he stays where it ends.
   const areas = screen.getAllDisplays().map((d) => d.workArea)
   const plan = planRunTo(b, areas, defaultPetPosition(cursorDisplay.workArea, { width: b.width, height: b.height }).x)
   if (plan) startPlan(plan)
-  else settleFollow()
-}
-
-/** The run is over: if the lane did not reach the display he was going to, he hops there. */
-function settleFollow(): void {
-  const target = followingTo
-  followingTo = null
-  if (target == null || !alive(petWindow)) return
-  const b = petWindow.getBounds()
-  const here = screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
-  if (here.id === target) return
-  const display = screen.getAllDisplays().find((d) => d.id === target)
-  if (!display) return
-  const size = { width: b.width, height: b.height }
-  const pos = restoredPetPosition(companionStore().getState().positions?.[String(display.id)], display.workArea, size)
-  petWindow.setBounds({ x: pos.x, y: pos.y, width: size.width, height: size.height })
-  placeBubble()
-  savePetPosition(display.id, pos)
 }
 
 // ─── Showing and hiding ────────────────────────────────────────────────────────

@@ -10,8 +10,14 @@ import * as path from 'path'
  * It lives inside the app and is never written to; no runbook is (ops:save-report writes to
  * the folders of Settings).
  */
-export function builtinRunbookDir(): string {
+export function builtinRunbookDir(name: BuiltinRunbook = 'diagnosis'): string {
   return app.isPackaged
-    ? path.join(process.resourcesPath, 'runbooks', 'diagnosis')
-    : path.join(__dirname, '..', '..', 'resources', 'runbooks', 'diagnosis')
+    ? path.join(process.resourcesPath, 'runbooks', name)
+    : path.join(__dirname, '..', '..', 'resources', 'runbooks', name)
 }
+
+/**
+ * The runbooks shipped with Argos: the read-only diagnosis and the base intervention
+ * (docs/BASE_INTERVENTION_PLAN.md §3), the diagnosis plus the Jarvis catalog's changes.
+ */
+export type BuiltinRunbook = 'diagnosis' | 'intervention'

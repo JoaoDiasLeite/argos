@@ -120,9 +120,14 @@ the operator). So write it as instructions to the model, not as documentation:
 
 ## Validate with Argos's own code
 
-Run from the repo root. `vitest` and `tsx` may not be installed; `esbuild` is. Use Windows
-style paths (`C:/…`) in the imports, since the native esbuild does not resolve Git Bash
-`/c/…` paths.
+Run from the repo root. `tsx` and `esbuild` are not installed (esbuild left with vite 8);
+`rolldown` is, and bundles the TypeScript sources. Use Windows style paths (`C:/…`) in the
+imports, since the native bundler does not resolve Git Bash `/c/…` paths.
+
+When a test command names a Jarvis update step (`jarvis run script … --step=N`), the
+`jarvis` plugin's hook takes it for a real update and blocks it: write the validator with
+the Write tool and build such strings in pieces (`'--st' + 'ep=3'`), never in the Bash
+command itself.
 
 ```ts
 // <scratchpad>/v.ts
@@ -147,7 +152,7 @@ for (const cmd of [/* every command the procedure uses */, /* plus a few it must
 ```
 
 ```
-node_modules/.bin/esbuild <scratchpad>/v.ts --bundle --platform=node --outfile=<scratchpad>/v.cjs --log-level=error && node <scratchpad>/v.cjs
+node_modules/.bin/rolldown <scratchpad>/v.ts --platform node --format cjs --file <scratchpad>/v.cjs --log-level silent && node <scratchpad>/v.cjs
 ```
 
 Done means: `assembleRunbook` returns ok with no warnings, every command the `RUNBOOK.md`
@@ -158,12 +163,19 @@ scratch files afterwards; nothing goes into `src/`.
 ## Examples
 
 `resources/runbooks/diagnosis/` in this repo is the read-only runbook shipped with Argos and
-the complete example with scripts: 43 `read` allow rules, 9 pinned scripts with argument
+the complete example with scripts: 70 `read` allow rules, 9 pinned scripts with argument
 patterns, `read.paths` plus a `read.deny` list, `limits`, and a `RUNBOOK.md` that uses
 `note` and `ask_operator`. Copy its shape for a read-only runbook with scripts, and
 `src/main/ops-despiste-runbook.test.ts` for a two-direction check. (In this repo, re-pin its scripts
 with `npm run pin:diagnosis`; the folder is `-text` in `.gitattributes` so hashes survive
 a Windows checkout. A runbook in `../runbooks` is pinned with the `node -e` hash above.)
+
+`resources/runbooks/intervention/` is the base intervention shipped with Argos: the
+diagnosis plus one rule per Jarvis catalog command. Its `policy.json` and `scripts/` are
+generated: never edit them, run `npm run pin:intervention` after every `pin:diagnosis` (and
+`npm run pin:intervention -- --fetch` to take a new Jarvis catalog), and edit only its
+`RUNBOOK.md` by hand. A runbook in `../runbooks` that adds to the base needs only the rules
+the base lacks.
 
 `../runbooks/proxmox-access/` is a complete read-only runbook (17 literal rules, no scripts).
 Copy its shape for a new read-only runbook without scripts. It runs as a non-root user: the commands that

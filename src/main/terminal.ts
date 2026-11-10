@@ -34,6 +34,8 @@ import {
   type ShellKind
 } from './terminal-ops-pure'
 
+import { builtinRunbookDir } from './ops-builtin'
+
 export type { OpsTerminalLaunch } from './terminal-ops-pure'
 
 /**
@@ -358,10 +360,15 @@ function writeOpsSettings(ops: OpsTerminalLaunch, configDir: string | null): voi
   }
 }
 
-/** The ops flags for this terminal, with `--settings` only when its overlay was written. */
+/** The ops flags for this terminal, with `--settings` only when its overlay was written,
+ *  and the base intervention's folder when the runbook runs added to it. */
 function opsFlags(ops: OpsTerminalLaunch): string[] {
   const settings = opsSettingsPath(ops)
-  return claudeOpsFlags(ops.mcpConfigPath, fs.existsSync(settings) ? settings : undefined)
+  return claudeOpsFlags(
+    ops.mcpConfigPath,
+    fs.existsSync(settings) ? settings : undefined,
+    ops.onBase ? [builtinRunbookDir('intervention')] : []
+  )
 }
 
 function defaultChatDir(): string {

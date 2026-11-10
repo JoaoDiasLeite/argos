@@ -876,6 +876,9 @@ export interface ApprovalOpsContext {
   argv?: string[]
   path?: string
   scriptSha256?: string
+  /** The model's one-line intent for this call (the tool's `why`). Its own claim, so the
+   *  UI labels it as the model's words and always shows the exact command beside it. */
+  why?: string
   /** Calls already waiting on this host before this one. */
   queuedBehind: number
   /** The runbook folder's name. */
@@ -951,6 +954,9 @@ export interface OpsIntervention {
   resumesRunId?: string
   /** Earlier runs the operator picked on the start screen (≤ 5, deduped by main). */
   relatedRunIds?: string[]
+  /** "Somar à base": the runbook runs added to the base intervention shipped with Argos.
+   *  Main ignores it for a built-in runbook. */
+  onBase?: boolean
 }
 
 /** One run in the history list (`ops:runs`), newest first. */
@@ -963,6 +969,8 @@ export interface OpsRunListItem {
   runbook: string
   /** The runbook folder's path: what a resume loads again. */
   runbookPath: string
+  /** The runbook ran added to the base intervention: a resume adds it again. */
+  onBase?: true
   /** The locked host, the hosts an open run touched, or (older runs) every runbook host. */
   hostNames: string[]
   task?: string
@@ -1757,14 +1765,24 @@ declare global {
       sftpHistory: (hostId: string) => Promise<{ ok: boolean; commands?: string[]; error?: string }>
 
       // Ops runs
-      opsLoadRunbook: (dir: string) => Promise<OpsRunbookInfo>
+      /** `onBase`: the runbook as it runs added to the base intervention. */
+      opsLoadRunbook: (dir: string, opts?: { onBase?: boolean }) => Promise<OpsRunbookInfo>
       /** The runbooks folder of Settings, listed (not validated): its direct subfolders with
        *  RUNBOOK.md or policy.json, by name. No folder set = `dir: null` and no entries. */
       opsScanRunbooks: () => Promise<
         { ok: true; dir: string | null; entries: { path: string; name: string }[] } | { ok: false; error: string }
       >
-      /** The read-only despiste runbook shipped with Argos. */
-      opsBuiltinRunbook: () => Promise<{ path: string }>
+      /** The runbooks shipped with Argos: the read-only despiste (`path`) and the base
+       *  intervention (`intervention`). */
+      opsBuiltinRunbook: () => Promise<{ path: string; intervention: string }>
+      opsExplainCommand: (argv: string[]) => Promise<{ ok: true; text: string } | { ok: false; error: string }>
+      /** "Add to Argos": what an ended run's own runbook adds to the base intervention, in
+       *  counts; null when there is nothing to propose (built-in runbook, no call, nothing new). */
+      opsBaseProposal: (
+        runId: string
+      ) => Promise<{ ok: true; proposal: { rules: number; scripts: number; used: number } | null } | { ok: false; error: string }>
+      /** Opens the prefilled GitHub issue; `viaClipboard` when the body was too long for the link. */
+      opsOpenBaseIssue: (runId: string) => Promise<{ ok: true; viaClipboard: boolean } | { ok: false; error: string }>
       /** internal: English, everything; client: the sanitised Relatório Técnico; handover: the pt-PT incident file. */
       opsReport: (
         runId: string,

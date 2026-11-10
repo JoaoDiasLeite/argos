@@ -57,6 +57,11 @@ const runbook: Record<keyof typeof en, string> = {
   'load.invalidJson': 'O policy.json não é JSON válido: {error}',
   'load.policyErrors': 'O policy.json tem {n} erro(s).',
   'load.failed': 'Não foi possível carregar o runbook: {error}',
+  'load.baseFailed': 'Não foi possível carregar a intervenção base que vem com o Argos: {error}',
+  'merge.scriptReplaced': 'scripts "{name}": o script do próprio runbook substitui o script com o mesmo nome da intervenção base.',
+  'merge.heading': 'Runbook somado à base: {name}',
+  'merge.intro':
+    'Este runbook soma-se à intervenção base: as regras dele juntam-se às da base e, onde as instruções abaixo forem mais restritas do que as da base, segue estas.',
   'library.listFailed': 'Não foi possível listar a pasta de runbooks {dir}: {error}',
 
   'session.noHosts': 'Nenhum anfitrião SSH guardado pertence a um grupo de anfitriões do runbook {name}.',

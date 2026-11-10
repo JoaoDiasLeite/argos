@@ -908,7 +908,8 @@ first natural trigger for running.
 format of `COMPANION_ART_PROMPT.md`, ~**140 px/s** (3.5× the walk), mirrored like `walk`.
 Until the sheet exists, `walk.png` at 12 fps stands in. When he runs: follow-me across
 screens (1920 px is 14 s running; past ~2 s he runs to the edge and appears on the other
-side), the ball (below), and now and then a short lap after a "done". Not to be summoned
+side; since 3.6.0 he does not appear there: a run the floor cannot carry to the other
+screen leaves him where it stopped), the ball (below), and now and then a short lap after a "done". Not to be summoned
 (the bubble opens where he is) and not for reminders (they appear on the right display at
 once, as today).
 

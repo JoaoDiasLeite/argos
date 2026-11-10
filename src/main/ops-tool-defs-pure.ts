@@ -25,6 +25,18 @@ export const OPS_TOOL_RULES =
   "Every call is checked against the runbook policy and may be refused or need the operator's approval. " +
   'Call past_interventions when the operator or the first message names an earlier run, or to check whether the same problem was seen before on this server.'
 
+/** The longest `why` a host call may carry: one sentence for the approval card. */
+export const OPS_WHY_MAX = 300
+
+/**
+ * What the host tools ask for in `why`: the model's own one-line intent, shown to the
+ * operator next to the exact command and kept in the ledger with the call. It is the
+ * model's claim, never a check: the gate decides on the command alone.
+ */
+const WHY_TEXT =
+  "Give why: one sentence, in the operator's language, saying what this call is for and what you expect to " +
+  'learn or change; the operator reads it next to the exact command when deciding.'
+
 /** The hosts the model may name, in every tool description: the id is what it must send. */
 export function opsHostListText(hosts: OpsToolHost[]): string {
   const rows = hosts.map((h) => `- ${h.name} (hostId: ${h.id}; groups: ${h.groups.join(', ')})`)
@@ -60,6 +72,7 @@ export interface OpsToolDef {
  *  calls do not wait for a plan, so propose_plan is described as optional. */
 export function opsToolDefs(z: typeof ZodNs, hosts: OpsToolHost[], opts: { planRequired?: boolean } = {}): OpsToolDef[] {
   const h = opsHostListText(hosts)
+  const why = z.string().min(1).max(OPS_WHY_MAX)
   const planLead =
     opts.planRequired === false
       ? 'Optional for this read-only runbook: your calls run without an approved plan. If you want the operator to review a sequence first, list the steps here. '
@@ -93,28 +106,28 @@ export function opsToolDefs(z: typeof ZodNs, hosts: OpsToolHost[], opts: { planR
     },
     {
       name: 'run',
-      description: `Run one command on a runbook host over SSH and return its exit code, stdout and stderr. ${OPS_TOOL_RULES}\n${h}`,
-      shape: { hostId: z.string(), cmd: z.string() }
+      description: `Run one command on a runbook host over SSH and return its exit code, stdout and stderr. ${WHY_TEXT} ${OPS_TOOL_RULES}\n${h}`,
+      shape: { hostId: z.string(), cmd: z.string(), why }
     },
     {
       name: 'script',
-      description: `Run one of the runbook's scripts (by file name, from its scripts/ folder) on a host, with arguments as separate strings. ${OPS_TOOL_RULES}\n${h}`,
-      shape: { hostId: z.string(), name: z.string(), args: z.array(z.string()).default([]) }
+      description: `Run one of the runbook's scripts (by file name, from its scripts/ folder) on a host, with arguments as separate strings. ${WHY_TEXT} ${OPS_TOOL_RULES}\n${h}`,
+      shape: { hostId: z.string(), name: z.string(), args: z.array(z.string()).default([]), why }
     },
     {
       name: 'read',
-      description: `Read a text file on a host. The path must be absolute and inside the runbook's read paths. ${OPS_TOOL_RULES}\n${h}`,
-      shape: { hostId: z.string(), path: z.string() }
+      description: `Read a text file on a host. The path must be absolute and inside the runbook's read paths. ${WHY_TEXT} ${OPS_TOOL_RULES}\n${h}`,
+      shape: { hostId: z.string(), path: z.string(), why: why.optional() }
     },
     {
       name: 'list',
-      description: `List a directory on a host. The path must be absolute and inside the runbook's read paths. ${OPS_TOOL_RULES}\n${h}`,
-      shape: { hostId: z.string(), path: z.string() }
+      description: `List a directory on a host. The path must be absolute and inside the runbook's read paths. ${WHY_TEXT} ${OPS_TOOL_RULES}\n${h}`,
+      shape: { hostId: z.string(), path: z.string(), why: why.optional() }
     },
     {
       name: 'write',
-      description: `Write a text file on a host. The path must be absolute and inside the runbook's write paths; the previous file may be backed up first. ${OPS_TOOL_RULES}\n${h}`,
-      shape: { hostId: z.string(), path: z.string(), content: z.string() }
+      description: `Write a text file on a host. The path must be absolute and inside the runbook's write paths; the previous file may be backed up first. ${WHY_TEXT} ${OPS_TOOL_RULES}\n${h}`,
+      shape: { hostId: z.string(), path: z.string(), content: z.string(), why }
     },
     {
       name: 'note',

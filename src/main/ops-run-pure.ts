@@ -12,6 +12,7 @@ import { canonicalCommand, classify, parseSimpleCommand } from './ops-gate-pure'
 import { hostDeniedReason, outOfScopeReason, scopeVerdict } from './ops-scope-pure'
 import type { OpsAuditEvent, OpsGateResult, OpsHostRef, OpsNote, OpsPolicy, OpsScope, OpsToolInput, OpsToolName } from './ops-types'
 import type { TFunction } from '../shared/i18n'
+import { OPS_WHY_MAX } from './ops-tool-defs-pure'
 
 // ─── Hosts ────────────────────────────────────────────────────────────────────────
 
@@ -46,8 +47,23 @@ export interface ApprovalOpsContext {
   argv?: string[]
   path?: string
   scriptSha256?: string
+  /** The model's one-line intent for this call (the tool's `why`): its claim, not the gate's. */
+  why?: string
   queuedBehind: number
   runbook: string
+}
+
+/**
+ * The `why` of a host call's raw arguments, trimmed and held to OPS_WHY_MAX, or undefined
+ * when there is none. canUseTool sees the raw JSON before zod does, so the type is
+ * checked here; a missing or odd `why` never refuses a call, it just shows nothing.
+ */
+export function callWhy(args: Record<string, unknown> | null | undefined): string | undefined {
+  const v = args?.why
+  if (typeof v !== 'string') return undefined
+  const s = v.replace(/\s+/g, ' ').trim()
+  if (!s) return undefined
+  return s.length > OPS_WHY_MAX ? `${s.slice(0, OPS_WHY_MAX - 1)}…` : s
 }
 
 /** Mirrors the renderer's OpsPlanStep (types.ts). */
@@ -77,7 +93,8 @@ export function toApprovalContext(
   hostAddress: string,
   tool: OpsToolName,
   runbookName: string,
-  queuedBehind: number
+  queuedBehind: number,
+  why?: string
 ): ApprovalOpsContext {
   return {
     hostName: host.name,
@@ -90,6 +107,7 @@ export function toApprovalContext(
     ...(gate.argv ? { argv: [...gate.argv] } : {}),
     ...(gate.path !== undefined ? { path: gate.path } : {}),
     ...(gate.scriptSha256 !== undefined ? { scriptSha256: gate.scriptSha256 } : {}),
+    ...(why ? { why } : {}),
     queuedBehind,
     runbook: runbookName
   }

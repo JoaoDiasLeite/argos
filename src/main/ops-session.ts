@@ -34,6 +34,7 @@ import {
   type OpsPlanStep,
   planTextFor,
   callPlanLine,
+  callWhy,
   planInputWithoutSkips,
   planSkips,
   skippedCommandLines,
@@ -618,7 +619,15 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions, operator
         answer = await opts.ask({
           tool: toolName,
           input,
-          ops: toApprovalContext(gate, entry.host, address, tool, ctx.runbook.ref.name, ctx.executor.queuedBehind(parsed.hostId))
+          ops: toApprovalContext(
+            gate,
+            entry.host,
+            address,
+            tool,
+            ctx.runbook.ref.name,
+            ctx.executor.queuedBehind(parsed.hostId),
+            callWhy(input)
+          )
         })
       }
       // The modal may not edit an ops call: the gate decided on this exact input, so

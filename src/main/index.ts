@@ -121,10 +121,12 @@ import { createLedger, RUN_LIST_MAX, type OpsLedger, type OpsReportKind } from '
 import { HISTORY_RUN_ID_RE } from './ops-briefing-pure'
 import { earlierRunsInScope } from './ops-tools'
 import { handoverFileName } from './ops-handover-pure'
+import { foldNotes } from './ops-notes-pure'
 import { createExecutor, createSshBackend, type OpsExecutor } from './ops-exec'
 import { createFakeBackend } from './ops-backend-fake'
-import { loadRunbook, readScript, scanRunbookLibrary } from './ops-runbook'
+import { loadRunbook, loadRunbookOnBase, readScript, scanRunbookLibrary } from './ops-runbook'
 import { builtinRunbookDir } from './ops-builtin'
+import { baseProposal, issueUrl, type BaseProposal } from './ops-proposal-pure'
 import { summarizePolicy } from './ops-policy-pure'
 import { interventionPrompt, referenceLine } from './ops-scope-pure'
 import type { OpsScope } from './ops-types'
@@ -232,6 +234,7 @@ import {
   terminalKey
 } from './companion-terminal-pure'
 import { buildWhenPrompt, MODEL_TIMEOUT_MS, needsModel, parsedFromModel } from './companion-nlu-gate-pure'
+import { buildExplainPrompt, cleanExplanation, explainArgv, explainCacheKey, type OpsExplainLanguage } from './ops-explain-pure'
 import { listForView, planCapture, todayQuery } from './companion-capture-pure'
 import { isQuiet, parseQuietCommand, tomorrowAt } from './companion-quiet-pure'
 import { isSaveThisCommand, parseSpanCommand } from './companion-focus-pure'
@@ -277,8 +280,7 @@ import { initUpdater, getUpdaterState, checkNow, quitAndInstall } from './update
 import { getPlanUsageForIpc, startPlanUsageWatcher } from './plan-usage'
 import { getCodexAccountsUsage } from './codex-usage'
 import {
-  setExplorerContextMenu,
-  removeLegacyExplorerContextMenu,
+  syncExplorerContextMenu,
   extractLaunchAction,
   hasToggleFlag,
   LaunchAction
@@ -824,13 +826,15 @@ app.whenReady().then(async () => {
   app.on('activate', () => showMainWindow())
 
   // Explorer context menu: re-register on every launch when enabled so the stored
-  // exe path stays fresh across updates. Skip in dev — electron.exe as the target
-  // would leave a checkout-specific command in the user's registry.
-  if (!is.dev && getConfig().system.explorerContextMenu) {
-    void setExplorerContextMenu(true)
+  // exe path stays fresh across updates, and, independent of the toggle, clear the
+  // entries left behind under the app's former name — one reg.exe run for both. Skip in
+  // dev — electron.exe as the target would leave a checkout-specific command in the
+  // user's registry.
+  if (!is.dev) {
+    void syncExplorerContextMenu(getConfig().system.explorerContextMenu ? true : undefined, {
+      removeLegacy: true
+    })
   }
-  // Independent of the toggle: clear the entries left behind under the app's former name.
-  if (!is.dev) void removeLegacyExplorerContextMenu()
 
   // Windows Jump List (recent projects + New terminal), refreshed on save below.
   refreshJumpList()
@@ -1958,14 +1962,21 @@ function opsHostAddress(hostId: string): string {
   return h ? `${h.username}@${h.host}:${h.port}` : hostId
 }
 
-// The read-only despiste runbook shipped with Argos, the default way to start an intervention.
-ipcMain.handle('ops:builtin-runbook', () => ({ path: builtinRunbookDir() }))
+// The runbooks shipped with Argos: the read-only despiste (`path`, the default way to start
+// an intervention) and the base intervention (`intervention`, docs/BASE_INTERVENTION_PLAN.md).
+ipcMain.handle('ops:builtin-runbook', () => ({ path: builtinRunbookDir('diagnosis'), intervention: builtinRunbookDir('intervention') }))
 
-ipcMain.handle('ops:load-runbook', async (_, dir: string) => {
+// `onBase`: load the runbook added to the base intervention, as the run would see it.
+ipcMain.handle('ops:load-runbook', async (_, dir: string, opts?: { onBase?: boolean }) => {
   if (typeof dir !== 'string' || dir.trim() === '') return { ok: false, error: t('main.ipc.ops.noRunbookFolder') }
-  const r = await loadRunbook(dir)
+  const onBase = !!(opts && typeof opts === 'object' && opts.onBase === true) && !isBuiltinRunbookPath(dir)
+  const r = onBase ? await loadRunbookOnBase(dir, builtinRunbookDir('intervention')) : await loadRunbook(dir)
   if (!r.ok) return { ok: false, error: r.error, ...(r.errors ? { errors: r.errors } : {}) }
   const rb = r.runbook
+  // The start screen describes the runbook picked, not the base it is added to: its own
+  // RUNBOOK.md, after the base's in the merged guidelines, gives the paragraph.
+  const own = onBase ? await loadRunbook(dir) : null
+  const guidelines = own?.ok ? own.runbook.guidelines : rb.guidelines
   return {
     ok: true,
     name: rb.ref.name,
@@ -1974,7 +1985,7 @@ ipcMain.handle('ops:load-runbook', async (_, dir: string) => {
     warnings: rb.warnings,
     ...(rb.ref.platform ? { platform: rb.ref.platform } : {}),
     strict: rb.policy.strict,
-    summary: summarizePolicy(rb.policy, rb.guidelines)
+    summary: summarizePolicy(rb.policy, guidelines)
   }
 })
 
@@ -2005,6 +2016,61 @@ ipcMain.handle('ops:runs', async (_, opts?: { hostId?: string; limit?: number })
     ...(typeof o.hostId === 'string' && o.hostId !== '' ? { hostId: o.hostId } : {}),
     ...(typeof o.limit === 'number' ? { limit: o.limit } : {})
   })
+})
+
+/**
+ * "Add to Argos" (docs/BASE_INTERVENTION_PLAN.md §6): what an ended run's own runbook
+ * allows that the base intervention does not. Null for a built-in runbook, a run that
+ * has not ended or made no call, or a runbook that adds nothing. Everything comes from the
+ * ledger and the folders on disk; the renderer only names the run.
+ */
+async function baseProposalFor(runId: string): Promise<{ ok: true; proposal: BaseProposal | null } | { ok: false; error: string }> {
+  const r = await getOpsLedger().readRun(runId)
+  if (!r.ok) return { ok: false, error: r.error }
+  const events = r.lines.map((l) => l.event)
+  const start = events.find((e) => e.kind === 'run.start')
+  const end = events.find((e) => e.kind === 'run.end')
+  if (start?.kind !== 'run.start' || end?.kind !== 'run.end') return { ok: true, proposal: null }
+  const decided = events.flatMap((e) => (e.kind === 'call.decided' ? [e] : []))
+  if (decided.length === 0 || isBuiltinRunbookPath(start.runbook.path)) return { ok: true, proposal: null }
+  const [own, base] = await Promise.all([loadRunbook(start.runbook.path), loadRunbook(builtinRunbookDir('intervention'))])
+  if (!own.ok) return { ok: false, error: own.error }
+  if (!base.ok) return { ok: false, error: t('runbook.load.baseFailed', { error: base.error }) }
+  const proposal = baseProposal({
+    base: base.runbook.policy,
+    runbook: own.runbook.policy,
+    runbookName: own.runbook.ref.name,
+    usedRules: decided.flatMap((e) => (e.rule ? [e.rule] : [])),
+    outcome: end.aborted ? 'aborted' : end.ok ? 'ok' : 'failed',
+    argosVersion: app.getVersion(),
+    hostWords: listHosts().flatMap((h) => [h.name, h.host])
+  })
+  return { ok: true, proposal }
+}
+
+ipcMain.handle('ops:base-proposal', async (_, runId: string) => {
+  if (!isRunId(runId)) return { ok: false, error: t('main.ipc.ops.invalidRunId') }
+  const r = await baseProposalFor(runId)
+  if (!r.ok || !r.proposal) return r.ok ? { ok: true, proposal: null } : r
+  const p = r.proposal
+  return {
+    ok: true,
+    proposal: { rules: p.rules.length, scripts: p.scripts.length, used: [...p.rules, ...p.scripts].filter((x) => x.used).length }
+  }
+})
+
+// Opens the prefilled GitHub issue in the browser. The URL is built here from the ledger,
+// never taken from the renderer; a body too long for a URL goes to the clipboard.
+ipcMain.handle('ops:open-base-issue', async (_, runId: string) => {
+  if (!isRunId(runId)) return { ok: false, error: t('main.ipc.ops.invalidRunId') }
+  const r = await baseProposalFor(runId)
+  if (!r.ok) return r
+  if (!r.proposal) return { ok: false, error: t('main.ipc.ops.nothingToPropose') }
+  // The issue is in English like the rest of its body, whatever the UI language.
+  const { url, viaClipboard } = issueUrl(r.proposal, 'The proposal was too long for the link: Argos copied it to the clipboard, paste it here.')
+  if (viaClipboard) clipboard.writeText(r.proposal.body)
+  await shell.openExternal(url)
+  return { ok: true, viaClipboard }
 })
 
 const isReportKind = (k: unknown): k is OpsReportKind => k === 'internal' || k === 'client' || k === 'handover'
@@ -2055,11 +2121,17 @@ ipcMain.handle('ops:save-report', async (_, runId: string, kind: OpsReportKind, 
   let names: string[]
   if (kind === 'handover') {
     const ev = start?.event.kind === 'run.start' ? start.event : undefined
+    // The server the run was scoped to, or its only one: it names a file without a client.
+    const scoped = ev?.scope?.kind === 'host' ? ev.scope.hostId : undefined
+    const host = scoped ? ev?.hosts.find((h) => h.id === scoped) : ev?.hosts.length === 1 ? ev.hosts[0] : undefined
+    const summary = lines.ok ? foldNotes(lines.lines, runId).summary : undefined
     const base = handoverFileName({
       startedAt: startAt ?? new Date().toISOString(),
       runbook: ev?.runbook.name ?? '',
       ...(ev?.client !== undefined ? { client: ev.client } : {}),
-      ...(ev?.task !== undefined ? { task: ev.task } : {})
+      ...(ev?.task !== undefined ? { task: ev.task } : {}),
+      ...(host?.name ? { host: host.name } : {}),
+      ...(summary ? { summary } : {})
     }).replace(/\.md$/, '')
     names = [`${base}.md`, ...Array.from({ length: 98 }, (_, i) => `${base}-${i + 2}.md`)]
   } else {
@@ -2108,6 +2180,66 @@ ipcMain.handle('ops:open-folder', async (_, which: string) => {
 ipcMain.handle('ops:verify', (_, date: string) => getOpsLedger().verify(date))
 ipcMain.handle('ops:ledger-info', () => getOpsLedger().info())
 
+// The "?" on an ops approval (ops-explain-pure.ts): one command, explained by a separate
+// one-shot call that sees only its words. Same policy and provider as standup:generate;
+// no run, host or task goes with it. Answers are kept per words and language for the
+// app's life, and a second click while one is on its way waits for that one.
+const OPS_EXPLAIN_TIMEOUT_MS = 45_000
+const OPS_EXPLAIN_CACHE_MAX = 200
+const opsExplainCache = new Map<string, string>()
+const opsExplainInFlight = new Map<string, Promise<{ ok: true; text: string } | { ok: false; error: string }>>()
+
+async function explainOpsCommand(argv: string[], language: OpsExplainLanguage): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  const abort = new AbortController()
+  const env = buildSubprocessEnv()
+  const policy = resolvePolicy({ profile: 'headless-reasoning' })
+  const providerId = providerFor(policy.model)
+  if (providerId !== 'claude') Object.assign(env, providerAccountEnv(providerId))
+  const timer = setTimeout(() => abort.abort('timeout'), OPS_EXPLAIN_TIMEOUT_MS)
+  const aborted = new Promise<null>((resolve) => abort.signal.addEventListener('abort', () => resolve(null), { once: true }))
+  try {
+    const stream = getEngine(providerId).run({
+      prompt: buildPrompt(buildExplainPrompt(argv, language), undefined, undefined, '') as string,
+      ...policy,
+      cwd: os.homedir(),
+      env,
+      abortController: abort,
+      permissionMode: 'bypassPermissions'
+    })
+    const collected = collectText(stream)
+    collected.catch(() => {})
+    const out = await Promise.race([collected, aborted])
+    if (!out) return { ok: false, error: t('main.ipc.ops.explainTimeout') }
+    if (out.isError) return { ok: false, error: out.errorText || t('main.ipc.ops.explainFailed') }
+    const text = cleanExplanation(out.text)
+    return text ? { ok: true, text } : { ok: false, error: t('main.ipc.ops.explainFailed') }
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+ipcMain.handle('ops:explain-command', async (_, argvIn: unknown) => {
+  const checked = explainArgv(argvIn)
+  if (!checked.ok) return { ok: false, error: checked.error }
+  const language: OpsExplainLanguage = currentLanguage() === 'pt-PT' ? 'pt-PT' : 'en'
+  const key = explainCacheKey(checked.argv, language)
+  const cached = opsExplainCache.get(key)
+  if (cached !== undefined) return { ok: true, text: cached }
+  let pending = opsExplainInFlight.get(key)
+  if (!pending) {
+    pending = explainOpsCommand(checked.argv, language).finally(() => opsExplainInFlight.delete(key))
+    opsExplainInFlight.set(key, pending)
+  }
+  const r = await pending
+  if (r.ok) {
+    if (opsExplainCache.size >= OPS_EXPLAIN_CACHE_MAX) opsExplainCache.delete(opsExplainCache.keys().next().value as string)
+    opsExplainCache.set(key, r.text)
+  }
+  return r
+})
+
 // A reopened ops chat's timeline: every ledger line of its runs, shaped like the live
 // `ops:event` so the renderer folds both the same way.
 ipcMain.handle('ops:session-events', async (_, appSessionId: string) => {
@@ -2135,6 +2267,8 @@ interface TerminalOpsSession {
   /** A resume only: the first message for the chain's create step, should --resume fail. */
   resumeFallbackPrompt?: string
   provider: OpsCli
+  /** The runbook runs added to the base intervention: the CLI gets the base's folder. */
+  onBase: boolean
   token: string
   endpoint: string
   mcpConfigPath: string
@@ -2180,6 +2314,9 @@ interface OpsIntervention {
   resumesRunId?: string
   /** Earlier runs the operator pointed to on the start screen (≤ 5). */
   relatedRunIds?: string[]
+  /** "Somar à base": the runbook runs added to the base intervention shipped with Argos
+   *  (docs/BASE_INTERVENTION_PLAN.md §5). Never set for a built-in runbook. */
+  onBase?: boolean
 }
 
 /** A run id is a UUID; anything else is not one Argos wrote. */
@@ -2216,8 +2353,17 @@ function parseIntervention(v: unknown): OpsIntervention | { error: string } {
     ...(client ? { client } : {}),
     ...(parentRunId ? { parentRunId } : {}),
     ...(resumesRunId ? { resumesRunId } : {}),
-    ...(relatedRunIds.length ? { relatedRunIds } : {})
+    ...(relatedRunIds.length ? { relatedRunIds } : {}),
+    // A built-in runbook is never added to the base: the diagnosis is read-only by design,
+    // and the base on itself is just the base.
+    ...(o.onBase === true && !isBuiltinRunbookPath(o.runbookPath) ? { onBase: true } : {})
   }
+}
+
+/** Whether a folder is one of the runbooks shipped with Argos. */
+function isBuiltinRunbookPath(dir: string): boolean {
+  const norm = (p: string): string => path.resolve(p).toLowerCase()
+  return (['diagnosis', 'intervention'] as const).some((name) => norm(builtinRunbookDir(name)) === norm(dir))
 }
 
 function terminalOpsReply(s: TerminalOpsSession): TerminalOpsResult {
@@ -2306,7 +2452,7 @@ async function handOverParent(parentRunId: string, childRunId: string, runbook: 
 async function openTerminalOps(terminalId: string, intervention: OpsIntervention): Promise<TerminalOpsResult> {
   // Claude Code only (39badc7): the one CLI whose own shell and file tools can be switched off.
   const provider: OpsCli = 'claude'
-  const { runbookPath, scope, task, ticket, client, parentRunId, resumesRunId, relatedRunIds } = intervention
+  const { runbookPath, scope, task, ticket, client, parentRunId, resumesRunId, relatedRunIds, onBase } = intervention
   const interventionKey = JSON.stringify([
     runbookPath,
     scope,
@@ -2315,7 +2461,8 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
     client ?? '',
     parentRunId ?? '',
     resumesRunId ?? '',
-    relatedRunIds ?? []
+    relatedRunIds ?? [],
+    !!onBase
   ])
   const existing = terminalOps.get(terminalId)
   if (existing && !existing.ctx.ended) {
@@ -2347,7 +2494,7 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
     executor: getOpsExecutor(),
     t,
     abort,
-    loadRunbook,
+    loadRunbook: onBase ? (dir: string) => loadRunbookOnBase(dir, builtinRunbookDir('intervention')) : loadRunbook,
     readScript,
     hostAddress: opsHostAddress,
     syslog: { operator: opsOperator(), sshUser: (hostId) => listHosts().find((h) => h.id === hostId)?.username ?? '' },
@@ -2374,7 +2521,11 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
     // A resume that continues its conversation says so on the --resume step; the create
     // step behind it (should the resume fail) gets the variant for a model that remembers
     // nothing. Any other launch has one message, for the create step.
-    const promptOpts = { planRequired: ctx.planRequired, ...(relatedRunIds?.length ? { related: relatedRunIds } : {}) }
+    const promptOpts = {
+      planRequired: ctx.planRequired,
+      ...(relatedRunIds?.length ? { related: relatedRunIds } : {}),
+      ...(onBase ? { baseDir: builtinRunbookDir('intervention') } : {})
+    }
     const freshPrompt = interventionPrompt(task, {
       ...promptOpts,
       ...(resumesRunId ? { resume: { runId: resumesRunId, conversation: false } } : {})
@@ -2390,6 +2541,7 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
       ...(cli.resumeSessionId ? { resumeSessionId: cli.resumeSessionId, resumeFallbackPrompt: freshPrompt } : {}),
       ...(cli.pinSessionId ? { pinSessionId: cli.pinSessionId } : {}),
       provider,
+      onBase: !!onBase,
       token,
       endpoint,
       mcpConfigPath: config.path,
@@ -2790,7 +2942,7 @@ ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
     prefs.explorerContextMenu !== undefined &&
     prefs.explorerContextMenu !== prevExplorerMenu
   ) {
-    void setExplorerContextMenu(system.explorerContextMenu)
+    void syncExplorerContextMenu(system.explorerContextMenu)
   }
 
   // Only touch the login entry when the pref actually changed, and never in dev (see
@@ -3145,9 +3297,12 @@ ipcMain.handle(
     const live = opts?.ops ? terminalOps.get(id) : undefined
     const fallback =
       live && !live.ctx.ended && live.resumeSessionId && live.resumeSessionId === opts.resumeSessionId ? live.resumeFallbackPrompt : undefined
+    // Whether the CLI also gets the base intervention's folder is main's own too: it comes
+    // from the live ops session, whatever the renderer sent.
+    const ops = opts?.ops ? { env: opts.ops.env, mcpConfigPath: opts.ops.mcpConfigPath, onBase: !!(live && !live.ctx.ended && live.onBase) } : undefined
     const r = await createTerminal(
       id,
-      { ...opts, resumeFallbackPrompt: fallback },
+      { ...opts, ...(ops ? { ops } : {}), resumeFallbackPrompt: fallback },
       (tid, data) => send('terminal:data', { id: tid, data }),
       (tid, exitCode) => {
         send('terminal:exit', { id: tid, exitCode })

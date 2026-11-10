@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { handoverFileName, lisbonDate, renderHandover, slug } from './ops-handover-pure'
+import { camelName, handoverFileName, lisbonDate, renderHandover, slug } from './ops-handover-pure'
 import { summarizeRun } from './ops-audit-pure'
 import type { OpsAuditEvent, OpsAuditLine, OpsNote } from './ops-types'
 
@@ -192,12 +192,38 @@ describe('handover file name', () => {
     expect(slug('  Ação: São João!  ')).toBe('acao-sao-joao')
     expect(
       handoverFileName({ startedAt: '2026-10-19T16:00:00Z', client: 'CM Torres Vedras', task: 'Puma não arranca pelo monit depois do reboot', runbook: 'despiste' })
-    ).toBe('INC-2026-10-19-cm-torres-vedras-puma-nao-arranca-pelo-monit-depois.md')
+    ).toBe('INC-2026-10-19-CMTorresVedras-puma-nao-arranca-pelo-monit-depois.md')
+    expect(camelName('Câmara de São João')).toBe('CamaraDeSaoJoao')
   })
 
   it('falls back to the runbook name and leaves out empty parts', () => {
     expect(handoverFileName({ startedAt: '2026-10-19T16:00:00Z', runbook: 'despiste' })).toBe('INC-2026-10-19-despiste.md')
     expect(handoverFileName({ startedAt: '2026-10-19T16:00:00Z', client: '—', task: '   ', runbook: '' })).toBe('INC-2026-10-19.md')
+  })
+
+  it('without a client or task, names the file by the server and the summary', () => {
+    expect(
+      handoverFileName({
+        startedAt: '2026-11-10T16:00:00Z',
+        host: 'CM Felgueiras',
+        summary: 'O puma do smile-saas (CM Felgueiras) está em baixo desde o reboot.\nMais texto.',
+        runbook: 'diagnosis'
+      })
+    ).toBe('INC-2026-11-10-CMFelgueiras-puma-do-smile-saas-esta.md')
+    expect(
+      handoverFileName({
+        startedAt: '2026-11-03T10:00:00Z',
+        host: 'Storm',
+        summary: 'O wm-project (wmproject.cityfy.pt) ficou lento e deu erros.',
+        runbook: 'diagnosis'
+      })
+    ).toBe('INC-2026-11-03-Storm-wm-project-ficou-lento-e.md')
+  })
+
+  it('the client wins over the server, and the task over the summary', () => {
+    expect(
+      handoverFileName({ startedAt: '2026-11-10T16:00:00Z', client: 'CM Porto', host: 'web1', task: 'Reload nginx', summary: 'Outra coisa', runbook: 'diagnosis' })
+    ).toBe('INC-2026-11-10-CMPorto-reload-nginx.md')
   })
 
   it('dates by the Lisbon day', () => {

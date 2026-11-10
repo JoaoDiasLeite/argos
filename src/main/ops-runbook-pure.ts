@@ -23,6 +23,9 @@ export interface LoadedRunbook {
   /** RUNBOOK.md text, appended verbatim to the system prompt. */
   guidelines: string
   scriptsDir: string
+  /** Script name → its folder, when a script lives outside scriptsDir: a runbook added to
+   *  the base intervention keeps the base's scripts in the base's own folder. */
+  scriptDirs?: Record<string, string>
   warnings: string[]
   /** Stored hosts that belong to at least one policy group, with those groups. */
   hosts: { host: OpsHostRef; groups: string[] }[]

@@ -21,9 +21,11 @@ import {
 import OpsReferPicker from './OpsReferPicker'
 import PlanReviewSheet from './PlanReviewSheet'
 import OpsReportSheet from './OpsReportSheet'
+import OpsBaseProposal from './OpsBaseProposal'
 import { backdropClose } from '../lib/backdrop-close'
 import { plural, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
+import CommandExplain from './CommandExplain'
 import './ActivityColumn.css'
 
 interface Props {
@@ -120,7 +122,7 @@ function CallRow({ row }: { row: OpsRow }) {
   const inner = (
     <>
       <span className={`ac-dot ${tone}${row.status === 'running' ? ' pulse' : ''}`} aria-hidden="true" />
-      <span className="ac-cmd" title={[text, row.title, row.reason].filter(Boolean).join('\n')}>
+      <span className="ac-cmd" title={[text, row.title, row.why, row.reason].filter(Boolean).join('\n')}>
         {text}
       </span>
       <span className={`ac-label ${tone}`}>{label}</span>
@@ -734,7 +736,19 @@ function WaitingCall({ ops, onDecide }: { ops: ApprovalOpsContext; onDecide: (al
         </span>
       </div>
       <div className="ac-wait-title">{title}</div>
-      {lines.length > 0 && <div className="ac-wait-cmd">{lines.join('\n')}</div>}
+      {ops.why && (
+        <div className="ac-wait-reason">
+          <span className="ac-wait-why-label">{t('sessions.activity.wait.why')}</span> {ops.why}
+        </div>
+      )}
+      {lines.length > 0 &&
+        (ops.tool === 'run' && ops.argv?.length ? (
+          <CommandExplain argv={ops.argv}>
+            <div className="ac-wait-cmd">{lines.join('\n')}</div>
+          </CommandExplain>
+        ) : (
+          <div className="ac-wait-cmd">{lines.join('\n')}</div>
+        ))}
       {sudo && ops.reason && <div className="ac-wait-reason">{ops.reason}</div>}
       {ops.queuedBehind > 0 && (
         <div className="ac-wait-reason">
@@ -1047,6 +1061,8 @@ export default function ActivityColumn({
           onClose={() => setReferOpen(false)}
         />
       )}
+
+      {current?.ended && <OpsBaseProposal runId={current.runId} runbookPath={runbookPath} />}
 
       {current && (
         <div className="ac-foot">

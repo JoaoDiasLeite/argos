@@ -72,6 +72,7 @@ const main: Record<keyof typeof en, string> = {
   'ipc.ops.notRunbookFile': 'Não é um ficheiro do runbook: {name}',
   'ipc.ops.noRunId': 'Não foi indicado nenhum id de execução.',
   'ipc.ops.invalidRunId': 'Id de execução inválido.',
+  'ipc.ops.nothingToPropose': 'Este runbook não acrescenta nada à intervenção base.',
   'ipc.ops.unknownReportKind': 'Tipo de relatório desconhecido: {kind}',
   'ipc.ops.reportHostsAnonymised':
     'Não foi possível carregar o runbook, por isso os anfitriões aparecem como [servidor]: {error}',
@@ -81,6 +82,8 @@ const main: Record<keyof typeof en, string> = {
   'ipc.ops.unknownFolder': 'Não é uma pasta de ops: {which}',
   'ipc.ops.noRunbooksFolder': 'Não há nenhuma pasta de runbooks definida.',
   'ipc.ops.noSessionId': 'Não foi indicado nenhum id de sessão.',
+  'ipc.ops.explainTimeout': 'A explicação demorou demasiado. Tenta outra vez.',
+  'ipc.ops.explainFailed': 'O modelo não conseguiu explicar este comando.',
   'ipc.ops.noIntervention': 'Não foi indicada nenhuma intervenção.',
   'ipc.ops.interventionNoServer': 'A intervenção não indica nenhum servidor.',
   'ipc.ops.interventionNoTask': 'A intervenção não tem tarefa.',
