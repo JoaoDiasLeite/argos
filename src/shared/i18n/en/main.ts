@@ -83,6 +83,8 @@ export default {
   'ipc.ops.unknownFolder': 'Not an ops folder: {which}',
   'ipc.ops.noRunbooksFolder': 'No runbooks folder is set.',
   'ipc.ops.noSessionId': 'No session id given.',
+  'ipc.ops.explainTimeout': 'The explanation took too long. Try again.',
+  'ipc.ops.explainFailed': 'The model could not explain this command.',
   'ipc.ops.noIntervention': 'No intervention given.',
   'ipc.ops.interventionNoServer': 'The intervention names no server.',
   'ipc.ops.interventionNoTask': 'The intervention has no task.',

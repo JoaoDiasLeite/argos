@@ -25,6 +25,7 @@ import OpsBaseProposal from './OpsBaseProposal'
 import { backdropClose } from '../lib/backdrop-close'
 import { plural, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
+import CommandExplain from './CommandExplain'
 import './ActivityColumn.css'
 
 interface Props {
@@ -740,7 +741,14 @@ function WaitingCall({ ops, onDecide }: { ops: ApprovalOpsContext; onDecide: (al
           <span className="ac-wait-why-label">{t('sessions.activity.wait.why')}</span> {ops.why}
         </div>
       )}
-      {lines.length > 0 && <div className="ac-wait-cmd">{lines.join('\n')}</div>}
+      {lines.length > 0 &&
+        (ops.tool === 'run' && ops.argv?.length ? (
+          <CommandExplain argv={ops.argv}>
+            <div className="ac-wait-cmd">{lines.join('\n')}</div>
+          </CommandExplain>
+        ) : (
+          <div className="ac-wait-cmd">{lines.join('\n')}</div>
+        ))}
       {sudo && ops.reason && <div className="ac-wait-reason">{ops.reason}</div>}
       {ops.queuedBehind > 0 && (
         <div className="ac-wait-reason">

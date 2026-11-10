@@ -69,6 +69,11 @@ const ops: Record<keyof typeof en, string> = {
   'approval.modal.deny': 'Recusar',
   'approval.modal.allowOnce': 'Permitir uma vez',
   'approval.modal.why': 'O modelo diz:',
+  // components/CommandExplain
+  'explain.button': 'Explicar este comando',
+  'explain.loading': 'A explicar o comando…',
+  'explain.note': 'Escrito por um modelo à parte, que só vê o comando e não a intervenção. Confirma no comando acima.',
+  'explain.retry': 'Tentar outra vez',
   // components/SecretPrompt
   'secret.title': 'Palavra-passe sudo para {host}',
   'secret.aria': 'Palavra-passe sudo para {host}',

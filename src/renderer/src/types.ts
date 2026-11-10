@@ -1775,6 +1775,7 @@ declare global {
       /** The runbooks shipped with Argos: the read-only despiste (`path`) and the base
        *  intervention (`intervention`). */
       opsBuiltinRunbook: () => Promise<{ path: string; intervention: string }>
+      opsExplainCommand: (argv: string[]) => Promise<{ ok: true; text: string } | { ok: false; error: string }>
       /** "Add to Argos": what an ended run's own runbook adds to the base intervention, in
        *  counts; null when there is nothing to propose (built-in runbook, no call, nothing new). */
       opsBaseProposal: (

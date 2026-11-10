@@ -3,6 +3,7 @@ import { ApprovalOpsContext, ApprovalRequest } from '../types'
 import { plural } from '../../../shared/i18n'
 import { describeOpsRequest } from '../lib/ops-approval'
 import DiffView from './DiffView'
+import CommandExplain from './CommandExplain'
 import { useModalA11y } from '../hooks/useModalA11y'
 import { useT } from '../i18n'
 import './ApprovalModal.css'
@@ -34,7 +35,14 @@ function OpsBody({ ops }: { ops: ApprovalOpsContext }) {
           <span className="approval-ops-why-label">{t('ops.approval.modal.why')}</span> {ops.why}
         </div>
       )}
-      {lines.length > 0 && <pre className="approval-ops-exec">{lines.join('\n')}</pre>}
+      {lines.length > 0 &&
+        (ops.tool === 'run' && ops.argv?.length ? (
+          <CommandExplain argv={ops.argv}>
+            <pre className="approval-ops-exec">{lines.join('\n')}</pre>
+          </CommandExplain>
+        ) : (
+          <pre className="approval-ops-exec">{lines.join('\n')}</pre>
+        ))}
       <div className="approval-ops-rule">{ops.rule ? ops.rule : t('ops.approval.modal.noRule')}</div>
       {ops.reason && <div className="approval-desc">{ops.reason}</div>}
       {ops.queuedBehind > 0 && (
