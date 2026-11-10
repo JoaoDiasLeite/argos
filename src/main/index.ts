@@ -234,6 +234,7 @@ import {
   terminalKey
 } from './companion-terminal-pure'
 import { buildWhenPrompt, MODEL_TIMEOUT_MS, needsModel, parsedFromModel } from './companion-nlu-gate-pure'
+import { buildExplainPrompt, cleanExplanation, explainArgv, explainCacheKey, type OpsExplainLanguage } from './ops-explain-pure'
 import { listForView, planCapture, todayQuery } from './companion-capture-pure'
 import { isQuiet, parseQuietCommand, tomorrowAt } from './companion-quiet-pure'
 import { isSaveThisCommand, parseSpanCommand } from './companion-focus-pure'
@@ -2178,6 +2179,66 @@ ipcMain.handle('ops:open-folder', async (_, which: string) => {
 
 ipcMain.handle('ops:verify', (_, date: string) => getOpsLedger().verify(date))
 ipcMain.handle('ops:ledger-info', () => getOpsLedger().info())
+
+// The "?" on an ops approval (ops-explain-pure.ts): one command, explained by a separate
+// one-shot call that sees only its words. Same policy and provider as standup:generate;
+// no run, host or task goes with it. Answers are kept per words and language for the
+// app's life, and a second click while one is on its way waits for that one.
+const OPS_EXPLAIN_TIMEOUT_MS = 45_000
+const OPS_EXPLAIN_CACHE_MAX = 200
+const opsExplainCache = new Map<string, string>()
+const opsExplainInFlight = new Map<string, Promise<{ ok: true; text: string } | { ok: false; error: string }>>()
+
+async function explainOpsCommand(argv: string[], language: OpsExplainLanguage): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  const abort = new AbortController()
+  const env = buildSubprocessEnv()
+  const policy = resolvePolicy({ profile: 'headless-reasoning' })
+  const providerId = providerFor(policy.model)
+  if (providerId !== 'claude') Object.assign(env, providerAccountEnv(providerId))
+  const timer = setTimeout(() => abort.abort('timeout'), OPS_EXPLAIN_TIMEOUT_MS)
+  const aborted = new Promise<null>((resolve) => abort.signal.addEventListener('abort', () => resolve(null), { once: true }))
+  try {
+    const stream = getEngine(providerId).run({
+      prompt: buildPrompt(buildExplainPrompt(argv, language), undefined, undefined, '') as string,
+      ...policy,
+      cwd: os.homedir(),
+      env,
+      abortController: abort,
+      permissionMode: 'bypassPermissions'
+    })
+    const collected = collectText(stream)
+    collected.catch(() => {})
+    const out = await Promise.race([collected, aborted])
+    if (!out) return { ok: false, error: t('main.ipc.ops.explainTimeout') }
+    if (out.isError) return { ok: false, error: out.errorText || t('main.ipc.ops.explainFailed') }
+    const text = cleanExplanation(out.text)
+    return text ? { ok: true, text } : { ok: false, error: t('main.ipc.ops.explainFailed') }
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+ipcMain.handle('ops:explain-command', async (_, argvIn: unknown) => {
+  const checked = explainArgv(argvIn)
+  if (!checked.ok) return { ok: false, error: checked.error }
+  const language: OpsExplainLanguage = currentLanguage() === 'pt-PT' ? 'pt-PT' : 'en'
+  const key = explainCacheKey(checked.argv, language)
+  const cached = opsExplainCache.get(key)
+  if (cached !== undefined) return { ok: true, text: cached }
+  let pending = opsExplainInFlight.get(key)
+  if (!pending) {
+    pending = explainOpsCommand(checked.argv, language).finally(() => opsExplainInFlight.delete(key))
+    opsExplainInFlight.set(key, pending)
+  }
+  const r = await pending
+  if (r.ok) {
+    if (opsExplainCache.size >= OPS_EXPLAIN_CACHE_MAX) opsExplainCache.delete(opsExplainCache.keys().next().value as string)
+    opsExplainCache.set(key, r.text)
+  }
+  return r
+})
 
 // A reopened ops chat's timeline: every ledger line of its runs, shaped like the live
 // `ops:event` so the renderer folds both the same way.

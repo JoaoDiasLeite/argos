@@ -527,3 +527,12 @@ describe('handoverTask', () => {
     expect(handoverTask(none, t)).toBe('')
   })
 })
+
+describe('call why', () => {
+  it("keeps the model's why from the raw input, and nothing when there is none", () => {
+    expect(row([start, decided('c1', 'allow', { rawInput: { hostId: 'h1', cmd: 'x', why: '  Ver o estado.  ' } })]).why).toBe('Ver o estado.')
+    expect(row([start, decided('c1', 'allow')]).why).toBeUndefined()
+    expect(row([start, decided('c1', 'allow', { rawInput: { why: 7 } })]).why).toBeUndefined()
+    expect(row([start, decided('c1', 'allow', { rawInput: null })]).why).toBeUndefined()
+  })
+})

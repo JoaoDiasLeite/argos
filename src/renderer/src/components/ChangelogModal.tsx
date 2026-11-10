@@ -29,7 +29,9 @@ const CHANGELOG: Entry[] = [
           'A runbook of yours can be added to the base intervention ("Somar à intervenção base", on by default per runbook), so it only needs what is specific to it. The base applies only on the hosts the runbook covers, and a resume adds it again.',
           'Handing a diagnosis over now offers the base intervention first, and each recommended action in the diagnosis says whether the base covers it.',
           'After a run with a runbook that allows more than the base, Argos asks whether it should join the base and opens a prefilled GitHub issue with only the rules: never the server, the client or the run.',
-          'The diagnosis reads more: root-only nginx logs, the /var/www layout, Ruby, Node, OpenSSL and PM2 versions, certificate dates, SELinux, packages, disks, firewall and Docker state, and the Jarvis commands that change nothing.'
+          'The diagnosis reads more: root-only nginx logs, the /var/www layout, Ruby, Node, OpenSSL and PM2 versions, certificate dates, SELinux, packages, disks, firewall and Docker state, and the Jarvis commands that change nothing.',
+          'Every command, script and file write in an intervention now comes with one sentence from the model saying what it is for, shown above the exact command when Argos asks you and kept with the call in the timeline.',
+          'A "?" next to a command Argos asks you about explains it word by word and says what it changes on the server. The explanation comes from a separate model call that sees only the command, never the run, so it does not just repeat what the intervention wants.'
         ]
       },
       {

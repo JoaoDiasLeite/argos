@@ -110,6 +110,7 @@ export default {
   'activity.wait.deny': 'Deny',
   'activity.wait.changesHost': 'changes the host',
   'activity.wait.read': 'read',
+  'activity.wait.why': 'The model says:',
   'activity.wait.queued.one': 'Queued behind {n} call on {host}.',
   'activity.wait.queued.other': 'Queued behind {n} calls on {host}.',
   'activity.wait.denyStop': 'Deny and stop',
