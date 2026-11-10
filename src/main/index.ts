@@ -277,8 +277,7 @@ import { initUpdater, getUpdaterState, checkNow, quitAndInstall } from './update
 import { getPlanUsageForIpc, startPlanUsageWatcher } from './plan-usage'
 import { getCodexAccountsUsage } from './codex-usage'
 import {
-  setExplorerContextMenu,
-  removeLegacyExplorerContextMenu,
+  syncExplorerContextMenu,
   extractLaunchAction,
   hasToggleFlag,
   LaunchAction
@@ -824,13 +823,15 @@ app.whenReady().then(async () => {
   app.on('activate', () => showMainWindow())
 
   // Explorer context menu: re-register on every launch when enabled so the stored
-  // exe path stays fresh across updates. Skip in dev — electron.exe as the target
-  // would leave a checkout-specific command in the user's registry.
-  if (!is.dev && getConfig().system.explorerContextMenu) {
-    void setExplorerContextMenu(true)
+  // exe path stays fresh across updates, and, independent of the toggle, clear the
+  // entries left behind under the app's former name — one reg.exe run for both. Skip in
+  // dev — electron.exe as the target would leave a checkout-specific command in the
+  // user's registry.
+  if (!is.dev) {
+    void syncExplorerContextMenu(getConfig().system.explorerContextMenu ? true : undefined, {
+      removeLegacy: true
+    })
   }
-  // Independent of the toggle: clear the entries left behind under the app's former name.
-  if (!is.dev) void removeLegacyExplorerContextMenu()
 
   // Windows Jump List (recent projects + New terminal), refreshed on save below.
   refreshJumpList()
@@ -2790,7 +2791,7 @@ ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
     prefs.explorerContextMenu !== undefined &&
     prefs.explorerContextMenu !== prevExplorerMenu
   ) {
-    void setExplorerContextMenu(system.explorerContextMenu)
+    void syncExplorerContextMenu(system.explorerContextMenu)
   }
 
   // Only touch the login entry when the pref actually changed, and never in dev (see
