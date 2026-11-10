@@ -1,5 +1,6 @@
 # Code owners are asked to review every pull request that touches these
-# paths, and the "main code owners" ruleset makes that review mandatory.
+# paths. Only the maintainer has write access, so this is not enforced by a
+# ruleset; it marks the areas that need the closest review.
 # Areas not listed here (companion, planner, views, i18n, ...) are open to
 # contribution with the maintainer's ordinary review.
 
