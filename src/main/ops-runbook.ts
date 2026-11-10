@@ -20,6 +20,7 @@ import {
   type RunbookLibraryChild,
   type LoadRunbookResult
 } from './ops-runbook-pure'
+import { mergeRunbooks, scriptDir } from './ops-merge-pure'
 import type { OpsHostRef } from './ops-types'
 import { t } from './i18n'
 import { makeT, type TFunction } from '../shared/i18n'
@@ -116,6 +117,21 @@ export async function loadRunbook(dir: string): Promise<LoadRunbookResult> {
 }
 
 /**
+ * "Somar à base": the runbook at `dir` added to the base intervention at `baseDir`
+ * (builtinRunbookDir('intervention')), as one runbook for the session. Either one failing
+ * to load refuses the whole thing; a base that does not load says so in its own words.
+ */
+export async function loadRunbookOnBase(dir: string, baseDir: string): Promise<LoadRunbookResult> {
+  const base = await loadRunbook(baseDir)
+  if (!base.ok) {
+    return { ok: false, error: t('runbook.load.baseFailed', { error: base.error }), ...(base.errors ? { errors: base.errors } : {}) }
+  }
+  const own = await loadRunbook(dir)
+  if (!own.ok) return own
+  return { ok: true, runbook: mergeRunbooks(base.runbook, own.runbook, t) }
+}
+
+/**
  * Re-read and re-hash a script right before it runs. The load-time hash only proves what
  * the file was when the run started; an edit since then is a refusal showing both hashes.
  */
@@ -131,7 +147,7 @@ export async function readScript(
     if (name !== path.basename(name) || name === '.' || name === '..') {
       return { ok: false, error: `Invalid script name: ${name}` }
     }
-    const r = await readCapped(path.join(runbook.scriptsDir, name), OPS_MAX_SCRIPT_BYTES, tEn)
+    const r = await readCapped(path.join(scriptDir(runbook, name), name), OPS_MAX_SCRIPT_BYTES, tEn)
     if (!r.ok) return r
     const sha256 = sha256Hex(r.bytes)
     const err = scriptPinError(runbook.policy, name, sha256)

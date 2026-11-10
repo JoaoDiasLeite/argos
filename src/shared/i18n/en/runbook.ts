@@ -60,6 +60,11 @@ export default {
   'load.invalidJson': 'policy.json is not valid JSON: {error}',
   'load.policyErrors': 'policy.json has {n} error(s).',
   'load.failed': 'Could not load runbook: {error}',
+  'load.baseFailed': 'Could not load the base intervention shipped with Argos: {error}',
+  'merge.scriptReplaced': 'scripts "{name}": the runbook\'s own script replaces the base intervention\'s script of the same name.',
+  'merge.heading': 'Runbook added to the base: {name}',
+  'merge.intro':
+    'This runbook adds to the base intervention: its rules join the base\'s, and where its instructions below are stricter than the base\'s, follow them.',
   'library.listFailed': 'Could not list the runbooks folder {dir}: {error}',
 
   'session.noHosts': 'No stored SSH host belongs to any host group of runbook {name}.',

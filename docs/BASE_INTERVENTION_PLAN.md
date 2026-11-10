@@ -148,19 +148,26 @@ loads the intervention yet (batch 4 wires the start screen).
 
 ## 5. Merging a runbook with the base
 
-A pure `mergePolicies(base, extra)` in `ops-policy-pure.ts`, used only for "Somar à base":
+`src/main/ops-merge-pure.ts` (pure, `mergePolicies` and `mergeRunbooks`) and
+`loadRunbookOnBase(dir, baseDir)` in `ops-runbook.ts`, used only for "Somar à base":
 
-- `allow` and `scripts` concatenated, the runbook's first (its own titles win on a tie);
-  a script name in both is an error (scripts are looked up by name in one folder each, so
-  each merged script keeps its `dir`).
-- `hosts`: the base's single `todos: ["*"]` group is rewritten onto the runbook's groups
-  so the base rules apply exactly where the runbook's do. `strict: true` always.
-- `read.paths` and `write.paths` unioned; `read.deny` unioned (a deny of either side
-  wins); `limits` the larger of each, still clamped.
-- `RUNBOOK.md`: the base's, then the runbook's under a heading that says its rules win
-  where they are stricter.
-- The ledger's `run.start` names both runbooks (`runbook` plus `baseRunbook`), with both
-  hashes; reports print both.
+- `allow` and `scripts` concatenated, the runbook's first (its own titles win on a tie).
+  A runbook script with a base script's name **replaces** it, with a warning (an error
+  would have refused `trace-message-dispatch`, which ships its own `log-window.sh`). Each
+  script is read from its own folder (`LoadedRunbook.scriptDirs`).
+- `hosts`: the runbook's groups; every base rule is moved onto them, so the base applies
+  exactly where the runbook does and on no other host. `strict: true` always, even when
+  the runbook alone is not.
+- `read.paths`, `read.deny` and `write.paths` unioned (a deny of either side wins);
+  `write.approval` the stricter; `limits` the longer timeout and larger output but the
+  **smaller** concurrency (changes never run side by side).
+- `RUNBOOK.md`: the base's, then a heading "Runbook somado à base: <name>" saying the
+  runbook's instructions win where they are stricter, then the runbook's.
+- The ledger's `run.start.runbook` is the runbook's ref with `base: {name, path,
+  policySha256, runbookMdSha256}`; the internal report prints both. The history item gets
+  `onBase`, so a resume loads the runbook on the base again (wired in batch 4).
+
+**Done in batch 3** (2026-11-10), tested in `ops-merge-pure.test.ts` against the real base.
 
 ## 6. "Add to Argos" at the end of a run
 
