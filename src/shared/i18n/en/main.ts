@@ -74,6 +74,7 @@ export default {
   'ipc.ops.notRunbookFile': 'Not a runbook file: {name}',
   'ipc.ops.noRunId': 'No run id given.',
   'ipc.ops.invalidRunId': 'Invalid run id.',
+  'ipc.ops.nothingToPropose': 'This runbook adds nothing to the base intervention.',
   'ipc.ops.unknownReportKind': 'Unknown report kind: {kind}',
   'ipc.ops.reportHostsAnonymised': 'The runbook could not be loaded, so hosts are shown as [servidor]: {error}',
   'ipc.ops.saveRunbookUnloadable': 'The runbook could not be loaded, so nothing was saved: {error}',

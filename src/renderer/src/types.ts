@@ -1772,6 +1772,13 @@ declare global {
       /** The runbooks shipped with Argos: the read-only despiste (`path`) and the base
        *  intervention (`intervention`). */
       opsBuiltinRunbook: () => Promise<{ path: string; intervention: string }>
+      /** "Add to Argos": what an ended run's own runbook adds to the base intervention, in
+       *  counts; null when there is nothing to propose (built-in runbook, no call, nothing new). */
+      opsBaseProposal: (
+        runId: string
+      ) => Promise<{ ok: true; proposal: { rules: number; scripts: number; used: number } | null } | { ok: false; error: string }>
+      /** Opens the prefilled GitHub issue; `viaClipboard` when the body was too long for the link. */
+      opsOpenBaseIssue: (runId: string) => Promise<{ ok: true; viaClipboard: boolean } | { ok: false; error: string }>
       /** internal: English, everything; client: the sanitised Relatório Técnico; handover: the pt-PT incident file. */
       opsReport: (
         runId: string,

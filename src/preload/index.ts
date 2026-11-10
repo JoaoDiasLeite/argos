@@ -435,6 +435,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   opsLoadRunbook: (dir: string, opts?: { onBase?: boolean }) => ipcRenderer.invoke('ops:load-runbook', dir, opts),
   opsScanRunbooks: () => ipcRenderer.invoke('ops:scan-runbooks'),
   opsBuiltinRunbook: () => ipcRenderer.invoke('ops:builtin-runbook'),
+  // "Add to Argos": what an ended run's runbook adds to the base, and the issue proposing it.
+  opsBaseProposal: (runId: string) => ipcRenderer.invoke('ops:base-proposal', runId),
+  opsOpenBaseIssue: (runId: string) => ipcRenderer.invoke('ops:open-base-issue', runId),
   opsReport: (runId: string, kind: 'internal' | 'client' | 'handover', runbookPath?: string) =>
     ipcRenderer.invoke('ops:report', runId, kind, runbookPath),
   opsSaveReport: (runId: string, kind: 'internal' | 'client' | 'handover', runbookPath?: string) =>

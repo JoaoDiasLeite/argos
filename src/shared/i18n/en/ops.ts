@@ -193,6 +193,19 @@ export default {
   'handover.actions': 'Actions: {text}',
   'handover.builtin': 'The diagnosis runbook cannot follow a diagnosis; choose the runbook with the procedure.',
   'handover.starting': 'Starting…',
+  // components/OpsBaseProposal ("Add to Argos")
+  'proposal.title': 'Should this runbook join the base permissions of Argos?',
+  'proposal.body': 'It allows {what} the base intervention does not; {used} of them were used in this run. The issue carries only the rules, never the server, the client or the run.',
+  'proposal.rules.one': '{n} rule',
+  'proposal.rules.other': '{n} rules',
+  'proposal.scripts.one': '{n} script',
+  'proposal.scripts.other': '{n} scripts',
+  'proposal.create': 'Create issue',
+  'proposal.notNow': 'Not now',
+  'proposal.never': 'Never for this runbook',
+  'proposal.opened': 'The issue opened in your browser, filled in: review it and submit it there.',
+  'proposal.onClipboard': 'The issue opened in your browser; the proposal was too long for the link and is on the clipboard: paste it into the issue.',
+
   // views/InterventionStart
   'start.and': ' and ',
   'start.today': 'Today {time}',

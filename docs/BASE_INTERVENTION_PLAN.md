@@ -205,6 +205,19 @@ and that runbook has at least one rule or script the base does not have:
    URL carries the title and "o corpo está na área de transferência", and the sheet says
    so.
 
+**Done in batch 5** (2026-11-10): `src/main/ops-proposal-pure.ts` (`baseProposal`,
+`issueUrl`, tested for leaks: every stored host's name and address, escaped or not,
+becomes `<host>`; rules drop `hosts`; no platform, client, ticket, task or output), IPC
+`ops:base-proposal` (counts only) and `ops:open-base-issue` (main builds the URL from the
+ledger and the folders, opens it, and copies an over-long body), and
+`components/OpsBaseProposal.tsx` above the activity column's footer of an ended run.
+Asked only when the run made at least one call and its runbook is not built in; the
+proposal compares the runbook alone with the base, whether it ran added to it or not.
+The issue is in English. A runbook folder named after a client would still show its name
+in the title: name runbooks by what they do. Not seen on screen: the isolated
+visual-check instance cannot reach the ops MCP relay (its app path is the launcher's), so
+no run there makes a call.
+
 ## 7. Clean-up in wm-devsecops (separate MR there, not this repo)
 
 - Remove `update-wmcp` and `update-wmcp-same-lane` (superseded by the base).

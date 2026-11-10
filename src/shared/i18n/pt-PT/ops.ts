@@ -194,6 +194,19 @@ const ops: Record<keyof typeof en, string> = {
   'handover.actions': 'Ações: {text}',
   'handover.builtin': 'O runbook de despiste não dá seguimento a um despiste; escolhe o runbook com o procedimento.',
   'handover.starting': 'A iniciar…',
+  // components/OpsBaseProposal ("Adicionar ao Argos")
+  'proposal.title': 'Este runbook deve passar às permissões base do Argos?',
+  'proposal.body': 'Permite {what} que a intervenção base não tem; {used} foram usadas neste run. O issue leva só as regras, nunca o servidor, o cliente nem o run.',
+  'proposal.rules.one': '{n} regra',
+  'proposal.rules.other': '{n} regras',
+  'proposal.scripts.one': '{n} script',
+  'proposal.scripts.other': '{n} scripts',
+  'proposal.create': 'Criar issue',
+  'proposal.notNow': 'Agora não',
+  'proposal.never': 'Nunca para este runbook',
+  'proposal.opened': 'O issue abriu no browser, já preenchido: revê-o e submete-o lá.',
+  'proposal.onClipboard': 'O issue abriu no browser; a proposta era longa demais para o link e ficou na área de transferência: cola-a no issue.',
+
   // views/InterventionStart
   'start.and': ' e ',
   'start.today': 'Hoje {time}',

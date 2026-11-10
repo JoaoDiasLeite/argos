@@ -21,6 +21,7 @@ import {
 import OpsReferPicker from './OpsReferPicker'
 import PlanReviewSheet from './PlanReviewSheet'
 import OpsReportSheet from './OpsReportSheet'
+import OpsBaseProposal from './OpsBaseProposal'
 import { backdropClose } from '../lib/backdrop-close'
 import { plural, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
@@ -1047,6 +1048,8 @@ export default function ActivityColumn({
           onClose={() => setReferOpen(false)}
         />
       )}
+
+      {current?.ended && <OpsBaseProposal runId={current.runId} runbookPath={runbookPath} />}
 
       {current && (
         <div className="ac-foot">

@@ -125,6 +125,7 @@ import { createExecutor, createSshBackend, type OpsExecutor } from './ops-exec'
 import { createFakeBackend } from './ops-backend-fake'
 import { loadRunbook, loadRunbookOnBase, readScript, scanRunbookLibrary } from './ops-runbook'
 import { builtinRunbookDir } from './ops-builtin'
+import { baseProposal, issueUrl, type BaseProposal } from './ops-proposal-pure'
 import { summarizePolicy } from './ops-policy-pure'
 import { interventionPrompt, referenceLine } from './ops-scope-pure'
 import type { OpsScope } from './ops-types'
@@ -2012,6 +2013,61 @@ ipcMain.handle('ops:runs', async (_, opts?: { hostId?: string; limit?: number })
     ...(typeof o.hostId === 'string' && o.hostId !== '' ? { hostId: o.hostId } : {}),
     ...(typeof o.limit === 'number' ? { limit: o.limit } : {})
   })
+})
+
+/**
+ * "Add to Argos" (docs/BASE_INTERVENTION_PLAN.md §6): what an ended run's own runbook
+ * allows that the base intervention does not. Null for a built-in runbook, a run that
+ * has not ended or made no call, or a runbook that adds nothing. Everything comes from the
+ * ledger and the folders on disk; the renderer only names the run.
+ */
+async function baseProposalFor(runId: string): Promise<{ ok: true; proposal: BaseProposal | null } | { ok: false; error: string }> {
+  const r = await getOpsLedger().readRun(runId)
+  if (!r.ok) return { ok: false, error: r.error }
+  const events = r.lines.map((l) => l.event)
+  const start = events.find((e) => e.kind === 'run.start')
+  const end = events.find((e) => e.kind === 'run.end')
+  if (start?.kind !== 'run.start' || end?.kind !== 'run.end') return { ok: true, proposal: null }
+  const decided = events.flatMap((e) => (e.kind === 'call.decided' ? [e] : []))
+  if (decided.length === 0 || isBuiltinRunbookPath(start.runbook.path)) return { ok: true, proposal: null }
+  const [own, base] = await Promise.all([loadRunbook(start.runbook.path), loadRunbook(builtinRunbookDir('intervention'))])
+  if (!own.ok) return { ok: false, error: own.error }
+  if (!base.ok) return { ok: false, error: t('runbook.load.baseFailed', { error: base.error }) }
+  const proposal = baseProposal({
+    base: base.runbook.policy,
+    runbook: own.runbook.policy,
+    runbookName: own.runbook.ref.name,
+    usedRules: decided.flatMap((e) => (e.rule ? [e.rule] : [])),
+    outcome: end.aborted ? 'aborted' : end.ok ? 'ok' : 'failed',
+    argosVersion: app.getVersion(),
+    hostWords: listHosts().flatMap((h) => [h.name, h.host])
+  })
+  return { ok: true, proposal }
+}
+
+ipcMain.handle('ops:base-proposal', async (_, runId: string) => {
+  if (!isRunId(runId)) return { ok: false, error: t('main.ipc.ops.invalidRunId') }
+  const r = await baseProposalFor(runId)
+  if (!r.ok || !r.proposal) return r.ok ? { ok: true, proposal: null } : r
+  const p = r.proposal
+  return {
+    ok: true,
+    proposal: { rules: p.rules.length, scripts: p.scripts.length, used: [...p.rules, ...p.scripts].filter((x) => x.used).length }
+  }
+})
+
+// Opens the prefilled GitHub issue in the browser. The URL is built here from the ledger,
+// never taken from the renderer; a body too long for a URL goes to the clipboard.
+ipcMain.handle('ops:open-base-issue', async (_, runId: string) => {
+  if (!isRunId(runId)) return { ok: false, error: t('main.ipc.ops.invalidRunId') }
+  const r = await baseProposalFor(runId)
+  if (!r.ok) return r
+  if (!r.proposal) return { ok: false, error: t('main.ipc.ops.nothingToPropose') }
+  // The issue is in English like the rest of its body, whatever the UI language.
+  const { url, viaClipboard } = issueUrl(r.proposal, 'The proposal was too long for the link: Argos copied it to the clipboard, paste it here.')
+  if (viaClipboard) clipboard.writeText(r.proposal.body)
+  await shell.openExternal(url)
+  return { ok: true, viaClipboard }
 })
 
 const isReportKind = (k: unknown): k is OpsReportKind => k === 'internal' || k === 'client' || k === 'handover'
