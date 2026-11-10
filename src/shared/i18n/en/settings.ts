@@ -118,7 +118,7 @@ export default {
   'companion.walk.label': 'Walk around the screen',
   'companion.walk.hint': 'With Argos on screen, every now and then he takes a few steps along the bottom.',
   'companion.follow.label': 'Follow me between screens',
-  'companion.follow.hint': 'With Argos on screen, once you have been on another monitor for a while he runs over there.',
+  'companion.follow.hint': 'With Argos on screen, once you have been on another monitor for a while he runs toward it along the floor and stays where the run ends.',
   'companion.focusAssist.label': 'Quiet with Focus Assist',
   'companion.focusAssist.hint': 'In Focus Assist, a full-screen app or a presentation, Argos keeps quiet; reminders go as notifications while the screen is full.',
   'companion.size.label': 'Size of Argos',
