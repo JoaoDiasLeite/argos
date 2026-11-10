@@ -146,6 +146,22 @@ loads the intervention yet (batch 4 wires the start screen).
   covered by the base (the model checks its `action` notes against the base catalog,
   which the diagnosis's `RUNBOOK.md` lists by name).
 
+**Done in batch 4** (2026-11-10), seen on screen in an isolated instance (three modes,
+the toggle on and off, the base's panel):
+- Start screen: a Despiste / Intervenção / Runbook radio group in the header; with a
+  runbook, "Somar à intervenção base" (on by default, per folder,
+  `lib/runbook-on-base.ts`). The panel shows the merge's counts and the runbook's own
+  paragraph; the base's panel hides the read paths, as the diagnosis's does.
+- `OpsIntervention.onBase` end to end: main loads with `loadRunbookOnBase`, refuses it for
+  a built-in runbook, and keeps it in the session key. The CLI gets `--add-dir <base>` and
+  a first message that reads the base's `RUNBOOK.md` first; whether a terminal gets the
+  folder comes from main's live ops session, never from the renderer.
+- Resume carries `onBase` from the history item; the workspace loads the merge; tabs and
+  history tag the base's runs "Intervenção".
+- Hand-over: "Continuar com" the base intervention (default) or a runbook, with the same
+  toggle. The diagnosis's `RUNBOOK.md` asks every `action` note to say whether the base
+  covers it. The dialog itself was not seen on screen (it needs a live diagnosis).
+
 ## 5. Merging a runbook with the base
 
 `src/main/ops-merge-pure.ts` (pure, `mergePolicies` and `mergeRunbooks`) and

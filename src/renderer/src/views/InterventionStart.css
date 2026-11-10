@@ -579,6 +579,55 @@
   color: var(--text-0);
 }
 
+/* Despiste · Intervenção · Runbook: one control, the chosen mode filled. */
+.ivs-modes {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.ivs-modes .ivs-btn-mode {
+  border-radius: 0;
+  color: var(--text-1);
+}
+.ivs-modes .ivs-btn-mode + .ivs-btn-mode {
+  margin-left: -1px;
+}
+.ivs-modes .ivs-btn-mode:first-child {
+  border-top-left-radius: var(--radius);
+  border-bottom-left-radius: var(--radius);
+}
+.ivs-modes .ivs-btn-mode:last-child {
+  border-top-right-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
+}
+.ivs-modes .ivs-btn-mode.on {
+  position: relative;
+  background: var(--bg-2);
+  color: var(--text-0);
+  font-weight: 600;
+}
+
+/* "Somar à intervenção base", under the runbook picker. */
+.ivs-onbase {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 4px;
+  cursor: pointer;
+}
+.ivs-onbase input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+.ivs-onbase > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ivs-onbase-title {
+  font-size: 13px;
+  color: var(--text-0);
+}
+
 .ivs-below {
   display: flex;
   flex-direction: column;

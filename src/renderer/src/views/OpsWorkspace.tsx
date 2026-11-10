@@ -7,7 +7,7 @@ import { useOpsEvents } from '../hooks/useOpsEvents'
 import { foldOpsEvents, splitRuns, touchedHosts, type OpsRun } from '../lib/ops-timeline'
 import { opsTerminalIdFor, type OpsTerminalProvider, type OpsTerminalSessionResult } from '../lib/ops-terminal'
 import { interventionLabel, type OpsLabelInfo } from '../lib/intervention-label'
-import { samePath, useBuiltinRunbook } from '../lib/builtin-runbook'
+import { samePath, useBaseRunbook, useBuiltinRunbook } from '../lib/builtin-runbook'
 import { useSshHostNames } from '../lib/ssh-host-names'
 import InterventionTag from '../components/InterventionTag'
 import { plural } from '../../../shared/i18n'
@@ -171,14 +171,15 @@ export default function OpsWorkspace({
   useEffect(() => {
     let cancelled = false
     setInfo(null)
+    // A runbook added to the base is shown as the run sees it: the merge.
     window.electronAPI
-      .opsLoadRunbook(runbookPath)
+      .opsLoadRunbook(runbookPath, intervention.onBase ? { onBase: true } : undefined)
       .then((r) => !cancelled && setInfo(r))
       .catch((e) => !cancelled && setInfo({ ok: false, error: e instanceof Error ? e.message : String(e) }))
     return () => {
       cancelled = true
     }
-  }, [runbookPath])
+  }, [runbookPath, intervention.onBase])
 
   useEffect(() => {
     if (!lockedHostId) return
@@ -323,12 +324,14 @@ export default function OpsWorkspace({
   const sshNames = useSshHostNames(lockedHostId ? [lockedHostId] : [])
   const touched = current ? touchedHosts(current) : []
   const builtin = samePath(runbookPath, useBuiltinRunbook())
+  const isBase = samePath(runbookPath, useBaseRunbook())
   const mutates = okInfo ? okInfo.summary.mutates > 0 : undefined
   // Named by its server, with the mode as a tag, the same way as its tab.
   const label = interventionLabel(
     {
       runbook: name,
       builtin,
+      base: isBase,
       server:
         scope.kind === 'host'
           ? { kind: 'host', name: (lockedHostId ? sshNames[lockedHostId] : undefined) ?? lockedHost?.name }

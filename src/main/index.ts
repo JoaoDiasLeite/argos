@@ -123,7 +123,7 @@ import { earlierRunsInScope } from './ops-tools'
 import { handoverFileName } from './ops-handover-pure'
 import { createExecutor, createSshBackend, type OpsExecutor } from './ops-exec'
 import { createFakeBackend } from './ops-backend-fake'
-import { loadRunbook, readScript, scanRunbookLibrary } from './ops-runbook'
+import { loadRunbook, loadRunbookOnBase, readScript, scanRunbookLibrary } from './ops-runbook'
 import { builtinRunbookDir } from './ops-builtin'
 import { summarizePolicy } from './ops-policy-pure'
 import { interventionPrompt, referenceLine } from './ops-scope-pure'
@@ -1958,14 +1958,21 @@ function opsHostAddress(hostId: string): string {
   return h ? `${h.username}@${h.host}:${h.port}` : hostId
 }
 
-// The read-only despiste runbook shipped with Argos, the default way to start an intervention.
-ipcMain.handle('ops:builtin-runbook', () => ({ path: builtinRunbookDir() }))
+// The runbooks shipped with Argos: the read-only despiste (`path`, the default way to start
+// an intervention) and the base intervention (`intervention`, docs/BASE_INTERVENTION_PLAN.md).
+ipcMain.handle('ops:builtin-runbook', () => ({ path: builtinRunbookDir('diagnosis'), intervention: builtinRunbookDir('intervention') }))
 
-ipcMain.handle('ops:load-runbook', async (_, dir: string) => {
+// `onBase`: load the runbook added to the base intervention, as the run would see it.
+ipcMain.handle('ops:load-runbook', async (_, dir: string, opts?: { onBase?: boolean }) => {
   if (typeof dir !== 'string' || dir.trim() === '') return { ok: false, error: t('main.ipc.ops.noRunbookFolder') }
-  const r = await loadRunbook(dir)
+  const onBase = !!(opts && typeof opts === 'object' && opts.onBase === true) && !isBuiltinRunbookPath(dir)
+  const r = onBase ? await loadRunbookOnBase(dir, builtinRunbookDir('intervention')) : await loadRunbook(dir)
   if (!r.ok) return { ok: false, error: r.error, ...(r.errors ? { errors: r.errors } : {}) }
   const rb = r.runbook
+  // The start screen describes the runbook picked, not the base it is added to: its own
+  // RUNBOOK.md, after the base's in the merged guidelines, gives the paragraph.
+  const own = onBase ? await loadRunbook(dir) : null
+  const guidelines = own?.ok ? own.runbook.guidelines : rb.guidelines
   return {
     ok: true,
     name: rb.ref.name,
@@ -1974,7 +1981,7 @@ ipcMain.handle('ops:load-runbook', async (_, dir: string) => {
     warnings: rb.warnings,
     ...(rb.ref.platform ? { platform: rb.ref.platform } : {}),
     strict: rb.policy.strict,
-    summary: summarizePolicy(rb.policy, rb.guidelines)
+    summary: summarizePolicy(rb.policy, guidelines)
   }
 })
 
@@ -2135,6 +2142,8 @@ interface TerminalOpsSession {
   /** A resume only: the first message for the chain's create step, should --resume fail. */
   resumeFallbackPrompt?: string
   provider: OpsCli
+  /** The runbook runs added to the base intervention: the CLI gets the base's folder. */
+  onBase: boolean
   token: string
   endpoint: string
   mcpConfigPath: string
@@ -2180,6 +2189,9 @@ interface OpsIntervention {
   resumesRunId?: string
   /** Earlier runs the operator pointed to on the start screen (≤ 5). */
   relatedRunIds?: string[]
+  /** "Somar à base": the runbook runs added to the base intervention shipped with Argos
+   *  (docs/BASE_INTERVENTION_PLAN.md §5). Never set for a built-in runbook. */
+  onBase?: boolean
 }
 
 /** A run id is a UUID; anything else is not one Argos wrote. */
@@ -2216,8 +2228,17 @@ function parseIntervention(v: unknown): OpsIntervention | { error: string } {
     ...(client ? { client } : {}),
     ...(parentRunId ? { parentRunId } : {}),
     ...(resumesRunId ? { resumesRunId } : {}),
-    ...(relatedRunIds.length ? { relatedRunIds } : {})
+    ...(relatedRunIds.length ? { relatedRunIds } : {}),
+    // A built-in runbook is never added to the base: the diagnosis is read-only by design,
+    // and the base on itself is just the base.
+    ...(o.onBase === true && !isBuiltinRunbookPath(o.runbookPath) ? { onBase: true } : {})
   }
+}
+
+/** Whether a folder is one of the runbooks shipped with Argos. */
+function isBuiltinRunbookPath(dir: string): boolean {
+  const norm = (p: string): string => path.resolve(p).toLowerCase()
+  return (['diagnosis', 'intervention'] as const).some((name) => norm(builtinRunbookDir(name)) === norm(dir))
 }
 
 function terminalOpsReply(s: TerminalOpsSession): TerminalOpsResult {
@@ -2306,7 +2327,7 @@ async function handOverParent(parentRunId: string, childRunId: string, runbook: 
 async function openTerminalOps(terminalId: string, intervention: OpsIntervention): Promise<TerminalOpsResult> {
   // Claude Code only (39badc7): the one CLI whose own shell and file tools can be switched off.
   const provider: OpsCli = 'claude'
-  const { runbookPath, scope, task, ticket, client, parentRunId, resumesRunId, relatedRunIds } = intervention
+  const { runbookPath, scope, task, ticket, client, parentRunId, resumesRunId, relatedRunIds, onBase } = intervention
   const interventionKey = JSON.stringify([
     runbookPath,
     scope,
@@ -2315,7 +2336,8 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
     client ?? '',
     parentRunId ?? '',
     resumesRunId ?? '',
-    relatedRunIds ?? []
+    relatedRunIds ?? [],
+    !!onBase
   ])
   const existing = terminalOps.get(terminalId)
   if (existing && !existing.ctx.ended) {
@@ -2347,7 +2369,7 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
     executor: getOpsExecutor(),
     t,
     abort,
-    loadRunbook,
+    loadRunbook: onBase ? (dir: string) => loadRunbookOnBase(dir, builtinRunbookDir('intervention')) : loadRunbook,
     readScript,
     hostAddress: opsHostAddress,
     syslog: { operator: opsOperator(), sshUser: (hostId) => listHosts().find((h) => h.id === hostId)?.username ?? '' },
@@ -2374,7 +2396,11 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
     // A resume that continues its conversation says so on the --resume step; the create
     // step behind it (should the resume fail) gets the variant for a model that remembers
     // nothing. Any other launch has one message, for the create step.
-    const promptOpts = { planRequired: ctx.planRequired, ...(relatedRunIds?.length ? { related: relatedRunIds } : {}) }
+    const promptOpts = {
+      planRequired: ctx.planRequired,
+      ...(relatedRunIds?.length ? { related: relatedRunIds } : {}),
+      ...(onBase ? { baseDir: builtinRunbookDir('intervention') } : {})
+    }
     const freshPrompt = interventionPrompt(task, {
       ...promptOpts,
       ...(resumesRunId ? { resume: { runId: resumesRunId, conversation: false } } : {})
@@ -2390,6 +2416,7 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
       ...(cli.resumeSessionId ? { resumeSessionId: cli.resumeSessionId, resumeFallbackPrompt: freshPrompt } : {}),
       ...(cli.pinSessionId ? { pinSessionId: cli.pinSessionId } : {}),
       provider,
+      onBase: !!onBase,
       token,
       endpoint,
       mcpConfigPath: config.path,
@@ -3145,9 +3172,12 @@ ipcMain.handle(
     const live = opts?.ops ? terminalOps.get(id) : undefined
     const fallback =
       live && !live.ctx.ended && live.resumeSessionId && live.resumeSessionId === opts.resumeSessionId ? live.resumeFallbackPrompt : undefined
+    // Whether the CLI also gets the base intervention's folder is main's own too: it comes
+    // from the live ops session, whatever the renderer sent.
+    const ops = opts?.ops ? { env: opts.ops.env, mcpConfigPath: opts.ops.mcpConfigPath, onBase: !!(live && !live.ctx.ended && live.onBase) } : undefined
     const r = await createTerminal(
       id,
-      { ...opts, resumeFallbackPrompt: fallback },
+      { ...opts, ...(ops ? { ops } : {}), resumeFallbackPrompt: fallback },
       (tid, data) => send('terminal:data', { id: tid, data }),
       (tid, exitCode) => {
         send('terminal:exit', { id: tid, exitCode })

@@ -1,9 +1,10 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import { rich } from '../lib/t-rich'
 import type { ReactNode } from 'react'
-import type { OpsIntervention, OpsRunListItem, OpsScope, SshHostPublic } from '../types'
+import type { OpsIntervention, OpsRunbookInfo, OpsRunListItem, OpsScope, SshHostPublic } from '../types'
 import { writeLastRunbook } from '../lib/runbook-library'
-import { samePath, useBuiltinRunbook } from '../lib/builtin-runbook'
+import { readOnBase, writeOnBase } from '../lib/runbook-on-base'
+import { samePath, useBaseRunbook, useBuiltinRunbook } from '../lib/builtin-runbook'
 import OpsReportSheet from '../components/OpsReportSheet'
 import { interventionLabel } from '../lib/intervention-label'
 import { runNotes, runStatus } from '../lib/ops-run-status'
@@ -61,13 +62,19 @@ type DotState = 'checking' | 'ok' | 'error'
  *  server: the open scope ("any server this runbook allows") was taken off the screen
  *  (2026-11-03); resuming an older open run still works through main. */
 type ServerChoice = string | null
-type Mode = 'despiste' | 'runbook'
+/** Despiste (read-only, built in), the base intervention (built in, changes through Jarvis)
+ *  or a runbook from the runbooks folder (docs/BASE_INTERVENTION_PLAN.md §4). */
+type Mode = 'despiste' | 'base' | 'runbook'
+const MODES: Mode[] = ['despiste', 'base', 'runbook']
 
 /**
  * The names the built-in runbook's runs carry in the ledger: its folder name, and the one
  * it had before 2.9.0 shipped (`despiste`), so runs from then still map to it.
  */
 const BUILTIN_NAMES = ['diagnosis', 'despiste']
+/** The folder name of the base intervention's runs in the ledger. */
+const BASE_NAME = 'intervention'
+
 /** A pre-rename path of the built-in runbook, as an older run recorded it. */
 const OLD_BUILTIN_PATH_RE = /[\\/]resources[\\/]runbooks[\\/]despiste[\\/]?$/i
 
@@ -221,8 +228,36 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
     builtin
   })
   const { listed, infos, runbookPath, loadRunbook } = picker
-  /** What the intervention starts with: the built-in runbook in despiste mode. */
-  const activePath = mode === 'despiste' ? builtin : runbookPath
+  const baseDir = useBaseRunbook()
+  /** What the intervention starts with: a built-in runbook, or the runbook picked. */
+  const activePath = mode === 'despiste' ? builtin : mode === 'base' ? baseDir : runbookPath
+
+  /** "Somar à base" for the runbook picked: on by default, remembered per folder. Flipping
+   *  it re-renders, and the stored choice is read again. */
+  const [, setOnBaseFlips] = useState(0)
+  const onBase = mode === 'runbook' && !!runbookPath && readOnBase(runbookPath)
+  const setOnBase = (on: boolean) => {
+    if (!runbookPath) return
+    writeOnBase(runbookPath, on)
+    setOnBaseFlips((n) => n + 1)
+  }
+  /** The picked runbook as it runs added to the base: what the panel shows and the start
+   *  checks, since the hosts and the rules are those of the merge. */
+  const [mergedInfos, setMergedInfos] = useState<Record<string, InfoState>>({})
+  const ownInfo = runbookPath ? infos[runbookPath] : undefined
+  useEffect(() => {
+    if (!onBase || !runbookPath || !ownInfo || ownInfo === 'loading') return
+    let cancelled = false
+    setMergedInfos((prev) => ({ ...prev, [runbookPath]: 'loading' }))
+    window.electronAPI
+      .opsLoadRunbook(runbookPath, { onBase: true })
+      .catch((e): OpsRunbookInfo => ({ ok: false, error: e instanceof Error ? e.message : String(e) }))
+      .then((r) => !cancelled && setMergedInfos((prev) => ({ ...prev, [runbookPath]: r })))
+    return () => {
+      cancelled = true
+    }
+    // ownInfo: the picker re-read the runbook, so the merge is read again too.
+  }, [onBase, runbookPath, ownInfo])
 
   const [task, setTask] = useState('')
   const [ticket, setTicket] = useState('')
@@ -264,6 +299,9 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
   useEffect(() => {
     if (builtin) void loadRunbook(builtin)
   }, [builtin, loadRunbook])
+  useEffect(() => {
+    if (baseDir) void loadRunbook(baseDir)
+  }, [baseDir, loadRunbook])
 
   // Every run once: the rail's latest-per-server line and the history are both cut from it.
   useEffect(() => {
@@ -324,7 +362,7 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
 
   const liveHere = hostId ? live.filter((l) => l.hostId === hostId) : []
 
-  const info: InfoState | undefined = activePath ? infos[activePath] : undefined
+  const info: InfoState | undefined = !activePath ? undefined : onBase ? mergedInfos[activePath] : infos[activePath]
   const loaded = info && info !== 'loading' ? info : undefined
   const okInfo = loaded?.ok ? loaded : undefined
   const summary = okInfo?.summary
@@ -336,8 +374,10 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
     !scope && t('ops.start.needServer'),
     mode === 'runbook' && !runbookPath && t('ops.start.needRunbook')
   ].filter((m): m is string => !!m)
-  // In despiste mode the built-in path arrives on its own; until it has loaded, it is loading.
-  const blocked = !!hostProblem || (!!loaded && !loaded.ok) || info === 'loading' || (mode === 'despiste' && !info)
+  // A built-in path (and a runbook's merge with the base) arrives on its own; until it has
+  // loaded, it is loading.
+  const blocked =
+    !!hostProblem || (!!loaded && !loaded.ok) || info === 'loading' || (!!activePath && !info) || (mode !== 'runbook' && !activePath)
   const canStart = missing.length === 0 && !blocked
 
   const startHint = canStart
@@ -360,15 +400,16 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
     const c = SHOW_DETAILS ? client.trim() : ''
     const tk = SHOW_DETAILS ? ticket.trim() : ''
     if (SHOW_DETAILS) writeLastClient(c)
-    // The built-in runbook is always one click away as the mode, so it is not remembered.
-    if (mode === 'runbook' && !samePath(activePath, builtin)) writeLastRunbook(activePath)
+    // The built-in runbooks are always one click away as the mode, so they are not remembered.
+    if (mode === 'runbook' && !samePath(activePath, builtin) && !samePath(activePath, baseDir)) writeLastRunbook(activePath)
     onStart({
       runbookPath: activePath,
       scope,
       task: SHOW_DETAILS ? task.trim() : '',
       ...(tk ? { ticket: tk } : {}),
       ...(c ? { client: c } : {}),
-      ...(related.length ? { relatedRunIds: related.map((r) => r.runId) } : {})
+      ...(related.length ? { relatedRunIds: related.map((r) => r.runId) } : {}),
+      ...(onBase ? { onBase: true } : {})
     })
   }
 
@@ -386,6 +427,7 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
       return builtin && (samePath(r.runbook, builtin) || OLD_BUILTIN_PATH_RE.test(r.runbook)) ? builtin : r.runbook
     }
     if (BUILTIN_NAMES.includes(r.runbook) && builtin && !listed.some((d) => baseName(d) === r.runbook)) return builtin
+    if (r.runbook === BASE_NAME && baseDir && !listed.some((d) => baseName(d) === r.runbook)) return baseDir
     return listed.find((d) => {
       const i = infos[d]
       return i && i !== 'loading' && i.ok && i.name === r.runbook
@@ -407,13 +449,15 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
   }
   const resume = (r: OpsRunListItem, dir: string | undefined) =>
     onResume({
-      // The built-in runbook moves with the install: a run from an older path uses today's.
-      runbookPath: dir && builtin && samePath(dir, builtin) ? builtin : r.runbookPath,
+      // The built-in runbooks move with the install: a run from an older path uses today's.
+      runbookPath: dir && builtin && samePath(dir, builtin) ? builtin : dir && baseDir && samePath(dir, baseDir) ? baseDir : r.runbookPath,
       scope: r.scope ?? { kind: 'open' },
       task: r.task ?? '',
       ...(r.ticket ? { ticket: r.ticket } : {}),
       ...(r.client ? { client: r.client } : {}),
-      resumesRunId: r.runId
+      resumesRunId: r.runId,
+      // A run added to the base is resumed added to it again.
+      ...(r.onBase ? { onBase: true } : {})
     })
   const relatedText = (r: OpsRunListItem) => `${runWhen(r.startedAt, t, locale)} · ${r.task || r.runbook}`
 
@@ -470,7 +514,7 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
     sumParts.push(summary.scripts === 0 ? t('ops.start.sum.noScripts') : plural(t, 'ops.start.sum.scripts', summary.scripts))
   }
   const sumText = !activePath
-    ? mode === 'despiste'
+    ? mode !== 'runbook'
       ? t('common.loading')
       : t('ops.start.allowsChoose')
     : info === 'loading' || !info
@@ -481,6 +525,15 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
           ? plural(t, okInfo.strict ? 'ops.start.noSummaryStrict' : 'ops.start.noSummary', okInfo.hosts.length)
           : sumParts.join(' · ')
 
+  const allowsTitle =
+    mode === 'despiste'
+      ? t('ops.start.despisteAllowsTitle')
+      : mode === 'base'
+        ? t('ops.start.baseAllowsTitle')
+        : onBase
+          ? t('ops.start.allowsTitleOnBase')
+          : t('ops.start.allowsTitle')
+
   const fileLink = <span className="ivs-mono">RUNBOOK.md</span>
 
   const hostLabel = (r: OpsRunListItem, dir: string | undefined) =>
@@ -488,6 +541,7 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
       {
         runbook: r.runbook,
         builtin: samePath(dir, builtin),
+        base: samePath(dir, baseDir),
         server: r.hostNames.length === 1 ? { kind: 'host', name: r.hostNames[0] } : { kind: 'open', reached: r.hostNames },
         task: r.task
       },
@@ -545,12 +599,23 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
             <span className="ivs-spacer" />
             {server !== null && (
               <>
-            <button type="button" className="ivs-btn ivs-btn-mode" onClick={() => setMode(mode === 'despiste' ? 'runbook' : 'despiste')}>
-              {mode === 'despiste' ? t('ops.start.toRunbook') : t('ops.start.toDespiste')}
-            </button>
+            <div className="ivs-modes" role="radiogroup" aria-label={t('ops.start.modes')}>
+              {MODES.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  role="radio"
+                  aria-checked={mode === m}
+                  className={`ivs-btn ivs-btn-mode${mode === m ? ' on' : ''}`}
+                  onClick={() => setMode(m)}
+                >
+                  {m === 'despiste' ? t('ops.start.mode.despiste') : m === 'base' ? t('ops.start.mode.base') : t('ops.start.mode.runbook')}
+                </button>
+              ))}
+            </div>
             <button type="button" className="ivs-start" disabled={!canStart} onClick={start}>
               <PlayIcon />
-              {mode === 'despiste' ? t('ops.start.startDespiste') : t('ops.start.startButton')}
+              {mode === 'despiste' ? t('ops.start.startDespiste') : mode === 'base' ? t('ops.start.startBase') : t('ops.start.startButton')}
             </button>
               </>
             )}
@@ -714,9 +779,9 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
               <span className="ivs-error" role="alert">
                 {hostProblem}
               </span>
-            ) : mode === 'despiste' && loaded && !loaded.ok ? (
+            ) : mode !== 'runbook' && loaded && !loaded.ok ? (
               <span className="ivs-error" role="alert">
-                <strong>{t('ops.start.despisteUnusable')}</strong> {loaded.error}
+                <strong>{mode === 'despiste' ? t('ops.start.despisteUnusable') : t('ops.start.baseUnusable')}</strong> {loaded.error}
               </span>
             ) : server !== null ? (
               <span className="ivs-help">{startHint}</span>
@@ -752,6 +817,15 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
                 {t('ops.start.runbook')}
               </span>
               <RunbookField picker={picker} labelledBy={runbookLabelId} />
+              {runbookPath && (
+                <label className="ivs-onbase">
+                  <input type="checkbox" checked={onBase} onChange={(e) => setOnBase(e.target.checked)} />
+                  <span>
+                    <span className="ivs-onbase-title">{t('ops.start.onBase')}</span>
+                    <span className="ivs-help">{t('ops.start.onBaseHelp')}</span>
+                  </span>
+                </label>
+              )}
             </div>
           )}
 
@@ -793,7 +867,7 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
             </>
           )}
 
-          <section className="ivs-allows" aria-label={mode === 'despiste' ? t('ops.start.despisteAllowsTitle') : t('ops.start.allowsTitle')}>
+          <section className="ivs-allows" aria-label={allowsTitle}>
             <div className="ivs-allows-line">
               <span className="ivs-allows-sum">{sumText}</span>
               {okInfo && (
@@ -811,13 +885,13 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
             </div>
             {okInfo && allowsOpen && (
               <div className="ivs-allows-body" id={allowsId}>
-                <h2 className="ivs-eyebrow">{mode === 'despiste' ? t('ops.start.despisteAllowsTitle') : t('ops.start.allowsTitle')}</h2>
+                <h2 className="ivs-eyebrow">{allowsTitle}</h2>
                 {summary && (
                   <p className="ivs-panel-text">
                     {summary.guidelinesHead.trim()
                       ? rich(t('ops.start.guidelines'), { text: withStop(summary.guidelinesHead), file: fileLink })
                       : rich(t('ops.start.noGuidelines'), { file: fileLink })}
-                    {mode !== 'despiste' && summary.readPaths.length > 0 && (
+                    {mode === 'runbook' && summary.readPaths.length > 0 && (
                       <>
                         {' '}
                         {rich(t('ops.start.readsAllowed'), {
@@ -834,7 +908,7 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
                     )}
                   </p>
                 )}
-                {mode === 'despiste' && <p className="ivs-panel-text">{t('ops.start.despisteLeftOut')}</p>}
+                {mode !== 'runbook' && <p className="ivs-panel-text">{mode === 'despiste' ? t('ops.start.despisteLeftOut') : t('ops.start.baseLeftOut')}</p>}
                 <div className="ivs-file-buttons">
                   <button type="button" className="ivs-btn" onClick={() => openFile('RUNBOOK.md')}>
                     <FileIcon />

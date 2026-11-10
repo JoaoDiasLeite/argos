@@ -25,6 +25,13 @@ describe('interventionLabel', () => {
     expect(interventionLabel({ ...base, mutates: true }, en).tagTone).toBe('neutral')
   })
 
+  it('tags the base intervention as one, amber since it changes servers', () => {
+    const b = { ...base, runbook: '/app/resources/runbooks/intervention', builtin: false, base: true, mutates: true }
+    expect(interventionLabel(b, en)).toMatchObject({ tag: 'Intervention', tagTone: 'warn' })
+    expect(interventionLabel(b, pt).tag).toBe('Intervenção')
+    expect(interventionLabel(b, pt).tooltip).toBe('Servidor: web1\nModo: Intervenção')
+  })
+
   it('names an open intervention by the servers it reached', () => {
     expect(interventionLabel({ ...base, server: { kind: 'open' } }, en).title).toBe('Several servers')
     expect(interventionLabel({ ...base, server: { kind: 'open' } }, pt).title).toBe('Vários servidores')
