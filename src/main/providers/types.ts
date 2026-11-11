@@ -62,7 +62,12 @@ export interface EngineRequest {
   abortController: AbortController
   settingSources: NonNullable<SdkOptions['settingSources']>
   permissionMode: NonNullable<SdkOptions['permissionMode']>
-  /** Explicit tool allowlist. Omit to leave tools unrestricted for the profile. */
+  /** Base set of built-in tools to load (Claude `tools`). `[]` disables every
+   * built-in; omit to keep the engine's full default set. MCP tools are unaffected. */
+  tools?: string[]
+  /** Tools auto-approved without a prompt (Claude `allowedTools`). This does not
+   * restrict what is reachable — use `tools`/`disallowedTools` for that. Codex and
+   * Gemini read its presence as read-only intent (see their sandbox mapping). */
   allowedTools?: string[]
   /** Extra working directories the engine may read/write beyond `cwd` (Claude --add-dir). */
   additionalDirectories?: string[]

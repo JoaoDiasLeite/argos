@@ -4,11 +4,17 @@ import { getConfig, providerFor, ProviderId } from './config'
  * Least-privilege policy for every AI/SDK call in the app.
  *
  * Each call site declares a capability *profile* rather than assembling raw SDK
- * options ad-hoc. The profile decides four cost/safety levers centrally:
+ * options ad-hoc. The profile decides three cost/safety levers centrally:
  *   1. which settings tiers load (user-tier plugin/skill marketplaces are the
  *      big per-turn context tax — headless work never loads them),
- *   2. which tools are reachable (mutating tools are stripped from context, not
- *      merely gated, so a bypassPermissions run cannot invoke them), and
+ *   2. which tools are reachable. `tools` is the base set of built-in tools the
+ *      Claude engine loads at all (`[]` = none); anything not listed is absent
+ *      from context, so a bypassPermissions run cannot invoke Bash/Write/Edit.
+ *      `allowedTools` only auto-approves — it does NOT restrict, which is why
+ *      `tools` must always be set alongside it. MCP tools are not built-ins:
+ *      `tools` leaves them alone and `allowedTools` approves them by server.
+ *      Codex/Gemini have no per-tool gate; they map this intent to their own
+ *      sandbox/approval modes (see providers/codex.ts and providers/gemini.ts), and
  *   3. the model ceiling + turn cap (pure-reasoning utility calls must never
  *      burn Opus/Fable budget, and no headless run may loop unbounded).
  *
@@ -37,7 +43,11 @@ export interface ResolvePolicyInput {
 export interface ResolvedPolicy {
   model: string
   settingSources: ('user' | 'project' | 'local')[]
-  /** Present only when the profile pins an explicit tool allowlist. */
+  /** Built-in tools the engine loads at all (`[]` disables every built-in). Always
+   * present: omitting it would leave the SDK's full default tool set reachable. */
+  tools: string[]
+  /** Tools auto-approved without a prompt. Present only when the profile pins an
+   * explicit allowlist. Does not restrict on its own — see `tools`. */
   allowedTools?: string[]
   /** Present only when the profile caps agentic turns. */
   maxTurns?: number
@@ -99,6 +109,7 @@ export function resolvePolicy(input: ResolvePolicyInput): ResolvedPolicy {
       return {
         model: clampToCheapTier(providerId, requestedModel, fallback),
         settingSources: [],
+        tools: [],
         allowedTools: [],
         maxTurns: REASONING_MAX_TURNS
       }
@@ -107,6 +118,7 @@ export function resolvePolicy(input: ResolvePolicyInput): ResolvedPolicy {
       return {
         model: clampToCheapTier(providerId, requestedModel, fallback),
         settingSources: ['project', 'local'],
+        tools: [...READ_ONLY_TOOLS],
         allowedTools: [
           ...(input.mcpServerNames ?? []).map((n) => `mcp__${n}`),
           ...READ_ONLY_TOOLS

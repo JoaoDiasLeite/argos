@@ -46,6 +46,7 @@ import {
   PROFILE_DIRS,
   PROFILE_JSON_FILES,
   candidateKey,
+  childDirInside,
   decryptSecrets,
   defaultExportName,
   encryptSecrets,
@@ -606,7 +607,10 @@ async function planProject(ctx: ImportContext, project: ProjectLine): Promise<Pl
       }
     }
   } else if (wsl) {
-    if (wslRoot) dest = { kind: 'claude', dir: path.join(wslRoot, destName) }
+    // childDirInside: null (nothing written) unless the archive's dir name stays a
+    // single directory strictly inside the projects root.
+    const dir = wslRoot ? childDirInside(wslRoot, destName) : null
+    if (dir) dest = { kind: 'claude', dir }
   } else {
     let root: string | null = null
     if (project.sourceId === 'local') root = path.join(os.homedir(), '.claude', 'projects')
@@ -614,7 +618,8 @@ async function planProject(ctx: ImportContext, project: ProjectLine): Promise<Pl
       const acc = ctx.claudeAccounts.group.accounts.find((a) => a.id === project.accountId)
       if (acc) root = acc.configDir ? path.join(acc.configDir, 'projects') : path.join(os.homedir(), '.claude', 'projects')
     }
-    if (root) dest = { kind: 'claude', dir: path.join(root, destName) }
+    const dir = root ? childDirInside(root, destName) : null
+    if (dir) dest = { kind: 'claude', dir }
   }
 
   let exists = false

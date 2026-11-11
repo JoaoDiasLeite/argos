@@ -3837,6 +3837,8 @@ ipcMain.handle(
       const res = await runWslOneShot(forgeServer.source, promptText, {
         model,
         // MCP server + read-only file tools (to read a repo's .git/config); no Bash/Write.
+        // `tools` is what removes the other built-ins; `allowedTools` only auto-approves.
+        tools: ['Read', 'Grep', 'Glob'],
         allowedTools: [`mcp__${forgeServer.name}`, 'Read', 'Grep', 'Glob'],
         cwd,
         timeoutMs: 180000

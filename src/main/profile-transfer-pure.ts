@@ -5,6 +5,7 @@ import { pipeline } from 'stream/promises'
 import { StringDecoder } from 'string_decoder'
 import type { Readable, Writable } from 'stream'
 import { promisify } from 'util'
+import * as path from 'path'
 import { encodeProjectPath } from './codex-data-pure'
 import { projectNameKey } from './project-move-pure'
 import { parseTrustEntry, type TrustEntry } from './ssh-trust-pure'
@@ -201,7 +202,7 @@ export function parseLine(raw: string): BundleLine {
       if (!isObj(v.record)) throw new BundleError('corrupt')
       return v as unknown as ChatLine
     case 'project':
-      if (typeof v.index !== 'number' || typeof v.sourceId !== 'string' || typeof v.realPath !== 'string' || typeof v.encodedDir !== 'string') {
+      if (typeof v.index !== 'number' || typeof v.sourceId !== 'string' || typeof v.realPath !== 'string' || !isSafeEncodedDir(v.encodedDir)) {
         throw new BundleError('corrupt')
       }
       {
@@ -364,6 +365,35 @@ export function safeRel(rel: unknown): string | null {
   if (parts.some((p) => p === '..' || p === '')) return null
   if (/^[A-Za-z]:/.test(rel) || rel.startsWith('/') || rel.startsWith('\\')) return null
   return parts.join('/')
+}
+
+/**
+ * A project's `encodedDir` as it may travel in a bundle: one directory name, joined
+ * under a projects root on import. Every legitimate value is a single path segment —
+ * a Claude Code projects-dir entry (`C--Users-X-proj`, `-home-x-proj`) or, for Codex,
+ * `encodeProjectPath(cwd)`, which leaves only `[A-Za-z0-9-]` — so anything that could
+ * name another directory is refused: separators, `.`/`..`, a drive colon, control
+ * characters (NUL included).
+ */
+export function isSafeEncodedDir(v: unknown): v is string {
+  if (typeof v !== 'string' || !v) return false
+  if (v === '.' || v === '..') return false
+  // eslint-disable-next-line no-control-regex
+  return !/[\\/:\u0000-\u001f\u007f]/.test(v)
+}
+
+/**
+ * `root` joined with the single directory `name`, or null when the result is not
+ * strictly inside `root` (it is `root` itself, or climbs out of it). Defence in depth
+ * behind isSafeEncodedDir for every archive-supplied name that becomes a directory.
+ */
+export function childDirInside(root: string, name: string): string | null {
+  if (!isSafeEncodedDir(name)) return null
+  const base = path.resolve(root)
+  const dest = path.resolve(base, name)
+  const rel = path.relative(base, dest)
+  if (!rel || rel === '..' || path.isAbsolute(rel) || rel.includes(path.sep) || rel.includes('/')) return null
+  return dest
 }
 
 // ─── Secrets ──────────────────────────────────────────────────────────────────
