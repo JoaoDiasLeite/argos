@@ -37,6 +37,7 @@ import {
   noteFrom,
   operatorAnswerText,
   operatorAskFrom,
+  unansweredCause,
   operatorOutput,
   OPERATOR_DECLINED,
   OPS_OPERATOR_OUTPUT_BYTES,
@@ -381,31 +382,54 @@ describe('sudoNeedsPassword', () => {
     expect(sudoNeedsPassword(['sudo', 'nginx', '-t'], exec())).toBe(false)
     expect(sudoNeedsPassword(undefined, r)).toBe(false)
   })
+
+  it.each([
+    'sudo: a password is required',
+    'sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper',
+    'sudo: no tty present and no askpass program specified',
+    'Sorry, try again.\nsudo: no password was provided\nsudo: 1 incorrect password attempt',
+    'sudo: 3 incorrect password attempts',
+    '[sudo] password for wiremaze: ',
+    'sudo: unable to resolve host app01\r\nsudo: a password is required\r\n'
+  ])('reads sudo own refusal %j as wanting a password', (stderr) => {
+    expect(sudoNeedsPassword(['sudo', 'systemctl', 'reload', 'nginx'], exec({ exitCode: 1, stderr }))).toBe(true)
+  })
+
+  it.each([
+    'psql: error: connection to server failed: FATAL:  password authentication failed for user "smile"',
+    'FATAL: password authentication failed',
+    'Password: ',
+    'redis: NOAUTH Authentication required. password missing',
+    'ERROR: the password is required to decrypt credentials',
+    'my-tool: sudo: a password is required'
+  ])('does not read the command own error %j as sudo asking', (stderr) => {
+    expect(sudoNeedsPassword(['sudo', '-u', 'postgres', 'psql', '-c', 'select 1'], exec({ exitCode: 1, stderr }))).toBe(false)
+  })
 })
 
 describe('withSudoStdin', () => {
   it('reads the password from stdin with an empty prompt', () => {
-    expect(withSudoStdin(['sudo', 'systemctl', 'reload', 'nginx'])).toEqual(['sudo', '-S', '-p', '', 'systemctl', 'reload', 'nginx'])
+    expect(withSudoStdin(['sudo', 'systemctl', 'reload', 'nginx'])).toEqual(['sudo', '-S', '-k', '-p', '', 'systemctl', 'reload', 'nginx'])
   })
 
   it('removes -n, which forbids the prompt, and keeps -u, -g and -H', () => {
-    expect(withSudoStdin(['sudo', '-n', 'systemctl', 'reload', 'nginx'])).toEqual(['sudo', '-S', '-p', '', 'systemctl', 'reload', 'nginx'])
+    expect(withSudoStdin(['sudo', '-n', 'systemctl', 'reload', 'nginx'])).toEqual(['sudo', '-S', '-k', '-p', '', 'systemctl', 'reload', 'nginx'])
     expect(withSudoStdin(['sudo', '-n', '-u', 'postgres', 'psql', '-c', 'select 1'])).toEqual([
-      'sudo', '-S', '-p', '', '-u', 'postgres', 'psql', '-c', 'select 1'
+      'sudo', '-S', '-k', '-p', '', '-u', 'postgres', 'psql', '-c', 'select 1'
     ])
-    expect(withSudoStdin(['sudo', '-nu', 'postgres', 'psql'])).toEqual(['sudo', '-S', '-p', '', '-u', 'postgres', 'psql'])
-    expect(withSudoStdin(['sudo', '-nHupostgres', 'psql'])).toEqual(['sudo', '-S', '-p', '', '-H', '-u', 'postgres', 'psql'])
-    expect(withSudoStdin(['sudo', '-g', 'adm', '-H', 'ls'])).toEqual(['sudo', '-S', '-p', '', '-g', 'adm', '-H', 'ls'])
+    expect(withSudoStdin(['sudo', '-nu', 'postgres', 'psql'])).toEqual(['sudo', '-S', '-k', '-p', '', '-u', 'postgres', 'psql'])
+    expect(withSudoStdin(['sudo', '-nHupostgres', 'psql'])).toEqual(['sudo', '-S', '-k', '-p', '', '-H', '-u', 'postgres', 'psql'])
+    expect(withSudoStdin(['sudo', '-g', 'adm', '-H', 'ls'])).toEqual(['sudo', '-S', '-k', '-p', '', '-g', 'adm', '-H', 'ls'])
     expect(withSudoStdin(['sudo', '--non-interactive', '--user=app', '--set-home', 'id'])).toEqual([
-      'sudo', '-S', '-p', '', '--user=app', '--set-home', 'id'
+      'sudo', '-S', '-k', '-p', '', '--user=app', '--set-home', 'id'
     ])
-    expect(withSudoStdin(['sudo', '--user', 'app', 'id'])).toEqual(['sudo', '-S', '-p', '', '--user', 'app', 'id'])
+    expect(withSudoStdin(['sudo', '--user', 'app', 'id'])).toEqual(['sudo', '-S', '-k', '-p', '', '--user', 'app', 'id'])
   })
 
   it('replaces the model\'s own -S and -p, and leaves the command\'s flags alone', () => {
-    expect(withSudoStdin(['sudo', '-S', '-p', 'pw:', 'nginx', '-t'])).toEqual(['sudo', '-S', '-p', '', 'nginx', '-t'])
-    expect(withSudoStdin(['sudo', '--prompt=x', '--stdin', 'nginx', '-n'])).toEqual(['sudo', '-S', '-p', '', 'nginx', '-n'])
-    expect(withSudoStdin(['sudo', '-n', '--', '-weird'])).toEqual(['sudo', '-S', '-p', '', '-weird'])
+    expect(withSudoStdin(['sudo', '-S', '-p', 'pw:', 'nginx', '-t'])).toEqual(['sudo', '-S', '-k', '-p', '', 'nginx', '-t'])
+    expect(withSudoStdin(['sudo', '--prompt=x', '--stdin', 'nginx', '-n'])).toEqual(['sudo', '-S', '-k', '-p', '', 'nginx', '-n'])
+    expect(withSudoStdin(['sudo', '-n', '--', '-weird'])).toEqual(['sudo', '-S', '-k', '-p', '', '-weird'])
   })
 
   it('leaves a non-sudo argv unchanged', () => {
@@ -732,6 +756,25 @@ describe('noteFrom', () => {
   })
 })
 
+describe('unansweredCause', () => {
+  const base = { answered: true, allow: false, runStopped: false, callCancelled: false }
+  it('is null for the operator own refusal or approval', () => {
+    expect(unansweredCause(base)).toBeNull()
+    expect(unansweredCause({ ...base, allow: true })).toBeNull()
+    // A refusal stays the operator's even if the call went away meanwhile.
+    expect(unansweredCause({ ...base, callCancelled: true })).toBeNull()
+  })
+  it('names why nobody answered', () => {
+    expect(unansweredCause({ ...base, answered: false })).toBe('no-operator')
+    expect(unansweredCause({ ...base, answered: false, runStopped: true })).toBe('run-stopped')
+    expect(unansweredCause({ ...base, answered: false, runStopped: true, callCancelled: true })).toBe('call-cancelled')
+  })
+  it('an allow that lands after a stop or a withdrawal is not taken', () => {
+    expect(unansweredCause({ ...base, allow: true, runStopped: true })).toBe('run-stopped')
+    expect(unansweredCause({ ...base, allow: true, callCancelled: true })).toBe('call-cancelled')
+  })
+})
+
 describe('operatorAskFrom', () => {
   it('takes a command and why, with the optional host and what to look for', () => {
     expect(
@@ -752,6 +795,36 @@ describe('operatorAskFrom', () => {
     expect(operatorAskFrom({ cmd: 'id', why: 'w'.repeat(501) })).toHaveProperty('error')
     expect(operatorAskFrom({ cmd: 'id', why: 'w', hostId: 7 })).toHaveProperty('error')
     expect(operatorAskFrom({ cmd: 'id', why: 'w', expect: 'e'.repeat(301) })).toHaveProperty('error')
+  })
+
+  it.each([
+    ['cat /var/log/messages‮', 'U+202E'],
+    ['sudo systemctl restart puma', 'U+00A0'],
+    ['ls​ /tmp', 'U+200B'],
+    ['id\nreboot', 'U+000A'],
+    ['id\u001b[2K', 'U+001B']
+  ])('refuses a cmd with a hidden or control character %j', (cmd, code) => {
+    const r = operatorAskFrom({ cmd, why: 'w' })
+    expect(r).toHaveProperty('error')
+    expect((r as { error: string }).error).toContain(code)
+  })
+
+  it.each([
+    ['sudo reboot', 'power'],
+    ['sudo rm -rf /', 'rm-recursive-root'],
+    ['grep x /var/log/messages; sudo shutdown -h now', 'power'],
+    ['tail /var/log/x && sudo systemctl reboot', 'systemctl-power'],
+    ['sudo dd if=/dev/zero of=/dev/sda bs=1M', 'dd-device'],
+    [':(){ :|:& };:', 'fork-bomb']
+  ])('refuses a hard-denylisted cmd %j', (cmd, hit) => {
+    const r = operatorAskFrom({ cmd, why: 'w' })
+    expect((r as { error: string }).error).toContain(`denylisted: ${hit}`)
+  })
+
+  it('still takes a pipeline or a sudo the gate would not run, as long as it is not denylisted', () => {
+    expect(operatorAskFrom({ cmd: 'sudo grep -c puma /var/log/messages | sort | uniq -c', why: 'w' })).not.toHaveProperty('error')
+    expect(operatorAskFrom({ cmd: 'sudo systemctl restart pumactl_smile-saas', why: 'w' })).not.toHaveProperty('error')
+    expect(operatorAskFrom({ cmd: '  sudo cat /var/log/secure\n', why: 'w' })).toEqual({ cmd: 'sudo cat /var/log/secure', why: 'w' })
   })
 })
 

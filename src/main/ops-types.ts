@@ -150,6 +150,13 @@ export interface OpsNote {
   when?: 'now' | 'later'
 }
 
+/**
+ * Why an approval prompt ended with no answer from the operator: there was no one to ask
+ * (no approval channel), the run was stopped while it waited (or before it was shown),
+ * or the CLI withdrew the call (Esc, or its tool timeout) before anyone answered.
+ */
+export type OpsUnansweredCause = 'no-operator' | 'run-stopped' | 'call-cancelled'
+
 /** One step of a plan, as logged with the user's decision on it. */
 export interface OpsLoggedPlanStep {
   title: string
@@ -203,7 +210,10 @@ export type OpsAuditEvent =
   | {
       kind: 'plan.approved' | 'plan.rejected'
       runId: string
-      by: 'user'
+      /** 'user': the operator answered. 'none' (plan.rejected only): nobody did, see cause. */
+      by: 'user' | 'none'
+      /** With by 'none': why the plan was not answered. */
+      cause?: OpsUnansweredCause
       /** The plan as the model wrote it. A terminal run has no plan at run.start, so the
        *  report takes it from here. */
       planText?: string
@@ -235,7 +245,9 @@ export type OpsAuditEvent =
       kind: 'call.answered'
       runId: string
       callId: string
-      answer: 'allow' | 'deny' | 'stop'
+      /** 'cancelled': the prompt ended with no operator answer, see cause; never run. */
+      answer: 'allow' | 'deny' | 'stop' | 'cancelled'
+      cause?: OpsUnansweredCause
       updatedInput?: unknown
     }
   | { kind: 'call.started'; runId: string; callId: string }

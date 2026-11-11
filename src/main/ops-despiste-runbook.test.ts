@@ -127,6 +127,9 @@ describe('despiste runbook: allowed', () => {
     'systemctl is-active nginx',
     'systemctl cat monit --no-pager',
     'systemctl show pumactl_smile-saas -p MainPID,ActiveState,SubState',
+    'systemctl show nginx -p MainPID',
+    'systemctl show nginx --no-pager -p ActiveState -p SubState,Result',
+    'systemctl show nginx --property=Restart,RestartUSec,User',
     'journalctl -b -p 3 --no-pager -n 200',
     'journalctl -b -1 -p 0..4 --no-pager -n 500',
     'journalctl -b -t monit -o json --no-pager',
@@ -307,6 +310,15 @@ describe('despiste runbook: refused', () => {
     'tail -n 50 /var/www/smile/shared/config/database.yml',
     'curl -sI https://download.docker.com/linux/rhel/docker-ce.repo',
     'systemctl restart nginx',
+    // systemctl show: every property from the closed list, never the environment
+    'systemctl show nginx',
+    'systemctl show nginx -p Environment',
+    'systemctl show nginx -p MainPID,Environment',
+    'systemctl show nginx -p EnvironmentFiles',
+    'systemctl show nginx --property=MainPID,EnvironmentFiles',
+    'systemctl show nginx -p MainPID -p Environment',
+    'systemctl show nginx -p MainPIDEnvironment',
+    'systemctl show nginx,MainPID',
     'systemctl stop pumactl_smile-saas',
     'systemctl start pumactl_smile-saas',
     'systemctl reload nginx',
@@ -371,6 +383,10 @@ describe('despiste runbook: refused', () => {
     'grep -m 5 password /home/w/www/app/config/database.yml',
     'tail -n 5 /home/w/www/app/config/master.key',
     'tail -n 5 /home/w/www/app/config/secrets.yml',
+    'tail -n 5 /home/app/www/app/config/application.yml',
+    'head -n 5 /var/www/smile/shared/config/application.yml',
+    'grep -m 5 password /home/app/www/app/config/application.production.yml',
+    'tail -n 5 /home/app/www/app/config/secrets/production.yml',
     'tail -n 5 /proc/1/environ',
     'journalctl -f',
     'journalctl --no-pager',
@@ -417,9 +433,16 @@ describe('despiste runbook: refused', () => {
     '/var/www/smile/shared/config/database.yml',
     '/var/www/smile/shared/config/master.key',
     '/home/w/www/app/.docker/config.json',
-    '/etc/docker/certs.d/registry/client.key'
+    '/etc/docker/certs.d/registry/client.key',
+    '/home/app/www/app/config/application.yml',
+    '/var/www/smile/shared/config/application.yml',
+    '/home/app/www/app/config/secrets/production.yml'
   ])('refuses reading %s', (p) => {
     expect(decide({ tool: 'read', path: p })).toBe('deny')
+  })
+
+  it('refuses listing a secrets folder', () => {
+    expect(decide({ tool: 'list', path: '/home/app/www/app/config/secrets' })).toBe('deny')
   })
 
   it('refuses any write', () => {

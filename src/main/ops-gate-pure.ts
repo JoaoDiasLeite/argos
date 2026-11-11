@@ -42,7 +42,7 @@ const DECEPTIVE = /[\u0080-\u009f\u00a0\u1680\u2000-\u200f\u2028-\u202f\u205f\u2
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
 
 /** Reason the string carries a control or deceptive character, or null. Tab is a control. */
-function badCharReason(s: string, what: string): string | null {
+export function badCharReason(s: string, what: string): string | null {
   for (const ch of s) {
     const c = ch.codePointAt(0) ?? 0
     if (c < 0x20 || c === 0x7f) {

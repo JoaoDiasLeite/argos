@@ -6,7 +6,7 @@ Diagnóstico só de leitura de um servidor: recolhe o estado do sistema, dos ser
 
 - Serve qualquer servidor guardado no Argos, e entras como o teu utilizador SSH. O que esse utilizador não pode ler falha sem efeito.
 - Só leitura, sem exceções. Ficam de fora: reiniciar, parar ou arrancar serviços (systemctl, monit, nginx -s), matar processos, `rails runner`, `rails console`, `rake`, o menu do Jarvis e os comandos do Jarvis que alteram o servidor, `EXPLAIN ANALYZE`, `strace`, `gdb`, `tcpdump`, comandos interativos (`top`, `less`, `vi`, `watch`) e `curl` com efeitos ou para fora do servidor.
-- Nunca leias nem mostres segredos: `.env`, `wmcp.env`, `database.yml`, `secrets*.yml`, `credentials*`, `master.key`, chaves e certificados privados, `.pgpass`, `/proc/<pid>/environ`. A policy recusa-os; não procures outro caminho para lá chegar. Para uma variável `WMCP_*` usa `env-get.sh`, que mascara as que têm PASS, SECRET, TOKEN ou KEY no nome.
+- Nunca leias nem mostres segredos: `.env`, `wmcp.env`, `database.yml`, `application*.yml`, `secrets*.yml` e a pasta `secrets/`, `credentials*`, `master.key`, chaves e certificados privados, `.pgpass`, `/proc/<pid>/environ`. A policy recusa-os; não procures outro caminho para lá chegar. Para uma variável `WMCP_*` usa `env-get.sh`, que mascara as que têm PASS, SECRET, TOKEN ou KEY no nome.
 - Se o pedido precisar de algo que este despiste não cobre, diz isso e para.
 
 ## Como trabalhar

@@ -126,6 +126,7 @@ export default {
   'timeline.row.exit': 'exit {code}',
   'timeline.row.timedOut': 'timed out',
   'timeline.row.stopped': 'stopped',
+  'timeline.row.cancelled': 'not answered',
   'timeline.row.waiting': 'waiting',
   'timeline.row.queued': 'queued',
   'timeline.row.running': 'running',

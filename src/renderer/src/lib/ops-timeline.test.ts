@@ -124,6 +124,14 @@ describe('foldOpsEvents', () => {
     expect(row([...asked, ev({ kind: 'call.answered', callId: 'c1', answer: 'stop' })]).status).toBe('stopped')
   })
 
+  it('answered cancelled (nobody answered) → stopped, never denied by you', () => {
+    const asked = [start, decided('c1', 'ask'), ev({ kind: 'call.asked', callId: 'c1' })]
+    const r = row([...asked, ev({ kind: 'call.answered', callId: 'c1', answer: 'cancelled', cause: 'call-cancelled' })])
+    expect(r).toMatchObject({ status: 'stopped', answer: 'cancelled' })
+    expect([rowTone(r), rowLabel(r, t)]).toEqual(['bad', 'not answered'])
+    expect(rowLabel(r, makeT('pt-PT'))).toBe('sem resposta')
+  })
+
   it('started → running', () => {
     expect(row([start, decided('c1', 'allow'), ev({ kind: 'call.started', callId: 'c1' })]).status).toBe('running')
   })

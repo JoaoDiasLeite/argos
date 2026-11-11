@@ -9,7 +9,7 @@
  * go from most to least useful, so a cut drops the oldest calls first.
  */
 
-import { summarizeRun, type OpsCallSummary, type OpsLinkedRun, type OpsRunListItem, type OpsRunSummary } from './ops-audit-pure'
+import { summarizeRun, unansweredText, type OpsCallSummary, type OpsLinkedRun, type OpsRunListItem, type OpsRunSummary } from './ops-audit-pure'
 import { lisbonDate } from './ops-handover-pure'
 import { foldNotes } from './ops-notes-pure'
 import type { OpsAuditLine, OpsScope } from './ops-types'
@@ -82,6 +82,7 @@ function callResult(c: OpsCallSummary): string {
   if (c.decision === 'deny') return 'denied by policy'
   if (c.answer === 'deny') return 'refused by the operator'
   if (c.answer === 'stop') return 'run stopped at the prompt'
+  if (c.answer === 'cancelled') return `not run: ${unansweredText(c.cause)}`
   const verdict = c.decision === 'ask' ? 'approved' : 'allowed'
   if (c.timedOut) return `${verdict}, timed out`
   if (c.exitCode === undefined) return `${verdict}, no finish recorded`

@@ -233,6 +233,72 @@ describe('ops bridge', () => {
     c.end()
   })
 
+  /** An ask that stays open until its call is withdrawn (then answers like index.ts on abort); allows the plan. */
+  const pendingAsk = (seen: AbortSignal[]): OpsAskFn => async (req, signal) => {
+    if (req.tool === 'mcp__ops__propose_plan') return { allow: true }
+    if (signal) seen.push(signal)
+    return new Promise((resolve) => signal?.addEventListener('abort', () => resolve({ allow: false, unanswered: true }), { once: true }))
+  }
+
+  it('a cancel frame ends the call waiting at the prompt, runs nothing, and frees the queue', async () => {
+    const fake = createFakeBackend({ exec: () => ({ stdout: 'active' }) })
+    const seen: AbortSignal[] = []
+    const { session } = await openSession(pendingAsk(seen), fake)
+    const { endpoint } = await startOpsBridge({ socketDir: os.tmpdir() })
+    const token = newOpsToken()
+    registerToken(token, bridgeSessionFor(session))
+    const c = await client(endpoint)
+    c.send({ id: 'p', token, kind: 'call', tool: 'propose_plan', args: { steps: ['restart'] } })
+    await c.next()
+    c.send({ id: 'a', token, kind: 'call', tool: 'run', args: { hostId: 'h1', cmd: 'systemctl restart nginx' } })
+    // Queued behind 'a' on the same connection.
+    c.send({ id: 'b', token, kind: 'call', tool: 'run', args: { hostId: 'h1', cmd: 'systemctl status nginx' } })
+    // A frame of a kind this bridge does not know is ignored, not a reason to hang up.
+    c.send({ id: 'z', token, kind: 'progress' })
+    while (seen.length === 0) await new Promise((r) => setTimeout(r, 5))
+    c.send({ id: 'a', token, kind: 'cancel' })
+    expect(await c.next()).toMatchObject({ id: 'a', ok: true, result: { isError: true, text: expect.stringContaining('Cancelled') } })
+    expect(await c.next()).toMatchObject({ id: 'b', ok: true, result: { isError: false } })
+    expect(fake.calls.filter((x) => x.kind === 'exec').map((x) => (x.args as { argv: string[] }).argv)).toEqual([['systemctl', 'status', 'nginx']])
+    const r = await ledger.readRun('run-t')
+    if (!r.ok) throw new Error(r.error)
+    expect(r.lines.find((l) => l.event.kind === 'call.answered')?.event).toMatchObject({ answer: 'cancelled', cause: 'call-cancelled' })
+    revokeToken(token)
+    c.end()
+  })
+
+  it('a closed connection withdraws the call waiting at the prompt', async () => {
+    const fake = createFakeBackend()
+    const seen: AbortSignal[] = []
+    const { session } = await openSession(pendingAsk(seen), fake)
+    const { endpoint } = await startOpsBridge({ socketDir: os.tmpdir() })
+    const token = newOpsToken()
+    registerToken(token, bridgeSessionFor(session))
+    const c = await client(endpoint)
+    c.send({ id: 'p', token, kind: 'call', tool: 'propose_plan', args: { steps: ['restart'] } })
+    await c.next()
+    c.send({ id: 'a', token, kind: 'call', tool: 'run', args: { hostId: 'h1', cmd: 'systemctl restart nginx' } })
+    while (seen.length === 0) await new Promise((r) => setTimeout(r, 5))
+    c.end()
+    while (!seen[0].aborted) await new Promise((r) => setTimeout(r, 5))
+    expect(fake.calls.filter((x) => x.kind === 'exec')).toEqual([])
+    revokeToken(token)
+  })
+
+  it('a cancel for an id that is not open changes nothing', async () => {
+    const fake = createFakeBackend({ exec: () => ({ stdout: 'active' }) })
+    const { session } = await openSession(async () => ({ allow: true }), fake)
+    const { endpoint } = await startOpsBridge({ socketDir: os.tmpdir() })
+    const token = newOpsToken()
+    registerToken(token, bridgeSessionFor(session))
+    const c = await client(endpoint)
+    c.send({ id: 'x', token, kind: 'cancel' })
+    c.send({ id: 'h', token, kind: 'hello' })
+    expect(await c.next()).toMatchObject({ id: 'h', ok: true })
+    revokeToken(token)
+    c.end()
+  })
+
   it('an unknown token is dropped without a reply', async () => {
     const { endpoint } = await startOpsBridge({ socketDir: os.tmpdir() })
     const c = await client(endpoint)
@@ -379,4 +445,40 @@ describe('ops relay', () => {
     expect(await exited).toBe(0)
     expect(logged).toEqual([])
   }, 30_000) // the first test to import the MCP SDK and zod pays a cold load; seen past 5 s once
+
+  it('forwards a notifications/cancelled to the bridge, so the prompt it waits on ends and the next call runs', async () => {
+    const fake = createFakeBackend({ exec: () => ({ stdout: 'active' }) })
+    const seen: AbortSignal[] = []
+    const { session } = await openSession(async (req, signal) => {
+      if (req.tool === 'mcp__ops__propose_plan') return { allow: true }
+      if (signal) seen.push(signal)
+      return new Promise((resolve) => signal?.addEventListener('abort', () => resolve({ allow: false, unanswered: true }), { once: true }))
+    }, fake)
+    const { endpoint } = await startOpsBridge({ socketDir: os.tmpdir() })
+    const token = newOpsToken()
+    registerToken(token, bridgeSessionFor(session))
+    const stdin = new PassThrough()
+    const stdout = new PassThrough()
+    let resolveExit: (code: number) => void = () => undefined
+    const exited = new Promise<number>((r) => (resolveExit = r))
+    await runOpsRelay({ env: { ARGOS_OPS_PIPE: endpoint, ARGOS_OPS_TOKEN: token }, stdin, stdout, log: () => undefined, exit: (c) => resolveExit(c), loadMcp })
+    const mcp = mcpClient(stdin, stdout)
+    await mcp.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } })
+    mcp.notify('notifications/initialized')
+    await mcp.request('tools/call', { name: 'propose_plan', arguments: { steps: ['restart'] } })
+
+    // Request id 3 (initialize 1, propose_plan 2): never answered once cancelled.
+    let answered = false
+    void mcp.request('tools/call', { name: 'run', arguments: { hostId: 'h1', cmd: 'systemctl restart nginx', why: 'reload the config' } }).then(() => (answered = true))
+    while (seen.length === 0) await new Promise((r) => setTimeout(r, 5))
+    stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 3, reason: 'Esc' } })}\n`)
+    while (!seen[0].aborted) await new Promise((r) => setTimeout(r, 5))
+
+    const next = await mcp.request('tools/call', { name: 'run', arguments: { hostId: 'h1', cmd: 'systemctl status nginx', why: 'check it' } })
+    expect(next.result).toMatchObject({ isError: false })
+    expect(answered).toBe(false)
+    expect(fake.calls.filter((x) => x.kind === 'exec').map((x) => (x.args as { argv: string[] }).argv)).toEqual([['systemctl', 'status', 'nginx']])
+    revokeToken(token)
+    expect(await exited).toBe(0)
+  }, 30_000)
 })
