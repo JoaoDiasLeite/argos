@@ -7,6 +7,7 @@ export default {
   'toast.allow': 'Allow',
   'toast.deny': 'Deny',
   'toast.openArgos': 'Open Argos',
+  'toast.reviewInApp': 'Open Argos to see all of it and answer there.',
   'toast.approveToolUse': 'Approve tool use',
   'overlay.placeholder': 'Ask anything…',
   'overlay.promptLabel': 'Prompt for a new terminal',

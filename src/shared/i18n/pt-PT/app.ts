@@ -8,6 +8,7 @@ const app: Record<keyof typeof en, string> = {
   'toast.allow': 'Permitir',
   'toast.deny': 'Recusar',
   'toast.openArgos': 'Abrir o Argos',
+  'toast.reviewInApp': 'Abre o Argos para veres tudo e responderes lá.',
   'toast.approveToolUse': 'Aprovar a utilização da ferramenta',
   'overlay.placeholder': 'Pergunta qualquer coisa…',
   'overlay.promptLabel': 'Prompt para um novo terminal',

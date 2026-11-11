@@ -133,6 +133,8 @@
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .toast-btn:hover { background: var(--bg-hover); color: var(--text-0); }
+.toast-btn:disabled { opacity: 0.45; cursor: default; }
+.toast-btn:disabled:hover { background: transparent; color: var(--text-1); }
 
 .toast-btn.allow {
   padding: 0 16px;
@@ -142,6 +144,7 @@
   font-weight: 650;
 }
 .toast-btn.allow:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--bg-0); }
+.toast-btn.allow:disabled:hover { background: var(--accent); border-color: var(--accent); color: var(--bg-0); }
 
 .toast-link {
   padding: 0;

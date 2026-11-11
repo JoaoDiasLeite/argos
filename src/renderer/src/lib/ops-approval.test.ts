@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   describeOpsRequest, displayArgv, summarizeOps, planTotals, planTotalsGroups, planChangesLine,
-  planTarget, planStepLabel, opsToastText, opsToastQuestion, opsToastEyebrow, planTotalsWithout
+  planTarget, planStepLabel, opsToastText, opsToastQuestion, opsToastEyebrow, planTotalsWithout,
+  opsToastNeedsMainWindow
 } from './ops-approval'
 import type { ApprovalOpsContext, OpsPlanStep } from '../types'
 import { makeT } from '../../../shared/i18n'
@@ -15,7 +16,45 @@ const base: ApprovalOpsContext = {
 
 describe('displayArgv', () => {
   it('quotes words with spaces or quotes', () => {
-    expect(displayArgv(['ls', '-la', 'my dir', "it's"])).toBe(`ls -la 'my dir' 'it'\''s'`)
+    expect(displayArgv(['ls', '-la', 'my dir', "it's"])).toBe(`ls -la 'my dir' 'it'\\''s'`)
+  })
+  it('writes an embedded quote as quote, backslash, quote, quote', () => {
+    expect(displayArgv(["it's"])).toBe("'it'\\''s'")
+    expect(displayArgv(["it's"])).toHaveLength(9)
+  })
+  it('quotes shell metacharacters and empty words', () => {
+    expect(displayArgv(['a b'])).toBe("'a b'")
+    expect(displayArgv(['a;b'])).toBe("'a;b'")
+    expect(displayArgv(['$HOME'])).toBe("'$HOME'")
+    expect(displayArgv(['', 'x'])).toBe("'' x")
+    for (const w of ['a|b', 'a&b', '<f', '>f', '(x)', '`x`', '*', '?', '!x', '#x', '~', '{a}', '[a]', 'a\\b', '"q"'])
+      expect(displayArgv([w])).toBe(`'${w}'`)
+  })
+  it('leaves plain words and paths bare', () => {
+    expect(displayArgv(['df', '-h', '/var/log/nginx.log', 'a=b', 'user@host:1,2_3+4%5'])).toBe(
+      'df -h /var/log/nginx.log a=b user@host:1,2_3+4%5'
+    )
+  })
+})
+
+describe('opsToastNeedsMainWindow', () => {
+  it('is true for a plan', () => {
+    expect(opsToastNeedsMainWindow({ ...base, tool: 'plan', planSteps: [step({})] })).toBe(true)
+  })
+  it('is false for a short command, path or host', () => {
+    expect(opsToastNeedsMainWindow({ ...base, argv: ['df', '-h'] })).toBe(false)
+    expect(opsToastNeedsMainWindow({ ...base, tool: 'read', path: '/etc/hosts' })).toBe(false)
+    expect(opsToastNeedsMainWindow({ ...base, tool: 'host' })).toBe(false)
+  })
+  it('is true when the command or path is longer than the chip', () => {
+    expect(opsToastNeedsMainWindow({ ...base, argv: ['echo', 'x'.repeat(80)] })).toBe(true)
+    expect(opsToastNeedsMainWindow({ ...base, tool: 'script', argv: ['s.sh', 'x'.repeat(80)] })).toBe(true)
+    expect(opsToastNeedsMainWindow({ ...base, tool: 'write', path: '/' + 'd/'.repeat(40) })).toBe(true)
+  })
+  it('counts the quoting: exactly at the limit fits, one over does not', () => {
+    expect(opsToastNeedsMainWindow({ ...base, argv: ['x'.repeat(70)] })).toBe(false)
+    expect(opsToastNeedsMainWindow({ ...base, argv: ['x'.repeat(71)] })).toBe(true)
+    expect(opsToastNeedsMainWindow({ ...base, argv: ['x'.repeat(69) + ' '] })).toBe(true)
   })
 })
 
