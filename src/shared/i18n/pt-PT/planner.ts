@@ -141,7 +141,8 @@ const planner: Record<keyof typeof en, string> = {
   'review.approve.other': 'Aprovar {n} passos',
   'review.approvePartial': 'Aprovar {left} de {n} passos',
   'review.reject': 'Rejeitar',
-  'review.hints': 'Enter aprova · Esc rejeita'
+  'review.hints': 'Enter aprova · Esc rejeita',
+  'saveFailed': 'Não foi possível guardar as alterações. Verifica o espaço em disco e as permissões.'
 }
 
 export default planner

@@ -2,7 +2,8 @@ import { app, nativeTheme } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
-import { readJsonFile } from './json-file'
+import { loadJsonFileGuarded, readJsonFile, writeJsonFileAtomic } from './json-file'
+import { isPlainObject } from './json-load-pure'
 import { UiPrefs, UiPrefsPatch, applyUiPatch, migrateUiPrefs, resolveUiPrefs } from './ui-prefs-pure'
 import { isCompanionCharacter, type CompanionPrefs } from './companion-types'
 import { cleanSubfolder, DEFAULT_OBSIDIAN_FOLDER } from './companion-obsidian-pure'
@@ -187,10 +188,17 @@ function loadUiPrefs(defaults: UiPrefs, loaded: Partial<UiPrefs> | undefined): U
   return resolveUiPrefs(migrateUiPrefs(merged), nativeTheme.shouldUseDarkColors)
 }
 
+/** Set when config.json exists but could not be read (transient lock): saving would
+ *  replace it with defaults, so saveConfig stays off for the session. */
+let configUnreadable = false
+
 export function loadConfig(): void {
-  try {
-    if (fs.existsSync(configPath)) {
-      const loaded = readJsonFile<Partial<AppConfig>>(configPath)
+  const result = loadJsonFileGuarded<Partial<AppConfig>>(configPath, isPlainObject)
+  // `corrupt` was copied aside by the loader; `missing` is a fresh install. Both continue on defaults.
+  configUnreadable = result.kind === 'unreadable'
+  if (result.kind === 'ok') {
+    const loaded = result.value
+    try {
       config = {
         ...config,
         ...loaded,
@@ -202,9 +210,9 @@ export function loadConfig(): void {
         companion: cleanCompanionPrefs(COMPANION_DEFAULTS, loaded.companion)
       }
       return
+    } catch {
+      // keep defaults
     }
-  } catch {
-    // keep defaults
   }
   // No file, or an unreadable one: the defaults still have to go through migration,
   // so a fresh install hands the renderer the same shape a migrated config has.
@@ -212,7 +220,11 @@ export function loadConfig(): void {
 }
 
 function saveConfig(): void {
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
+  if (configUnreadable) {
+    console.warn('[argos] config.json was unreadable at startup; not overwriting it with defaults')
+    return
+  }
+  writeJsonFileAtomic(configPath, config)
 }
 
 export function getConfig(): AppConfig {

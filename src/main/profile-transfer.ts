@@ -736,7 +736,7 @@ async function applyProfile(ctx: ImportContext, secrets: SecretsPayload | null, 
   if (isPlainObject(pj['store.json'])) {
     const local = await readJson(path.join(ud, 'store.json'))
     const merged = mergeStore(isPlainObject(local) ? local : {}, remapStore(pj['store.json'], remap))
-    await fs.promises.writeFile(path.join(ud, 'store.json'), JSON.stringify(merged), 'utf8')
+    await writeJsonAtomic(path.join(ud, 'store.json'), merged)
   }
 
   // Accounts: metadata only, each new one with an empty config dir of its own.

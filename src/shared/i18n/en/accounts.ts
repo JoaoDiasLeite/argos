@@ -37,5 +37,8 @@ export default {
   'model.discoveredMeta': 'new — pricing not catalogued yet',
   'model.discoveredMetaCtx': '{context} · new — pricing not catalogued yet',
   'model.comingSoon': 'Coming soon',
-  'model.price': '{context} · ${input}/${output} per Mtok'
+  'model.price': '{context} · ${input}/${output} per Mtok',
+  'row.keep': 'Keep',
+  'row.confirmRemove': 'Remove this account? Its login on this machine is removed too, and it cannot be undone.',
+  'actionFailed': 'The action failed: {message}'
 } satisfies Record<string, string>

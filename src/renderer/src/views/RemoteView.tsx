@@ -372,16 +372,26 @@ export default function RemoteView({
     setEditing(h)
   }
 
+  // Guards against re-entry (Enter held, double click) creating duplicate hosts.
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
   const save = async () => {
-    if (!editing || !hostValid) return
-    const res = await window.electronAPI.sshSave(editing)
-    if (!res.ok) {
-      // Nothing was written: the sheet stays open with what was typed.
-      setWriteError(res.error)
-      return
+    if (!editing || !hostValid || savingRef.current) return
+    savingRef.current = true
+    setSaving(true)
+    try {
+      const res = await window.electronAPI.sshSave(editing)
+      if (!res.ok) {
+        // Nothing was written: the sheet stays open with what was typed.
+        setWriteError(res.error)
+        return
+      }
+      setHosts(res.hosts)
+      setEditing(null)
+    } finally {
+      savingRef.current = false
+      setSaving(false)
     }
-    setHosts(res.hosts)
-    setEditing(null)
   }
 
   // Enter saves (§6), except on a control that has its own Enter (a button, a select), and
@@ -1029,7 +1039,7 @@ export default function RemoteView({
               <button type="button" className="btn-ghost" onClick={() => setEditing(null)}>
                 {t('common.cancel')}
               </button>
-              <button type="button" className="btn-primary" onClick={save} disabled={!hostValid}>
+              <button type="button" className="btn-primary" onClick={save} disabled={!hostValid || saving}>
                 {t('common.save')}
               </button>
             </>

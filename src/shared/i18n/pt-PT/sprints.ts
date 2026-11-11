@@ -218,7 +218,8 @@ const sprints: Record<keyof typeof en, string> = {
   'backfill.selected': 'Selecionados: {n}',
   'backfill.all': 'Todos',
   'backfill.row.pr': 'PR',
-  'backfill.row.mr': 'MR'
+  'backfill.row.mr': 'MR',
+  'saveFailed': 'Não foi possível guardar as alterações. Verifica o espaço em disco e as permissões.'
 }
 
 export default sprints

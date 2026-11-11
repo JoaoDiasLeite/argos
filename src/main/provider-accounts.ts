@@ -3,7 +3,9 @@ import { spawn } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
-import { readJsonFile } from './json-file'
+import { loadJsonFileGuarded, writeJsonFileAtomic } from './json-file'
+import { isPlainObject } from './json-load-pure'
+import { isStrictlyInside } from './path-contain-pure'
 import { checkCodexStatus } from './agent-clis'
 import { openLinuxTerminal } from './linux-desktop'
 
@@ -97,16 +99,19 @@ function loadGroup(provider: AgentProvider, loaded: unknown): AccountGroup {
   }
 }
 
+/** Set when provider-accounts.json exists but could not be read (transient lock):
+ *  persisting would replace it with a fresh state, so persist stays off for the session. */
+let providerAccountsUnreadable = false
+
 export function loadProviderAccounts(): void {
+  const result = loadJsonFileGuarded<Partial<ProviderAccountsState>>(accountsFile(), isPlainObject)
+  providerAccountsUnreadable = result.kind === 'unreadable'
+  state = freshState()
+  if (result.kind !== 'ok') return
   try {
-    if (fs.existsSync(accountsFile())) {
-      const loaded = readJsonFile<Partial<ProviderAccountsState>>(accountsFile())
-      state = {
-        codex: loadGroup('codex', loaded.codex),
-        gemini: loadGroup('gemini', loaded.gemini)
-      }
-    } else {
-      state = freshState()
+    state = {
+      codex: loadGroup('codex', result.value.codex),
+      gemini: loadGroup('gemini', result.value.gemini)
     }
   } catch {
     state = freshState()
@@ -114,8 +119,12 @@ export function loadProviderAccounts(): void {
 }
 
 function persist(): void {
+  if (providerAccountsUnreadable) {
+    console.warn('[argos] provider-accounts.json was unreadable at startup; not overwriting it')
+    return
+  }
   try {
-    fs.writeFileSync(accountsFile(), JSON.stringify(state, null, 2))
+    writeJsonFileAtomic(accountsFile(), state)
   } catch {
     // best-effort
   }
@@ -187,7 +196,8 @@ export function removeProviderAccount(provider: AgentProvider, id: string): void
   if (id === DEFAULT_ID) return
   const g = group(provider)
   const account = g.accounts.find((a) => a.id === id)
-  if (account?.configDir) {
+  // Only ever delete inside the dir this app creates accounts in (see accounts.ts).
+  if (account?.configDir && isStrictlyInside(accountsRoot(provider), account.configDir)) {
     try {
       fs.rmSync(account.configDir, { recursive: true, force: true })
     } catch {

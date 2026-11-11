@@ -2,7 +2,7 @@ import { app, safeStorage } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
-import { readJsonFile } from './json-file'
+import { readJsonFile, writeJsonFileAtomic } from './json-file'
 
 export type AuthMode = 'claude-code' | 'api-key'
 
@@ -28,7 +28,7 @@ export function loadAuthState(): void {
 }
 
 function saveAuthState(): void {
-  fs.writeFileSync(authStatePath, JSON.stringify(state, null, 2))
+  writeJsonFileAtomic(authStatePath, state)
 }
 
 export function getMode(): AuthMode {

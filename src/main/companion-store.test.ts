@@ -107,6 +107,17 @@ describe('createCompanionStore', () => {
     expect(fs.readFileSync(path.join(dir, kept[0]), 'utf-8')).toBe('[{"id": "t1", "tit')
   })
 
+  it('abandons a save when the list cannot be read, instead of replacing it', () => {
+    // A directory where todos.json should be: readFileSync fails with EISDIR (not ENOENT,
+    // not a parse error), the same class as an EBUSY/EPERM lock.
+    fs.mkdirSync(path.join(dir, 'todos.json'))
+    const store = createCompanionStore(dir)
+    expect(() => store.saveTodo(TODO)).toThrow()
+    expect(() => store.deleteTodo('t1')).toThrow()
+    expect(fs.readdirSync(dir).filter((f) => f.includes('corrupt'))).toEqual([])
+    expect(fs.statSync(path.join(dir, 'todos.json')).isDirectory()).toBe(true)
+  })
+
   it('reads a file with a UTF-8 BOM', () => {
     fs.writeFileSync(path.join(dir, 'todos.json'), '﻿' + JSON.stringify([TODO]), 'utf-8')
     expect(createCompanionStore(dir).listTodos()).toEqual([TODO])

@@ -3,7 +3,7 @@ import * as fs from 'fs'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
-import { readJsonFile } from './json-file'
+import { readJsonFile, writeJsonFileAtomic } from './json-file'
 
 // A chat popped out of the main window into a window of its own, so it can sit on another
 // monitor. The window shows only the chat's terminal, attached to the same pty the pane had:
@@ -61,7 +61,7 @@ function forgetBounds(sessionId: string): void {
     const all = loadBounds()
     if (!(sessionId in all)) return
     delete all[sessionId]
-    fs.writeFileSync(boundsPath(), JSON.stringify(all, null, 2))
+    writeJsonFileAtomic(boundsPath(), all)
   } catch {
     // A stale entry only costs a few bytes in the file.
   }
@@ -71,7 +71,7 @@ function saveBounds(sessionId: string, bounds: Rectangle): void {
   try {
     const all = loadBounds()
     all[sessionId] = bounds
-    fs.writeFileSync(boundsPath(), JSON.stringify(all, null, 2))
+    writeJsonFileAtomic(boundsPath(), all)
   } catch {
     // A position we can't remember just opens at the default size next time.
   }

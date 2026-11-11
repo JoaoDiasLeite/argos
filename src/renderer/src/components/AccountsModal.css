@@ -72,3 +72,4 @@
 
 .acct-add { display: flex; gap: 8px; margin-top: 4px; }
 .acct-add .text-input { flex: 1; height: 30px; }
+.acct-meta.acct-confirm { white-space: normal; color: var(--text-1); }

@@ -2,7 +2,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { getWslClaudeRoots } from './wsl'
-import { readJsonFile } from './json-file'
+import { readJsonFile, writeJsonFileAtomic } from './json-file'
 
 const claudeJsonPath = path.join(os.homedir(), '.claude.json')
 const authCachePath = path.join(os.homedir(), '.claude', 'mcp-needs-auth-cache.json')
@@ -133,7 +133,7 @@ function backupAndWrite(data: unknown): void {
   if (fs.existsSync(claudeJsonPath)) {
     fs.copyFileSync(claudeJsonPath, `${claudeJsonPath}.bak`)
   }
-  fs.writeFileSync(claudeJsonPath, JSON.stringify(data, null, 2))
+  writeJsonFileAtomic(claudeJsonPath, data)
 }
 
 /** Add or update a global MCP server (local ~/.claude.json). cfg is the raw server config. */

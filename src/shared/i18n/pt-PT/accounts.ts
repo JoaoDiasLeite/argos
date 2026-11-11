@@ -38,7 +38,10 @@ const accounts: Record<keyof typeof en, string> = {
   'model.discoveredMeta': 'novo: preços ainda não catalogados',
   'model.discoveredMetaCtx': '{context} · novo: preços ainda não catalogados',
   'model.comingSoon': 'Em breve',
-  'model.price': '{context} · ${input}/${output} por Mtok'
+  'model.price': '{context} · ${input}/${output} por Mtok',
+  'row.keep': 'Manter',
+  'row.confirmRemove': 'Remover esta conta? O início de sessão desta conta neste computador também é removido e não pode ser desfeito.',
+  'actionFailed': 'A ação falhou: {message}'
 }
 
 export default accounts

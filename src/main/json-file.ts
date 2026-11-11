@@ -1,4 +1,6 @@
 import * as fs from 'fs'
+import * as path from 'path'
+import { classifyJsonRead, staleCorruptCopies, type JsonLoad } from './json-load-pure'
 
 /** Read and parse a JSON file, tolerating a UTF-8 BOM (external tools like
  *  PowerShell 5.1 write one; bare JSON.parse throws on it). Throws like
@@ -33,4 +35,37 @@ export function writeJsonFileAtomic(p: string, value: unknown): void {
     }
     throw e
   }
+}
+
+/** Corrupt copies kept per file; older ones are deleted. */
+const KEEP_CORRUPT_COPIES = 3
+
+/**
+ * Read a JSON state file and say what to do about the outcome (see json-load-pure.ts).
+ * A `corrupt` file is copied to `<name>.corrupt-<ms>` beside it first (best effort, never
+ * throws), so the defaults the caller falls back to cannot bury the only copy of what was
+ * in it. An `unreadable` file (transient lock) is left alone; the caller should refuse to
+ * overwrite it this session.
+ */
+export function loadJsonFileGuarded<T>(p: string, accept: (v: unknown) => v is T): JsonLoad<T> {
+  const result = classifyJsonRead<T>(() => readJsonFile<unknown>(p), accept)
+  if (result.kind === 'corrupt') {
+    try {
+      fs.copyFileSync(p, `${p}.corrupt-${Date.now()}`)
+      const dir = path.dirname(p)
+      const base = path.basename(p)
+      for (const stale of staleCorruptCopies(fs.readdirSync(dir), base, KEEP_CORRUPT_COPIES)) {
+        try {
+          fs.unlinkSync(path.join(dir, stale))
+        } catch {
+          // Locked or already gone.
+        }
+      }
+    } catch {
+      // Best effort: the file may have vanished or the folder be read-only.
+    }
+  } else if (result.kind === 'unreadable') {
+    console.warn(`[argos] could not read ${p}; leaving it untouched and not saving over it this session`, result.error)
+  }
+  return result
 }
