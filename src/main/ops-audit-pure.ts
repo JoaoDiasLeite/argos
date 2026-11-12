@@ -20,7 +20,8 @@ import type {
   OpsLoggedPlanStep,
   OpsRunbookRef,
   OpsScope,
-  OpsToolName
+  OpsToolName,
+  OpsUnansweredCause
 } from './ops-types'
 
 export function sha256Hex(data: string | Uint8Array): string {
@@ -170,7 +171,9 @@ export interface OpsCallSummary {
   argv?: string[]
   path?: string
   rawInput: unknown
-  answer?: 'allow' | 'deny' | 'stop'
+  /** 'cancelled': the prompt ended with no operator answer (call.answered cause); the call never ran. */
+  answer?: 'allow' | 'deny' | 'stop' | 'cancelled'
+  cause?: OpsUnansweredCause
   startedAt?: string
   exitCode?: number | null
   timedOut?: boolean
@@ -233,6 +236,13 @@ export interface OpsLinkedRun {
 }
 
 export const DECIDED_MISSING = 'decided event missing'
+
+/** A prompt nobody answered (call.answered 'cancelled'), in the reports' and briefing's words. */
+export function unansweredText(cause: OpsUnansweredCause | undefined): string {
+  if (cause === 'call-cancelled') return 'withdrawn by the CLI before the operator answered'
+  if (cause === 'no-operator') return 'no operator to answer the prompt'
+  return 'run stopped before the operator answered'
+}
 
 /**
  * A call event seen before its `call.decided`. The gate logs before it runs, so this
@@ -325,6 +335,7 @@ export function summarizeRun(lines: OpsAuditLine[], runId: string): OpsRunSummar
         break
       case 'call.answered':
         callFor(e.callId).answer = e.answer
+        if (e.cause !== undefined) callFor(e.callId).cause = e.cause
         break
       case 'call.started':
         callFor(e.callId).startedAt = at

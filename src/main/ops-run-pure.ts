@@ -8,9 +8,9 @@ import * as path from 'path'
 import { sha256Hex } from './ops-audit-pure'
 import type { LoadedRunbook } from './ops-runbook-pure'
 import type { ExecResult, OpsListResult, OpsReadResult, OpsWriteResult } from './ops-exec-pure'
-import { canonicalCommand, classify, parseSimpleCommand } from './ops-gate-pure'
+import { badCharReason, canonicalCommand, classify, matchDenylist, parseSimpleCommand } from './ops-gate-pure'
 import { hostDeniedReason, outOfScopeReason, scopeVerdict } from './ops-scope-pure'
-import type { OpsAuditEvent, OpsGateResult, OpsHostRef, OpsNote, OpsPolicy, OpsScope, OpsToolInput, OpsToolName } from './ops-types'
+import type { OpsAuditEvent, OpsGateResult, OpsHostRef, OpsNote, OpsPolicy, OpsScope, OpsToolInput, OpsToolName, OpsUnansweredCause } from './ops-types'
 import type { TFunction } from '../shared/i18n'
 import { OPS_WHY_MAX } from './ops-tool-defs-pure'
 
@@ -123,6 +123,33 @@ export const OPS_PLAN_MAX_STEPS = 40
 export const PLAN_FIRST_REASON = 'propose a plan first (mcp__ops__propose_plan)'
 export const PLAN_REJECTED_MESSAGE = 'Plan rejected by the operator. Revise it or stop.'
 export const PLAN_APPROVED_TEXT = 'Plan approved. Proceed step by step.'
+
+/** What the model reads when an approval prompt (a call's or a plan's) ended with no operator answer. */
+export const UNANSWERED_MESSAGES: Record<OpsUnansweredCause, string> = {
+  'no-operator': 'Refused: no operator is available to answer the approval prompt. Nothing ran.',
+  'run-stopped': 'Refused: the run was stopped. Nothing ran.',
+  'call-cancelled': 'Cancelled: the call was withdrawn before the operator answered. Nothing ran.'
+}
+
+/**
+ * Why an approval prompt has no operator answer the run can take, or null when it has one
+ * (`call.answered` deny/stop and `plan.rejected` by 'user' are then the operator's own).
+ * `answered`: the operator really answered the prompt (not a prompt resolved by a stop or
+ * a cancel, and not one never shown). An allow that lands after the run stopped or the
+ * call was withdrawn is not taken, so it is not an answer here either; a refusal is, and
+ * stays the operator's. The call's own withdrawal comes first: it is the nearer cause.
+ */
+export function unansweredCause(a: {
+  answered: boolean
+  allow: boolean
+  runStopped: boolean
+  callCancelled: boolean
+}): OpsUnansweredCause | null {
+  if (a.answered && !(a.allow && (a.runStopped || a.callCancelled))) return null
+  if (a.callCancelled) return 'call-cancelled'
+  if (a.runStopped) return 'run-stopped'
+  return 'no-operator'
+}
 
 /**
  * Whether the runbook's calls wait for an approved plan. Not for a runbook that cannot
@@ -584,9 +611,18 @@ export function writeResultText(r: OpsWriteResult, p: string): { text: string; i
  * sudo on these boxes usually wants a password. Recognised so the run handler can ask
  * the operator for it once per host (plan §4, "Session-level sudo"), or, with no way to
  * ask, tell the model plainly to stop rather than to retry.
+ *
+ * Only sudo's own words count: a line starting `sudo:` that says a password is required,
+ * that it has no terminal or askpass to read one on, that none was given or that one was
+ * wrong, or the `[sudo] password for` prompt. A command's own error that mentions a
+ * password (`FATAL: password authentication failed`) is the command's result, not sudo
+ * asking, and must not lead to a password prompt and a re-run.
  */
+const SUDO_OWN_PASSWORD_LINE =
+  /^(sudo: (a password is required|a terminal is required to read the password|no tty present and no askpass program specified|no password was provided|\d+ incorrect password attempts?)|\[sudo\] password for )/im
+
 export function sudoNeedsPassword(argv: string[] | undefined, result: ExecResult): boolean {
-  return !!argv && argv[0] === 'sudo' && result.exitCode === 1 && /password/i.test(result.stderr)
+  return !!argv && argv[0] === 'sudo' && result.exitCode === 1 && SUDO_OWN_PASSWORD_LINE.test(result.stderr)
 }
 
 export const SUDO_PASSWORD_NOTE =
@@ -603,9 +639,11 @@ const SUDO_LONG_BARE_DROP = new Set(['--non-interactive', '--stdin'])
 const SUDO_LONG_VALUED = new Set(['--user', '--group', '--prompt'])
 
 /**
- * argv rewritten to read the password from stdin: `sudo -S -p '' <kept flags> <command>`.
+ * argv rewritten to read the password from stdin: `sudo -S -k -p '' <kept flags> <command>`.
  * `-n` goes (it forbids the prompt this needs), and so do the model's own `-S` and
- * `-p`, which the leading pair replaces. `-u user`, `-g group` and `-H` stay, one flag
+ * `-p`, which the leading pair replaces. `-k` makes sudo ignore a cached timestamp and
+ * prompt, so the password on stdin is read by sudo and not left to the command (a rule
+ * without a password still never prompts: runSudo only sends one after sudo asked). `-u user`, `-g group` and `-H` stay, one flag
  * per word, so `-nu root` becomes `-u root`. The first word that is not a flag the gate
  * accepts starts the command, which is kept verbatim. argv[0] must be `sudo`; anything
  * else comes back unchanged.
@@ -661,7 +699,7 @@ export function withSudoStdin(argv: string[]): string[] {
     kept.push(...flags)
     i += consumedNext ? 2 : 1
   }
-  return ['sudo', '-S', '-p', '', ...kept, ...argv.slice(i)]
+  return ['sudo', '-S', '-k', '-p', '', ...kept, ...argv.slice(i)]
 }
 
 /**
@@ -851,13 +889,41 @@ export interface OperatorAskInput {
   expect?: string
 }
 
-/** An `ask_operator` call, checked like noteFrom. Whether hostId names a runbook host is the caller's check. */
+/** Where a shell line the operator runs splits into commands: `;`, `&&`, `||`, `|`, `&`, `$(` and backticks. */
+const OPERATOR_CMD_SEPARATORS = /;|&&|\|\||\||&|\$\(|`|\)/
+
+/**
+ * The hard denylist over a command the operator is asked to run in their own shell. That
+ * line may be a pipeline the gate's parser refuses, so each part between shell separators
+ * that parses as a simple command is matched on its own; a part that does not parse is
+ * not matched (the operator still reads the whole line before running anything).
+ */
+function operatorCmdDenylisted(cmd: string): string | null {
+  if (cmd.replace(/\s/g, '').includes(':(){')) return 'fork-bomb'
+  for (const part of [cmd, ...cmd.split(OPERATOR_CMD_SEPARATORS)]) {
+    const parsed = parseSimpleCommand(part.trim())
+    const hit = parsed.ok ? matchDenylist(parsed.argv) : null
+    if (hit) return hit
+  }
+  return null
+}
+
+/**
+ * An `ask_operator` call, checked like noteFrom. Whether hostId names a runbook host is the
+ * caller's check. The command goes to a person's clipboard, so it gets the gate's own
+ * character check (nothing invisible, reordering or space-like the prompt could hide) and
+ * hard denylist: what Argos may never run, it does not ask the operator to run either.
+ */
 export function operatorAskFrom(input: Record<string, unknown>): OperatorAskInput | { error: string } {
   if (!input || typeof input !== 'object') return { error: 'ask_operator input is not an object' }
   const { cmd, why, hostId, expect } = input
   if (typeof cmd !== 'string' || cmd.trim() === '' || cmd.length > OPERATOR_CMD_MAX) {
     return { error: `cmd must be 1 to ${OPERATOR_CMD_MAX} characters` }
   }
+  const bad = badCharReason(cmd.trim(), 'cmd')
+  if (bad) return { error: bad }
+  const hit = operatorCmdDenylisted(cmd.trim())
+  if (hit) return { error: `cmd is denylisted: ${hit} — no runbook can allow this, and the operator is not asked to run it` }
   if (typeof why !== 'string' || why.trim() === '' || why.length > OPERATOR_WHY_MAX) {
     return { error: `why must be 1 to ${OPERATOR_WHY_MAX} characters` }
   }

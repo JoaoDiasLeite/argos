@@ -23,7 +23,7 @@ import {
   type OpsSession,
   type OpsSessionOptions
 } from './ops-session'
-import { PLAN_REJECTED_MESSAGE } from './ops-run-pure'
+import { PLAN_REJECTED_MESSAGE, UNANSWERED_MESSAGES } from './ops-run-pure'
 import type { OpsAuditLine, OpsHostRef } from './ops-types'
 
 /**
@@ -586,6 +586,140 @@ describe('plan first', () => {
   })
 })
 
+describe('prompts nobody answered', () => {
+  const RELOAD = { hostId: 'h1', cmd: 'sudo systemctl reload nginx' }
+  const PLAN = { steps: [{ title: 'Estado', hostId: 'h1', commands: ['systemctl status nginx'] }] }
+  const answered = async () => (await lines()).find((l) => l.event.kind === 'call.answered')?.event
+  const rejected = async () => (await lines()).find((l) => l.event.kind === 'plan.rejected')?.event
+
+  it('no approval channel: the call is cancelled with no-operator, never a user deny', async () => {
+    const { fake, call } = await start({ exec: () => ({ stdout: 'x' }) })
+    const res = await call('run', RELOAD)
+    expect(res).toEqual({ text: UNANSWERED_MESSAGES['no-operator'], isError: true })
+    expect(await answered()).toMatchObject({ answer: 'cancelled', cause: 'no-operator' })
+    expect(hostCalls(fake)).toEqual([])
+  })
+
+  it('no approval channel: a plan is rejected by none, not by the user', async () => {
+    const { call } = await start({}, undefined, { plan: false })
+    expect(await call('propose_plan', PLAN)).toEqual({ text: UNANSWERED_MESSAGES['no-operator'], isError: true })
+    const e = await rejected()
+    expect(e).toMatchObject({ by: 'none', cause: 'no-operator' })
+  })
+
+  it('a stop that ends the open prompt is run-stopped; an allow after the stop is not taken', async () => {
+    let abortRun: () => void = () => undefined
+    const { fake, call, abort } = await start({ exec: () => ({ stdout: 'x' }) }, async () => {
+      abortRun()
+      return { allow: false, unanswered: true }
+    })
+    abortRun = () => abort.abort()
+    expect(await call('run', RELOAD)).toEqual({ text: UNANSWERED_MESSAGES['run-stopped'], isError: true })
+    expect(await answered()).toMatchObject({ answer: 'cancelled', cause: 'run-stopped' })
+    expect(hostCalls(fake)).toEqual([])
+  })
+
+  it('an allow that lands after the stop is recorded as cancelled, not as the operator refusing', async () => {
+    const abort = { ref: null as AbortController | null }
+    const { fake, call, abort: a } = await start({ exec: () => ({ stdout: 'x' }) }, async () => {
+      abort.ref?.abort()
+      return { allow: true }
+    })
+    abort.ref = a
+    expect((await call('run', RELOAD)).isError).toBe(true)
+    expect(await answered()).toMatchObject({ answer: 'cancelled', cause: 'run-stopped' })
+    expect(hostCalls(fake)).toEqual([])
+  })
+
+  it('a real refusal and a stop stay the operator answers', async () => {
+    const { call } = await start({}, async () => ({ allow: false }))
+    expect(await call('run', RELOAD)).toEqual({ text: 'Denied by the operator.', isError: true })
+    expect(await answered()).toMatchObject({ answer: 'deny' })
+    expect((await answered()) as { cause?: unknown }).not.toHaveProperty('cause')
+  })
+
+  it('a plan the operator rejects is still by user', async () => {
+    const { call } = await start({}, async () => ({ allow: false }), { plan: false })
+    expect(await call('propose_plan', PLAN)).toEqual({ text: PLAN_REJECTED_MESSAGE, isError: true })
+    expect(await rejected()).toMatchObject({ by: 'user' })
+    expect((await rejected()) as { cause?: unknown }).not.toHaveProperty('cause')
+  })
+})
+
+describe('a call the CLI withdraws', () => {
+  const RELOAD = { hostId: 'h1', cmd: 'sudo systemctl reload nginx' }
+  const STATUS = { hostId: 'h1', cmd: 'systemctl status nginx' }
+
+  /** An ask that waits until its signal aborts (the withdrawn call), then answers like index.ts does. */
+  const waitingAsk = (seen: (AbortSignal | undefined)[]): OpsAskFn => (_req, signal) => {
+    seen.push(signal)
+    return new Promise((resolve) => {
+      if (!signal) return
+      signal.addEventListener('abort', () => resolve({ allow: false, unanswered: true }), { once: true })
+    })
+  }
+
+  it('ends the pending approval as call-cancelled, runs nothing, and the ask got the signal', async () => {
+    const seen: (AbortSignal | undefined)[] = []
+    const { fake, session } = await start({ exec: () => ({ stdout: 'reloaded' }) }, waitingAsk(seen))
+    const ctl = new AbortController()
+    const pending = callOpsTool(session, 'run', RELOAD, ctl.signal)
+    await new Promise((r) => setTimeout(r, 10))
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.aborted).toBe(false)
+    ctl.abort()
+    expect(await pending).toEqual({ text: UNANSWERED_MESSAGES['call-cancelled'], isError: true })
+    expect(seen[0]?.aborted).toBe(true)
+    expect(hostCalls(fake)).toEqual([])
+    const l = await lines()
+    expect(l.map((x) => x.event.kind)).toEqual(['run.start', 'call.decided', 'call.asked', 'call.answered'])
+    expect(l[3].event).toMatchObject({ kind: 'call.answered', answer: 'cancelled', cause: 'call-cancelled' })
+    // The run goes on: the next call is decided and runs.
+    expect((await callOpsTool(session, 'run', STATUS)).isError).toBe(false)
+  })
+
+  it('an allow that lands after the withdrawal does not run the command', async () => {
+    const ctl = new AbortController()
+    const { fake, session } = await start({ exec: () => ({ stdout: 'reloaded' }) }, async () => {
+      ctl.abort()
+      return { allow: true }
+    })
+    expect((await callOpsTool(session, 'run', RELOAD, ctl.signal)).isError).toBe(true)
+    expect(hostCalls(fake)).toEqual([])
+    expect((await lines()).find((x) => x.event.kind === 'call.answered')?.event).toMatchObject({ answer: 'cancelled', cause: 'call-cancelled' })
+  })
+
+  it('an allowed call withdrawn before it reaches the host is logged as not run', async () => {
+    const { fake, session } = await start({ exec: () => ({ stdout: 'active' }) })
+    const ctl = new AbortController()
+    const verdict = await session.canUseTool('mcp__ops__run', STATUS, { signal: ctl.signal })
+    expect(verdict.behavior).toBe('allow')
+    ctl.abort()
+    const r = await session.tools.run(STATUS, { signal: ctl.signal })
+    expect(r.isError).toBe(true)
+    expect(hostCalls(fake)).toEqual([])
+    const fin = (await lines()).find((x) => x.event.kind === 'call.finished')?.event
+    expect(fin).toMatchObject({ exitCode: null, stderrHead: expect.stringContaining('withdrawn') })
+  })
+
+  it('a command already running is aborted with the call, the way a stop aborts it', async () => {
+    const ctl = new AbortController()
+    let execSignal: AbortSignal | undefined
+    const fake = createFakeBackend({})
+    const exec = fake.exec.bind(fake)
+    fake.exec = async (hostId, argv, opts) => {
+      execSignal = opts.signal
+      ctl.abort()
+      return exec(hostId, argv, opts)
+    }
+    const r = await openOpsSession({ ...baseOptions(fake), runId: 'run-1' })
+    if (!r.ok) throw new Error(r.error)
+    r.ctx.planApproved = true
+    await callOpsTool(r, 'run', STATUS, ctl.signal)
+    expect(execSignal?.aborted).toBe(true)
+  })
+})
+
 describe('sudo password per run', () => {
   const RELOAD = { hostId: 'h1', cmd: 'sudo systemctl reload nginx' }
   // sudo -S reads the password: the fake succeeds only for the stdin form.
@@ -607,7 +741,7 @@ describe('sudo password per run', () => {
     expect(asked).toEqual([{ hostId: 'h1', hostName: 'web-01', prompt: expect.stringContaining('sudo on web-01') }])
     expect(hostCalls(fake).map((c) => c.args)).toEqual([
       { argv: ['sudo', 'systemctl', 'reload', 'nginx'], stdin: undefined, timeoutMs: 60_000 },
-      { argv: ['sudo', '-S', '-p', '', 'systemctl', 'reload', 'nginx'], stdin: 'hunter2\n', timeoutMs: 60_000 }
+      { argv: ['sudo', '-S', '-k', '-p', '', 'systemctl', 'reload', 'nginx'], stdin: 'hunter2\n', timeoutMs: 60_000 }
     ])
 
     const l = await lines()
@@ -633,17 +767,54 @@ describe('sudo password per run', () => {
     const raw = fs.readdirSync(ledgerDir).map((f) => fs.readFileSync(path.join(ledgerDir, f), 'utf-8')).join('')
     expect(raw).not.toContain('hunter2')
 
-    // A later sudo on the same host uses the kept password at once: no prompt, no -n.
+    // A later sudo on the same host tries without the password first, then uses the kept
+    // one once sudo asks: no prompt to the operator.
     expect((await call('run', RELOAD)).isError).toBe(false)
     expect(asked).toHaveLength(1)
-    expect(hostCalls(fake).at(-1)?.args).toEqual({
-      argv: ['sudo', '-S', '-p', '', 'systemctl', 'reload', 'nginx'],
-      stdin: 'hunter2\n',
-      timeoutMs: 60_000
-    })
+    expect(hostCalls(fake).slice(-2).map((c) => c.args)).toEqual([
+      { argv: ['sudo', 'systemctl', 'reload', 'nginx'], stdin: undefined, timeoutMs: 60_000 },
+      { argv: ['sudo', '-S', '-k', '-p', '', 'systemctl', 'reload', 'nginx'], stdin: 'hunter2\n', timeoutMs: 60_000 }
+    ])
 
     await finishOpsRun(session.ctx, { ok: true, costUsd: 0 })
     expect(session.ctx.sudoPasswords.size).toBe(0)
+  })
+
+  it('never sends the kept password to a sudo that does not ask for it (NOPASSWD or a cached timestamp)', async () => {
+    let needsPassword = true
+    const { fake, call } = await start(
+      { exec: (argv) => (argv[1] === '-S' || !needsPassword ? { stdout: 'reloaded' } : { exitCode: 1, stderr: 'sudo: a password is required' }) },
+      async () => ({ allow: true }),
+      { askSecret: async () => 'hunter2' }
+    )
+    expect((await call('run', RELOAD)).isError).toBe(false)
+    needsPassword = false
+    const before = hostCalls(fake).length
+    const res = await call('run', RELOAD)
+    expect(res.isError).toBe(false)
+    expect(hostCalls(fake).slice(before).map((c) => c.args)).toEqual([
+      { argv: ['sudo', 'systemctl', 'reload', 'nginx'], stdin: undefined, timeoutMs: 60_000 }
+    ])
+  })
+
+  it('a command whose own error mentions a password is not re-run with a sudo password', async () => {
+    const asked: unknown[] = []
+    const { fake, call } = await start(
+      { exec: () => ({ exitCode: 1, stderr: 'psql: error: FATAL:  password authentication failed for user "smile"' }) },
+      async () => ({ allow: true }),
+      {
+        askSecret: async (req) => {
+          asked.push(req)
+          return 'hunter2'
+        }
+      }
+    )
+    const res = await call('run', RELOAD)
+    expect(res.isError).toBe(true)
+    expect(res.text).toContain('password authentication failed')
+    expect(asked).toEqual([])
+    expect(hostCalls(fake)).toHaveLength(1)
+    expect(await kinds()).not.toContain('sudo.password-supplied')
   })
 
   it('a declined prompt returns the failure with a note and does not retry', async () => {

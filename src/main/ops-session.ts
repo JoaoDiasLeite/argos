@@ -40,6 +40,8 @@ import {
   skippedCommandLines,
   STEP_SKIPPED_REASON,
   toApprovalContext,
+  UNANSWERED_MESSAGES,
+  unansweredCause,
   type ApprovalOpsContext,
   type CallBook
 } from './ops-run-pure'
@@ -59,7 +61,8 @@ export type CanUseToolResult =
   | { behavior: 'allow'; updatedInput: Record<string, unknown> }
   | { behavior: 'deny'; message: string }
 
-export type CanUseTool = (toolName: string, input: Record<string, unknown>) => Promise<CanUseToolResult>
+/** `signal`: the CLI withdrew this one call (Esc, its tool timeout); the prompt it waits on ends as cancelled. */
+export type CanUseTool = (toolName: string, input: Record<string, unknown>, call?: { signal?: AbortSignal }) => Promise<CanUseToolResult>
 
 /** How long each host gets to answer before the run refuses to start (plan §4). */
 export const OPS_REACH_TIMEOUT_MS = 15_000
@@ -69,11 +72,19 @@ export type ReadScriptFn = (
   name: string
 ) => Promise<{ ok: true; content: Buffer; sha256: string } | { ok: false; error: string }>
 
-export type OpsAskFn = (req: {
-  tool: string
-  input: Record<string, unknown>
-  ops: ApprovalOpsContext
-}) => Promise<{ allow: boolean; stop?: boolean; skipSteps?: number[] }>
+/**
+ * The approval prompt. `signal` aborts when the call it is for is withdrawn; the prompt
+ * then goes away as on a stop. `unanswered`: the prompt ended without the operator's
+ * answer (a stop or a withdrawal resolved it), so its `allow: false` is nobody's refusal.
+ */
+export type OpsAskFn = (
+  req: {
+    tool: string
+    input: Record<string, unknown>
+    ops: ApprovalOpsContext
+  },
+  signal?: AbortSignal
+) => Promise<{ allow: boolean; stop?: boolean; skipSteps?: number[]; unanswered?: boolean }>
 
 /** Ask the operator for a secret (the sudo password of a host). null = declined or stopped. */
 export type OpsAskSecretFn = (req: { hostId: string; hostName: string; prompt: string }) => Promise<string | null>
@@ -230,6 +241,26 @@ export const DEFAULT_FILE_TITLES: Partial<Record<OpsToolName, string>> = {
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
+/** `p`, or `onAbort` as soon as `signal` aborts (p keeps running; its result is dropped). */
+function untilAborted<T, U>(p: Promise<T>, signal: AbortSignal | undefined, onAbort: U): Promise<T | U> {
+  if (!signal) return p
+  if (signal.aborted) return Promise.resolve(onAbort)
+  return new Promise<T | U>((resolve, reject) => {
+    const done = (): void => resolve(onAbort)
+    signal.addEventListener('abort', done, { once: true })
+    p.then(
+      (v) => {
+        signal.removeEventListener('abort', done)
+        resolve(v)
+      },
+      (e) => {
+        signal.removeEventListener('abort', done)
+        reject(e)
+      }
+    )
+  })
+}
+
 const tEn = makeT('en')
 const tOf = (opts: OpsSessionOptions): TFunction => opts.t ?? tEn
 
@@ -355,16 +386,17 @@ export async function openOpsSession(opts: OpsSessionOptions): Promise<OpenOpsSe
 export async function callOpsTool(
   session: OpsSession,
   tool: string,
-  args: Record<string, unknown> | undefined
+  args: Record<string, unknown> | undefined,
+  signal?: AbortSignal
 ): Promise<{ text: string; isError: boolean }> {
   if (!(OPS_BRIDGE_TOOLS as readonly string[]).includes(tool)) return { text: `Refused: unknown ops tool ${tool}.`, isError: true }
   const name = tool as OpsBridgeTool
   const input = args && typeof args === 'object' && !Array.isArray(args) ? args : {}
   try {
-    const verdict = await session.canUseTool(`mcp__ops__${name}`, input)
+    const verdict = await session.canUseTool(`mcp__ops__${name}`, input, { signal })
     if (verdict.behavior !== 'allow') return { text: verdict.message, isError: true }
     // The plan tool's allow carries the plan minus the skipped steps; the others pass the input through.
-    const r = await session.tools[name](verdict.updatedInput)
+    const r = await session.tools[name](verdict.updatedInput, { signal })
     return { text: r.content.map((c) => c.text).join('\n'), isError: r.isError === true }
   } catch (e) {
     return { text: `The ops tool failed: ${message(e)}`, isError: true }
@@ -428,7 +460,7 @@ export async function runOperatorScript(
  */
 export function bridgeSessionFor(session: OpsSession): {
   hello(): { runbook: string; hosts: { id: string; name: string; groups: string[] }[]; tools: string[]; planRequired: boolean }
-  call(tool: string, args: Record<string, unknown> | undefined): Promise<{ text: string; isError: boolean }>
+  call(tool: string, args: Record<string, unknown> | undefined, signal?: AbortSignal): Promise<{ text: string; isError: boolean }>
 } {
   return {
     hello: () => ({
@@ -437,7 +469,7 @@ export function bridgeSessionFor(session: OpsSession): {
       tools: [...OPS_BRIDGE_TOOLS],
       planRequired: session.ctx.planRequired
     }),
-    call: (tool, args) => callOpsTool(session, tool, args)
+    call: (tool, args, signal) => callOpsTool(session, tool, args, signal)
   }
 }
 
@@ -450,9 +482,10 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions, operator
   const { runId } = ctx
   const deny = (msg: string) => ({ behavior: 'deny' as const, message: msg })
 
-  return async (toolName, input) => {
+  return async (toolName, input, call) => {
+    const signal = call?.signal
     try {
-      if (toolName === OPS_PLAN_TOOL) return await decidePlan(ctx, opts, toolName, input)
+      if (toolName === OPS_PLAN_TOOL) return await decidePlan(ctx, opts, toolName, input, signal)
       // None of these reaches a host: no gate, no plan, no scope. Their handlers check the
       // input (past_interventions holds itself to the run's scope) and write their own
       // ledger lines.
@@ -550,9 +583,16 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions, operator
       // Open scope: the first call on a host asks the operator once for the run. Not for a
       // call the gate refuses anyway, and not before the plan is approved (above).
       if (entry && ctx.scope?.kind === 'open' && gate.decision !== 'deny') {
-        const verdict = await hostVerdict(ctx, opts, entry.host, parsed.hostId)
+        // The host prompt is the run's, shared by every call on that host: a withdrawn
+        // call stops waiting for it, and the prompt stays for the run to answer.
+        const verdict = await untilAborted(hostVerdict(ctx, opts, entry.host, parsed.hostId), signal, 'cancelled' as const)
         if (verdict !== 'allow') {
-          const reason = verdict === 'none' ? 'no operator is available to allow this host' : hostDeniedReason(entry.host.name)
+          const reason =
+            verdict === 'none'
+              ? 'no operator is available to allow this host'
+              : verdict === 'cancelled'
+                ? 'the call was withdrawn while the host prompt was open'
+                : hostDeniedReason(entry.host.name)
           await ctx.log({
             kind: 'call.decided',
             runId,
@@ -571,6 +611,7 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions, operator
             ctx.abort.abort()
             return deny('Denied by the operator, who stopped the run.')
           }
+          if (verdict === 'cancelled') return deny(UNANSWERED_MESSAGES['call-cancelled'])
           return deny(`Refused: ${reason}.`)
         }
       }
@@ -613,30 +654,47 @@ function makeOpsCanUseTool(ctx: OpsRunContext, opts: OpsSessionOptions, operator
 
       // ask
       await ctx.log({ kind: 'call.asked', runId, callId })
-      let answer: { allow: boolean; stop?: boolean } = { allow: false }
-      if (opts.ask && !ctx.abort.signal.aborted) {
+      let answer: { allow: boolean; stop?: boolean; unanswered?: boolean } = { allow: false }
+      let shown = false
+      if (opts.ask && !ctx.abort.signal.aborted && !signal?.aborted) {
+        shown = true
         const address = opts.hostAddress ? opts.hostAddress(parsed.hostId) : entry.host.host
-        answer = await opts.ask({
-          tool: toolName,
-          input,
-          ops: toApprovalContext(
-            gate,
-            entry.host,
-            address,
-            tool,
-            ctx.runbook.ref.name,
-            ctx.executor.queuedBehind(parsed.hostId),
-            callWhy(input)
-          )
-        })
+        answer = await opts.ask(
+          {
+            tool: toolName,
+            input,
+            ops: toApprovalContext(
+              gate,
+              entry.host,
+              address,
+              tool,
+              ctx.runbook.ref.name,
+              ctx.executor.queuedBehind(parsed.hostId),
+              callWhy(input)
+            )
+          },
+          signal
+        )
       }
       // The modal may not edit an ops call: the gate decided on this exact input, so
       // whatever runs is this input, and updatedInput is never taken.
-      if (answer.allow && !ctx.abort.signal.aborted) {
+      if (answer.allow && !ctx.abort.signal.aborted && !signal?.aborted) {
         await ctx.log({ kind: 'call.answered', runId, callId, answer: 'allow' })
         return { behavior: 'allow' as const, updatedInput: input }
       }
       ctx.calls.take(key)
+      // Only a real answer is the operator's: a prompt never shown, or ended by a stop or
+      // a withdrawal, is recorded as cancelled with why, not as a refusal.
+      const cause = unansweredCause({
+        answered: shown && !answer.unanswered,
+        allow: answer.allow,
+        runStopped: ctx.abort.signal.aborted,
+        callCancelled: signal?.aborted === true
+      })
+      if (cause) {
+        await ctx.log({ kind: 'call.answered', runId, callId, answer: 'cancelled', cause })
+        return deny(UNANSWERED_MESSAGES[cause])
+      }
       if (answer.stop) {
         await ctx.log({ kind: 'call.answered', runId, callId, answer: 'stop' })
         ctx.abort.abort()
@@ -677,8 +735,8 @@ async function hostVerdict(
         input: { hostId },
         ops: hostApprovalContext(host, address, ctx.runbook.ref.name)
       })
-      // An answer that lands after a stop is not an approval.
-      if (ctx.abort.signal.aborted && !answer.stop) return 'none' as const
+      // An answer that lands after a stop is not an approval, and a prompt a stop ended is no answer.
+      if ((ctx.abort.signal.aborted || answer.unanswered) && !answer.stop) return 'none' as const
       const allowed = answer.allow
       ;(allowed ? ctx.approvedHosts : ctx.deniedHosts).add(hostId)
       await ctx.log({ kind: allowed ? 'host.approved' : 'host.denied', runId: ctx.runId, hostId, host: host.name, by: 'user' })
@@ -699,7 +757,8 @@ async function decidePlan(
   ctx: OpsRunContext,
   opts: OpsSessionOptions,
   toolName: string,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  signal?: AbortSignal
 ): Promise<CanUseToolResult> {
   const deny = (msg: string) => ({ behavior: 'deny' as const, message: msg })
   const steps = planStepsFrom(input)
@@ -714,10 +773,13 @@ async function decidePlan(
     ctx.scope ? { scope: ctx.scope, approvedHosts: ctx.approvedHosts, deniedHosts: ctx.deniedHosts } : undefined
   )
 
-  let answer: { allow: boolean; stop?: boolean; skipSteps?: number[] } = { allow: false }
-  if (opts.ask && !ctx.abort.signal.aborted) {
-    answer = await opts.ask({ tool: toolName, input, ops: planApprovalContext(plan, ctx.runbook.ref.name) })
+  let answer: { allow: boolean; stop?: boolean; skipSteps?: number[]; unanswered?: boolean } = { allow: false }
+  let shown = false
+  if (opts.ask && !ctx.abort.signal.aborted && !signal?.aborted) {
+    shown = true
+    answer = await opts.ask({ tool: toolName, input, ops: planApprovalContext(plan, ctx.runbook.ref.name) }, signal)
   }
+  const runStopped = (): boolean => ctx.abort.signal.aborted || signal?.aborted === true
   // The steps as the operator saw them go into the ledger with the decision, so the report
   // can show the plan (a terminal run has none at run.start).
   const planText = planTextFor(plan.steps)
@@ -727,7 +789,7 @@ async function decidePlan(
     verdict: s.verdict,
     ...(s.hostName !== undefined ? { hostName: s.hostName } : {})
   }))
-  if (answer.allow && !ctx.abort.signal.aborted) {
+  if (answer.allow && !runStopped()) {
     const skips = planSkips(plan, answer.skipSteps)
     const ok = await ctx.log({
       kind: 'plan.approved',
@@ -749,7 +811,15 @@ async function decidePlan(
   // A rejected revision does not leave the earlier plan standing: the operator has just
   // said no to where the run was going.
   ctx.planApproved = false
-  await ctx.log({ kind: 'plan.rejected', runId: ctx.runId, by: 'user', planText, steps: logged })
+  // by 'user' only for the operator's own answer; a plan nobody answered says why.
+  const cause = unansweredCause({
+    answered: shown && !answer.unanswered,
+    allow: answer.allow,
+    runStopped: ctx.abort.signal.aborted,
+    callCancelled: signal?.aborted === true
+  })
+  await ctx.log({ kind: 'plan.rejected', runId: ctx.runId, ...(cause ? { by: 'none' as const, cause } : { by: 'user' as const }), planText, steps: logged })
+  if (cause) return deny(UNANSWERED_MESSAGES[cause])
   if (answer.stop) {
     ctx.abort.abort()
     return deny('Denied by the operator, who stopped the run.')

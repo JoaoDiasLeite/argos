@@ -49,6 +49,26 @@ describe('parseRequest', () => {
     ]
     for (const line of bad) expect(parseRequest(line).ok, line).toBe(false)
   })
+
+  it('accepts a cancel naming a call id', () => {
+    expect(parseRequest(JSON.stringify({ id: 'r7', token: TOKEN, kind: 'cancel' }))).toEqual({
+      ok: true,
+      msg: { id: 'r7', token: TOKEN, kind: 'cancel' }
+    })
+  })
+
+  it('marks a well-formed frame of an unknown kind to be ignored, and only that', () => {
+    expect(parseRequest(JSON.stringify({ id: '1', token: TOKEN, kind: 'exec' }))).toEqual({ ok: false, error: 'unknown kind', ignore: true })
+    expect(parseRequest(JSON.stringify({ id: '1', token: TOKEN, kind: 'progress', extra: 1 }))).toMatchObject({ ignore: true })
+    for (const line of [
+      JSON.stringify({ id: '1', token: TOKEN }),
+      JSON.stringify({ id: '1', token: TOKEN, kind: 7 }),
+      JSON.stringify({ id: '1', token: 'nope', kind: 'exec' }),
+      JSON.stringify({ token: TOKEN, kind: 'exec' })
+    ]) {
+      expect(parseRequest(line), line).not.toHaveProperty('ignore')
+    }
+  })
 })
 
 describe('parseReply', () => {

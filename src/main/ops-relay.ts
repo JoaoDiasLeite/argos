@@ -85,10 +85,16 @@ function divertConsole(log: (line: string) => void): void {
   console.debug = toErr
 }
 
-/** The bridge connection: one outstanding request per id, replies matched back. */
+/**
+ * The bridge connection: one outstanding request per id, replies matched back. A request
+ * whose `signal` aborts (the CLI cancelled the MCP call) sends a `cancel` frame for its id
+ * and settles at once; a reply that still comes for it is dropped.
+ */
 interface BridgeClient {
-  request(kind: 'hello' | 'call', tool?: string, args?: Record<string, unknown>): Promise<OpsBridgeReply>
+  request(kind: 'hello' | 'call', tool?: string, args?: Record<string, unknown>, signal?: AbortSignal): Promise<OpsBridgeReply>
 }
+
+export const RELAY_CANCELLED_ERROR = 'the call was cancelled by the client'
 
 function connectBridge(endpoint: string, token: string, onClose: () => void): Promise<BridgeClient> {
   return new Promise((resolve, reject) => {
@@ -100,11 +106,25 @@ function connectBridge(endpoint: string, token: string, onClose: () => void): Pr
     socket.on('connect', () => {
       connected = true
       resolve({
-        request(kind, tool, args) {
+        request(kind, tool, args, signal) {
           seq += 1
           const id = `r${seq}`
           return new Promise<OpsBridgeReply>((res) => {
-            pending.set(id, res)
+            if (signal?.aborted) {
+              res({ id, ok: false, error: RELAY_CANCELLED_ERROR })
+              return
+            }
+            const onAbort = (): void => {
+              if (!pending.has(id)) return
+              pending.delete(id)
+              if (!socket.destroyed) socket.write(encodeFrame({ id, token, kind: 'cancel' }))
+              res({ id, ok: false, error: RELAY_CANCELLED_ERROR })
+            }
+            pending.set(id, (r) => {
+              signal?.removeEventListener('abort', onAbort)
+              res(r)
+            })
+            signal?.addEventListener('abort', onAbort, { once: true })
             socket.write(encodeFrame({ id, token, kind, ...(tool ? { tool } : {}), ...(args ? { args } : {}) }))
           })
         }
@@ -200,10 +220,16 @@ export async function runOpsRelay(override: Partial<OpsRelayIo> = {}): Promise<v
     const register = server.registerTool.bind(server) as unknown as (
       name: string,
       config: { description: string; inputSchema: Record<string, unknown> },
-      cb: (args: Record<string, unknown>) => Promise<{ content: { type: 'text'; text: string }[]; isError: boolean }>
+      cb: (
+        args: Record<string, unknown>,
+        extra: { signal?: AbortSignal }
+      ) => Promise<{ content: { type: 'text'; text: string }[]; isError: boolean }>
     ) => void
-    register(def.name, { description: def.description, inputSchema: def.shape }, async (args) => {
-      const r = await bridge.request('call', def.name, args)
+    // extra.signal aborts when the CLI cancels the request (notifications/cancelled, sent
+    // on Esc or its tool timeout) or the transport closes: the bridge is told, so a call
+    // nobody waits for does not stay at the operator's prompt.
+    register(def.name, { description: def.description, inputSchema: def.shape }, async (args, extra) => {
+      const r = await bridge.request('call', def.name, args, extra?.signal)
       return r.ok
         ? { content: [{ type: 'text', text: r.result.text }], isError: r.result.isError }
         : { content: [{ type: 'text', text: `Argos could not run the call: ${r.error}` }], isError: true }

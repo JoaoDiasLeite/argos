@@ -34,8 +34,12 @@ import {
 /** What a token resolves to: the terminal's ops session, seen through the two things the relay may ask. */
 export interface OpsBridgeSession {
   hello(): OpsBridgeHello
-  call(tool: string, args: Record<string, unknown> | undefined): Promise<{ text: string; isError: boolean }>
+  /** `signal` aborts when the relay withdraws the call (a `cancel` frame) or the connection closes. */
+  call(tool: string, args: Record<string, unknown> | undefined, signal?: AbortSignal): Promise<{ text: string; isError: boolean }>
 }
+
+/** What a call withdrawn while it still waited its turn on the connection answers (the relay has stopped listening). */
+export const CALL_CANCELLED_TEXT = 'Cancelled: the call was withdrawn before it started. Nothing ran.'
 
 const sessions = new Map<string, OpsBridgeSession>()
 let server: net.Server | null = null
@@ -131,11 +135,18 @@ type SocketWithToken = net.Socket & { opsToken?: string }
 
 function serveConnection(socket: SocketWithToken): void {
   sockets.add(socket)
-  socket.on('close', () => sockets.delete(socket))
+  // Every call still open on this connection, by request id: a `cancel` frame aborts one,
+  // and a closed connection aborts them all (nobody is left to read their answers).
+  const open = new Map<string, AbortController>()
+  socket.on('close', () => {
+    sockets.delete(socket)
+    for (const c of open.values()) c.abort()
+    open.clear()
+  })
   socket.on('error', () => socket.destroy())
   const splitter = createLineSplitter()
   // One call at a time per connection: the CLI awaits each anyway, and the per-host queue
-  // and the ledger read best in the order the model asked.
+  // and the ledger read best in the order the model asked. A cancel skips the queue.
   let chain: Promise<void> = Promise.resolve()
 
   socket.on('data', (chunk: Buffer) => {
@@ -144,6 +155,7 @@ function serveConnection(socket: SocketWithToken): void {
     for (const line of lines) {
       const r = parseRequest(line)
       if (!r.ok) {
+        if (r.ignore) continue
         socket.destroy()
         return
       }
@@ -161,12 +173,27 @@ function serveConnection(socket: SocketWithToken): void {
         return
       }
       socket.opsToken = msg.token
-      chain = chain.then(() => answer(socket, session, msg))
+      if (msg.kind === 'cancel') {
+        // Not queued: the call it names may be the one holding the queue. Unknown or
+        // already answered ids are nothing to cancel.
+        open.get(msg.id)?.abort()
+        continue
+      }
+      let signal: AbortSignal | undefined
+      if (msg.kind === 'call') {
+        const ctl = new AbortController()
+        // A reused id replaces nothing that is still open: the earlier call keeps its controller.
+        if (!open.has(msg.id)) open.set(msg.id, ctl)
+        signal = ctl.signal
+      }
+      chain = chain.then(() => answer(socket, session, msg, signal)).finally(() => {
+        if (signal && open.get(msg.id)?.signal === signal) open.delete(msg.id)
+      })
     }
   })
 }
 
-async function answer(socket: net.Socket, session: OpsBridgeSession, msg: OpsBridgeRequest): Promise<void> {
+async function answer(socket: net.Socket, session: OpsBridgeSession, msg: OpsBridgeRequest, signal?: AbortSignal): Promise<void> {
   if (socket.destroyed) return
   // Revoked while queued behind an earlier call.
   if (!sessions.has(msg.token)) {
@@ -177,8 +204,11 @@ async function answer(socket: net.Socket, session: OpsBridgeSession, msg: OpsBri
   try {
     if (msg.kind === 'hello') {
       reply = { id: msg.id, ok: true, result: { text: JSON.stringify(session.hello()), isError: false } }
+    } else if (signal?.aborted) {
+      // Withdrawn while it waited behind an earlier call: never decided, so nothing to log.
+      reply = { id: msg.id, ok: true, result: { text: CALL_CANCELLED_TEXT, isError: true } }
     } else {
-      const r = await session.call(msg.tool ?? '', msg.args)
+      const r = await session.call(msg.tool ?? '', msg.args, signal)
       reply = { id: msg.id, ok: true, result: { text: r.text, isError: r.isError } }
     }
   } catch (e) {

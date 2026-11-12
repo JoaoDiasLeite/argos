@@ -5,7 +5,7 @@ Intervenção num servidor com tudo o que o despiste lê e com as alterações q
 ## Âmbito
 
 - Serve qualquer servidor guardado no Argos, e entras como o teu utilizador SSH.
-- As leituras são as do despiste: o mesmo catálogo de comandos e de scripts, os mesmos segredos fora de alcance (`.env`, `wmcp.env`, `database.yml`, `secrets*.yml`, `credentials*`, `master.key`, chaves privadas, `.pgpass`, `/proc/<pid>/environ`).
+- As leituras são as do despiste: o mesmo catálogo de comandos e de scripts, os mesmos segredos fora de alcance (`.env`, `wmcp.env`, `database.yml`, `application*.yml`, `secrets*.yml` e a pasta `secrets/`, `credentials*`, `master.key`, chaves privadas, `.pgpass`, `/proc/<pid>/environ`).
 - As alterações são só os comandos do catálogo do Jarvis, sempre pelo caminho completo `/usr/local/sbin/jarvis run script <comando>`, exatamente como o catálogo os escreve (com `sudo` só nos que o catálogo põe com `sudo`).
 - Ficam de fora: `systemctl`, `monit` e `nginx -s` para reiniciar ou parar (usa `app/restart`, `app/reload`, `app/stop`, `app/start` e `app/monitor_service`), `kill`, `rails runner`, `rails console`, `rake`, editar ficheiros, instalar pacotes fora do Jarvis e `curl` para fora do servidor.
 - Os comandos interativos do Jarvis nunca correm por aqui, porque esperam por um teclado: `accounts/migrate`, `system/install_wmcp_server`, `system/renew_postgresql_certificates` e `update_app/production`. Passa-os ao operador com `ask_operator`.

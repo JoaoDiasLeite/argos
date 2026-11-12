@@ -139,7 +139,7 @@
       "hosts": [
         "todos"
       ],
-      "cmd": "^systemctl show [A-Za-z0-9_][A-Za-z0-9_.@:-]*( [A-Za-z0-9_][A-Za-z0-9_.@:-]*)*( --no-pager)?( (-p |--property=)(MainPID|ExecMainPID|ExecMainStatus|ExecMainCode|ExecMainStartTimestamp|ActiveState|SubState|LoadState|UnitFileState|Result|NRestarts|ActiveEnterTimestamp|InactiveEnterTimestamp|StateChangeTimestamp|MemoryCurrent|TasksCurrent|FragmentPath|Restart|RestartUSec|TimeoutStartUSec|TimeoutStopUSec|KillMode|User|Group|WorkingDirectory)(,[A-Za-z]+)*)+$",
+      "cmd": "^systemctl show [A-Za-z0-9_][A-Za-z0-9_.@:-]*( [A-Za-z0-9_][A-Za-z0-9_.@:-]*)*( --no-pager)?(?= (-p |--property=))(( (-p |--property=)|,)(MainPID|ExecMainPID|ExecMainStatus|ExecMainCode|ExecMainStartTimestamp|ActiveState|SubState|LoadState|UnitFileState|Result|NRestarts|ActiveEnterTimestamp|InactiveEnterTimestamp|StateChangeTimestamp|MemoryCurrent|TasksCurrent|FragmentPath|Restart|RestartUSec|TimeoutStartUSec|TimeoutStopUSec|KillMode|User|Group|WorkingDirectory))+$",
       "class": "read",
       "title": "Consulta das propriedades de um serviço"
     },
@@ -786,6 +786,8 @@
       "(^|/)[^/]*\\.env(\\.[^/]*)?$",
       "(^|/)database\\.yml",
       "(^|/)secrets[^/]*\\.yml",
+      "(^|/)secrets(/|$)",
+      "(^|/)application[^/]*\\.yml",
       "(^|/)credentials[^/]*$",
       "(^|/)master\\.key",
       "\\.(key|pem|p12|pfx|jks|keystore)$",

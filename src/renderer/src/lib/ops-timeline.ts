@@ -34,7 +34,8 @@ export interface OpsRow {
   why?: string
   argv?: string[]
   path?: string
-  answer?: 'allow' | 'deny' | 'stop'
+  /** 'cancelled': the prompt ended with no operator answer (a stop, a withdrawn call, nobody to ask). */
+  answer?: 'allow' | 'deny' | 'stop' | 'cancelled'
   status: OpsRowStatus
   exitCode?: number | null
   durationMs?: number
@@ -336,8 +337,8 @@ export function foldOpsEvents(events: OpsLiveEvent[]): OpsRun[] {
         if (!callId) break
         const row = rowFor(run, callId)
         const answer = e.answer
-        if (answer === 'allow' || answer === 'deny' || answer === 'stop') row.answer = answer
-        row.status = answer === 'allow' ? 'queued' : answer === 'stop' ? 'stopped' : 'denied'
+        if (answer === 'allow' || answer === 'deny' || answer === 'stop' || answer === 'cancelled') row.answer = answer
+        row.status = answer === 'allow' ? 'queued' : answer === 'stop' || answer === 'cancelled' ? 'stopped' : 'denied'
         break
       }
       case 'call.started': {
@@ -564,7 +565,7 @@ export function rowLabel(row: OpsRow, t: TFunction): string {
     case 'denied':
       return deniedLabel(row, t)
     case 'stopped':
-      return t('ops.timeline.row.stopped')
+      return row.answer === 'cancelled' ? t('ops.timeline.row.cancelled') : t('ops.timeline.row.stopped')
     case 'asked':
       return t('ops.timeline.row.waiting')
     case 'queued':

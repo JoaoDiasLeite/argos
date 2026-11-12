@@ -41,10 +41,11 @@ import {
   sudoNonInteractive,
   sudoNonInteractiveRefused,
   toolResultText,
+  UNANSWERED_MESSAGES,
   withSudoStdin,
   writeResultText
 } from './ops-run-pure'
-import { failedExec, type ExecOpts, type ExecResult } from './ops-exec-pure'
+import { anySignal, failedExec, type ExecOpts, type ExecResult } from './ops-exec-pure'
 import { sha256Hex, type OpsRunListItem } from './ops-audit-pure'
 import { RUN_LIST_MAX } from './ops-audit'
 import {
@@ -79,7 +80,8 @@ export interface OpsToolResult {
   [key: string]: unknown
 }
 
-type OpsHandler = (args: Record<string, unknown>) => Promise<OpsToolResult>
+/** `signal`: the CLI withdrew this call; one that has not reached the host yet does not, and a running exec is aborted as on a stop. */
+type OpsHandler = (args: Record<string, unknown>, call?: { signal?: AbortSignal }) => Promise<OpsToolResult>
 
 /** The five gated tools, plus propose_plan, which canUseTool alone decides, and note,
  *  ask_operator and past_interventions, which never reach a host. */
@@ -95,6 +97,9 @@ export type OpsToolHandlers = Record<OpsToolName, OpsHandler> & {
 const HISTORY_SCAN_LIMIT = 100
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+
+/** The call.finished error of an allowed call the CLI withdrew before it reached the host. */
+const CALL_WITHDRAWN = 'the call was withdrawn by the client before it ran'
 
 /** How long one logger exec (or the probe for it) may take. */
 const LOGGER_TIMEOUT_MS = 10_000
@@ -217,7 +222,7 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
   }
 
   /** `operator`: the operator's own click on a script; there is no plan it could have been decided under. */
-  async function handle(tool: OpsToolName, args: Record<string, unknown>, operator = false): Promise<OpsToolResult> {
+  async function handle(tool: OpsToolName, args: Record<string, unknown>, operator = false, signal?: AbortSignal): Promise<OpsToolResult> {
     try {
       const input = mcpInputToOpsInput(tool, args)
       if ('error' in input) return text(`Refused: ${input.error}.`, true)
@@ -259,19 +264,23 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
         await ctx.log(refusedFinishedEvent(runId, callId, 'the run was stopped'))
         return text('Refused: the run was stopped.', true)
       }
+      if (signal?.aborted) {
+        await ctx.log(refusedFinishedEvent(runId, callId, CALL_WITHDRAWN))
+        return text(UNANSWERED_MESSAGES['call-cancelled'], true)
+      }
 
-      return await ctx.executor.run(input.hostId, () => execute(input, gate, callId, args, entry.host.name))
+      return await ctx.executor.run(input.hostId, () => execute(input, gate, callId, args, entry.host.name, signal))
     } catch (e) {
       return text(`The ops tool failed: ${message(e)}`, true)
     }
   }
 
   /**
-   * A `run` under sudo (plan §4). With the host's password already given in this run,
-   * the first attempt reads it on stdin. Without it, a plain attempt runs first; when
-   * sudo answers that it needs a password, the operator is asked once for the host, the
-   * answer is kept for the run, and the command runs once more with it, logged as its
-   * own call `<callId>-retry` under a copy of the decision.
+   * A `run` under sudo (plan §4). A plain attempt runs first; when sudo answers that it
+   * needs a password, the host's password kept for this run is used, or else the
+   * operator is asked once for the host and the answer is kept for the run, and the
+   * command runs once more with it, logged as its own call `<callId>-retry` under a copy
+   * of the decision.
    */
   async function runSudo(
     input: Extract<OpsToolInput, { tool: 'run' }>,
@@ -293,34 +302,33 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
       const note = sudoNonInteractiveRefused(argv, r) ? `\n${SUDO_ASK_OPERATOR_NOTE}` : ''
       return text(toolResultText(r) + note, execIsError(r))
     }
-    const known = ctx.sudoPasswords.get(input.hostId)
-    if (known !== undefined) {
-      const r = await loggedExec(input.hostId, hostName, call, () =>
-        backend.exec(input.hostId, withSudoStdin(argv), { ...opts, stdin: `${known}\n` })
-      )
-      await ctx.log(finishedEventFrom(r, runId, callId))
-      // Refused again: the kept password is wrong (or was changed), so the next sudo asks anew.
-      if (sudoNeedsPassword(argv, r)) ctx.sudoPasswords.delete(input.hostId)
-      return text(toolResultText(r), execIsError(r))
-    }
-
+    // Always the plain attempt first, even with the host's password already kept: when
+    // sudo needs none (NOPASSWD, or a cached timestamp), a password sent on stdin would be
+    // read by the command itself. Only once sudo has said it wants one does the password
+    // go out, and then with -k (withSudoStdin), so sudo reads it rather than skip the prompt.
     const first = await loggedExec(input.hostId, hostName, call, () => backend.exec(input.hostId, argv, opts))
     await ctx.log(finishedEventFrom(first, runId, callId))
     if (!sudoNeedsPassword(argv, first)) return text(toolResultText(first), execIsError(first))
-    if (!ctx.askSecret) return text(`${toolResultText(first)}\n${SUDO_PASSWORD_NOTE}`, true)
 
-    const password = ctx.abort.signal.aborted
-      ? null
-      : await ctx.askSecret({
-          hostId: input.hostId,
-          hostName,
-          prompt: `sudo on ${hostName} needs a password for: ${argv.join(' ')}. It is kept in memory for this run only and never written to the ledger.`
-        })
-    if (password === null || ctx.abort.signal.aborted) {
-      return text(`${toolResultText(first)}\n${SUDO_DECLINED_NOTE}`, true)
+    let password = ctx.sudoPasswords.get(input.hostId)
+    if (password === undefined) {
+      if (!ctx.askSecret) return text(`${toolResultText(first)}\n${SUDO_PASSWORD_NOTE}`, true)
+      const given = ctx.abort.signal.aborted
+        ? null
+        : await ctx.askSecret({
+            hostId: input.hostId,
+            hostName,
+            prompt: `sudo on ${hostName} needs a password for: ${argv.join(' ')}. It is kept in memory for this run only and never written to the ledger.`
+          })
+      if (given === null || ctx.abort.signal.aborted) {
+        return text(`${toolResultText(first)}\n${SUDO_DECLINED_NOTE}`, true)
+      }
+      password = given
+      ctx.sudoPasswords.set(input.hostId, password)
+      await ctx.log({ kind: 'sudo.password-supplied', runId, hostId: input.hostId })
+    } else if (opts.signal.aborted) {
+      return text(`${toolResultText(first)}\nRefused: the run was stopped or the call withdrawn, so it was not retried with the password.`, true)
     }
-    ctx.sudoPasswords.set(input.hostId, password)
-    await ctx.log({ kind: 'sudo.password-supplied', runId, hostId: input.hostId })
 
     const retryId = `${callId}-retry`
     const decided = await ctx.log({
@@ -334,6 +342,7 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
       backend.exec(input.hostId, withSudoStdin(argv), { ...opts, stdin: `${password}\n` })
     )
     await ctx.log(finishedEventFrom(retry, runId, retryId))
+    // Refused again: the password is wrong (or was changed), so the next sudo asks anew.
     if (sudoNeedsPassword(argv, retry)) ctx.sudoPasswords.delete(input.hostId)
     return text(toolResultText(retry), execIsError(retry))
   }
@@ -371,8 +380,11 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
     gate: OpsGateResult,
     callId: string,
     rawInput: Record<string, unknown>,
-    hostName: string
+    hostName: string,
+    callSignal?: AbortSignal
   ): Promise<OpsToolResult> {
+    // The run's stop and this call's withdrawal both end the exec, the same way.
+    const linked = callSignal ? anySignal([ctx.abort.signal, callSignal]) : null
     try {
       // A call whose start cannot be recorded does not start.
       const started = await ctx.log({ kind: 'call.started', runId, callId })
@@ -381,8 +393,13 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
         await ctx.log(refusedFinishedEvent(runId, callId, 'the run was stopped'))
         return text('Refused: the run was stopped.', true)
       }
+      // Withdrawn while it waited in the host's queue.
+      if (callSignal?.aborted) {
+        await ctx.log(refusedFinishedEvent(runId, callId, CALL_WITHDRAWN))
+        return text(UNANSWERED_MESSAGES['call-cancelled'], true)
+      }
 
-      const opts = { timeoutMs: limits.timeoutMs, maxOutputBytes: limits.maxOutputBytes, signal: ctx.abort.signal }
+      const opts = { timeoutMs: limits.timeoutMs, maxOutputBytes: limits.maxOutputBytes, signal: linked?.signal ?? ctx.abort.signal }
       const backend = ctx.executor.backend
       const t0 = Date.now()
 
@@ -492,10 +509,13 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
           return text(shown.text, shown.isError)
         }
       }
+      return text('Refused: unknown ops tool.', true)
     } catch (e) {
       const err = failedExec(message(e))
       await ctx.log(finishedEventFrom(err, runId, callId)).catch(() => undefined)
       return text(`The ops tool failed: ${message(e)}`, true)
+    } finally {
+      linked?.dispose()
     }
   }
 
@@ -624,12 +644,12 @@ export function createOpsToolHandlers(ctx: OpsRunContext): OpsToolHandlers {
     note,
     ask_operator: askOperator,
     past_interventions: pastInterventions,
-    run: (a) => handle('run', a),
-    script: (a) => handle('script', a),
+    run: (a, c) => handle('run', a, false, c?.signal),
+    script: (a, c) => handle('script', a, false, c?.signal),
     operatorScript: (a) => handle('script', a, true),
-    read: (a) => handle('read', a),
-    list: (a) => handle('list', a),
-    write: (a) => handle('write', a),
+    read: (a, c) => handle('read', a, false, c?.signal),
+    list: (a, c) => handle('list', a, false, c?.signal),
+    write: (a, c) => handle('write', a, false, c?.signal),
     // canUseTool asked the operator and logged plan.approved before this can run.
     propose_plan: async () =>
       ctx.planApproved ? text(planApprovedText(ctx.planSteps ?? [], ctx.skippedSteps)) : text(`Refused: ${PLAN_FIRST_REASON}.`, true)
