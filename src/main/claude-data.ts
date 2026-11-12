@@ -38,6 +38,7 @@ import {
   storeSet
 } from './store'
 import { readJsonFile } from './json-file'
+import { StatCache } from './transcript-cache-pure'
 import { getAccounts } from './accounts'
 import { getProviderAccounts } from './provider-accounts'
 import { encodeProjectPath } from './codex-data-pure'
@@ -676,6 +677,20 @@ export async function getAllProjects(): Promise<CCProject[]> {
   return all.sort((a, b) => b.lastActive - a.lastActive)
 }
 
+// What one transcript pass yields, kept per file so an unchanged transcript is not read
+// again each time a project is opened. Bounded; see StatCache.
+interface TranscriptMeta {
+  title: string
+  customTitle: string
+  preview: string
+  model: string | undefined
+  messageCount: number
+  createdAt: number
+  lastMessageAt: number
+  tags: string[]
+}
+const transcriptMetaCache = new StatCache<TranscriptMeta>(3000)
+
 export async function listSessions(
   sourceId: string,
   encodedDir: string,
@@ -709,6 +724,7 @@ export async function listSessions(
     const sessionId = file.replace(/\.jsonl$/, '')
     const full = path.join(dir, file)
     const st = safeStat(full)
+    const cached = st ? transcriptMetaCache.get(full, st.mtimeMs, st.size) : undefined
     let title = ''
     let customTitle = ''
     let preview = ''
@@ -724,6 +740,10 @@ export async function listSessions(
     // a second walk of the transcript to fetch one line would double the cost of
     // opening a project.
     let tags: string[] = []
+    let parsedOk = false
+    if (cached) {
+      ;({ title, customTitle, preview, model, messageCount, createdAt, lastMessageAt, tags } = cached)
+    } else
     try {
       for await (const obj of iterJsonl(full)) {
         if (obj.type === 'ai-title' && obj.aiTitle) title = obj.aiTitle
@@ -753,8 +773,15 @@ export async function listSessions(
           }
         }
       }
+      parsedOk = true
     } catch {
       /* skip */
+    }
+    // Only a complete read is kept: a failed one may be a transcript caught mid-write.
+    if (parsedOk && st) {
+      transcriptMetaCache.set(full, st.mtimeMs, st.size, {
+        title, customTitle, preview, model, messageCount, createdAt, lastMessageAt, tags
+      })
     }
     sessions.push({
       sessionId,
