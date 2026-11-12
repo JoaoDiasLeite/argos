@@ -77,6 +77,12 @@ export interface OpsBackend {
   /** Upload a script to a private temp dir on the host, run it with args, delete it. */
   runScript(hostId: string, name: string, content: Buffer, args: string[], opts: ExecOpts, hooks?: ScriptHooks): Promise<ExecResult>
   reachable(hostId: string, timeoutMs: number): Promise<{ ok: boolean; message: string }>
+  /**
+   * Remove whatever runScript uploaded to this host and could not remove at the time (a
+   * stalled or dropped connection), then its parent folder if that is now empty. Argos's
+   * own housekeeping: it takes no paths, so nothing outside its own uploads can be named.
+   */
+  removeUploads(hostId: string): Promise<{ removed: string[]; left: string[] }>
 }
 
 /** An ExecResult for a command that never produced anything. */
@@ -145,6 +151,122 @@ export function makeCapture(maxBytes: number): Capture {
  */
 export function backupPathFor(path: string, at: Date): string {
   return `${path}.argos-${at.toISOString().replace(/:/g, '-')}.bak`
+}
+
+// ─── Deadlines ────────────────────────────────────────────────────────────────────
+
+export type Raced<T> = { ok: true; value: T } | { ok: false; reason: 'aborted' | 'timeout' }
+
+/**
+ * `p`, or why we stopped waiting for it: the signal aborted or `timeoutMs` passed. SFTP
+ * requests cannot be cancelled one by one, so the caller ends the channel on a loss;
+ * `onLate` gets a value that arrives after that (a channel opened too late, to close it).
+ * A rejection of `p` before the deadline rejects.
+ */
+export function raceDeadline<T>(
+  p: Promise<T>,
+  opts: { signal?: AbortSignal; timeoutMs: number; onLate?: (value: T) => void }
+): Promise<Raced<T>> {
+  const { signal, onLate } = opts
+  let lost = false
+  p.then(
+    (v) => {
+      if (lost) onLate?.(v)
+    },
+    () => undefined
+  )
+  if (signal?.aborted) {
+    lost = true
+    return Promise.resolve({ ok: false, reason: 'aborted' })
+  }
+  return new Promise<Raced<T>>((resolve, reject) => {
+    const timer = setTimeout(() => settle({ ok: false, reason: 'timeout' }), Math.max(1, opts.timeoutMs))
+    const onAbort = (): void => settle({ ok: false, reason: 'aborted' })
+    let done = false
+    function settle(r: Raced<T>): void {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      if (!r.ok) lost = true
+      resolve(r)
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+    p.then(
+      (value) => settle({ ok: true, value }),
+      (e) => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+        reject(e)
+      }
+    )
+  })
+}
+
+// ─── Upload housekeeping ──────────────────────────────────────────────────────────
+
+/** Where one runScript call put its script: `<base>/<dir>/<file>`, all three created by us. */
+export interface UploadSite {
+  /** `~/.argos-ops`, shared by every call; removed only when empty. */
+  base: string
+  /** The call's own random folder. */
+  dir: string
+  file: string
+}
+
+/** The two removals cleanup needs. 'gone' also covers a path that was never there. */
+export interface UploadRemover {
+  unlink(path: string): Promise<'gone' | 'failed'>
+  rmdir(path: string): Promise<'gone' | 'failed'>
+}
+
+/**
+ * Remove one call's file and folder, then the shared parent when it is empty (rmdir
+ * refuses a folder with anything in it, which is what keeps us off files we did not put
+ * there). True once the call's folder is gone.
+ */
+export async function removeUpload(fs: UploadRemover, site: UploadSite): Promise<boolean> {
+  await fs.unlink(site.file)
+  if ((await fs.rmdir(site.dir)) !== 'gone') return false
+  await fs.rmdir(site.base)
+  return true
+}
+
+/** Every site in turn, split into what is gone and what is still on the host. */
+export async function sweepUploads(fs: UploadRemover, sites: UploadSite[]): Promise<{ removed: UploadSite[]; left: UploadSite[] }> {
+  const removed: UploadSite[] = []
+  const left: UploadSite[] = []
+  for (const site of sites) ((await removeUpload(fs, site)) ? removed : left).push(site)
+  return { removed, left }
+}
+
+export interface UploadLeftovers {
+  add(hostId: string, site: UploadSite): void
+  remove(hostId: string, site: UploadSite): void
+  of(hostId: string): UploadSite[]
+}
+
+/** Uploads not yet confirmed removed, per host, so the end of the run can try again. */
+export function makeUploadLeftovers(): UploadLeftovers {
+  const byHost = new Map<string, Map<string, UploadSite>>()
+  return {
+    add(hostId, site) {
+      let m = byHost.get(hostId)
+      if (!m) byHost.set(hostId, (m = new Map()))
+      m.set(site.dir, site)
+    },
+    remove(hostId, site) {
+      const m = byHost.get(hostId)
+      if (!m) return
+      m.delete(site.dir)
+      if (m.size === 0) byHost.delete(hostId)
+    },
+    of(hostId) {
+      return [...(byHost.get(hostId)?.values() ?? [])]
+    }
+  }
 }
 
 // ─── Per-host FIFO queue ──────────────────────────────────────────────────────────
@@ -248,7 +370,9 @@ export function createExecutor(backend: OpsBackend): OpsExecutor {
     write: (hostId, path, content, backup) => backend.write(hostId, path, content, backup),
     runScript: (hostId, name, content, args, opts, hooks) =>
       withApp(opts, (o) => backend.runScript(hostId, name, content, args, o, hooks)),
-    reachable: (hostId, timeoutMs) => backend.reachable(hostId, timeoutMs)
+    reachable: (hostId, timeoutMs) => backend.reachable(hostId, timeoutMs),
+    // Not tied to the app-wide abort: cleanup is what runs after a Stop.
+    removeUploads: (hostId) => backend.removeUploads(hostId)
   }
   return {
     backend: wrapped,

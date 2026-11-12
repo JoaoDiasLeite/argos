@@ -22,13 +22,20 @@ import {
   backupPathFor,
   failedExec,
   makeCapture,
+  makeUploadLeftovers,
+  raceDeadline,
+  removeUpload,
+  sweepUploads,
   type ExecOpts,
   type ExecResult,
   type OpsBackend,
   type OpsListResult,
   type OpsReadResult,
   type OpsWriteResult,
-  type ScriptHooks
+  type Raced,
+  type ScriptHooks,
+  type UploadRemover,
+  type UploadSite
 } from './ops-exec-pure'
 
 export {
@@ -227,9 +234,7 @@ const p = {
   mkdir: (s: SFTPWrapper, d: string, mode: number) =>
     new Promise<Error | null>((resolve) => s.mkdir(d, { mode }, (e) => resolve(e ?? null))),
   realpath: (s: SFTPWrapper, f: string) =>
-    new Promise<string>((resolve, reject) => s.realpath(f, (e, r) => (e ? reject(e) : resolve(r)))),
-  unlink: (s: SFTPWrapper, f: string) => new Promise<void>((resolve) => s.unlink(f, () => resolve())),
-  rmdir: (s: SFTPWrapper, d: string) => new Promise<void>((resolve) => s.rmdir(d, () => resolve()))
+    new Promise<string>((resolve, reject) => s.realpath(f, (e, r) => (e ? reject(e) : resolve(r))))
 }
 
 // ─── read / list / write ──────────────────────────────────────────────────────────
@@ -300,10 +305,83 @@ async function write(hostId: string, filePath: string, content: string, backup: 
 
 const SCRIPT_NAME = /^[A-Za-z0-9._-]+$/
 
+/** Opening the SFTP channel and putting the script there. A script is small (ops-runbook-pure caps it). */
+const UPLOAD_TIMEOUT_MS = 30_000
+/** Removing an upload, at the end of a call or of the run. Not cut short by Stop. */
+const CLEANUP_TIMEOUT_MS = 10_000
+
+/** Uploads not yet confirmed removed; removeUploads retries them at the end of the run. */
+const leftovers = makeUploadLeftovers()
+
+/** A fresh SFTP channel, closed again if it only arrives after we stopped waiting. */
+function openSftpBounded(hostId: string, timeoutMs: number, signal?: AbortSignal): Promise<Raced<SFTPWrapper | Fail>> {
+  const open = (async (): Promise<SFTPWrapper | Fail> => {
+    const client = await getRemoteClient(hostId)
+    if (!client.ok) return { ok: false, error: client.error }
+    return new Promise<SFTPWrapper | Fail>((resolve) => {
+      try {
+        client.conn.sftp((e, s) => resolve(e ? { ok: false, error: e.message } : s))
+      } catch (e) {
+        resolve({ ok: false, error: message(e) })
+      }
+    })
+  })()
+  return raceDeadline(open, { timeoutMs, signal, onLate: (s) => endSftp(s) })
+}
+
+function endSftp(s: SFTPWrapper | Fail | null): void {
+  if (!s || 'ok' in s) return
+  try {
+    s.end()
+  } catch {
+    // Channel already gone.
+  }
+}
+
+const isNoSuchFile = (e: Error | null | undefined): boolean => (e as (Error & { code?: unknown }) | null)?.code === SFTP_NO_SUCH_FILE
+
+function remover(sftp: SFTPWrapper): UploadRemover {
+  return {
+    unlink: (f) => new Promise((resolve) => sftp.unlink(f, (e) => resolve(!e || isNoSuchFile(e) ? 'gone' : 'failed'))),
+    rmdir: (d) => new Promise((resolve) => sftp.rmdir(d, (e) => resolve(!e || isNoSuchFile(e) ? 'gone' : 'failed')))
+  }
+}
+
+/**
+ * Remove one call's upload, on its own channel when it has one that still works, else on
+ * a fresh one; bounded, and not tied to the run's abort. True once it is gone; otherwise
+ * it stays in `leftovers` for removeUploads.
+ */
+async function cleanUpload(hostId: string, site: UploadSite, sftp: SFTPWrapper | null): Promise<boolean> {
+  const deadline = Date.now() + CLEANUP_TIMEOUT_MS
+  let channel = sftp
+  let opened: SFTPWrapper | null = null
+  try {
+    if (!channel) {
+      const o = await openSftpBounded(hostId, CLEANUP_TIMEOUT_MS)
+      if (!o.ok || 'ok' in o.value) return false
+      channel = opened = o.value
+    }
+    const r = await raceDeadline(removeUpload(remover(channel), site), { timeoutMs: deadline - Date.now() })
+    if (!r.ok) endSftp(channel)
+    if (r.ok && r.value) leftovers.remove(hostId, site)
+    return r.ok && r.value
+  } catch {
+    return false
+  } finally {
+    endSftp(opened)
+  }
+}
+
+const stalled = (what: string, why: 'aborted' | 'timeout'): string =>
+  why === 'aborted' ? `aborted while ${what}` : `timed out after ${UPLOAD_TIMEOUT_MS / 1000}s while ${what}`
+
 /**
  * Upload to `~/.argos-ops/<random>/<name>` (0700 dir and file), exec it with the args as
- * separate quoted words, and remove both in `finally`. Done over SFTP because `mkdir -p`
- * as a shell wrapper is exactly the composition the gate forbids.
+ * separate quoted words, and remove both, and `~/.argos-ops` when empty, in `finally`.
+ * Done over SFTP because `mkdir -p` as a shell wrapper is exactly the composition the gate
+ * forbids. The upload is bounded by UPLOAD_TIMEOUT_MS and ends on the run's abort: SFTP
+ * cannot cancel one request, so a stalled upload ends its channel and cleanup opens another.
  */
 async function runScript(
   hostId: string,
@@ -315,32 +393,80 @@ async function runScript(
 ): Promise<ExecResult> {
   if (!SCRIPT_NAME.test(name) || name === '.' || name === '..') return failedExec(`Invalid script name: ${name}`)
   if (opts.signal.aborted) return failedExec('aborted before start')
-  const r = await withSftp<ExecResult>(hostId, async (sftp) => {
-    const home = await p.realpath(sftp, '.')
-    const base = path.posix.join(home, '.argos-ops')
-    await p.mkdir(sftp, base, 0o700) // fails harmlessly when it already exists
-    const baseSt = await p.stat(sftp, base)
-    if (!('st' in baseSt) || !baseSt.st.isDirectory()) return failedExec(`Could not create ${base}`)
-    const dir = path.posix.join(base, randomBytes(8).toString('hex'))
-    const mk = await p.mkdir(sftp, dir, 0o700)
-    if (mk) return failedExec(`Could not create ${dir}: ${mk.message}`)
-    const remote = path.posix.join(dir, name)
-    let uploaded = false
-    try {
-      await p.writeFile(sftp, remote, content, 0o700)
-      await p.chmod(sftp, remote, 0o700) // the server's umask may have trimmed the mode
-      uploaded = true
-      await hooks.uploaded?.(remote)
-      const r = await exec(hostId, [remote, ...args], opts)
-      await hooks.finished?.(r)
-      return r
-    } finally {
-      await p.unlink(sftp, remote)
-      await p.rmdir(sftp, dir)
-      if (uploaded) await hooks.removed?.(remote)
+  const startedAt = Date.now()
+  const elapsed = (): number => Date.now() - startedAt
+  const bound = { signal: opts.signal, timeoutMs: UPLOAD_TIMEOUT_MS }
+
+  const opened = await openSftpBounded(hostId, UPLOAD_TIMEOUT_MS, opts.signal)
+  if (!opened.ok) return failedExec(stalled('opening SFTP', opened.reason), elapsed())
+  if ('ok' in opened.value) return failedExec(opened.value.error, elapsed())
+  const sftp = opened.value
+  let usable = true
+  let site: UploadSite | null = null
+  let uploaded = false
+  try {
+    const up = await raceDeadline(
+      (async (): Promise<string | null> => {
+        const home = await p.realpath(sftp, '.')
+        const base = path.posix.join(home, '.argos-ops')
+        const dir = path.posix.join(base, randomBytes(8).toString('hex'))
+        // Known before anything is created, so a stall at any later step is still cleaned up.
+        site = { base, dir, file: path.posix.join(dir, name) }
+        leftovers.add(hostId, site)
+        await p.mkdir(sftp, base, 0o700) // fails harmlessly when it already exists
+        const baseSt = await p.stat(sftp, base)
+        if (!('st' in baseSt) || !baseSt.st.isDirectory()) return `Could not create ${base}`
+        const mk = await p.mkdir(sftp, dir, 0o700)
+        if (mk) return `Could not create ${dir}: ${mk.message}`
+        await p.writeFile(sftp, site.file, content, 0o700)
+        await p.chmod(sftp, site.file, 0o700) // the server's umask may have trimmed the mode
+        return null
+      })(),
+      bound
+    )
+    if (!up.ok) {
+      usable = false
+      endSftp(sftp)
+      return failedExec(stalled('uploading the script', up.reason), elapsed())
     }
-  })
-  return 'exitCode' in r ? r : failedExec(r.error)
+    if (up.value !== null) return failedExec(up.value, elapsed())
+    const remote = (site as UploadSite | null)?.file ?? ''
+    uploaded = true
+    await hooks.uploaded?.(remote)
+    const r = await exec(hostId, [remote, ...args], opts)
+    await hooks.finished?.(r)
+    return r
+  } catch (e) {
+    return failedExec(message(e), elapsed())
+  } finally {
+    const s = site as UploadSite | null
+    if (s) {
+      const gone = await cleanUpload(hostId, s, usable ? sftp : null)
+      if (uploaded && gone) await hooks.removed?.(s.file)
+    }
+    endSftp(sftp)
+  }
+}
+
+/** The end of a run: one more bounded try at what a call could not remove. */
+async function removeUploads(hostId: string): Promise<{ removed: string[]; left: string[] }> {
+  const sites = leftovers.of(hostId)
+  if (sites.length === 0) return { removed: [], left: [] }
+  const files = (xs: UploadSite[]): string[] => xs.map((x) => x.file)
+  const deadline = Date.now() + CLEANUP_TIMEOUT_MS
+  const o = await openSftpBounded(hostId, CLEANUP_TIMEOUT_MS)
+  if (!o.ok || 'ok' in o.value) return { removed: [], left: files(sites) }
+  const sftp = o.value
+  try {
+    const r = await raceDeadline(sweepUploads(remover(sftp), sites), { timeoutMs: deadline - Date.now() })
+    if (!r.ok) return { removed: [], left: files(sites) }
+    for (const s of r.value.removed) leftovers.remove(hostId, s)
+    return { removed: files(r.value.removed), left: files(r.value.left) }
+  } catch {
+    return { removed: [], left: files(sites) }
+  } finally {
+    endSftp(sftp)
+  }
 }
 
 // ─── reachable ────────────────────────────────────────────────────────────────────
@@ -365,5 +491,5 @@ async function reachable(hostId: string, timeoutMs: number): Promise<{ ok: boole
 }
 
 export function createSshBackend(): OpsBackend {
-  return { exec, read, list, write, runScript, reachable }
+  return { exec, read, list, write, runScript, reachable, removeUploads }
 }

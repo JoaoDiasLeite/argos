@@ -165,7 +165,7 @@ async function lines(): Promise<OpsAuditLine[]> {
   return r.lines
 }
 
-const hostCalls = (fake: FakeBackend) => fake.calls.filter((c) => c.kind !== 'reachable')
+const hostCalls = (fake: FakeBackend) => fake.calls.filter((c) => c.kind !== 'reachable' && c.kind !== 'removeUploads')
 
 describe('ops session through callOpsTool', () => {
   it('a full run logs start, decision, start and end of the call, and run end in order', async () => {
@@ -183,6 +183,9 @@ describe('ops session through callOpsTool', () => {
     ])
     // Reachability is checked once per runbook host, and only for hosts in a group.
     expect(fake.calls.filter((c) => c.kind === 'reachable').map((c) => c.hostId)).toEqual(['h1'])
+    // The end of the run sweeps every host for leftover uploads, once, past the gate and the ledger.
+    expect(fake.calls.filter((c) => c.kind === 'removeUploads').map((c) => c.hostId)).toEqual([...session.ctx.hosts.byId.keys()])
+    expect(fake.calls.filter((c) => c.kind === 'removeUploads').map((c) => c.hostId)).toContain('h1')
 
     const l = await lines()
     expect(l[0].event).toMatchObject({ kind: 'run.start', appSessionId: 'opsterm_t1', model: 'claude CLI (terminal)' })
