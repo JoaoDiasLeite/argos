@@ -280,6 +280,13 @@ describe('despiste runbook: allowed', () => {
     ['pg-query.sh', ['smile_production', 'SELECT relname, n_live_tup FROM pg_stat_user_tables ORDER BY 2 DESC LIMIT 20']],
     ['pg-query.sh', ['smile_production', 'EXPLAIN SELECT * FROM candidaturas WHERE estado = 1']],
     ['pg-query.sh', ['smile_production', 'show work_mem']],
+    ['pg-query.sh', ['smile_production', 'select count(*) from pg_stat_activity']],
+    ['pg-query.sh', ['smile_production', "select pid, state, query_start from pg_stat_activity where state <> 'idle'"]],
+    ['pg-query.sh', ['smile_production', 'show max_connections']],
+    ['pg-query.sh', ['smile_production', 'explain select 1']],
+    ['pg-query.sh', ['smile_production', 'select pg_size_pretty(pg_database_size(current_database()))']],
+    ['pg-query.sh', ['smile_production', 'select * from pg_locks']],
+    ['pg-query.sh', ['smile_production', 'with x as (select 1) select * from x']],
     ['env-get.sh', ['wiremaze', 'WMCP_APP_NAME']],
     ['tls-check.sh', ['recrutamento.cm-tvedras.pt']],
     ['tls-check.sh', ['127.0.0.1:443', 'recrutamento.cm-tvedras.pt']]
@@ -500,6 +507,13 @@ describe('despiste runbook: refused', () => {
     ['pg-query.sh', ['smile', 'SELECT 1; DROP TABLE users']],
     ['pg-query.sh', ['smile', 'select pg_terminate_backend(123)']],
     ['pg-query.sh', ['smile', 'select 1 \\g /tmp/x']],
+    // A Unicode-escaped identifier hides the name; a function that runs SQL given as
+    // text hides it behind ||. pg-query.sh's check_sql refuses both as well.
+    ['pg-query.sh', ['smile', `SELECT U&"pg!0074erminate_backend" UESCAPE '!' (pid) FROM pg_stat_activity`]],
+    ['pg-query.sh', ['smile', "SELECT * FROM ts_stat('SELECT pg_'||'terminate_backend(1)::text::tsvector')"]],
+    ['pg-query.sh', ['smile', "select ts_rewrite('a'::tsquery, 'select 1')"]],
+    ['pg-query.sh', ['smile', "select query_to_xml('select 1', true, false, '')"]],
+    ['pg-query.sh', ['smile', "select * from CROSSTAB('select 1')"]],
     ['env-get.sh', ['wiremaze', 'PATH']],
     ['env-get.sh', ['/home/wiremaze/wmcp.env', 'WMCP_X']],
     ['tls-check.sh', ['-connect', 'x']],

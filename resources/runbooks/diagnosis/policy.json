@@ -725,7 +725,7 @@
     },
     {
       "name": "pg-query.sh",
-      "sha256": "c4404ac178a39d4babd77d54e11d6a33e0e4123d0a4cb811bc25f997bb254b6e",
+      "sha256": "79f48203fe6b9f2bdc26e233e3f20512b667993ac8ffdd6385b43d7995db5a4c",
       "hosts": [
         "todos"
       ],
@@ -733,7 +733,7 @@
       "title": "Consulta de leitura à base de dados",
       "args": {
         "max": 2,
-        "pattern": "^([A-Za-z_][A-Za-z0-9_-]{0,62}|(?![^;]*(pg_terminate|pg_cancel|pg_sleep|pg_reload|set_config|dblink|lo_import|lo_export|pg_advisory))[ ]*([Ss][Ee][Ll][Ee][Cc][Tt]|[Ww][Ii][Tt][Hh]|[Ss][Hh][Oo][Ww]|[Ee][Xx][Pp][Ll][Aa][Ii][Nn](?![^;]*[Aa][Nn][Aa][Ll][Yy][SsZz][Ee]))[ (][^;\\\\]{0,3990};?[ ]*)$"
+        "pattern": "^([A-Za-z_][A-Za-z0-9_-]{0,62}|(?![^;]*(pg_terminate|pg_cancel|pg_sleep|pg_reload|set_config|dblink|lo_import|lo_export|pg_advisory|[Uu]&|[Tt][Ss]_([Ss][Tt][Aa][Tt]|[Rr][Ee][Ww][Rr])|[Qq][Uu][Ee][Rr][Yy]_[Tt][Oo]_|_[Tt][Oo]_[Xx][Mm][Ll]|[Cc][Rr][Oo][Ss][Ss][Tt][Aa][Bb]|[Cc][Oo][Nn][Nn][Ee][Cc][Tt][Bb][Yy]|[Xx][Pp][Aa][Tt][Hh]_[Tt][Aa][Bb]))[ ]*([Ss][Ee][Ll][Ee][Cc][Tt]|[Ww][Ii][Tt][Hh]|[Ss][Hh][Oo][Ww]|[Ee][Xx][Pp][Ll][Aa][Ii][Nn](?![^;]*[Aa][Nn][Aa][Ll][Yy][SsZz][Ee]))[ (][^;\\\\]{0,3990};?[ ]*)$"
       }
     },
     {

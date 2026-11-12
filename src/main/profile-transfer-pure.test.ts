@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { gzipSync } from 'zlib'
 import { PassThrough, Readable } from 'stream'
+import * as path from 'path'
 import {
   mergeCompanionList,
   BUNDLE_FORMAT,
@@ -9,11 +10,13 @@ import {
   BundleWriter,
   candidateKey,
   chatSourceId,
+  childDirInside,
   decryptSecrets,
   defaultExportName,
   encodeLine,
   encryptSecrets,
   isFileLine,
+  isSafeEncodedDir,
   isTranscriptRel,
   openBundle,
   parseLine,
@@ -395,6 +398,31 @@ describe('bundle stream', () => {
 })
 
 describe('safety', () => {
+  const BAD_DIRS = ['..', '.', '../x', 'a/b', 'a\\b', 'C:', '', 'x\u0000y', 'x\ny']
+
+  it('accepts only a single directory name as a project encodedDir', () => {
+    for (const bad of BAD_DIRS) expect(isSafeEncodedDir(bad), JSON.stringify(bad)).toBe(false)
+    expect(isSafeEncodedDir(42)).toBe(false)
+    expect(isSafeEncodedDir('C--Users-Jo-oLeite-Desktop-proj')).toBe(true)
+    expect(isSafeEncodedDir('-home-jdl-secops-friday')).toBe(true)
+    expect(isSafeEncodedDir('-')).toBe(true)
+  })
+
+  it('refuses a project line whose encodedDir is not a single directory name', () => {
+    const line = (encodedDir: string): string =>
+      JSON.stringify({ type: 'project', index: 0, sourceId: 'local', realPath: 'C:\\p', encodedDir })
+    for (const bad of BAD_DIRS) expect(() => parseLine(line(bad)), JSON.stringify(bad)).toThrow(BundleError)
+    expect((parseLine(line('C--p')) as ProjectLine).encodedDir).toBe('C--p')
+    expect((parseLine(line('-home-x-proj')) as ProjectLine).encodedDir).toBe('-home-x-proj')
+  })
+
+  it('joins a directory only when it stays strictly inside the root', () => {
+    const root = path.resolve('argos-test-root', '.claude', 'projects')
+    expect(childDirInside(root, 'C--p')).toBe(path.join(root, 'C--p'))
+    expect(childDirInside(root, '-home-x-proj')).toBe(path.join(root, '-home-x-proj'))
+    for (const bad of BAD_DIRS) expect(childDirInside(root, bad), JSON.stringify(bad)).toBeNull()
+  })
+
   it('accepts only relative paths that stay inside', () => {
     expect(safeRel('archived/a.jsonl')).toBe('archived/a.jsonl')
     expect(safeRel('sessions\\2026\\01\\r.jsonl')).toBe('sessions/2026/01/r.jsonl')
