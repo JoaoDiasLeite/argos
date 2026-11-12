@@ -1007,6 +1007,13 @@ export interface OpsLiveEvent {
 /** internal: ours, in English; client: the sanitised Relatório Técnico; handover: the pt-PT incident file. */
 export type OpsReportKind = 'internal' | 'client' | 'handover'
 
+/** A ledger day imported from a profile archive, as ops:verify reports it (ops-audit-pure.ts). */
+export interface OpsImportedVerify {
+  lines: number
+  importedAt?: string
+  archive?: string
+}
+
 /**
  * The model's ask_operator, waiting for the operator (`ops:operator-request`). `askId` is
  * the ledger's id for it: the `operator.asked` / `operator.answered` lines carry the same
@@ -1800,9 +1807,15 @@ declare global {
       /** Open one of the ops folders in the file manager: reports and handovers are created when
        *  missing; the runbooks folder only opens when one is set. */
       opsOpenFolder: (which: 'reports' | 'handovers' | 'runbooks') => Promise<{ ok: true; path: string } | { ok: false; error: string }>
+      /** `imported`: the day (or, with runId, that run's file) came from a profile archive; its
+       *  chain is consistent but its origin cannot be verified. `lines` counts local lines only. */
       opsVerify: (
-        date: string
-      ) => Promise<{ ok: true; lines: number } | { ok: false; brokenAt?: number; reason: string }>
+        date: string,
+        runId?: string
+      ) => Promise<
+        | { ok: true; lines: number; imported?: OpsImportedVerify }
+        | { ok: false; brokenAt?: number; reason: string; imported?: OpsImportedVerify }
+      >
       opsLedgerInfo: () => Promise<{ dir: string; files: number; bytes: number }>
       onOpsEvent: (cb: (data: OpsLiveEvent) => void) => () => void
       /** Every ledger line of this chat's ops runs, in order, shaped like the live `ops:event`. */

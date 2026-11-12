@@ -210,6 +210,7 @@ const main: Record<keyof typeof en, string> = {
   'profile.fileFilter': 'Perfil do Argos',
   'profile.error.read': 'Não foi possível ler {path}: {error}',
   'profile.error.notArgos': 'Este ficheiro não é um perfil do Argos.',
+  'profile.ledgerDayExists': 'Este computador já tem um registo de ops de {date}, por isso o importado não foi adicionado.',
   'profile.error.corrupt': 'O ficheiro do perfil está danificado e não pôde ser lido.',
   'profile.error.version': 'Este perfil usa o formato {version}, que esta versão do Argos não consegue ler. Atualiza o Argos e tenta de novo.',
   'profile.error.write': 'Não foi possível guardar o perfil: {error}',
