@@ -30,17 +30,18 @@ export default function HooksModal({ onClose }: Props) {
     window.electronAPI.getClaudeHooks().then(setHooks)
   }, [])
 
-  const persist = async (next: ClaudeHooks) => {
+  const persist = async (next: ClaudeHooks): Promise<boolean> => {
     setSaveError(null)
     const result = await window.electronAPI.setClaudeHooks(next)
     if (!result.ok) {
       setSaveError(result.error ?? t('settings.hooks.saveFailed'))
-      return
+      return false
     }
     // Use the merged hooks returned by the main process (includes unknown events)
     setHooks(result.hooks ?? next)
     setSaved(true)
     setTimeout(() => setSaved(false), 1200)
+    return true
   }
 
   const addHook = async () => {
@@ -52,8 +53,7 @@ export default function HooksModal({ onClose }: Props) {
     if (form.matcher.trim()) entry.matcher = form.matcher.trim()
 
     const existing = hooks[form.event] ?? []
-    await persist({ ...hooks, [form.event]: [...existing, entry] })
-    setForm(EMPTY_FORM)
+    if (await persist({ ...hooks, [form.event]: [...existing, entry] })) setForm(EMPTY_FORM)
   }
 
   const removeHook = async (event: string, idx: number) => {

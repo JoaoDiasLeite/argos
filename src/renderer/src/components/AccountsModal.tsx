@@ -45,6 +45,9 @@ interface RowOps {
   onLogin: () => void
   onMakeDefault: () => void
   onRemove: () => void
+  /** Which provider this row belongs to, for the remove confirmation. */
+  provider: 'claude' | AgentProvider
+  onConfirmRemove: () => void
 }
 
 export default function AccountsModal({ onClose, onChanged }: Props) {
@@ -52,6 +55,9 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
   const [accounts, setAccounts] = useState<CCAccountStatus[]>([])
   const [defaultId, setDefaultId] = useState('default')
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // Account whose inline "remove?" confirmation is open (the login on this machine goes with it).
+  const [confirmRemove, setConfirmRemove] = useState<{ provider: 'claude' | AgentProvider; id: string } | null>(null)
   const [newName, setNewName] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
@@ -60,6 +66,19 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
     codex: emptyProviderState,
     gemini: emptyProviderState
   })
+
+  // Every action runs through here: a rejected IPC must not leave the buttons disabled.
+  const guarded = async (fn: () => Promise<void>) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await fn()
+    } catch (e) {
+      setError(t('accounts.actionFailed', { message: e instanceof Error ? e.message : String(e) }))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const refresh = async () => {
     const list = await window.electronAPI.accountsList()
@@ -78,27 +97,34 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
   }
 
   useEffect(() => {
-    refresh()
-    refreshProvider('codex')
-    refreshProvider('gemini')
+    const report = (e: unknown) => setError(t('accounts.actionFailed', { message: e instanceof Error ? e.message : String(e) }))
+    refresh().catch(report)
+    refreshProvider('codex').catch(report)
+    refreshProvider('gemini').catch(report)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const addAccount = async () => {
     const name = newName.trim()
     if (!name) return
-    setBusy(true)
-    const acc = await window.electronAPI.accountsAdd(name)
-    setNewName('')
-    await refresh()
-    setBusy(false)
+    let createdId: string | null = null
+    await guarded(async () => {
+      const acc = await window.electronAPI.accountsAdd(name)
+      createdId = acc.id
+      setNewName('')
+      await refresh()
+    })
     // Immediately kick off login for the freshly created account.
-    login(acc.id)
+    if (createdId) login(createdId)
   }
 
   const login = async (id: string) => {
-    const res = await window.electronAPI.accountsLogin(id)
-    setLoginCmd({ id, command: res.command })
+    try {
+      const res = await window.electronAPI.accountsLogin(id)
+      setLoginCmd({ id, command: res.command })
+    } catch (e) {
+      setError(t('accounts.actionFailed', { message: e instanceof Error ? e.message : String(e) }))
+    }
   }
 
   const startRename = (a: CCAccountStatus) => {
@@ -108,26 +134,27 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
 
   const saveRename = async () => {
     if (!editingId) return
-    setBusy(true)
-    await window.electronAPI.accountsRename(editingId, editName)
-    setEditingId(null)
-    await refresh()
-    setBusy(false)
+    await guarded(async () => {
+      await window.electronAPI.accountsRename(editingId, editName)
+      setEditingId(null)
+      await refresh()
+    })
   }
 
   const remove = async (id: string) => {
-    setBusy(true)
-    await window.electronAPI.accountsRemove(id)
-    if (loginCmd?.id === id) setLoginCmd(null)
-    await refresh()
-    setBusy(false)
+    setConfirmRemove(null)
+    await guarded(async () => {
+      await window.electronAPI.accountsRemove(id)
+      if (loginCmd?.id === id) setLoginCmd(null)
+      await refresh()
+    })
   }
 
   const makeDefault = async (id: string) => {
-    setBusy(true)
-    await window.electronAPI.accountsSetDefault(id)
-    await refresh()
-    setBusy(false)
+    await guarded(async () => {
+      await window.electronAPI.accountsSetDefault(id)
+      await refresh()
+    })
   }
 
   // ─── Codex / Gemini account actions — same shape as the Claude ones above,
@@ -136,17 +163,23 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
   const addProviderAccount = async (p: AgentProvider) => {
     const name = providerUi[p].newName.trim()
     if (!name) return
-    setBusy(true)
-    const acc = await window.electronAPI.providerAccountsAdd(p, name)
-    updateProvider(p, { newName: '' })
-    await refreshProvider(p)
-    setBusy(false)
-    loginProviderAccount(p, acc.id)
+    let createdId: string | null = null
+    await guarded(async () => {
+      const acc = await window.electronAPI.providerAccountsAdd(p, name)
+      createdId = acc.id
+      updateProvider(p, { newName: '' })
+      await refreshProvider(p)
+    })
+    if (createdId) loginProviderAccount(p, createdId)
   }
 
   const loginProviderAccount = async (p: AgentProvider, id: string) => {
-    const res = await window.electronAPI.providerAccountsLogin(p, id)
-    updateProvider(p, { loginCmd: { id, command: res.command } })
+    try {
+      const res = await window.electronAPI.providerAccountsLogin(p, id)
+      updateProvider(p, { loginCmd: { id, command: res.command } })
+    } catch (e) {
+      setError(t('accounts.actionFailed', { message: e instanceof Error ? e.message : String(e) }))
+    }
   }
 
   const startRenameProvider = (p: AgentProvider, a: ProviderAccountStatus) => {
@@ -156,31 +189,34 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
   const saveRenameProvider = async (p: AgentProvider) => {
     const editingId = providerUi[p].editingId
     if (!editingId) return
-    setBusy(true)
-    await window.electronAPI.providerAccountsRename(p, editingId, providerUi[p].editName)
-    updateProvider(p, { editingId: null })
-    await refreshProvider(p)
-    setBusy(false)
+    await guarded(async () => {
+      await window.electronAPI.providerAccountsRename(p, editingId, providerUi[p].editName)
+      updateProvider(p, { editingId: null })
+      await refreshProvider(p)
+    })
   }
 
   const removeProviderAccount = async (p: AgentProvider, id: string) => {
-    setBusy(true)
-    await window.electronAPI.providerAccountsRemove(p, id)
-    if (providerUi[p].loginCmd?.id === id) updateProvider(p, { loginCmd: null })
-    await refreshProvider(p)
-    setBusy(false)
+    setConfirmRemove(null)
+    await guarded(async () => {
+      await window.electronAPI.providerAccountsRemove(p, id)
+      if (providerUi[p].loginCmd?.id === id) updateProvider(p, { loginCmd: null })
+      await refreshProvider(p)
+    })
   }
 
   const makeDefaultProvider = async (p: AgentProvider, id: string) => {
-    setBusy(true)
-    await window.electronAPI.providerAccountsSetDefault(p, id)
-    await refreshProvider(p)
-    setBusy(false)
+    await guarded(async () => {
+      await window.electronAPI.providerAccountsSetDefault(p, id)
+      await refreshProvider(p)
+    })
   }
 
   // One row per account, whichever provider it belongs to: a dot for logged in or not,
   // the name, a "Default" chip and a muted line, with the actions on the right.
-  const accountRow = (a: Pick<CCAccountStatus, 'id' | 'name' | 'isDefault' | 'loggedIn'>, o: RowOps) => (
+  const accountRow = (a: Pick<CCAccountStatus, 'id' | 'name' | 'isDefault' | 'loggedIn'>, o: RowOps) => {
+    const confirming = confirmRemove?.provider === o.provider && confirmRemove.id === a.id
+    return (
     <div className="acct-row" key={a.id}>
       <i className={`acct-dot ${a.loggedIn ? 'ok' : ''}`} />
       <div className="acct-body">
@@ -203,9 +239,24 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
             {a.id === o.defaultId && <span className="chip">{t('accounts.row.default')}</span>}
           </div>
         )}
-        <div className="acct-meta">{o.meta}</div>
+        {confirming ? (
+          <div className="acct-meta acct-confirm">{t('accounts.row.confirmRemove')}</div>
+        ) : (
+          <div className="acct-meta">{o.meta}</div>
+        )}
       </div>
       <div className="acct-actions">
+        {confirming ? (
+          <>
+            <button type="button" className="btn-ghost small" onClick={() => setConfirmRemove(null)} autoFocus>
+              {t('accounts.row.keep')}
+            </button>
+            <button type="button" className="btn-primary small danger" onClick={o.onConfirmRemove} disabled={busy}>
+              {t('accounts.row.remove')}
+            </button>
+          </>
+        ) : (
+          <>
         {(!a.loggedIn || !a.isDefault) && (
           <button type="button" className="btn-ghost small" onClick={o.onLogin} disabled={busy}>
             {a.loggedIn ? t('accounts.row.relogin') : t('accounts.row.login')}
@@ -224,9 +275,12 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
             {t('accounts.row.remove')}
           </button>
         )}
+          </>
+        )}
       </div>
     </div>
-  )
+    )
+  }
 
   const loginBlock = (command: string, onRefresh: () => void, onDismiss: () => void) => (
     <div className="block warn acct-login">
@@ -285,7 +339,9 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
               onStartRename: () => startRenameProvider(p, a),
               onLogin: () => loginProviderAccount(p, a.id),
               onMakeDefault: () => makeDefaultProvider(p, a.id),
-              onRemove: () => removeProviderAccount(p, a.id)
+              onRemove: () => setConfirmRemove({ provider: p, id: a.id }),
+              provider: p,
+              onConfirmRemove: () => removeProviderAccount(p, a.id)
             })
           )}
         </div>
@@ -345,6 +401,7 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
       }
     >
       <div className="acct-page">
+        {error && <p className="help settings-error" role="alert">{error}</p>}
         <section className="acct-section">
           <div className="eyebrow">Claude</div>
           <p className="help">{t('accounts.claude.intro')}</p>
@@ -366,7 +423,9 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
                 onStartRename: () => startRename(a),
                 onLogin: () => login(a.id),
                 onMakeDefault: () => makeDefault(a.id),
-                onRemove: () => remove(a.id)
+                onRemove: () => setConfirmRemove({ provider: 'claude', id: a.id }),
+                provider: 'claude',
+                onConfirmRemove: () => remove(a.id)
               })
             )}
           </div>

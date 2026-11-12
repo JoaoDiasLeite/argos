@@ -139,5 +139,6 @@ export default {
   'review.approve.other': 'Approve {n} steps',
   'review.approvePartial': 'Approve {left} of {n} steps',
   'review.reject': 'Reject',
-  'review.hints': 'Enter approves · Esc rejects'
+  'review.hints': 'Enter approves · Esc rejects',
+  'saveFailed': 'Could not save your changes. Check disk space and permissions.'
 } satisfies Record<string, string>

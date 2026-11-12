@@ -5,6 +5,7 @@ import { WeekPlan, PlannerTask, WeeklyPriority, Effort, PlannerAssistMode, CCAcc
 import ModelPicker from '../components/ModelPicker'
 import AccountPicker from '../components/AccountPicker'
 import Sheet from '../components/Sheet'
+import { useDebouncedSaver } from '../hooks/useDebouncedSaver'
 import SprintBoard, { PlannerModeToggle, PlannerMode } from './SprintBoard'
 import './views.css'
 import './PlannerView.css'
@@ -159,7 +160,13 @@ export default function PlannerView({
   const [image, setImage] = useState<{ mediaType: string; data: string; preview: string } | null>(null)
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
 
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [saveError, setSaveError] = useState(false)
+  // One pending save per week; flushed (not dropped) on unmount and when the window hides.
+  const saver = useDebouncedSaver<WeekPlan>({
+    delay: 400,
+    save: (w) => window.electronAPI.plannerSave(w),
+    onResult: (e) => setSaveError(e !== null)
+  })
   const todayYmd = ymd(new Date())
 
   // Briefly highlight a freshly-saved review and scroll it into view.
@@ -190,12 +197,10 @@ export default function PlannerView({
   const mutate = (fn: (w: WeekPlan) => WeekPlan) => {
     setWeek((prev) => {
       const next = fn(prev)
-      if (saveTimer.current) clearTimeout(saveTimer.current)
-      saveTimer.current = setTimeout(() => window.electronAPI.plannerSave(next), 400)
+      saver.schedule(next.weekStart, next)
       return next
     })
   }
-  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current) }, [])
 
   // ─── Mutations ───────────────────────────────────────────────────────────
   const addTask = (day: number | null, title: string) => {
@@ -429,6 +434,7 @@ export default function PlannerView({
             </p>
           </div>
         </div>
+        {saveError && <p className="sb-error" role="alert">{t('planner.saveFailed')}</p>}
         <div className="planner-header-actions">
           <div className="week-nav">
             <button

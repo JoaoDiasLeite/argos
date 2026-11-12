@@ -16,6 +16,7 @@ import {
 } from '../types'
 import Menu, { MoreIcon } from '../components/Menu'
 import Sheet from '../components/Sheet'
+import { useDebouncedSaver } from '../hooks/useDebouncedSaver'
 import { originOf, kindLabel, FORGE_NAMES } from '../lib/sprint-origin'
 import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
 import { useT } from '../i18n'
@@ -282,7 +283,13 @@ export default function SprintBoard({
   const [standupDate, setStandupDate] = useState(() => ymd(new Date()))
   const [genBusy, setGenBusy] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [saveError, setSaveError] = useState(false)
+  // One pending save per sprint id; flushed (not dropped) on unmount and when the window hides.
+  const saver = useDebouncedSaver<Sprint>({
+    delay: 350,
+    save: (s) => window.electronAPI.sprintSave(s),
+    onResult: (e) => setSaveError(e !== null)
+  })
 
   // ─── Cross-provider "Run with" selector (standup Generate + backlog backfill) ─────────
   // Seeded from the app-wide default model/account, but switchable to any logged-in
@@ -329,7 +336,6 @@ export default function SprintBoard({
       cancelled = true
     }
   }, [])
-  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current) }, [])
 
   // Persist one sprint (debounced) and keep it in the in-memory list.
   const persist = (next: Sprint) => {
@@ -337,22 +343,25 @@ export default function SprintBoard({
       const has = prev.some((s) => s.id === next.id)
       return has ? prev.map((s) => (s.id === next.id ? next : s)) : [next, ...prev]
     })
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => window.electronAPI.sprintSave(next), 350)
+    saver.schedule(next.id, next)
   }
 
   // Write several sprints at once (sprint completion moves items between two of them).
-  // The debounced `persist` keeps a single timer, so a second call would swallow the
-  // first — these go straight to disk instead.
+  // These go straight to disk (superseding any pending debounced save of the same sprint).
   const persistAll = (next: Sprint[]) => {
-    if (saveTimer.current) clearTimeout(saveTimer.current)
+    next.forEach((s) => saver.discard(s.id))
     setSprints((prev) => {
       const byId = new Map(next.map((s) => [s.id, s]))
       const merged = prev.map((s) => byId.get(s.id) ?? s)
       const added = next.filter((s) => !prev.some((p) => p.id === s.id))
       return [...added, ...merged]
     })
-    next.forEach((s) => window.electronAPI.sprintSave(s))
+    next.forEach((s) => {
+      window.electronAPI.sprintSave(s).then(
+        () => setSaveError(false),
+        () => setSaveError(true)
+      )
+    })
   }
 
   // Mutate the active sprint immutably, then persist. A completed sprint is a closed
@@ -390,6 +399,7 @@ export default function SprintBoard({
   }
   const deleteSprint = async () => {
     if (!active) return
+    saver.discard(active.id)
     const list = await window.electronAPI.sprintDelete(active.id)
     setSprints(list)
     setActiveId(list[0]?.id ?? '')
@@ -654,6 +664,7 @@ export default function SprintBoard({
 
   return (
     <div className="view">
+      {saveError && <p className="sb-error" role="alert">{t('sprints.saveFailed')}</p>}
       <div className="sb-head">
         <div className="sb-head-text">
           <div className="sb-title-row">

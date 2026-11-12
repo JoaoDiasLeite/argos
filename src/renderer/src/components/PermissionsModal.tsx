@@ -31,24 +31,24 @@ export default function PermissionsModal({ onClose }: Props) {
     window.electronAPI.getClaudePermissions().then(setPerms)
   }, [])
 
-  const persist = async (next: ClaudePermissions) => {
+  const persist = async (next: ClaudePermissions): Promise<boolean> => {
     setSaveError(null)
     const result = await window.electronAPI.setClaudePermissions(next)
     if (!result.ok) {
       setSaveError(result.error ?? t('settings.permissions.saveFailed'))
-      return
+      return false
     }
     setPerms(next)
     setSaved(true)
     setTimeout(() => setSaved(false), 1200)
+    return true
   }
 
   const add = async (key: ListKey) => {
     const val = inputs[key].trim()
     if (!val) return
     if (perms[key].includes(val)) return
-    await persist({ ...perms, [key]: [...perms[key], val] })
-    setInputs((prev) => ({ ...prev, [key]: '' }))
+    if (await persist({ ...perms, [key]: [...perms[key], val] })) setInputs((prev) => ({ ...prev, [key]: '' }))
   }
 
   const remove = async (key: ListKey, entry: string) => {
