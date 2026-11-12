@@ -21,8 +21,11 @@ export default function McpView() {
 
   const load = async () => {
     setLoading(true)
-    setServers(await window.electronAPI.mcpList())
-    setLoading(false)
+    try {
+      setServers(await window.electronAPI.mcpList())
+    } finally {
+      setLoading(false)
+    }
   }
   useEffect(() => {
     load()

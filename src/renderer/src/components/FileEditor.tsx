@@ -162,6 +162,10 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
       }
       setContent(res.content ?? '')
       setOriginal(res.content ?? '')
+    }).catch((e: unknown) => {
+      if (cancelled) return
+      setLoading(false)
+      setError(e instanceof Error ? e.message : t('editor.file.readFailed'))
     })
     return () => {
       cancelled = true
@@ -176,10 +180,15 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
     if (!dirty || saving) return
     setSaving(true)
     setError(null)
-    const res = await write(filePath, content)
-    setSaving(false)
-    if (res.ok) setOriginal(content)
-    else setError(res.error || t('editor.file.saveFailed'))
+    try {
+      const res = await write(filePath, content)
+      if (res.ok) setOriginal(content)
+      else setError(res.error || t('editor.file.saveFailed'))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('editor.file.saveFailed'))
+    } finally {
+      setSaving(false)
+    }
   }, [dirty, saving, write, filePath, content, t])
 
   /** Closing with unsaved edits raises an inline confirmation instead of throwing them away. */

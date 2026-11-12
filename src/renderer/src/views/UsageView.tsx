@@ -383,13 +383,16 @@ export default function UsageView() {
   const refresh = async () => {
     setRefreshing(true)
     window.electronAPI.ccPlanUsage(true).then(setPlanReport).catch(() => {})
-    const [rep, srcs, cfg] = await Promise.all([
-      window.electronAPI.ccUsage(true),
-      window.electronAPI.ccSources(),
-      window.electronAPI.getConfig()
-    ])
-    apply(rep, srcs, cfg.limits)
-    setRefreshing(false)
+    try {
+      const [rep, srcs, cfg] = await Promise.all([
+        window.electronAPI.ccUsage(true),
+        window.electronAPI.ccSources(),
+        window.electronAPI.getConfig()
+      ])
+      apply(rep, srcs, cfg.limits)
+    } finally {
+      setRefreshing(false)
+    }
   }
 
   useEffect(() => {
