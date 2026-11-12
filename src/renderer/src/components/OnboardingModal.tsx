@@ -27,19 +27,25 @@ export default function OnboardingModal({ onFinish }: Props) {
 
   const choose = async (mode: AuthMode) => {
     setBusy(true)
-    await window.electronAPI.setAuthMode(mode)
-    await refresh()
-    setBusy(false)
+    try {
+      await window.electronAPI.setAuthMode(mode)
+      await refresh()
+    } finally {
+      setBusy(false)
+    }
   }
 
   const saveKey = async () => {
     if (!key.trim()) return
     setBusy(true)
-    await window.electronAPI.setApiKey(key.trim())
-    await window.electronAPI.setAuthMode('api-key')
-    await refresh()
-    setBusy(false)
-    setKey('')
+    try {
+      await window.electronAPI.setApiKey(key.trim())
+      await window.electronAPI.setAuthMode('api-key')
+      await refresh()
+      setKey('')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const detected = auth?.claudeCodeDetected

@@ -169,11 +169,16 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
 
   const loadHistory = async () => {
     setHistoryLoading(true)
-    const res = isSsh
-      ? await window.electronAPI.sftpHistory(target.host.id)
-      : await window.electronAPI.wslHistory(target.distro)
-    setHistoryLoading(false)
-    if (res.ok) setRemoteHistory(res.commands ?? [])
+    try {
+      const res = isSsh
+        ? await window.electronAPI.sftpHistory(target.host.id)
+        : await window.electronAPI.wslHistory(target.distro)
+      if (res.ok) setRemoteHistory(res.commands ?? [])
+    } catch {
+      // History is a convenience: an empty panel beats a spinner that never ends.
+    } finally {
+      setHistoryLoading(false)
+    }
   }
 
   const openHistoryPanel = () => {

@@ -304,13 +304,18 @@ export default function RemoteView({
     if (!name || generating) return
     setGenerating(true)
     setGenError(null)
-    const res = await window.electronAPI.sshKeysGenerate(name)
-    setGenerating(false)
-    if (res.ok) {
-      setNewKeyName('')
-      setKeys(await window.electronAPI.sshKeysList())
-    } else {
-      setGenError(res.error)
+    try {
+      const res = await window.electronAPI.sshKeysGenerate(name)
+      if (res.ok) {
+        setNewKeyName('')
+        setKeys(await window.electronAPI.sshKeysList())
+      } else {
+        setGenError(res.error)
+      }
+    } catch (e) {
+      setGenError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setGenerating(false)
     }
   }
 

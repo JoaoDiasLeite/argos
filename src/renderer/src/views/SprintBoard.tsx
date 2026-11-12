@@ -2013,13 +2013,20 @@ function BacklogBackfillSheet(props: {
   const resolveProject = async () => {
     setResolving(true)
     setResolveError(null)
-    const res = await window.electronAPI.sprintBackfill({
-      projectPath: props.sprint.projectPath,
-      probe: true,
-      model: props.model,
-      accountId: props.accountId
-    })
-    setResolving(false)
+    let res: Awaited<ReturnType<typeof window.electronAPI.sprintBackfill>>
+    try {
+      res = await window.electronAPI.sprintBackfill({
+        projectPath: props.sprint.projectPath,
+        probe: true,
+        model: props.model,
+        accountId: props.accountId
+      })
+    } catch (e) {
+      setResolveError(e instanceof Error ? e.message : t('sprints.backfill.loadFailed'))
+      return
+    } finally {
+      setResolving(false)
+    }
     if (!res.ok || !res.data) {
       setResolveError(res.error || t('sprints.backfill.loadFailed'))
       return
@@ -2047,14 +2054,22 @@ function BacklogBackfillSheet(props: {
     setFetchError(null)
     setFetchWarning(null)
     setHasFetched(false)
-    const res = await window.electronAPI.sprintBackfill({
-      projectPath: props.sprint.projectPath,
-      instructions: project.trim() || undefined,
-      model: props.model,
-      accountId: props.accountId,
-      kind: which,
-      forge
-    })
+    let res: Awaited<ReturnType<typeof window.electronAPI.sprintBackfill>>
+    try {
+      res = await window.electronAPI.sprintBackfill({
+        projectPath: props.sprint.projectPath,
+        instructions: project.trim() || undefined,
+        model: props.model,
+        accountId: props.accountId,
+        kind: which,
+        forge
+      })
+    } catch (e) {
+      setFetching(false)
+      setHasFetched(true)
+      setFetchError(e instanceof Error ? e.message : t('sprints.backfill.fetchFailed', { what: kindNoun(t, forge, which) }))
+      return
+    }
     setFetching(false)
     setHasFetched(true)
     if (!res.ok || !res.data) {

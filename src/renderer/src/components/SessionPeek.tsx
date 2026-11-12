@@ -140,8 +140,15 @@ export default function SessionPeek({
   const run = async (fn: () => Promise<LifecycleResult>, after: 'close' | 'stay') => {
     setBusy(true)
     setError('')
-    const res = await fn()
-    setBusy(false)
+    let res: LifecycleResult
+    try {
+      res = await fn()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      return
+    } finally {
+      setBusy(false)
+    }
     if (!res.ok) {
       setError(
         res.error === 'not-found'

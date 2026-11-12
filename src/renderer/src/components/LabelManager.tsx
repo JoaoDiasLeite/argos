@@ -57,8 +57,15 @@ export default function LabelManager({ onClose, onChanged }: Props) {
 
   const doRename = async (from: string, to: string) => {
     setBusy(true)
-    const res = await window.electronAPI.ccLabelRename(from, to)
-    setBusy(false)
+    let res: Awaited<ReturnType<typeof window.electronAPI.ccLabelRename>>
+    try {
+      res = await window.electronAPI.ccLabelRename(from, to)
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e))
+      return
+    } finally {
+      setBusy(false)
+    }
     if (!res.ok) {
       // Renaming onto an existing name is a merge. Offer it rather than doing it:
       // merging silently loses a label nobody asked to lose.
@@ -75,8 +82,15 @@ export default function LabelManager({ onClose, onChanged }: Props) {
 
   const doMerge = async (from: string, into: string) => {
     setBusy(true)
-    const res = await window.electronAPI.ccLabelMerge(from, into)
-    setBusy(false)
+    let res: Awaited<ReturnType<typeof window.electronAPI.ccLabelMerge>>
+    try {
+      res = await window.electronAPI.ccLabelMerge(from, into)
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e))
+      return
+    } finally {
+      setBusy(false)
+    }
     await after(
       res.failed > 0
         ? partial(res.failed)
@@ -86,8 +100,15 @@ export default function LabelManager({ onClose, onChanged }: Props) {
 
   const doDelete = async (name: string) => {
     setBusy(true)
-    const res = await window.electronAPI.ccLabelDelete(name)
-    setBusy(false)
+    let res: Awaited<ReturnType<typeof window.electronAPI.ccLabelDelete>>
+    try {
+      res = await window.electronAPI.ccLabelDelete(name)
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e))
+      return
+    } finally {
+      setBusy(false)
+    }
     await after(
       res.failed > 0
         ? partial(res.failed)

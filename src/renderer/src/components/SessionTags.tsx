@@ -152,13 +152,20 @@ export function TagEditor({ session, vocabulary, colorFor, onSaved, onClose }: E
   const commit = async (next: string[]) => {
     setBusy(true)
     setError('')
-    const res = await window.electronAPI.ccSetSessionTags(
-      session.sourceId,
-      session.encodedDir,
-      session.sessionId,
-      next
-    )
-    setBusy(false)
+    let res: Awaited<ReturnType<typeof window.electronAPI.ccSetSessionTags>>
+    try {
+      res = await window.electronAPI.ccSetSessionTags(
+        session.sourceId,
+        session.encodedDir,
+        session.sessionId,
+        next
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      return
+    } finally {
+      setBusy(false)
+    }
     if (res.ok) {
       setTags(res.tags)
       onSaved(res.tags)
