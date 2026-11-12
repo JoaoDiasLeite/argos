@@ -145,6 +145,11 @@ export default {
   'ssh.claudeNoOutput': 'claude produced no output',
   'ssh.timedOut': 'No answer from the server within 20 s',
   'ssh.notTrusted': "The server's host key is not trusted; the terminal was not opened",
+  'ssh.invalid.username':
+    'Invalid username: use letters, numbers, ".", "_", "-", "@" or "\\", and do not start with "-".',
+  'ssh.invalid.host': 'Invalid host: use a hostname, an IPv4 address or an IPv6 address, without spaces or a leading "-".',
+  'ssh.invalid.remotePath': 'The remote project path may not contain control characters.',
+  'ssh.invalid.claudePath': 'The Claude path may not contain control characters.',
   'ssh.hostsSaveFailed': 'Could not save the hosts file: {error}',
   'ssh.hostsUnreadable':
     'The saved hosts file could not be read ({error}); refusing to overwrite it. Move {file} aside to start over.',
