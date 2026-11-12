@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactElement, type ReactNode, type Re
 import { rich } from '../lib/t-rich'
 import type { ApprovalOpsContext, ApprovalRequest, OpsOperatorRequest } from '../types'
 import { describeOpsRequest, displayArgv } from '../lib/ops-approval'
+import { useArmedAfter } from '../hooks/useArmedAfter'
 import { splitSections, type OpsOutputSection } from '../lib/ops-sections'
 import {
   currentStepKey,
@@ -335,9 +336,12 @@ function ScriptsList({ terminalId, runId, disabled }: { terminalId: string; runI
     const raw = (argText[s.name] ?? '').trim()
     const args = s.maxArgs > 0 && raw ? raw.split(/\s+/) : []
     // One line: a raw newline written into the pty is Enter, not part of the prompt.
+    // Names come from the runbook files: no control character reaches the pty (an ESC or a
+    // CR in a title would be typed into the TUI, not shown in the prompt).
+    const clean = (v: string): string => v.replace(/[\x00-\x1f\x7f]/g, ' ')
     const withArgs = args.length ? ` with the arguments ${JSON.stringify(args)}` : ' with no arguments'
     const prompt =
-      `Run the runbook script ${s.name} ("${s.title}") on host ${host.name} (hostId ${host.id})${withArgs}, ` +
+      `Run the runbook script ${clean(s.name)} ("${clean(s.title)}") on host ${clean(host.name)} (hostId ${clean(host.id)})${withArgs}, ` +
       'using the mcp__ops__script tool. Then show me its output and tell me what it means.'
     window.electronAPI.terminalWrite(terminalId, prompt)
     // Enter apart from the text, as ChatTerminal sends a seeded prompt: in the same write
@@ -696,8 +700,25 @@ function OperatorCard({ req, onAnswer }: { req: OpsOperatorRequest; onAnswer: (r
 }
 
 /** The call or host variant of the waiting block. */
-function WaitingCall({ ops, onDecide }: { ops: ApprovalOpsContext; onDecide: (allow: boolean) => void }) {
+function WaitingCall({
+  approvalId,
+  ops,
+  onDecide
+}: {
+  approvalId: string
+  ops: ApprovalOpsContext
+  onDecide: (allow: boolean) => void
+}) {
   const t = useT()
+  // The next queued request renders in this same spot: its buttons ignore clicks for a
+  // moment, and once one answer is sent no second click on this request goes out.
+  const armed = useArmedAfter(approvalId)
+  const sent = useRef(false)
+  const decide = (allow: boolean): void => {
+    if (!armed || sent.current) return
+    sent.current = true
+    onDecide(allow)
+  }
   if (ops.tool === 'host') {
     return (
       <>
@@ -710,10 +731,10 @@ function WaitingCall({ ops, onDecide }: { ops: ApprovalOpsContext; onDecide: (al
         </div>
         <div className="ac-wait-cmd">{ops.hostAddress}</div>
         <div className="ac-wait-actions">
-          <button type="button" className="ac-allow" onClick={() => onDecide(true)}>
+          <button type="button" className="ac-allow" disabled={!armed} onClick={() => decide(true)}>
             {t('sessions.activity.wait.allow')}
           </button>
-          <button type="button" className="ac-deny" onClick={() => onDecide(false)}>
+          <button type="button" className="ac-deny" disabled={!armed} onClick={() => decide(false)}>
             {t('sessions.activity.wait.deny')}
           </button>
         </div>
@@ -756,10 +777,10 @@ function WaitingCall({ ops, onDecide }: { ops: ApprovalOpsContext; onDecide: (al
         </div>
       )}
       <div className="ac-wait-actions">
-        <button type="button" className="ac-allow" onClick={() => onDecide(true)}>
+        <button type="button" className="ac-allow" disabled={!armed} onClick={() => decide(true)}>
           {t('sessions.activity.wait.allow')}
         </button>
-        <button type="button" className="ac-deny" onClick={() => onDecide(false)}>
+        <button type="button" className="ac-deny" disabled={!armed} onClick={() => decide(false)}>
           {t('sessions.activity.wait.deny')}
         </button>
       </div>
@@ -971,7 +992,7 @@ export default function ActivityColumn({
                 {ops.tool === 'plan' ? (
                   <PlanReviewSheet key={waiting.approvalId} request={waiting} onDecide={onDecide} />
                 ) : (
-                  <WaitingCall key={waiting.approvalId} ops={ops} onDecide={onDecide} />
+                  <WaitingCall key={waiting.approvalId} approvalId={waiting.approvalId} ops={ops} onDecide={onDecide} />
                 )}
               </div>
               {onDenyStop && (
