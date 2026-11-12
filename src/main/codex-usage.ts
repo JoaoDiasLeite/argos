@@ -70,7 +70,6 @@ async function readCodexRateLimits(configDir: string | null): Promise<CodexAccou
       child.stdout?.on('data', (chunk: Buffer) => {
         buf += chunk.toString()
         let nl: number
-        // eslint-disable-next-line no-cond-assign
         while ((nl = buf.indexOf('\n')) !== -1) {
           const line = buf.slice(0, nl).trim()
           buf = buf.slice(nl + 1)

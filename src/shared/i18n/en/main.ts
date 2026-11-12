@@ -91,7 +91,6 @@ export default {
   'ipc.ops.bridgeFailed': 'Could not start the ops bridge: {error}',
   'ipc.ops.noLiveSession': 'No live ops session on this terminal.',
   'ipc.ops.scriptNameRequired': 'A script name is required.',
-  'ipc.ops.scriptAndHostRequired': 'A script name and a host are required.',
   'ipc.ops.invalidTerminalId': 'Invalid terminal id.',
   'ipc.ops.ledgerUnreadable': 'Could not read the ops ledger: {error}',
   'ipc.ops.resumeRunUnknown': 'The intervention to resume ({runId}) is not in the ledger on this machine.',

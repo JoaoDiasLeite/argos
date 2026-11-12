@@ -797,7 +797,6 @@ function plainText(content: unknown): string {
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
     return content
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((b: any) => (b.type === 'text' ? b.text ?? '' : b.type === 'thinking' ? b.thinking ?? '' : ''))
       .join(' ')
   }

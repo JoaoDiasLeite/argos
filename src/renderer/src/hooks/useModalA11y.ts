@@ -77,6 +77,5 @@ export function useModalA11y(
       // Restore focus to the element that was focused before the modal opened.
       previouslyFocused?.focus()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled])
 }

@@ -68,7 +68,6 @@ function load(): Win32 | null {
   win32 = null
   if (process.platform !== 'win32') return null
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const koffi = require('koffi')
     const user32 = koffi.load('user32.dll')
     const dwmapi = koffi.load('dwmapi.dll')

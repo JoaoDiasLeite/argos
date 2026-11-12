@@ -70,7 +70,6 @@ export default function LocalBrowser({ dir, barSlot, pathSlot, onNavigate, onOpe
     setRenaming(null)
     setCreatingFolder(false)
     setCreatingFile(false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dir])
 
   const openEntry = (entry: FileNode) => {

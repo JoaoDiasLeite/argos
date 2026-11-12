@@ -155,12 +155,10 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSsh, isSsh ? target.host.id : target.distro])
 
   useEffect(() => {
     onStatusChange?.(status)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status])
 
   useEffect(() => {

@@ -21,7 +21,6 @@ import {
   setMode,
   setApiKey,
   getApiKey,
-  clearApiKey,
   getAuthStatus,
   buildSubprocessEnv,
   AuthMode
@@ -31,7 +30,6 @@ import { buildModelsCatalog } from './models-catalog'
 import {
   getAllProjects,
   listSessions,
-  readSession,
   readChatTranscript,
   getUsage,
   listSources,
@@ -66,8 +64,8 @@ import {
   removeGlobalMcpServer,
   mcpServersForProject
 } from './mcp'
-import { listWeeks, getWeek, saveWeek, deleteWeek, WeekPlan } from './planner'
-import { listSprints, getSprint, saveSprint, deleteSprint, Sprint } from './sprints'
+import { getWeek, saveWeek, WeekPlan } from './planner'
+import { listSprints, saveSprint, deleteSprint, Sprint } from './sprints'
 import {
   BackfillKind,
   buildBacklogBackfillPrompt,
@@ -93,7 +91,7 @@ import {
   SshHostInput
 } from './ssh'
 import { connectionFieldsChanged } from './ssh-host-pure'
-import { listSshKeys, generateKey, readPublicKey } from './ssh-keys'
+import { listSshKeys, generateKey } from './ssh-keys'
 import {
   sftpConnect,
   sftpList,
@@ -135,7 +133,6 @@ import {
   finishOpsRun,
   listOperatorScripts,
   openOpsSession,
-  runOperatorScript,
   type ApprovalOpsContext,
   type OpsRunContext,
   type OpsSession
@@ -171,7 +168,6 @@ import {
 } from './accounts'
 import { repairClaudeCliIfBroken } from './claude-cli'
 import { migrateUserDataDir } from './migrate-userdata'
-import { checkAgentCliStatus, loginAgentCli, AgentCliId } from './agent-clis'
 import {
   loadProviderAccounts,
   listProviderAccountStatus,
@@ -197,7 +193,6 @@ import {
   writeTerminal,
   resizeTerminal,
   killTerminal,
-  killTerminalDeferred,
   listTerminals,
   startCliInTerminal,
   killAllTerminals
@@ -1873,10 +1868,6 @@ ipcMain.handle('auth:set-api-key', (_, key: string) => {
   setApiKey(key)
   return getAuthStatus()
 })
-ipcMain.handle('auth:clear-api-key', () => {
-  clearApiKey()
-  return getAuthStatus()
-})
 ipcMain.handle('auth:has-api-key', () => getApiKey() !== null)
 
 // ─── Accounts (multiple Claude Code logins) ──────────────────────────────────
@@ -1890,11 +1881,6 @@ ipcMain.handle('accounts:rename', (_, id: string, name: string) => {
 ipcMain.handle('accounts:remove', (_, id: string) => removeAccount(id))
 ipcMain.handle('accounts:set-default', (_, id: string) => setDefaultAccount(id))
 ipcMain.handle('accounts:login', (_, id: string) => loginAccount(id))
-
-// ─── Agent CLI login status (Codex / Gemini) ─────────────────────────────────
-
-ipcMain.handle('agentcli:status', (_, id: AgentCliId) => checkAgentCliStatus(id))
-ipcMain.handle('agentcli:login', (_, id: AgentCliId) => loginAgentCli(id))
 
 // ─── Provider accounts (multiple Codex / Gemini logins) ─────────────────────
 
@@ -2605,15 +2591,6 @@ ipcMain.handle('ops:script-source', async (_, terminalId: string, name: unknown)
   return r.ok ? { ok: true, text: r.content.toString('utf-8'), sha256: r.sha256 } : { ok: false, error: r.error }
 })
 
-ipcMain.handle('ops:run-script', async (_, terminalId: string, name: unknown, hostId: unknown, args: unknown) => {
-  const s = typeof terminalId === 'string' ? terminalOps.get(terminalId) : undefined
-  if (!s || s.ctx.ended) return { ok: false, error: t('main.ipc.ops.noLiveSession') }
-  if (typeof name !== 'string' || typeof hostId !== 'string') return { ok: false, error: t('main.ipc.ops.scriptAndHostRequired') }
-  const list = Array.isArray(args) && args.every((a) => typeof a === 'string') ? (args as string[]) : []
-  const r = await runOperatorScript(s.session, name, hostId, list)
-  return { ok: !r.isError, text: r.text }
-})
-
 // The run header's "Refer to an intervention…" (INTERVENTION_HISTORY_PLAN §4): the
 // operator points a live run at an earlier one. Only a run the model could itself read
 // through past_interventions (one that touched a host in this run's scope), logged as
@@ -2862,7 +2839,6 @@ ipcMain.handle('ssh:test-claude', (_, id: string) => testClaude(id))
 ipcMain.handle('ssh:secret-storage', () => secretStorageState())
 ipcMain.handle('ssh:keys-list', () => listSshKeys())
 ipcMain.handle('ssh:keys-generate', (_, name: string, comment?: string) => generateKey(name, comment))
-ipcMain.handle('ssh:keys-public', (_, privatePath: string) => readPublicKey(privatePath))
 
 // ─── SFTP (Remote Session file browser) ────────────────────────────────────
 
@@ -3060,11 +3036,6 @@ ipcMain.handle('cc:list-sessions', async (_, sourceId: string, encodedDir: strin
   }
   return sessions
 })
-ipcMain.handle(
-  'cc:read-session',
-  (_, sourceId: string, encodedDir: string, sessionId: string, archived = false) =>
-    readSession(sourceId, encodedDir, sessionId, archived)
-)
 // Terminal-driven chats address a transcript by cwd + session id rather than by
 // source/encodedDir — see readChatTranscript's own doc comment for the resolution.
 ipcMain.handle(
@@ -3383,15 +3354,6 @@ ipcMain.handle('terminal:kill', (_, id: string) => {
   void endTerminalOps(id, TERMINAL_CLOSED)
   return r
 })
-ipcMain.on('terminal:kill-deferred', (_, id: string) => {
-  killTerminalDeferred(id)
-  if (!terminalOps.has(id)) return
-  // The deferred kill fires after 250 ms unless a re-create for the same id cancels it
-  // (a remount); only a terminal that is really gone ends its run.
-  setTimeout(() => {
-    if (!listTerminals().some((t) => t.id === id)) void endTerminalOps(id, TERMINAL_CLOSED)
-  }, 500)
-})
 // The ptys this process holds, for the terminal grid. No consumer count: unmounting
 // a terminal view never kills anything, so there is nothing to reference-count.
 ipcMain.handle('terminal:list', () => listTerminals())
@@ -3432,15 +3394,12 @@ ipcMain.handle('remote-shell:kill', (_, id: string) => remoteShellKill(id))
 
 // ─── Planner ──────────────────────────────────────────────────────────────────
 
-ipcMain.handle('planner:list', () => listWeeks())
 ipcMain.handle('planner:get', (_, weekStart: string) => getWeek(weekStart))
 ipcMain.handle('planner:save', (_, week: WeekPlan) => saveWeek(week))
-ipcMain.handle('planner:delete', (_, weekStart: string) => deleteWeek(weekStart))
 
 // ─── Sprints (Scrum board / standups / burndown) ───────────────────────────────
 
 ipcMain.handle('sprint:list', () => listSprints())
-ipcMain.handle('sprint:get', (_, id: string) => getSprint(id))
 ipcMain.handle('sprint:save', (_, sprint: Sprint) => {
   const saved = saveSprint(sprint)
   companionSprintChanged()
@@ -4021,13 +3980,6 @@ ipcMain.handle(
   }
 )
 
-ipcMain.handle('fs:read-file', (_, filePath: string) => {
-  try {
-    return { content: fs.readFileSync(filePath, 'utf-8') }
-  } catch (err: unknown) {
-    return { error: err instanceof Error ? err.message : String(err) }
-  }
-})
 
 ipcMain.handle('fs:open-folder', async (_, defaultPath?: string) => {
   if (!mainWindow) return null

@@ -241,12 +241,6 @@ function isSafeId(id: unknown): id is string {
   return typeof id === 'string' && id.length > 0 && id.length <= 128 && SAFE_ID_RE.test(id)
 }
 
-/** The buffered output replayed when a renderer reattaches to a live pty. */
-export function getTerminalBuffer(id: string): string {
-  if (!isSafeId(id)) return ''
-  return outputBuffers.get(id) ?? ''
-}
-
 export interface CreateTerminalOptions {
   cwd?: string
   /** The account id for the chat's provider (Claude account, CODEX_HOME account, or Gemini account). */
@@ -782,20 +776,6 @@ export function killTerminal(id: string): { ok: boolean } {
   terminalInfo.delete(id)
   forgetOps(id)
   return { ok: true }
-}
-
-// Schedule a kill instead of running it immediately, so a renderer effect cleanup that's
-// about to be immediately followed by a re-create for the same id (React StrictMode's
-// dev-only mount -> cleanup -> mount) doesn't tear down a pty that's about to be reused.
-// A real close/session-switch has no follow-up create, so the kill fires after the delay.
-export function killTerminalDeferred(id: string): void {
-  if (!isSafeId(id)) return
-  if (pendingKills.has(id)) return
-  const t = setTimeout(() => {
-    pendingKills.delete(id)
-    killTerminal(id)
-  }, 250)
-  pendingKills.set(id, t)
 }
 
 // Only characters found in Claude Code session ids (UUID-like) — guards against injecting

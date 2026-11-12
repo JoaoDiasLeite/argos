@@ -1,6 +1,6 @@
 import { storeGet, storeSet } from './store'
 import { LABEL_PALETTE, nextFreeColor, normalizeTags } from './tags-pure'
-import { countSessionsWithTag, rewriteTagAcrossSessions, scanSessionsWithTag } from './tags-sweep'
+import { countSessionsWithTag, rewriteTagAcrossSessions } from './tags-sweep'
 
 /**
  * The label colour registry.
@@ -143,20 +143,4 @@ export async function deleteLabel(name: string): Promise<{ cleared: number; fail
     save(reg)
   }
   return { cleared: changed, failed }
-}
-
-/**
- * The vocabulary: every label in the registry, plus every tag currently applied.
- * The union is what the filter bar and the autocomplete offer.
- */
-export async function labelVocabulary(): Promise<LabelRegistry> {
-  const reg = getLabels()
-  // Only registry keys are cheap to read; applied-but-unregistered tags arrive via
-  // foldIn as sessions are listed, which is the path that actually reads them.
-  return reg
-}
-
-/** Sessions carrying a label — used by the manager to show what a verb will touch. */
-export async function sessionsWithLabel(name: string): Promise<number> {
-  return (await scanSessionsWithTag(name)).length
 }
