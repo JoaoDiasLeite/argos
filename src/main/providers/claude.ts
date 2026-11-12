@@ -1,5 +1,6 @@
 import type { query as QueryFn } from '@anthropic-ai/claude-agent-sdk'
 import { sdkExecutable } from '../sdk-exe'
+import { buildClaudeSdkOptions } from './claude-options-pure'
 import type { AiEngine, EngineMessage, EngineRequest } from './types'
 
 /**
@@ -116,27 +117,7 @@ export const claudeEngine: AiEngine = {
   async *run(req: EngineRequest) {
     const query = await getQuery()
 
-    // Map the provider-neutral request onto SDK options. Optional fields are only
-    // set when present so the SDK's own defaults apply otherwise (e.g. an omitted
-    // maxTurns stays uncapped).
-    const options: NonNullable<Parameters<typeof query>[0]['options']> = {
-      ...sdkExecutable(),
-      model: req.model,
-      cwd: req.cwd,
-      env: req.env,
-      abortController: req.abortController,
-      settingSources: req.settingSources,
-      permissionMode: req.permissionMode,
-      ...(req.allowedTools ? { allowedTools: req.allowedTools } : {}),
-      ...(req.additionalDirectories && req.additionalDirectories.length
-        ? { additionalDirectories: req.additionalDirectories }
-        : {}),
-      ...(req.disallowedTools ? { disallowedTools: req.disallowedTools } : {}),
-      ...(req.maxTurns !== undefined ? { maxTurns: req.maxTurns } : {}),
-      ...(req.mcpServers ? { mcpServers: req.mcpServers as Record<string, never> } : {}),
-      ...(req.systemPrompt ? { systemPrompt: req.systemPrompt } : {}),
-      ...(req.resume ? { resume: req.resume } : {})
-    }
+    const options = buildClaudeSdkOptions(req, sdkExecutable())
 
     const stream = query({ prompt: req.prompt, options })
     const sawPartial = { value: false }

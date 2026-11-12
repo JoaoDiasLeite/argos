@@ -19,7 +19,14 @@ AS_POSTGRES=0
 PGH=()
 
 # Funções que uma transação READ ONLY não trava, ou que executam SQL vindo de texto.
-FORBIDDEN='(^|[^a-z0-9_$])(pg_terminate_backend|pg_cancel_backend|pg_reload_conf|pg_rotate_logfile|pg_sleep[a-z_]*|lo_[a-z_]+|dblink[a-z_]*|set_config|pg_advisory[a-z_]*|pg_try_advisory[a-z_]*|pg_notify|pg_read_file|pg_read_binary_file|pg_ls_[a-z_]+|pg_stat_file|pg_file_[a-z_]+|pg_switch_[a-z_]+|pg_create_[a-z_]+|pg_drop_[a-z_]+|pg_promote|pg_wal_[a-z_]+|pg_xlog_[a-z_]+|pg_logical_[a-z_]+|pg_replication_[a-z_]+|pg_start_backup|pg_stop_backup|pg_backup_[a-z_]+|pg_log_[a-z_]+|pg_stat_reset[a-z_]*|pg_import_[a-z_]+|[a-z_]*_to_xml[a-z_]*|query_to_[a-z_]+)([^a-z0-9_$]|$)'
+# As que executam SQL vindo de texto (query_to_*, *_to_xml*, ts_stat, ts_rewrite,
+# crosstab*, connectby, xpath_table, pgr_*, dblink*) são recusadas pelo nome: dentro do
+# texto que recebem, o nome de outra função pode vir partido por || e nenhuma regra o
+# apanha. O que fecha esse caminho é esta lista de executores, não procurar nomes dentro
+# de strings.
+FORBIDDEN='(^|[^a-z0-9_$])(pg_terminate_backend|pg_cancel_backend|pg_reload_conf|pg_rotate_logfile|pg_sleep[a-z_]*|lo_[a-z_]+|dblink[a-z_]*|set_config|pg_advisory[a-z_]*|pg_try_advisory[a-z_]*|pg_notify|pg_read_[a-z_]+|pg_ls_[a-z_]+|pg_logdir_ls|pg_stat_file|pg_file_[a-z_]+|pg_switch_[a-z_]+|pg_create_[a-z_]+|pg_drop_[a-z_]+|pg_copy_[a-z_]+|pg_sync_replication_slots|pg_promote|pg_wal_[a-z_]+|pg_xlog_[a-z_]+|pg_logical_[a-z_]+|pg_replication_[a-z_]+|pg_start_backup|pg_stop_backup|pg_backup_[a-z_]+|pg_log_[a-z_]+|pg_stat_reset[a-z_]*|pg_stat_statements_reset|pg_import_[a-z_]+|pg_restore_[a-z_]+_stats|pg_clear_[a-z_]+_stats|pg_set_[a-z_]+_stats|pg_truncate_visibility_map|brin_[a-z_]+|gin_clean_pending_list|binary_upgrade_[a-z_]+|[a-z_]*_to_xml[a-z_]*|query_to_[a-z_]+|ts_stat|ts_rewrite|crosstab[a-z0-9_]*|connectby|xpath_table|pgr_[a-z0-9_]+)([^a-z0-9_$]|$)'
+# U&"..." / U&'...' (com o UESCAPE que os acompanha), já em minúsculas.
+UNICODE_ESC="u&[[:space:]]*[\"']|(^|[^a-z0-9_\$])uescape([^a-z0-9_\$]|\$)"
 
 find_psql() {
   if command -v psql >/dev/null 2>&1; then
@@ -102,8 +109,14 @@ check_sql() {
       return
       ;;
   esac
+  # U&"..." e U&'...' escrevem um nome ou um texto em escapes Unicode, que nenhuma regra
+  # de nomes lê (U&"pg!0074erminate_backend" UESCAPE '!'). Recusados de todo.
+  if [[ $lower =~ $UNICODE_ESC ]]; then
+    REASON="a query usa a sintaxe U& (escapes Unicode), que esconde nomes de funções"
+    return
+  fi
   if [[ $lower =~ $FORBIDDEN ]]; then
-    REASON="a query chama ${BASH_REMATCH[2]}, que tem efeitos fora da leitura"
+    REASON="a query chama ${BASH_REMATCH[2]}, que tem efeitos fora da leitura ou executa SQL vindo de texto"
     return
   fi
   # SELECT INTO e FOR UPDATE não precisam de regra: a transação de leitura recusa-os.

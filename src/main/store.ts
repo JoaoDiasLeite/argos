@@ -1,7 +1,7 @@
 import { app } from 'electron'
-import * as fs from 'fs'
 import * as path from 'path'
-import { readJsonFile } from './json-file'
+import { loadJsonFileGuarded, writeJsonFileAtomic } from './json-file'
+import { isPlainObject } from './json-load-pure'
 import { projectNameKey } from './project-move-pure'
 
 /**
@@ -13,20 +13,24 @@ const storePath = path.join(app.getPath('userData'), 'store.json')
 
 let data: Record<string, unknown> = {}
 let loaded = false
+/** store.json exists but could not be read (transient lock): not overwritten this session. */
+let unreadable = false
 
 function ensureLoaded(): void {
   if (loaded) return
-  try {
-    if (fs.existsSync(storePath)) data = readJsonFile<Record<string, unknown>>(storePath)
-  } catch {
-    data = {}
-  }
+  const result = loadJsonFileGuarded<Record<string, unknown>>(storePath, isPlainObject)
+  unreadable = result.kind === 'unreadable'
+  data = result.kind === 'ok' ? result.value : {}
   loaded = true
 }
 
 function persist(): void {
+  if (unreadable) {
+    console.warn('[argos] store.json was unreadable at startup; not overwriting it')
+    return
+  }
   try {
-    fs.writeFileSync(storePath, JSON.stringify(data))
+    writeJsonFileAtomic(storePath, data)
   } catch {
     // best-effort
   }

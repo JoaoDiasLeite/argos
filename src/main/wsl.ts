@@ -415,18 +415,22 @@ export function wslClipboardImageCapable(distro: string): Promise<boolean> {
  * Run a one-shot headless `claude -p` inside a distro and capture its full output — used
  * for background JSON tasks (e.g. the GitLab-MCP backlog backfill) where the MCP server
  * only exists inside WSL. Loads the distro's own MCP config automatically; bypasses
- * permission prompts (there's no interactive channel) and restricts tools to allowedTools.
+ * permission prompts (there's no interactive channel). `tools` is the base set of
+ * built-in tools loaded at all (`--tools`); `allowedTools` only auto-approves, so
+ * under bypassPermissions it is `tools` that keeps Bash/Write/Edit out of reach.
  * Returns the concatenated assistant text (or the final result string).
  */
 export function runWslOneShot(
   distro: string,
   prompt: string,
-  opts: { model?: string; allowedTools?: string[]; cwd?: string; timeoutMs?: number }
+  opts: { model?: string; tools?: string[]; allowedTools?: string[]; cwd?: string; timeoutMs?: number }
 ): Promise<{ ok: boolean; text: string; error?: string }> {
   if (!isWindows) return Promise.resolve({ ok: false, text: '', error: t('main.wsl.windowsOnly') })
   return new Promise((resolve) => {
     const flags = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'bypassPermissions']
     if (opts.model) flags.push('--model', opts.model)
+    // An empty list is forwarded too: `--tools ''` disables every built-in tool.
+    if (opts.tools !== undefined) flags.push('--tools', shQuote(opts.tools.join(',')))
     if (opts.allowedTools?.length) flags.push('--allowedTools', opts.allowedTools.join(','))
     const useHome = !opts.cwd || isWindowsHomeMount(opts.cwd)
     const cd = useHome ? 'cd "$HOME" && ' : `cd ${shQuote(opts.cwd!)} && `

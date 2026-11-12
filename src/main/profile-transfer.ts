@@ -46,6 +46,7 @@ import {
   PROFILE_DIRS,
   PROFILE_JSON_FILES,
   candidateKey,
+  childDirInside,
   decryptSecrets,
   defaultExportName,
   encryptSecrets,
@@ -606,7 +607,10 @@ async function planProject(ctx: ImportContext, project: ProjectLine): Promise<Pl
       }
     }
   } else if (wsl) {
-    if (wslRoot) dest = { kind: 'claude', dir: path.join(wslRoot, destName) }
+    // childDirInside: null (nothing written) unless the archive's dir name stays a
+    // single directory strictly inside the projects root.
+    const dir = wslRoot ? childDirInside(wslRoot, destName) : null
+    if (dir) dest = { kind: 'claude', dir }
   } else {
     let root: string | null = null
     if (project.sourceId === 'local') root = path.join(os.homedir(), '.claude', 'projects')
@@ -614,7 +618,8 @@ async function planProject(ctx: ImportContext, project: ProjectLine): Promise<Pl
       const acc = ctx.claudeAccounts.group.accounts.find((a) => a.id === project.accountId)
       if (acc) root = acc.configDir ? path.join(acc.configDir, 'projects') : path.join(os.homedir(), '.claude', 'projects')
     }
-    if (root) dest = { kind: 'claude', dir: path.join(root, destName) }
+    const dir = root ? childDirInside(root, destName) : null
+    if (dir) dest = { kind: 'claude', dir }
   }
 
   let exists = false
@@ -736,7 +741,7 @@ async function applyProfile(ctx: ImportContext, secrets: SecretsPayload | null, 
   if (isPlainObject(pj['store.json'])) {
     const local = await readJson(path.join(ud, 'store.json'))
     const merged = mergeStore(isPlainObject(local) ? local : {}, remapStore(pj['store.json'], remap))
-    await fs.promises.writeFile(path.join(ud, 'store.json'), JSON.stringify(merged), 'utf8')
+    await writeJsonAtomic(path.join(ud, 'store.json'), merged)
   }
 
   // Accounts: metadata only, each new one with an empty config dir of its own.

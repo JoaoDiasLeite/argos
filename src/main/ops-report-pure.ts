@@ -10,7 +10,7 @@
  * fixed sentences are ours and are written to need no sanitising.
  */
 
-import type { OpsCallSummary, OpsLinkedRun, OpsRunSummary } from './ops-audit-pure'
+import { unansweredText, type OpsCallSummary, type OpsLinkedRun, type OpsRunSummary } from './ops-audit-pure'
 import type { OpsHostRef } from './ops-types'
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────────
@@ -23,14 +23,14 @@ function hostLabel(summary: OpsRunSummary, c: OpsCallSummary): string {
 
 function concluded(c: OpsCallSummary): boolean {
   if (c.decision === 'deny') return false
-  if (c.answer === 'deny' || c.answer === 'stop') return false
+  if (c.answer === 'deny' || c.answer === 'stop' || c.answer === 'cancelled') return false
   if (c.timedOut) return false
   return c.exitCode === 0
 }
 
 /** Went to the host (or was meant to): what decides whether the run changed anything. */
 function attempted(c: OpsCallSummary): boolean {
-  return c.decision !== 'deny' && c.answer !== 'deny' && c.answer !== 'stop'
+  return c.decision !== 'deny' && c.answer !== 'deny' && c.answer !== 'stop' && c.answer !== 'cancelled'
 }
 
 /** A fence longer than any backtick run inside, so stdout cannot close it early. */
@@ -90,6 +90,7 @@ function callStatus(c: OpsCallSummary): string {
   if (c.decision === 'deny') return 'not run (denied)'
   if (c.answer === 'deny') return 'not run (refused at the prompt)'
   if (c.answer === 'stop') return 'not run (run stopped at the prompt)'
+  if (c.answer === 'cancelled') return `not run (${unansweredText(c.cause)})`
   if (c.timedOut) return 'timed out'
   if (c.exitCode === undefined) return 'no finish recorded'
   if (c.exitCode === null) return 'killed (no exit code)'

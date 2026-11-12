@@ -141,6 +141,7 @@ import {
   type OpsSession
 } from './ops-session'
 import { newOpsToken, registerToken, revokeToken, startOpsBridge, stopOpsBridge } from './ops-bridge'
+import { anySignal } from './ops-exec-pure'
 import { removeOpsMcpConfig, writeOpsMcpConfig } from './ops-mcp-config'
 import { opsRelayCommand, type OpsCli } from './ops-mcp-config-pure'
 import { OPS_MCP_FLAG, runOpsRelay } from './ops-relay'
@@ -2498,9 +2499,20 @@ async function openTerminalOps(terminalId: string, intervention: OpsIntervention
     readScript,
     hostAddress: opsHostAddress,
     syslog: { operator: opsOperator(), sshUser: (hostId) => listHosts().find((h) => h.id === hostId)?.username ?? '' },
-    ask: async ({ tool, input, ops: context }) => {
-      const d = await requestToolApproval(terminalId, tool, input, abort.signal, context)
-      return { allow: d.allow, ...(d.stop ? { stop: true } : {}), ...(d.skipSteps?.length ? { skipSteps: d.skipSteps } : {}) }
+    ask: async ({ tool, input, ops: context }, callSignal) => {
+      // A withdrawn call ends its prompt the way a stop does: it leaves both UIs.
+      const linked = callSignal ? anySignal([abort.signal, callSignal]) : null
+      try {
+        const d = await requestToolApproval(terminalId, tool, input, linked?.signal ?? abort.signal, context)
+        return {
+          allow: d.allow,
+          ...(d.stop ? { stop: true } : {}),
+          ...(d.skipSteps?.length ? { skipSteps: d.skipSteps } : {}),
+          ...(d.unanswered ? { unanswered: true } : {})
+        }
+      } finally {
+        linked?.dispose()
+      }
     },
     askSecret: (req) => requestOpsSecret(terminalId, req, abort.signal),
     askOperator: (req) => requestOpsOperator(terminalId, req, abort.signal),
@@ -2668,6 +2680,8 @@ interface ApprovalDecision {
   stop?: boolean
   /** Ops plans only: 0-based indices of the plan steps the operator skipped. */
   skipSteps?: number[]
+  /** Set when no one answered: the prompt was ended by a stop or a withdrawn call (or never shown). */
+  unanswered?: boolean
 }
 // Each entry keeps the request exactly as it was sent, so a reloaded renderer can pull
 // it back (`ops:pending`) instead of leaving the run waiting on a prompt nobody sees.
@@ -2686,7 +2700,7 @@ function requestToolApproval(
   signal: AbortSignal,
   ops?: ApprovalOpsContext
 ): Promise<ApprovalDecision> {
-  if (signal.aborted) return Promise.resolve({ allow: false })
+  if (signal.aborted) return Promise.resolve({ allow: false, unanswered: true })
   const approvalId = nextApprovalId()
   return new Promise((resolve) => {
     const finish = (decision: ApprovalDecision) => {
@@ -2695,7 +2709,7 @@ function requestToolApproval(
       resolveApprovalEverywhere(approvalId)
       resolve(decision)
     }
-    const onAbort = () => finish({ allow: false })
+    const onAbort = () => finish({ allow: false, unanswered: true })
     const req = { appSessionId, approvalId, tool, input, ...(ops ? { ops } : {}) }
     pendingApprovals.set(approvalId, { req, finish })
     signal.addEventListener('abort', onAbort, { once: true })
@@ -3837,6 +3851,8 @@ ipcMain.handle(
       const res = await runWslOneShot(forgeServer.source, promptText, {
         model,
         // MCP server + read-only file tools (to read a repo's .git/config); no Bash/Write.
+        // `tools` is what removes the other built-ins; `allowedTools` only auto-approves.
+        tools: ['Read', 'Grep', 'Glob'],
         allowedTools: [`mcp__${forgeServer.name}`, 'Read', 'Grep', 'Glob'],
         cwd,
         timeoutMs: 180000

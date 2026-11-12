@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ApprovalRequest } from '../types'
 import { applyTheme } from '../lib/theme'
 import { mergeById } from '../lib/merge-by-id'
-import { opsToastEyebrow, opsToastQuestion } from '../lib/ops-approval'
+import { opsToastEyebrow, opsToastNeedsMainWindow, opsToastQuestion } from '../lib/ops-approval'
+import { useArmedAfter } from '../hooks/useArmedAfter'
 import { rich } from '../lib/t-rich'
 import { useT } from '../i18n'
 import type { TFunction } from '../../../shared/i18n'
@@ -74,9 +75,15 @@ export default function Toast() {
   }, [])
 
   const head = queue[0]
+  // The next request takes the same spot when this one is answered: its buttons stay dead
+  // for a moment, so a double click cannot answer what was never read.
+  const armed = useArmedAfter(head?.approvalId ?? '')
+  const answered = useRef(new Set<string>())
   if (!head) return <div className="toast-shell toast-empty" />
 
   const decide = (allow: boolean) => {
+    if (!armed || answered.current.has(head.approvalId)) return
+    answered.current.add(head.approvalId)
     // The main process broadcasts approval:resolved which prunes the queue here,
     // so we don't need to optimistically remove — but doing so keeps the UI snappy.
     window.electronAPI.respondApproval({ approvalId: head.approvalId, allow })
@@ -88,6 +95,8 @@ export default function Toast() {
     // to the person deciding, and a plan is approved, not "allowed".
     const q = opsToastQuestion(head.ops, t)
     const plan = head.ops.tool === 'plan'
+    // Allow only for what the toast shows in full; anything cut short is answered in the app.
+    const review = opsToastNeedsMainWindow(head.ops)
     return (
       <div className="toast-shell">
         <div className="toast-head">
@@ -101,16 +110,29 @@ export default function Toast() {
           {rich(q.text, { code: q.code ? <code className="toast-chip">{q.code}</code> : '' })}
         </div>
         <div className="toast-actions">
-          <button className="toast-btn allow" onClick={() => decide(true)}>
-            {plan ? t('app.toast.approve') : t('app.toast.allow')}
-          </button>
-          <button className="toast-btn deny" onClick={() => decide(false)}>
+          {review ? (
+            // No extra line of text: the window is 160 px tall and the question needs its three.
+            <button
+              className="toast-btn allow"
+              title={t('app.toast.reviewInApp')}
+              onClick={() => window.electronAPI.toastOpenMain()}
+            >
+              {t('app.toast.openArgos')}
+            </button>
+          ) : (
+            <button className="toast-btn allow" disabled={!armed} onClick={() => decide(true)}>
+              {plan ? t('app.toast.approve') : t('app.toast.allow')}
+            </button>
+          )}
+          <button className="toast-btn deny" disabled={!armed} onClick={() => decide(false)}>
             {t('app.toast.deny')}
           </button>
           <span className="toast-spacer" />
-          <button className="toast-link" onClick={() => window.electronAPI.toastOpenMain()}>
-            {t('app.toast.openArgos')}
-          </button>
+          {!review && (
+            <button className="toast-link" onClick={() => window.electronAPI.toastOpenMain()}>
+              {t('app.toast.openArgos')}
+            </button>
+          )}
         </div>
       </div>
     )
@@ -129,10 +151,10 @@ export default function Toast() {
         </span>
       </div>
       <div className="toast-actions">
-        <button className="toast-btn allow" onClick={() => decide(true)}>
+        <button className="toast-btn allow" disabled={!armed} onClick={() => decide(true)}>
           {t('app.toast.allow')}
         </button>
-        <button className="toast-btn deny" onClick={() => decide(false)}>
+        <button className="toast-btn deny" disabled={!armed} onClick={() => decide(false)}>
           {t('app.toast.deny')}
         </button>
         <span className="toast-spacer" />

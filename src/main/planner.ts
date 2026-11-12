@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import { readJsonFile } from './json-file'
+import { readJsonFile, writeJsonFileAtomic } from './json-file'
 
 // A weekly plan is keyed by its Monday (ISO date, e.g. "2026-06-15") and stored
 // as one JSON file per week.
@@ -110,7 +110,7 @@ export function getWeek(weekStart: string): WeekPlan {
 export function saveWeek(week: WeekPlan): WeekPlan {
   ensurePlannerDir()
   const next: WeekPlan = { ...week, updatedAt: Date.now() }
-  fs.writeFileSync(fileFor(week.weekStart), JSON.stringify(next, null, 2))
+  writeJsonFileAtomic(fileFor(week.weekStart), next)
   return next
 }
 

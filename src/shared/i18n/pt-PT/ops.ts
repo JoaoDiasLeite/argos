@@ -127,6 +127,7 @@ const ops: Record<keyof typeof en, string> = {
   'timeline.row.exit': 'saída {code}',
   'timeline.row.timedOut': 'expirou',
   'timeline.row.stopped': 'parou',
+  'timeline.row.cancelled': 'sem resposta',
   'timeline.row.waiting': 'à espera',
   'timeline.row.queued': 'em fila',
   'timeline.row.running': 'em execução',

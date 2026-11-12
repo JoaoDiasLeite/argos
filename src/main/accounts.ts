@@ -3,7 +3,9 @@ import { spawn } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
-import { readJsonFile } from './json-file'
+import { loadJsonFileGuarded, readJsonFile, writeJsonFileAtomic } from './json-file'
+import { isPlainObject } from './json-load-pure'
+import { isStrictlyInside } from './path-contain-pure'
 import { openLinuxTerminal } from './linux-desktop'
 
 /**
@@ -56,24 +58,28 @@ function freshState(): AccountsState {
 
 let state: AccountsState = freshState()
 
+/** Set when accounts.json exists but could not be read (transient lock): persisting
+ *  would replace it with a fresh state, so persist stays off for the session. */
+let accountsUnreadable = false
+
 export function loadAccounts(): void {
+  const result = loadJsonFileGuarded<Partial<AccountsState>>(accountsFile(), isPlainObject)
+  accountsUnreadable = result.kind === 'unreadable'
+  state = freshState()
+  if (result.kind !== 'ok') return
   try {
-    if (fs.existsSync(accountsFile())) {
-      const loaded = readJsonFile<Partial<AccountsState>>(accountsFile())
-      const accounts = Array.isArray(loaded.accounts) ? loaded.accounts : []
-      // Always guarantee a default account exists.
-      if (!accounts.some((a) => a.id === DEFAULT_ID)) {
-        accounts.unshift({ id: DEFAULT_ID, name: 'Default', configDir: null, isDefault: true })
-      }
-      state = {
-        accounts: accounts.map((a) => ({ ...a, isDefault: a.id === DEFAULT_ID })),
-        defaultAccountId:
-          loaded.defaultAccountId && accounts.some((a) => a.id === loaded.defaultAccountId)
-            ? loaded.defaultAccountId
-            : DEFAULT_ID
-      }
-    } else {
-      state = freshState()
+    const loaded = result.value
+    const accounts = Array.isArray(loaded.accounts) ? loaded.accounts : []
+    // Always guarantee a default account exists.
+    if (!accounts.some((a) => a.id === DEFAULT_ID)) {
+      accounts.unshift({ id: DEFAULT_ID, name: 'Default', configDir: null, isDefault: true })
+    }
+    state = {
+      accounts: accounts.map((a) => ({ ...a, isDefault: a.id === DEFAULT_ID })),
+      defaultAccountId:
+        loaded.defaultAccountId && accounts.some((a) => a.id === loaded.defaultAccountId)
+          ? loaded.defaultAccountId
+          : DEFAULT_ID
     }
   } catch {
     state = freshState()
@@ -81,8 +87,12 @@ export function loadAccounts(): void {
 }
 
 function persist(): void {
+  if (accountsUnreadable) {
+    console.warn('[argos] accounts.json was unreadable at startup; not overwriting it')
+    return
+  }
   try {
-    fs.writeFileSync(accountsFile(), JSON.stringify(state, null, 2))
+    writeJsonFileAtomic(accountsFile(), state)
   } catch {
     // best-effort
   }
@@ -189,7 +199,9 @@ export function renameAccount(id: string, name: string): void {
 export function removeAccount(id: string): { accounts: CCAccountStatus[]; defaultAccountId: string } {
   if (id === DEFAULT_ID) return listAccountStatus() // never remove the default
   const account = state.accounts.find((a) => a.id === id)
-  if (account?.configDir) {
+  // Only ever delete inside the dir this app creates accounts in: accounts.json can be
+  // hand-edited, and an imported profile writes it too.
+  if (account?.configDir && isStrictlyInside(accountsRoot(), account.configDir)) {
     try {
       fs.rmSync(account.configDir, { recursive: true, force: true })
     } catch {

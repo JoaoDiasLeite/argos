@@ -137,7 +137,7 @@ export function handoverFileName(s: {
 
 /** Went to the host: neither the gate nor the operator stopped it, and it started or finished. */
 function ran(c: OpsCallSummary): boolean {
-  if (c.decision === 'deny' || c.answer === 'deny' || c.answer === 'stop') return false
+  if (c.decision === 'deny' || c.answer === 'deny' || c.answer === 'stop' || c.answer === 'cancelled') return false
   return c.startedAt !== undefined || c.exitCode !== undefined
 }
 

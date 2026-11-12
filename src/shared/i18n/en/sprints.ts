@@ -216,5 +216,6 @@ export default {
   'backfill.selected': '{n} selected',
   'backfill.all': 'All',
   'backfill.row.pr': 'PR',
-  'backfill.row.mr': 'MR'
+  'backfill.row.mr': 'MR',
+  'saveFailed': 'Could not save your changes. Check disk space and permissions.'
 } satisfies Record<string, string>

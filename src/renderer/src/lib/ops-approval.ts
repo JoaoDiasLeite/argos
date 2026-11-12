@@ -4,11 +4,15 @@ import { plural, type TFunction } from '../../../shared/i18n'
 // Every text helper takes the translator `t` after its data arguments (required: the
 // caller passes the one from `useT()`, so the text follows the chosen language).
 
-/** Words joined by spaces; any word with whitespace or a quote is single-quoted. */
+/** Characters a POSIX shell takes literally in a bare word. */
+const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/
+
+/**
+ * Words joined by spaces, each quoted the way a POSIX shell would need it: bare when it is
+ * made only of safe characters, else single-quoted with an embedded `'` written as quote, backslash, quote, quote.
+ */
 export function displayArgv(argv: string[]): string {
-  return argv
-    .map((w) => (w === '' || /[\s'"]/.test(w) ? `'${w.replace(/'/g, `'\''`)}'` : w))
-    .join(' ')
+  return argv.map((w) => (SAFE_WORD.test(w) ? w : "'" + w.replace(/'/g, `'\\''`) + "'")).join(' ')
 }
 
 /** Header verb and the "what exactly will run" lines for an ops approval. */
@@ -51,6 +55,21 @@ export function summarizeOps(ops: ApprovalOpsContext, t: TFunction): string {
 }
 
 const cap = (s: string, n: number): string => (s.length > n ? s.slice(0, n - 1) + '…' : s)
+
+/** How much of the command or path the toast's chip shows before cutting it with `…`. */
+const TOAST_CODE_MAX = 70
+
+/**
+ * Whether the toast cannot show everything the operator would be allowing: a plan (the toast
+ * only counts its steps) or a command, script or path longer than the chip. Then the toast
+ * must not offer Allow; the operator answers in the app, in full.
+ */
+export function opsToastNeedsMainWindow(ops: ApprovalOpsContext): boolean {
+  if (ops.tool === 'plan') return true
+  if (ops.argv?.length && displayArgv(ops.argv).length > TOAST_CODE_MAX) return true
+  if (ops.path && ops.path.length > TOAST_CODE_MAX) return true
+  return false
+}
 
 /**
  * The toast's wording for an ops request: a question a person can answer at a glance
@@ -104,8 +123,8 @@ export function opsToastText(ops: ApprovalOpsContext, t: TFunction): { title: st
  */
 export function opsToastQuestion(ops: ApprovalOpsContext, t: TFunction): { text: string; code?: string } {
   const host = ops.hostName
-  const argv = ops.argv?.length ? cap(displayArgv(ops.argv), 70) : ''
-  const path = ops.path ? cap(ops.path, 70) : ''
+  const argv = ops.argv?.length ? cap(displayArgv(ops.argv), TOAST_CODE_MAX) : ''
+  const path = ops.path ? cap(ops.path, TOAST_CODE_MAX) : ''
   switch (ops.tool) {
     case 'plan': {
       const totals = planTotals(ops)

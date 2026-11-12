@@ -3,7 +3,11 @@
  * (docs/OPS_AGENT_PLAN.md §9 Phase 5): newline-delimited JSON over a local socket.
  *
  *   relay → main: { id, token, kind: 'hello' | 'call', tool?, args? }
+ *                 { id, token, kind: 'cancel' }   the CLI withdrew call `id`; no reply
  *   main → relay: { id, ok: true, result: { text, isError } } | { id, ok: false, error }
+ *
+ * A well-formed frame (id and token valid) of a kind this side does not know is ignored,
+ * not an error, so either end can learn a new kind without breaking the other.
  *
  * One message is at most OPS_BRIDGE_MAX_FRAME bytes. A line that is too long or does
  * not parse closes the connection: the relay is a program Argos wrote, so a malformed
@@ -25,7 +29,7 @@ export function isOpsToken(v: unknown): v is string {
 export interface OpsBridgeRequest {
   id: string
   token: string
-  kind: 'hello' | 'call'
+  kind: 'hello' | 'call' | 'cancel'
   tool?: string
   args?: Record<string, unknown>
 }
@@ -45,8 +49,11 @@ export interface OpsBridgeHello {
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 
-/** One line from the relay → a request, or why it is not one. */
-export function parseRequest(line: string): { ok: true; msg: OpsBridgeRequest } | { ok: false; error: string } {
+/**
+ * One line from the relay → a request, or why it is not one. `ignore`: a well-formed frame
+ * of an unknown kind, to be dropped without closing the connection.
+ */
+export function parseRequest(line: string): { ok: true; msg: OpsBridgeRequest } | { ok: false; error: string; ignore?: true } {
   let v: unknown
   try {
     v = JSON.parse(line)
@@ -56,7 +63,9 @@ export function parseRequest(line: string): { ok: true; msg: OpsBridgeRequest } 
   if (!isObject(v)) return { ok: false, error: 'not an object' }
   if (typeof v.id !== 'string' || v.id === '' || v.id.length > 128) return { ok: false, error: 'bad id' }
   if (!isOpsToken(v.token)) return { ok: false, error: 'bad token' }
-  if (v.kind !== 'hello' && v.kind !== 'call') return { ok: false, error: 'bad kind' }
+  if (v.kind !== 'hello' && v.kind !== 'call' && v.kind !== 'cancel') {
+    return typeof v.kind === 'string' ? { ok: false, error: 'unknown kind', ignore: true } : { ok: false, error: 'bad kind' }
+  }
   if (v.kind === 'call') {
     if (typeof v.tool !== 'string' || !/^[a-z_]{1,32}$/.test(v.tool)) return { ok: false, error: 'bad tool' }
     if (v.args !== undefined && !isObject(v.args)) return { ok: false, error: 'bad args' }

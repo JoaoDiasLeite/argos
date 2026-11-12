@@ -15,6 +15,7 @@ import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { readJsonFile, writeJsonFileAtomic } from './json-file'
+import { classifyJsonRead } from './json-load-pure'
 import { POSITIONS_VERSION, type CompanionNote, type CompanionState, type CompanionTodo } from './companion-types'
 import { cleanRepeat } from './companion-repeat-pure'
 import { migrateLegacyPosition } from './companion-window-pure'
@@ -107,16 +108,17 @@ export function createCompanionStore(dir: string): CompanionStore {
   /**
    * readList for a read-modify-write. A file that exists but won't parse is renamed to
    * `<name>.corrupt-<ms>` first, so the save that follows doesn't bury the only copy of
-   * whatever was in it under a one-item list.
+   * whatever was in it under a one-item list. A file that cannot be read at all throws
+   * instead, leaving it untouched.
    */
   function readListForWrite<T>(name: string, normalize: (raw: unknown) => T | null): T[] {
     const p = file(name)
-    try {
-      const raw = readJsonFile<unknown>(p)
-      if (Array.isArray(raw)) return raw.map(normalize).filter((x): x is T => x !== null)
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return []
-    }
+    const result = classifyJsonRead<unknown[]>(() => readJsonFile<unknown>(p), Array.isArray)
+    if (result.kind === 'ok') return result.value.map(normalize).filter((x): x is T => x !== null)
+    if (result.kind === 'missing') return []
+    // A lock (EBUSY/EPERM) says nothing about the content: abandon the write rather than
+    // replace a list we could not read. The IPC handler turns the throw into a rejection.
+    if (result.kind === 'unreadable') throw result.error
     try {
       fs.renameSync(p, `${p}.corrupt-${Date.now()}`)
     } catch {

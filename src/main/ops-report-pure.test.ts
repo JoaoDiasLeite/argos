@@ -219,6 +219,14 @@ describe('renderClientReport', () => {
     expect(renderClientReport(run([READ_WEB, denied]), OPTS)).toContain('sem alterações à configuração')
   })
 
+  it('a mutate whose prompt nobody answered does not make the run a change', () => {
+    const cancelled = { ...SUDO_RESTART, answer: 'cancelled' as const, cause: 'call-cancelled' as const, exitCode: undefined }
+    expect(renderClientReport(run([READ_WEB, cancelled]), OPTS)).toContain('sem alterações à configuração')
+    const internal = renderInternalReport(run([cancelled]))
+    expect(internal).toContain('ask → cancelled')
+    expect(internal).toContain('Status: not run (withdrawn by the CLI before the operator answered)')
+  })
+
   it('renders an untitled step as an unnamed technical operation', () => {
     const out = renderClientReport(run([call({ callId: 'n', title: undefined })]), OPTS)
     expect(out).toContain('- Operação técnica.')

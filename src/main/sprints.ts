@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import { readJsonFile } from './json-file'
+import { readJsonFile, writeJsonFileAtomic } from './json-file'
 // What the cached backfill went looking for — one definition, shared with the importer.
 import type { BackfillKind } from './sprint-backfill-pure'
 import type { Forge } from './forge-pure'
@@ -140,7 +140,7 @@ export function getSprint(id: string): Sprint | null {
 export function saveSprint(sprint: Sprint): Sprint {
   ensureSprintsDir()
   const next: Sprint = { ...normalize(sprint), updatedAt: Date.now() }
-  fs.writeFileSync(fileFor(sprint.id), JSON.stringify(next, null, 2))
+  writeJsonFileAtomic(fileFor(sprint.id), next)
   return next
 }
 
