@@ -85,9 +85,11 @@ export function useDictation(enabled: boolean, onText: (text: string) => void): 
     clearHardStop()
     recording.current?.cancel()
     recording.current = null
-    if (stateRef.current.kind !== 'transcribing') {
+    const k = stateRef.current.kind
+    if (k !== 'transcribing') {
       setState({ kind: 'idle' })
-      phase('idle')
+      // Main sends this on every hide, recording or not; only a live one has a phase to end.
+      if (k === 'starting' || k === 'recording') phase('idle')
     }
   }, [])
 
@@ -175,6 +177,10 @@ export function useDictation(enabled: boolean, onText: (text: string) => void): 
   // The bubble hidden mid-recording, or the view gone: the microphone goes too.
   useEffect(() => api.onBubbleHidden(cancel), [cancel])
   useEffect(() => () => cancel(), [cancel])
+  // Dictation switched off in Settings while the mic was open.
+  useEffect(() => {
+    if (!enabled) cancel()
+  }, [enabled, cancel])
 
   return {
     state,
