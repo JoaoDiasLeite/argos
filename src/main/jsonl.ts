@@ -16,7 +16,6 @@ export interface JsonlEntry {
   /** The original line. Callers that match against the serialized form (search)
    *  need it; parsing and re-serializing would not round-trip. */
   raw: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   obj: any
 }
 
@@ -68,7 +67,6 @@ export async function* iterJsonlEntries(
 }
 
 /** `iterJsonlEntries` for callers that don't need the raw line. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function* iterJsonl(file: string, opts: IterOptions = {}): AsyncGenerator<any> {
   for await (const entry of iterJsonlEntries(file, opts)) yield entry.obj
 }
@@ -87,7 +85,6 @@ export const TAIL_BYTES = 256 * 1024
  * zero: it is a fragment of a line that began before it, and a fragment either fails
  * to parse or, worse, parses into something that is not what was written.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function tailJsonlEntries(file: string, maxBytes = TAIL_BYTES): Promise<any[]> {
   const handle = await fs.promises.open(file, 'r')
   try {
@@ -99,7 +96,6 @@ export async function tailJsonlEntries(file: string, maxBytes = TAIL_BYTES): Pro
     await handle.read(buf, 0, length, start)
     const lines = buf.toString('utf-8').split('\n')
     if (start > 0) lines.shift()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const out: any[] = []
     for (const line of lines) {
       if (!line.trim()) continue

@@ -170,7 +170,6 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filePath])
 
   const dirty = content !== original
@@ -417,7 +416,6 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
       handleScroll()
       syncCaret()
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [matches, query, wrap, content, lineH, syncCaret]
   )
 
