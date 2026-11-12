@@ -72,6 +72,7 @@
     "nsis": {
       "oneClick": true,
       "perMachine": false,
+      "include": "build/installer.nsh",
       "artifactName": "Argos-Setup-${version}.${ext}"
     },
     "mac": {
