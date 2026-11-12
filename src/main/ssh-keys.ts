@@ -108,27 +108,6 @@ export function listSshKeys(): SshKeyInfo[] {
   return keys
 }
 
-/** Guard: resolve a path and confirm it lives directly inside ~/.ssh. */
-function isInsideSshDir(target: string): boolean {
-  const dir = path.resolve(sshDir())
-  const resolved = path.resolve(target)
-  return path.dirname(resolved) === dir
-}
-
-/**
- * Return the public-key text for a discovered key. `privatePath` must resolve
- * inside ~/.ssh. Returns the .pub first line (public material) or null.
- */
-export function readPublicKey(privatePath: string): string | null {
-  if (!isInsideSshDir(privatePath)) return null
-  const pub = `${privatePath}.pub`
-  try {
-    return fs.readFileSync(pub, 'utf-8').split('\n')[0].trim() || null
-  } catch {
-    return null
-  }
-}
-
 /**
  * Generate a new ed25519 key pair in ~/.ssh via ssh-keygen. The filename is
  * validated to [A-Za-z0-9_-]+, the target dir is always ~/.ssh, and an existing

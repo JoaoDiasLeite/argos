@@ -160,9 +160,6 @@ export interface OpsHostAnswer {
   beforeCall: number
 }
 
-/** Rows of statuses that mean "this did not go as planned" (red in the panel). */
-export const OPS_BAD_STATUSES: ReadonlySet<OpsRowStatus> = new Set(['denied', 'failed', 'timed-out', 'stopped'])
-
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined)
 const strArr = (v: unknown): string[] | undefined =>
   Array.isArray(v) && v.every((w) => typeof w === 'string') ? (v as string[]) : undefined

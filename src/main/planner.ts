@@ -81,20 +81,6 @@ function emptyWeek(weekStart: string): WeekPlan {
   }
 }
 
-/** List the week-start keys that have a saved plan, most recent first. */
-export function listWeeks(): string[] {
-  ensurePlannerDir()
-  try {
-    return fs
-      .readdirSync(plannerDir)
-      .filter((f) => f.endsWith('.json'))
-      .map((f) => f.replace(/\.json$/, ''))
-      .sort((a, b) => b.localeCompare(a))
-  } catch {
-    return []
-  }
-}
-
 /** Load a week's plan, or a fresh empty plan if none exists yet. */
 export function getWeek(weekStart: string): WeekPlan {
   const p = fileFor(weekStart)
@@ -112,10 +98,4 @@ export function saveWeek(week: WeekPlan): WeekPlan {
   const next: WeekPlan = { ...week, updatedAt: Date.now() }
   writeJsonFileAtomic(fileFor(week.weekStart), next)
   return next
-}
-
-export function deleteWeek(weekStart: string): string[] {
-  const p = fileFor(weekStart)
-  if (fs.existsSync(p)) fs.unlinkSync(p)
-  return listWeeks()
 }

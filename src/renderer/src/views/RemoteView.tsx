@@ -258,7 +258,6 @@ export default function RemoteView({
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, editing, reportFor])
 
   const load = async () => {
@@ -336,7 +335,6 @@ export default function RemoteView({
     if (openWslSessions.length > 0) setWasLiveWsl((prev) => [...new Set([...prev, ...openWslSessions])])
     if (openSshSessions.length > 0) setWasLiveSsh((prev) => [...new Set([...prev, ...openSshSessions])])
     window.electronAPI.wslList().then(setDistros)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openKey])
 
   const probe = async (sel: Selection, which: 'conn' | 'claude') => {

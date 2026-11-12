@@ -112,9 +112,6 @@ export const UI_FONT_SIZE_DEFAULT = 14
 
 export const CODE_FONT_SIZE_MIN = 10
 export const CODE_FONT_SIZE_MAX = 18
-/** Matches `--font-size-code` in global.css, i.e. what code blocks already render at. */
-export const CODE_FONT_SIZE_DEFAULT = 13
-
 /**
  * `#rgb` / `#rrggbb`, and nothing else.
  *

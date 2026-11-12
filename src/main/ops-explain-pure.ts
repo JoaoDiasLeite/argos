@@ -23,7 +23,6 @@ export function explainArgv(v: unknown): { ok: true; argv: string[] } | { ok: fa
   }
   // The gate refuses control characters too; here they would also let a word end the
   // prompt's command block early.
-  // eslint-disable-next-line no-control-regex
   if ((v as string[]).some((w) => /[\u0000-\u001f\u007f]/.test(w))) {
     return { ok: false, error: 'the command has control characters' }
   }

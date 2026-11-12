@@ -336,7 +336,6 @@ function HomeSelect({
       window.removeEventListener('scroll', onScroll, true)
       window.removeEventListener('resize', onResize)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   const moveFocus = (dir: 1 | -1) => {

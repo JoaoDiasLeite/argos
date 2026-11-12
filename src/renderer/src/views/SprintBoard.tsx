@@ -1281,7 +1281,6 @@ function StandupPanel(props: {
     setDraft({ yesterday: s.yesterday, today: s.today, blockers: s.blockers })
     setEditing(false)
     setConfirmDelete(false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.updatedAt])
 
   const form = !props.locked && (editing || !hasContent)
@@ -2039,7 +2038,6 @@ function BacklogBackfillSheet(props: {
     // Cached results hydrate the initial state above — only probe when there's no cache.
     if (cache) preselect(cache.items ?? [])
     else resolveProject()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const fetchIssues = async (which: BackfillKind = kind) => {

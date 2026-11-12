@@ -302,11 +302,6 @@ export function repoNameFromRemoteUrl(url: string): string | undefined {
 
 const repoNameCache = new Map<string, RepoName>()
 
-/** Drops all cached repo-name lookups; not time-based since a repo's identity rarely changes. */
-export function clearRepoNameCache(): void {
-  repoNameCache.clear()
-}
-
 /**
  * The origin remote's URL, verbatim — the basename in `getRepoName` throws away the
  * host, and the host is what says which forge a project lives on. Empty when the

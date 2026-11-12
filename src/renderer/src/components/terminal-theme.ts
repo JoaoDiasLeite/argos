@@ -51,4 +51,3 @@ export const TERMINAL_THEME: ITheme = {
  * and there together.
  */
 export const TERMINAL_BG = TERMINAL_THEME.background!
-export const TERMINAL_FG = TERMINAL_THEME.foreground!

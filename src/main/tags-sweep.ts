@@ -3,7 +3,7 @@ import * as path from 'path'
 import { getSources, resolveCodexFor, safeSessionPath, ClaudeSource } from './claude-data'
 import { readEffectiveTags, writeSessionTags } from './tags'
 import { normalizeTags } from './tags-pure'
-import { codexTagKey, getCodexSessionTags, setCodexSessionTags } from './store'
+import { getCodexSessionTags, setCodexSessionTags } from './store'
 
 /**
  * Cross-source tag operations — everything that has to look at more than one
@@ -131,24 +131,6 @@ export async function rewriteTagAcrossSessions(
     }
   }
   return { changed, failed }
-}
-
-/** Read the tags of one session, addressed the way the renderer addresses it. */
-export async function tagsForSession(
-  sourceId: string,
-  encodedDir: string,
-  sessionId: string
-): Promise<string[]> {
-  if (await resolveCodexFor(sourceId)) {
-    return getCodexSessionTags()[codexTagKey(sourceId, sessionId)] ?? []
-  }
-  const file = await safeSessionPath(sourceId, encodedDir, sessionId)
-  if (!file) return []
-  try {
-    return await readEffectiveTags(file)
-  } catch {
-    return []
-  }
 }
 
 /**

@@ -128,7 +128,6 @@ export default function SftpBrowser({ hostId, cwd, barSlot, pathSlot, onNavigate
     setRenaming(null)
     setCreatingFolder(false)
     setCreatingFile(false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hostId, cwd])
 
   const openEntry = (entry: RemoteEntry) => {

@@ -84,7 +84,6 @@ function toolResultToText(content: unknown): string {
   return ''
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
  * Everything of one entry a reader can see: prose, tool inputs, tool results.
@@ -180,7 +179,6 @@ export function proseSegments(obj: any): Segment[] {
   return out
 }
 
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 /**
  * May a raw-line substring test stand in for building this entry's segments?

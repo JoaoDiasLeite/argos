@@ -94,7 +94,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   authStatus: () => ipcRenderer.invoke('auth:status'),
   setAuthMode: (mode: string) => ipcRenderer.invoke('auth:set-mode', mode),
   setApiKey: (key: string) => ipcRenderer.invoke('auth:set-api-key', key),
-  clearApiKey: () => ipcRenderer.invoke('auth:clear-api-key'),
   hasApiKey: () => ipcRenderer.invoke('auth:has-api-key'),
 
   // Accounts (multiple Claude Code logins)
@@ -105,9 +104,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   accountsSetDefault: (id: string) => ipcRenderer.invoke('accounts:set-default', id),
   accountsLogin: (id: string) => ipcRenderer.invoke('accounts:login', id),
 
-  // Agent CLI login status (Codex / Gemini) — machine-default login only
-  agentCliStatus: (id: string) => ipcRenderer.invoke('agentcli:status', id),
-  agentCliLogin: (id: string) => ipcRenderer.invoke('agentcli:login', id),
 
   // Provider accounts (multiple Codex / Gemini logins)
   providerAccountsList: (provider: string) => ipcRenderer.invoke('provider-accounts:list', provider),
@@ -287,8 +283,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ccListProjects: () => ipcRenderer.invoke('cc:list-projects'),
   ccListSessions: (sourceId: string, encodedDir: string, archived?: boolean) =>
     ipcRenderer.invoke('cc:list-sessions', sourceId, encodedDir, archived),
-  ccReadSession: (sourceId: string, encodedDir: string, sessionId: string) =>
-    ipcRenderer.invoke('cc:read-session', sourceId, encodedDir, sessionId),
   ccChatTranscript: (cwd: string, sessionId: string, preferSourceId?: string) =>
     ipcRenderer.invoke('cc:chat-transcript', cwd, sessionId, preferSourceId),
   ccUsage: (force?: boolean) => ipcRenderer.invoke('cc:usage', force),
@@ -382,16 +376,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   mcpRemove: (name: string) => ipcRenderer.invoke('mcp:remove', name),
 
   // Planner
-  plannerList: () => ipcRenderer.invoke('planner:list'),
   plannerGet: (weekStart: string) => ipcRenderer.invoke('planner:get', weekStart),
   plannerSave: (week: unknown) => ipcRenderer.invoke('planner:save', week),
-  plannerDelete: (weekStart: string) => ipcRenderer.invoke('planner:delete', weekStart),
 
   plannerAssist: (payload: unknown) => ipcRenderer.invoke('planner:assist', payload),
 
   // Sprints (Scrum board / standups / burndown)
   sprintList: () => ipcRenderer.invoke('sprint:list'),
-  sprintGet: (id: string) => ipcRenderer.invoke('sprint:get', id),
   sprintSave: (sprint: unknown) => ipcRenderer.invoke('sprint:save', sprint),
   sprintDelete: (id: string) => ipcRenderer.invoke('sprint:delete', id),
   standupGenerate: (payload: unknown) => ipcRenderer.invoke('standup:generate', payload),
@@ -413,7 +404,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sshKeysGenerate: (name: string, comment?: string) =>
     ipcRenderer.invoke('ssh:keys-generate', name, comment),
   sshSecretStorage: () => ipcRenderer.invoke('ssh:secret-storage'),
-  sshKeysPublic: (privatePath: string) => ipcRenderer.invoke('ssh:keys-public', privatePath),
 
   // SFTP (Remote Session file browser)
   sftpConnect: (hostId: string) => ipcRenderer.invoke('sftp:connect', hostId),
@@ -498,8 +488,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // The runbook's scripts for the Scripts list, and the operator's own run of one.
   opsScripts: (terminalId: string) => ipcRenderer.invoke('ops:scripts', terminalId),
   opsScriptSource: (terminalId: string, name: string) => ipcRenderer.invoke('ops:script-source', terminalId, name),
-  opsRunScript: (terminalId: string, name: string, hostId: string, args: string[]) =>
-    ipcRenderer.invoke('ops:run-script', terminalId, name, hostId, args),
   // The operator points a live run at an earlier intervention: logs run.referenced and
   // returns the one line to type into the CLI.
   opsReference: (terminalId: string, refRunId: string) => ipcRenderer.invoke('ops:reference', terminalId, refRunId),
@@ -531,7 +519,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // File system
   readDir: (dirPath: string) => ipcRenderer.invoke('fs:read-dir', dirPath),
-  readFile: (filePath: string) => ipcRenderer.invoke('fs:read-file', filePath),
   openFolder: (defaultPath?: string) => ipcRenderer.invoke('fs:open-folder', defaultPath),
   // The app handles Ctrl+V itself — see renderer lib/clipboard-paste.ts for why.
   clipboardRead: () => ipcRenderer.invoke('clipboard:read'),
@@ -560,7 +547,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   terminalResize: (id: string, cols: number, rows: number) =>
     ipcRenderer.send('terminal:resize', id, cols, rows),
   terminalKill: (id: string) => ipcRenderer.invoke('terminal:kill', id),
-  terminalKillDeferred: (id: string) => ipcRenderer.send('terminal:kill-deferred', id),
   terminalList: () => ipcRenderer.invoke('terminal:list'),
   terminalBusyList: () => ipcRenderer.invoke('terminal:busy-list'),
   terminalWaitingList: () => ipcRenderer.invoke('terminal:waiting-list'),

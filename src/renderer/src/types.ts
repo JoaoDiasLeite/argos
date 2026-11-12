@@ -631,8 +631,6 @@ export interface McpServer {
   config: Record<string, unknown>
 }
 
-export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan'
-
 // ─── Claude permissions & hooks (from ~/.claude/settings.json) ────────────────
 
 export interface WriteResult {
@@ -706,13 +704,6 @@ export interface RepoName {
   remote?: string
   /** Basename of the repository root (`git rev-parse --show-toplevel`). */
   toplevel?: string
-}
-
-export interface ImageAttachment {
-  kind: 'image'
-  mediaType: string
-  data: string
-  preview: string
 }
 
 export type SshAuthType = 'password' | 'key' | 'agent'
@@ -807,15 +798,6 @@ export interface CCAccountStatus {
 export interface AccountList {
   accounts: CCAccountStatus[]
   defaultAccountId: string
-}
-
-export interface AgentCliStatus {
-  id: 'codex' | 'gemini'
-  installed: boolean
-  loggedIn: boolean
-  detail?: string
-  email?: string
-  plan?: string
 }
 
 export type AgentProvider = 'codex' | 'gemini'
@@ -1392,7 +1374,6 @@ declare global {
       authStatus: () => Promise<AuthStatus>
       setAuthMode: (mode: AuthMode) => Promise<AuthStatus>
       setApiKey: (key: string) => Promise<AuthStatus>
-      clearApiKey: () => Promise<AuthStatus>
       hasApiKey: () => Promise<boolean>
 
       // Accounts (multiple Claude Code logins)
@@ -1403,9 +1384,6 @@ declare global {
       accountsSetDefault: (id: string) => Promise<AccountList>
       accountsLogin: (id: string) => Promise<{ launched: boolean; command: string }>
 
-      // Agent CLI login status (Codex / Gemini) — machine-default login only
-      agentCliStatus: (id: 'codex' | 'gemini') => Promise<AgentCliStatus>
-      agentCliLogin: (id: 'codex' | 'gemini') => Promise<{ launched: boolean; command: string }>
 
       // Provider accounts (multiple Codex / Gemini logins)
       providerAccountsList: (provider: AgentProvider) => Promise<ProviderAccountList>
@@ -1566,11 +1544,6 @@ declare global {
         encodedDir: string,
         archived?: boolean
       ) => Promise<CCSessionMeta[]>
-      ccReadSession: (
-        sourceId: string,
-        encodedDir: string,
-        sessionId: string
-      ) => Promise<CCTranscriptMessage[]>
       ccChatTranscript: (
         cwd: string,
         sessionId: string,
@@ -1660,10 +1633,8 @@ declare global {
       mcpRemove: (name: string) => Promise<McpServer[]>
 
       // Planner
-      plannerList: () => Promise<string[]>
       plannerGet: (weekStart: string) => Promise<WeekPlan>
       plannerSave: (week: WeekPlan) => Promise<WeekPlan>
-      plannerDelete: (weekStart: string) => Promise<string[]>
 
       plannerAssist: (payload: {
         mode: PlannerAssistMode
@@ -1676,7 +1647,6 @@ declare global {
 
       // Sprints (Scrum board / standups / burndown)
       sprintList: () => Promise<Sprint[]>
-      sprintGet: (id: string) => Promise<Sprint | null>
       sprintSave: (sprint: Sprint) => Promise<Sprint>
       sprintDelete: (id: string) => Promise<Sprint[]>
       standupGenerate: (payload: {
@@ -1740,7 +1710,6 @@ declare global {
       sshKeysList: () => Promise<SshKeyInfo[]>
       sshKeysGenerate: (name: string, comment?: string) => Promise<GenerateKeyResult>
       sshSecretStorage: () => Promise<SecretStorageState>
-      sshKeysPublic: (privatePath: string) => Promise<string | null>
 
       // SFTP (Remote Session file browser)
       sftpConnect: (hostId: string) => Promise<{ ok: boolean; home?: string; cwd?: string; error?: string }>
@@ -1871,7 +1840,6 @@ declare global {
         | { ok: false; error: string }
       >
       opsScriptSource: (terminalId: string, name: string) => Promise<{ ok: true; text: string; sha256: string } | { ok: false; error: string }>
-      opsRunScript: (terminalId: string, name: string, hostId: string, args: string[]) => Promise<{ ok: boolean; text?: string; error?: string }>
       /**
        * Point a live run at an earlier intervention in its scope: logs run.referenced and
        * returns the one line to write (with `\r`) into the terminal. Errors when the run is
@@ -1915,7 +1883,6 @@ declare global {
 
       // File system
       readDir: (dirPath: string) => Promise<FileNode[] | { error: string }>
-      readFile: (filePath: string) => Promise<{ content?: string; error?: string }>
       openFolder: (defaultPath?: string) => Promise<string | null>
       /** What is on the clipboard: an image if there is one, else text, else the paths
        *  of files copied in Explorer (Windows only). */
@@ -1966,7 +1933,6 @@ declare global {
       terminalWrite: (id: string, data: string) => void
       terminalResize: (id: string, cols: number, rows: number) => void
       terminalKill: (id: string) => Promise<{ ok: boolean }>
-      terminalKillDeferred: (id: string) => void
       /** The ptys this process holds, newest first. */
       terminalList: () => Promise<TerminalInfo[]>
       /** The ids of the ptys currently producing output. */

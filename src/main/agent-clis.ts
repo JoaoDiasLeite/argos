@@ -1,8 +1,4 @@
 import { execFile, spawn } from 'child_process'
-import * as fs from 'fs'
-import * as os from 'os'
-import * as path from 'path'
-import { openLinuxTerminal } from './linux-desktop'
 import { resolveCodex, resolveGemini } from './providers/cli-resolve'
 import { JsonRpcConnection } from './providers/jsonrpc'
 
@@ -133,98 +129,5 @@ export async function checkCodexStatus(codexHome?: string): Promise<AgentCliStat
     detail: loggedIn ? undefined : 'Not signed in. Run `codex login` in a terminal.',
     email: account?.email,
     plan: account?.plan
-  }
-}
-
-/**
- * Gemini CLI has no equivalent one-shot "status" command, so this checks for a
- * configured auth method in `~/.gemini/settings.json` — a local file check, not a
- * live API call (avoids spending quota just to check login state). The exact
- * settings schema is best-effort/unconfirmed against a primary source; treat a
- * missing or unrecognized file as "not logged in" rather than guessing.
- *
- * There is no per-account variant: Gemini runs through Antigravity, whose login is
- * machine-wide and lives in the OS keyring rather than under a config dir, so there
- * is only ever one Gemini identity to check (see provider-accounts.ts).
- */
-export async function checkGeminiStatus(): Promise<AgentCliStatus> {
-  const { code } = await execCli('gemini', ['--version'], 8000)
-  if (code === -1) {
-    return {
-      id: 'gemini',
-      installed: false,
-      loggedIn: false,
-      detail: 'Gemini CLI not found. Install with: npm install -g @google/gemini-cli'
-    }
-  }
-  const base = os.homedir()
-  const settingsPath = path.join(base, '.gemini', 'settings.json')
-  let loggedIn = false
-  try {
-    const raw = fs.readFileSync(settingsPath, 'utf-8')
-    const parsed = JSON.parse(raw)
-    loggedIn = !!parsed?.security?.auth?.selectedAuthType
-  } catch {
-    loggedIn = false
-  }
-  // `google_accounts.json`'s "active" field is the signed-in email — same
-  // local-file-read approach accounts.ts uses for Claude's oauthAccount, no
-  // network call. Only meaningful for the oauth-personal auth path; an
-  // API-key login has no associated email here.
-  let email: string | undefined
-  if (loggedIn) {
-    try {
-      const raw = fs.readFileSync(path.join(base, '.gemini', 'google_accounts.json'), 'utf-8')
-      const parsed = JSON.parse(raw)
-      email = typeof parsed?.active === 'string' ? parsed.active : undefined
-    } catch {
-      email = undefined
-    }
-  }
-  return {
-    id: 'gemini',
-    installed: true,
-    loggedIn,
-    detail: loggedIn ? undefined : 'Not signed in. Run `gemini` in a terminal and choose "Login with Google".',
-    email
-  }
-}
-
-export function checkAgentCliStatus(id: AgentCliId): Promise<AgentCliStatus> {
-  return id === 'codex' ? checkCodexStatus() : checkGeminiStatus()
-}
-
-/**
- * Launch an interactive login for a CLI in its own terminal window, mirroring
- * `accounts.ts`'s `loginAccount()`. The user completes the browser OAuth flow
- * themselves; this only opens the terminal and runs the CLI's own login entry
- * point (interactive `gemini` for the auth-method picker; `codex login` for Codex).
- */
-export function loginAgentCli(id: AgentCliId): { launched: boolean; command: string } {
-  const command = id === 'codex' ? 'codex login' : 'gemini'
-  try {
-    let child: ReturnType<typeof spawn> | null = null
-    if (process.platform === 'win32') {
-      const bat = path.join(os.tmpdir(), `${id}-login-${Date.now()}.bat`)
-      fs.writeFileSync(bat, `@echo off\r\n${command}\r\n`)
-      child = spawn('cmd.exe', ['/c', 'start', '', 'cmd', '/k', bat], {
-        detached: true,
-        stdio: 'ignore'
-      })
-    } else if (process.platform === 'darwin') {
-      child = spawn('osascript', ['-e', `tell application "Terminal" to do script "${command}"`], {
-        detached: true,
-        stdio: 'ignore'
-      })
-    } else if (!openLinuxTerminal(command)) {
-      return { launched: false, command }
-    }
-    child?.on('error', () => {
-      /* swallow — caller falls back to showing the command */
-    })
-    child?.unref()
-    return { launched: true, command }
-  } catch {
-    return { launched: false, command }
   }
 }

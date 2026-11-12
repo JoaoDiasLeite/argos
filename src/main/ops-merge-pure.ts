@@ -127,6 +127,3 @@ export function mergeRunbooks(base: LoadedRunbook, runbook: LoadedRunbook, t: TF
 export function scriptDir(runbook: LoadedRunbook, name: string): string {
   return runbook.scriptDirs?.[name] ?? runbook.scriptsDir
 }
-
-/** For tests and the start screen: whether a loaded runbook is a merge. */
-export const isMerged = (runbook: LoadedRunbook): boolean => !!runbook.ref.base

@@ -266,8 +266,6 @@ export type CompanionPetState =
 /** Which way the walk sheet faces; it is drawn facing right and mirrored for left. */
 export type CompanionPetFacing = 'left' | 'right'
 
-export type CompanionBubbleMode = 'input' | 'reminder' | 'catchup' | 'confirm' | 'terminal' | 'plan' | 'week'
-
 /**
  * Where the bubble sits against the pet, so it can draw its tail: above the dog (or below,
  * when there is no room above), and `tailX`, the tail's distance in DIPs from the bubble

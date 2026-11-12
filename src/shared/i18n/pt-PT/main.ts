@@ -90,7 +90,6 @@ const main: Record<keyof typeof en, string> = {
   'ipc.ops.bridgeFailed': 'Não foi possível iniciar a ponte de ops: {error}',
   'ipc.ops.noLiveSession': 'Não há nenhuma sessão de ops ativa neste terminal.',
   'ipc.ops.scriptNameRequired': 'É necessário o nome de um script.',
-  'ipc.ops.scriptAndHostRequired': 'São necessários o nome de um script e um anfitrião.',
   'ipc.ops.invalidTerminalId': 'Id de terminal inválido.',
   'ipc.ops.ledgerUnreadable': 'Não foi possível ler o registo de ops: {error}',
   'ipc.ops.resumeRunUnknown': 'A intervenção a retomar ({runId}) não está no registo desta máquina.',
