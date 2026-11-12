@@ -72,6 +72,15 @@ Read-only, so they go into `resources/runbooks/diagnosis` (re-pin with
     container's environment, where secrets live), and `~/.docker/config.json` goes into
     `read.deny`.
 
+    Widened after 3.6.0: `system df`, `network ls`, `network inspect`, `volume ls`,
+    `top`, `port`, `diff`, `stats --no-stream <container>`, `ps` with `--filter` and a
+    `--format` over the listing's fields (not `Labels`), `logs` with `--since`/`--until`
+    (always with `--tail`, never `-f`), and `compose -p <project> (ps|top|images|logs)`.
+    `docker inspect` is allowed only with `--format` over a fixed list of fields that
+    carry no secrets (`.State`, `.Mounts`, `.NetworkSettings`, limits, restart policy,
+    ports); the whole document, `.Config.Env`, `.Config.Labels`, `.Config.Cmd`,
+    `docker volume inspect`, `docker history` and `docker compose config` stay refused.
+
 Not added: `zgrep` without `-m` (the diagnosis forces a cap; `log-window.sh` covers time
 windows), `curl` to a host other than the server itself (decided 2026-11-10: not even
 with `ask`), and `app/test_rails` (it boots the application). Certificates ending in

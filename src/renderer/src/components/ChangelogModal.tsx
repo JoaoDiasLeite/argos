@@ -21,7 +21,14 @@ const CHANGELOG: Entry[] = [
     version: '3.7.0',
     date: '2026-11-11',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'The diagnosis and the base intervention read more of Docker: disk use, networks and volumes, processes, ports, changed files and stats of a named container, logs within a time window, and the state of a Compose project. docker inspect answers only for fields that carry no secrets (state, mounts, network settings, limits, restart policy, ports); the environment, labels and command of a container stay refused.'
+        ]
+      }
+    ]
   },
   {
     version: '3.6.0',
