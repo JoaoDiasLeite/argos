@@ -19,13 +19,38 @@ interface Entry {
 const CHANGELOG: Entry[] = [
   {
     version: '3.7.0',
-    date: '2026-11-11',
-    tag: 'new',
+    date: '2026-11-12',
+    tag: 'latest',
     sections: [
       {
         title: 'Features',
         items: [
           'The diagnosis and the base intervention read more of Docker: disk use, networks and volumes, processes, ports, changed files and stats of a named container, logs within a time window, and the state of a Compose project. docker inspect answers only for fields that carry no secrets (state, mounts, network settings, limits, restart policy, ports); the environment, labels and command of a container stay refused.'
+        ]
+      },
+      {
+        title: 'Security',
+        items: [
+          'The one-off model calls Argos makes on its own (explaining a command, the companion reading a date, the backlog backfill) could reach every tool of the CLI. They now load none, or only the file-reading ones where a question needs them.',
+          'Importing a .argos file can no longer create files outside the projects folder: a project whose folder name is not a single plain name is refused.',
+          'The database query script of the diagnosis and the base intervention refuses Unicode-escaped names and the functions that run SQL given as text, which got around its list of forbidden functions.',
+          'systemctl show only answers for the listed properties, also in a comma list (Environment got through), and application*.yml and anything under secrets/ are refused for reading.',
+          'A command the model asks you to run yourself is refused when it has hidden characters or is on the list no runbook can allow.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'A call the CLI gave up on (Esc, or its timeout) no longer waits at the approval prompt: the prompt goes away, nothing runs, and the calls behind it go on. Before, a late Allow ran the command with nobody reading the result.',
+          'The intervention record says "not answered" when a run was stopped or a call withdrawn, instead of saying you denied it.',
+          'sudo: an error of the command itself that mentions a password is no longer taken for sudo asking for one, and a password kept for the run is only sent after sudo asks.',
+          'The approval toast offers Allow only for what it shows in full. For a plan, or a command or path longer than it can show, it offers Open Argos and Deny.',
+          'Allow and Deny ignore clicks for a moment after a request appears, so a double click cannot answer the next one in the queue unread. The command on the approval card is quoted the way a shell reads it.',
+          'Settings, accounts, sprints and the planner are written in one step, so a crash while saving no longer leaves a broken file. A file that cannot be read is kept as a .corrupt copy instead of being overwritten with defaults.',
+          'Planner and sprint edits made just before leaving the view are saved, editing one sprint no longer drops the save of another, and a save that fails is shown.',
+          'Removing an account asks first, and says its login on this machine goes with it.',
+          'The companion no longer replaces the whole to-do list with one item when the file is locked for a moment.',
+          'The hooks and permissions forms keep what you typed when saving fails, and Add host cannot be submitted twice.'
         ]
       }
     ]
@@ -33,7 +58,6 @@ const CHANGELOG: Entry[] = [
   {
     version: '3.6.0',
     date: '2026-11-10',
-    tag: 'latest',
     sections: [
       {
         title: 'Features',
