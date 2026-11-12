@@ -79,6 +79,32 @@ export function findRepeat(text: string): RepeatMatch | null {
   return null
 }
 
+const N = String.raw`\d{1,3}|uma|um|duas|dois|tr[êe]s|quatro|cinco|seis|sete|oito|nove|dez|doze|quinze|vinte|trinta|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty|thirty`
+const UNIT = String.raw`minutos?|horas?|dias?|semanas?|meses|m[êe]s|minutes?|hours?|days?|weeks?|months?`
+
+/**
+ * Interval repeats: "de 2 em 2 horas", "de hora a hora", "a cada 3 dias", "every 2 hours".
+ * CompanionRepeat has no interval (one step of a day, a weekday, a week or a month), so
+ * these are not read as a repeat. They are found only so their pieces are not misread:
+ * "de 2 em 2 horas" would otherwise be "em 2 horas", a one-off in two hours.
+ */
+const INTERVAL_RE = new RegExp(
+  String.raw`${B}(?:de\s+(?:${N})\s+em\s+(?:${N})\s+(?:${UNIT})|de\s+hora\s+(?:em|a)\s+hora|de\s+meia\s+em\s+meia\s+hora|(?:a\s+)?cada\s+(?:(?:${N})\s+(?:${UNIT})|hora|meia\s+hora)|every\s+(?:(?:${N})\s+|other\s+)(?:${UNIT})|every\s+(?:hour|half\s+(?:an\s+)?hour)|hourly)${E}`,
+  'giu'
+)
+
+/** The interval phrases in the line, as [start, end) spans. */
+export function findIntervals(text: string): [number, number][] {
+  return [...text.matchAll(INTERVAL_RE)].map((m) => [m.index, m.index + m[0].length])
+}
+
+/** The line with those spans blanked out, same length, for the grammar only. */
+export function maskIntervals(text: string, spans: [number, number][]): string {
+  let out = text
+  for (const [s, e] of spans) out = out.slice(0, s) + ' '.repeat(e - s) + out.slice(e)
+  return out
+}
+
 /**
  * The line with the repeat phrase blanked out, same length: the weekday it named stays
  * (at the end of the span, so a time after it still reads "segunda às 9h"), the rest

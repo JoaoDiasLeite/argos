@@ -9,6 +9,7 @@
  * reused read-only when present.
  */
 import { join } from 'path'
+import type { Language } from '../shared/i18n'
 
 /** The folder inside a models root that holds the Whisper files. */
 export const WHISPER_DIR = 'sherpa-onnx-whisper-turbo'
@@ -22,8 +23,7 @@ export const MODEL_FILES = {
 
 /**
  * What the first-use download fetches. sherpa-onnx publishes no checksums for these, so
- * each download is checked by its size, and the archive's members for being there and
- * non-empty after extraction. (In meeting-notes' copy, extracted from this archive, they
+ * each download is checked by its size, and the installed files against MODEL_SHA256. (In meeting-notes' copy, extracted from this archive, they
  * are 674,716,297 / 361,080,764 / 816,730 bytes — about 1 GB on disk.)
  */
 export const VAD_DOWNLOAD = {
@@ -37,6 +37,27 @@ export const WHISPER_DOWNLOAD = {
   members: [MODEL_FILES.encoder, MODEL_FILES.decoder, MODEL_FILES.tokens] as string[]
 } as const
 export const DOWNLOAD_TOTAL_BYTES = VAD_DOWNLOAD.bytes + WHISPER_DOWNLOAD.bytes
+
+/**
+ * SHA-256 of each file the download installs, checked before it is moved into place:
+ * a size can match a truncated or tampered file, a hash cannot. sherpa-onnx publishes
+ * none, so these were taken from meeting-notes' copy (same release, same sizes as above)
+ * on 2026-11-12. A mismatch deletes the file and fails the install.
+ */
+export const MODEL_SHA256: Record<keyof typeof MODEL_FILES, string> = {
+  vad: '9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6',
+  encoder: 'b02dcdf54f348741e93fe732b67d933c8dcb6735655f710640143081db38878b',
+  decoder: '20accd02388482eb3a46bd615631adfdc85e1eb2c7db9ea3f02a40ffe6b81547',
+  tokens: 'b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126'
+}
+
+/** The files whose hash is not the pinned one (null = could not be read). */
+export function hashMismatches(
+  files: readonly (keyof typeof MODEL_FILES)[],
+  sha256: (file: keyof typeof MODEL_FILES) => string | null
+): (keyof typeof MODEL_FILES)[] {
+  return files.filter((f) => sha256(f)?.toLowerCase() !== MODEL_SHA256[f])
+}
 
 /** The rate the bubble records at and the models expect. */
 export const SAMPLE_RATE = 16_000
@@ -120,7 +141,15 @@ export function voiceThreads(cpuCount: number): number {
   return Math.max(1, Math.min(8, Math.floor(cpuCount) || 1))
 }
 
-/** sherpa-onnx's OfflineRecognizer config for Whisper turbo, in Portuguese. */
+/**
+ * Whisper's language code for the app's UI language: dictation is read in the language
+ * the app is set to, so an English UI is not transcribed as Portuguese.
+ */
+export function whisperLanguage(uiLanguage: Language): 'en' | 'pt' {
+  return uiLanguage === 'pt-PT' ? 'pt' : 'en'
+}
+
+/** sherpa-onnx's OfflineRecognizer config for Whisper turbo; Portuguese unless told otherwise. */
 export function recognizerConfig(root: string, threads: number, language = 'pt') {
   const p = modelPaths(root)
   return {

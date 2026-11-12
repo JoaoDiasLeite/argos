@@ -187,6 +187,83 @@ describe('times', () => {
 
   it('does not take "as" as "às" before a bare number', () => {
     expect(parse('rever as 3 propostas').when).toBeNull()
+    expect(parse('rever as duas propostas').when).toBeNull()
+  })
+})
+
+describe('noon, midnight and the day parts around 12', () => {
+  it.each([
+    // Monday 10:00: a time still ahead is today, else tomorrow.
+    ['almoço ao meio-dia', '2026-11-02 12:00'],
+    ['backup à meia-noite', '2026-11-03 00:00'],
+    ['backup às 12 da noite', '2026-11-03 00:00'],
+    ['backup amanhã às 12 da noite', '2026-11-04 00:00'],
+    ['almoço às 12', '2026-11-02 12:00'],
+    ['almoço às 12 da manhã', '2026-11-02 12:00'],
+    ['almoço às 12 da tarde', '2026-11-02 12:00'],
+    ['reunião à uma da tarde', '2026-11-02 13:00'],
+    ['reunião às 1 da tarde', '2026-11-02 13:00'],
+    ['backup à uma da manhã', '2026-11-03 01:00'],
+    ['call às duas da tarde', '2026-11-02 14:00'],
+    ['sair às 8 da noite', '2026-11-02 20:00'],
+    ['sair às oito da noite', '2026-11-02 20:00'],
+    ['deploy às 2 da noite', '2026-11-03 02:00'],
+    ['jantar às onze da noite', '2026-11-02 23:00'],
+    ['lunch at noon', '2026-11-02 12:00'],
+    ['backup at midnight', '2026-11-03 00:00'],
+    ['backup at 12am', '2026-11-03 00:00'],
+    ['lunch at 12pm', '2026-11-02 12:00'],
+    ['meeting at 1pm', '2026-11-02 13:00'],
+    ['meeting at one pm', '2026-11-02 13:00'],
+    ['call at two in the afternoon', '2026-11-02 14:00'],
+    ['leave at 8 in the evening', '2026-11-02 20:00'],
+    ['backup at 12 at night', '2026-11-03 00:00']
+  ])('%s → %s', (text, expected) => {
+    expect(when(text)).toBe(expected)
+  })
+
+  it('cuts the hour words out of the title', () => {
+    expect(parse('reunião à uma da tarde').title).toBe('Reunião')
+    expect(parse('call às duas da tarde').title).toBe('Call')
+  })
+
+  it('reads a bare pt-PT word hour like a bare number, but not a bare English one', () => {
+    const r = parse('ligar às duas')
+    expect(local(r.when!.at)).toBe('2026-11-02 14:00')
+    expect(r.confidence).toBe(0.7)
+    expect(when('ligar à uma')).toBe('2026-11-02 13:00')
+    expect(parse('at one point check this').when).toBeNull()
+  })
+
+  it('keeps "à" before anything but one o\'clock out of it', () => {
+    expect(parse('fica à 5 minutos').when).toBeNull()
+  })
+})
+
+describe('interval repeats, which CompanionRepeat cannot hold', () => {
+  it.each([
+    'tomar comprimido de 2 em 2 horas',
+    'regar plantas de 3 em 3 dias',
+    'beber água de hora a hora',
+    'beber água de duas em duas horas',
+    'ver a fila a cada 30 minutos',
+    'drink water every 2 hours',
+    'stretch every hour',
+    'water the plants every other day'
+  ])('%s: no one-off date, no repeat, the phrase stays in the title', (text) => {
+    const r = parse(text)
+    expect(r.when).toBeNull()
+    expect(r.repeat).toBeUndefined()
+    expect(r.title).toBe(text.charAt(0).toUpperCase() + text.slice(1))
+  })
+
+  it('still reads the rest of the line', () => {
+    expect(when('amanhã tomar comprimido de 8 em 8 horas')).toBe('2026-11-03')
+    expect(parse('todos os dias de 2 em 2 horas beber água').repeat).toEqual({ every: 'day' })
+  })
+
+  it('leaves a plain duration alone', () => {
+    expect(when('ligar em 2 horas')).toBe('2026-11-02 12:00')
   })
 })
 
