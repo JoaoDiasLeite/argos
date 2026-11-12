@@ -209,6 +209,7 @@ export default {
   'profile.fileFilter': 'Argos profile',
   'profile.error.read': 'Could not read {path}: {error}',
   'profile.error.notArgos': 'This file is not an Argos profile.',
+  'profile.ledgerDayExists': 'This machine already has an ops ledger for {date}, so the imported one was not added.',
   'profile.error.corrupt': 'The profile file is damaged and could not be read.',
   'profile.error.version': 'This profile uses format {version}, which this version of Argos cannot read. Update Argos and try again.',
   'profile.error.write': 'Could not save the profile: {error}',

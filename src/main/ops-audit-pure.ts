@@ -153,6 +153,100 @@ export function verifyChain(
   return { ok: true, lines: s.items.length }
 }
 
+// ─── Imported days ──────────────────────────────────────────────────────────────────
+//
+// A day file from a `.argos` profile import has a chain that starts at genesis like any other,
+// so it proves nothing about where it was written: anyone can build a consistent one.
+// Imported days therefore live apart, in `<ledger>/imported/`, are never appended to, and
+// verify as "imported" rather than "verified". Where a file sits is the provenance; the
+// manifest Argos writes at import time only adds when and from which archive.
+
+/** The subfolder of the ledger that holds imported day files and the manifest. */
+export const IMPORTED_DIR = 'imported'
+export const IMPORT_MANIFEST = 'manifest.json'
+
+const DAY_REL = /^(?:imported\/)?(\d{4}-\d{2}-\d{2})\.jsonl$/
+
+/**
+ * The day of an archive's ledger file, or null when the entry is not a day file. A day
+ * re-exported from `imported/` keeps its date and lands in `imported/` again.
+ */
+export function importedLedgerDate(rel: string): string | null {
+  return DAY_REL.exec(rel)?.[1] ?? null
+}
+
+export interface OpsImportedDay {
+  /** When this machine imported it (ISO). */
+  importedAt: string
+  /** The archive's file name, as picked in the open dialog. */
+  archive: string
+  /** sha256 of the file as written at import time. */
+  sha256: string
+}
+
+export type OpsImportManifest = Record<string, OpsImportedDay>
+
+/** The manifest's days; anything malformed is dropped (the file location still marks a day imported). */
+export function parseImportManifest(text: string | null): OpsImportManifest {
+  if (!text) return {}
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return {}
+  }
+  const days = raw && typeof raw === 'object' ? (raw as { days?: unknown }).days : undefined
+  if (!days || typeof days !== 'object' || Array.isArray(days)) return {}
+  const out: OpsImportManifest = {}
+  for (const [date, v] of Object.entries(days as Record<string, unknown>)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !v || typeof v !== 'object') continue
+    const e = v as Record<string, unknown>
+    if (typeof e.importedAt === 'string' && typeof e.archive === 'string' && typeof e.sha256 === 'string') {
+      out[date] = { importedAt: e.importedAt, archive: e.archive, sha256: e.sha256 }
+    }
+  }
+  return out
+}
+
+export function serializeImportManifest(m: OpsImportManifest): string {
+  return JSON.stringify({ days: m }, null, 2)
+}
+
+/** What a verify says about the imported copy of a day. */
+export interface OpsImportedVerify {
+  lines: number
+  importedAt?: string
+  archive?: string
+}
+
+export type OpsVerifyResult =
+  | { ok: true; lines: number; imported?: OpsImportedVerify }
+  | { ok: false; brokenAt?: number; reason: string; imported?: OpsImportedVerify }
+
+/**
+ * One day's verdict from its local and imported files (null: not there). `lines` counts
+ * the local file only; `imported` is present whenever the imported file was checked, so
+ * the screen never shows an imported chain as plainly verified. A broken local chain is
+ * reported first. An imported file that no longer matches the hash the manifest took at
+ * import time is broken too.
+ */
+export function verifyDay(local: string | null, imported: string | null, entry?: OpsImportedDay): OpsVerifyResult {
+  let localLines = 0
+  if (local !== null) {
+    const v = verifyChain(local)
+    if (!v.ok) return v
+    localLines = v.lines
+  }
+  if (imported === null) return { ok: true, lines: localLines }
+  const meta = entry ? { importedAt: entry.importedAt, archive: entry.archive } : {}
+  if (entry && sha256Hex(imported) !== entry.sha256) {
+    return { ok: false, reason: 'the imported file changed after it was imported', imported: { lines: 0, ...meta } }
+  }
+  const v = verifyChain(imported)
+  if (!v.ok) return { ...v, imported: { lines: 0, ...meta } }
+  return { ok: true, lines: localLines, imported: { lines: v.lines, ...meta } }
+}
+
 /** Events of one run, in file order. */
 export function runEvents(lines: OpsAuditLine[], runId: string): OpsAuditLine[] {
   return lines.filter((l) => l.event.runId === runId)

@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { createLedger } from './ops-audit'
-import { GENESIS } from './ops-audit-pure'
+import { createLedger, importLedgerDay } from './ops-audit'
+import { buildLine, GENESIS } from './ops-audit-pure'
 import type { OpsAuditEvent } from './ops-types'
 
 let dir: string
@@ -330,5 +330,96 @@ describe('report of a resumed run', () => {
     } finally {
       fs.rmSync(ldir, { recursive: true, force: true })
     }
+  })
+})
+
+/** A day file with a valid chain, as anyone could build one outside Argos. */
+function fabricatedDay(events: OpsAuditEvent[], at: Date): string {
+  let prev: string | null = null
+  let text = ''
+  for (const e of events) {
+    const { raw } = buildLine(prev, e, at)
+    text += `${raw}\n`
+    prev = raw
+  }
+  return text
+}
+
+describe('imported ledger days', () => {
+  const DAY = '2026-04-01'
+  const AT = new Date(`${DAY}T09:00:00.000Z`)
+  const IMPORT_AT = new Date('2026-04-10T12:00:00.000Z')
+
+  it('a fabricated day with a consistent chain verifies as imported, never as plainly verified', async () => {
+    const text = fabricatedDay([START, END], AT)
+    expect(await importLedgerDay(dir, DAY, text, 'other-pc.argos', IMPORT_AT)).toBe('imported')
+    // Kept apart from the days this machine writes.
+    expect(fs.existsSync(path.join(dir, `${DAY}.jsonl`))).toBe(false)
+    expect(fs.readFileSync(path.join(dir, 'imported', `${DAY}.jsonl`), 'utf-8')).toBe(text)
+    const ledger = createLedger(dir)
+    expect(await ledger.verify(DAY)).toEqual({
+      ok: true,
+      lines: 0,
+      imported: { lines: 2, importedAt: IMPORT_AT.toISOString(), archive: 'other-pc.argos' }
+    })
+  })
+
+  it('imported runs still read back, and local appends that day never chain onto the imported file', async () => {
+    await importLedgerDay(dir, DAY, fabricatedDay([START, END], AT), 'other-pc.argos')
+    const ledger = createLedger(dir)
+    const r = await ledger.readRun('run-1', AT)
+    expect(r.ok && r.lines.map((l) => l.event.kind)).toEqual(['run.start', 'run.end'])
+    expect((await ledger.listRuns()).ok).toBe(true)
+
+    const mine: OpsAuditEvent = { ...START, runId: 'run-9' }
+    expect((await ledger.append(mine, new Date(`${DAY}T15:00:00.000Z`))).ok).toBe(true)
+    const local = lines(path.join(dir, `${DAY}.jsonl`))
+    expect(local).toHaveLength(1)
+    expect(JSON.parse(local[0]).prev).toBe(GENESIS)
+    expect(lines(path.join(dir, 'imported', `${DAY}.jsonl`))).toHaveLength(2)
+
+    // The day has both: the local chain counts as verified, the imported part is marked.
+    expect(await ledger.verify(DAY)).toMatchObject({ ok: true, lines: 1, imported: { lines: 2 } })
+    // Asked about one run, only the file that holds it is checked.
+    expect(await ledger.verify(DAY, 'run-9')).toEqual({ ok: true, lines: 1 })
+    expect(await ledger.verify(DAY, 'run-1')).toMatchObject({ ok: true, lines: 0, imported: { lines: 2 } })
+  })
+
+  it('never overwrites or merges into a day this machine already has', async () => {
+    const ledger = createLedger(dir)
+    await ledger.append(START, AT)
+    const before = fs.readFileSync(path.join(dir, `${DAY}.jsonl`), 'utf-8')
+    // Byte-identical (one's own export re-imported): nothing to report, nothing written.
+    expect(await importLedgerDay(dir, DAY, before, 'mine.argos')).toBe('same')
+    expect(await importLedgerDay(dir, DAY, fabricatedDay([OTHER], AT), 'other.argos')).toBe('conflict')
+    expect(fs.readFileSync(path.join(dir, `${DAY}.jsonl`), 'utf-8')).toBe(before)
+    expect(fs.existsSync(path.join(dir, 'imported', `${DAY}.jsonl`))).toBe(false)
+  })
+
+  it('a second import of the same day does not replace the first', async () => {
+    const first = fabricatedDay([START], AT)
+    await importLedgerDay(dir, DAY, first, 'a.argos', IMPORT_AT)
+    expect(await importLedgerDay(dir, DAY, first, 'a.argos')).toBe('same')
+    expect(await importLedgerDay(dir, DAY, fabricatedDay([OTHER], AT), 'b.argos')).toBe('conflict')
+    expect(fs.readFileSync(path.join(dir, 'imported', `${DAY}.jsonl`), 'utf-8')).toBe(first)
+    expect(await createLedger(dir).verify(DAY)).toMatchObject({ imported: { archive: 'a.argos' } })
+  })
+
+  it('an imported file edited after import is reported broken, still as imported', async () => {
+    await importLedgerDay(dir, DAY, fabricatedDay([START, END], AT), 'a.argos')
+    // Rebuilt with a consistent chain, so only the manifest's hash can tell.
+    fs.writeFileSync(path.join(dir, 'imported', `${DAY}.jsonl`), fabricatedDay([START], AT))
+    const v = await createLedger(dir).verify(DAY)
+    expect(v).toMatchObject({ ok: false, imported: { archive: 'a.argos' } })
+  })
+
+  it('a file dropped into imported/ without a manifest entry is still treated as imported', async () => {
+    fs.mkdirSync(path.join(dir, 'imported'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'imported', `${DAY}.jsonl`), fabricatedDay([START], AT))
+    expect(await createLedger(dir).verify(DAY)).toEqual({ ok: true, lines: 0, imported: { lines: 1 } })
+  })
+
+  it('refuses a name that is not a day', async () => {
+    await expect(importLedgerDay(dir, '../x', 'x', 'a.argos')).rejects.toThrow()
   })
 })

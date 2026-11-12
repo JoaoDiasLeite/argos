@@ -2178,7 +2178,7 @@ ipcMain.handle('ops:open-folder', async (_, which: string) => {
   return error ? { ok: false, error } : { ok: true, path: dir }
 })
 
-ipcMain.handle('ops:verify', (_, date: string) => getOpsLedger().verify(date))
+ipcMain.handle('ops:verify', (_, date: string, runId?: string) => getOpsLedger().verify(date, typeof runId === 'string' ? runId : undefined))
 ipcMain.handle('ops:ledger-info', () => getOpsLedger().info())
 
 // The "?" on an ops approval (ops-explain-pure.ts): one command, explained by a separate

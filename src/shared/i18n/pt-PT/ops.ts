@@ -161,6 +161,7 @@ const ops: Record<keyof typeof en, string> = {
   'report.chainVerified': 'cadeia verificada',
   'report.chainBrokenAt': 'cadeia quebrada na linha {line}',
   'report.chainBroken': 'cadeia quebrada',
+  'report.chainImported': 'importado, cadeia coerente mas origem não verificável',
   'report.tile.calls': 'chamadas',
   'report.tile.ran': 'executadas',
   'report.tile.asked': 'perguntaram-te',
