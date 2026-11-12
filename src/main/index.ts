@@ -3919,7 +3919,7 @@ ipcMain.handle(
 // ─── Git ──────────────────────────────────────────────────────────────────────
 
 ipcMain.handle('git:status', (_, cwd: string) => getStatus(cwd))
-ipcMain.handle('git:file-diff', (_, cwd: string, filePath: string) => getFileDiff(cwd, filePath))
+ipcMain.handle('git:file-diff', (_, cwd: string, filePath: string, origPath?: string) => getFileDiff(cwd, filePath, origPath))
 ipcMain.handle('git:repo-name', (_, cwd: string) => getRepoName(cwd))
 
 // ─── File System ──────────────────────────────────────────────────────────────

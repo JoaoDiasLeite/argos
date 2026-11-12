@@ -672,6 +672,8 @@ export type HookEvent = (typeof HOOK_EVENTS)[number]
 
 export interface GitFile {
   path: string
+  /** Source path of a rename or copy; `path` is then the destination. */
+  origPath?: string
   index: string
   worktree: string
   staged: boolean
@@ -1910,7 +1912,7 @@ declare global {
       // Git
       gitStatus: (cwd: string) => Promise<GitStatus>
       /** Rejects on a path that is absolute or climbs out of the repo. */
-      gitFileDiff: (cwd: string, filePath: string) => Promise<GitFileDiff>
+      gitFileDiff: (cwd: string, filePath: string, origPath?: string) => Promise<GitFileDiff>
       gitRepoName: (cwd: string) => Promise<RepoName>
 
       // File system
