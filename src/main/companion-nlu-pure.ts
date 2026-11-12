@@ -548,7 +548,7 @@ export function parseCapture(text: string, opts: ParseOptions): ParsedCapture {
   const repeatMatch = intent === 'todo' ? findRepeat(text) : null
   const scanned = repeatMatch ? maskRepeat(text, repeatMatch) : text
   // "de 2 em 2 horas" has no repeat to become (see findIntervals): hidden from the grammar
-  // so it is not read as "em 2 horas", and left whole in the title for João to see.
+  // so it is not read as "em 2 horas", and left whole in the title.
   const intervals = intent === 'todo' ? findIntervals(scanned) : []
   const comps = scan(intervals.length ? maskIntervals(scanned, intervals) : scanned, ctx)
   const resolved = resolve(comps, ctx)

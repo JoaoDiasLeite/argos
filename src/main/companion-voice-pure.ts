@@ -23,7 +23,8 @@ export const MODEL_FILES = {
 
 /**
  * What the first-use download fetches. sherpa-onnx publishes no checksums for these, so
- * each download is checked by its size, and the installed files against MODEL_SHA256. (In meeting-notes' copy, extracted from this archive, they
+ * each download is checked by its size, and the installed files against MODEL_SHA256.
+ * (In meeting-notes' copy, extracted from this archive, they
  * are 674,716,297 / 361,080,764 / 816,730 bytes — about 1 GB on disk.)
  */
 export const VAD_DOWNLOAD = {
@@ -40,9 +41,11 @@ export const DOWNLOAD_TOTAL_BYTES = VAD_DOWNLOAD.bytes + WHISPER_DOWNLOAD.bytes
 
 /**
  * SHA-256 of each file the download installs, checked before it is moved into place:
- * a size can match a truncated or tampered file, a hash cannot. sherpa-onnx publishes
- * none, so these were taken from meeting-notes' copy (same release, same sizes as above)
- * on 2026-11-12. A mismatch deletes the file and fails the install.
+ * a size can match a truncated or tampered file, a hash cannot. The release page lists
+ * none, so they were checked on 2026-11-12 against the upstream sources: the encoder and
+ * decoder against the LFS ids of csukuangfj/sherpa-onnx-whisper-turbo on Hugging Face,
+ * the tokens against that repository's git blob id, the VAD against a fresh download of
+ * VAD_DOWNLOAD.url. A mismatch deletes the file and fails the install.
  */
 export const MODEL_SHA256: Record<keyof typeof MODEL_FILES, string> = {
   vad: '9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6',
