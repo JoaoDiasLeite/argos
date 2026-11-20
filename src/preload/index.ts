@@ -580,8 +580,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Remote shell (Remote Session SSH terminal, over the SFTP connection)
-  remoteShellCreate: (id: string, hostId: string, cols: number, rows: number) =>
-    ipcRenderer.invoke('remote-shell:create', id, hostId, cols, rows),
+  remoteShellCreate: (
+    id: string,
+    hostId: string,
+    cols: number,
+    rows: number,
+    container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string }
+  ) => ipcRenderer.invoke('remote-shell:create', id, hostId, cols, rows, container),
   remoteShellWrite: (id: string, data: string) => ipcRenderer.send('remote-shell:write', id, data),
   remoteShellResize: (id: string, cols: number, rows: number) =>
     ipcRenderer.send('remote-shell:resize', id, cols, rows),

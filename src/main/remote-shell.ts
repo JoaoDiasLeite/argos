@@ -1,6 +1,7 @@
 import { ClientChannel } from 'ssh2'
 import { getRemoteClient } from './sftp'
 import { ShellRegistry, type CreateResult } from './remote-shell-pure'
+import { containerShellCommand, type ContainerRuntime } from './remote-containers-pure'
 import { t } from './i18n'
 
 /**
@@ -29,9 +30,19 @@ export function remoteShellCreate(
   cols: number,
   rows: number,
   onData: (id: string, data: string) => void,
-  onExit: (id: string, code: number) => void
+  onExit: (id: string, code: number) => void,
+  container?: { runtime: ContainerRuntime; sudo: boolean; id: string }
 ): Promise<{ ok: boolean; error?: string }> {
   if (!isSafeId(id)) return Promise.resolve({ ok: false, error: t('main.terminal.invalidIdShort') })
+  // A container tab runs `<runtime> exec -it <id> …` on its own pty instead of the login
+  // shell, so `exit` ends the tab's channel. Built here from the validated id only.
+  let command: string | null = null
+  if (container !== undefined) {
+    // Shape-checked as well: it comes over IPC.
+    const c = container !== null && typeof container === 'object' ? container : null
+    command = c ? containerShellCommand(c.runtime, c.sudo === true, c.id) : null
+    if (!command) return Promise.resolve({ ok: false, error: t('main.containers.invalid') })
+  }
 
   // The id is reserved before the connection is awaited (see ShellRegistry): a kill that
   // lands while this is still connecting (the tab closed, a StrictMode remount) closes the
@@ -48,7 +59,10 @@ export function remoteShellCreate(
 
     return new Promise<CreateResult>((resolve) => {
       try {
-        res.conn.shell({ term: 'xterm-color', cols: safeCols, rows: safeRows }, (err, stream) => {
+        const pty = { term: 'xterm-color', cols: safeCols, rows: safeRows }
+        const open = (cb: (err: Error | undefined, stream: ClientChannel) => void) =>
+          command ? res.conn.exec(command, { pty }, cb) : res.conn.shell(pty, cb)
+        open((err, stream) => {
           if (err) {
             resolve({ ok: false, error: err.message })
             return
@@ -64,10 +78,15 @@ export function remoteShellCreate(
           }
           stream.on('data', (d: Buffer) => onData(id, d.toString('utf8')))
           stream.stderr?.on('data', (d: Buffer) => onData(id, d.toString('utf8')))
+          // An exec channel reports the command's exit status before it closes.
+          let exitCode = 0
+          stream.on('exit', (code: number | null) => {
+            if (typeof code === 'number') exitCode = code
+          })
           stream.on('close', () => {
             // Only a channel the far end closed reports an exit; one we killed (or one a
             // fresh create already replaced) stays quiet towards the id's new owner.
-            if (shells.release(id, stream)) onExit(id, 0)
+            if (shells.release(id, stream)) onExit(id, exitCode)
           })
           resolve({ ok: true })
         })

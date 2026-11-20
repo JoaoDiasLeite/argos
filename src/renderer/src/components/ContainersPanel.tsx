@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { RemoteContainerList, RemoteContainerRow } from '../types'
+import type { RemoteContainerList, RemoteContainerRow, RemoteContainerTarget } from '../types'
 import { useT } from '../i18n'
 import './ContainersPanel.css'
 
@@ -9,17 +9,17 @@ interface Props {
   connected: boolean
   /** The pane's Files / History / Containers switch, drawn at the start of the bar. */
   barSlot: ReactNode
-  /** Types a command into the session's terminal. */
-  onRun: (cmd: string) => void
+  /** Opens a tab with a shell inside that container. */
+  onOpen: (container: RemoteContainerTarget, name: string) => void
 }
 
 /**
  * The Remote Session's Containers pane: the host's docker (or podman) containers, listed
  * when the pane opens and on Refresh (no polling). A running one has a Shell button that
- * types its `exec -it` into the session's terminal, so `exit` lands back on the host.
- * The command comes from main (remote-containers.ts), built from the validated id only.
+ * opens it in a tab of its own (its channel runs `exec -it`, built in main from the
+ * validated id only), so the session's own terminal stays on the host.
  */
-export default function ContainersPanel({ hostId, connected, barSlot, onRun }: Props) {
+export default function ContainersPanel({ hostId, connected, barSlot, onOpen }: Props) {
   const t = useT()
   const [result, setResult] = useState<RemoteContainerList | null>(null)
   const [loading, setLoading] = useState(false)
@@ -62,13 +62,15 @@ export default function ContainersPanel({ hostId, connected, barSlot, onRun }: P
         <div className="containers-meta mono" title={`${c.image} · ${c.id}`}>{c.image}</div>
         <div className="containers-status">{c.status}</div>
       </div>
-      {c.shell ? (
+      {c.running && result?.runtime ? (
         <button
           type="button"
           className="btn-ghost small containers-shell"
           disabled={!connected}
           title={connected ? t('remote.containers.shellTitle', { name: c.name || c.id }) : t('remote.containers.notConnected')}
-          onClick={() => c.shell && onRun(c.shell)}
+          onClick={() =>
+            result.runtime && onOpen({ runtime: result.runtime, sudo: result.sudo === true, id: c.id }, c.name || c.id)
+          }
         >
           {t('remote.containers.shell')}
         </button>
