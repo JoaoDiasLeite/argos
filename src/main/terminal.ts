@@ -10,6 +10,7 @@ import { providerAccountEnv } from './provider-accounts'
 import { resolveCodex } from './providers/cli-resolve'
 import { prepareCodexHomeFromToml } from './providers/codex'
 import { getSshTerminalCommand } from './ssh'
+import { remoteCommandWord } from './ssh-host-pure'
 import { BusyTracker, isMouseClick, isTerminalReport } from './terminal-busy-pure'
 import { isApprovalNotification, OscScanner } from './terminal-osc-pure'
 import {
@@ -239,12 +240,6 @@ const SAFE_ID_RE = /^[A-Za-z0-9_-]+$/
 
 function isSafeId(id: unknown): id is string {
   return typeof id === 'string' && id.length > 0 && id.length <= 128 && SAFE_ID_RE.test(id)
-}
-
-/** The buffered output replayed when a renderer reattaches to a live pty. */
-export function getTerminalBuffer(id: string): string {
-  if (!isSafeId(id)) return ''
-  return outputBuffers.get(id) ?? ''
 }
 
 export interface CreateTerminalOptions {
@@ -784,20 +779,6 @@ export function killTerminal(id: string): { ok: boolean } {
   return { ok: true }
 }
 
-// Schedule a kill instead of running it immediately, so a renderer effect cleanup that's
-// about to be immediately followed by a re-create for the same id (React StrictMode's
-// dev-only mount -> cleanup -> mount) doesn't tear down a pty that's about to be reused.
-// A real close/session-switch has no follow-up create, so the kill fires after the delay.
-export function killTerminalDeferred(id: string): void {
-  if (!isSafeId(id)) return
-  if (pendingKills.has(id)) return
-  const t = setTimeout(() => {
-    pendingKills.delete(id)
-    killTerminal(id)
-  }, 250)
-  pendingKills.set(id, t)
-}
-
 // Only characters found in Claude Code session ids (UUID-like) — guards against injecting
 // anything into the shell command line.
 function safeResumeId(v: unknown): string | null {
@@ -911,9 +892,11 @@ function claudeLaunchCommand(
     // Remote box has no CLAUDE_BIN — use the host's configured claude path (or bare
     // `claude` on its PATH), from the working directory the host was set up for.
     const meta = sshMeta.get(id)
-    const base = meta?.claudePath || 'claude'
+    // Both are typed into the remote shell: the path is one quoted word, and `--` keeps a
+    // folder that starts with `-` from reading as a cd option.
+    const base = meta?.claudePath ? remoteCommandWord(meta.claudePath) : 'claude'
     const bin = ops ? withOpsEnvPrefix(base, ops.env) : base
-    const cd = meta?.remotePath ? `cd ${quoteUnix(meta.remotePath)} && ` : ''
+    const cd = meta?.remotePath ? `cd -- ${quoteUnix(meta.remotePath)} && ` : ''
     const chain = claudeChain(kind, sessionId, createFirst, extra, bin)
     if (!sessionId) return typedLaunchLine(`${cd}${chain}`)
     // Wrap the whole chain in parens so it runs as a single unit after the one-time cd,

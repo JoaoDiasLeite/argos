@@ -3,10 +3,12 @@ import { join } from 'path'
 import {
   DOWNLOAD_TOTAL_BYTES,
   MODEL_FILES,
+  MODEL_SHA256,
   WHISPER_DOWNLOAD,
   argosModelsDir,
   badMembers,
   cleanTranscript,
+  hashMismatches,
   megabytes,
   meetingNotesModelsDir,
   modelPaths,
@@ -17,7 +19,8 @@ import {
   tarExtractArgs,
   vadConfig,
   voiceShortcutCandidates,
-  voiceThreads
+  voiceThreads,
+  whisperLanguage
 } from './companion-voice-pure'
 import { encodeWav16 } from '../shared/companion-wav'
 
@@ -89,6 +92,22 @@ describe('install', () => {
     ])
   })
 
+  it('pins a lower-case SHA-256 for each of the four files', () => {
+    expect(Object.keys(MODEL_SHA256).sort()).toEqual(Object.keys(MODEL_FILES).sort())
+    for (const h of Object.values(MODEL_SHA256)) expect(h).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('reports files whose hash is not the pinned one, or unreadable', () => {
+    const all = ['vad', 'encoder', 'decoder', 'tokens'] as const
+    expect(hashMismatches(all, (f) => MODEL_SHA256[f])).toEqual([])
+    expect(hashMismatches(all, (f) => MODEL_SHA256[f].toUpperCase())).toEqual([])
+    expect(hashMismatches(all, (f) => (f === 'decoder' ? '0'.repeat(64) : f === 'tokens' ? null : MODEL_SHA256[f]))).toEqual([
+      'decoder',
+      'tokens'
+    ])
+    expect(hashMismatches(['vad'], () => MODEL_SHA256.encoder)).toEqual(['vad'])
+  })
+
   it('progress math', () => {
     expect(DOWNLOAD_TOTAL_BYTES).toBe(643_854 + 563_790_207)
     expect(megabytes(DOWNLOAD_TOTAL_BYTES)).toBe(564)
@@ -102,6 +121,11 @@ describe('install', () => {
 })
 
 describe('engine config', () => {
+  it("transcribes in the UI's language", () => {
+    expect(whisperLanguage('pt-PT')).toBe('pt')
+    expect(whisperLanguage('en')).toBe('en')
+  })
+
   it('caps threads at 8 and never goes below 1', () => {
     expect(voiceThreads(22)).toBe(8)
     expect(voiceThreads(4)).toBe(4)
@@ -118,6 +142,7 @@ describe('engine config', () => {
     })
     expect(c.modelConfig.numThreads).toBe(8)
     expect(c.modelConfig.provider).toBe('cpu')
+    expect(recognizerConfig(MN, 8, 'en').modelConfig.whisper.language).toBe('en')
     expect(c.featConfig.sampleRate).toBe(16000)
     expect(vadConfig(MN).sileroVad).toEqual({
       model: modelPaths(MN).vad,

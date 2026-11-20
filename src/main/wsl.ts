@@ -3,6 +3,7 @@ import * as fs from 'fs'
 import { getHiddenDistros } from './store'
 import { parseHistoryLines } from './sftp-pure'
 import { t } from './i18n'
+import { oneShotCommand } from './wsl-oneshot-pure'
 
 export interface WslDistro {
   name: string
@@ -53,10 +54,6 @@ export function listDistros(): Promise<WslDistro[]> {
       }
     )
   })
-}
-
-function shQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`
 }
 
 // Run `claude`/`node` through an INTERACTIVE login shell. Per-user version managers (nvm,
@@ -152,13 +149,22 @@ export function wslShareRoot(distro: string): string {
   return root
 }
 
-export async function getWslCredentialsPaths(): Promise<WslCredentialsPath[]> {
-  if (!isWindows) return []
+export async function getWslCredentialsPaths(
+  wake = true
+): Promise<{ paths: WslCredentialsPath[]; sleeping: string[] }> {
+  if (!isWindows) return { paths: [], sleeping: [] }
   const distros = await listDistros()
   const hidden = new Set(getHiddenDistros())
   const out: WslCredentialsPath[] = []
+  // Reading a distro's files (even over the UNC share) boots its VM. A background poll
+  // passes wake=false so a stopped distro stays stopped; only a user action wakes one.
+  const sleeping: string[] = []
   for (const d of distros) {
     if (SKIP_DISTROS.has(d.name) || hidden.has(d.name)) continue
+    if (!wake && !d.running) {
+      sleeping.push(d.name)
+      continue
+    }
     const home = await wslHome(d.name)
     if (!home) continue
     const unc = `${wslShareRoot(d.name)}${home.replace(/\//g, '\\')}`
@@ -169,7 +175,7 @@ export async function getWslCredentialsPaths(): Promise<WslCredentialsPath[]> {
       // not reachable — skip
     }
   }
-  return out
+  return { paths: out, sleeping }
 }
 
 /**
@@ -427,14 +433,7 @@ export function runWslOneShot(
 ): Promise<{ ok: boolean; text: string; error?: string }> {
   if (!isWindows) return Promise.resolve({ ok: false, text: '', error: t('main.wsl.windowsOnly') })
   return new Promise((resolve) => {
-    const flags = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'bypassPermissions']
-    if (opts.model) flags.push('--model', opts.model)
-    // An empty list is forwarded too: `--tools ''` disables every built-in tool.
-    if (opts.tools !== undefined) flags.push('--tools', shQuote(opts.tools.join(',')))
-    if (opts.allowedTools?.length) flags.push('--allowedTools', opts.allowedTools.join(','))
-    const useHome = !opts.cwd || isWindowsHomeMount(opts.cwd)
-    const cd = useHome ? 'cd "$HOME" && ' : `cd ${shQuote(opts.cwd!)} && `
-    const cmd = `${cd}claude ${flags.join(' ')}`
+    const cmd = oneShotCommand(opts, !opts.cwd || isWindowsHomeMount(opts.cwd))
     const child = spawn('wsl.exe', ['-d', distro, '--', 'bash', CLAUDE_SHELL_FLAG, cmd], {
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe']

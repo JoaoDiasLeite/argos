@@ -38,6 +38,84 @@ export function cleanHostFields<T extends HostText>(input: T): T {
   return out
 }
 
+/**
+ * What a saved host may hold before it reaches the `ssh` CLI's argv or a remote shell.
+ * The user and host go into argv as `user@host`, where a leading `-` would be read as an
+ * option (`-oProxyCommand=...` runs a local command). The paths are typed into a shell on
+ * the far side; a control character there acts on the terminal (Ctrl-C, Enter) even
+ * inside quotes, so it is refused rather than quoted.
+ */
+
+/** C0 controls, DEL and C1 controls. */
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/
+
+export function hasControlChars(value: string): boolean {
+  return CONTROL.test(value)
+}
+
+/** POSIX-style login names, plus `@` and `\` for directory accounts (`user@corp.example`,
+ *  `CORP\user`) and a trailing `$` for machine accounts. Never a leading `-`. */
+const USERNAME = /^[A-Za-z0-9_.][A-Za-z0-9_.@\\-]*\$?$/
+
+export function isSafeSshUsername(value: string): boolean {
+  return value.length > 0 && value.length <= 256 && USERNAME.test(value)
+}
+
+/** DNS names (with `_`, which internal zones use) and IPv4, as dot-separated labels that
+ *  neither start nor end with `-`; an optional trailing dot. */
+const HOSTNAME = /^(?=.{1,253}\.?$)[A-Za-z0-9_](?:[A-Za-z0-9_-]*[A-Za-z0-9_])?(?:\.[A-Za-z0-9_](?:[A-Za-z0-9_-]*[A-Za-z0-9_])?)*\.?$/
+/** IPv6, bare or bracketed, with an optional zone (`fe80::1%eth0`). Loose on purpose: it
+ *  only has to keep option-like and shell-special text out, ssh rejects a bad address. */
+const IPV6 = /^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*(?:%[A-Za-z0-9_.-]+)?$/
+
+export function isSafeSshHost(value: string): boolean {
+  if (HOSTNAME.test(value)) return true
+  const bare = value.startsWith('[') && value.endsWith(']') ? value.slice(1, -1) : value
+  return bare.length <= 64 && IPV6.test(bare)
+}
+
+export type HostFieldProblem = 'username' | 'host' | 'remotePath' | 'claudePath'
+
+/** The first field of a (cleaned) host that may not be used, or null when all are fine. */
+export function hostFieldProblem(h: {
+  host: string
+  username: string
+  remotePath?: string
+  claudePath?: string
+}): HostFieldProblem | null {
+  if (!isSafeSshUsername(h.username)) return 'username'
+  if (!isSafeSshHost(h.host)) return 'host'
+  if (h.remotePath && hasControlChars(h.remotePath)) return 'remotePath'
+  if (h.claudePath && hasControlChars(h.claudePath)) return 'claudePath'
+  return null
+}
+
+/** The i18n key that explains a HostFieldProblem. */
+export function hostFieldProblemKey(p: HostFieldProblem): `main.ssh.invalid.${HostFieldProblem}` {
+  return `main.ssh.invalid.${p}`
+}
+
+/** The `ssh` CLI's destination, after `--` so that nothing in it can be read as an option.
+ *  Null when the user or host would not pass hostFieldProblem. */
+export function sshDestinationArgs(username: string, host: string): string[] | null {
+  if (!isSafeSshUsername(username) || !isSafeSshHost(host)) return null
+  return ['--', `${username}@${host}`]
+}
+
+/** POSIX single-quoting: `'...'`, each `'` written as `'\''`. */
+export function quotePosix(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+/**
+ * A configured command path (the host's claude) as one word for a POSIX shell. A leading
+ * `~/` stays outside the quotes so the remote shell still expands it to the user's home,
+ * the usual spelling for a per-user install (`~/.local/bin/claude`).
+ */
+export function remoteCommandWord(path: string): string {
+  return path.startsWith('~/') ? `~/${quotePosix(path.slice(2))}` : quotePosix(path)
+}
+
 export interface HostSecrets {
   password?: string
   passphrase?: string

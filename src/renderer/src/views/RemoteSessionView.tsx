@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { RemoteTarget } from '../types'
+import { RemoteTarget, type RemoteContainerTarget } from '../types'
 import ChatTerminal from '../components/ChatTerminal'
 import RemoteTerminal from '../components/RemoteTerminal'
 import SftpBrowser from '../components/SftpBrowser'
+import ContainersPanel from '../components/ContainersPanel'
 import LocalBrowser from '../components/LocalBrowser'
 import FileEditor from '../components/FileEditor'
 import { readLocalFile, writeLocalFile } from '../lib/local-file-io'
@@ -27,6 +28,8 @@ interface Props {
    *  Remote & WSL list's status dots reflect what actually happened — an open tab is not
    *  evidence a host is reachable, since the connection may have been refused. */
   onStatusChange?: (status: 'connecting' | 'connected' | 'error') => void
+  /** The Containers pane's Shell: a tab of its own on that container (App.tsx). */
+  onOpenContainer?: (container: RemoteContainerTarget, name: string) => void
 }
 
 interface RunLogEntry {
@@ -88,7 +91,7 @@ function uncToPosixPath(distro: string, uncPath: string): string {
   return rest.startsWith('/') ? rest : `/${rest}`
 }
 
-export default function RemoteSessionView({ target, seq, active, onBack, onStatusChange }: Props) {
+export default function RemoteSessionView({ target, seq, active, onBack, onStatusChange, onOpenContainer }: Props) {
   const t = useT()
   const isSsh = target.kind === 'ssh'
   // targetId is per TARGET (the run log is shared by every session on the same box, which
@@ -105,7 +108,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
   // `~` stands for. A ref: read by the terminal's cwd reports, not rendered.
   const homeRef = useRef<string | null>(null)
   const [pathInput, setPathInput] = useState(cwd)
-  const [panel, setPanel] = useState<'files' | 'history'>('files')
+  const [panel, setPanel] = useState<'files' | 'history' | 'containers'>('files')
   const [openFile, setOpenFile] = useState<string | null>(null)
   const [remoteHistory, setRemoteHistory] = useState<string[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -155,12 +158,10 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSsh, isSsh ? target.host.id : target.distro])
 
   useEffect(() => {
     onStatusChange?.(status)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status])
 
   useEffect(() => {
@@ -169,11 +170,16 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
 
   const loadHistory = async () => {
     setHistoryLoading(true)
-    const res = isSsh
-      ? await window.electronAPI.sftpHistory(target.host.id)
-      : await window.electronAPI.wslHistory(target.distro)
-    setHistoryLoading(false)
-    if (res.ok) setRemoteHistory(res.commands ?? [])
+    try {
+      const res = isSsh
+        ? await window.electronAPI.sftpHistory(target.host.id)
+        : await window.electronAPI.wslHistory(target.distro)
+      if (res.ok) setRemoteHistory(res.commands ?? [])
+    } catch {
+      // History is a convenience: an empty panel beats a spinner that never ends.
+    } finally {
+      setHistoryLoading(false)
+    }
   }
 
   const openHistoryPanel = () => {
@@ -238,6 +244,10 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     <div className="seg-control remote-session-toggle">
       <button type="button" className={panel === 'files' ? 'on' : ''} onClick={() => setPanel('files')}>{t('remote.session.files')}</button>
       <button type="button" className={panel === 'history' ? 'on' : ''} onClick={openHistoryPanel}>{t('remote.session.history')}</button>
+      {/* SSH only for now: the listing rides the host's ssh2 connection. */}
+      {isSsh && (
+        <button type="button" className={panel === 'containers' ? 'on' : ''} onClick={() => setPanel('containers')}>{t('remote.session.containers')}</button>
+      )}
     </div>
   )
 
@@ -297,7 +307,14 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
               </div>
             </div>
           )}
-          {panel === 'files' ? (
+          {panel === 'containers' && isSsh ? (
+            <ContainersPanel
+              hostId={target.host.id}
+              connected={status === 'connected'}
+              barSlot={paneSwitch}
+              onOpen={(c, name) => onOpenContainer?.(c, name)}
+            />
+          ) : panel === 'files' ? (
             isSsh ? (
               <SftpBrowser
                 hostId={target.host.id}

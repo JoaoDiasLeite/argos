@@ -7,6 +7,7 @@ import { getWslCredentialsPaths } from './wsl'
 import { updateTrayTooltip } from './tray'
 import { readJsonFile } from './json-file'
 import { nextAlert, type AlertState } from './plan-alerts-pure'
+import { carryOverSleeping, tokenAccountKey } from './plan-usage-pure'
 import { t } from './i18n'
 import type { MessageKey } from '../shared/i18n'
 
@@ -77,6 +78,7 @@ const STALE_OK_MS = 30 * 60_000
 // Spacing between actual network calls when polling multiple accounts in sequence —
 // the endpoint rate-limits aggressively, so we never fire two real requests back to back.
 const NETWORK_GAP_MS = 300
+const FETCH_TIMEOUT_MS = 15_000
 
 // Known window spellings across endpoint revisions / community reports.
 // The label is translated when the report is built, so a language change shows up on
@@ -181,7 +183,8 @@ interface Candidate {
  * from several environments (e.g. Work on Local AND a WSL distro) has different
  * tokens but identical server-side limits. One fetch per account, not per env.
  */
-async function enumerateSources(): Promise<Source[]> {
+async function enumerateSources(wake: boolean): Promise<{ sources: Source[]; sleeping: Set<string> }> {
+  const sleeping = new Set<string>()
   const candidates: Candidate[] = []
 
   const { accounts } = listAccountStatus()
@@ -215,7 +218,9 @@ async function enumerateSources(): Promise<Source[]> {
 
   // WSL distros — best-effort; skipped silently when unreachable.
   try {
-    for (const w of await getWslCredentialsPaths()) {
+    const wsl = await getWslCredentialsPaths(wake)
+    for (const d of wsl.sleeping) sleeping.add(d)
+    for (const w of wsl.paths) {
       // <home>/.claude/.credentials.json → <home>/.claude.json
       const home = path.dirname(path.dirname(w.credentialsPath))
       candidates.push({
@@ -240,7 +245,7 @@ async function enumerateSources(): Promise<Source[]> {
     const email = c.emailHint ?? readIdentityEmail(c.claudeJsonPath)
     if (email) c.emailHint = email
     const token = email ? undefined : readCredentialsFile(c.credsPath)?.accessToken
-    const key = email ? `acct:${email.toLowerCase()}` : token ? `tok:${token.slice(0, 24)}` : `path:${norm}`
+    const key = email ? `acct:${email.toLowerCase()}` : token ? tokenAccountKey(token) : `path:${norm}`
     const g = groups.get(key)
     if (g) g.push(c)
     else groups.set(key, [c])
@@ -260,7 +265,7 @@ async function enumerateSources(): Promise<Source[]> {
       credsPaths: group.map((c) => c.credsPath)
     })
   }
-  return sources
+  return { sources, sleeping }
 }
 
 // On failure, surface the last good windows (if recent) as stale data with the failure
@@ -366,7 +371,10 @@ async function fetchAccount(
         Authorization: `Bearer ${creds.accessToken}`,
         'anthropic-beta': 'oauth-2025-04-20',
         'User-Agent': 'argos'
-      }
+      },
+      // A hung request must not block the sequential poll chain; the abort lands in
+      // the catch below like any other failed fetch.
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
     })
     if (res.status === 401 || res.status === 403) {
       // Token rejected despite a future expiry — Claude Code rotates it on its next run;
@@ -428,8 +436,12 @@ function pickPrimary(accounts: AccountPlanUsage[]): string | undefined {
   return first?.accountKey
 }
 
-export async function getPlanUsage(force = false): Promise<PlanUsageReport> {
-  const sources = await enumerateSources()
+let lastReport: PlanUsageReport | null = null
+
+/** `wake`: may reading a stopped WSL distro's credentials start it. False for the
+ *  background poll, true when the user asked. */
+export async function getPlanUsage(force = false, wake = true): Promise<PlanUsageReport> {
+  const { sources, sleeping } = await enumerateSources(wake)
   const accounts: AccountPlanUsage[] = []
   // Sequential — the endpoint rate-limits aggressively. Only actual network calls get
   // the inter-request gap; cached / expired / backing-off entries are free.
@@ -440,11 +452,14 @@ export async function getPlanUsage(force = false): Promise<PlanUsageReport> {
     if (hitNetwork) firstNetworkDone = true
     accounts.push(entry)
   }
+  // Accounts that live only in distros we left asleep keep their last known value.
+  if (lastReport) accounts.push(...carryOverSleeping(lastReport.accounts, accounts, sleeping))
   const report: PlanUsageReport = {
     accounts,
     primary: pickPrimary(accounts),
     generatedAt: Date.now()
   }
+  lastReport = report
   return report
 }
 
@@ -544,8 +559,8 @@ function afterFetch(report: PlanUsageReport): void {
 }
 
 /** Run a fetch and push the result through the shared post-fetch path. */
-async function refreshAndDispatch(force: boolean): Promise<PlanUsageReport> {
-  const report = await getPlanUsage(force)
+async function refreshAndDispatch(force: boolean, wake: boolean): Promise<PlanUsageReport> {
+  const report = await getPlanUsage(force, wake)
   afterFetch(report)
   return report
 }
@@ -560,14 +575,16 @@ export function startPlanUsageWatcher(handlers: PlanUsageWatcherHandlers): void 
   // Initial fetch ~30s after start (let the app settle; don't hammer the endpoint on
   // launch), then every 10 minutes.
   setTimeout(() => {
-    void refreshAndDispatch(false)
-    setInterval(() => void refreshAndDispatch(false), 10 * 60_000)
+    void refreshAndDispatch(false, false)
+    setInterval(() => void refreshAndDispatch(false, false), 10 * 60_000)
   }, 30_000)
 }
 
 /** IPC entry point. Fetches and — once the watcher is running — pushes the result through
  *  the same tray/broadcast/notification path as the scheduled fetches. */
 export async function getPlanUsageForIpc(force = false): Promise<PlanUsageReport> {
-  if (watcherHandlers) return refreshAndDispatch(force)
-  return getPlanUsage(force)
+  // Only an explicit refresh may start a stopped distro; the passive reads (app start,
+  // opening the view) work from what is already running plus the last known values.
+  if (watcherHandlers) return refreshAndDispatch(force, force)
+  return getPlanUsage(force, force)
 }

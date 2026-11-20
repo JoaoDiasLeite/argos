@@ -258,7 +258,6 @@ export default function RemoteView({
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, editing, reportFor])
 
   const load = async () => {
@@ -304,13 +303,18 @@ export default function RemoteView({
     if (!name || generating) return
     setGenerating(true)
     setGenError(null)
-    const res = await window.electronAPI.sshKeysGenerate(name)
-    setGenerating(false)
-    if (res.ok) {
-      setNewKeyName('')
-      setKeys(await window.electronAPI.sshKeysList())
-    } else {
-      setGenError(res.error)
+    try {
+      const res = await window.electronAPI.sshKeysGenerate(name)
+      if (res.ok) {
+        setNewKeyName('')
+        setKeys(await window.electronAPI.sshKeysList())
+      } else {
+        setGenError(res.error)
+      }
+    } catch (e) {
+      setGenError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setGenerating(false)
     }
   }
 
@@ -336,7 +340,6 @@ export default function RemoteView({
     if (openWslSessions.length > 0) setWasLiveWsl((prev) => [...new Set([...prev, ...openWslSessions])])
     if (openSshSessions.length > 0) setWasLiveSsh((prev) => [...new Set([...prev, ...openSshSessions])])
     window.electronAPI.wslList().then(setDistros)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openKey])
 
   const probe = async (sel: Selection, which: 'conn' | 'claude') => {

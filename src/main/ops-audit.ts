@@ -12,15 +12,21 @@ import { promises as fsp } from 'fs'
 import * as path from 'path'
 import {
   buildLine,
+  IMPORT_MANIFEST,
+  IMPORTED_DIR,
+  parseImportManifest,
   parseLedger,
+  serializeImportManifest,
+  sha256Hex,
+  verifyDay,
   runEvents,
   runListItem,
   runTouchesHost,
   summarizeRun,
-  verifyChain,
   type OpsLinkedRun,
   type OpsRunListItem,
-  type OpsRunSummary
+  type OpsRunSummary,
+  type OpsVerifyResult
 } from './ops-audit-pure'
 import { renderHandover } from './ops-handover-pure'
 import { foldNotes, runHeadline } from './ops-notes-pure'
@@ -60,7 +66,12 @@ export interface OpsLedger {
     kind: OpsReportKind,
     opts?: ClientReportOptions
   ): Promise<{ ok: true; markdown: string; warnings: string[] } | { ok: false; error: string }>
-  verify(date: string): Promise<{ ok: true; lines: number } | { ok: false; brokenAt?: number; reason: string }>
+  /**
+   * The day's hash chain. A day imported from a profile archive is checked too but comes
+   * back marked `imported`: consistent, origin not verifiable. With `runId`, only the file
+   * that holds that run is checked when the day has both.
+   */
+  verify(date: string, runId?: string): Promise<OpsVerifyResult>
   info(): Promise<{ dir: string; files: number; bytes: number }>
 }
 
@@ -77,6 +88,49 @@ const message = (e: unknown): string => (e instanceof Error ? e.message : String
 const dayOf = (at: Date): string => at.toISOString().slice(0, 10)
 const dayBefore = (date: string): string => dayOf(new Date(Date.parse(`${date}T00:00:00.000Z`) - 86_400_000))
 const isMissing = (e: unknown): boolean => (e as NodeJS.ErrnoException)?.code === 'ENOENT'
+
+/** A file's text, or null when it does not exist. */
+async function readIfExists(file: string): Promise<string | null> {
+  try {
+    return await fsp.readFile(file, 'utf-8')
+  } catch (e) {
+    if (isMissing(e)) return null
+    throw e
+  }
+}
+
+/**
+ * Put one day file from a profile archive into `<dir>/imported/` and note it in the
+ * manifest. Never overwrites or merges: a day this machine already has (locally or from an
+ * earlier import) is left as it is. 'same' when the existing file is byte-identical, so a
+ * re-import of one's own export is not reported; 'conflict' when it differs.
+ */
+export async function importLedgerDay(
+  dir: string,
+  date: string,
+  text: string,
+  archive: string,
+  at = new Date()
+): Promise<'imported' | 'same' | 'conflict'> {
+  if (!DATE.test(date)) throw new Error(`not a ledger day: ${date}`)
+  const local = await readIfExists(path.join(dir, `${date}.jsonl`))
+  if (local !== null) return local === text ? 'same' : 'conflict'
+  const importedDir = path.join(dir, IMPORTED_DIR)
+  await fsp.mkdir(importedDir, { recursive: true })
+  try {
+    await fsp.writeFile(path.join(importedDir, `${date}.jsonl`), text, { flag: 'wx' })
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code !== 'EEXIST') throw e
+    return (await readIfExists(path.join(importedDir, `${date}.jsonl`))) === text ? 'same' : 'conflict'
+  }
+  const manifestFile = path.join(importedDir, IMPORT_MANIFEST)
+  const manifest = parseImportManifest(await readIfExists(manifestFile))
+  manifest[date] = { importedAt: at.toISOString(), archive, sha256: sha256Hex(text) }
+  const tmp = `${manifestFile}.tmp`
+  await fsp.writeFile(tmp, serializeImportManifest(manifest), 'utf-8')
+  await fsp.rename(tmp, manifestFile)
+  return 'imported'
+}
 
 /**
  * The last non-blank complete line of a file, read backwards in chunks so a large day
@@ -122,6 +176,8 @@ async function readTail(file: string): Promise<{ last: string | null; partial: b
  */
 export function createLedger(dir: string, t: TFunction = makeT('en')): OpsLedger {
   const fileFor = (date: string): string => path.join(dir, `${date}.jsonl`)
+  // Imported days: read with the rest, never appended to (doAppend only knows fileFor).
+  const importedFor = (date: string): string => path.join(dir, IMPORTED_DIR, `${date}.jsonl`)
   let queue: Promise<unknown> = Promise.resolve()
   let state: { date: string; prevRaw: string | null; needsNewline: boolean } | null = null
 
@@ -157,22 +213,29 @@ export function createLedger(dir: string, t: TFunction = makeT('en')): OpsLedger
     }
   }
 
+  /** A day's lines: the imported file's, then the local one's. A run lives in one of them. */
   async function readDay(date: string): Promise<OpsAuditLine[]> {
+    const lines: OpsAuditLine[] = []
+    for (const file of [importedFor(date), fileFor(date)]) {
+      const text = await readIfExists(file)
+      if (text !== null) lines.push(...parseLedger(text).lines)
+    }
+    return lines
+  }
+
+  async function dayNames(folder: string): Promise<string[]> {
     try {
-      return parseLedger(await fsp.readFile(fileFor(date), 'utf-8')).lines
+      return (await fsp.readdir(folder)).filter((f) => DAY_FILE.test(f))
     } catch (e) {
       if (isMissing(e)) return []
       throw e
     }
   }
 
+  /** Every day with a local or an imported file, once, oldest first. */
   async function dayFiles(): Promise<string[]> {
-    try {
-      return (await fsp.readdir(dir)).filter((f) => DAY_FILE.test(f)).sort()
-    } catch (e) {
-      if (isMissing(e)) return []
-      throw e
-    }
+    const names = new Set([...(await dayNames(dir)), ...(await dayNames(path.join(dir, IMPORTED_DIR)))])
+    return [...names].sort()
   }
 
   async function readRun(
@@ -299,14 +362,21 @@ export function createLedger(dir: string, t: TFunction = makeT('en')): OpsLedger
       return { ok: true, markdown: renderClientReport(summary, clientOpts), warnings }
     },
 
-    verify(date) {
-      return enqueue(async () => {
+    verify(date, runId) {
+      return enqueue(async (): Promise<OpsVerifyResult> => {
         if (!DATE.test(date)) return { ok: false as const, reason: t('runbook.audit.badDate', { date }) }
         try {
-          return verifyChain(await fsp.readFile(fileFor(date), 'utf-8'))
-        } catch (e) {
           // No file is no entries, not a broken chain: the day simply has not been written to.
-          if (isMissing(e)) return { ok: true as const, lines: 0 }
+          let local = await readIfExists(fileFor(date))
+          let imported = await readIfExists(importedFor(date))
+          if (runId && local !== null && imported !== null) {
+            const has = (text: string): boolean => parseLedger(text).lines.some((l) => l.event.runId === runId)
+            if (has(local)) imported = null
+            else if (has(imported)) local = null
+          }
+          const entry = imported === null ? undefined : parseImportManifest(await readIfExists(path.join(dir, IMPORTED_DIR, IMPORT_MANIFEST)))[date]
+          return verifyDay(local, imported, entry)
+        } catch (e) {
           return { ok: false as const, reason: t('runbook.audit.readDayFailed', { date, error: message(e) }) }
         }
       })

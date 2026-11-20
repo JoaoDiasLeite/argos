@@ -20,7 +20,25 @@ permissions:
   contents: read
 
 jobs:
+  # Fails the run before anything is built when the tag and package.json disagree: the
+  # installer and the update feeds carry package.json's version, the release the tag's.
+  check-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Check the tag matches package.json
+        run: |
+          expected="v$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version ($expected)"
+            exit 1
+          fi
+
   build:
+    needs: check-version
     permissions:
       contents: read
     strategy:

@@ -1,6 +1,23 @@
-import { resolve } from 'path'
+import { basename, resolve } from 'path'
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import type { Plugin } from 'vite'
+import { rendererCsp } from './src/shared/renderer-csp'
+
+// Puts the CSP <meta> first in <head> of every html entry, so it covers every script
+// after it. Dev is told apart by the dev server being present (ctx.server).
+function rendererCspPlugin(): Plugin {
+  return {
+    name: 'argos-renderer-csp',
+    transformIndexHtml(_html, ctx) {
+      const content = rendererCsp({
+        dev: ctx.server !== undefined,
+        blobScripts: basename(ctx.filename) === 'companion.html'
+      })
+      return [{ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content }, injectTo: 'head-prepend' }]
+    }
+  }
+}
 
 export default defineConfig({
   main: {
@@ -26,7 +43,7 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
-    plugins: [react()],
+    plugins: [react(), rendererCspPlugin()],
     build: {
       rolldownOptions: {
         input: {

@@ -842,7 +842,7 @@ export async function finishOpsRun(
   ctx.sudoPasswords.clear()
   if (ctx.ended) return { ok: true }
   ctx.ended = true
-  return ctx.log({
+  const logged = await ctx.log({
     kind: 'run.end',
     runId: ctx.runId,
     ok: result.ok,
@@ -851,4 +851,20 @@ export async function finishOpsRun(
     ...(result.aborted ? { aborted: true } : {}),
     ...(result.error ? { error: result.error } : {})
   })
+  await removeRunUploads(ctx)
+  return logged
+}
+
+/**
+ * Nothing of the run stays on its hosts: any script upload a call could not remove (Stop
+ * mid-upload, a dropped connection) gets one more try. Argos's own housekeeping, so it
+ * goes past the gate and the model cannot name what it removes. Queued behind the host's
+ * in-flight call, which the run's abort has already ended. Best effort, never throws.
+ */
+async function removeRunUploads(ctx: OpsRunContext): Promise<void> {
+  await Promise.all(
+    [...ctx.hosts.byId.keys()].map((hostId) =>
+      ctx.executor.run(hostId, () => ctx.executor.backend.removeUploads(hostId)).catch(() => undefined)
+    )
+  )
 }

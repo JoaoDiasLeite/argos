@@ -20,6 +20,11 @@ describe('cwdFromTitle', () => {
     expect(cwdFromTitle('jdl@box: relative/dir')).toBeNull()
     expect(cwdFromTitle('')).toBeNull()
   })
+
+  it('ignores a shell inside a container', () => {
+    expect(cwdFromTitle('root@3f2a9c1b7d4e: /app')).toBeNull()
+    expect(cwdFromTitle('root@web-01: /app')).toBe('/app')
+  })
 })
 
 describe('cwdFromOsc7', () => {
@@ -32,6 +37,7 @@ describe('cwdFromOsc7', () => {
     expect(cwdFromOsc7('/home/jdl')).toBeNull()
     expect(cwdFromOsc7('file://host')).toBeNull()
     expect(cwdFromOsc7('file://host/%E0%A4%A')).toBeNull()
+    expect(cwdFromOsc7('file://3f2a9c1b7d4e/app')).toBeNull()
   })
 })
 

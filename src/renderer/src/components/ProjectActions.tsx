@@ -155,7 +155,20 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
 
   const members = siblings?.length ? siblings : [{ sourceId, encodedDir }]
 
-  const doArchiveToggle = async () => {
+  // A rejected IPC must not leave the panel stuck busy; surface it in the error line.
+  const guarded = async (fn: () => Promise<void>) => {
+    try {
+      await fn()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const doArchiveToggle = () => guarded(runArchiveToggle)
+
+  const runArchiveToggle = async () => {
     setBusy(true)
     // Sequentially, not Promise.all: each write reads and rewrites the same stored list,
     // and concurrent writers would race to a value that drops some of them.
@@ -167,7 +180,9 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
     onClose()
   }
 
-  const doDelete = async () => {
+  const doDelete = () => guarded(runDelete)
+
+  const runDelete = async () => {
     setBusy(true)
     setError('')
     const multiple = members.length > 1
@@ -226,7 +241,9 @@ export default function ProjectActions({ project, siblings, anchor, onChanged, o
   const trimmedDraft = moveDraft.trim()
   const canMove = trimmedDraft.length > 0 && trimmedDraft !== realPath
 
-  const doMove = async () => {
+  const doMove = () => guarded(runMove)
+
+  const runMove = async () => {
     setBusy(true)
     setError('')
     const warnings: string[] = []

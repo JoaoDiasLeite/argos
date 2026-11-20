@@ -15,6 +15,8 @@ import type {
 } from '../shared/profile-transfer'
 import { PROFILE_FILE_EXTENSION } from '../shared/profile-transfer'
 import { t } from './i18n'
+import { importLedgerDay } from './ops-audit'
+import { importedLedgerDate } from './ops-audit-pure'
 import { getAllProjects, getSources, type ClaudeSource } from './claude-data'
 import {
   appendThreadNames,
@@ -775,7 +777,7 @@ async function applyProfile(ctx: ImportContext, secrets: SecretsPayload | null, 
 
 /** Sprints, planner, ops ledger: add-only, file by file. The ledger is hash-chained, so
  *  it is written exactly as exported. */
-async function applyProfileDirs(ctx: ImportContext, skipped: ImportSkip[]): Promise<void> {
+async function applyProfileDirs(ctx: ImportContext, skipped: ImportSkip[], archive: string): Promise<void> {
   for (const name of PROFILE_DIRS) {
     const files = ctx.profile.dirs[name]
     if (!isPlainObject(files)) continue
@@ -783,11 +785,15 @@ async function applyProfileDirs(ctx: ImportContext, skipped: ImportSkip[]): Prom
       await applyCompanion(ctx, files, skipped)
       continue
     }
+    if (name === 'ops-audit') {
+      await applyLedger(files, skipped, archive)
+      continue
+    }
     for (const [rel, text] of Object.entries(files)) {
       const safe = safeRel(rel)
       if (!safe || typeof text !== 'string') continue
       let data = text
-      if (name !== 'ops-audit' && safe.endsWith('.json')) {
+      if (safe.endsWith('.json')) {
         try {
           data = JSON.stringify(ctx.remap.deep(JSON.parse(text)), null, 2)
         } catch {
@@ -799,6 +805,28 @@ async function applyProfileDirs(ctx: ImportContext, skipped: ImportSkip[]): Prom
       } catch (e) {
         skipped.push({ name: `${name}/${safe}`, reason: errMsg(e) })
       }
+    }
+  }
+}
+
+/**
+ * Ledger days go to the ledger's `imported/` folder, never next to the days this machine
+ * wrote: their chain is self-contained, so it proves nothing about where they came from,
+ * and a local append must never chain onto one. A day already here is not touched; one
+ * that differs from it is reported. Anything that is not a day file stays behind.
+ */
+async function applyLedger(files: Record<string, unknown>, skipped: ImportSkip[], archive: string): Promise<void> {
+  const dir = path.join(userData(), 'ops-audit')
+  for (const [rel, text] of Object.entries(files)) {
+    const safe = safeRel(rel)
+    if (!safe || typeof text !== 'string') continue
+    const date = importedLedgerDate(safe)
+    if (!date) continue
+    try {
+      const r = await importLedgerDay(dir, date, text, archive)
+      if (r === 'conflict') skipped.push({ name: `ops-audit/${safe}`, reason: t('main.profile.ledgerDayExists', { date }) })
+    } catch (e) {
+      skipped.push({ name: `ops-audit/${safe}`, reason: errMsg(e) })
     }
   }
 }
@@ -901,7 +929,7 @@ export async function applyImport(req: ImportRequest): Promise<ImportResult> {
   try {
     const ctx = await planProfile(opened.header, profile)
     await applyProfile(ctx, secrets, importedHosts)
-    await applyProfileDirs(ctx, skipped)
+    await applyProfileDirs(ctx, skipped, path.basename(req.path))
 
     const projects = new Map<number, ProjectState>()
     for await (const line of opened.lines) {

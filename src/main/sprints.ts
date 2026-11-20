@@ -127,16 +127,6 @@ export function listSprints(): Sprint[] {
   }
 }
 
-export function getSprint(id: string): Sprint | null {
-  const p = fileFor(id)
-  if (!fs.existsSync(p)) return null
-  try {
-    return normalize(readJsonFile<Sprint>(p))
-  } catch {
-    return null
-  }
-}
-
 export function saveSprint(sprint: Sprint): Sprint {
   ensureSprintsDir()
   const next: Sprint = { ...normalize(sprint), updatedAt: Date.now() }
