@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest'
-import { anySignal, backupPathFor, createExecutor, makeCapture, makeHostQueue, type ExecOpts } from './ops-exec-pure'
+import {
+  anySignal,
+  backupPathFor,
+  createExecutor,
+  makeCapture,
+  makeHostQueue,
+  makeUploadLeftovers,
+  raceDeadline,
+  removeUpload,
+  sweepUploads,
+  type ExecOpts,
+  type UploadRemover,
+  type UploadSite
+} from './ops-exec-pure'
 import { createFakeBackend } from './ops-backend-fake'
 
 const tick = (ms = 0): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -200,5 +213,115 @@ describe('createFakeBackend', () => {
     const fake = createFakeBackend({ reachable: { h2: false } })
     expect((await fake.reachable('h1', 100)).ok).toBe(true)
     expect((await fake.reachable('h2', 100)).ok).toBe(false)
+  })
+})
+
+describe('raceDeadline', () => {
+  it('passes the value through when it arrives in time', async () => {
+    expect(await raceDeadline(Promise.resolve(7), { timeoutMs: 1000 })).toEqual({ ok: true, value: 7 })
+  })
+
+  it('gives up on timeout, and hands a late value to onLate', async () => {
+    let late: number | undefined
+    let release: (v: number) => void = () => undefined
+    const p = new Promise<number>((r) => (release = r))
+    expect(await raceDeadline(p, { timeoutMs: 5, onLate: (v) => (late = v) })).toEqual({ ok: false, reason: 'timeout' })
+    release(3)
+    await tick()
+    expect(late).toBe(3)
+  })
+
+  it('gives up as soon as the signal aborts, or at once when it already has', async () => {
+    const ctl = new AbortController()
+    const never = new Promise<number>(() => undefined)
+    const raced = raceDeadline(never, { signal: ctl.signal, timeoutMs: 60_000 })
+    ctl.abort()
+    expect(await raced).toEqual({ ok: false, reason: 'aborted' })
+    expect(await raceDeadline(never, { signal: ctl.signal, timeoutMs: 60_000 })).toEqual({ ok: false, reason: 'aborted' })
+  })
+
+  it('does not call onLate for a value that won, and rejects with an early error', async () => {
+    let late = false
+    await raceDeadline(Promise.resolve(1), { timeoutMs: 1000, onLate: () => (late = true) })
+    await tick()
+    expect(late).toBe(false)
+    await expect(raceDeadline(Promise.reject(new Error('boom')), { timeoutMs: 1000 })).rejects.toThrow('boom')
+  })
+})
+
+describe('upload housekeeping', () => {
+  const site = (id: string): UploadSite => ({ base: '/home/ops/.argos-ops', dir: `/home/ops/.argos-ops/${id}`, file: `/home/ops/.argos-ops/${id}/check.sh` })
+
+  /** A remote tree as a set of paths; rmdir refuses a folder with anything under it, like SFTP does. */
+  function tree(paths: string[], failing: string[] = []): UploadRemover & { paths: Set<string>; ops: string[] } {
+    const set = new Set(paths)
+    const ops: string[] = []
+    const rm = async (p: string): Promise<'gone' | 'failed'> => {
+      if (failing.includes(p)) return 'failed'
+      if ([...set].some((x) => x.startsWith(`${p}/`))) return 'failed'
+      set.delete(p)
+      return 'gone'
+    }
+    return {
+      paths: set,
+      ops,
+      unlink: (p) => (ops.push(`unlink ${p}`), rm(p)),
+      rmdir: (p) => (ops.push(`rmdir ${p}`), rm(p))
+    }
+  }
+
+  it('removes the file, its folder and then the empty parent, in that order', async () => {
+    const s = site('a1')
+    const fs = tree([s.base, s.dir, s.file])
+    expect(await removeUpload(fs, s)).toBe(true)
+    expect(fs.ops).toEqual([`unlink ${s.file}`, `rmdir ${s.dir}`, `rmdir ${s.base}`])
+    expect([...fs.paths]).toEqual([])
+  })
+
+  it('leaves a parent that holds anything else, and still counts the call as cleaned', async () => {
+    const s = site('a1')
+    const foreign = '/home/ops/.argos-ops/notes.txt'
+    const fs = tree([s.base, s.dir, s.file, foreign])
+    expect(await removeUpload(fs, s)).toBe(true)
+    expect([...fs.paths].sort()).toEqual([s.base, foreign].sort())
+  })
+
+  it('treats paths that were never created as gone (a stall before the upload)', async () => {
+    const s = site('a1')
+    const fs = tree([])
+    expect(await removeUpload(fs, s)).toBe(true)
+  })
+
+  it('reports a folder it could not remove, and sweeps the rest', async () => {
+    const a = site('a1')
+    const b = site('b2')
+    const fs = tree([a.base, a.dir, a.file, b.dir, b.file], [a.file])
+    const r = await sweepUploads(fs, [a, b])
+    expect(r.removed).toEqual([b])
+    expect(r.left).toEqual([a])
+    expect(fs.paths.has(a.file)).toBe(true)
+    // The parent stays while a's folder is still in it.
+    expect(fs.paths.has(a.base)).toBe(true)
+  })
+
+  it('keeps leftovers per host until removed', () => {
+    const l = makeUploadLeftovers()
+    const a = site('a1')
+    l.add('h1', a)
+    l.add('h1', site('b2'))
+    l.add('h2', a)
+    expect(l.of('h1')).toHaveLength(2)
+    l.remove('h1', a)
+    expect(l.of('h1').map((s) => s.dir)).toEqual([site('b2').dir])
+    expect(l.of('h2')).toEqual([a])
+    expect(l.of('h3')).toEqual([])
+  })
+
+  it('the executor passes removeUploads through even after abortAll', async () => {
+    const fake = createFakeBackend()
+    const ex = createExecutor(fake)
+    ex.abortAll()
+    expect(await ex.backend.removeUploads('h1')).toEqual({ removed: [], left: [] })
+    expect(fake.calls.map((c) => c.kind)).toEqual(['removeUploads'])
   })
 })

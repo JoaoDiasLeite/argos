@@ -32,7 +32,7 @@ export interface FakeScript {
 }
 
 export interface FakeCall {
-  kind: 'exec' | 'read' | 'list' | 'write' | 'runScript' | 'reachable'
+  kind: 'exec' | 'read' | 'list' | 'write' | 'runScript' | 'reachable' | 'removeUploads'
   hostId: string
   args: unknown
 }
@@ -177,6 +177,12 @@ export function createFakeBackend(script: FakeScript = {}): FakeBackend {
       await hooks.finished?.(r)
       await hooks.removed?.(remote)
       return r
+    },
+
+    async removeUploads(hostId) {
+      // The fake's uploads are gone when runScript returns; recorded so a test sees the sweep.
+      calls.push({ kind: 'removeUploads', hostId, args: {} })
+      return { removed: [], left: [] }
     },
 
     async reachable(hostId, timeoutMs) {
