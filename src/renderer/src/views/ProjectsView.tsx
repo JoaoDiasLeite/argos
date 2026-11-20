@@ -576,7 +576,6 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       (p) => p.sourceId === accountFilter && identityOf(p, codexAccounts) !== accountFilter
     )
     if (match) setAccountFilter(identityOf(match, codexAccounts))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codexAccounts, projects])
 
   // The options the filter offers: one per account identity actually present (see
@@ -757,7 +756,6 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     load()
     window.electronAPI.ccFavorites().then(setFavorites)
     window.electronAPI.ccProjectNames().then(setCustomNames).catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // A project just archived (or unarchived past the other scope) drops out of the
@@ -772,7 +770,6 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       setSessions([])
       setPeeked(null)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectGroups, showArchivedProjects])
 
   // The filter above can narrow (or restore) which members belong to the selected
@@ -783,7 +780,6 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     if (!selected) return
     const match = projectGroups.find((g) => g.key === selected.key)
     if (match) selectProject(match)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountFilter])
 
   // Debounced full-text search across all sources.
@@ -873,7 +869,6 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
   useEffect(() => {
     refreshSessions()
     setPeeked(null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showArchived])
 
   // Open what a deep link named. The conversation can have been archived since the
@@ -922,7 +917,6 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target])
 
   // Select the project Home pointed at. Matching is by projectKey, not by raw path:
@@ -945,7 +939,6 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus])
 
   // The in-project search. Debounced like the global one, and reset by moving to
@@ -1016,7 +1009,6 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       selectProject(group)
       setPendingSelect(null)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projects, projectGroups, pendingSelect])
 
   // The tag vocabulary offered here is the registry plus whatever is applied in this
@@ -1103,7 +1095,6 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
         // basename — one miss here must never take the others down with it.
         .catch(() => {})
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownKey])
 
   /**

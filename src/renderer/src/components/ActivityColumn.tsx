@@ -948,7 +948,6 @@ export default function ActivityColumn({
     }
     if (readyRef.current && scrolledRef.current && added > 0) setNewCount((c) => c + added)
     if (!loading) readyRef.current = true
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [keySig, loading])
 
   /** How far the list's first row is above the panel's visible top. */

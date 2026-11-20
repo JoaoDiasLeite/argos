@@ -97,7 +97,6 @@ const companion: Record<keyof typeof en, string> = {
   'catchup.markDone': 'Marcar "{title}" como feito',
   'catchup.seeAll': 'Ver todos',
 
-  'panel.title': 'Companheiro',
   'panel.sub': 'Chama o Argos com {shortcut}, em qualquer parte do Windows.',
   'panel.subNoShortcut': 'O Argos não tem atalho para o chamar. Escolhe um nas Definições.',
   'panel.tabs.aria': 'Tarefas ou notas',

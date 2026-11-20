@@ -143,7 +143,6 @@ export default function SftpBrowser({ hostId, cwd, barSlot, pathSlot, onNavigate
     return () => {
       listSeq.current++
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hostId, cwd])
 
   const openEntry = (entry: RemoteEntry) => {

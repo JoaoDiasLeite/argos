@@ -55,7 +55,6 @@ const sessions: Record<keyof typeof en, string> = {
   'activity.label': 'Atividade',
   'activity.loading': 'A carregar…',
   'activity.run': 'Execução',
-  'activity.report': 'Relatório',
   'activity.panel.progress': 'Progresso',
   'activity.panel.context': 'Contexto',
   'activity.panel.activity': 'Atividade',

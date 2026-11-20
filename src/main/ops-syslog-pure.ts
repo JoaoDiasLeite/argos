@@ -60,7 +60,6 @@ export type SyslogEvent =
 
 /** Control characters and line breaks (C0, DEL, C1, U+2028/2029) become one space. */
 export function sanitizeSyslogText(s: string): string {
-  // eslint-disable-next-line no-control-regex
   return s.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')
 }
 

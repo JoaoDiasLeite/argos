@@ -110,7 +110,6 @@ export default {
   'catchup.seeAll': 'See all',
 
   // The panel in the main window (CompanionView.tsx).
-  'panel.title': 'Companion',
   'panel.sub': 'Summon Argos with {shortcut}, anywhere in Windows.',
   'panel.subNoShortcut': 'Argos has no summon shortcut right now. Pick one in Settings.',
   'panel.tabs.aria': 'Tasks or notes',

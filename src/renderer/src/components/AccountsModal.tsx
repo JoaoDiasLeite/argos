@@ -101,7 +101,6 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
     refresh().catch(report)
     refreshProvider('codex').catch(report)
     refreshProvider('gemini').catch(report)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const addAccount = async () => {
