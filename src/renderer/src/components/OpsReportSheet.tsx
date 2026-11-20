@@ -20,7 +20,8 @@ interface Props {
 }
 
 type Kind = OpsReportKind
-type Verified = { ok: true } | { ok: false; brokenAt?: number; reason: string } | null
+/** `imported`: the run's day came from a profile archive, so its chain cannot prove its origin. */
+type Verified = { ok: true; imported: boolean } | { ok: false; brokenAt?: number; reason: string } | null
 
 const clock = (iso?: string, seconds = false, locale?: string): string => {
   if (!iso) return ''
@@ -123,13 +124,13 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
     if (!ledgerDay) return
     let cancelled = false
     window.electronAPI
-      .opsVerify(ledgerDay)
-      .then((v) => !cancelled && setVerified(v.ok ? { ok: true } : v))
+      .opsVerify(ledgerDay, runId)
+      .then((v) => !cancelled && setVerified(v.ok ? { ok: true, imported: v.imported !== undefined } : v))
       .catch(() => !cancelled && setVerified(null))
     return () => {
       cancelled = true
     }
-  }, [ledgerDay])
+  }, [ledgerDay, runId])
 
   const copy = () => {
     if (!markdown) return
@@ -244,7 +245,7 @@ export default function OpsReportSheet({ runId, appSessionId, runbookPath, onClo
                 · {t('ops.report.policy')} <code>{run.policySha256.slice(0, 8)}</code>
               </>
             )}
-            {verified?.ok && ` · ${t('ops.report.chainVerified')}`}
+            {verified?.ok && ` · ${t(verified.imported ? 'ops.report.chainImported' : 'ops.report.chainVerified')}`}
             {verified && !verified.ok && (
               <span className="ops-rs-broken" title={verified.reason}>
                 {' '}

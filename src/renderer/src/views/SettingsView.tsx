@@ -197,9 +197,7 @@ export default function SettingsView({
   const [ledger, setLedger] = useState<{ dir: string; files: number; bytes: number } | null>(null)
   const [verifyDate, setVerifyDate] = useState(utcToday)
   const [verifying, setVerifying] = useState(false)
-  const [verifyResult, setVerifyResult] = useState<
-    { ok: true; lines: number } | { ok: false; brokenAt?: number; reason: string } | null
-  >(null)
+  const [verifyResult, setVerifyResult] = useState<Awaited<ReturnType<typeof window.electronAPI.opsVerify>> | null>(null)
   const [dirCopied, setDirCopied] = useState(false)
 
   useEffect(() => {
@@ -1263,16 +1261,38 @@ export default function SettingsView({
                   <span className="help">{t('settings.ops.verify.hint')}</span>
                   {verifyResult && (
                     <span
-                      className={`help settings-result ${verifyResult.ok ? (verifyResult.lines === 0 ? '' : 'ok') : 'err'}`}
+                      className={`help settings-result ${verifyResult.ok ? (verifyResult.lines === 0 || verifyResult.imported ? '' : 'ok') : 'err'}`}
                       role="status"
                     >
                       {verifyResult.ok
                         ? verifyResult.lines === 0
-                          ? t('settings.ops.verify.noEntries')
+                          ? verifyResult.imported
+                            ? ''
+                            : t('settings.ops.verify.noEntries')
                           : t('settings.ops.verify.intact', { lines: plural(t, 'settings.ops.verify.lines', verifyResult.lines) })
-                        : verifyResult.brokenAt !== undefined
-                          ? t('settings.ops.verify.brokenAt', { line: verifyResult.brokenAt, reason: verifyResult.reason })
-                          : t('settings.ops.verify.broken', { reason: verifyResult.reason })}
+                        : verifyResult.imported
+                          ? verifyResult.brokenAt !== undefined
+                            ? t('settings.ops.verify.importedBrokenAt', { line: verifyResult.brokenAt, reason: verifyResult.reason })
+                            : t('settings.ops.verify.importedBroken', { reason: verifyResult.reason })
+                          : verifyResult.brokenAt !== undefined
+                            ? t('settings.ops.verify.brokenAt', { line: verifyResult.brokenAt, reason: verifyResult.reason })
+                            : t('settings.ops.verify.broken', { reason: verifyResult.reason })}
+                      {/* An imported day is never shown as plainly verified: its chain cannot prove where it was written. */}
+                      {verifyResult.ok && verifyResult.imported && (
+                        <>
+                          {verifyResult.lines > 0 && ' · '}
+                          {t('settings.ops.verify.imported', { lines: plural(t, 'settings.ops.verify.lines', verifyResult.imported.lines) })}
+                          {verifyResult.imported.archive && verifyResult.imported.importedAt && (
+                            <>
+                              {' '}
+                              {t('settings.ops.verify.importedSource', {
+                                archive: verifyResult.imported.archive,
+                                date: verifyResult.imported.importedAt.slice(0, 10)
+                              })}
+                            </>
+                          )}
+                        </>
+                      )}
                     </span>
                   )}
                 </div>

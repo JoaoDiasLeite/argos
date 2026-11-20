@@ -160,6 +160,7 @@ export default {
   'report.chainVerified': 'chain verified',
   'report.chainBrokenAt': 'chain broken at line {line}',
   'report.chainBroken': 'chain broken',
+  'report.chainImported': 'imported, chain consistent but origin not verifiable',
   'report.tile.calls': 'calls',
   'report.tile.ran': 'ran',
   'report.tile.asked': 'asked you',
