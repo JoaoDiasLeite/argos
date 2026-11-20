@@ -115,6 +115,7 @@ import {
   remoteShellKill,
   remoteShellKillAll
 } from './remote-shell'
+import { remoteContainers } from './remote-containers'
 import { listDistros, testDistro, testDistroClaude, runWslOneShot, uncToWslPath, wslHistory, wslHome, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths, wslShareRoot } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
 import { createLedger, RUN_LIST_MAX, type OpsLedger, type OpsReportKind } from './ops-audit'
@@ -2878,6 +2879,7 @@ ipcMain.handle('sftp:upload', (_, hostId: string, dir: string, localPaths?: stri
   sftpUpload(hostId, dir, localPaths)
 )
 ipcMain.handle('sftp:history', (_, hostId: string) => sftpHistory(hostId))
+ipcMain.handle('remote:containers', (_, hostId: string) => remoteContainers(hostId))
 ipcMain.handle('sftp:disconnect', (_, hostId: string) => sftpDisconnect(hostId))
 
 // ─── WSL ──────────────────────────────────────────────────────────────────

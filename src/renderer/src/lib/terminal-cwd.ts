@@ -15,15 +15,22 @@ import type { Terminal } from '@xterm/xterm'
  *
  * A title set by a program instead of the prompt ("file (~/dir) - VIM", Claude Code's
  * "✳ …") has no `user@host:` in front and is ignored, so it can never move the pane.
+ *
+ * Neither does a shell inside a container (the Containers pane's Shell, or a `docker exec`
+ * typed by hand): its host is the container's default hostname, its 12-hex short id, and
+ * its paths are the container's, which the host's file pane would fail to open.
  */
 
-const TITLE_CWD = /^(?:\([^)]*\)\s*)?[^@\s()]+@[^:\s]+:\s?(\S.*)$/
+const TITLE_CWD = /^(?:\([^)]*\)\s*)?[^@\s()]+@([^:\s]+):\s?(\S.*)$/
+
+/** A container's default hostname: the first 12 hex characters of its id. */
+const CONTAINER_HOST = /^[0-9a-f]{12}$/
 
 /** The cwd a prompt-set title names, or null for a title that is not one. */
 export function cwdFromTitle(title: string): string | null {
   const m = TITLE_CWD.exec(title.trim())
-  if (!m) return null
-  const path = m[1].trim()
+  if (!m || CONTAINER_HOST.test(m[1])) return null
+  const path = m[2].trim()
   return path.startsWith('/') || path === '~' || path.startsWith('~/') ? path : null
 }
 
@@ -33,6 +40,7 @@ export function cwdFromOsc7(data: string): string | null {
   const rest = data.slice('file://'.length)
   const slash = rest.indexOf('/')
   if (slash === -1) return null
+  if (CONTAINER_HOST.test(rest.slice(0, slash))) return null
   try {
     return decodeURIComponent(rest.slice(slash)) || null
   } catch {

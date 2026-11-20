@@ -787,6 +787,26 @@ export interface WslDistro {
 /** The Remote Session ("Connect") view's target — an SSH host or a WSL distro. */
 export type RemoteTarget = { kind: 'ssh'; host: SshHostPublic } | { kind: 'wsl'; distro: string }
 
+/** One container on a remote host, as main/remote-containers.ts lists it. */
+export interface RemoteContainerRow {
+  id: string
+  name: string
+  image: string
+  status: string
+  running: boolean
+  /** What to type into the session's terminal to get a shell inside it; null when stopped. */
+  shell: string | null
+}
+
+export interface RemoteContainerList {
+  ok: boolean
+  error?: string
+  /** Null when the host has neither docker nor podman. */
+  runtime?: 'docker' | 'podman' | null
+  sudo?: boolean
+  containers?: RemoteContainerRow[]
+}
+
 export type AuthMode = 'claude-code' | 'api-key'
 
 export interface AuthStatus {
@@ -1772,6 +1792,8 @@ declare global {
         localPaths?: string[]
       ) => Promise<{ ok: boolean; uploaded?: string[]; error?: string }>
       sftpHistory: (hostId: string) => Promise<{ ok: boolean; commands?: string[]; error?: string }>
+      /** The host's docker/podman containers (Remote Session's Containers pane). */
+      remoteContainers: (hostId: string) => Promise<RemoteContainerList>
 
       // Ops runs
       /** `onBase`: the runbook as it runs added to the base intervention. */
