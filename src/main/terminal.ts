@@ -10,6 +10,7 @@ import { providerAccountEnv } from './provider-accounts'
 import { resolveCodex } from './providers/cli-resolve'
 import { prepareCodexHomeFromToml } from './providers/codex'
 import { getSshTerminalCommand } from './ssh'
+import { remoteCommandWord } from './ssh-host-pure'
 import { BusyTracker, isMouseClick, isTerminalReport } from './terminal-busy-pure'
 import { isApprovalNotification, OscScanner } from './terminal-osc-pure'
 import {
@@ -911,9 +912,11 @@ function claudeLaunchCommand(
     // Remote box has no CLAUDE_BIN — use the host's configured claude path (or bare
     // `claude` on its PATH), from the working directory the host was set up for.
     const meta = sshMeta.get(id)
-    const base = meta?.claudePath || 'claude'
+    // Both are typed into the remote shell: the path is one quoted word, and `--` keeps a
+    // folder that starts with `-` from reading as a cd option.
+    const base = meta?.claudePath ? remoteCommandWord(meta.claudePath) : 'claude'
     const bin = ops ? withOpsEnvPrefix(base, ops.env) : base
-    const cd = meta?.remotePath ? `cd ${quoteUnix(meta.remotePath)} && ` : ''
+    const cd = meta?.remotePath ? `cd -- ${quoteUnix(meta.remotePath)} && ` : ''
     const chain = claudeChain(kind, sessionId, createFirst, extra, bin)
     if (!sessionId) return typedLaunchLine(`${cd}${chain}`)
     // Wrap the whole chain in parens so it runs as a single unit after the one-time cd,

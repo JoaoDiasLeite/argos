@@ -6,7 +6,17 @@ import { randomUUID } from 'crypto'
 import { isEndpointKeyStored, trustedKnownHostsPath, verifyHostKey } from './ssh-trust'
 import { sshOptionPath } from './ssh-trust-pure'
 import { t } from './i18n'
-import { cleanHostFields, decodeHostsFile, mergeSecrets, refuseOverwriteMessage, type HostsRead } from './ssh-host-pure'
+import {
+  cleanHostFields,
+  decodeHostsFile,
+  hostFieldProblem,
+  hostFieldProblemKey,
+  mergeSecrets,
+  refuseOverwriteMessage,
+  remoteCommandWord,
+  sshDestinationArgs,
+  type HostsRead
+} from './ssh-host-pure'
 
 export type SshAuthType = 'password' | 'key' | 'agent'
 
@@ -121,6 +131,8 @@ function genId(): string {
 
 export function saveHost(raw: SshHostInput): HostsWriteResult {
   const { password: _p, passphrase: _pp, ...fields } = cleanHostFields(raw)
+  const problem = hostFieldProblem(fields)
+  if (problem) return { ok: false, error: t(hostFieldProblemKey(problem)) }
   return updateHosts((hosts) => {
     const idx = fields.id ? hosts.findIndex((h) => h.id === fields.id) : -1
     const prev = idx >= 0 ? hosts[idx] : undefined
@@ -199,6 +211,10 @@ export async function getSshTerminalCommand(
 ): Promise<{ shell: string; args: string[]; remotePath?: string; claudePath?: string } | null> {
   const h = getHost(hostId)
   if (!h) return null
+  // Checked again here, not only on save: a host can arrive through a profile import or a
+  // hosts file written by an older version.
+  const problem = hostFieldProblem(h)
+  if (problem) throw new Error(t(hostFieldProblemKey(problem)))
   const port = h.port || 22
   if (!isEndpointKeyStored(h.host, port)) {
     // The verifier records the key before authentication, so a check that then fails to
@@ -218,7 +234,9 @@ export async function getSshTerminalCommand(
   // One argv element each, never shell-quoted; sshOptionPath only applies ssh's own
   // option syntax (the userData path can hold spaces, `%` and non-ASCII characters).
   args.push('-o', `UserKnownHostsFile=${sshOptionPath(knownHosts)}`, '-o', 'StrictHostKeyChecking=yes')
-  args.push(`${h.username}@${h.host}`)
+  const destination = sshDestinationArgs(h.username, h.host)
+  if (!destination) throw new Error(t('main.ssh.invalid.host'))
+  args.push(...destination)
   return { shell: 'ssh', args, remotePath: h.remotePath, claudePath: h.claudePath }
 }
 
@@ -271,6 +289,8 @@ export function testConnection(id: string): Promise<{ ok: boolean; message: stri
 export function testClaude(id: string): Promise<{ ok: boolean; message: string }> {
   const host = getHost(id)
   if (!host) return Promise.resolve({ ok: false, message: t('main.ssh.hostNotFound') })
+  const problem = hostFieldProblem(host)
+  if (problem) return Promise.resolve({ ok: false, message: t(hostFieldProblemKey(problem)) })
 
   return new Promise((resolve) => {
     const conn = new Client()
@@ -284,7 +304,8 @@ export function testClaude(id: string): Promise<{ ok: boolean; message: string }
     }
     const timer = setTimeout(() => done({ ok: false, message: t('main.ssh.timedOut') }), CHECK_TIMEOUT_MS)
     conn.on('ready', () => {
-      const claude = host.claudePath || 'claude'
+      // exec runs the line through the remote user's shell: the path is one quoted word.
+      const claude = host.claudePath ? remoteCommandWord(host.claudePath) : 'claude'
       conn.exec(`${claude} --version`, (err, stream) => {
         if (err) return done({ ok: false, message: t('main.ssh.connectedBut', { error: err.message }) })
         let out = ''
