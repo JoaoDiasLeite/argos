@@ -22,6 +22,7 @@ const main: Record<keyof typeof en, string> = {
   'companion.openPanel': 'Abrir o painel',
   'companion.hide': 'Esconder o Argos',
   'companion.settings': 'Definições',
+  'companion.voice.checksum': 'o modelo de voz não corresponde ao checksum esperado e foi apagado',
 
   'menu.view': 'Ver',
   'menu.window': 'Janela',

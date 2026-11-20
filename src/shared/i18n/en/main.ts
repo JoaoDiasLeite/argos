@@ -24,6 +24,8 @@ export default {
   'companion.openPanel': 'Open the panel',
   'companion.hide': 'Hide Argos',
   'companion.settings': 'Settings',
+  // Settings shows it after "The download failed:".
+  'companion.voice.checksum': 'the speech model did not match its expected checksum and was deleted',
 
   'menu.view': 'View',
   'menu.window': 'Window',
