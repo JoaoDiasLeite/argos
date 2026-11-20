@@ -23,6 +23,12 @@ const CHANGELOG: Entry[] = [
     tag: 'latest',
     sections: [
       {
+        title: 'Features',
+        items: [
+          'Containers in a remote session: a third pane next to Files and History lists the Docker containers of the server, or Podman ones when there is no Docker, running ones first. Shell opens a tab inside a running container, one group of tabs per container; exit ends the tab and Reconnect goes back in. When the login user cannot reach the socket, the list and the shells go through sudo, without asking for a password.'
+        ]
+      },
+      {
         title: 'Security',
         items: [
           'Every page of the app carries a content security policy: scripts and styles load only from the app itself, and images from the app or embedded data. A remote image in rendered text is no longer fetched.',
