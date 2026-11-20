@@ -138,6 +138,10 @@ export default {
   'sftp.dialog.upload': 'Upload files',
   'sftp.uploadFailed': 'Upload failed: {names}',
 
+  'containers.timedOut': 'No answer from the server within 20 s',
+  'containers.failed': '{runtime} is installed but could not list containers (no sudo without a password either): {detail}',
+  'containers.garbled': 'The server did not answer the container listing as expected',
+
   'ssh.hostNotFound': 'Host not found',
   'ssh.connectedAs': 'Connected as {user}@{host}:{port} in {ms} ms',
   'ssh.connectedBut': 'Connected, but: {error}',

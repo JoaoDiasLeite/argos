@@ -138,6 +138,10 @@ const main: Record<keyof typeof en, string> = {
   'sftp.dialog.upload': 'Carregar ficheiros',
   'sftp.uploadFailed': 'O carregamento falhou: {names}',
 
+  'containers.timedOut': 'O servidor não respondeu em 20 s',
+  'containers.failed': 'O {runtime} está instalado mas não deu para listar os containers (nem com sudo sem palavra-passe): {detail}',
+  'containers.garbled': 'O servidor não respondeu à listagem de containers como esperado',
+
   'ssh.hostNotFound': 'Anfitrião não encontrado',
   'ssh.connectedAs': 'Ligado como {user}@{host}:{port} em {ms} ms',
   'ssh.connectedBut': 'Ligado, mas: {error}',

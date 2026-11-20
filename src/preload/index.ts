@@ -429,6 +429,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sftpUpload: (hostId: string, dir: string, localPaths?: string[]) =>
     ipcRenderer.invoke('sftp:upload', hostId, dir, localPaths),
   sftpHistory: (hostId: string) => ipcRenderer.invoke('sftp:history', hostId),
+  remoteContainers: (hostId: string) => ipcRenderer.invoke('remote:containers', hostId),
 
   // Ops runs (docs/OPS_AGENT_PLAN.md): runbook preview, reports, ledger checks, and the
   // live ledger lines of a run for the timeline. The renderer never writes the ledger.

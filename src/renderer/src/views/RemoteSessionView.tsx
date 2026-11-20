@@ -3,6 +3,7 @@ import { RemoteTarget } from '../types'
 import ChatTerminal from '../components/ChatTerminal'
 import RemoteTerminal from '../components/RemoteTerminal'
 import SftpBrowser from '../components/SftpBrowser'
+import ContainersPanel from '../components/ContainersPanel'
 import LocalBrowser from '../components/LocalBrowser'
 import FileEditor from '../components/FileEditor'
 import { readLocalFile, writeLocalFile } from '../lib/local-file-io'
@@ -105,7 +106,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
   // `~` stands for. A ref: read by the terminal's cwd reports, not rendered.
   const homeRef = useRef<string | null>(null)
   const [pathInput, setPathInput] = useState(cwd)
-  const [panel, setPanel] = useState<'files' | 'history'>('files')
+  const [panel, setPanel] = useState<'files' | 'history' | 'containers'>('files')
   const [openFile, setOpenFile] = useState<string | null>(null)
   const [remoteHistory, setRemoteHistory] = useState<string[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -238,6 +239,10 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     <div className="seg-control remote-session-toggle">
       <button type="button" className={panel === 'files' ? 'on' : ''} onClick={() => setPanel('files')}>{t('remote.session.files')}</button>
       <button type="button" className={panel === 'history' ? 'on' : ''} onClick={openHistoryPanel}>{t('remote.session.history')}</button>
+      {/* SSH only: a WSL distro's containers are the Windows host's Docker Desktop. */}
+      {isSsh && (
+        <button type="button" className={panel === 'containers' ? 'on' : ''} onClick={() => setPanel('containers')}>{t('remote.session.containers')}</button>
+      )}
     </div>
   )
 
@@ -297,7 +302,14 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
               </div>
             </div>
           )}
-          {panel === 'files' ? (
+          {panel === 'containers' && isSsh ? (
+            <ContainersPanel
+              hostId={target.host.id}
+              connected={status === 'connected'}
+              barSlot={paneSwitch}
+              onRun={sendToTerminal}
+            />
+          ) : panel === 'files' ? (
             isSsh ? (
               <SftpBrowser
                 hostId={target.host.id}
