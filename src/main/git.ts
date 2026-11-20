@@ -1,21 +1,52 @@
 import { execFile } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
+import { parseNumstat, parsePorcelainZ, type NumstatEntry } from './git-pure'
 
-function git(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
+/** Ceiling for one git call; a stuck process is killed rather than hanging the IPC. */
+const GIT_TIMEOUT_MS = 20_000
+/** Status, diffs and blob reads can legitimately take a while on a big repo. */
+const GIT_SLOW_TIMEOUT_MS = 60_000
+
+// No prompt: a git waiting for credentials must fail, not sit there. quotePath=false
+// keeps accented names readable in the text we do not parse (patches).
+const GIT_ENV = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+const GIT_PREFIX = ['-c', 'core.quotePath=false']
+
+function git(
+  cwd: string,
+  args: string[],
+  timeout = GIT_TIMEOUT_MS
+): Promise<{ stdout: string; stderr: string; code: number; timedOut: boolean }> {
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, maxBuffer: 20 * 1024 * 1024 }, (err, stdout, stderr) => {
-      resolve({
-        stdout: stdout?.toString() ?? '',
-        stderr: stderr?.toString() ?? '',
-        code: err && typeof (err as { code?: number }).code === 'number' ? (err as { code: number }).code : err ? 1 : 0
-      })
-    })
+    execFile(
+      'git',
+      [...GIT_PREFIX, ...args],
+      { cwd, maxBuffer: 20 * 1024 * 1024, timeout, env: GIT_ENV },
+      (err, stdout, stderr) => {
+        const e = err as { code?: unknown; killed?: boolean; signal?: string } | null
+        resolve({
+          stdout: stdout?.toString() ?? '',
+          stderr: stderr?.toString() ?? '',
+          code: e && typeof e.code === 'number' ? e.code : e ? 1 : 0,
+          // execFile kills the child on timeout, leaving killed + a signal on the error.
+          timedOut: !!e && e.killed === true && !!e.signal
+        })
+      }
+    )
   })
+}
+
+/** A hung git must reach the renderer as a rejected call, handled like any other git
+ *  error, not as an empty repo or a forever-pending promise. */
+function failIfTimedOut(res: { timedOut: boolean }, what: string): void {
+  if (res.timedOut) throw new Error(`git ${what} timed out`)
 }
 
 export interface GitFile {
   path: string
+  /** Source path of a rename or copy; `path` is then the destination. */
+  origPath?: string
   index: string
   worktree: string
   staged: boolean
@@ -38,26 +69,22 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
   if (!cwd || !fs.existsSync(cwd)) return { isRepo: false, branch: '', files: [], ahead: 0, behind: 0 }
 
   const inside = await git(cwd, ['rev-parse', '--is-inside-work-tree'])
+  failIfTimedOut(inside, 'rev-parse')
   if (inside.stdout.trim() !== 'true') return { isRepo: false, branch: '', files: [], ahead: 0, behind: 0 }
 
   const branchRes = await git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
   const branch = branchRes.stdout.trim()
 
-  const statusRes = await git(cwd, ['status', '--porcelain=v1', '--untracked-files=all'])
-  const files: GitFile[] = []
-  for (const line of statusRes.stdout.split('\n')) {
-    if (!line.trim()) continue
-    const index = line[0]
-    const worktree = line[1]
-    const filePath = line.slice(3).replace(/^"|"$/g, '')
-    files.push({
-      path: filePath,
-      index,
-      worktree,
-      staged: index !== ' ' && index !== '?',
-      untracked: index === '?' && worktree === '?'
-    })
-  }
+  const statusRes = await git(cwd, ['status', '--porcelain=v1', '-z', '--untracked-files=all'], GIT_SLOW_TIMEOUT_MS)
+  failIfTimedOut(statusRes, 'status')
+  const files: GitFile[] = parsePorcelainZ(statusRes.stdout).map((e) => ({
+    path: e.path,
+    ...(e.origPath ? { origPath: e.origPath } : {}),
+    index: e.index,
+    worktree: e.worktree,
+    staged: e.index !== ' ' && e.index !== '?',
+    untracked: e.index === '?' && e.worktree === '?'
+  }))
 
   await addLineCounts(cwd, files)
 
@@ -71,40 +98,6 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
   }
 
   return { isRepo: true, branch, files, ahead, behind }
-}
-
-export interface NumstatEntry {
-  added: number
-  deleted: number
-  binary: boolean
-}
-
-/**
- * `git diff --numstat` output keyed by path. A rename is printed as `old => new` or with
- * braces (`src/{a => b}/x.ts`); it is keyed by the new path, since that is the one the
- * porcelain status names. Binaries print `-` for both counts.
- */
-export function parseNumstat(stdout: string): Map<string, NumstatEntry> {
-  const out = new Map<string, NumstatEntry>()
-  for (const line of stdout.split('\n')) {
-    const m = /^(-|\d+)\t(-|\d+)\t(.+)$/.exec(line.replace(/\r$/, ''))
-    if (!m) continue
-    const binary = m[1] === '-' && m[2] === '-'
-    out.set(renameTarget(m[3]), {
-      added: binary ? 0 : Number(m[1]),
-      deleted: binary ? 0 : Number(m[2]),
-      binary
-    })
-  }
-  return out
-}
-
-function renameTarget(p: string): string {
-  const braced = /^(.*)\{(.*) => (.*)\}(.*)$/.exec(p)
-  // "{a => }/x" or "{ => b}/x" leave a doubled slash once the empty side is dropped.
-  if (braced) return (braced[1] + braced[3] + braced[4]).replace(/\/\//g, '/')
-  const plain = p.indexOf(' => ')
-  return plain >= 0 ? p.slice(plain + 4) : p
 }
 
 /** Untracked files are read whole to count them; past this they are left as "binary"
@@ -128,11 +121,11 @@ async function addLineCounts(cwd: string, files: GitFile[]): Promise<void> {
   const head = await git(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD'])
   let counts: Map<string, NumstatEntry>
   if (head.code === 0) {
-    counts = parseNumstat((await git(cwd, ['diff', '--numstat', 'HEAD'])).stdout)
+    counts = parseNumstat((await git(cwd, ['diff', '--numstat', '-z', 'HEAD'], GIT_SLOW_TIMEOUT_MS)).stdout)
   } else {
     // No commits yet, so nothing to diff against: staged and unstaged are summed instead.
-    const cached = parseNumstat((await git(cwd, ['diff', '--numstat', '--cached'])).stdout)
-    const worktree = parseNumstat((await git(cwd, ['diff', '--numstat'])).stdout)
+    const cached = parseNumstat((await git(cwd, ['diff', '--numstat', '-z', '--cached'], GIT_SLOW_TIMEOUT_MS)).stdout)
+    const worktree = parseNumstat((await git(cwd, ['diff', '--numstat', '-z'], GIT_SLOW_TIMEOUT_MS)).stdout)
     counts = new Map(cached)
     for (const [p, w] of worktree) {
       const c = counts.get(p)
@@ -163,9 +156,8 @@ async function addLineCounts(cwd: string, files: GitFile[]): Promise<void> {
       }
       continue
     }
-    // Porcelain shows a rename as "old -> new"; numstat is keyed by the new path.
-    const arrow = f.path.indexOf(' -> ')
-    const c = counts.get(arrow >= 0 ? f.path.slice(arrow + 4) : f.path)
+    // numstat is keyed by the new path, which is `path` for a rename too.
+    const c = counts.get(f.path)
     if (!c) continue
     if (c.binary) f.binary = true
     else {
@@ -202,11 +194,11 @@ export interface GitFileDiff {
  * renderer's DiffView computes its own rows) plus git's patch for "Copy diff". Throws on
  * a path that is absolute or climbs out of the repo.
  */
-export async function getFileDiff(cwd: string, filePath: string): Promise<GitFileDiff> {
-  // Porcelain names a rename "old -> new"; the worktree side is the new path.
-  const arrow = filePath.indexOf(' -> ')
-  const oldPath = arrow >= 0 ? filePath.slice(0, arrow) : filePath
-  const newPath = arrow >= 0 ? filePath.slice(arrow + 4) : filePath
+export async function getFileDiff(cwd: string, filePath: string, origPath?: string): Promise<GitFileDiff> {
+  // For a rename the worktree side is the new path and HEAD still has the old one.
+  const renamed = !!origPath
+  const oldPath = origPath || filePath
+  const newPath = filePath
   resolveInRepo(cwd, oldPath)
   const full = resolveInRepo(cwd, newPath)
   const result: GitFileDiff = { path: filePath, oldText: '', newText: '', binary: false, tooLarge: false, patch: '' }
@@ -232,11 +224,13 @@ export async function getFileDiff(cwd: string, filePath: string): Promise<GitFil
   result.newText = newBuf.toString('utf-8')
 
   const tracked = await git(cwd, ['ls-files', '--error-unmatch', '--', newPath])
-  if (tracked.code === 0 || arrow >= 0) {
+  if (tracked.code === 0 || renamed) {
     const args = ['diff', 'HEAD', '--']
-    if (arrow >= 0) args.push(oldPath)
+    if (renamed) args.push(oldPath)
     args.push(newPath)
-    result.patch = (await git(cwd, args)).stdout
+    const diffRes = await git(cwd, args, GIT_SLOW_TIMEOUT_MS)
+    failIfTimedOut(diffRes, 'diff')
+    result.patch = diffRes.stdout
   }
   if (!result.patch && result.newText && !result.oldText) {
     // Untracked: `git diff --no-index /dev/null` misbehaves on Windows, and the patch of
@@ -250,9 +244,16 @@ export async function getFileDiff(cwd: string, filePath: string): Promise<GitFil
 /** `git show <rev>:<path>` as raw bytes; empty on any failure (new file, no HEAD). The
  *  buffer is generous so an oversized blob still arrives and is caught as tooLarge. */
 function gitShowBuffer(cwd: string, spec: string): Promise<Buffer> {
-  return new Promise((resolve) => {
-    execFile('git', ['show', spec], { cwd, encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 }, (err, stdout) =>
-      resolve(err ? Buffer.alloc(0) : stdout)
+  return new Promise((resolve, reject) => {
+    execFile(
+      'git',
+      [...GIT_PREFIX, 'show', spec],
+      { cwd, encoding: 'buffer', maxBuffer: 64 * 1024 * 1024, timeout: GIT_SLOW_TIMEOUT_MS, env: GIT_ENV },
+      (err, stdout) => {
+        // A timeout must not read as "file is new": that would show the whole file as added.
+        if (err && (err as { killed?: boolean }).killed) reject(new Error('git show timed out'))
+        else resolve(err ? Buffer.alloc(0) : stdout)
+      }
     )
   })
 }

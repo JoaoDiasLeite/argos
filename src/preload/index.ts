@@ -526,7 +526,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Git
   gitStatus: (cwd: string) => ipcRenderer.invoke('git:status', cwd),
-  gitFileDiff: (cwd: string, filePath: string) => ipcRenderer.invoke('git:file-diff', cwd, filePath),
+  gitFileDiff: (cwd: string, filePath: string, origPath?: string) =>
+    ipcRenderer.invoke('git:file-diff', cwd, filePath, origPath),
   gitRepoName: (cwd: string) => ipcRenderer.invoke('git:repo-name', cwd),
 
   // File system
