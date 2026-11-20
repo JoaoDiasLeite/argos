@@ -88,7 +88,7 @@ import { SESSION_DRAG_TYPE, type DropPlan } from './lib/pane-drop'
 // of statically imported. That keeps their code — and the vendor libraries
 // they alone pull in — out of the initial renderer chunk. See the Suspense
 // fallback (`ViewLoading`) rendered while each view's chunk is fetched.
-import { SshHostPublic, RemoteTarget } from './types'
+import { SshHostPublic, RemoteTarget, type RemoteContainerTarget } from './types'
 import { useT } from './i18n'
 import { NEW_CHAT_NAME, chatDisplayName } from './lib/chat-name'
 import { mergeById } from './lib/merge-by-id'
@@ -105,6 +105,7 @@ const PlannerView = lazy(() => import('./views/PlannerView'))
 const CompanionView = lazy(() => import('./views/CompanionView'))
 const RemoteView = lazy(() => import('./views/RemoteView'))
 const RemoteSessionView = lazy(() => import('./views/RemoteSessionView'))
+const ContainerSessionView = lazy(() => import('./views/ContainerSessionView'))
 const InterventionStart = lazy(() => import('./views/InterventionStart'))
 const OpsWorkspace = lazy(() => import('./views/OpsWorkspace'))
 const SettingsView = lazy(() => import('./views/SettingsView'))
@@ -213,6 +214,9 @@ interface ServerSession {
   /** 1-based, per group. Never reused within a run, so a tab's number doesn't shift
    *  under the user when a sibling closes. */
   seq: number
+  /** A container's own tab (opened from a session's Containers pane): its group is the
+   *  container, its target the host whose SSH connection it rides. */
+  container?: { target: RemoteContainerTarget; name: string }
 }
 function serverGroupKey(target: RemoteTarget): string {
   return target.kind === 'ssh' ? `srv:ssh:${target.host.id}` : `srv:wsl:${target.distro}`
@@ -2298,6 +2302,18 @@ export default function App() {
     setActiveServerSessionId(id)
     setView('remote-session')
   }
+  /** The Containers pane's Shell: always a new tab, grouped with any other on that
+   *  container (so its title is the container, not the host). */
+  const openContainerSession = (host: SshHostPublic, container: RemoteContainerTarget, name: string) => {
+    const groupKey = `srv:ctr:${host.id}:${container.id}`
+    const seq = (seqCounterRef.current[groupKey] ?? 0) + 1
+    seqCounterRef.current[groupKey] = seq
+    const id = `${groupKey}#${seq}`
+    const session: ServerSession = { id, groupKey, target: { kind: 'ssh', host }, title: name, seq, container: { target: container, name } }
+    setServerSessions((prev) => [...prev, session])
+    setActiveServerSessionId(id)
+    setView('remote-session')
+  }
   const openRemoteSession = (host: SshHostPublic, newSession?: boolean) =>
     openServerSession({ kind: 'ssh', host }, newSession)
   const openWslSession = (distro: string, newSession?: boolean) =>
@@ -2341,8 +2357,13 @@ export default function App() {
 
   /** The group header's + button — another session on a target that already has one. */
   const addToTabGroup = (groupKey: string) => {
-    const target = serverSessions.find((s) => s.groupKey === groupKey)?.target
-    if (target) openServerSession(target, true)
+    const session = serverSessions.find((s) => s.groupKey === groupKey)
+    if (!session) return
+    if (session.container && session.target.kind === 'ssh') {
+      openContainerSession(session.target.host, session.container.target, session.container.name)
+    } else {
+      openServerSession(session.target, true)
+    }
   }
 
 
@@ -3166,15 +3187,32 @@ export default function App() {
                 className="server-session-pane"
                 style={{ display: s.id === activeServerSessionId ? 'flex' : 'none' }}
               >
-                <RemoteSessionView
-                  target={s.target}
-                  seq={s.seq}
-                  active={view === 'remote-session' && s.id === activeServerSessionId}
-                  onBack={() => setView('remote')}
-                  onStatusChange={(st) =>
-                    setServerSessionStatus((prev) => (prev[s.id] === st ? prev : { ...prev, [s.id]: st }))
-                  }
-                />
+                {s.container && s.target.kind === 'ssh' ? (
+                  <ContainerSessionView
+                    host={s.target.host}
+                    container={s.container.target}
+                    name={s.container.name}
+                    seq={s.seq}
+                    active={view === 'remote-session' && s.id === activeServerSessionId}
+                    onBack={() => setView('remote')}
+                    onStatusChange={(st) =>
+                      setServerSessionStatus((prev) => (prev[s.id] === st ? prev : { ...prev, [s.id]: st }))
+                    }
+                  />
+                ) : (
+                  <RemoteSessionView
+                    target={s.target}
+                    seq={s.seq}
+                    active={view === 'remote-session' && s.id === activeServerSessionId}
+                    onBack={() => setView('remote')}
+                    onStatusChange={(st) =>
+                      setServerSessionStatus((prev) => (prev[s.id] === st ? prev : { ...prev, [s.id]: st }))
+                    }
+                    onOpenContainer={(c, name) => {
+                      if (s.target.kind === 'ssh') openContainerSession(s.target.host, c, name)
+                    }}
+                  />
+                )}
               </div>
             ))}
           </Suspense>

@@ -8,6 +8,7 @@ import { registerOsc52Copy } from '../lib/osc52'
 import { registerCwdReports } from '../lib/terminal-cwd'
 import { registerTerminalLinks } from '../lib/terminal-links'
 import { useT } from '../i18n'
+import type { RemoteContainerTarget } from '../types'
 import './ChatTerminal.css'
 
 interface Props {
@@ -27,6 +28,8 @@ interface Props {
   /** The shell's working directory, as its prompt reports it (lib/terminal-cwd.ts) — the
    *  path may still start with `~`. Lets the file pane beside it follow a `cd`. */
   onCwdChange?: (path: string) => void
+  /** A container tab: the channel runs that container's shell instead of the login shell. */
+  container?: RemoteContainerTarget
 }
 
 /**
@@ -63,7 +66,7 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function RemoteTerminal({ terminalId, hostId, active, closable = true, onClose, onCwdChange }: Props) {
+export default function RemoteTerminal({ terminalId, hostId, active, closable = true, onClose, onCwdChange, container }: Props) {
   const t = useT()
   // Read from the one-shot setup effect, which cannot close over a prop.
   const onCwdRef = useRef(onCwdChange)
@@ -76,6 +79,8 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const idRef = useRef(terminalId)
+  // Fixed for the tab's life; read by the create effect without making it a dependency.
+  const containerRef = useRef(container)
   const [exited, setExited] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [fontSize, setFontSize] = useState(loadFontSize)
@@ -315,7 +320,7 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
     // Set by the cleanup: a create still connecting when the effect tears down is killed in
     // main and resolves as a failure — that's not an error to paint into the terminal.
     let disposed = false
-    window.electronAPI.remoteShellCreate(terminalId, hostId, cols, rows).then((res) => {
+    window.electronAPI.remoteShellCreate(terminalId, hostId, cols, rows, containerRef.current).then((res) => {
       if (disposed) return
       if (!res.ok) {
         term.write(
