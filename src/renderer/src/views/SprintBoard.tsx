@@ -1281,7 +1281,6 @@ function StandupPanel(props: {
     setDraft({ yesterday: s.yesterday, today: s.today, blockers: s.blockers })
     setEditing(false)
     setConfirmDelete(false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.updatedAt])
 
   const form = !props.locked && (editing || !hasContent)
@@ -2013,13 +2012,20 @@ function BacklogBackfillSheet(props: {
   const resolveProject = async () => {
     setResolving(true)
     setResolveError(null)
-    const res = await window.electronAPI.sprintBackfill({
-      projectPath: props.sprint.projectPath,
-      probe: true,
-      model: props.model,
-      accountId: props.accountId
-    })
-    setResolving(false)
+    let res: Awaited<ReturnType<typeof window.electronAPI.sprintBackfill>>
+    try {
+      res = await window.electronAPI.sprintBackfill({
+        projectPath: props.sprint.projectPath,
+        probe: true,
+        model: props.model,
+        accountId: props.accountId
+      })
+    } catch (e) {
+      setResolveError(e instanceof Error ? e.message : t('sprints.backfill.loadFailed'))
+      return
+    } finally {
+      setResolving(false)
+    }
     if (!res.ok || !res.data) {
       setResolveError(res.error || t('sprints.backfill.loadFailed'))
       return
@@ -2039,7 +2045,6 @@ function BacklogBackfillSheet(props: {
     // Cached results hydrate the initial state above — only probe when there's no cache.
     if (cache) preselect(cache.items ?? [])
     else resolveProject()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const fetchIssues = async (which: BackfillKind = kind) => {
@@ -2047,14 +2052,22 @@ function BacklogBackfillSheet(props: {
     setFetchError(null)
     setFetchWarning(null)
     setHasFetched(false)
-    const res = await window.electronAPI.sprintBackfill({
-      projectPath: props.sprint.projectPath,
-      instructions: project.trim() || undefined,
-      model: props.model,
-      accountId: props.accountId,
-      kind: which,
-      forge
-    })
+    let res: Awaited<ReturnType<typeof window.electronAPI.sprintBackfill>>
+    try {
+      res = await window.electronAPI.sprintBackfill({
+        projectPath: props.sprint.projectPath,
+        instructions: project.trim() || undefined,
+        model: props.model,
+        accountId: props.accountId,
+        kind: which,
+        forge
+      })
+    } catch (e) {
+      setFetching(false)
+      setHasFetched(true)
+      setFetchError(e instanceof Error ? e.message : t('sprints.backfill.fetchFailed', { what: kindNoun(t, forge, which) }))
+      return
+    }
     setFetching(false)
     setHasFetched(true)
     if (!res.ok || !res.data) {

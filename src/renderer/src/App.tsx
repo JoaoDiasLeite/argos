@@ -741,7 +741,6 @@ export default function App() {
       offApproval()
       offResolved()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Answer a specific queued approval by id: send the response, prune it from the
@@ -2704,7 +2703,6 @@ export default function App() {
       })
     }
     return items
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, accounts, t])
 
   // What the Remote & WSL list's SSH dots are allowed to claim. A host counts as reachable

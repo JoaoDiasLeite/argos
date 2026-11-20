@@ -46,8 +46,8 @@ export function ChangeFileRow({
       <span className={`changes-letter ${LETTER_CLASS[letter]}`} aria-hidden="true">
         {letter}
       </span>
-      <span className="changes-path" title={file.path}>
-        {file.path}
+      <span className="changes-path" title={file.origPath ? `${file.origPath} -> ${file.path}` : file.path}>
+        {file.origPath ? `${file.origPath} -> ${file.path}` : file.path}
       </span>
       {file.binary ? (
         <span className="changes-count">{t('home.repos.binary')}</span>
@@ -132,7 +132,7 @@ export default function ChangesViewer({ mode, repo, cwd, onClose, onOpenRepo }: 
     if (!selected || diffs[selected]) return
     let cancelled = false
     window.electronAPI
-      .gitFileDiff(cwd, selected)
+      .gitFileDiff(cwd, selected, files.find((f) => f.path === selected)?.origPath)
       .then((diff) => {
         if (!cancelled) setDiffs((prev) => ({ ...prev, [selected]: { diff } }))
       })

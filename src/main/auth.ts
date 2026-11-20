@@ -31,10 +31,6 @@ function saveAuthState(): void {
   writeJsonFileAtomic(authStatePath, state)
 }
 
-export function getMode(): AuthMode {
-  return state.mode
-}
-
 export function setMode(mode: AuthMode): void {
   state.mode = mode
   saveAuthState()
@@ -70,10 +66,6 @@ export function getApiKey(): string | null {
 
 export function hasApiKey(): boolean {
   return getApiKey() !== null
-}
-
-export function clearApiKey(): void {
-  if (fs.existsSync(apiKeyPath)) fs.unlinkSync(apiKeyPath)
 }
 
 // ─── Claude Code login detection ───────────────────────────────────────────────

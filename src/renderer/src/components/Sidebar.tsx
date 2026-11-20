@@ -461,7 +461,6 @@ export default function Sidebar({
       // Projects searches the CLI transcripts themselves (cc:search).
       return !!base?.toLowerCase().includes(q)
     })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleSessions, searchQuery])
 
   // ── What it takes to recognise one WSL folder under all its addresses ────

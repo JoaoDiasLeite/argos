@@ -1,19 +1,24 @@
 import { app, net } from 'electron'
 import { spawn, type ChildProcess } from 'child_process'
-import { createWriteStream, mkdirSync, renameSync, rmSync, statSync } from 'fs'
+import { createHash } from 'crypto'
+import { createReadStream, createWriteStream, mkdirSync, renameSync, rmSync, statSync } from 'fs'
 import { join, sep } from 'path'
 import {
   DOWNLOAD_TOTAL_BYTES,
+  MODEL_FILES,
   VAD_DOWNLOAD,
   WHISPER_DIR,
   WHISPER_DOWNLOAD,
   argosModelsDir,
   badMembers,
+  hashMismatches,
   meetingNotesModelsDir,
   resolveModelRoot,
-  tarExtractArgs
+  tarExtractArgs,
+  whisperLanguage
 } from './companion-voice-pure'
 import { VoiceEngine } from './companion-voice-engine'
+import { currentLanguage, t } from './i18n'
 import type { CompanionVoiceResult, CompanionVoiceStatus } from './companion-types'
 
 // The companion's dictation (docs/COMPANION_PLAN.md §4.2): sherpa-onnx with Silero VAD to
@@ -60,18 +65,21 @@ function workerPath(): string {
 
 const engine = new VoiceEngine({ workerPath: workerPath(), log: (line) => console.log(line) })
 
+/** Read on every call, so a language change in Settings applies to the next dictation. */
+const voiceOptions = (): { language: string } => ({ language: whisperLanguage(currentLanguage()) })
+
 /** Load the recognizer ahead of need — the bubble asks when recording starts. */
 export function prepareVoice(): void {
   const root = modelRoot()
   if (!root || install || engine.engineOk === false) return
-  engine.prepare(root.dir).catch((e) => console.error('[companion] the speech recognizer did not load:', e))
+  engine.prepare(root.dir, voiceOptions()).catch((e) => console.error('[companion] the speech recognizer did not load:', e))
 }
 
 /** A WAV from the bubble → text; empty (noSpeech) when VAD heard none, and Whisper is not asked. */
 export async function transcribe(bytes: Uint8Array): Promise<CompanionVoiceResult> {
   const root = modelRoot()
   if (!root || install || !(await engine.probe())) return { ok: false, error: 'unavailable' }
-  const r = await engine.transcribe(bytes, root.dir)
+  const r = await engine.transcribe(bytes, root.dir, voiceOptions())
   if (!r.ok) {
     if (r.error === 'failed') console.error('[companion] transcription failed:', r.detail)
     return r
@@ -134,6 +142,34 @@ function pushProgress(force = false): void {
 // ─── Install (first use) ─────────────────────────────────────────────────────
 
 class Cancelled extends Error {}
+
+/** A file whose SHA-256 is not the pinned one; its message is what Settings shows. */
+class ChecksumMismatch extends Error {
+  constructor(readonly files: string[]) {
+    super(t('main.companion.voice.checksum'))
+  }
+}
+
+/** Streamed, so hashing the ~675 MB encoder never blocks the main process. null if unreadable. */
+function sha256File(path: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const hash = createHash('sha256')
+    createReadStream(path)
+      .on('data', (chunk) => hash.update(chunk))
+      .on('error', () => resolve(null))
+      .on('end', () => resolve(hash.digest('hex')))
+  })
+}
+
+/** Hash `files` under `root`; any that miss their pin are deleted and the install fails. */
+async function verifyHashes(root: string, files: (keyof typeof MODEL_FILES)[]): Promise<void> {
+  const actual = new Map<string, string | null>()
+  for (const f of files) actual.set(f, await sha256File(join(root, MODEL_FILES[f])))
+  const bad = hashMismatches(files, (f) => actual.get(f) ?? null)
+  if (!bad.length) return
+  for (const f of bad) rmSync(join(root, MODEL_FILES[f]), { force: true })
+  throw new ChecksumMismatch(bad.map((f) => MODEL_FILES[f]))
+}
 
 /** One file to `<dest>.part`, size-checked, then renamed into place. Adds to install.received. */
 async function download(job: Install, url: string, dest: string, bytes: number): Promise<void> {
@@ -204,6 +240,8 @@ async function runInstall(job: Install): Promise<void> {
     const vad = join(dir, 'silero_vad.onnx')
     if (fileSize(vad) === VAD_DOWNLOAD.bytes) job.received += VAD_DOWNLOAD.bytes
     else await download(job, VAD_DOWNLOAD.url, vad, VAD_DOWNLOAD.bytes)
+    // A kept VAD from an earlier try is checked too; a bad one is deleted for the retry.
+    await verifyHashes(dir, ['vad'])
     await download(job, WHISPER_DOWNLOAD.url, archive, WHISPER_DOWNLOAD.bytes)
     job.phase = 'extract'
     pushProgress(true)
@@ -212,6 +250,8 @@ async function runInstall(job: Install): Promise<void> {
     await extract(job, archive, staging)
     const bad = badMembers((m) => fileSize(join(staging, m)))
     if (bad.length) throw new Error(`the archive did not hold ${bad.join(', ')}`)
+    // Checked in staging: a mismatch never reaches the folder modelRoot() loads from.
+    await verifyHashes(staging, ['encoder', 'decoder', 'tokens'])
     rmSync(join(dir, WHISPER_DIR), { recursive: true, force: true })
     renameSync(join(staging, WHISPER_DIR), join(dir, WHISPER_DIR))
   } finally {
@@ -232,7 +272,8 @@ export function installVoiceModels(): CompanionVoiceStatus {
     .catch((e) => {
       if (e instanceof Cancelled) return
       lastInstallError = e instanceof Error ? e.message : String(e)
-      console.error('[companion] the speech model download failed:', e)
+      if (e instanceof ChecksumMismatch) console.error('[companion] speech model checksum mismatch, deleted:', e.files.join(', '))
+      else console.error('[companion] the speech model download failed:', e)
     })
     .finally(() => {
       if (install === job) install = null

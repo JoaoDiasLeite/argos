@@ -24,6 +24,8 @@ export default {
   'companion.openPanel': 'Open the panel',
   'companion.hide': 'Hide Argos',
   'companion.settings': 'Settings',
+  // Settings shows it after "The download failed:".
+  'companion.voice.checksum': 'the speech model did not match its expected checksum and was deleted',
 
   'menu.view': 'View',
   'menu.window': 'Window',
@@ -91,7 +93,6 @@ export default {
   'ipc.ops.bridgeFailed': 'Could not start the ops bridge: {error}',
   'ipc.ops.noLiveSession': 'No live ops session on this terminal.',
   'ipc.ops.scriptNameRequired': 'A script name is required.',
-  'ipc.ops.scriptAndHostRequired': 'A script name and a host are required.',
   'ipc.ops.invalidTerminalId': 'Invalid terminal id.',
   'ipc.ops.ledgerUnreadable': 'Could not read the ops ledger: {error}',
   'ipc.ops.resumeRunUnknown': 'The intervention to resume ({runId}) is not in the ledger on this machine.',
@@ -150,6 +151,11 @@ export default {
   'ssh.claudeNoOutput': 'claude produced no output',
   'ssh.timedOut': 'No answer from the server within 20 s',
   'ssh.notTrusted': "The server's host key is not trusted; the terminal was not opened",
+  'ssh.invalid.username':
+    'Invalid username: use letters, numbers, ".", "_", "-", "@" or "\\", and do not start with "-".',
+  'ssh.invalid.host': 'Invalid host: use a hostname, an IPv4 address or an IPv6 address, without spaces or a leading "-".',
+  'ssh.invalid.remotePath': 'The remote project path may not contain control characters.',
+  'ssh.invalid.claudePath': 'The Claude path may not contain control characters.',
   'ssh.hostsSaveFailed': 'Could not save the hosts file: {error}',
   'ssh.hostsUnreadable':
     'The saved hosts file could not be read ({error}); refusing to overwrite it. Move {file} aside to start over.',
@@ -214,6 +220,7 @@ export default {
   'profile.fileFilter': 'Argos profile',
   'profile.error.read': 'Could not read {path}: {error}',
   'profile.error.notArgos': 'This file is not an Argos profile.',
+  'profile.ledgerDayExists': 'This machine already has an ops ledger for {date}, so the imported one was not added.',
   'profile.error.corrupt': 'The profile file is damaged and could not be read.',
   'profile.error.version': 'This profile uses format {version}, which this version of Argos cannot read. Update Argos and try again.',
   'profile.error.write': 'Could not save the profile: {error}',

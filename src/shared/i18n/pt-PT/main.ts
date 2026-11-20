@@ -22,6 +22,7 @@ const main: Record<keyof typeof en, string> = {
   'companion.openPanel': 'Abrir o painel',
   'companion.hide': 'Esconder o Argos',
   'companion.settings': 'Definições',
+  'companion.voice.checksum': 'o modelo de voz não corresponde ao checksum esperado e foi apagado',
 
   'menu.view': 'Ver',
   'menu.window': 'Janela',
@@ -90,7 +91,6 @@ const main: Record<keyof typeof en, string> = {
   'ipc.ops.bridgeFailed': 'Não foi possível iniciar a ponte de ops: {error}',
   'ipc.ops.noLiveSession': 'Não há nenhuma sessão de ops ativa neste terminal.',
   'ipc.ops.scriptNameRequired': 'É necessário o nome de um script.',
-  'ipc.ops.scriptAndHostRequired': 'São necessários o nome de um script e um anfitrião.',
   'ipc.ops.invalidTerminalId': 'Id de terminal inválido.',
   'ipc.ops.ledgerUnreadable': 'Não foi possível ler o registo de ops: {error}',
   'ipc.ops.resumeRunUnknown': 'A intervenção a retomar ({runId}) não está no registo desta máquina.',
@@ -151,6 +151,12 @@ const main: Record<keyof typeof en, string> = {
   'ssh.claudeNoOutput': 'O claude não produziu nenhuma saída',
   'ssh.timedOut': 'O servidor não respondeu em 20 s',
   'ssh.notTrusted': 'A chave do servidor não é de confiança; o terminal não foi aberto',
+  'ssh.invalid.username':
+    'Nome de utilizador inválido: usa letras, números, ".", "_", "-", "@" ou "\\", e não comeces por "-".',
+  'ssh.invalid.host':
+    'Anfitrião inválido: usa um nome, um endereço IPv4 ou um endereço IPv6, sem espaços nem "-" no início.',
+  'ssh.invalid.remotePath': 'O caminho remoto do projeto não pode ter caracteres de controlo.',
+  'ssh.invalid.claudePath': 'O caminho do Claude não pode ter caracteres de controlo.',
   'ssh.hostsSaveFailed': 'Não foi possível guardar o ficheiro de anfitriões: {error}',
   'ssh.hostsUnreadable':
     'Não foi possível ler o ficheiro de anfitriões guardado ({error}); não vai ser substituído. Move {file} para outro lado para começar de novo.',
@@ -215,6 +221,7 @@ const main: Record<keyof typeof en, string> = {
   'profile.fileFilter': 'Perfil do Argos',
   'profile.error.read': 'Não foi possível ler {path}: {error}',
   'profile.error.notArgos': 'Este ficheiro não é um perfil do Argos.',
+  'profile.ledgerDayExists': 'Este computador já tem um registo de ops de {date}, por isso o importado não foi adicionado.',
   'profile.error.corrupt': 'O ficheiro do perfil está danificado e não pôde ser lido.',
   'profile.error.version': 'Este perfil usa o formato {version}, que esta versão do Argos não consegue ler. Atualiza o Argos e tenta de novo.',
   'profile.error.write': 'Não foi possível guardar o perfil: {error}',

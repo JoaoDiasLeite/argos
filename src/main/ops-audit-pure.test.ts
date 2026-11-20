@@ -3,11 +3,15 @@ import {
   buildLine,
   DECIDED_MISSING,
   GENESIS,
+  importedLedgerDate,
+  parseImportManifest,
   parseLedger,
   runEvents,
+  serializeImportManifest,
   sha256Hex,
   summarizeRun,
-  verifyChain
+  verifyChain,
+  verifyDay
 } from './ops-audit-pure'
 import type { OpsAuditEvent, OpsAuditLine } from './ops-types'
 
@@ -334,5 +338,52 @@ describe('summarizeRun', () => {
       path: '/etc/app.conf',
       backupPath: '/etc/app.conf.bak'
     })
+  })
+})
+
+describe('imported ledger days', () => {
+  const run = (id: string): OpsAuditEvent => ({ kind: 'plan.approved', runId: id, by: 'user' })
+
+  it('maps an archive entry to its day, from the top level or a re-exported imported/ folder', () => {
+    expect(importedLedgerDate('2026-04-01.jsonl')).toBe('2026-04-01')
+    expect(importedLedgerDate('imported/2026-04-01.jsonl')).toBe('2026-04-01')
+    expect(importedLedgerDate('imported/manifest.json')).toBeNull()
+    expect(importedLedgerDate('other/2026-04-01.jsonl')).toBeNull()
+    expect(importedLedgerDate('2026-04-01.jsonl.bak')).toBeNull()
+    expect(importedLedgerDate('../2026-04-01.jsonl')).toBeNull()
+  })
+
+  it('reads back its own manifest and drops malformed entries', () => {
+    const m = { '2026-04-01': { importedAt: '2026-04-10T12:00:00.000Z', archive: 'a.argos', sha256: 'f'.repeat(64) } }
+    expect(parseImportManifest(serializeImportManifest(m))).toEqual(m)
+    expect(parseImportManifest(null)).toEqual({})
+    expect(parseImportManifest('not json')).toEqual({})
+    expect(parseImportManifest(JSON.stringify({ days: { 'x': m['2026-04-01'], '2026-04-02': { archive: 1 } } }))).toEqual({})
+  })
+
+  it('verifies a local day as before, and marks an imported one', () => {
+    const local = ledger([run('a'), run('a')]).text
+    const imported = ledger([run('b')]).text
+    expect(verifyDay(local, null)).toEqual({ ok: true, lines: 2 })
+    expect(verifyDay(null, null)).toEqual({ ok: true, lines: 0 })
+    expect(verifyDay(null, imported)).toEqual({ ok: true, lines: 0, imported: { lines: 1 } })
+    const entry = { importedAt: '2026-04-10T12:00:00.000Z', archive: 'a.argos', sha256: sha256Hex(imported) }
+    expect(verifyDay(local, imported, entry)).toEqual({
+      ok: true,
+      lines: 2,
+      imported: { lines: 1, importedAt: entry.importedAt, archive: 'a.argos' }
+    })
+  })
+
+  it('reports a broken local chain first, then a broken or changed imported one, marked as imported', () => {
+    const good = ledger([run('a'), run('a')])
+    const broken = `${good.raws[1]}
+${good.raws[0]}
+`
+    expect(verifyDay(broken, good.text)).toMatchObject({ ok: false, brokenAt: 1 })
+    expect(verifyDay(broken, good.text)).not.toHaveProperty('imported')
+    expect(verifyDay(null, broken)).toMatchObject({ ok: false, brokenAt: 1, imported: { lines: 0 } })
+    const entry = { importedAt: 'x', archive: 'a.argos', sha256: sha256Hex('something else') }
+    expect(verifyDay(null, good.text, entry)).toMatchObject({ ok: false, imported: { archive: 'a.argos' } })
   })
 })

@@ -1186,6 +1186,8 @@ export function openBubble(next: CompanionBubblePayload): void {
   stopWalk()
   showPet()
   const win = alive(bubbleWindow) ? bubbleWindow : createBubbleWindow()
+  // A reminder taking over the bubble unmounts the input; its recording goes with it.
+  if (next.mode !== 'input' && bubble?.mode === 'input') stopDictation()
   bubble = next
   positionBubble(win)
   send(win, 'companion:bubble-anchor', bubbleAnchor)
@@ -1203,11 +1205,10 @@ export function openBubble(next: CompanionBubblePayload): void {
 function hideBubbleWindow(notify = true): void {
   const mode = bubble?.mode
   bubble = null
-  if (alive(bubbleWindow) && bubbleWindow.isVisible()) {
-    bubbleWindow.hide()
-    // A recording in progress is dropped: the microphone never stays open behind a hidden bubble.
-    if (voicePhase !== 'idle') bubbleWindow.webContents.send('companion:bubble-hidden')
-  }
+  if (alive(bubbleWindow) && bubbleWindow.isVisible()) bubbleWindow.hide()
+  // Told whatever the phase: a microphone still opening has not reported 'recording' yet,
+  // and must not finish opening behind a hidden bubble.
+  stopDictation()
   voicePhase = 'idle'
   if (mode && notify) hooks.onBubbleClosed?.(mode)
 }
@@ -1247,6 +1248,9 @@ export function applyCompanionPrefs(next: CompanionPrefs): void {
     if (alive(win)) win.setContentProtection(next.hideFromCapture)
   }
   resizePet(next.size)
+  // Dictation switched off mid-recording: the permission handler refuses new streams,
+  // but one already open would run on to its 30 s stop.
+  if (!next.voice) stopDictation()
   // The pet swaps its sheets live; a window opened later reads it from companion:state.
   sendToPet('companion:pet-character', next.character)
   if (!next.walk || !next.stayOnScreen) stopWalk()
@@ -1302,8 +1306,22 @@ export function isCompanionBubble(contents: WebContents): boolean {
   return alive(bubbleWindow) && bubbleWindow.webContents.id === contents.id
 }
 
+/**
+ * Tell the bubble to drop any dictation (an opening, a recording): it releases the
+ * microphone's tracks. Harmless when nothing is recording. The bubble hidden, the pet
+ * hidden, and dictation switched off all come through here.
+ */
+export function stopDictation(): void {
+  if (alive(bubbleWindow)) bubbleWindow.webContents.send('companion:bubble-hidden')
+}
+
 /** The bubble's recording phase: the pet listens while it records and thinks while it reads. */
 export function setVoicePhase(phase: CompanionVoicePhase): void {
+  // A 'recording' sent just before the bubble went away: drop it rather than keep the mic.
+  if (phase !== 'idle' && !(alive(bubbleWindow) && bubbleWindow.isVisible() && bubble?.mode === 'input')) {
+    stopDictation()
+    return
+  }
   voicePhase = phase
   if (phase === 'recording') setPetState('listening')
   else if (phase === 'transcribing') setPetState('thinking')

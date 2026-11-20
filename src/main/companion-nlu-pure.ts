@@ -16,7 +16,7 @@
  * offsets across days, so a DST change never shifts a date by an hour.
  */
 import type { CompanionIntent, ParsedCapture } from './companion-types'
-import { findRepeat, firstOccurrence, maskRepeat } from './companion-repeat-pure'
+import { findIntervals, findRepeat, firstOccurrence, maskIntervals, maskRepeat } from './companion-repeat-pure'
 
 export type { CompanionIntent, ParsedCapture } from './companion-types'
 
@@ -37,9 +37,20 @@ type Body =
   | { kind: 'day'; date: Date; week?: boolean }
   /**
    * A clock time. `bare` when the hour came with no ":" or "h" ("às 2"), which is what
-   * makes it open to the pm guess; `meridiem` from "pm" / "da tarde" / "da manhã".
+   * makes it open to the pm guess; `meridiem` from "am" / "pm"; `part` from "da manhã" /
+   * "da tarde" / "da noite", kept apart from am/pm because "12 da noite" is midnight
+   * where "12 pm" is noon.
    */
-  | { kind: 'time'; h: number; m: number; bare: boolean; guessPm: boolean; meridiem: 'am' | 'pm' | null; nextDay?: boolean }
+  | {
+      kind: 'time'
+      h: number
+      m: number
+      bare: boolean
+      guessPm: boolean
+      meridiem: 'am' | 'pm' | null
+      part?: Part
+      nextDay?: boolean
+    }
   /** A day part on its own: "de manhã", "à tarde", "à noite". */
   | { kind: 'part'; part: Part }
 
@@ -74,6 +85,17 @@ const NUMBER_WORDS: Record<string, number> = {
   twenty: 20, thirty: 30, 'forty-five': 45, 'forty five': 45
 }
 
+/** Hours said as words: "à uma", "às duas da tarde", "at two pm". */
+const HOUR_WORDS_PT: Record<string, number> = {
+  uma: 1, duas: 2, 'três': 3, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8,
+  nove: 9, dez: 10, onze: 11, doze: 12
+}
+const HOUR_WORDS_EN: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12
+}
+const HOUR_WORDS: Record<string, number> = { ...HOUR_WORDS_PT, ...HOUR_WORDS_EN }
+
 const MONTHS_PT: Record<string, number> = {
   janeiro: 0, fevereiro: 1, 'março': 2, marco: 2, abril: 3, maio: 4, junho: 5, julho: 6,
   agosto: 7, setembro: 8, outubro: 9, novembro: 10, dezembro: 11
@@ -104,6 +126,7 @@ function alt(words: string[]): string {
 }
 
 const NUMW = alt(Object.keys(NUMBER_WORDS))
+const HOURW = alt(Object.keys(HOUR_WORDS))
 const MONTH = alt(Object.keys(MONTHS))
 const MONTH_EN = alt(Object.keys(MONTHS_EN))
 const WD = alt(Object.keys(WEEKDAYS))
@@ -176,17 +199,33 @@ function weekdayNextWeek(target: number, today: Date): Date {
 
 // ---- the rules, in priority order ----------------------------------------------
 
+function dayPart(word: string): Part {
+  return /^(manh|morning)/i.test(word) ? 'morning' : /^(tarde|afternoon)/i.test(word) ? 'afternoon' : 'night'
+}
+
 function clock(g: Record<string, string | undefined>, allowBare: boolean): Body[] | null {
-  const h = Number(g.h)
+  const h = g.hw ? HOUR_WORDS[key(g.hw)] : Number(g.h)
   const m = g.mi ? Number(g.mi) : 0
   const bare = !g.sep && !g.hh
   let meridiem: 'am' | 'pm' | null = null
   if (g.ap) meridiem = g.ap.toLowerCase().startsWith('a') ? 'am' : 'pm'
-  else if (g.dp) meridiem = /^(manh|morning)/i.test(g.dp) ? 'am' : 'pm'
-  if (bare && !meridiem && !allowBare) return null
-  if (m > 59 || h > 23 || (meridiem && (h < 1 || h > 12))) return null
+  const part = !g.ap && g.dp ? dayPart(g.dp) : undefined
+  if (bare && !meridiem && !part && !allowBare) return null
+  if (h === undefined || m > 59 || h > 23 || ((meridiem || part) && (h < 1 || h > 12))) return null
   // "às 2" and "às 2h" are open to the pm guess; "às 2:00" was written as a clock.
-  return [{ kind: 'time', h, m, bare, guessPm: g.sep !== ':', meridiem }]
+  return [{ kind: 'time', h, m, bare, guessPm: g.sep !== ':', meridiem, ...(part ? { part } : {}) }]
+}
+
+/**
+ * A 12-hour reading under a day part, as pt-PT says it: "12 da manhã" and "12 da tarde"
+ * are noon, "1 da tarde" is 13:00, "12 da noite" is the midnight that ends the day (like
+ * "meia-noite"), "8 da noite" is 20:00, and "2 da noite" the small hours.
+ */
+function partHour(h: number, part: Part): { h: number; nextDay: boolean } {
+  if (part === 'morning') return { h, nextDay: false }
+  if (part === 'afternoon') return { h: h === 12 ? 12 : h + 12, nextDay: false }
+  if (h === 12) return { h: 0, nextDay: true }
+  return { h: h <= 5 ? h : h + 12, nextDay: false }
 }
 
 const RULES: Rule[] = [
@@ -287,13 +326,22 @@ const RULES: Rule[] = [
     re: rx(String.raw`${B}(?:(?:à|até\s+à|para\s+a|at|by)\s+)?(?:meia[-\s]noite|midnight)${E}`),
     read: () => [{ kind: 'time', h: 0, m: 0, bare: false, guessPm: false, meridiem: null, nextDay: true }]
   },
-  // "às 14h", "às 14:30", "até às 14h", "às 2 da tarde", "at 2pm", "at 14:00", bare "às 2".
-  // A bare hour only after "às" / "pelas" / "at": "as 3 propostas" is an article.
+  // "às 14h", "às 14:30", "até às 14h", "às 2 da tarde", "at 2pm", "at 14:00", bare "às 2",
+  // and the hour as a word: "à uma da tarde", "às duas", "at two pm".
+  // A bare hour only after "às" / "pelas" / "at": "as 3 propostas" is an article. "à"
+  // (singular) only before one o'clock, the one hour pt-PT says with it.
   {
     re: rx(
-      String.raw`${B}(?:(?:até|by|until)\s+)?(?<p>[àá]s|as|pelas|at|by|until|até)\s+${NB}(?<h>\d{1,2})(?:(?<sep>[:h])(?<mi>\d{2})|(?<hh>h)|\s*horas?)?(?:\s*(?<ap>${AMPM})|\s+(?:da|de|pela|in\s+the)\s+(?<dp>${DAYPART}))?${NE}`
+      String.raw`${B}(?:(?:até|by|until)\s+)?(?<p>[àá]s|[àá]|as|pelas|at|by|until|até)\s+(?:${NB}(?<h>\d{1,2})(?:(?<sep>[:h])(?<mi>\d{2})|(?<hh>h)|\s*horas?)?|(?<hw>${HOURW})(?:\s+horas?)?)(?:\s*(?<ap>${AMPM})|\s+(?:da|de|pela|in\s+the|at)\s+(?<dp>${DAYPART}))?${NE}`
     ),
-    read: (g) => clock(g, /^([àá]s|pelas|at)$/i.test(g.p!))
+    read: (g) => {
+      const p = g.p!.toLowerCase()
+      const hour = g.hw ? HOUR_WORDS[key(g.hw)] : Number(g.h)
+      if ((p === 'à' || p === 'á') && hour !== 1) return null
+      // A bare English word ("at one point") is not a time; a bare pt-PT one ("às duas") is.
+      const english = !!g.hw && key(g.hw) in HOUR_WORDS_EN
+      return clock(g, !english && /^([àá]s?|pelas|at)$/.test(p))
+    }
   },
   // "14h30", "9h", "14:30", "2:30pm", "2pm", "9 da manhã" — no lead-in word
   {
@@ -416,7 +464,11 @@ function resolve(comps: Comp[], ctx: Ctx): Resolved {
     nextDay = !!time.nextDay
     if (time.meridiem === 'pm' && h < 12) h += 12
     else if (time.meridiem === 'am' && h === 12) h = 0
-    else if (!time.meridiem && time.guessPm) {
+    else if (time.part) {
+      const r = partHour(h, time.part)
+      h = r.h
+      nextDay = nextDay || r.nextDay
+    } else if (!time.meridiem && time.guessPm) {
       // A day part elsewhere settles a bare hour ("amanhã à tarde às 3"); without one,
       // 1–7 is read as afternoon — nobody books a call at 3 in the morning by typing "às 3".
       if ((part === 'afternoon' || part === 'night') && h < 12) h += 12
@@ -495,7 +547,10 @@ export function parseCapture(text: string, opts: ParseOptions): ParsedCapture {
   // so its spans still index `text`), and the date it reads is then aligned to the rule.
   const repeatMatch = intent === 'todo' ? findRepeat(text) : null
   const scanned = repeatMatch ? maskRepeat(text, repeatMatch) : text
-  const comps = scan(scanned, ctx)
+  // "de 2 em 2 horas" has no repeat to become (see findIntervals): hidden from the grammar
+  // so it is not read as "em 2 horas", and left whole in the title.
+  const intervals = intent === 'todo' ? findIntervals(scanned) : []
+  const comps = scan(intervals.length ? maskIntervals(scanned, intervals) : scanned, ctx)
   const resolved = resolve(comps, ctx)
   let repeat: ParsedCapture['repeat'] = null
   if (repeatMatch) {

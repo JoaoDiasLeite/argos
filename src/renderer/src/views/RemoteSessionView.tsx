@@ -158,12 +158,10 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSsh, isSsh ? target.host.id : target.distro])
 
   useEffect(() => {
     onStatusChange?.(status)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status])
 
   useEffect(() => {
@@ -172,11 +170,16 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
 
   const loadHistory = async () => {
     setHistoryLoading(true)
-    const res = isSsh
-      ? await window.electronAPI.sftpHistory(target.host.id)
-      : await window.electronAPI.wslHistory(target.distro)
-    setHistoryLoading(false)
-    if (res.ok) setRemoteHistory(res.commands ?? [])
+    try {
+      const res = isSsh
+        ? await window.electronAPI.sftpHistory(target.host.id)
+        : await window.electronAPI.wslHistory(target.distro)
+      if (res.ok) setRemoteHistory(res.commands ?? [])
+    } catch {
+      // History is a convenience: an empty panel beats a spinner that never ends.
+    } finally {
+      setHistoryLoading(false)
+    }
   }
 
   const openHistoryPanel = () => {

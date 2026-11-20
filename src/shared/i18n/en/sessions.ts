@@ -54,7 +54,6 @@ export default {
   'activity.label': 'Activity',
   'activity.loading': 'Loading…',
   'activity.run': 'Run',
-  'activity.report': 'Report',
   'activity.panel.progress': 'Progress',
   'activity.panel.context': 'Context',
   'activity.panel.activity': 'Activity',

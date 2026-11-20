@@ -378,7 +378,6 @@ export function safeRel(rel: unknown): string | null {
 export function isSafeEncodedDir(v: unknown): v is string {
   if (typeof v !== 'string' || !v) return false
   if (v === '.' || v === '..') return false
-  // eslint-disable-next-line no-control-regex
   return !/[\\/:\u0000-\u001f\u007f]/.test(v)
 }
 
@@ -731,9 +730,6 @@ export function mergeCompanionList(localText: string | null, importedText: strin
   if (!added.length) return null
   return JSON.stringify([...local, ...added], null, 2)
 }
-
-/** A stored ssh-trust.json value: the legacy fingerprint string or the `{ fp, type, key }` form. */
-export type TrustValue = string | TrustEntry
 
 /**
  * Host-key trust: entries this machine has not seen are added; one it has verified stays.

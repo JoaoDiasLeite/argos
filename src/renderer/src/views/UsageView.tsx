@@ -383,13 +383,16 @@ export default function UsageView() {
   const refresh = async () => {
     setRefreshing(true)
     window.electronAPI.ccPlanUsage(true).then(setPlanReport).catch(() => {})
-    const [rep, srcs, cfg] = await Promise.all([
-      window.electronAPI.ccUsage(true),
-      window.electronAPI.ccSources(),
-      window.electronAPI.getConfig()
-    ])
-    apply(rep, srcs, cfg.limits)
-    setRefreshing(false)
+    try {
+      const [rep, srcs, cfg] = await Promise.all([
+        window.electronAPI.ccUsage(true),
+        window.electronAPI.ccSources(),
+        window.electronAPI.getConfig()
+      ])
+      apply(rep, srcs, cfg.limits)
+    } finally {
+      setRefreshing(false)
+    }
   }
 
   useEffect(() => {
@@ -412,7 +415,6 @@ export default function UsageView() {
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Live-update from the main-process watcher (every ~10 min and after IPC fetches).
@@ -479,7 +481,6 @@ export default function UsageView() {
     const byDay = new Map<string, number>()
     for (const e of entries) byDay.set(e.day, (byDay.get(e.day) ?? 0) + e.costUsd)
     return { entries, byDay, total: aggregate(entries, srcMeta) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [report, range, activeSources, srcMeta, accountFilter, accounts])
 
   // A CONTINUOUS timeline (empty days at $0) over the range, clamped to the first active
