@@ -19,14 +19,36 @@ interface Entry {
 const CHANGELOG: Entry[] = [
   {
     version: '3.8.0',
-    date: '2026-11-12',
-    tag: 'new',
-    sections: []
+    date: '2026-11-20',
+    tag: 'latest',
+    sections: [
+      {
+        title: 'Security',
+        items: [
+          'Every page of the app carries a content security policy: scripts and styles load only from the app itself, and images from the app or embedded data. A remote image in rendered text is no longer fetched.',
+          'A saved server whose user or address starts with a dash, or holds a space or a control character, is refused: it could be read by ssh as an option. The path to claude on a server is quoted, so a path with a space or a shell character runs as one word.',
+          'The headless claude run inside a WSL distro quotes its model and tool names. The name of an MCP server comes from the configuration of the distro, and one with a ; ran as a command.',
+          'The speech models downloaded on first use are checked against a fixed SHA-256 before they are installed. A file that does not match is deleted and the install fails.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'Changes: files with spaces, accents or an arrow in their name, and renamed files, are listed and diffed correctly. A git call that hangs, or waits for a password, is given up on instead of leaving the panel loading.',
+          'The usage poll no longer wakes a sleeping WSL distro just to read its login, gives up on a request after 15 seconds, and keeps the last reading of an account whose distro is asleep.',
+          'The list of conversations opens faster in large projects: a transcript that has not changed is not read again.',
+          'Search in Projects and the remote file browser no longer show the results of an earlier, slower request over the current one. Several panels that could stay on Loading after an error now come back.',
+          'The companion closes the microphone when its bubble closes, and dictation is read in the language of the interface instead of always Portuguese. He reads "at 3 in the afternoon", "half past nine" and hours written as words.',
+          'Ops: sending a script to a server stops after 30 seconds and obeys Stop. Each call removes the script it sent, and the ~/.argos-ops folder when it is left empty.',
+          'Ledger days that arrive in a .argos file are kept apart from the ones written on this machine and never replace them. Verifying one says it was imported: the chain is consistent, its origin cannot be proven.',
+          'Uninstalling removes the Explorer menu entries, the start-with-Windows entry and the argos:// link handler. An update keeps them.'
+        ]
+      }
+    ]
   },
   {
     version: '3.7.0',
     date: '2026-11-12',
-    tag: 'latest',
     sections: [
       {
         title: 'Features',
