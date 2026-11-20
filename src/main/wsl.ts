@@ -152,13 +152,22 @@ export function wslShareRoot(distro: string): string {
   return root
 }
 
-export async function getWslCredentialsPaths(): Promise<WslCredentialsPath[]> {
-  if (!isWindows) return []
+export async function getWslCredentialsPaths(
+  wake = true
+): Promise<{ paths: WslCredentialsPath[]; sleeping: string[] }> {
+  if (!isWindows) return { paths: [], sleeping: [] }
   const distros = await listDistros()
   const hidden = new Set(getHiddenDistros())
   const out: WslCredentialsPath[] = []
+  // Reading a distro's files (even over the UNC share) boots its VM. A background poll
+  // passes wake=false so a stopped distro stays stopped; only a user action wakes one.
+  const sleeping: string[] = []
   for (const d of distros) {
     if (SKIP_DISTROS.has(d.name) || hidden.has(d.name)) continue
+    if (!wake && !d.running) {
+      sleeping.push(d.name)
+      continue
+    }
     const home = await wslHome(d.name)
     if (!home) continue
     const unc = `${wslShareRoot(d.name)}${home.replace(/\//g, '\\')}`
@@ -169,7 +178,7 @@ export async function getWslCredentialsPaths(): Promise<WslCredentialsPath[]> {
       // not reachable — skip
     }
   }
-  return out
+  return { paths: out, sleeping }
 }
 
 /**
