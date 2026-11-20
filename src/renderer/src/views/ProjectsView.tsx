@@ -727,7 +727,13 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
 
   const load = async () => {
     setLoading(true)
-    const list = await window.electronAPI.ccListProjects()
+    let list: Awaited<ReturnType<typeof window.electronAPI.ccListProjects>>
+    try {
+      list = await window.electronAPI.ccListProjects()
+    } catch {
+      setLoading(false)
+      return
+    }
     setProjects(list)
     setLoading(false)
     // Opening on the first project is a default, not a decision — and a deep link is
@@ -789,12 +795,23 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       return
     }
     setSearching(true)
+    // A slow earlier query must not overwrite the results of a later one.
+    let cancelled = false
     const timer = setTimeout(async () => {
-      const hits = await window.electronAPI.ccSearch(q)
+      let hits: Awaited<ReturnType<typeof window.electronAPI.ccSearch>> = []
+      try {
+        hits = await window.electronAPI.ccSearch(q)
+      } catch {
+        // A failed search reads as "no results" rather than a stuck spinner.
+      }
+      if (cancelled) return
       setResults(hits)
       setSearching(false)
     }, 250)
-    return () => clearTimeout(timer)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [query])
 
   // Favorites, like archiving, are a preference about the folder — not about
@@ -828,7 +845,13 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
     setSelected(g)
     setLoadingSessions(true)
     setPeeked(null)
-    const s = await listGroupSessions(g, showArchived)
+    let s: CCSessionMeta[]
+    try {
+      s = await listGroupSessions(g, showArchived)
+    } catch {
+      // Show an empty list rather than a spinner that never ends.
+      s = []
+    }
     if (seq !== listingSeq.current) return
     setSessions(s)
     setLoadingSessions(false)
@@ -946,7 +969,9 @@ export default function ProjectsView({ onResume, target, focus }: Props) {
       // same folder still has to surface here.
       const results = await Promise.all(
         selected.members.map((m) =>
-          window.electronAPI.ccSearch(q, { sourceId: m.sourceId, encodedDir: m.encodedDir })
+          window.electronAPI
+            .ccSearch(q, { sourceId: m.sourceId, encodedDir: m.encodedDir })
+            .catch(() => [])
         )
       )
       if (cancelled) return

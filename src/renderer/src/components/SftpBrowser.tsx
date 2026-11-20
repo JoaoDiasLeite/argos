@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { RemoteEntry } from '../types'
 import { useLanguage, useT } from '../i18n'
 import './SftpBrowser.css'
@@ -112,13 +112,25 @@ export default function SftpBrowser({ hostId, cwd, barSlot, pathSlot, onNavigate
 
   const parent = cwd === '/' ? null : posixDirname(cwd)
 
+  // Only the latest listing may land: a slow one for a previous directory or host
+  // must not overwrite the current one. Bumped on unmount too.
+  const listSeq = useRef(0)
+
   const load = async () => {
+    const seq = ++listSeq.current
     setLoading(true)
     setError(null)
-    const res = await window.electronAPI.sftpList(hostId, cwd)
-    setLoading(false)
-    if (res.ok) setEntries(res.entries ?? [])
-    else setError(res.error || t('remote.sftp.listFailed'))
+    try {
+      const res = await window.electronAPI.sftpList(hostId, cwd)
+      if (seq !== listSeq.current) return
+      if (res.ok) setEntries(res.entries ?? [])
+      else setError(res.error || t('remote.sftp.listFailed'))
+    } catch (e) {
+      if (seq !== listSeq.current) return
+      setError(e instanceof Error ? e.message : t('remote.sftp.listFailed'))
+    } finally {
+      if (seq === listSeq.current) setLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -128,6 +140,9 @@ export default function SftpBrowser({ hostId, cwd, barSlot, pathSlot, onNavigate
     setRenaming(null)
     setCreatingFolder(false)
     setCreatingFile(false)
+    return () => {
+      listSeq.current++
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hostId, cwd])
 
@@ -138,11 +153,16 @@ export default function SftpBrowser({ hostId, cwd, barSlot, pathSlot, onNavigate
 
   const doDelete = async (entry: RemoteEntry) => {
     setBusyPath(entry.path)
-    const res = await window.electronAPI.sftpDelete(hostId, entry.path)
-    setBusyPath(null)
-    setConfirmDelete(null)
-    if (res.ok) load()
-    else setError(res.error || t('remote.sftp.deleteFailed'))
+    try {
+      const res = await window.electronAPI.sftpDelete(hostId, entry.path)
+      if (res.ok) load()
+      else setError(res.error || t('remote.sftp.deleteFailed'))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('remote.sftp.deleteFailed'))
+    } finally {
+      setBusyPath(null)
+      setConfirmDelete(null)
+    }
   }
 
   const doRename = async () => {
@@ -155,11 +175,16 @@ export default function SftpBrowser({ hostId, cwd, barSlot, pathSlot, onNavigate
     const dir = cwd
     const to = posixJoin(dir, name)
     setBusyPath(renaming.path)
-    const res = await window.electronAPI.sftpRename(hostId, renaming.path, to)
-    setBusyPath(null)
-    setRenaming(null)
-    if (res.ok) load()
-    else setError(res.error || t('remote.sftp.renameFailed'))
+    try {
+      const res = await window.electronAPI.sftpRename(hostId, renaming.path, to)
+      if (res.ok) load()
+      else setError(res.error || t('remote.sftp.renameFailed'))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('remote.sftp.renameFailed'))
+    } finally {
+      setBusyPath(null)
+      setRenaming(null)
+    }
   }
 
   const doMkdir = async () => {
@@ -223,10 +248,15 @@ export default function SftpBrowser({ hostId, cwd, barSlot, pathSlot, onNavigate
       // Dropping onto its own folder, onto itself, or into its own subtree is a no-op.
       if (posixDirname(moved) === dir || dir === moved || dir.startsWith(`${moved}/`)) return
       setBusyPath(moved)
-      const res = await window.electronAPI.sftpRename(hostId, moved, posixJoin(dir, posixBasename(moved)))
-      setBusyPath(null)
-      if (res.ok) load()
-      else setError(res.error || t('remote.sftp.moveFailed'))
+      try {
+        const res = await window.electronAPI.sftpRename(hostId, moved, posixJoin(dir, posixBasename(moved)))
+        if (res.ok) load()
+        else setError(res.error || t('remote.sftp.moveFailed'))
+      } catch (e) {
+        setError(e instanceof Error ? e.message : t('remote.sftp.moveFailed'))
+      } finally {
+        setBusyPath(null)
+      }
       return
     }
     const paths = Array.from(e.dataTransfer.files)
@@ -235,8 +265,15 @@ export default function SftpBrowser({ hostId, cwd, barSlot, pathSlot, onNavigate
     if (paths.length === 0) return
     setUploading(true)
     setError(null)
-    const res = await window.electronAPI.sftpUpload(hostId, dir, paths)
-    setUploading(false)
+    let res: Awaited<ReturnType<typeof window.electronAPI.sftpUpload>>
+    try {
+      res = await window.electronAPI.sftpUpload(hostId, dir, paths)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('remote.sftp.uploadFailed'))
+      return
+    } finally {
+      setUploading(false)
+    }
     if (!res.ok) setError(res.error || t('remote.sftp.uploadFailed'))
     if (dir === cwd && res.uploaded && res.uploaded.length > 0) load()
   }

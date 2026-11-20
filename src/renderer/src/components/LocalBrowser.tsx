@@ -58,10 +58,15 @@ export default function LocalBrowser({ dir, barSlot, pathSlot, onNavigate, onOpe
   const load = async () => {
     setLoading(true)
     setError(null)
-    const res = await window.electronAPI.readDir(dir)
-    setLoading(false)
-    if ('error' in res) setError(res.error || t('remote.sftp.listFailed'))
-    else setEntries(res)
+    try {
+      const res = await window.electronAPI.readDir(dir)
+      if ('error' in res) setError(res.error || t('remote.sftp.listFailed'))
+      else setEntries(res)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('remote.sftp.listFailed'))
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
