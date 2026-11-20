@@ -302,12 +302,16 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
 
     const offData = window.electronAPI.onRemoteShellData((e) => {
       if (e.id !== terminalId) return
-      term.write(e.data)
-      if (awaitingRevealRef.current && hasVisibleContent(term)) {
-        awaitingRevealRef.current = false
-        clearTimeout(quietTimerRef.current)
-        quietTimerRef.current = setTimeout(reveal, REVEAL_PAINT_GRACE_MS)
-      }
+      // Checked once xterm has parsed the chunk: write() is async, so checking straight
+      // after it missed a prompt that came in one piece (a container's `exec` shell) and
+      // left the loader up until the backstop.
+      term.write(e.data, () => {
+        if (awaitingRevealRef.current && hasVisibleContent(term)) {
+          awaitingRevealRef.current = false
+          clearTimeout(quietTimerRef.current)
+          quietTimerRef.current = setTimeout(reveal, REVEAL_PAINT_GRACE_MS)
+        }
+      })
     })
     const offExit = window.electronAPI.onRemoteShellExit((e) => {
       if (e.id !== terminalId) return
