@@ -1,6 +1,5 @@
 import { getRemoteClient } from './sftp'
 import {
-  containerShellCommand,
   listContainersCommand,
   parseContainerListing,
   type ContainerRuntime,
@@ -11,15 +10,10 @@ import { t } from './i18n'
 /**
  * The Remote Session's Containers pane: lists a host's docker (or podman) containers over
  * an exec channel on the SAME ssh2 connection the file browser and terminal already use
- * (sftp.ts getRemoteClient). Read-only: entering a container is a command the renderer
- * types into the session's terminal, built here from the validated id. Never throws
+ * (sftp.ts getRemoteClient). Read-only: entering a container is a tab of its own, whose
+ * channel remote-shell.ts opens on an `exec -it` built from the validated id. Never throws
  * across the IPC boundary.
  */
-
-export interface ContainerRow extends RemoteContainer {
-  /** What to type into the terminal to get a shell inside it; null when it isn't running. */
-  shell: string | null
-}
 
 export interface ContainerListResult {
   ok: boolean
@@ -28,7 +22,7 @@ export interface ContainerListResult {
   runtime?: ContainerRuntime | null
   /** The listing only worked through `sudo -n`, so the shell command uses sudo too. */
   sudo?: boolean
-  containers?: ContainerRow[]
+  containers?: RemoteContainer[]
 }
 
 const TIMEOUT_MS = 20000
@@ -104,10 +98,7 @@ export async function remoteContainers(hostId: string): Promise<ContainerListRes
           ok: true,
           runtime: listing.runtime,
           sudo: listing.sudo,
-          containers: listing.containers.map((c) => ({
-            ...c,
-            shell: c.running ? containerShellCommand(listing.runtime, listing.sudo, c.id) : null
-          }))
+          containers: listing.containers
         }
     }
   } catch (e) {

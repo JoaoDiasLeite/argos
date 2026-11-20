@@ -3378,15 +3378,18 @@ ipcMain.handle(
 
 // ─── Remote shell (Remote Session SSH terminal, over the SFTP connection) ──────
 
-ipcMain.handle('remote-shell:create', (_, id: string, hostId: string, cols: number, rows: number) =>
-  remoteShellCreate(
-    id,
-    hostId,
-    cols,
-    rows,
-    (tid, data) => send('remote-shell:data', { id: tid, data }),
-    (tid, code) => send('remote-shell:exit', { id: tid, code })
-  )
+ipcMain.handle(
+  'remote-shell:create',
+  (_, id: string, hostId: string, cols: number, rows: number, container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string }) =>
+    remoteShellCreate(
+      id,
+      hostId,
+      cols,
+      rows,
+      (tid, data) => send('remote-shell:data', { id: tid, data }),
+      (tid, code) => send('remote-shell:exit', { id: tid, code }),
+      container
+    )
 )
 ipcMain.on('remote-shell:write', (_, id: string, data: string) => remoteShellWrite(id, data))
 ipcMain.on('remote-shell:resize', (_, id: string, cols: number, rows: number) =>

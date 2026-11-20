@@ -785,8 +785,13 @@ export interface RemoteContainerRow {
   image: string
   status: string
   running: boolean
-  /** What to type into the session's terminal to get a shell inside it; null when stopped. */
-  shell: string | null
+}
+
+/** Which container a container tab enters; the id is re-validated in main. */
+export interface RemoteContainerTarget {
+  runtime: 'docker' | 'podman'
+  sudo: boolean
+  id: string
 }
 
 export interface RemoteContainerList {
@@ -1988,7 +1993,14 @@ declare global {
       onTerminalNotify: (cb: (data: TerminalNotifyEvent) => void) => () => void
 
       // Remote shell (Remote Session SSH terminal, over the SFTP connection)
-      remoteShellCreate: (id: string, hostId: string, cols: number, rows: number) => Promise<{ ok: boolean; error?: string }>
+      /** `container`: run that container's shell (`exec -it`) instead of the login shell. */
+      remoteShellCreate: (
+        id: string,
+        hostId: string,
+        cols: number,
+        rows: number,
+        container?: RemoteContainerTarget
+      ) => Promise<{ ok: boolean; error?: string }>
       remoteShellWrite: (id: string, data: string) => void
       remoteShellResize: (id: string, cols: number, rows: number) => void
       remoteShellKill: (id: string) => Promise<{ ok: boolean }>
