@@ -165,7 +165,6 @@ export default {
   'containers.stopped': 'Stopped',
   'containers.shell': 'Shell',
   'containers.shellTitle': "Open a shell inside {name} in this session's terminal",
-  'containers.notRunning': 'Not running: start it first to open a shell',
   'containers.notConnected': 'Waiting for the connection',
   // components/RemoteTerminal
   'terminal.closedCode': 'connection closed · code {code}',

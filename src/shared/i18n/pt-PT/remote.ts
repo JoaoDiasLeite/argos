@@ -166,7 +166,6 @@ const remote: Record<keyof typeof en, string> = {
   'containers.stopped': 'Parados',
   'containers.shell': 'Shell',
   'containers.shellTitle': 'Abrir uma shell dentro de {name} no terminal desta sessão',
-  'containers.notRunning': 'Não está a correr: arranca-o primeiro para abrires uma shell',
   'containers.notConnected': 'À espera da ligação',
   // components/RemoteTerminal
   'terminal.closedCode': 'ligação fechada · código {code}',

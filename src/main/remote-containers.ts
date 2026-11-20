@@ -56,6 +56,16 @@ function runExec(hostId: string, command: string): Promise<{ ok: true; stdout: s
       try {
         res.conn.exec(command, (err, stream) => {
           if (err) return finish({ ok: false, error: err.message })
+          // Timed out before the channel opened: close it rather than leave it on the
+          // shared connection, which only has so many.
+          if (done) {
+            try {
+              stream.close()
+            } catch {
+              // no-op
+            }
+            return
+          }
           channel = stream
           stream.on('data', (d: Buffer) => {
             stdout += d.toString('utf8')

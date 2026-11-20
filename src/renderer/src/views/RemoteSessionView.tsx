@@ -239,7 +239,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     <div className="seg-control remote-session-toggle">
       <button type="button" className={panel === 'files' ? 'on' : ''} onClick={() => setPanel('files')}>{t('remote.session.files')}</button>
       <button type="button" className={panel === 'history' ? 'on' : ''} onClick={openHistoryPanel}>{t('remote.session.history')}</button>
-      {/* SSH only: a WSL distro's containers are the Windows host's Docker Desktop. */}
+      {/* SSH only for now: the listing rides the host's ssh2 connection. */}
       {isSsh && (
         <button type="button" className={panel === 'containers' ? 'on' : ''} onClick={() => setPanel('containers')}>{t('remote.session.containers')}</button>
       )}
