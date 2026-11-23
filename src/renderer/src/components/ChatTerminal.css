@@ -50,8 +50,10 @@
 }
 .chat-terminal-btn:hover:not(:disabled) { background: var(--bg-2); color: var(--text-0); border-color: var(--border-light); }
 .chat-terminal-btn:disabled { opacity: 0.4; cursor: default; }
-/* RemoteTerminal's key button while main sees a password prompt: a quiet ring, a hint only. */
-.chat-terminal-btn.is-prompting { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+/* The key button (RemoteTerminal's bar, a remote chat's header) while main sees a password
+   prompt: a quiet ring, a hint only. */
+.chat-terminal-btn.is-prompting,
+.chat-head-btn.is-prompting { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
 
 .chat-terminal-fontsize {
   display: flex;

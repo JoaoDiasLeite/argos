@@ -2065,6 +2065,10 @@ declare global {
       onTerminalExit: (cb: (data: TerminalExitEvent) => void) => () => void
       onTerminalBusy: (cb: (data: TerminalBusyEvent) => void) => () => void
       onTerminalNotify: (cb: (data: TerminalNotifyEvent) => void) => () => void
+      /** "Send password" in a remote chat's ssh terminal: same answers as remoteShellSendSecret. */
+      terminalSendSecret: (id: string, opts?: { force?: boolean }) => Promise<RemoteShellSendSecretResult>
+      /** Same shape as the Remote Session hint, for a chat's ssh terminal. */
+      onTerminalSecretHint: (cb: (data: RemoteShellSecretHintEvent) => void) => () => void
 
       // Remote shell (Remote Session SSH terminal, over the SFTP connection)
       /** `container`: run that container's shell (`exec -it`) instead of the login shell.

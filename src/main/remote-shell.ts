@@ -10,12 +10,12 @@ import { getHost } from './ssh'
 import { elevateCommandFor } from './ssh-host-pure'
 import {
   appendTail,
+  decideSecretSend,
   elevationSecret,
   isOnlyFocusReports,
   matchSecretPrompt,
-  secretForForcedSend,
-  secretForPrompt,
   SecretSendGuard,
+  wantsForce,
   type PromptSelf,
   type SecretPromptKind
 } from './secret-prompt-pure'
@@ -372,33 +372,12 @@ export function remoteShellSendSecret(id: unknown, opts: unknown): SendSecretRes
   const st = hostShellFor(id)
   if ('reason' in st) return { ok: false, reason: st.reason }
   const sid = id as string
-  // Shape-checked: it comes over IPC.
-  const force = opts !== null && typeof opts === 'object' && (opts as { force?: unknown }).force === true
   const now = Date.now()
-  if (sendGuard.rateLimited(sid, now)) return { ok: false, reason: 'rate-limited' }
   const host = getHostWithSessionSecrets(st.hostId)
-  if (!host) return { ok: false, reason: 'no-secret' }
-
-  // Read fresh here: a nested ssh's `user@host's password:` that is not this host is no
-  // prompt, so it answers no-prompt and only a confirmed forced send can type into it.
-  const match = matchSecretPrompt(st.tail, { username: host.username, host: host.host })
-  if (match) {
-    const secret = secretForPrompt(match, host)
-    if (!secret) return { ok: false, reason: 'no-secret' }
-    disarm(st)
-    return writeSecret(sid, st, secret + '\r') ? { ok: true } : { ok: false, reason: 'unknown-shell' }
-  }
-  if (!force) {
-    sendGuard.noteNoPrompt(sid, now)
-    return { ok: false, reason: 'no-prompt' }
-  }
-  // A force that did not follow a no-prompt answer is refused without opening a window of
-  // its own, so two forced calls in a row cannot skip the guard.
-  if (!sendGuard.canForce(sid, now)) return { ok: false, reason: 'no-prompt' }
-  const secret = secretForForcedSend(host)
-  if (!secret) return { ok: false, reason: 'no-secret' }
+  const decision = decideSecretSend(sendGuard, sid, st.tail, host, wantsForce(opts), now)
+  if ('reason' in decision) return { ok: false, reason: decision.reason }
   disarm(st)
-  return writeSecret(sid, st, secret) ? { ok: true } : { ok: false, reason: 'unknown-shell' }
+  return writeSecret(sid, st, decision.write) ? { ok: true } : { ok: false, reason: 'unknown-shell' }
 }
 
 export type ElevateResult =
