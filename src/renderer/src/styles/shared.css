@@ -360,6 +360,11 @@ select.text-input { cursor: pointer; }
 .seg-control button:hover:not(.on):not(:disabled) { color: var(--text-1); }
 .seg-control button.on { background: var(--bg-2); color: var(--text-0); font-weight: 600; }
 .seg-control button em { font-style: normal; color: var(--text-2); font-weight: 400; }
+/* Plain tabs: the same control without the frame, only the current one on a soft fill.
+   The Servers sub-nav and a remote session's Files / History / Containers switch. */
+.seg-control.seg-tabs { gap: 4px; padding: 0; border: none; }
+.seg-control.seg-tabs button { padding: 5px 12px; border-radius: var(--radius); font-size: 13px; }
+.seg-control.seg-tabs button.on { font-weight: 500; }
 
 /* ── Eyebrow: the small uppercase heading over a section (§4). ── */
 .eyebrow {

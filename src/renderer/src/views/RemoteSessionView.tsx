@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { RemoteTarget, type RemoteContainerTarget } from '../types'
 import ChatTerminal from '../components/ChatTerminal'
 import RemoteTerminal from '../components/RemoteTerminal'
@@ -68,6 +68,40 @@ function saveRunLog(targetId: string, log: RunLogEntry[]): void {
   }
 }
 
+// The side pane's width and whether it is folded away, shared by every session and kept
+// across runs. Read once per session mount; a drag in one session does not move the others.
+const PANE_WIDTH_KEY = 'argos.remoteSession.paneWidth'
+const PANE_COLLAPSED_KEY = 'argos.remoteSession.paneCollapsed'
+const PANE_DEFAULT = 440
+const PANE_MIN = 380
+/** The terminal keeps at least this much of the body when the pane is dragged wide. */
+const TERMINAL_MIN = 320
+
+function loadPaneWidth(): number {
+  try {
+    const n = Number(localStorage.getItem(PANE_WIDTH_KEY))
+    return Number.isFinite(n) && n >= PANE_MIN ? n : PANE_DEFAULT
+  } catch {
+    return PANE_DEFAULT
+  }
+}
+
+function loadPaneCollapsed(): boolean {
+  try {
+    return localStorage.getItem(PANE_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function savePane(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    // storage unavailable: the layout just isn't remembered.
+  }
+}
+
 // Quote a command for a POSIX shell — same escaping ssh.ts's shQuote uses.
 function shQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`
@@ -115,6 +149,65 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
   const [runLog, setRunLog] = useState<RunLogEntry[]>(() => loadRunLog(targetId))
   const [quickRun, setQuickRun] = useState('')
   const historyLoadedRef = useRef(false)
+  const [paneWidth, setPaneWidth] = useState(loadPaneWidth)
+  const [collapsed, setCollapsed] = useState(loadPaneCollapsed)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const paneWidthRef = useRef(paneWidth)
+  paneWidthRef.current = paneWidth
+
+  const toggleCollapsed = () => {
+    setCollapsed((v) => {
+      savePane(PANE_COLLAPSED_KEY, v ? '0' : '1')
+      return !v
+    })
+  }
+
+  // The widest the pane may be: the terminal keeps TERMINAL_MIN of the body.
+  const clampPane = (w: number): number => {
+    const body = bodyRef.current
+    const max = body ? Math.max(PANE_MIN, body.clientWidth - TERMINAL_MIN) : w
+    return Math.round(Math.min(max, Math.max(PANE_MIN, w)))
+  }
+
+  // The divider between the pane and the terminal: the PaneSplitter recipe (listeners on
+  // window, paneDrag set so the terminal fits once at the end, persisted on mouseup).
+  const startPaneDrag = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const body = bodyRef.current
+    if (!body) return
+    const left = body.getBoundingClientRect().left
+    // Kept here too: a mouseup can arrive before React has re-rendered with the last move.
+    let latest = paneWidthRef.current
+    const onMove = (ev: MouseEvent) => {
+      latest = clampPane(ev.clientX - left)
+      setPaneWidth(latest)
+    }
+    const onUp = () => {
+      delete document.body.dataset.paneDrag
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      savePane(PANE_WIDTH_KEY, String(latest))
+      window.dispatchEvent(new Event('panedragend'))
+    }
+    document.body.dataset.paneDrag = '1'
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [])
+
+  // Keyboard on the focused divider: arrows move it 16 px, Home/End go to the bounds.
+  const nudgePane = (e: React.KeyboardEvent) => {
+    const steps: Record<string, number> = { ArrowLeft: -16, ArrowRight: 16, Home: -Infinity, End: Infinity }
+    const step = steps[e.key]
+    if (step === undefined) return
+    e.preventDefault()
+    const next = clampPane(Number.isFinite(step) ? paneWidthRef.current + step : step > 0 ? 1e6 : 0)
+    setPaneWidth(next)
+    savePane(PANE_WIDTH_KEY, String(next))
+  }
 
   // Connect on mount. SSH only — the connection is per-host, cached in main. WSL has
   // nothing to "connect": the terminal (ChatTerminal, wsl.exe) and the file browser
@@ -241,7 +334,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
   // takes it as a slot, so the switch and the toolbar icons share one line); on the
   // history side the view draws the same bar around it.
   const paneSwitch = (
-    <div className="seg-control remote-session-toggle">
+    <div className="seg-control seg-tabs remote-session-toggle">
       <button type="button" className={panel === 'files' ? 'on' : ''} onClick={() => setPanel('files')}>{t('remote.session.files')}</button>
       <button type="button" className={panel === 'history' ? 'on' : ''} onClick={openHistoryPanel}>{t('remote.session.history')}</button>
       {/* SSH only for now: the listing rides the host's ssh2 connection. */}
@@ -283,10 +376,25 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
           </span>
         </div>
         <span className="remote-session-spacer" />
+        <button
+          type="button"
+          className={`remote-session-pane-toggle${collapsed ? '' : ' on'}`}
+          onClick={toggleCollapsed}
+          title={collapsed ? t('remote.session.showPanel') : t('remote.session.hidePanel')}
+          aria-label={collapsed ? t('remote.session.showPanel') : t('remote.session.hidePanel')}
+          aria-pressed={!collapsed}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M9 4v16" />
+          </svg>
+        </button>
       </div>
 
-      <div className="remote-session-body">
-        <div className="remote-session-left">
+      <div className="remote-session-body" ref={bodyRef}>
+        {/* Folded away by hiding, not unmounting: the listing, the containers and the
+            folder the shell is on all survive a hide and show. */}
+        <div className="remote-session-left" style={{ width: paneWidth, display: collapsed ? 'none' : undefined }}>
           {panel === 'history' && <div className="remote-session-pane-bar">{paneSwitch}</div>}
           {/* The connection's failure lives in the pane it is about. The terminal rides the
               same SSH connection as the file browser (sftp.ts getRemoteClient), so when this
@@ -378,6 +486,24 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
             </div>
           )}
         </div>
+
+        {!collapsed && (
+          <div
+            className="remote-session-divider"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t('remote.session.resizePanel')}
+            aria-valuenow={paneWidth}
+            tabIndex={0}
+            onMouseDown={startPaneDrag}
+            onKeyDown={nudgePane}
+            onDoubleClick={() => {
+              setPaneWidth(PANE_DEFAULT)
+              savePane(PANE_WIDTH_KEY, String(PANE_DEFAULT))
+            }}
+            title={t('remote.session.resizePanel')}
+          />
+        )}
 
         {/* No close button on the terminal: the session's tab is what closes it, and a
             "close" that only went back to the targets list read as if it had. */}
