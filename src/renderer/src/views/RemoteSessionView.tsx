@@ -196,7 +196,6 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     document.body.style.cursor = 'col-resize'
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Keyboard on the focused divider: arrows move it 16 px, Home/End go to the bounds.
