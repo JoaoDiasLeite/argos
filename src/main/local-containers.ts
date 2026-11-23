@@ -49,9 +49,11 @@ function run(cmd: string, args: string[]): Promise<Run> {
   })
 }
 
-/** What docker and podman print when the CLI is there and the engine behind it is not. */
+/** What docker and podman print when the CLI is there and the engine behind it is not.
+ *  Docker 28 says "failed to connect to the docker API at …", older ones "error during
+ *  connect" or "Cannot connect to the Docker daemon". */
 const ENGINE_DOWN_RE =
-  /cannot connect to the docker daemon|error during connect|docker_engine|dockerdesktoplinuxengine|is the docker daemon running|cannot connect to podman|unable to connect to podman/i
+  /cannot connect to the docker daemon|failed to connect to the docker api|error during connect|docker_engine|dockerdesktoplinuxengine|daemon is running|cannot connect to podman|unable to connect to podman/i
 
 export async function localContainers(): Promise<LocalContainerList> {
   try {
