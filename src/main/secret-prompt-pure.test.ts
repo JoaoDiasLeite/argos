@@ -1,17 +1,24 @@
 import { describe, it, expect } from 'vitest'
 import {
   appendTail,
+  decideSecretSend,
   detectSecretPrompt,
   elevationSecret,
   isOnlyFocusReports,
   lastVisibleLine,
+  LOGIN_WINDOW_MS,
+  LoginAutoAnswer,
+  LoginHold,
+  loginPromptSecret,
   matchSecretPrompt,
   secretForForcedSend,
   secretForPrompt,
   SecretSendGuard,
   stripAnsi,
   TAIL_MAX,
-  type SecretSource
+  wantsForce,
+  type SecretSource,
+  type SendSecretHost
 } from './secret-prompt-pure'
 
 describe('stripAnsi', () => {
@@ -243,5 +250,251 @@ describe('isOnlyFocusReports', () => {
     expect(isOnlyFocusReports('')).toBe(false)
     expect(isOnlyFocusReports('[200~pw[201~')).toBe(false)
     expect(isOnlyFocusReports('[Ia')).toBe(false)
+  })
+})
+
+describe('OpenSSH prompts as the Windows client prints them', () => {
+  const self = { username: 'demo', host: '127.0.0.1' }
+
+  it('reads the keyboard-interactive form for this host only', () => {
+    expect(matchSecretPrompt('(demo@127.0.0.1) Password: ', self)).toEqual({ kind: 'login', ambiguous: false })
+    expect(matchSecretPrompt('(root@127.0.0.1) Password: ', self)).toBeNull()
+    expect(matchSecretPrompt('(demo@127.0.0.1) Password: ')).toBeNull()
+    expect(matchSecretPrompt('(demo@127.0.0.1) Verification code: ', self)).toBeNull()
+  })
+
+  it('keeps the key file a passphrase prompt names', () => {
+    expect(matchSecretPrompt("Enter passphrase for key 'C:\\Users\\demo\\.ssh\\id_ed25519': ")).toEqual({
+      kind: 'passphrase',
+      ambiguous: false,
+      keyPath: 'C:\\Users\\demo\\.ssh\\id_ed25519'
+    })
+  })
+})
+
+describe('decideSecretSend', () => {
+  const host: SendSecretHost = { authType: 'password', password: 'fake-login', username: 'joao', host: 'web01' }
+
+  it('answers a prompt with its secret and Enter', () => {
+    const g = new SecretSendGuard()
+    expect(decideSecretSend(g, 't', '[sudo] password for joao: ', host, false, 0)).toEqual({ write: 'fake-login\r' })
+  })
+
+  it('refuses without a prompt, then allows one forced send without Enter', () => {
+    const g = new SecretSendGuard()
+    expect(decideSecretSend(g, 't', 'joao@web01:~$ ', host, true, 0)).toEqual({ reason: 'no-prompt' })
+    expect(decideSecretSend(g, 't', 'joao@web01:~$ ', host, false, 10)).toEqual({ reason: 'no-prompt' })
+    expect(decideSecretSend(g, 't', 'joao@web01:~$ ', host, true, 20)).toEqual({ write: 'fake-login' })
+  })
+
+  it('checks the rate limit first and needs a host', () => {
+    const g = new SecretSendGuard()
+    g.noteSent('t', 0)
+    expect(decideSecretSend(g, 't', 'Password: ', host, false, 500)).toEqual({ reason: 'rate-limited' })
+    expect(decideSecretSend(g, 'u', 'Password: ', null, false, 500)).toEqual({ reason: 'no-secret' })
+  })
+
+  it('does not take a nested ssh prompt for this host', () => {
+    const g = new SecretSendGuard()
+    expect(decideSecretSend(g, 't', "joao@db01's password: ", host, false, 0)).toEqual({ reason: 'no-prompt' })
+  })
+
+  it('reads force only from a real flag', () => {
+    expect(wantsForce({ force: true })).toBe(true)
+    expect(wantsForce({ force: 'yes' })).toBe(false)
+    expect(wantsForce(null)).toBe(false)
+    expect(wantsForce(true)).toBe(false)
+  })
+})
+
+describe('loginPromptSecret', () => {
+  const pwHost = { authType: 'password' as const, username: 'demo', host: '127.0.0.1', password: 'fake-login' }
+  const keyPath = 'C:\\Users\\demo\\.ssh\\id_ed25519'
+  const keyHost = { authType: 'key' as const, username: 'demo', host: '127.0.0.1', passphrase: 'fake-passphrase' }
+
+  it("answers ssh's password prompts with the login password", () => {
+    expect(loginPromptSecret("demo@127.0.0.1's password: ", pwHost)).toEqual({ kind: 'login', secret: 'fake-login' })
+    expect(loginPromptSecret('(demo@127.0.0.1) Password: ', pwHost)).toEqual({ kind: 'login', secret: 'fake-login' })
+    // An older client's keyboard-interactive prompt: the login password, never the elevation one.
+    const withElevation = { ...pwHost, elevation: 'other', elevationPassword: 'fake-elev' }
+    expect(loginPromptSecret('Password: ', withElevation)).toEqual({ kind: 'login', secret: 'fake-login' })
+  })
+
+  it('never answers sudo, another host, or a host with no such secret', () => {
+    expect(loginPromptSecret('[sudo] password for demo: ', pwHost)).toBeNull()
+    expect(loginPromptSecret("root@127.0.0.1's password: ", pwHost)).toBeNull()
+    expect(loginPromptSecret("demo@127.0.0.1's password: ", { ...pwHost, password: undefined })).toBeNull()
+    expect(loginPromptSecret("demo@127.0.0.1's password: ", { ...keyHost, password: 'stale' })).toBeNull()
+    expect(loginPromptSecret('demo@127.0.0.1:~$ ', pwHost)).toBeNull()
+  })
+
+  it('answers the passphrase prompt for the host key only', () => {
+    const prompt = `Enter passphrase for key '${keyPath}': `
+    expect(loginPromptSecret(prompt, keyHost, keyPath)).toEqual({ kind: 'passphrase', secret: 'fake-passphrase' })
+    expect(loginPromptSecret(prompt, keyHost, 'c:/users/demo/.ssh/id_ed25519')).toEqual({
+      kind: 'passphrase',
+      secret: 'fake-passphrase'
+    })
+    expect(loginPromptSecret("Enter passphrase for key 'C:\\Users\\demo\\.ssh\\other': ", keyHost, keyPath)).toBeNull()
+    expect(loginPromptSecret(prompt, keyHost)).toBeNull()
+    expect(loginPromptSecret(prompt, { ...pwHost, passphrase: 'x' }, keyPath)).toBeNull()
+  })
+
+  it('accepts the path ssh cut to 100 characters', () => {
+    const long = 'C:\\Users\\demo\\' + 'a'.repeat(120) + '\\id_ed25519'
+    const prompt = `Enter passphrase for key '${long.slice(0, 100)}': `
+    expect(loginPromptSecret(prompt, keyHost, long)).toEqual({ kind: 'passphrase', secret: 'fake-passphrase' })
+    // Cut through a two-byte character: the decoder leaves U+FFFD where the half was.
+    const accented = 'C:\\Users\\João\\' + 'b'.repeat(120)
+    const cut = `Enter passphrase for key '${accented.slice(0, 11)}\uFFFD': `
+    expect(loginPromptSecret(cut, keyHost, accented)).toEqual({ kind: 'passphrase', secret: 'fake-passphrase' })
+  })
+
+  it('only looks at the last line', () => {
+    expect(loginPromptSecret("demo@127.0.0.1's password: \r\nWelcome\r\n", pwHost)).toBeNull()
+  })
+})
+
+describe('LoginAutoAnswer', () => {
+  const pwHost = { authType: 'password' as const, username: 'demo', host: '127.0.0.1', password: 'fake-login' }
+  const pick = (tail: string) => () => loginPromptSecret(tail, pwHost)
+
+  it('answers the login prompt once', () => {
+    const a = new LoginAutoAnswer(0)
+    expect(a.answer(100, pick('Warning: Permanently added ...\r\n'))).toBeNull()
+    expect(a.armed(100)).toBe(true)
+    expect(a.answer(160, pick("demo@127.0.0.1's password: "))).toEqual({ kind: 'login', secret: 'fake-login' })
+    expect(a.armed(161)).toBe(false)
+  })
+
+  it('does not answer a second prompt after a wrong password', () => {
+    const a = new LoginAutoAnswer(0)
+    expect(a.answer(160, pick("demo@127.0.0.1's password: "))).not.toBeNull()
+    const again = "\r\nPermission denied, please try again.\r\ndemo@127.0.0.1's password: "
+    expect(a.answer(400, pick(again))).toBeNull()
+  })
+
+  it('disarms after the window', () => {
+    const a = new LoginAutoAnswer(1000)
+    expect(a.armed(1000 + LOGIN_WINDOW_MS)).toBe(true)
+    expect(a.answer(1001 + LOGIN_WINDOW_MS, pick("demo@127.0.0.1's password: "))).toBeNull()
+    expect(a.armed(1000)).toBe(false)
+  })
+
+  it('only answers known kinds, and stays armed for the real prompt', () => {
+    const a = new LoginAutoAnswer(0)
+    expect(a.answer(10, pick('[sudo] password for demo: '))).toBeNull()
+    expect(a.answer(20, pick('New password: '))).toBeNull()
+    expect(a.answer(30, pick('(demo@127.0.0.1) Verification code: '))).toBeNull()
+    expect(a.answer(40, pick("root@elsewhere's password: "))).toBeNull()
+    expect(a.armed(50)).toBe(true)
+    expect(a.answer(60, pick('(demo@127.0.0.1) Password: '))).toEqual({ kind: 'login', secret: 'fake-login' })
+  })
+
+  it('answers nothing once disarmed (the user typed)', () => {
+    const a = new LoginAutoAnswer(0)
+    a.disarm()
+    expect(a.answer(10, pick("demo@127.0.0.1's password: "))).toBeNull()
+  })
+
+  it('does not read the secret once spent', () => {
+    const a = new LoginAutoAnswer(0)
+    a.disarm()
+    let read = false
+    a.answer(10, () => {
+      read = true
+      return null
+    })
+    expect(read).toBe(false)
+  })
+})
+
+describe('LoginHold', () => {
+  const LAUNCH = "clear; PROMPT_COMMAND='exit $?'; claude; exit $?\n"
+  const PROMPT = "demo@127.0.0.1's password: "
+
+  it('queues the launch line until the shell shows after the answer', () => {
+    const h = new LoginHold()
+    expect(h.write(LAUNCH, 'launch')).toBe(false)
+    expect(h.output('Warning: Permanently added ...\r\n', false)).toBeNull()
+    h.answered()
+    expect(h.output('\r\n', false)).toBeNull()
+    expect(h.output('Welcome to OpenSSH Server\r\nhost:~$ ', false)).toEqual([LAUNCH])
+    expect(h.open).toBe(true)
+    expect(h.write('x', 'user')).toBe(true)
+  })
+
+  it('holds a launch line that arrives after the answer, then flushes it', () => {
+    const h = new LoginHold()
+    h.answered()
+    expect(h.write(LAUNCH, 'launch')).toBe(false)
+    expect(h.output('\x1b[?2004h', false)).toEqual([LAUNCH])
+  })
+
+  it('never sends the launch line into a prompt after a refused answer', () => {
+    const h = new LoginHold()
+    h.write(LAUNCH, 'launch')
+    h.answered()
+    expect(h.output('\r\nPermission denied, please try again.\r\n', false)).toBeNull()
+    expect(h.output(PROMPT, true)).toBeNull()
+    // The user's own keys go straight to ssh: they are the password.
+    expect(h.write('typed-by-user', 'user')).toBe(true)
+    expect(h.write('\r', 'user')).toBe(true)
+    // A later launch write still waits.
+    expect(h.write('again', 'launch')).toBe(false)
+    expect(h.output('\r\n', false)).toBeNull()
+    expect(h.output('demo@127.0.0.1: Permission denied (publickey,password).\r\n', false)).toBeNull()
+    expect(h.open).toBe(false)
+  })
+
+  it('flushes the launch line once the user logs in by hand', () => {
+    const h = new LoginHold()
+    h.write(LAUNCH, 'launch')
+    h.answered()
+    h.output(PROMPT, true)
+    expect(h.output('Welcome\r\nhost:~$ ', false)).toEqual([LAUNCH])
+  })
+
+  it('drops keys typed before a prompt the user then has to answer', () => {
+    const h = new LoginHold()
+    expect(h.write('early', 'user')).toBe(false)
+    h.write(LAUNCH, 'launch')
+    expect(h.output(PROMPT, true)).toBeNull()
+    expect(h.output('\x1b[?2004hhost:~$ ', false)).toEqual([LAUNCH])
+  })
+
+  it('queues keys typed after the answer and flushes them after the launch line, in order', () => {
+    const h = new LoginHold()
+    h.write(LAUNCH, 'launch')
+    h.answered()
+    expect(h.write('k', 'user')).toBe(false)
+    expect(h.output('host:~$ ', false)).toEqual([LAUNCH, 'k'])
+  })
+
+  it('drops terminal query answers while held', () => {
+    const h = new LoginHold()
+    expect(h.write('\x1b[I', 'report')).toBe(false)
+    h.answered()
+    expect(h.output('host:~$ ', false)).toEqual([])
+  })
+
+  it('does not take pre-login output for the shell before any answer', () => {
+    const h = new LoginHold()
+    h.write(LAUNCH, 'launch')
+    expect(h.output('Authorized users only.\r\n', false)).toBeNull()
+    expect(h.open).toBe(false)
+  })
+
+  it('on expiry flushes away from a prompt, and waits at one', () => {
+    const away = new LoginHold()
+    away.write(LAUNCH, 'launch')
+    expect(away.expire(false)).toEqual([LAUNCH])
+
+    const at = new LoginHold()
+    at.write(LAUNCH, 'launch')
+    expect(at.expire(true)).toBeNull()
+    expect(at.write('pw', 'user')).toBe(true)
+    expect(at.output('host:~$ ', false)).toEqual([LAUNCH])
+    expect(at.expire(false)).toBeNull()
   })
 })

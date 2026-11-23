@@ -204,7 +204,9 @@ import {
   killTerminal,
   listTerminals,
   startCliInTerminal,
-  killAllTerminals
+  killAllTerminals,
+  setTerminalSecretHintSink,
+  terminalSendSecret
 } from './terminal'
 import { createOverlayWindow, hideOverlay, toggleOverlay, registerOverlayShortcut, reregisterOverlayShortcut, overlayShortcut } from './overlay'
 import { createToastWindow, showToast, hideToast, sendToToast } from './toast'
@@ -3415,6 +3417,14 @@ ipcMain.on('terminal:write', (_, id: string, data: string) => writeTerminal(id, 
 ipcMain.on('terminal:resize', (_, id: string, cols: number, rows: number) =>
   resizeTerminal(id, cols, rows)
 )
+// "Send password" in a remote chat's ssh terminal: the main window only, by a click there, as
+// for remote-shell:send-secret. The host and its secret are resolved in terminal.ts from the
+// terminal id; nothing secret comes back.
+ipcMain.handle('terminal:send-secret', (e, id: unknown, opts: unknown) =>
+  e.sender === mainWindow?.webContents ? terminalSendSecret(id, opts) : { ok: false, reason: 'unknown-shell' }
+)
+// Only whether a prompt is showing, and of which kind: never the text around it.
+setTerminalSecretHintSink((id, kind) => send('terminal:secret-hint', { id, kind }))
 // killTerminal drops the pty without its onExit, so a closed ops terminal ends its run here.
 // A run still open at that point was cut short (Restart kills the pty without an ops:stop
 // first, aborting any exec in flight), so it ends as aborted. A run already ended (a Stop,

@@ -16,6 +16,8 @@ export interface SecretPromptMatch {
   /** A bare `Password:` (su, a sudo with a custom prompt, a nested login): which secret it
    *  wants is a guess, so the choice falls back from the elevation secret to the login one. */
   ambiguous: boolean
+  /** For a passphrase prompt, the key file as ssh printed it (cut to 100 characters). */
+  keyPath?: string
 }
 
 /** How much stripped output a shell keeps. A prompt is one short line; this is plenty. */
@@ -62,11 +64,14 @@ export function lastVisibleLine(tail: string): string {
 
 // Each is the whole line, start to end, so "New password:", "Retype new password:" and
 // "(current) UNIX password:" (passwd asking for a password the button has no business
-// typing) are not prompts here.
+// typing) are not prompts here. The two `login` forms name a user and a host (groups 1 and
+// 2): `user@host's password:` is OpenSSH's password prompt, `(user@host) Password:` its
+// keyboard-interactive one (the client puts them in front of the server's own prompt text).
 const PROMPTS: { re: RegExp; kind: SecretPromptKind; ambiguous: boolean }[] = [
   { re: /^\[sudo\] (?:password for|palavra-passe para|senha para) [^\s:]+:\s*$/i, kind: 'sudo', ambiguous: false },
-  { re: /^Enter passphrase for (?:key )?'[^']+':\s*$/i, kind: 'passphrase', ambiguous: false },
+  { re: /^Enter passphrase for (?:key )?'([^']+)':\s*$/i, kind: 'passphrase', ambiguous: false },
   { re: /^([^\s@']+)@([^\s@']+)'s password:\s*$/i, kind: 'login', ambiguous: false },
+  { re: /^\(([^\s@'()]+)@([^\s@'()]+)\) (?:password|palavra-passe|senha):\s*$/i, kind: 'login', ambiguous: false },
   { re: /^(?:password|palavra-passe|senha):\s*$/i, kind: 'sudo', ambiguous: true }
 ]
 
@@ -98,6 +103,7 @@ export function matchSecretPrompt(tail: string, self?: PromptSelf): SecretPrompt
       if (!self) return null
       if (m[1].toLowerCase() !== self.username.toLowerCase() || bareHost(m[2]) !== bareHost(self.host)) return null
     }
+    if (p.kind === 'passphrase') return { kind: p.kind, ambiguous: p.ambiguous, keyPath: m[1] }
     return { kind: p.kind, ambiguous: p.ambiguous }
   }
   return null
@@ -192,5 +198,240 @@ export class SecretSendGuard {
   forget(id: string): void {
     this.lastSend.delete(id)
     this.noPromptAt.delete(id)
+  }
+}
+
+/** Whether a send-secret call's options ask for a forced send. Shape-checked: they come over
+ *  IPC. */
+export function wantsForce(opts: unknown): boolean {
+  return opts !== null && typeof opts === 'object' && (opts as { force?: unknown }).force === true
+}
+
+/** A saved host as the send decision reads it: its secrets, and its user and address for the
+ *  `user@host's password:` check. */
+export type SendSecretHost = SecretSource & PromptSelf
+
+export type SecretSendDecision =
+  /** Write exactly this to the terminal (the secret, with Enter when a prompt was seen). */
+  | { write: string }
+  | { reason: 'no-secret' | 'no-prompt' | 'rate-limited' }
+
+/**
+ * The "Send password" decision, shared by the Remote Session shells (remote-shell.ts) and the
+ * remote chats' ssh terminals (terminal.ts) so both apply the same guard:
+ *  - one write per terminal per second;
+ *  - a prompt on the last line gets the secret it asks for, followed by Enter;
+ *  - no prompt: refuse with `no-prompt` and open the force window;
+ *  - a forced send only inside that window, typing the elevation or login password WITHOUT
+ *    Enter so a mistake can be erased with Ctrl+U.
+ * The caller writes `write` and then calls `guard.noteSent`; nothing here touches a terminal.
+ */
+export function decideSecretSend(
+  guard: SecretSendGuard,
+  id: string,
+  tail: string,
+  host: SendSecretHost | null,
+  force: boolean,
+  now: number
+): SecretSendDecision {
+  if (guard.rateLimited(id, now)) return { reason: 'rate-limited' }
+  if (!host) return { reason: 'no-secret' }
+  // A nested ssh's `user@host's password:` that is not this host is no prompt, so it answers
+  // no-prompt and only a confirmed forced send can type into it.
+  const match = matchSecretPrompt(tail, { username: host.username, host: host.host })
+  if (match) {
+    const secret = secretForPrompt(match, host)
+    return secret ? { write: secret + '\r' } : { reason: 'no-secret' }
+  }
+  if (!force) {
+    guard.noteNoPrompt(id, now)
+    return { reason: 'no-prompt' }
+  }
+  // A force that did not follow a no-prompt answer is refused without opening a window of
+  // its own, so two forced calls in a row cannot skip the guard.
+  if (!guard.canForce(id, now)) return { reason: 'no-prompt' }
+  const secret = secretForForcedSend(host)
+  return secret ? { write: secret } : { reason: 'no-secret' }
+}
+
+// ─── The remote chats' ssh login ────────────────────────────────────────────
+
+/** How long after the ssh terminal is spawned its login prompt may be answered on its own. */
+export const LOGIN_WINDOW_MS = 30_000
+
+export type LoginSecretKind = 'login' | 'passphrase'
+
+/** Windows paths compare without regard to case or slash direction. */
+function normalisePath(p: string): string {
+  return p.replace(/\//g, '\\').toLowerCase()
+}
+
+/** Whether a passphrase prompt names this key. ssh prints at most the first 100 bytes of the
+ *  path, so the printed one only has to begin the expected one; a cut through a multi-byte
+ *  character (an accented user name) leaves a replacement character at the end, dropped here. */
+function sameKeyFile(shown: string | undefined, expected: string): boolean {
+  if (!shown) return false
+  const s = normalisePath(shown.replace(/�+$/, ''))
+  return s.length > 0 && normalisePath(expected).startsWith(s)
+}
+
+/**
+ * Which saved secret ssh's own login prompt on the tail's last line asks for, or null when it
+ * is not such a prompt or the host has nothing for it. Deliberately not secretForPrompt: at
+ * login a bare `Password:` (keyboard-interactive on an older client, or a PAM prompt) is the
+ * login password, never the elevation one, and a `[sudo]` prompt is never answered at all.
+ *  - `user@host's password:` and `(user@host) Password:` count only for this host's user;
+ *  - the login password only on a password host, the passphrase only on a key host and only
+ *    for the key file the host names (`keyPath`, `~` already expanded by the caller).
+ */
+export function loginPromptSecret(
+  tail: string,
+  host: { authType: SshAuthType; username: string; host: string; password?: string; passphrase?: string },
+  keyPath?: string
+): { kind: LoginSecretKind; secret: string } | null {
+  const match = matchSecretPrompt(tail, { username: host.username, host: host.host })
+  if (!match) return null
+  const login = match.kind === 'login' || (match.kind === 'sudo' && match.ambiguous)
+  if (login) {
+    return host.authType === 'password' && host.password ? { kind: 'login', secret: host.password } : null
+  }
+  if (match.kind === 'passphrase') {
+    if (host.authType !== 'key' || !host.passphrase || !keyPath || !sameKeyFile(match.keyPath, keyPath)) return null
+    return { kind: 'passphrase', secret: host.passphrase }
+  }
+  return null
+}
+
+/**
+ * The one automatic answer an ssh chat terminal gets: armed when the pty is spawned, it lets
+ * the caller answer ssh's login prompt once, inside the first LOGIN_WINDOW_MS. The answer is
+ * acceptable here because ssh has already checked the server's key against Argos' trusted
+ * list before it asks, and the secret is that server's own. After the answer it is spent: a
+ * second prompt means the secret was wrong, and replaying it only burns tries, so it is the
+ * user's turn. Anything the user types also ends it.
+ */
+export class LoginAutoAnswer {
+  private spent = false
+
+  constructor(
+    private readonly startedAt: number,
+    private readonly windowMs: number = LOGIN_WINDOW_MS
+  ) {}
+
+  /** Whether an answer may still be given at `now`. */
+  armed(now: number): boolean {
+    if (this.spent) return false
+    if (now - this.startedAt > this.windowMs || now < this.startedAt) this.spent = true
+    return !this.spent
+  }
+
+  /**
+   * Called with the terminal's tail after each chunk of output. `pick` reads the prompt and
+   * the secret (loginPromptSecret, given the host); it runs only while armed, so the store is
+   * not read for every chunk of a long session. Returns what to write, once.
+   */
+  answer<T extends { secret: string }>(now: number, pick: () => T | null): T | null {
+    if (!this.armed(now)) return null
+    const found = pick()
+    if (!found) return null
+    this.spent = true
+    return found
+  }
+
+  /** The user typed, or the terminal is going away. */
+  disarm(): void {
+    this.spent = true
+  }
+}
+
+/** What wrote to a held ssh terminal: the CLI launch line Argos types, a key the user
+ *  pressed, or xterm answering a query (focus, cursor position). */
+export type HeldWriteSource = 'launch' | 'user' | 'report'
+
+// ssh's own words for a refused login. Seen before the next prompt (or before ssh gives up),
+// they are not the shell starting.
+const AUTH_FAILED_RE = /permission denied|please try again|authentication failed|too many authentication failures|connection closed|connection reset/i
+
+// Bracketed paste switched on: what bash and zsh print as their prompt appears, so the remote
+// shell is up even when no answer was needed (a key the agent held, say).
+const SHELL_READY_RE = /\x1b\[\?2004h/
+
+/**
+ * Holds what the renderer writes to an ssh chat terminal while its login is still being
+ * answered, so the CLI launch line (typed about 600 ms after spawn) can never be read by ssh
+ * as a password, and is not lost: Windows ssh drops anything typed before it asks, and takes
+ * anything typed while it asks as the answer. Used only when the login answer is armed.
+ *
+ * Phases:
+ *  - `waiting`: no answer yet. Everything is queued.
+ *  - `answered`: the saved secret went in. Everything is queued until the shell shows.
+ *  - `user`: a prompt the auto-answer did not take (a refused secret asked again, or the user
+ *    typed first). The user's keys pass straight through, since they are the password; keys
+ *    queued earlier are dropped rather than typed into that prompt; the launch line stays
+ *    queued until the shell shows.
+ *  - `open`: the shell is up, or the hold timed out away from a prompt. Everything passes, and
+ *    the queue is flushed once, in order.
+ * Answers to terminal queries are dropped while held: they answer a screen that is gone.
+ */
+export class LoginHold {
+  private phase: 'waiting' | 'answered' | 'user' | 'open' = 'waiting'
+  private queue: { data: string; source: HeldWriteSource }[] = []
+
+  get open(): boolean {
+    return this.phase === 'open'
+  }
+
+  /** A write from the renderer or the launch. True when it may go to the pty now. */
+  write(data: string, source: HeldWriteSource): boolean {
+    if (this.phase === 'open') return true
+    if (this.phase === 'user' && source !== 'launch') return true
+    if (source !== 'report') this.queue.push({ data, source })
+    return false
+  }
+
+  /** The auto-answer just wrote the secret. */
+  answered(): void {
+    if (this.phase === 'waiting') this.phase = 'answered'
+  }
+
+  /**
+   * Output arrived. `raw` is the chunk as received, `atPrompt` whether the tail's last line is
+   * a password prompt after the auto-answer had its chance at it. Returns what to write now
+   * (the flushed queue), or null.
+   */
+  output(raw: string, atPrompt: boolean): string[] | null {
+    if (this.phase === 'open') return null
+    if (atPrompt) {
+      // A prompt still showing after the auto-answer looked at it is the user's to answer.
+      if (this.phase !== 'user') this.toUser()
+      return null
+    }
+    const text = stripAnsi(raw).trim()
+    const shellStarted =
+      SHELL_READY_RE.test(raw) || (this.phase !== 'waiting' && text !== '' && !AUTH_FAILED_RE.test(text))
+    return shellStarted ? this.release() : null
+  }
+
+  /** The login window ran out. Away from a prompt the queue goes out; at one, it waits for the
+   *  shell like a refused answer does. */
+  expire(atPrompt: boolean): string[] | null {
+    if (this.phase === 'open') return null
+    if (atPrompt) {
+      if (this.phase !== 'user') this.toUser()
+      return null
+    }
+    return this.release()
+  }
+
+  private toUser(): void {
+    this.phase = 'user'
+    this.queue = this.queue.filter((w) => w.source === 'launch')
+  }
+
+  private release(): string[] {
+    this.phase = 'open'
+    const out = this.queue.map((w) => w.data)
+    this.queue = []
+    return out
   }
 }
