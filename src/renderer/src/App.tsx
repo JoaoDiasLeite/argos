@@ -3050,7 +3050,7 @@ export default function App() {
       {activeGroup && view !== 'remote-session' && !(view === 'ops-workspace' && opsWorkspace) && (
         <div className="view-with-subnav">
           <div className="view-subnav">
-            <div className="seg-control" role="tablist" aria-label={t(activeGroup.label)}>
+            <div className="seg-control seg-tabs" role="tablist" aria-label={t(activeGroup.label)}>
               {activeGroup.members.map((m) => (
                 <button
                   key={m}

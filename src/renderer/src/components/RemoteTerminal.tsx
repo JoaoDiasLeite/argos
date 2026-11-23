@@ -222,12 +222,23 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
         // container mid-layout — ignore
       }
     }
-    const ro = new ResizeObserver(() => doFit())
+    // Debounced, and skipped while a divider is dragged (the session's pane handle sets
+    // paneDrag, as PaneSplitter does): every fit sends a window change over SSH, and a drag
+    // would send one per frame. The drag gets one fit when it ends (panedragend).
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null
+    const ro = new ResizeObserver(() => {
+      if (document.body.dataset.paneDrag === '1') return
+      if (resizeTimer) clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(doFit, 70)
+    })
     ro.observe(host)
     requestAnimationFrame(() => requestAnimationFrame(doFit))
+    window.addEventListener('panedragend', doFit)
 
     return () => {
       ro.disconnect()
+      if (resizeTimer) clearTimeout(resizeTimer)
+      window.removeEventListener('panedragend', doFit)
       host.removeEventListener('contextmenu', onContextMenu)
       host.removeEventListener('mousedown', swallowRightButton, true)
       host.removeEventListener('mouseup', swallowRightButton, true)
