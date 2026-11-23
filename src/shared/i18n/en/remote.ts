@@ -222,6 +222,17 @@ export default {
   'terminal.connecting': 'Connecting…',
   'terminal.exited': 'The shell exited.',
   'terminal.reconnect': 'Reconnect',
+  'terminal.sendSecret': 'Send password',
+  'terminal.sendSecretPrompt': 'Send password (the terminal is asking for one)',
+  'terminal.elevate': 'Elevate ({command})',
+  'terminal.elevateTitle': 'Type {command} and answer its password prompt once',
+  'terminal.secretNoPrompt':
+    "The terminal doesn't seem to be asking for a password. If you send it now, it may show on screen and end up in the shell history. It goes without Enter, so you can erase it with Ctrl+U.",
+  'terminal.secretSendAnyway': 'Send anyway',
+  'terminal.secretCancel': 'Cancel',
+  'terminal.secretNone': 'There is no saved password for this prompt.',
+  'terminal.secretRateLimited': 'Wait a moment before sending again.',
+  'terminal.secretFailed': 'Could not send the password.',
   // components/SftpBrowser and LocalBrowser
   'sftp.listFailed': 'Failed to list directory',
   'sftp.deleteFailed': 'Delete failed',

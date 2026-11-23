@@ -601,5 +601,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const fn = (_: unknown, data: unknown) => cb(data)
     ipcRenderer.on('remote-shell:exit', fn)
     return () => ipcRenderer.removeListener('remote-shell:exit', fn)
+  },
+  // The secret itself never crosses here: main picks it from the host and types it.
+  remoteShellSendSecret: (id: string, opts?: { force?: boolean }) => ipcRenderer.invoke('remote-shell:send-secret', id, opts),
+  remoteShellElevate: (id: string) => ipcRenderer.invoke('remote-shell:elevate', id),
+  onRemoteShellSecretHint: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('remote-shell:secret-hint', fn)
+    return () => ipcRenderer.removeListener('remote-shell:secret-hint', fn)
   }
 })

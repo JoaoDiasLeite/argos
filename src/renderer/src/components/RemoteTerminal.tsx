@@ -8,8 +8,11 @@ import { registerOsc52Copy } from '../lib/osc52'
 import { registerCwdReports } from '../lib/terminal-cwd'
 import { registerTerminalLinks } from '../lib/terminal-links'
 import { useT } from '../i18n'
-import type { RemoteContainerTarget } from '../types'
+import type { RemoteContainerTarget, RemoteShellSecretHintEvent, SshHostPublic } from '../types'
 import './ChatTerminal.css'
+
+/** Only flags: the renderer never holds a host's secrets. */
+type SecretFlags = Pick<SshHostPublic, 'hasPassword' | 'hasPassphrase' | 'hasElevation' | 'elevateCommand'>
 
 interface Props {
   /** Stable id for this shell channel (e.g. `remoteterm_<hostId>`). */
@@ -31,6 +34,9 @@ interface Props {
   onCwdChange?: (path: string) => void
   /** A container tab: the channel runs that container's shell instead of the login shell. */
   container?: RemoteContainerTarget
+  /** The host's saved-secret flags, for the "Send password" and "Elevate" actions. Main
+   *  picks and types the secret itself; these only decide which buttons show. */
+  secrets?: SecretFlags | null
 }
 
 /**
@@ -67,7 +73,7 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function RemoteTerminal({ terminalId, hostId, active, closable = true, onClose, onCwdChange, container }: Props) {
+export default function RemoteTerminal({ terminalId, hostId, active, closable = true, onClose, onCwdChange, container, secrets }: Props) {
   const t = useT()
   // Read from the one-shot setup effect, which cannot close over a prop.
   const onCwdRef = useRef(onCwdChange)
@@ -90,6 +96,10 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null)
   const awaitingRevealRef = useRef(false)
   const quietTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  // Main's hint that the shell sits at a password prompt: it only lights the key button up.
+  const [secretHint, setSecretHint] = useState<RemoteShellSecretHintEvent['kind']>(null)
+  // The "send anyway?" confirmation after a no-prompt answer, or a short note on a refusal.
+  const [secretPanel, setSecretPanel] = useState<'confirm' | { note: string } | null>(null)
 
   // Create the xterm instance once for this component's lifetime.
   useEffect(() => {
@@ -290,6 +300,8 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
     idRef.current = terminalId
     setExited(false)
     setStarting(true)
+    setSecretHint(null)
+    setSecretPanel(null)
     term.reset()
 
     let cols = term.cols
@@ -328,9 +340,15 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
     const offExit = window.electronAPI.onRemoteShellExit((e) => {
       if (e.id !== terminalId) return
       setExited(true)
+      setSecretHint(null)
+      setSecretPanel(null)
       term.write(
         `\r\n\x1b[2m[${e.code ? tRef.current('remote.terminal.closedCode', { code: e.code }) : tRef.current('remote.terminal.closed')}]\x1b[0m\r\n`
       )
+    })
+
+    const offHint = window.electronAPI.onRemoteShellSecretHint((e) => {
+      if (e.id === terminalId) setSecretHint(e.kind)
     })
 
     // Set by the cleanup: a create still connecting when the effect tears down is killed in
@@ -357,15 +375,83 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
       awaitingRevealRef.current = false
       offData()
       offExit()
+      offHint()
       window.electronAPI.remoteShellKill(terminalId)
     }
   }, [terminalId, hostId, reloadKey])
+
+  // A refusal note clears itself; the confirmation waits for an answer.
+  useEffect(() => {
+    if (!secretPanel || secretPanel === 'confirm') return
+    const timer = setTimeout(() => setSecretPanel(null), 4000)
+    return () => clearTimeout(timer)
+  }, [secretPanel])
+
+  // Local container ptys have no host, so no secret to send.
+  const canSendSecret = hostId !== null && !!secrets && (secrets.hasPassword || secrets.hasPassphrase || secrets.hasElevation)
+  const canElevate = hostId !== null && !!secrets?.hasElevation
+  // Shown as main will type it (elevateCommandFor falls back to the same default).
+  const elevateCommand = secrets?.elevateCommand ?? 'sudo -i'
+
+  const secretNote = (reason: string): string =>
+    reason === 'no-secret'
+      ? t('remote.terminal.secretNone')
+      : reason === 'rate-limited'
+        ? t('remote.terminal.secretRateLimited')
+        : t('remote.terminal.secretFailed')
+
+  // Main checks the prompt and picks the secret; a no-prompt answer asks before a forced send
+  // (which goes without Enter). Nothing is ever sent without this click.
+  const sendSecret = async (force: boolean): Promise<void> => {
+    setSecretPanel(null)
+    const res = await window.electronAPI.remoteShellSendSecret(terminalId, force ? { force: true } : undefined)
+    if (!res.ok && res.reason === 'no-prompt' && !force) {
+      setSecretPanel('confirm')
+      return
+    }
+    if (res.ok) setSecretHint(null)
+    else setSecretPanel({ note: secretNote(res.reason) })
+    termRef.current?.focus()
+  }
+
+  const elevate = async (): Promise<void> => {
+    setSecretPanel(null)
+    const res = await window.electronAPI.remoteShellElevate(terminalId)
+    if (!res.ok) setSecretPanel({ note: secretNote(res.reason) })
+    termRef.current?.focus()
+  }
 
   return (
     <div className="chat-terminal">
       <div className="chat-terminal-bar">
         <span className="chat-terminal-label">{t('remote.terminal.label')}</span>
         <div className="chat-terminal-actions">
+          {canElevate && (
+            <button
+              className="btn-ghost small"
+              onClick={() => void elevate()}
+              // At a password prompt the command would be typed in as a wrong password.
+              disabled={exited || !!secretHint}
+              title={t('remote.terminal.elevateTitle', { command: elevateCommand })}
+            >
+              {t('remote.terminal.elevate', { command: elevateCommand })}
+            </button>
+          )}
+          {canSendSecret && (
+            <button
+              className={`chat-terminal-btn${secretHint ? ' is-prompting' : ''}`}
+              onClick={() => void sendSecret(false)}
+              disabled={exited}
+              title={secretHint ? t('remote.terminal.sendSecretPrompt') : t('remote.terminal.sendSecret')}
+              aria-label={t('remote.terminal.sendSecret')}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="7.5" cy="15.5" r="5.5" />
+                <path d="m21 2-9.6 9.6" />
+                <path d="m15.5 7.5 3 3L22 7l-3-3" />
+              </svg>
+            </button>
+          )}
           <div className="chat-terminal-fontsize">
             <button
               className="chat-terminal-btn"
@@ -412,6 +498,31 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
       </div>
       <div className="chat-terminal-host-wrap">
         <div ref={hostRef} className="chat-terminal-host" />
+        {secretPanel === 'confirm' && (
+          <div className="chat-terminal-secret-pop" role="alertdialog" aria-label={t('remote.terminal.sendSecret')}>
+            <p>{t('remote.terminal.secretNoPrompt')}</p>
+            <div className="chat-terminal-secret-pop-actions">
+              <button
+                className="btn-ghost small"
+                autoFocus
+                onClick={() => {
+                  setSecretPanel(null)
+                  termRef.current?.focus()
+                }}
+              >
+                {t('remote.terminal.secretCancel')}
+              </button>
+              <button className="btn-primary small" onClick={() => void sendSecret(true)}>
+                {t('remote.terminal.secretSendAnyway')}
+              </button>
+            </div>
+          </div>
+        )}
+        {secretPanel && secretPanel !== 'confirm' && (
+          <div className="chat-terminal-secret-pop" role="status">
+            <p>{secretPanel.note}</p>
+          </div>
+        )}
         {starting && !exited && (
           <div className="chat-terminal-loading">
             <div className="chat-terminal-spinner" />
