@@ -17,6 +17,7 @@ import {
   OpsRunListItem,
   OpsOperatorRequest,
   OpsSecretRequest,
+  HostSecretRequest,
   GitFile
 } from './types'
 import Sidebar from './components/Sidebar'
@@ -426,20 +427,36 @@ export default function App() {
     })
   }, [])
   const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([])
-  // Sudo-password requests from ops runs, answered one at a time (head of the queue).
-  const [secretQueue, setSecretQueue] = useState<OpsSecretRequest[]>([])
+  // Masked secret prompts, answered one at a time (head of the queue): sudo passwords from ops
+  // runs, and the secrets a connecting Remote Session asks for (`source: 'host'`). Each goes
+  // back on its own channel.
+  const [secretQueue, setSecretQueue] = useState<(OpsSecretRequest | HostSecretRequest)[]>([])
   useEffect(() => {
-    const bySecretId = (r: OpsSecretRequest): string => r.requestId
+    const bySecretId = (r: OpsSecretRequest | HostSecretRequest): string => r.requestId
     const off = window.electronAPI.onOpsSecretRequest((req) => setSecretQueue((q) => mergeById(q, [req], bySecretId)))
+    const offHost = window.electronAPI.onHostSecretRequest((req) => setSecretQueue((q) => mergeById(q, [req], bySecretId)))
+    // Main stopped waiting (the session was closed while connecting): the prompt goes too.
+    const offCancel = window.electronAPI.onHostSecretCancel(({ requestId }) =>
+      setSecretQueue((q) => q.filter((r) => r.requestId !== requestId))
+    )
     // A reload lost the queue: pull back what main still waits on (a push can race it).
     window.electronAPI
       .opsPending()
-      .then((p) => setSecretQueue((q) => mergeById(q, p.secrets, bySecretId)))
+      .then((p) => setSecretQueue((q) => mergeById(mergeById(q, p.secrets, bySecretId), p.hostSecrets ?? [], bySecretId)))
       .catch(() => undefined)
-    return off
+    return () => {
+      off()
+      offHost()
+      offCancel()
+    }
   }, [])
-  const answerSecret = (requestId: string, value: string | null) => {
-    void window.electronAPI.respondOpsSecret({ requestId, value })
+  const answerSecret = (request: OpsSecretRequest | HostSecretRequest, value: string | null, save: boolean) => {
+    const { requestId } = request
+    if ('source' in request && request.source === 'host') {
+      void window.electronAPI.respondHostSecret({ requestId, value, save })
+    } else {
+      void window.electronAPI.respondOpsSecret({ requestId, value })
+    }
     setSecretQueue((q) => q.filter((r) => r.requestId !== requestId))
   }
   // The model's ask_operator requests: a command for the operator to run in their own
@@ -3242,7 +3259,7 @@ export default function App() {
         <SecretPrompt
           key={secretQueue[0].requestId}
           request={secretQueue[0]}
-          onSubmit={(value) => answerSecret(secretQueue[0].requestId, value)}
+          onSubmit={(value, save) => answerSecret(secretQueue[0], value, save)}
         />
       )}
       {/* While a password is being asked, the approval modal waits: its window-level Esc would

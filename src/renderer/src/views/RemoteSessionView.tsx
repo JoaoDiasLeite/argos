@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { RemoteTarget, type RemoteContainerTarget } from '../types'
+import { RemoteTarget, type HostSecretFlags, type RemoteContainerTarget } from '../types'
 import ChatTerminal from '../components/ChatTerminal'
 import RemoteTerminal from '../components/RemoteTerminal'
 import SftpBrowser from '../components/SftpBrowser'
@@ -218,6 +218,18 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
   // Note there's deliberately no disconnect in the cleanup: that ssh2 client is shared by
   // every session on the host, so tearing it down here would kill a sibling session's
   // terminal. App.tsx's closeServerSession drops it once the last one is gone.
+  // What the terminal's Send password and Elevate can use, asked of main once connected: a
+  // password typed at the connect prompt (kept in memory, or just saved) is not in the host
+  // list this view was opened with. Flags only, never the secret.
+  const [secretFlags, setSecretFlags] = useState<HostSecretFlags | null>(null)
+  const refreshSecretFlags = () => {
+    if (!isSsh) return
+    window.electronAPI
+      .sshSecretFlags(target.host.id)
+      .then(setSecretFlags)
+      .catch(() => undefined)
+  }
+
   useEffect(() => {
     let cancelled = false
     if (!isSsh) {
@@ -239,6 +251,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     window.electronAPI.sftpConnect(hostId).then((res) => {
       if (cancelled) return
       if (res.ok) {
+        refreshSecretFlags()
         setStatus('connected')
         homeRef.current = res.home ?? null
         // Where the login shell starts, so the two panes agree from the first prompt.
@@ -320,6 +333,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     setStatusError(null)
     window.electronAPI.sftpConnect(target.host.id).then((res) => {
       if (res.ok) {
+        refreshSecretFlags()
         setStatus('connected')
         homeRef.current = res.home ?? null
         setCwd(res.home || target.host.remotePath || '/')
@@ -510,7 +524,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
             "close" that only went back to the targets list read as if it had. */}
         <div className="remote-session-right">
           {isSsh ? (
-            <RemoteTerminal terminalId={terminalId} hostId={target.host.id} active={active} closable={false} onCwdChange={followShell} secrets={target.host} />
+            <RemoteTerminal terminalId={terminalId} hostId={target.host.id} active={active} closable={false} onCwdChange={followShell} secrets={secretFlags ? { ...target.host, ...secretFlags } : target.host} />
           ) : (
             <ChatTerminal
               terminalId={terminalId}

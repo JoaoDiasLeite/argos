@@ -153,6 +153,12 @@ export default {
   'ssh.claudeNoOutput': 'claude produced no output',
   'ssh.timedOut': 'No answer from the server within 20 s',
   'ssh.notTrusted': "The server's host key is not trusted; the terminal was not opened",
+  'ssh.noSavedPassword': 'No saved password: Argos asks for it when you open a session on this server',
+  'ssh.noSavedPassphrase': "The key is encrypted and its passphrase is not saved: Argos asks for it when you open a session on this server",
+  'ssh.connectCancelled': 'Connection cancelled',
+  'ssh.closedEarly': 'The server closed the connection before the check finished',
+  'ssh.askPassword': 'Password for {user}@{host}',
+  'ssh.askPassphrase': 'Passphrase for the private key of {user}@{host}',
   'ssh.invalid.username':
     'Invalid username: use letters, numbers, ".", "_", "-", "@" or "\\", and do not start with "-".',
   'ssh.invalid.host': 'Invalid host: use a hostname, an IPv4 address or an IPv6 address, without spaces or a leading "-".',

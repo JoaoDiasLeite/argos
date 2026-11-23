@@ -404,6 +404,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sshKeysGenerate: (name: string, comment?: string) =>
     ipcRenderer.invoke('ssh:keys-generate', name, comment),
   sshSecretStorage: () => ipcRenderer.invoke('ssh:secret-storage'),
+  sshSecretFlags: (hostId: string) => ipcRenderer.invoke('ssh:secret-flags', hostId),
 
   // SFTP (Remote Session file browser)
   sftpConnect: (hostId: string) => ipcRenderer.invoke('sftp:connect', hostId),
@@ -453,6 +454,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   respondOpsSecret: (payload: { requestId: string; value: string | null }) =>
     ipcRenderer.invoke('ops:secret-response', payload),
+  // A Remote Session that is connecting asks for a secret (a password nobody saved, a key's
+  // passphrase, a keyboard-interactive question). null = cancelled. The answer only ever goes
+  // this way, renderer to main.
+  onHostSecretRequest: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('ssh:secret-request', fn)
+    return () => ipcRenderer.removeListener('ssh:secret-request', fn)
+  },
+  // Main stopped waiting (the connection was abandoned): drop the prompt.
+  onHostSecretCancel: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('ssh:secret-cancel', fn)
+    return () => ipcRenderer.removeListener('ssh:secret-cancel', fn)
+  },
+  respondHostSecret: (payload: { requestId: string; value: string | null; save: boolean }) =>
+    ipcRenderer.invoke('ssh:secret-response', payload),
   // ask_operator: a command for the operator to run in their own session. null = declined.
   onOpsOperatorRequest: (cb: (data: unknown) => void) => {
     const fn = (_: unknown, data: unknown) => cb(data)

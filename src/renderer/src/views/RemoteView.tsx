@@ -1225,6 +1225,7 @@ export default function RemoteView({
                   placeholder={editing.password === null ? t('remote.form.removed') : editing.id ? t('remote.form.unchanged') : ''}
                   onChange={(e) => setEditing({ ...editing, password: e.target.value })}
                 />
+                <p className="help">{t('remote.form.passwordAskHelp')}</p>
                 {!secretsEncrypted && <p className="help">{t('remote.form.passwordPlain')}</p>}
                 {canRemovePassword && editing.password === undefined && (
                   <button type="button" className="btn-ghost small rv-remove-secret" onClick={() => setEditing({ ...editing, password: null })}>

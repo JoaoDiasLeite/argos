@@ -1,7 +1,7 @@
 import { ClientChannel } from 'ssh2'
 import * as os from 'os'
 import * as pty from 'node-pty'
-import { getRemoteClient } from './sftp'
+import { getHostWithSessionSecrets, getRemoteClient } from './sftp'
 import { ShellRegistry, type CreateResult } from './remote-shell-pure'
 import { containerShellArgs, containerShellCommand, type ContainerRuntime } from './remote-containers-pure'
 import { resolveWindowsExe } from './terminal'
@@ -128,7 +128,7 @@ function feedOutput(id: string, channel: ShellChannel, data: string): void {
   const match = matchSecretPrompt(st.tail, st.self ?? undefined)
   if (st.armed && match && (match.kind === 'sudo' || match.kind === 'login')) {
     disarm(st)
-    const host = getHost(st.hostId)
+    const host = getHostWithSessionSecrets(st.hostId)
     const secret = host ? elevationSecret(host) : undefined
     if (secret && writeSecret(id, st, secret + '\r')) return
   }
@@ -170,7 +170,8 @@ export function remoteShellCreate(
   // the same id joins this one rather than opening a second channel. A live id resolves ok
   // straight away (benign re-create).
   return shells.create(id, async (ticket) => {
-    const res = await getRemoteClient(hostId)
+    // The user opened this terminal: the connection may ask for a missing password.
+    const res = await getRemoteClient(hostId, { interactive: true })
     if (!res.ok) return { ok: false, error: res.error }
     if (ticket.killed) return { ok: false, error: KILLED_ERROR }
 
@@ -363,7 +364,9 @@ function hostShellFor(id: unknown): HostShellState | { reason: 'unknown-shell' |
  * the user may confirm a forced send, which types the elevation or login password WITHOUT
  * Enter so a mistake can be erased with Ctrl+U. If a prompt has appeared by the time the
  * forced send arrives, it is answered normally instead. The secret is read from the store
- * here, written to the channel and dropped: never returned, logged or put in an event.
+ * here, written to the channel and dropped: never returned, logged or put in an event. A
+ * password typed at the connect prompt and not saved counts as the login password while its
+ * connection lives (getHostWithSessionSecrets).
  */
 export function remoteShellSendSecret(id: unknown, opts: unknown): SendSecretResult {
   const st = hostShellFor(id)
@@ -373,7 +376,7 @@ export function remoteShellSendSecret(id: unknown, opts: unknown): SendSecretRes
   const force = opts !== null && typeof opts === 'object' && (opts as { force?: unknown }).force === true
   const now = Date.now()
   if (sendGuard.rateLimited(sid, now)) return { ok: false, reason: 'rate-limited' }
-  const host = getHost(st.hostId)
+  const host = getHostWithSessionSecrets(st.hostId)
   if (!host) return { ok: false, reason: 'no-secret' }
 
   // Read fresh here: a nested ssh's `user@host's password:` that is not this host is no
@@ -413,7 +416,7 @@ export function remoteShellElevate(id: unknown): ElevateResult {
   if ('reason' in st) return { ok: false, reason: st.reason }
   const sid = id as string
   if (sendGuard.rateLimited(sid, Date.now())) return { ok: false, reason: 'rate-limited' }
-  const host = getHost(st.hostId)
+  const host = getHostWithSessionSecrets(st.hostId)
   if (!host || !elevationSecret(host)) return { ok: false, reason: 'no-secret' }
   disarm(st)
   try {
