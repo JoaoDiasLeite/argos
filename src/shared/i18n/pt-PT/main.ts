@@ -142,6 +142,8 @@ const main: Record<keyof typeof en, string> = {
   'containers.failed': 'O {runtime} está instalado mas não deu para listar os containers (nem com sudo sem palavra-passe): {detail}',
   'containers.invalid': 'Não é um container que a app consiga abrir',
   'containers.garbled': 'O servidor não respondeu à listagem de containers como esperado',
+  'containers.localFailed': 'O {runtime} não conseguiu listar os containers deste computador: {detail}',
+  'containers.localTimedOut': 'O {runtime} não respondeu em 15 s',
 
   'ssh.hostNotFound': 'Anfitrião não encontrado',
   'ssh.connectedAs': 'Ligado como {user}@{host}:{port} em {ms} ms',

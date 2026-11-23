@@ -1,7 +1,10 @@
 import { ClientChannel } from 'ssh2'
+import * as os from 'os'
+import * as pty from 'node-pty'
 import { getRemoteClient } from './sftp'
 import { ShellRegistry, type CreateResult } from './remote-shell-pure'
-import { containerShellCommand, type ContainerRuntime } from './remote-containers-pure'
+import { containerShellArgs, containerShellCommand, type ContainerRuntime } from './remote-containers-pure'
+import { resolveWindowsExe } from './terminal'
 import { t } from './i18n'
 
 /**
@@ -22,7 +25,24 @@ function isSafeId(id: unknown): id is string {
 
 const KILLED_ERROR = 'Terminal closed before it started'
 
-const shells = new ShellRegistry<ClientChannel>()
+/** What the registry holds: an ssh2 channel, or the pty of a shell in a container on this
+ *  computer (localContainerShellCreate). Write, resize and kill go through it alike. */
+interface ShellChannel {
+  write(data: string): void
+  resize(cols: number, rows: number): void
+  end(): void
+}
+
+const shells = new ShellRegistry<ShellChannel>()
+
+function sshChannel(stream: ClientChannel): ShellChannel {
+  return {
+    write: (data) => stream.write(data),
+    // ssh2 ClientChannel#setWindow arg order: rows, cols, height (px), width (px).
+    resize: (cols, rows) => stream.setWindow(rows, cols, 0, 0),
+    end: () => stream.end()
+  }
+}
 
 export function remoteShellCreate(
   id: string,
@@ -67,7 +87,8 @@ export function remoteShellCreate(
             resolve({ ok: false, error: err.message })
             return
           }
-          if (!shells.adopt(id, ticket, stream)) {
+          const channel = sshChannel(stream)
+          if (!shells.adopt(id, ticket, channel)) {
             try {
               stream.close()
             } catch {
@@ -86,7 +107,7 @@ export function remoteShellCreate(
           stream.on('close', () => {
             // Only a channel the far end closed reports an exit; one we killed (or one a
             // fresh create already replaced) stays quiet towards the id's new owner.
-            if (shells.release(id, stream)) onExit(id, exitCode)
+            if (shells.release(id, channel)) onExit(id, exitCode)
           })
           resolve({ ok: true })
         })
@@ -97,13 +118,70 @@ export function remoteShellCreate(
   })
 }
 
+/**
+ * A shell inside a container on THIS computer, for the Servers screen's local containers:
+ * a pty running `<runtime> exec -it <id> sh -c …` from an argument vector, built here from
+ * the validated id only. It shares the registry (and so write, resize and kill) with the
+ * ssh channels; RemoteTerminal reaches it with a null host.
+ */
+export function localContainerShellCreate(
+  id: string,
+  cols: number,
+  rows: number,
+  onData: (id: string, data: string) => void,
+  onExit: (id: string, code: number) => void,
+  container: unknown
+): Promise<CreateResult> {
+  if (!isSafeId(id)) return Promise.resolve({ ok: false, error: t('main.terminal.invalidIdShort') })
+  const c = container !== null && typeof container === 'object' ? (container as { runtime?: unknown; id?: unknown }) : null
+  const runtime = c?.runtime === 'docker' || c?.runtime === 'podman' ? c.runtime : null
+  const args = runtime && typeof c?.id === 'string' ? containerShellArgs(runtime, c.id) : null
+  if (!runtime || !args) return Promise.resolve({ ok: false, error: t('main.containers.invalid') })
+
+  return shells.create(id, async (ticket) => {
+    if (ticket.killed) return { ok: false, error: KILLED_ERROR }
+    let p: pty.IPty
+    try {
+      const env: Record<string, string> = {}
+      for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
+      p = pty.spawn(resolveWindowsExe(process.platform === 'win32' ? `${runtime}.exe` : runtime), args, {
+        name: 'xterm-color',
+        cols: Number.isInteger(cols) && cols > 0 ? cols : 80,
+        rows: Number.isInteger(rows) && rows > 0 ? rows : 24,
+        cwd: os.homedir(),
+        env
+      })
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+    const channel: ShellChannel = {
+      write: (data) => p.write(data),
+      resize: (c2, r2) => p.resize(c2, r2),
+      end: () => p.kill()
+    }
+    if (!shells.adopt(id, ticket, channel)) {
+      try {
+        p.kill()
+      } catch {
+        // no-op
+      }
+      return { ok: false, error: KILLED_ERROR }
+    }
+    p.onData((d) => onData(id, d))
+    p.onExit(({ exitCode }) => {
+      if (shells.release(id, channel)) onExit(id, exitCode)
+    })
+    return { ok: true }
+  })
+}
+
 export function remoteShellWrite(id: string, data: string): void {
   if (!isSafeId(id)) return
   if (typeof data !== 'string') return
-  const stream = shells.get(id)
-  if (!stream) return
+  const channel = shells.get(id)
+  if (!channel) return
   try {
-    stream.write(data)
+    channel.write(data)
   } catch {
     // no-op
   }
@@ -113,11 +191,10 @@ export function remoteShellResize(id: string, cols: number, rows: number): void 
   if (!isSafeId(id)) return
   if (!Number.isInteger(cols) || cols <= 0) return
   if (!Number.isInteger(rows) || rows <= 0) return
-  const stream = shells.get(id)
-  if (!stream) return
+  const channel = shells.get(id)
+  if (!channel) return
   try {
-    // ssh2 ClientChannel#setWindow arg order: rows, cols, height (px), width (px).
-    stream.setWindow(rows, cols, 0, 0)
+    channel.resize(cols, rows)
   } catch {
     // no-op
   }
@@ -138,9 +215,9 @@ export function remoteShellKill(id: string): { ok: boolean } {
 }
 
 export function remoteShellKillAll(): void {
-  for (const stream of shells.killAll()) {
+  for (const channel of shells.killAll()) {
     try {
-      stream.end()
+      channel.end()
     } catch {
       // no-op
     }

@@ -15,8 +15,9 @@ interface Props {
   /** Stable id for this shell channel (e.g. `remoteterm_<hostId>`). */
   terminalId: string
   /** The SSH host id to connect to — the interactive shell rides the SAME ssh2 connection
-   *  SFTP already has open for this host (see remote-shell.ts / sftp.ts getRemoteClient). */
-  hostId: string
+   *  SFTP already has open for this host (see remote-shell.ts / sftp.ts getRemoteClient).
+   *  Null for a container on this computer, which runs on a local pty (needs `container`). */
+  hostId: string | null
   /** True while this terminal's pane is the one visible. The session (and this component)
    *  stays mounted in the background regardless — a `display: none` pane has zero size, so
    *  a re-fit is needed when it becomes visible again or xterm renders stale/blank. */

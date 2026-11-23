@@ -778,13 +778,19 @@ export interface WslDistro {
 /** The Remote Session ("Connect") view's target — an SSH host or a WSL distro. */
 export type RemoteTarget = { kind: 'ssh'; host: SshHostPublic } | { kind: 'wsl'; distro: string }
 
-/** One container on a remote host, as main/remote-containers.ts lists it. */
+/** One container on a remote host or this computer, as main/remote-containers.ts and
+ *  main/local-containers.ts list it. */
 export interface RemoteContainerRow {
   id: string
   name: string
   image: string
   status: string
   running: boolean
+  /** Its compose project and service, from the container's labels. */
+  project?: string
+  service?: string
+  /** Published ports, `host→container`. */
+  ports?: string[]
 }
 
 /** Which container a container tab enters; the id is re-validated in main. */
@@ -800,6 +806,8 @@ export interface RemoteContainerList {
   /** Null when the host has neither docker nor podman. */
   runtime?: 'docker' | 'podman' | null
   sudo?: boolean
+  /** This computer only: the runtime is installed but its engine is not running. */
+  notRunning?: boolean
   containers?: RemoteContainerRow[]
 }
 
@@ -1768,6 +1776,8 @@ declare global {
       sftpHistory: (hostId: string) => Promise<{ ok: boolean; commands?: string[]; error?: string }>
       /** The host's docker/podman containers (Remote Session's Containers pane). */
       remoteContainers: (hostId: string) => Promise<RemoteContainerList>
+      /** This computer's docker (or podman) containers, for the Servers screen. */
+      localContainers: () => Promise<RemoteContainerList>
 
       // Ops runs
       /** `onBase`: the runbook as it runs added to the base intervention. */
@@ -1993,10 +2003,11 @@ declare global {
       onTerminalNotify: (cb: (data: TerminalNotifyEvent) => void) => () => void
 
       // Remote shell (Remote Session SSH terminal, over the SFTP connection)
-      /** `container`: run that container's shell (`exec -it`) instead of the login shell. */
+      /** `container`: run that container's shell (`exec -it`) instead of the login shell.
+       *  A null host is this computer: then `container` is required and runs on a local pty. */
       remoteShellCreate: (
         id: string,
-        hostId: string,
+        hostId: string | null,
         cols: number,
         rows: number,
         container?: RemoteContainerTarget
