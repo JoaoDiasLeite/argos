@@ -343,3 +343,31 @@
 .rv-notes-input { width: 100%; min-height: 96px; resize: vertical; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; }
 /* Notes are the user's own Markdown, so a long one scrolls inside the column. */
 .rv-notes { max-height: 260px; overflow-y: auto; font-size: 13px; }
+
+/* Shared credentials: the list in their sheet, and the linked summary in the host form */
+.rv-creds { display: flex; flex-direction: column; gap: 2px; }
+.rv-cred {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+}
+.rv-cred:hover { background: var(--bg-2); }
+.rv-cred-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rv-cred-name { font-size: 13px; color: var(--text-0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-cred-meta { font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-cred-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.rv-cred-delete { color: var(--error); }
+.rv-cred-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+.rv-cred-summary .btn-ghost { margin-left: auto; }
+.rv-cred-user { font-family: var(--font-mono); }

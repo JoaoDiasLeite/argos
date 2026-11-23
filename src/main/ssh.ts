@@ -6,14 +6,14 @@ import { randomUUID } from 'crypto'
 import { isEndpointKeyStored, trustedKnownHostsPath, verifyHostKey } from './ssh-trust'
 import { sshOptionPath } from './ssh-trust-pure'
 import { t } from './i18n'
+import { plural } from '../shared/i18n'
 import { keyboardInteractiveDecision, keyNeedsPassphrase, type KbdPrompt } from './connect-auth-pure'
+import { createEncryptedListStore } from './encrypted-list-store'
 import {
   cleanHostFields,
-  decodeHostsFile,
   hostFieldProblem,
   hostFieldProblemKey,
   mergeSecrets,
-  refuseOverwriteMessage,
   stripSecrets,
   toPublicHost,
   remoteCommandWord,
@@ -23,58 +23,45 @@ import {
   type SshHost,
   type SshHostPublic
 } from './ssh-host-pure'
+import {
+  cleanCredentialFields,
+  credentialFieldProblem,
+  credentialUsage,
+  resolveHostAuth,
+  stripCredentialAuth,
+  toPublicCredential,
+  withCredentialInfo,
+  type EffectiveSshHost,
+  type SshCredential,
+  type SshCredentialInput,
+  type SshCredentialPublic,
+  type StoredSshHost
+} from './ssh-credential-pure'
 
 export type { SshAuthType, SshHost, SshHostPublic } from './ssh-host-pure'
+export type { EffectiveSshHost, SshCredential, SshCredentialInput, SshCredentialPublic, StoredSshHost } from './ssh-credential-pure'
 
-/** What the renderer sends: `undefined` keeps a stored secret, `null` clears it. */
+/** What the renderer sends: `undefined` keeps a stored secret, `null` clears it. A host with
+ *  `credentialId` set takes its login from that credential; its own login fields are ignored. */
 export type SshHostInput = Omit<SshHost, 'id' | SecretField> & {
   id?: string
 } & { [K in SecretField]?: string | null }
 
-const hostsPath = path.join(app.getPath('userData'), 'ssh-hosts.bin')
+const hostStore = createEncryptedListStore<StoredSshHost>(path.join(app.getPath('userData'), 'ssh-hosts.bin'), 'ssh', {
+  unreadable: 'main.ssh.hostsUnreadable',
+  saveFailed: 'main.ssh.hostsSaveFailed'
+})
 
-/**
- * A missing file is an empty list; any other failure (unreadable, corrupt, undecryptable in
- * both modes) is an error, so the write paths can refuse to overwrite it.
- */
-function readHosts(): HostsRead<SshHost> {
-  let buf: Buffer
-  try {
-    buf = fs.readFileSync(hostsPath)
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return { ok: true, hosts: [] }
-    return { ok: false, error: e instanceof Error ? e.message : String(e) }
-  }
-  return decodeHostsFile<SshHost>(buf, {
-    encryptionAvailable: safeStorage.isEncryptionAvailable(),
-    decrypt: (b) => safeStorage.decryptString(b)
-  })
-}
-
-/** Read-only callers: an unreadable file shows as no hosts (logged), nothing is written. */
-function readHostsOrEmpty(): SshHost[] {
-  const res = readHosts()
-  if (res.ok) return res.hosts
-  console.error(`[ssh] could not read ${hostsPath}: ${res.error}`)
-  return []
-}
+const credentialStore = createEncryptedListStore<SshCredential>(path.join(app.getPath('userData'), 'ssh-credentials.bin'), 'ssh', {
+  unreadable: 'main.ssh.credentialsUnreadable',
+  saveFailed: 'main.ssh.credentialsSaveFailed'
+})
 
 export type HostsWriteResult = { ok: true; hosts: SshHostPublic[] } | { ok: false; error: string }
 
-/**
- * Read-modify-write, fail-closed: when the file cannot be read, nothing is written, since
- * writing would replace every saved host (and its secrets) with whatever `mutate` built
- * from an empty list.
- */
-function updateHosts(mutate: (hosts: SshHost[]) => SshHost[]): HostsWriteResult {
-  const res = readHosts()
-  if (!res.ok) return { ok: false, error: refuseOverwriteMessage(t, hostsPath, res.error) }
-  try {
-    writeHosts(mutate(res.hosts))
-  } catch (e) {
-    return { ok: false, error: t('main.ssh.hostsSaveFailed', { error: e instanceof Error ? e.message : String(e) }) }
-  }
-  return { ok: true, hosts: listHosts() }
+function updateHosts(mutate: (hosts: StoredSshHost[]) => StoredSshHost[]): HostsWriteResult {
+  const res = hostStore.update(mutate)
+  return res.ok ? { ok: true, hosts: listHosts() } : res
 }
 
 /** Whether saved secrets are really encrypted: on Linux without a keyring Electron reports
@@ -91,39 +78,64 @@ export function secretStorageState(): { encrypted: boolean; backend?: string } {
   return { encrypted: available && backend !== 'basic_text', backend }
 }
 
-function writeHosts(hosts: SshHost[]): void {
-  const json = JSON.stringify(hosts)
-  const data = safeStorage.isEncryptionAvailable()
-    ? safeStorage.encryptString(json)
-    : Buffer.from(json, 'utf-8')
-  // Write-then-rename: an interrupted write must never leave the file truncated, since an
-  // unreadable file blocks every later save until the user moves it aside.
-  const tmp = `${hostsPath}.tmp`
-  fs.writeFileSync(tmp, data)
-  fs.renameSync(tmp, hostsPath)
-}
-
+/** The hosts as the renderer sees them: the login each one really uses (its own or its
+ *  credential's), never a secret, plus the name of a linked credential. */
 export function listHosts(): SshHostPublic[] {
-  return readHostsOrEmpty().map(toPublicHost)
+  const credentials = credentialStore.readOrEmpty()
+  return hostStore.readOrEmpty().map((h) => {
+    const eff = resolveHostAuth(h, credentials)
+    return withCredentialInfo(toPublicHost(eff), eff)
+  })
 }
 
 function genId(): string {
   return `ssh_${randomUUID()}`
 }
 
+function genCredentialId(): string {
+  return `cred_${randomUUID()}`
+}
+
 export function saveHost(raw: SshHostInput): HostsWriteResult {
-  const fields = stripSecrets(cleanHostFields(raw))
+  const credentialId = typeof raw.credentialId === 'string' && raw.credentialId ? raw.credentialId : undefined
+  if (credentialId) return saveLinkedHost(raw, credentialId)
+  const cleaned = stripSecrets(cleanHostFields({ ...raw, username: typeof raw.username === 'string' ? raw.username : '' }))
+  // Unlinked: a credential id the input carried is dropped.
+  const fields: Omit<typeof cleaned, 'credentialId'> & { credentialId?: string } = { ...cleaned }
+  delete fields.credentialId
   const problem = hostFieldProblem(fields)
   if (problem) return { ok: false, error: t(hostFieldProblemKey(problem)) }
   return updateHosts((hosts) => {
     const idx = fields.id ? hosts.findIndex((h) => h.id === fields.id) : -1
-    const prev = idx >= 0 ? hosts[idx] : undefined
+    // A host that was linked has no secrets of its own to keep.
+    const prev = idx >= 0 && !hosts[idx].credentialId ? hosts[idx] : undefined
     const secrets = mergeSecrets(prev, raw)
     if (idx >= 0) {
       hosts[idx] = { ...fields, id: fields.id as string, ...secrets }
     } else {
       hosts.push({ ...fields, id: fields.id || genId(), ...secrets })
     }
+    return hosts
+  })
+}
+
+/** A host that logs in with a shared credential: only its own fields are kept (address,
+ *  name, paths, organisation), never a login or a secret. */
+function saveLinkedHost(raw: SshHostInput, credentialId: string): HostsWriteResult {
+  const creds = credentialStore.read()
+  if (!creds.ok) return { ok: false, error: t('main.ssh.credentialsUnreadable', { error: creds.error, file: credentialStore.file }) }
+  const cred = creds.hosts.find((c) => c.id === credentialId)
+  if (!cred) return { ok: false, error: t('main.ssh.credentialMissing') }
+  // Cleaned with the credential's username in place, so the checks below see the login
+  // the host will really use.
+  const cleaned = cleanHostFields({ ...raw, username: cred.username })
+  const problem = hostFieldProblem(cleaned)
+  if (problem) return { ok: false, error: t(hostFieldProblemKey(problem)) }
+  const fields = { ...stripCredentialAuth(cleaned), credentialId }
+  return updateHosts((hosts) => {
+    const idx = fields.id ? hosts.findIndex((h) => h.id === fields.id) : -1
+    if (idx >= 0) hosts[idx] = { ...fields, id: fields.id as string }
+    else hosts.push({ ...fields, id: fields.id || genId() })
     return hosts
   })
 }
@@ -135,14 +147,91 @@ export function deleteHost(id: string): HostsWriteResult {
 /**
  * Saves a login password typed at the connect prompt with "save" ticked. Only the password
  * field changes, on a fresh read of the store (fail-closed like every write here), and only
- * while the host still exists and still logs in with a password: the form may have changed it
- * while the prompt was up. Not through saveHost, whose callers close the pooled connection
- * when a password is touched, and this one has just been opened with it.
+ * while the host still exists and still logs in with a password of its own: the form may have
+ * changed it while the prompt was up, and a host linked to a shared credential never stores
+ * one (the prompt does not offer to save for it). Not through saveHost, whose callers close
+ * the pooled connection when a password is touched, and this one has just been opened with
+ * it. Not ok when nothing was saved, so the caller keeps the password for the session.
  */
 export function saveHostPassword(id: string, password: string): HostsWriteResult {
-  return updateHosts((hosts) =>
-    hosts.map((h) => (h.id === id && h.authType === 'password' ? { ...h, password } : h))
+  let saved = false
+  const res = updateHosts((hosts) =>
+    hosts.map((h) => {
+      if (h.id !== id || h.credentialId || h.authType !== 'password') return h
+      saved = true
+      return { ...h, password }
+    })
   )
+  if (res.ok && !saved) return { ok: false, error: t('main.ssh.hostNotFound') }
+  return res
+}
+
+// ─── Shared credentials ─────────────────────────────────────────────────────
+
+export type CredentialsWriteResult = { ok: true; credentials: SshCredentialPublic[] } | { ok: false; error: string }
+
+/** The credentials as the renderer sees them: no secrets, and how many hosts link each. */
+export function listCredentials(): SshCredentialPublic[] {
+  const hosts = hostStore.readOrEmpty()
+  return credentialStore.readOrEmpty().map((c) => toPublicCredential(c, credentialUsage(hosts, c.id)))
+}
+
+/** One saved credential with its secrets, for main only (comparing before and after a save). */
+export function getStoredCredential(id: string): SshCredential | null {
+  return credentialStore.readOrEmpty().find((c) => c.id === id) ?? null
+}
+
+/** The ids of the hosts linked to credential `id`. */
+export function hostIdsUsingCredential(id: string): string[] {
+  return hostStore
+    .readOrEmpty()
+    .filter((h) => h.credentialId === id)
+    .map((h) => h.id)
+}
+
+/** Same keep / clear / replace rules for its secrets as a host (mergeSecrets). */
+export function saveCredential(raw: SshCredentialInput): CredentialsWriteResult {
+  const fields = stripSecrets(cleanCredentialFields(raw))
+  const problem = credentialFieldProblem(fields)
+  if (problem) {
+    const key =
+      problem === 'name' ? 'main.ssh.credentialNameMissing' : problem === 'username' ? 'main.ssh.invalid.username' : 'main.ssh.credentialAuthInvalid'
+    return { ok: false, error: t(key) }
+  }
+  const res = credentialStore.update((creds) => {
+    const idx = fields.id ? creds.findIndex((c) => c.id === fields.id) : -1
+    const prev = idx >= 0 ? creds[idx] : undefined
+    const secrets = mergeSecrets(prev, raw)
+    if (idx >= 0) creds[idx] = { ...fields, id: fields.id as string, ...secrets }
+    else creds.push({ ...fields, id: fields.id || genCredentialId(), ...secrets })
+    return creds
+  })
+  return res.ok ? { ok: true, credentials: listCredentials() } : res
+}
+
+/**
+ * Deletes a credential no host links. One still in use is refused rather than unlinked: those
+ * hosts would be left with no login at all. Read strictly: an unreadable hosts file must not
+ * pass for "no host uses it".
+ */
+export function deleteCredential(id: string): CredentialsWriteResult {
+  const hosts = hostStore.read()
+  if (!hosts.ok) return { ok: false, error: t('main.ssh.hostsUnreadable', { error: hosts.error, file: hostStore.file }) }
+  const used = credentialUsage(hosts.hosts, id)
+  if (used > 0) return { ok: false, error: plural(t, 'main.ssh.credentialInUse', used) }
+  const res = credentialStore.update((creds) => creds.filter((c) => c.id !== id))
+  return res.ok ? { ok: true, credentials: listCredentials() } : res
+}
+
+/** Every saved credential with its secrets, for a profile export. A failed read is an error. */
+export function readCredentialsWithSecrets(): HostsRead<SshCredential> {
+  return credentialStore.read()
+}
+
+/** Replace the saved credentials through `mutate`, fail-closed. For a profile import. */
+export function updateCredentialsWith(mutate: (creds: SshCredential[]) => SshCredential[]): CredentialsWriteResult {
+  const res = credentialStore.update(mutate)
+  return res.ok ? { ok: true, credentials: listCredentials() } : res
 }
 
 export interface ConnectAuthOptions {
@@ -159,7 +248,10 @@ export interface ConnectAuthOptions {
  * instead of failing the method, and the checks would end in a timeout rather than an
  * authentication failure.
  */
-export function buildConnectConfig(h: SshHost, opts: ConnectAuthOptions = { interactive: false }): ConnectConfig {
+export function buildConnectConfig(h: EffectiveSshHost, opts: ConnectAuthOptions = { interactive: false }): ConnectConfig {
+  // A host whose shared credential is gone has no login at all: say so, rather than dial
+  // with an empty password.
+  if (h.credentialMissing) throw new Error(t('main.ssh.credentialMissing'))
   const conf: ConnectConfig = {
     host: h.host,
     port: h.port || 22,
@@ -237,7 +329,7 @@ export function attachKeyboardInteractive(conn: Client, knownPassword: string | 
 
 /** Dials `conn` for `h`: the config plus the keyboard-interactive listener. Throws what
  *  buildConnectConfig or ssh2's connect throws (an unreadable or unparsable key). */
-export function connectClient(conn: Client, h: SshHost, opts: ConnectAuthOptions = { interactive: false }): void {
+export function connectClient(conn: Client, h: EffectiveSshHost, opts: ConnectAuthOptions = { interactive: false }): void {
   const conf = buildConnectConfig(h, opts)
   attachKeyboardInteractive(conn, h.authType === 'password' ? h.password || undefined : undefined, opts)
   conn.connect(conf)
@@ -255,20 +347,33 @@ function explainCheckFailure(h: SshHost, message: string): string {
   return message
 }
 
-/** Every saved host with its secrets, for a profile export. A failed read is an error, not
- *  an empty list (see readHosts). */
-export function readHostsWithSecrets(): HostsRead<SshHost> {
-  return readHosts()
+/** Every saved host as stored (a linked one without a login of its own), with its secrets,
+ *  for a profile export. A failed read is an error, not an empty list. */
+export function readHostsWithSecrets(): HostsRead<StoredSshHost> {
+  return hostStore.read()
 }
 
 /** Replace the saved hosts through `mutate`, re-encrypted for this machine. Fail-closed,
  *  like every other write here. For a profile import. */
-export function updateHostsWith(mutate: (hosts: SshHost[]) => SshHost[]): HostsWriteResult {
+export function updateHostsWith(mutate: (hosts: StoredSshHost[]) => StoredSshHost[]): HostsWriteResult {
   return updateHosts(mutate)
 }
 
-export function getHost(id: string): SshHost | null {
-  return readHostsOrEmpty().find((h) => h.id === id) ?? null
+/**
+ * A saved host as it logs in: its login resolved through its shared credential, if it links
+ * one (resolveHostAuth). What every connecting path uses, so none of them has to know about
+ * credentials. A host whose credential is gone comes back marked `credentialMissing`, and the
+ * connect paths refuse it.
+ */
+export function getHost(id: string): EffectiveSshHost | null {
+  const h = getStoredHost(id)
+  return h ? resolveHostAuth(h, credentialStore.readOrEmpty()) : null
+}
+
+/** A saved host exactly as stored: a linked one has no login of its own. For the paths that
+ *  edit or copy the record itself, never for connecting. */
+export function getStoredHost(id: string): StoredSshHost | null {
+  return hostStore.readOrEmpty().find((h) => h.id === id) ?? null
 }
 
 /**
@@ -287,6 +392,7 @@ export async function getSshTerminalCommand(
 ): Promise<{ shell: string; args: string[]; remotePath?: string; claudePath?: string } | null> {
   const h = getHost(hostId)
   if (!h) return null
+  if (h.credentialMissing) throw new Error(t('main.ssh.credentialMissing'))
   // Checked again here, not only on save: a host can arrive through a profile import or a
   // hosts file written by an older version.
   const problem = hostFieldProblem(h)
@@ -329,6 +435,7 @@ const CHECK_TIMEOUT_MS = 20_000
 export function testConnection(id: string): Promise<{ ok: boolean; message: string }> {
   const host = getHost(id)
   if (!host) return Promise.resolve({ ok: false, message: t('main.ssh.hostNotFound') })
+  if (host.credentialMissing) return Promise.resolve({ ok: false, message: t('main.ssh.credentialMissing') })
 
   return new Promise((resolve) => {
     const conn = new Client()
@@ -371,6 +478,7 @@ export function testConnection(id: string): Promise<{ ok: boolean; message: stri
 export function testClaude(id: string): Promise<{ ok: boolean; message: string }> {
   const host = getHost(id)
   if (!host) return Promise.resolve({ ok: false, message: t('main.ssh.hostNotFound') })
+  if (host.credentialMissing) return Promise.resolve({ ok: false, message: t('main.ssh.credentialMissing') })
   const problem = hostFieldProblem(host)
   if (problem) return Promise.resolve({ ok: false, message: t(hostFieldProblemKey(problem)) })
 

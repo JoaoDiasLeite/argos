@@ -88,9 +88,16 @@ import {
   testConnection,
   testClaude,
   secretStorageState,
-  SshHostInput
+  listCredentials,
+  saveCredential,
+  deleteCredential,
+  getStoredCredential,
+  hostIdsUsingCredential,
+  SshHostInput,
+  type SshCredentialInput
 } from './ssh'
-import { connectionFieldsChanged, toPublicHost } from './ssh-host-pure'
+import { toPublicHost } from './ssh-host-pure'
+import { credentialConnectionChanged, hostConnectionChanged } from './ssh-credential-pure'
 import { listSshKeys, generateKey } from './ssh-keys'
 import {
   sftpConnect,
@@ -2889,17 +2896,37 @@ ipcMain.handle('ops:pending', () => ({
 
 ipcMain.handle('ssh:list', () => listHosts())
 // The pooled sftp connection was opened with the old host, port, user and secret, so a
-// change to any of them (or deleting the host) must close it; the next use reconnects.
+// change to any of them (or deleting the host) must close it; the next use reconnects. The
+// login is compared as resolved (getHost), so linking, unlinking or switching a shared
+// credential counts too.
 ipcMain.handle('ssh:save', (_, host: SshHostInput) => {
   const prev = host.id ? getHost(host.id) : null
   const res = saveHost(host)
-  if (res.ok && prev && connectionFieldsChanged(prev, host)) void sftpDisconnect(prev.id)
+  if (res.ok && prev) {
+    const next = getHost(prev.id)
+    if (!next || hostConnectionChanged(prev, next)) void sftpDisconnect(prev.id)
+  }
   return res
 })
 ipcMain.handle('ssh:delete', (_, id: string) => {
   void sftpDisconnect(id)
   return deleteHost(id)
 })
+// Shared credentials. A credential edit that changes the login (not elevation alone) closes
+// the pooled connection of every host linked to it, as a host edit does.
+ipcMain.handle('ssh:credentials-list', () => listCredentials())
+ipcMain.handle('ssh:credential-save', (_, cred: SshCredentialInput) => {
+  const prev = cred && typeof cred.id === 'string' && cred.id ? getStoredCredential(cred.id) : null
+  const res = saveCredential(cred)
+  if (res.ok && prev) {
+    const next = getStoredCredential(prev.id)
+    if (!next || credentialConnectionChanged(prev, next)) {
+      for (const hostId of hostIdsUsingCredential(prev.id)) void sftpDisconnect(hostId)
+    }
+  }
+  return res
+})
+ipcMain.handle('ssh:credential-delete', (_, id: string) => deleteCredential(id))
 ipcMain.handle('ssh:test', (_, id: string) => testConnection(id))
 ipcMain.handle('ssh:test-claude', (_, id: string) => testClaude(id))
 ipcMain.handle('ssh:secret-storage', () => secretStorageState())

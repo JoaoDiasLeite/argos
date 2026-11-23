@@ -6,8 +6,6 @@ import {
   cleanTags,
   cleanNotes,
   decodeHostsFile,
-  refuseOverwriteMessage,
-  connectionFieldsChanged,
   hasControlChars,
   hostFieldProblem,
   hostFieldProblemKey,
@@ -135,15 +133,6 @@ describe('decodeHostsFile', () => {
   })
 })
 
-describe('refuseOverwriteMessage', () => {
-  it('says nothing was written and names the file', () => {
-    const msg = refuseOverwriteMessage(makeT('en'), 'C:\\data\\ssh-hosts.bin', 'bad decrypt')
-    expect(msg).toContain('refusing to overwrite')
-    expect(msg).toContain('bad decrypt')
-    expect(msg).toContain('C:\\data\\ssh-hosts.bin')
-  })
-})
-
 describe('mergeSecrets', () => {
   const prev = { password: 'old', passphrase: 'oldpp' }
   it('keeps the stored secret when undefined or empty', () => {
@@ -215,7 +204,8 @@ describe('host secrets allowlist', () => {
     favorite: true,
     production: true,
     tags: ['prod'],
-    notes: 'n'
+    notes: 'n',
+    credentialId: 'cred_1'
   }
 
   it('keeps the public and secret field lists disjoint and covering every host field', () => {
@@ -280,45 +270,6 @@ describe('effectiveElevation / elevateCommandFor', () => {
     expect(elevateCommandFor({})).toBe(DEFAULT_ELEVATE_COMMAND)
     expect(elevateCommandFor({ elevateCommand: 'sudo su -' })).toBe('sudo su -')
     expect(elevateCommandFor({ elevateCommand: 'sudo -i; rm -rf /' })).toBe(DEFAULT_ELEVATE_COMMAND)
-  })
-})
-
-describe('connectionFieldsChanged', () => {
-  const prev = { host: 'h', port: 22, username: 'u', authType: 'key' as const, privateKeyPath: '/k' }
-
-  it('is false when nothing changed, or only non-connection fields did', () => {
-    expect(connectionFieldsChanged(prev, { ...prev })).toBe(false)
-    expect(connectionFieldsChanged(prev, { ...prev, name: 'x', remotePath: '/r', claudePath: 'c' } as never)).toBe(false)
-  })
-
-  it('treats a missing port as 22', () => {
-    expect(connectionFieldsChanged(prev, { ...prev, port: undefined })).toBe(false)
-  })
-
-  it('is true for each connection field', () => {
-    expect(connectionFieldsChanged(prev, { ...prev, host: 'h2' })).toBe(true)
-    expect(connectionFieldsChanged(prev, { ...prev, port: 2222 })).toBe(true)
-    expect(connectionFieldsChanged(prev, { ...prev, username: 'v' })).toBe(true)
-    expect(connectionFieldsChanged(prev, { ...prev, authType: 'agent' })).toBe(true)
-    expect(connectionFieldsChanged(prev, { ...prev, privateKeyPath: '/k2' })).toBe(true)
-  })
-
-  it('ignores elevation-only changes', () => {
-    const next = { ...prev, elevation: 'other', elevationPassword: 'root-pw', elevateCommand: 'su -' }
-    expect(connectionFieldsChanged(prev, next as never)).toBe(false)
-    expect(connectionFieldsChanged(prev, { ...prev, elevationPassword: null } as never)).toBe(false)
-  })
-
-  it('ignores favourite, production, tags and notes', () => {
-    const next = { ...prev, favorite: true, production: true, tags: ['a'], notes: '# hi' }
-    expect(connectionFieldsChanged(prev, next as never)).toBe(false)
-  })
-
-  it('is true when a secret is replaced or cleared, false when untouched', () => {
-    expect(connectionFieldsChanged(prev, { ...prev, passphrase: 'new' })).toBe(true)
-    expect(connectionFieldsChanged(prev, { ...prev, password: null })).toBe(true)
-    expect(connectionFieldsChanged(prev, { ...prev, passphrase: undefined })).toBe(false)
-    expect(connectionFieldsChanged(prev, { ...prev, passphrase: '' })).toBe(false)
   })
 })
 

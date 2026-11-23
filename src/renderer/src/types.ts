@@ -730,6 +730,12 @@ export interface SshHostPublic {
   production?: boolean
   tags?: string[]
   notes?: string
+  /** The shared credential this host logs in with. When set, the username, auth type, key
+   *  path, elevation and the flags below are the credential's. */
+  credentialId?: string
+  credentialName?: string
+  /** The linked credential no longer exists: the host cannot connect until it is edited. */
+  credentialMissing?: boolean
   hasPassword: boolean
   hasPassphrase: boolean
   /** A saved secret can answer sudo/su now (the login password in `login` mode, the
@@ -758,7 +764,41 @@ export interface SshHostInput {
   production?: boolean
   tags?: string[]
   notes?: string
+  /** Log in with this shared credential: main then ignores the login fields above. */
+  credentialId?: string
 }
+
+/** A shared login (see src/main/ssh-credential-pure.ts): no secrets, only whether each
+ *  exists, and how many hosts link it. */
+export interface SshCredentialPublic {
+  id: string
+  name: string
+  username: string
+  authType: SshAuthType
+  privateKeyPath?: string
+  elevation?: ElevationMode
+  elevateCommand?: ElevateCommand
+  hasPassword: boolean
+  hasPassphrase: boolean
+  hasElevation: boolean
+  usedBy: number
+}
+
+/** What the credentials form sends: the same keep / clear / replace rules for secrets as a host. */
+export interface SshCredentialInput {
+  id?: string
+  name: string
+  username: string
+  authType: SshAuthType
+  password?: string | null
+  privateKeyPath?: string
+  passphrase?: string | null
+  elevation?: ElevationMode
+  elevationPassword?: string | null
+  elevateCommand?: ElevateCommand
+}
+
+export type SshCredentialsWriteResult = { ok: true; credentials: SshCredentialPublic[] } | { ok: false; error: string }
 
 export interface SshKeyInfo {
   name: string
@@ -1807,6 +1847,9 @@ declare global {
       sshList: () => Promise<SshHostPublic[]>
       sshSave: (host: SshHostInput) => Promise<SshHostsWriteResult>
       sshDelete: (id: string) => Promise<SshHostsWriteResult>
+      sshCredentialsList: () => Promise<SshCredentialPublic[]>
+      sshCredentialSave: (cred: SshCredentialInput) => Promise<SshCredentialsWriteResult>
+      sshCredentialDelete: (id: string) => Promise<SshCredentialsWriteResult>
       sshTest: (id: string) => Promise<{ ok: boolean; message: string }>
       sshTestClaude: (id: string) => Promise<{ ok: boolean; message: string }>
       sshKeysList: () => Promise<SshKeyInfo[]>

@@ -3,7 +3,7 @@ import * as fs from 'fs'
 import { promises as fsp } from 'fs'
 import * as path from 'path'
 import { Client, SFTPWrapper, Stats, utils as ssh2Utils } from 'ssh2'
-import { getHost, connectClient, saveHostPassword, type SshHost } from './ssh'
+import { getHost, connectClient, saveHostPassword, type EffectiveSshHost } from './ssh'
 import {
   looksLikePasswordPrompt,
   sanitizeServerPrompt,
@@ -94,11 +94,12 @@ function dropAttempt(hostId: string, attempt?: OpenAttempt): void {
 }
 
 /**
- * The saved host with the in-memory secrets of its live session filled in where nothing is
- * saved, for main's own use only (the terminal's Send password and Elevate). Never saved,
- * sent to the renderer or shown to the agent.
+ * The saved host, its login resolved through a linked credential (getHost), with the
+ * in-memory secrets of its live session filled in where nothing is saved, for main's own use
+ * only (the terminal's Send password and Elevate). Never saved, sent to the renderer or shown
+ * to the agent.
  */
-export function getHostWithSessionSecrets(hostId: string): SshHost | null {
+export function getHostWithSessionSecrets(hostId: string): EffectiveSshHost | null {
   const h = getHost(hostId)
   return h ? withSessionSecrets(h, attempts.get(hostId)?.secrets) : null
 }
@@ -128,6 +129,8 @@ function keyParseError(keyPath: string, passphrase?: string): string | undefined
 async function openSession(hostId: string, evict: () => void, interactive: boolean): Promise<SessionResult> {
   const saved = getHost(hostId)
   if (!saved) return { ok: false, error: 'Host not found' }
+  // Before anything is asked: a host whose shared credential is gone has no login to ask for.
+  if (saved.credentialMissing) return { ok: false, error: t('main.ssh.credentialMissing') }
 
   const attempt: OpenAttempt = { abort: new AbortController(), secrets: {} }
   dropAttempt(hostId)
@@ -161,7 +164,8 @@ async function openSession(hostId: string, evict: () => void, interactive: boole
           host: saved.host
         }),
         echo: false,
-        canSave: need === 'password'
+        // A host on a shared credential keeps no password of its own to save it in.
+        canSave: need === 'password' && !saved.credentialId
       },
       signal
     )
@@ -283,7 +287,7 @@ async function openSession(hostId: string, evict: () => void, interactive: boole
   if (!res.ok) return fail(res.error)
   // Logged in: only now is a typed secret known to be right.
   if (typedPassword !== undefined) {
-    const stored = savePassword && saveHostPassword(hostId, typedPassword).ok
+    const stored = savePassword && !saved.credentialId && saveHostPassword(hostId, typedPassword).ok
     if (!stored) attempt.secrets.password = typedPassword
   }
   if (typedPassphrase !== undefined) attempt.secrets.passphrase = typedPassphrase

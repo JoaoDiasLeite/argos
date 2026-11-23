@@ -43,7 +43,7 @@ export const PROFILE_DIRS = ['sprints', 'planner', 'ops-audit', 'companion'] as 
 export const COMPANION_FILES = ['todos.json', 'notes.json'] as const
 
 /** Everything an import may replace or merge, copied aside before it starts. */
-export const BACKUP_FILES = [...PROFILE_JSON_FILES, 'ssh-hosts.bin', 'api-key.bin']
+export const BACKUP_FILES = [...PROFILE_JSON_FILES, 'ssh-hosts.bin', 'ssh-credentials.bin', 'api-key.bin']
 
 /** store.json keys that describe this machine rather than the user: never exported. */
 export const STORE_LOCAL_KEYS = ['usageCache', 'sessionMigration']
@@ -69,6 +69,8 @@ export interface EncryptedSecrets {
 
 export interface SecretsPayload {
   ssh: Record<string, HostSecrets>
+  /** The shared credentials' secrets, keyed by credential id. Absent in older bundles. */
+  sshCredentials?: Record<string, HostSecrets>
   apiKey?: string
 }
 
@@ -95,6 +97,8 @@ export interface ProfileLine {
   json: Record<string, unknown>
   dirs: Record<string, Record<string, string>>
   sshHosts: Record<string, unknown>[]
+  /** Shared credentials, without their secrets (those go in `secrets`). Empty in older bundles. */
+  sshCredentials: Record<string, unknown>[]
   secrets?: EncryptedSecrets
 }
 
@@ -197,6 +201,7 @@ export function parseLine(raw: string): BundleLine {
         json: isObj(v.json) ? v.json : {},
         dirs: isObj(v.dirs) ? (v.dirs as ProfileLine['dirs']) : {},
         sshHosts: Array.isArray(v.sshHosts) ? v.sshHosts.filter(isObj) : [],
+        sshCredentials: Array.isArray(v.sshCredentials) ? v.sshCredentials.filter(isObj) : [],
         ...(isObj(v.secrets) ? { secrets: v.secrets as unknown as EncryptedSecrets } : {})
       }
     case 'chat':
@@ -421,7 +426,11 @@ export async function decryptSecrets(enc: EncryptedSecrets, passphrase: string):
     decipher.setAuthTag(Buffer.from(enc.tag, 'base64'))
     const text = Buffer.concat([decipher.update(Buffer.from(enc.data, 'base64')), decipher.final()]).toString('utf8')
     const parsed = JSON.parse(text) as Partial<SecretsPayload>
-    return { ssh: parsed.ssh && typeof parsed.ssh === 'object' ? parsed.ssh : {}, apiKey: parsed.apiKey }
+    return {
+      ssh: parsed.ssh && typeof parsed.ssh === 'object' ? parsed.ssh : {},
+      sshCredentials: parsed.sshCredentials && typeof parsed.sshCredentials === 'object' ? parsed.sshCredentials : {},
+      apiKey: parsed.apiKey
+    }
   } catch {
     return null
   }
@@ -665,12 +674,14 @@ export function mergeAccountGroup(
   return { group: base, created }
 }
 
-export type HostLike = { id: string; elevation?: string } & HostSecrets
+export type HostLike = { id: string; elevation?: string; credentialId?: string } & HostSecrets
 
 /**
- * Merge SSH hosts by id: imported fields win, and a secret the import lacks is kept from
- * here. A kept elevation password is dropped when the merged host no longer uses one
- * (its elevation mode is not `other`), as saving the host from the form would.
+ * Merge SSH hosts (or shared credentials, which hold the same secrets) by id: imported fields
+ * win, and a secret the import lacks is kept from here. A kept elevation password is dropped
+ * when the merged entry no longer uses one (its elevation mode is not `other`), as saving it
+ * from the form would, and a host that now links a shared credential keeps no secret of its
+ * own.
  */
 export function mergeHosts<T extends HostLike>(local: T[], imported: T[]): T[] {
   const out = local.map((h) => ({ ...h }))
@@ -689,6 +700,7 @@ export function mergeHosts<T extends HostLike>(local: T[], imported: T[]): T[] {
       else delete merged[k]
     }
     if (merged.elevation !== 'other') delete merged.elevationPassword
+    if (merged.credentialId) for (const k of SECRET_FIELDS) delete merged[k]
     out[idx] = merged
   }
   return out
