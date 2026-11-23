@@ -726,6 +726,10 @@ export interface SshHostPublic {
   claudePath?: string
   elevation?: ElevationMode
   elevateCommand?: ElevateCommand
+  favorite?: boolean
+  production?: boolean
+  tags?: string[]
+  notes?: string
   hasPassword: boolean
   hasPassphrase: boolean
   /** A saved secret can answer sudo/su now (the login password in `login` mode, the
@@ -750,6 +754,10 @@ export interface SshHostInput {
   /** Same keep/clear/replace rules as the password; kept only in `other` mode. */
   elevationPassword?: string | null
   elevateCommand?: ElevateCommand
+  favorite?: boolean
+  production?: boolean
+  tags?: string[]
+  notes?: string
 }
 
 export interface SshKeyInfo {

@@ -2361,6 +2361,12 @@ export default function App() {
   }
 
   /** The group header's + button — another session on a target that already has one. */
+  // The tab strip's view of the sessions: a host marked as production (container tabs on it
+  // included) gets its red marker. Read from the host as it was when the session opened.
+  const serverTabItems = serverSessions.map((s) => ({
+    ...s,
+    production: s.target.kind === 'ssh' && !!s.target.host.production
+  }))
   const addToTabGroup = (groupKey: string) => {
     const session = serverSessions.find((s) => s.groupKey === groupKey)
     if (!session) return
@@ -3080,7 +3086,7 @@ export default function App() {
           {activeGroup.key === 'servers' && serverSessions.length > 0 && (
             <ServerTabs
               inline
-              sessions={serverSessions}
+              sessions={serverTabItems}
               statuses={serverSessionStatus}
               /* Always null: this copy of the strip only renders on a Servers screen, and
                  there no tab is "current" — the session is open, but you aren't looking at
@@ -3178,7 +3184,7 @@ export default function App() {
           {/* Topmost strip here, so it keeps the drag region (no `inline`). Selecting a
               tab only swaps the visible pane — we're already in the session view. */}
           <ServerTabs
-            sessions={serverSessions}
+            sessions={serverTabItems}
             statuses={serverSessionStatus}
             activeId={activeServerSessionId}
             onSelect={setActiveServerSessionId}
