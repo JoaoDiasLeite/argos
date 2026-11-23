@@ -37,6 +37,7 @@ import {
   type BundleLine,
   type ProjectLine
 } from './profile-transfer-pure'
+import { SECRET_FIELDS } from './ssh-host-pure'
 
 const FROM_HOME = 'C:\\Users\\JoãoLeite'
 const TO_HOME = 'C:\\Users\\jdl'
@@ -258,6 +259,35 @@ describe('hosts', () => {
       { id: 'h1', name: 'new', password: 'local' },
       { id: 'h3', name: 'c' },
       { id: 'h2', name: 'b', passphrase: 'pp' }
+    ])
+  })
+
+  it('exports no secret field in the clear and carries the elevation password in the payload', () => {
+    const { hosts, secrets } = splitHostSecrets([
+      { id: 'h1', name: 'a', authType: 'agent', elevation: 'other', elevationPassword: 'ep' },
+      { id: 'h2', name: 'b', password: 'pw', passphrase: 'pp', elevationPassword: 'ep2' }
+    ])
+    for (const h of hosts) {
+      for (const k of SECRET_FIELDS) expect(h).not.toHaveProperty(k)
+    }
+    expect(JSON.stringify(hosts)).not.toMatch(/pw|pp|ep/)
+    expect(hosts[0]).toEqual({ id: 'h1', name: 'a', authType: 'agent', elevation: 'other' })
+    expect(secrets).toEqual({ h1: { elevationPassword: 'ep' }, h2: { password: 'pw', passphrase: 'pp', elevationPassword: 'ep2' } })
+  })
+
+  it('merges the elevation password like the others, and drops it when the mode is not other', () => {
+    type H = { id: string; name: string; elevation?: string; elevationPassword?: string }
+    const local: H[] = [
+      { id: 'h1', name: 'a', elevation: 'other', elevationPassword: 'local' },
+      { id: 'h2', name: 'b', elevation: 'other', elevationPassword: 'local2' }
+    ]
+    const merged = mergeHosts(local, [
+      { id: 'h1', name: 'a2', elevation: 'other' },
+      { id: 'h2', name: 'b2', elevation: 'none' }
+    ])
+    expect(merged).toEqual([
+      { id: 'h1', name: 'a2', elevation: 'other', elevationPassword: 'local' },
+      { id: 'h2', name: 'b2', elevation: 'none' }
     ])
   })
 

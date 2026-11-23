@@ -29,6 +29,7 @@ import {
 } from './codex-data'
 import { encodeProjectPath, missingThreadNames, pickThreadNames } from './codex-data-pure'
 import { readHostsWithSecrets, updateHostsWith, type SshHost } from './ssh'
+import { SECRET_FIELDS, type HostSecrets } from './ssh-host-pure'
 import { getApiKey, setApiKey, loadAuthState } from './auth'
 import { loadAccounts } from './accounts'
 import { loadProviderAccounts } from './provider-accounts'
@@ -767,7 +768,12 @@ async function applyProfile(ctx: ImportContext, secrets: SecretsPayload | null, 
     const incoming = importedHosts.map((h) => {
       const host = remap.deep(h) as unknown as SshHost
       const s = secrets?.ssh[host.id]
-      return { ...host, ...(s?.password ? { password: s.password } : {}), ...(s?.passphrase ? { passphrase: s.passphrase } : {}) }
+      const restored: HostSecrets = {}
+      for (const k of SECRET_FIELDS) {
+        const v = s?.[k]
+        if (typeof v === 'string' && v) restored[k] = v
+      }
+      return { ...host, ...restored }
     })
     const res = updateHostsWith((local) => mergeHosts(local, incoming))
     if (!res.ok) throw new Error(res.error)

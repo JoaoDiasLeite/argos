@@ -13,7 +13,15 @@ import {
   isSafeSshUsername,
   quotePosix,
   remoteCommandWord,
-  sshDestinationArgs
+  sshDestinationArgs,
+  DEFAULT_ELEVATE_COMMAND,
+  PUBLIC_HOST_FIELDS,
+  SECRET_FIELDS,
+  effectiveElevation,
+  elevateCommandFor,
+  stripSecrets,
+  toPublicHost,
+  type SshHost
 } from './ssh-host-pure'
 import { makeT } from '../shared/i18n'
 
@@ -38,6 +46,14 @@ describe('cleanHostText', () => {
 })
 
 describe('cleanHostFields', () => {
+  it('drops an elevation mode or command that is not on the list, keeps a known one', () => {
+    const base = { name: 'n', host: 'h', username: 'u' }
+    const bad = cleanHostFields({ ...base, elevation: 'root', elevateCommand: 'sudo -i; id' })
+    expect(bad).not.toHaveProperty('elevation')
+    expect(bad).not.toHaveProperty('elevateCommand')
+    expect(cleanHostFields({ ...base, elevation: 'other', elevateCommand: 'su -' })).toMatchObject({ elevation: 'other', elevateCommand: 'su -' })
+  })
+
   const base = { id: 'ssh_1', name: ' pve-01 ', host: '192.168.1.10 ', port: 22, username: 'jdl\u200b', authType: 'key' as const }
 
   it('cleans name, host and username', () => {
@@ -147,6 +163,120 @@ describe('mergeSecrets', () => {
   })
 })
 
+describe('mergeSecrets, elevation password', () => {
+  const prev = { password: 'old', elevationPassword: 'root-pw' }
+  it('keeps the stored one when undefined or empty', () => {
+    expect(mergeSecrets(prev, { authType: 'agent', elevation: 'other' })).toEqual({ elevationPassword: 'root-pw' })
+    expect(mergeSecrets(prev, { authType: 'agent', elevation: 'other', elevationPassword: '' })).toEqual({ elevationPassword: 'root-pw' })
+  })
+  it('clears on null and replaces with a non-empty string', () => {
+    expect(mergeSecrets(prev, { authType: 'agent', elevation: 'other', elevationPassword: null })).toEqual({})
+    expect(mergeSecrets(prev, { authType: 'agent', elevation: 'other', elevationPassword: 'new' })).toEqual({ elevationPassword: 'new' })
+    expect(mergeSecrets(undefined, { authType: 'key', elevation: 'other', elevationPassword: 'x' })).toEqual({ elevationPassword: 'x' })
+  })
+  it('drops it when the mode is not other', () => {
+    for (const elevation of ['login', 'none', undefined, 'bogus']) {
+      expect(mergeSecrets(prev, { authType: 'agent', elevation, elevationPassword: 'typed' })).toEqual({})
+    }
+    expect(mergeSecrets(prev, { authType: 'password', elevation: 'login' })).toEqual({ password: 'old' })
+  })
+  it('survives switching the auth type', () => {
+    expect(mergeSecrets(prev, { authType: 'password', elevation: 'other' })).toEqual({ password: 'old', elevationPassword: 'root-pw' })
+    expect(mergeSecrets(prev, { authType: 'key', elevation: 'other' })).toEqual({ elevationPassword: 'root-pw' })
+    expect(mergeSecrets(prev, { authType: 'agent', elevation: 'other' })).toEqual({ elevationPassword: 'root-pw' })
+  })
+  it('leaves the login password and passphrase rules as they were', () => {
+    const all = { password: 'pw', passphrase: 'pp', elevationPassword: 'ep' }
+    expect(mergeSecrets(all, { authType: 'key', elevation: 'other' })).toEqual({ passphrase: 'pp', elevationPassword: 'ep' })
+    expect(mergeSecrets(all, { authType: 'password', elevation: 'none', password: null })).toEqual({})
+  })
+})
+
+describe('host secrets allowlist', () => {
+  // Required<SshHost>: a field added to SshHost makes this literal fail the typecheck
+  // until it is listed here, and the assertions below then check where it ended up.
+  const full: Required<SshHost> = {
+    id: 'h1',
+    name: 'n',
+    host: 'h',
+    port: 22,
+    username: 'u',
+    authType: 'password',
+    password: 'pw',
+    privateKeyPath: '/k',
+    passphrase: 'pp',
+    remotePath: '/r',
+    claudePath: 'claude',
+    elevation: 'other',
+    elevationPassword: 'ep',
+    elevateCommand: 'su -'
+  }
+
+  it('keeps the public and secret field lists disjoint and covering every host field', () => {
+    const pub = new Set<string>(PUBLIC_HOST_FIELDS)
+    for (const k of SECRET_FIELDS) expect(pub.has(k), k).toBe(false)
+    for (const k of Object.keys(full)) {
+      expect(pub.has(k) || (SECRET_FIELDS as readonly string[]).includes(k), k).toBe(true)
+    }
+  })
+
+  it('gives the renderer no secret, only the allowlisted fields and flags', () => {
+    const pub = toPublicHost(full)
+    for (const k of SECRET_FIELDS) expect(pub).not.toHaveProperty(k)
+    const allowed = new Set<string>([...PUBLIC_HOST_FIELDS, 'hasPassword', 'hasPassphrase', 'hasElevation'])
+    for (const k of Object.keys(pub)) expect(allowed.has(k), k).toBe(true)
+    for (const v of Object.values(pub)) {
+      for (const secret of ['pw', 'pp', 'ep']) expect(v).not.toBe(secret)
+    }
+    expect(pub).toMatchObject({ hasPassword: true, hasPassphrase: true, hasElevation: true, elevateCommand: 'su -' })
+  })
+
+  it('drops a field it does not know, even one smuggled in at runtime', () => {
+    const pub = toPublicHost({ ...full, token: 'secret' } as unknown as SshHost)
+    expect(pub).not.toHaveProperty('token')
+  })
+
+  it('drops an off-list elevation mode or command (a host that skipped cleanHostFields)', () => {
+    const pub = toPublicHost({ ...full, elevation: 'root', elevateCommand: 'sudo -i; id' } as unknown as SshHost)
+    expect(pub).not.toHaveProperty('elevation')
+    expect(pub).not.toHaveProperty('elevateCommand')
+  })
+
+  it('stripSecrets removes every secret field', () => {
+    const out = stripSecrets(full)
+    for (const k of SECRET_FIELDS) expect(out).not.toHaveProperty(k)
+    expect(out).toHaveProperty('elevation', 'other')
+  })
+
+  it('hasElevation: login needs a password host with one, other needs the elevation password', () => {
+    const base = { id: 'h', name: 'n', host: 'h', port: 22, username: 'u' }
+    expect(toPublicHost({ ...base, authType: 'password', password: 'pw' }).hasElevation).toBe(true)
+    expect(toPublicHost({ ...base, authType: 'password' }).hasElevation).toBe(false)
+    expect(toPublicHost({ ...base, authType: 'password', password: 'pw', elevation: 'none' }).hasElevation).toBe(false)
+    expect(toPublicHost({ ...base, authType: 'key', elevation: 'login' }).hasElevation).toBe(false)
+    expect(toPublicHost({ ...base, authType: 'key', elevation: 'other' }).hasElevation).toBe(false)
+    expect(toPublicHost({ ...base, authType: 'agent', elevation: 'other', elevationPassword: 'ep' }).hasElevation).toBe(true)
+    expect(toPublicHost({ ...base, authType: 'password', password: 'pw', elevation: 'other' }).hasElevation).toBe(false)
+  })
+})
+
+describe('effectiveElevation / elevateCommandFor', () => {
+  it('defaults to login for password hosts and none otherwise', () => {
+    expect(effectiveElevation({ authType: 'password' })).toBe('login')
+    expect(effectiveElevation({ authType: 'key' })).toBe('none')
+    expect(effectiveElevation({ authType: 'agent', elevation: 'bogus' })).toBe('none')
+  })
+  it('treats login on a host without a login password as none', () => {
+    expect(effectiveElevation({ authType: 'key', elevation: 'login' })).toBe('none')
+    expect(effectiveElevation({ authType: 'agent', elevation: 'other' })).toBe('other')
+  })
+  it('falls back to the default command for anything off the list', () => {
+    expect(elevateCommandFor({})).toBe(DEFAULT_ELEVATE_COMMAND)
+    expect(elevateCommandFor({ elevateCommand: 'sudo su -' })).toBe('sudo su -')
+    expect(elevateCommandFor({ elevateCommand: 'sudo -i; rm -rf /' })).toBe(DEFAULT_ELEVATE_COMMAND)
+  })
+})
+
 describe('connectionFieldsChanged', () => {
   const prev = { host: 'h', port: 22, username: 'u', authType: 'key' as const, privateKeyPath: '/k' }
 
@@ -165,6 +295,12 @@ describe('connectionFieldsChanged', () => {
     expect(connectionFieldsChanged(prev, { ...prev, username: 'v' })).toBe(true)
     expect(connectionFieldsChanged(prev, { ...prev, authType: 'agent' })).toBe(true)
     expect(connectionFieldsChanged(prev, { ...prev, privateKeyPath: '/k2' })).toBe(true)
+  })
+
+  it('ignores elevation-only changes', () => {
+    const next = { ...prev, elevation: 'other', elevationPassword: 'root-pw', elevateCommand: 'su -' }
+    expect(connectionFieldsChanged(prev, next as never)).toBe(false)
+    expect(connectionFieldsChanged(prev, { ...prev, elevationPassword: null } as never)).toBe(false)
   })
 
   it('is true when a secret is replaced or cleared, false when untouched', () => {
