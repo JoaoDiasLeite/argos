@@ -18,6 +18,12 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '3.9.0',
+    date: '2026-11-23',
+    tag: 'new',
+    sections: []
+  },
+  {
     version: '3.8.0',
     date: '2026-11-20',
     tag: 'latest',
