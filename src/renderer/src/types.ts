@@ -710,6 +710,10 @@ export interface RepoName {
 
 export type SshAuthType = 'password' | 'key' | 'agent'
 
+/** Which secret answers sudo/su: the login password, a separate one, or none. */
+export type ElevationMode = 'login' | 'other' | 'none'
+export type ElevateCommand = 'sudo -i' | 'sudo su -' | 'su -'
+
 export interface SshHostPublic {
   id: string
   name: string
@@ -720,7 +724,13 @@ export interface SshHostPublic {
   privateKeyPath?: string
   remotePath?: string
   claudePath?: string
-  hasSecret: boolean
+  elevation?: ElevationMode
+  elevateCommand?: ElevateCommand
+  hasPassword: boolean
+  hasPassphrase: boolean
+  /** A saved secret can answer sudo/su now (the login password in `login` mode, the
+   *  elevation password in `other` mode). */
+  hasElevation: boolean
 }
 
 export interface SshHostInput {
@@ -736,6 +746,10 @@ export interface SshHostInput {
   passphrase?: string | null
   remotePath?: string
   claudePath?: string
+  elevation?: ElevationMode
+  /** Same keep/clear/replace rules as the password; kept only in `other` mode. */
+  elevationPassword?: string | null
+  elevateCommand?: ElevateCommand
 }
 
 export interface SshKeyInfo {

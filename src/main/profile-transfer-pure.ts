@@ -9,6 +9,7 @@ import * as path from 'path'
 import { encodeProjectPath } from './codex-data-pure'
 import { projectNameKey } from './project-move-pure'
 import { parseTrustEntry, type TrustEntry } from './ssh-trust-pure'
+import { SECRET_FIELDS, stripSecrets, type HostSecrets, type SecretField } from './ssh-host-pure'
 
 /**
  * The parts of profile export/import that need no Electron and no disk: the bundle format,
@@ -67,7 +68,7 @@ export interface EncryptedSecrets {
 }
 
 export interface SecretsPayload {
-  ssh: Record<string, { password?: string; passphrase?: string }>
+  ssh: Record<string, HostSecrets>
   apiKey?: string
 }
 
@@ -664,13 +665,13 @@ export function mergeAccountGroup(
   return { group: base, created }
 }
 
-export interface HostLike {
-  id: string
-  password?: string
-  passphrase?: string
-}
+export type HostLike = { id: string; elevation?: string } & HostSecrets
 
-/** Merge SSH hosts by id: imported fields win, and a secret the import lacks is kept from here. */
+/**
+ * Merge SSH hosts by id: imported fields win, and a secret the import lacks is kept from
+ * here. A kept elevation password is dropped when the merged host no longer uses one
+ * (its elevation mode is not `other`), as saving the host from the form would.
+ */
 export function mergeHosts<T extends HostLike>(local: T[], imported: T[]): T[] {
   const out = local.map((h) => ({ ...h }))
   for (const h of imported) {
@@ -681,24 +682,31 @@ export function mergeHosts<T extends HostLike>(local: T[], imported: T[]): T[] {
       continue
     }
     const prev = out[idx]
-    out[idx] = { ...h, password: h.password || prev.password, passphrase: h.passphrase || prev.passphrase }
-    if (!out[idx].password) delete out[idx].password
-    if (!out[idx].passphrase) delete out[idx].passphrase
+    const merged: T = { ...h }
+    for (const k of SECRET_FIELDS) {
+      const v = h[k] || prev[k]
+      if (v) merged[k] = v as T[SecretField]
+      else delete merged[k]
+    }
+    if (merged.elevation !== 'other') delete merged.elevationPassword
+    out[idx] = merged
   }
   return out
 }
 
-/** The hosts as they travel: no secrets in the clear. */
-export function splitHostSecrets<T extends HostLike>(hosts: T[]): { hosts: Omit<T, 'password' | 'passphrase'>[]; secrets: SecretsPayload['ssh'] } {
+/** The hosts as they travel: no secrets in the clear. Every field in SECRET_FIELDS goes to
+ *  the secrets payload (which is only exported encrypted), so a secret added later travels
+ *  the same way without touching this. */
+export function splitHostSecrets<T extends HostLike>(hosts: T[]): { hosts: Omit<T, SecretField>[]; secrets: SecretsPayload['ssh'] } {
   const secrets: SecretsPayload['ssh'] = {}
   const out = hosts.map((h) => {
-    const { password, passphrase, ...rest } = h
-    if (password || passphrase) {
-      secrets[h.id] = {}
-      if (password) secrets[h.id].password = password
-      if (passphrase) secrets[h.id].passphrase = passphrase
+    const found: HostSecrets = {}
+    for (const k of SECRET_FIELDS) {
+      const v = h[k]
+      if (typeof v === 'string' && v) found[k] = v
     }
-    return rest
+    if (Object.keys(found).length) secrets[h.id] = found
+    return stripSecrets(h)
   })
   return { hosts: out, secrets }
 }

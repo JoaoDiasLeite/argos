@@ -13,36 +13,22 @@ import {
   hostFieldProblemKey,
   mergeSecrets,
   refuseOverwriteMessage,
+  stripSecrets,
+  toPublicHost,
   remoteCommandWord,
   sshDestinationArgs,
-  type HostsRead
+  type HostsRead,
+  type SecretField,
+  type SshHost,
+  type SshHostPublic
 } from './ssh-host-pure'
 
-export type SshAuthType = 'password' | 'key' | 'agent'
-
-export interface SshHost {
-  id: string
-  name: string
-  host: string
-  port: number
-  username: string
-  authType: SshAuthType
-  password?: string
-  privateKeyPath?: string
-  passphrase?: string
-  remotePath?: string
-  claudePath?: string
-}
+export type { SshAuthType, SshHost, SshHostPublic } from './ssh-host-pure'
 
 /** What the renderer sends: `undefined` keeps a stored secret, `null` clears it. */
-export type SshHostInput = Omit<SshHost, 'id' | 'password' | 'passphrase'> & {
+export type SshHostInput = Omit<SshHost, 'id' | SecretField> & {
   id?: string
-  password?: string | null
-  passphrase?: string | null
-}
-
-/** Host with secrets stripped — safe to hand to the renderer. */
-export type SshHostPublic = Omit<SshHost, 'password' | 'passphrase'> & { hasSecret: boolean }
+} & { [K in SecretField]?: string | null }
 
 const hostsPath = path.join(app.getPath('userData'), 'ssh-hosts.bin')
 
@@ -116,13 +102,8 @@ function writeHosts(hosts: SshHost[]): void {
   fs.renameSync(tmp, hostsPath)
 }
 
-function toPublic(h: SshHost): SshHostPublic {
-  const { password, passphrase, ...rest } = h
-  return { ...rest, hasSecret: !!(password || passphrase) }
-}
-
 export function listHosts(): SshHostPublic[] {
-  return readHostsOrEmpty().map(toPublic)
+  return readHostsOrEmpty().map(toPublicHost)
 }
 
 function genId(): string {
@@ -130,7 +111,7 @@ function genId(): string {
 }
 
 export function saveHost(raw: SshHostInput): HostsWriteResult {
-  const { password: _p, passphrase: _pp, ...fields } = cleanHostFields(raw)
+  const fields = stripSecrets(cleanHostFields(raw))
   const problem = hostFieldProblem(fields)
   if (problem) return { ok: false, error: t(hostFieldProblemKey(problem)) }
   return updateHosts((hosts) => {

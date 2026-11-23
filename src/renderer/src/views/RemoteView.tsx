@@ -6,6 +6,8 @@ import {
   SshHostInput,
   SshAuthType,
   SshKeyInfo,
+  type ElevationMode,
+  type ElevateCommand,
   WslDistro,
   SourceInfo,
   OpsRunbookInfo,
@@ -182,6 +184,20 @@ const Dot = ({ state }: { state: DotState }) => {
 }
 
 const AUTH_LABEL: Record<SshAuthType, MessageKey> = { password: 'remote.auth.password', key: 'remote.auth.key', agent: 'remote.auth.agent' }
+
+const ELEVATION_LABEL: Record<ElevationMode, MessageKey> = {
+  login: 'remote.form.elevation.login',
+  other: 'remote.form.elevation.other',
+  none: 'remote.form.elevation.none'
+}
+const ELEVATE_COMMANDS: ElevateCommand[] = ['sudo -i', 'sudo su -', 'su -']
+
+/** The elevation mode the form shows. Mirrors main's effectiveElevation: unset is `login` on
+ *  a password host and `none` otherwise, and `login` without a login password is `none`. */
+function shownElevation(h: { authType: SshAuthType; elevation?: ElevationMode }): ElevationMode {
+  const mode = h.elevation ?? (h.authType === 'password' ? 'login' : 'none')
+  return mode === 'login' && h.authType !== 'password' ? 'none' : mode
+}
 const AUTH_CHIP: Record<SshAuthType, MessageKey> = { password: 'remote.auth.chipPassword', key: 'remote.auth.chipKey', agent: 'remote.auth.chipAgent' }
 
 export default function RemoteView({
@@ -375,8 +391,13 @@ export default function RemoteView({
 
   const hostValid = !!editing && !!editing.name.trim() && !!editing.host.trim() && !!editing.username.trim()
 
-  // A saved secret exists for the auth type being edited (the main process drops the other).
-  const canRemoveSecret = !!editing?.id && hosts.some((h) => h.id === editing.id && h.hasSecret && h.authType === editing.authType)
+  // Which saved secrets the edited host has. The login password and passphrase count only for
+  // the auth type being edited (main drops the other), the elevation password only while it
+  // was saved in `other` mode (otherwise hasElevation comes from the login password).
+  const savedHost = editing?.id ? hosts.find((h) => h.id === editing.id) : undefined
+  const canRemovePassword = !!savedHost?.hasPassword && editing?.authType === 'password'
+  const canRemovePassphrase = !!savedHost?.hasPassphrase && editing?.authType === 'key'
+  const canRemoveElevation = !!savedHost?.hasElevation && shownElevation(savedHost) === 'other'
 
   const openEditor = (h: SshHostInput) => {
     editorOpenedAt.current = Date.now()
@@ -790,7 +811,9 @@ export default function RemoteView({
                     authType: selHost.authType,
                     privateKeyPath: selHost.privateKeyPath,
                     remotePath: selHost.remotePath,
-                    claudePath: selHost.claudePath
+                    claudePath: selHost.claudePath,
+                    elevation: selHost.elevation,
+                    elevateCommand: selHost.elevateCommand
                   })
                 }
               >
@@ -1121,7 +1144,7 @@ export default function RemoteView({
                   onChange={(e) => setEditing({ ...editing, password: e.target.value })}
                 />
                 {!secretsEncrypted && <p className="help">{t('remote.form.passwordPlain')}</p>}
-                {canRemoveSecret && editing.password === undefined && (
+                {canRemovePassword && editing.password === undefined && (
                   <button type="button" className="btn-ghost small rv-remove-secret" onClick={() => setEditing({ ...editing, password: null })}>
                     {t('remote.form.removePassword')}
                   </button>
@@ -1166,7 +1189,7 @@ export default function RemoteView({
                     onChange={(e) => setEditing({ ...editing, passphrase: e.target.value })}
                   />
                   {!secretsEncrypted && <p className="help">{t('remote.form.passphrasePlain')}</p>}
-                  {canRemoveSecret && editing.passphrase === undefined && (
+                  {canRemovePassphrase && editing.passphrase === undefined && (
                     <button type="button" className="btn-ghost small rv-remove-secret" onClick={() => setEditing({ ...editing, passphrase: null })}>
                       {t('remote.form.removePassphrase')}
                     </button>
@@ -1174,6 +1197,63 @@ export default function RemoteView({
                 </div>
               </>
             )}
+            <div className="form-group">
+              <label>{t('remote.form.elevation')}</label>
+              <div className="seg-control">
+                {(['login', 'other', 'none'] as ElevationMode[])
+                  // Reusing the login password only makes sense when there is one.
+                  .filter((m) => m !== 'login' || editing.authType === 'password')
+                  .map((m) => (
+                    <button
+                      type="button"
+                      key={m}
+                      className={shownElevation(editing) === m ? 'on' : ''}
+                      // A password typed for `other` is not carried into another mode (main
+                      // would drop it anyway); a requested removal still applies on save.
+                      onClick={() => {
+                        // Re-clicking the current mode must not forget what the (still
+                        // mounted) password field holds.
+                        if (shownElevation(editing) === m) return
+                        setEditing({ ...editing, elevation: m, elevationPassword: editing.elevationPassword === null ? null : undefined })
+                      }}
+                    >
+                      {t(ELEVATION_LABEL[m])}
+                    </button>
+                  ))}
+              </div>
+              <p className="help">{t('remote.form.elevationHelp')}</p>
+            </div>
+            {shownElevation(editing) === 'other' && (
+              <div className="form-group">
+                <label>{t('remote.form.elevationPassword')}</label>
+                <input
+                  className="text-input"
+                  type="password"
+                  aria-label={t('remote.form.elevationPassword')}
+                  placeholder={editing.elevationPassword === null ? t('remote.form.removed') : canRemoveElevation ? t('remote.form.unchanged') : ''}
+                  onChange={(e) => setEditing({ ...editing, elevationPassword: e.target.value })}
+                />
+                {!secretsEncrypted && <p className="help">{t('remote.form.elevationPlain')}</p>}
+                {canRemoveElevation && editing.elevationPassword === undefined && (
+                  <button type="button" className="btn-ghost small rv-remove-secret" onClick={() => setEditing({ ...editing, elevationPassword: null })}>
+                    {t('remote.form.removeElevationPassword')}
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="form-group">
+              <label>{t('remote.form.elevateCommand')}</label>
+              <Select
+                value={editing.elevateCommand ?? 'sudo -i'}
+                onChange={(e) => setEditing({ ...editing, elevateCommand: e.target.value as ElevateCommand })}
+              >
+                {ELEVATE_COMMANDS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </Select>
+            </div>
             <div className="form-group">
               <label>
                 {t('remote.form.remotePath')}<span className="optional">{t('remote.form.optional')}</span>
