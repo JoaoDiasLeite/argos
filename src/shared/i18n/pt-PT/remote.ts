@@ -147,7 +147,7 @@ const remote: Record<keyof typeof en, string> = {
   'form.tagsHelp': 'Separadas por vírgulas. Até 12 etiquetas; só letras, dígitos, espaços, - _ e .',
   'form.notes': 'Notas',
   'form.notesPlaceholder': 'O que corre aqui, a quem ligar, como entrar…',
-  'form.notesHelp': 'Markdown. As notas não são cifradas nem são um cofre: nunca escrevas palavras-passe nelas.',
+  'form.notesHelp': 'Markdown. As notas ficam guardadas com o anfitrião, mas não são um cofre e aparecem no ecrã: nunca escrevas palavras-passe nelas.',
   'prod.pill': 'PRODUÇÃO',
   'prod.pillShort': 'PROD',
   'prod.title': 'Servidor de produção',

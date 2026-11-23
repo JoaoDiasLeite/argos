@@ -146,7 +146,7 @@ export default {
   'form.tagsHelp': 'Separated by commas. Up to 12 tags; letters, digits, spaces, - _ and . only.',
   'form.notes': 'Notes',
   'form.notesPlaceholder': 'What runs here, who to call, how to get in…',
-  'form.notesHelp': 'Markdown. Notes are not encrypted and are not a vault: never write passwords in them.',
+  'form.notesHelp': 'Markdown. Notes are saved with the host but are not a vault, and they are shown on screen: never write passwords in them.',
   'prod.pill': 'PROD',
   'prod.pillShort': 'PROD',
   'prod.title': 'Production server',

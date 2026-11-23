@@ -337,7 +337,8 @@
 .rv-tag-filter:hover { color: var(--text-0); }
 .rv-tag-filter.on { color: var(--text-0); border-color: var(--border-light); background: var(--bg-3); }
 .rv-tag-clear { font-size: 12px; }
-.rv-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.rv-toggle-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+.rv-toggle-row > label:first-child { margin: 0; }
 .rv-toggle-help { margin-top: -6px; }
 .rv-notes-input { width: 100%; min-height: 96px; resize: vertical; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; }
 /* Notes are the user's own Markdown, so a long one scrolls inside the column. */
