@@ -33,6 +33,9 @@ describe('groupContainers', () => {
   it('hides stopped containers and the projects left empty', () => {
     const g = groupContainers(rows, { runningOnly: true })
     expect(g.groups.map((x) => x.project)).toEqual(['api', 'lab'])
+    // The count is the project's, not what is shown of it.
+    expect(g.groups[1]).toMatchObject({ running: 1, total: 2 })
+    expect(g.groups[1].containers).toHaveLength(1)
     expect(g.loose.map((c) => c.name)).toEqual(['adhoc'])
   })
 

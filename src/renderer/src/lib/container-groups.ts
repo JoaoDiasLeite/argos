@@ -8,9 +8,12 @@ import type { RemoteContainerRow } from '../types'
 
 export interface ContainerGroup {
   project: string
+  /** The ones the options let through. */
   containers: RemoteContainerRow[]
-  /** How many of them are running. */
+  /** The whole project, whatever the options leave out: its count reads the same with
+   *  Running only on or a filter typed. */
   running: number
+  total: number
 }
 
 export interface GroupedContainers {
@@ -49,11 +52,15 @@ export function groupContainers(rows: RemoteContainerRow[], opts: GroupOptions =
     else byProject.set(c.project, [c])
   }
 
-  const groups = [...byProject].map(([project, containers]) => ({
-    project,
-    containers: [...containers].sort(byRunningThenName),
-    running: containers.filter((c) => c.running).length
-  }))
+  const groups = [...byProject].map(([project, containers]) => {
+    const all = rows.filter((c) => c.project === project)
+    return {
+      project,
+      containers: [...containers].sort(byRunningThenName),
+      running: all.filter((c) => c.running).length,
+      total: all.length
+    }
+  })
   // A project with something running first, then by name.
   groups.sort((a, b) => Number(b.running > 0) - Number(a.running > 0) || a.project.localeCompare(b.project))
   loose.sort(byRunningThenName)

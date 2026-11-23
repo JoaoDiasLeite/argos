@@ -177,7 +177,7 @@ export default function ContainersPanel({ source, ready, barSlot, query, onOpen,
 
       {grouped.groups.map((g) => {
         const open = !folded.has(g.project)
-        const total = g.containers.length
+        const total = g.total
         const tone = g.running === 0 ? '' : g.running === total ? ' up' : ' part'
         return (
           <div key={g.project} className="ctr-group">
