@@ -1336,6 +1336,20 @@ export interface RemoteShellExitEvent {
   code: number
 }
 
+/** Main saw the shell stop at a password prompt (or stop showing one): a hint, no content. */
+export interface RemoteShellSecretHintEvent {
+  id: string
+  kind: 'sudo' | 'login' | 'passphrase' | null
+}
+
+export type RemoteShellSendSecretResult =
+  | { ok: true }
+  | { ok: false; reason: 'unknown-shell' | 'not-a-host-shell' | 'no-secret' | 'no-prompt' | 'rate-limited' }
+
+export type RemoteShellElevateResult =
+  | { ok: true }
+  | { ok: false; reason: 'unknown-shell' | 'not-a-host-shell' | 'no-secret' | 'rate-limited' }
+
 // ─── Auto-update ────────────────────────────────────────────────────────────
 
 export type UpdaterStateKind =
@@ -2039,6 +2053,12 @@ declare global {
       remoteShellKill: (id: string) => Promise<{ ok: boolean }>
       onRemoteShellData: (cb: (data: RemoteShellDataEvent) => void) => () => void
       onRemoteShellExit: (cb: (data: RemoteShellExitEvent) => void) => () => void
+      /** Main types the saved secret the shell's prompt asks for; `force` only after a
+       *  `no-prompt` answer for the same shell, and then without Enter. */
+      remoteShellSendSecret: (id: string, opts?: { force?: boolean }) => Promise<RemoteShellSendSecretResult>
+      /** Types the host's elevation command and answers its password prompt once. */
+      remoteShellElevate: (id: string) => Promise<RemoteShellElevateResult>
+      onRemoteShellSecretHint: (cb: (data: RemoteShellSecretHintEvent) => void) => () => void
     }
   }
 }

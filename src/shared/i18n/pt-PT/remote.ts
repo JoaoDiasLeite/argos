@@ -223,6 +223,17 @@ const remote: Record<keyof typeof en, string> = {
   'terminal.connecting': 'A ligar…',
   'terminal.exited': 'A shell terminou.',
   'terminal.reconnect': 'Voltar a ligar',
+  'terminal.sendSecret': 'Enviar palavra-passe',
+  'terminal.sendSecretPrompt': 'Enviar palavra-passe (o terminal está a pedir uma)',
+  'terminal.elevate': 'Elevar ({command})',
+  'terminal.elevateTitle': 'Escreve {command} e responde uma vez ao pedido de palavra-passe',
+  'terminal.secretNoPrompt':
+    'O terminal não parece estar a pedir uma palavra-passe. Se a enviares agora, pode ficar visível e no histórico da shell. Vai sem Enter, para poderes apagar com Ctrl+U.',
+  'terminal.secretSendAnyway': 'Enviar mesmo assim',
+  'terminal.secretCancel': 'Cancelar',
+  'terminal.secretNone': 'Não há palavra-passe guardada para este pedido.',
+  'terminal.secretRateLimited': 'Espera um momento antes de voltar a enviar.',
+  'terminal.secretFailed': 'Não foi possível enviar a palavra-passe.',
   // components/SftpBrowser and LocalBrowser
   'sftp.listFailed': 'Falha ao listar a diretoria',
   'sftp.deleteFailed': 'Falha ao eliminar',

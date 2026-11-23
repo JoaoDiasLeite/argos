@@ -112,7 +112,10 @@ import {
   remoteShellWrite,
   remoteShellResize,
   remoteShellKill,
-  remoteShellKillAll
+  remoteShellKillAll,
+  remoteShellSendSecret,
+  remoteShellElevate,
+  setSecretHintSink
 } from './remote-shell'
 import { remoteContainers } from './remote-containers'
 import { localContainers } from './local-containers'
@@ -3409,6 +3412,16 @@ ipcMain.on('remote-shell:resize', (_, id: string, cols: number, rows: number) =>
   remoteShellResize(id, cols, rows)
 )
 ipcMain.handle('remote-shell:kill', (_, id: string) => remoteShellKill(id))
+// "Send password" and "Elevate": only the main window may ask, by a click there. The host and
+// its secret are resolved in remote-shell.ts from the shell id; nothing secret comes back.
+ipcMain.handle('remote-shell:send-secret', (e, id: unknown, opts: unknown) =>
+  e.sender === mainWindow?.webContents ? remoteShellSendSecret(id, opts) : { ok: false, reason: 'unknown-shell' }
+)
+ipcMain.handle('remote-shell:elevate', (e, id: unknown) =>
+  e.sender === mainWindow?.webContents ? remoteShellElevate(id) : { ok: false, reason: 'unknown-shell' }
+)
+// Only whether a prompt is showing, and of which kind: never the text around it.
+setSecretHintSink((id, kind) => send('remote-shell:secret-hint', { id, kind }))
 
 // ─── Planner ──────────────────────────────────────────────────────────────────
 

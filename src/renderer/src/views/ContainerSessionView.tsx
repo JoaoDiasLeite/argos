@@ -86,6 +86,7 @@ export default function ContainerSessionView({ host, container, name, seq, activ
             container={container}
             active={active}
             closable={false}
+            secrets={host}
           />
         </div>
       </div>

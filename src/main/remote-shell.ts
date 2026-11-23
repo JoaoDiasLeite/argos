@@ -6,6 +6,19 @@ import { ShellRegistry, type CreateResult } from './remote-shell-pure'
 import { containerShellArgs, containerShellCommand, type ContainerRuntime } from './remote-containers-pure'
 import { resolveWindowsExe } from './terminal'
 import { t } from './i18n'
+import { getHost } from './ssh'
+import { elevateCommandFor } from './ssh-host-pure'
+import {
+  appendTail,
+  elevationSecret,
+  isOnlyFocusReports,
+  matchSecretPrompt,
+  secretForForcedSend,
+  secretForPrompt,
+  SecretSendGuard,
+  type PromptSelf,
+  type SecretPromptKind
+} from './secret-prompt-pure'
 
 /**
  * Interactive ssh2 shell channels backing the Remote Session ("Connect") terminal — one per
@@ -34,6 +47,93 @@ interface ShellChannel {
 }
 
 const shells = new ShellRegistry<ShellChannel>()
+
+/**
+ * What main knows about a shell on a remote host, for "Send password" and "Elevate": which
+ * host it belongs to (never taken from the renderer), the stripped tail of its output, the
+ * last prompt hint sent, and the Elevate responder while one is armed. Local container ptys
+ * have no entry. Keyed by id but tied to the channel, so a restart that reuses the id is not
+ * touched by the old channel's late output or close.
+ */
+interface HostShellState {
+  channel: ShellChannel
+  hostId: string
+  /** The host's user and address, read once when the shell opens (not secret), so the hint
+   *  for a `user@host's password:` prompt can tell this host from a nested ssh without
+   *  reading the encrypted store on every chunk. */
+  self: PromptSelf | null
+  tail: string
+  hint: SecretPromptKind | null
+  armed: { timer: ReturnType<typeof setTimeout> } | null
+}
+
+const hostShells = new Map<string, HostShellState>()
+const sendGuard = new SecretSendGuard()
+
+/** How long an Elevate click waits for its password prompt. */
+const ELEVATE_WINDOW_MS = 8000
+
+export type SecretHintSink = (id: string, kind: SecretPromptKind | null) => void
+let hintSink: SecretHintSink = () => {}
+
+/** Where `remote-shell:secret-hint` events go (index.ts sends them to the main window). */
+export function setSecretHintSink(sink: SecretHintSink): void {
+  hintSink = sink
+}
+
+function setHint(id: string, st: HostShellState, kind: SecretPromptKind | null): void {
+  if (st.hint === kind) return
+  st.hint = kind
+  hintSink(id, kind)
+}
+
+function disarm(st: HostShellState): void {
+  if (!st.armed) return
+  clearTimeout(st.armed.timer)
+  st.armed = null
+}
+
+/** Drops a shell's state (all of it, the Elevate timer included). With `channel`, only if
+ *  the entry still belongs to that channel. */
+function forgetHostShell(id: string, channel?: ShellChannel): void {
+  const st = hostShells.get(id)
+  if (!st || (channel && st.channel !== channel)) return
+  disarm(st)
+  hostShells.delete(id)
+  sendGuard.forget(id)
+}
+
+/** Writes a secret and treats the prompt as answered: the tail is cleared so the next click,
+ *  or the Elevate responder, needs a fresh prompt rather than typing it again into whatever
+ *  reads stdin next on a slow link. Never logs or rethrows anything that could carry it. */
+function writeSecret(id: string, st: HostShellState, data: string): boolean {
+  try {
+    st.channel.write(data)
+  } catch {
+    return false
+  }
+  sendGuard.noteSent(id, Date.now())
+  st.tail = ''
+  setHint(id, st, null)
+  return true
+}
+
+/** Output from a host shell: update the tail and the hint, and answer an armed Elevate. */
+function feedOutput(id: string, channel: ShellChannel, data: string): void {
+  const st = hostShells.get(id)
+  if (!st || st.channel !== channel) return
+  st.tail = appendTail(st.tail, data)
+  // A mismatching `user@host's password:` (a nested ssh) is no match: no hint, and the
+  // Elevate responder leaves it alone.
+  const match = matchSecretPrompt(st.tail, st.self ?? undefined)
+  if (st.armed && match && (match.kind === 'sudo' || match.kind === 'login')) {
+    disarm(st)
+    const host = getHost(st.hostId)
+    const secret = host ? elevationSecret(host) : undefined
+    if (secret && writeSecret(id, st, secret + '\r')) return
+  }
+  setHint(id, st, match?.kind ?? null)
+}
 
 function sshChannel(stream: ClientChannel): ShellChannel {
   return {
@@ -97,8 +197,19 @@ export function remoteShellCreate(
             resolve({ ok: false, error: KILLED_ERROR })
             return
           }
-          stream.on('data', (d: Buffer) => onData(id, d.toString('utf8')))
-          stream.stderr?.on('data', (d: Buffer) => onData(id, d.toString('utf8')))
+          // A container exec on the host belongs to the host too: `sudo docker exec` asks
+          // for the host's password.
+          forgetHostShell(id)
+          const h = getHost(hostId)
+          const self = h ? { username: h.username, host: h.host } : null
+          hostShells.set(id, { channel, hostId, self, tail: '', hint: null, armed: null })
+          const onChunk = (d: Buffer) => {
+            const text = d.toString('utf8')
+            feedOutput(id, channel, text)
+            onData(id, text)
+          }
+          stream.on('data', onChunk)
+          stream.stderr?.on('data', onChunk)
           // An exec channel reports the command's exit status before it closes.
           let exitCode = 0
           stream.on('exit', (code: number | null) => {
@@ -107,6 +218,7 @@ export function remoteShellCreate(
           stream.on('close', () => {
             // Only a channel the far end closed reports an exit; one we killed (or one a
             // fresh create already replaced) stays quiet towards the id's new owner.
+            forgetHostShell(id, channel)
             if (shells.release(id, channel)) onExit(id, exitCode)
           })
           resolve({ ok: true })
@@ -180,6 +292,10 @@ export function remoteShellWrite(id: string, data: string): void {
   if (typeof data !== 'string') return
   const channel = shells.get(id)
   if (!channel) return
+  // The user typing into the shell takes over from an armed Elevate. xterm's focus reports
+  // do not count, so the terminal regaining focus after the click does not disarm it.
+  const st = hostShells.get(id)
+  if (st && st.channel === channel && !isOnlyFocusReports(data)) disarm(st)
   try {
     channel.write(data)
   } catch {
@@ -202,6 +318,7 @@ export function remoteShellResize(id: string, cols: number, rows: number): void 
 
 export function remoteShellKill(id: string): { ok: boolean } {
   if (!isSafeId(id)) return { ok: false }
+  forgetHostShell(id)
   const outcome = shells.kill(id)
   if (outcome.kind === 'none') return { ok: false }
   if (outcome.kind === 'live') {
@@ -215,6 +332,7 @@ export function remoteShellKill(id: string): { ok: boolean } {
 }
 
 export function remoteShellKillAll(): void {
+  for (const id of [...hostShells.keys()]) forgetHostShell(id)
   for (const channel of shells.killAll()) {
     try {
       channel.end()
@@ -222,4 +340,97 @@ export function remoteShellKillAll(): void {
       // no-op
     }
   }
+}
+
+export type SendSecretResult =
+  | { ok: true }
+  | { ok: false; reason: 'unknown-shell' | 'not-a-host-shell' | 'no-secret' | 'no-prompt' | 'rate-limited' }
+
+/** The live host shell for `id`, or why there is none. A live id without an entry is a local
+ *  container pty. */
+function hostShellFor(id: unknown): HostShellState | { reason: 'unknown-shell' | 'not-a-host-shell' } {
+  if (!isSafeId(id)) return { reason: 'unknown-shell' }
+  const channel = shells.get(id)
+  if (!channel) return { reason: 'unknown-shell' }
+  const st = hostShells.get(id)
+  if (!st || st.channel !== channel) return { reason: 'not-a-host-shell' }
+  return st
+}
+
+/**
+ * "Send password": types the saved secret the shell's current prompt asks for, followed by
+ * Enter. With no prompt in sight it refuses (`no-prompt`) and opens a short window in which
+ * the user may confirm a forced send, which types the elevation or login password WITHOUT
+ * Enter so a mistake can be erased with Ctrl+U. If a prompt has appeared by the time the
+ * forced send arrives, it is answered normally instead. The secret is read from the store
+ * here, written to the channel and dropped: never returned, logged or put in an event.
+ */
+export function remoteShellSendSecret(id: unknown, opts: unknown): SendSecretResult {
+  const st = hostShellFor(id)
+  if ('reason' in st) return { ok: false, reason: st.reason }
+  const sid = id as string
+  // Shape-checked: it comes over IPC.
+  const force = opts !== null && typeof opts === 'object' && (opts as { force?: unknown }).force === true
+  const now = Date.now()
+  if (sendGuard.rateLimited(sid, now)) return { ok: false, reason: 'rate-limited' }
+  const host = getHost(st.hostId)
+  if (!host) return { ok: false, reason: 'no-secret' }
+
+  // Read fresh here: a nested ssh's `user@host's password:` that is not this host is no
+  // prompt, so it answers no-prompt and only a confirmed forced send can type into it.
+  const match = matchSecretPrompt(st.tail, { username: host.username, host: host.host })
+  if (match) {
+    const secret = secretForPrompt(match, host)
+    if (!secret) return { ok: false, reason: 'no-secret' }
+    disarm(st)
+    return writeSecret(sid, st, secret + '\r') ? { ok: true } : { ok: false, reason: 'unknown-shell' }
+  }
+  if (!force) {
+    sendGuard.noteNoPrompt(sid, now)
+    return { ok: false, reason: 'no-prompt' }
+  }
+  // A force that did not follow a no-prompt answer is refused without opening a window of
+  // its own, so two forced calls in a row cannot skip the guard.
+  if (!sendGuard.canForce(sid, now)) return { ok: false, reason: 'no-prompt' }
+  const secret = secretForForcedSend(host)
+  if (!secret) return { ok: false, reason: 'no-secret' }
+  disarm(st)
+  return writeSecret(sid, st, secret) ? { ok: true } : { ok: false, reason: 'unknown-shell' }
+}
+
+export type ElevateResult =
+  | { ok: true }
+  | { ok: false; reason: 'unknown-shell' | 'not-a-host-shell' | 'no-secret' | 'rate-limited' }
+
+/**
+ * "Elevate": types the host's elevation command (from the fixed list, never free text) and,
+ * for the next few seconds, answers the first sudo or login password prompt with the
+ * elevation secret, once. Answering without a click of its own is acceptable only here: the
+ * user's click put that command into the shell a moment before.
+ */
+export function remoteShellElevate(id: unknown): ElevateResult {
+  const st = hostShellFor(id)
+  if ('reason' in st) return { ok: false, reason: st.reason }
+  const sid = id as string
+  if (sendGuard.rateLimited(sid, Date.now())) return { ok: false, reason: 'rate-limited' }
+  const host = getHost(st.hostId)
+  if (!host || !elevationSecret(host)) return { ok: false, reason: 'no-secret' }
+  disarm(st)
+  try {
+    st.channel.write(`${elevateCommandFor(host)}\r`)
+  } catch {
+    return { ok: false, reason: 'unknown-shell' }
+  }
+  // Counts towards the rate limit, so a double click does not type the command twice.
+  sendGuard.noteSent(sid, Date.now())
+  // Only a prompt printed after the command counts.
+  st.tail = ''
+  setHint(sid, st, null)
+  const armed = {
+    timer: setTimeout(() => {
+      if (st.armed === armed) st.armed = null
+    }, ELEVATE_WINDOW_MS)
+  }
+  st.armed = armed
+  return { ok: true }
 }

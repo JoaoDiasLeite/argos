@@ -510,7 +510,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
             "close" that only went back to the targets list read as if it had. */}
         <div className="remote-session-right">
           {isSsh ? (
-            <RemoteTerminal terminalId={terminalId} hostId={target.host.id} active={active} closable={false} onCwdChange={followShell} />
+            <RemoteTerminal terminalId={terminalId} hostId={target.host.id} active={active} closable={false} onCwdChange={followShell} secrets={target.host} />
           ) : (
             <ChatTerminal
               terminalId={terminalId}
