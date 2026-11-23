@@ -17,6 +17,8 @@ import {
 import ContainersPanel, { type ContainerSource } from '../components/ContainersPanel'
 import Menu, { MoreIcon } from '../components/Menu'
 import Sheet from '../components/Sheet'
+import Markdown from '../components/Markdown'
+import { allHostTags, filterHosts } from '../lib/host-filter'
 import OpsReportSheet from '../components/OpsReportSheet'
 import { allRunbookPaths, readRunbookSources } from '../lib/runbook-library'
 import './views.css'
@@ -91,6 +93,30 @@ function emptyHost(): SshHostInput {
   return { name: '', host: '', port: 22, username: '', authType: 'password' }
 }
 
+/** A saved host as the form edits it: no secrets, which only ever travel renderer to main. */
+function hostToInput(h: SshHostPublic): SshHostInput {
+  return {
+    id: h.id,
+    name: h.name,
+    host: h.host,
+    port: h.port,
+    username: h.username,
+    authType: h.authType,
+    privateKeyPath: h.privateKeyPath,
+    remotePath: h.remotePath,
+    claudePath: h.claudePath,
+    elevation: h.elevation,
+    elevateCommand: h.elevateCommand,
+    favorite: h.favorite,
+    production: h.production,
+    tags: h.tags,
+    notes: h.notes
+  }
+}
+
+/** The tags box is free text while typing; main cleans, dedupes and caps what is saved. */
+const parseTagsText = (text: string): string[] => text.split(',').map((x) => x.trim()).filter(Boolean)
+
 /** `C:\Users\you\.ssh\id_ed25519` → `~/.ssh/id_ed25519`; anything else as written. */
 function shortKeyPath(p: string): string {
   const m = /[\\/]\.ssh[\\/](.+)$/.exec(p)
@@ -149,6 +175,11 @@ const SearchIcon = () => (
     <circle cx="11" cy="11" r="7" />
     <path d="M20 20l-3.5-3.5" />
   </Icon>
+)
+const StarIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 3l2.7 5.6 6.1.8-4.5 4.3 1.1 6.1L12 16.9 6.6 19.8l1.1-6.1L3.2 9.4l6.1-.8z" />
+  </svg>
 )
 const XIcon = () => (
   <Icon>
@@ -219,6 +250,11 @@ export default function RemoteView({
   const [hidden, setHidden] = useState<string[]>([])
   const [wslPaths, setWslPaths] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<SshHostInput | null>(null)
+  // The tags field as typed ("a, b,"): the list is only built when saving.
+  const [tagsText, setTagsText] = useState('')
+  // "Edit notes" opens the same form and lands in the notes box.
+  const focusNotesRef = useRef(false)
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
   const editorOpenedAt = useRef(0)
   const [probes, setProbes] = useState<Record<string, Probes>>({})
   const [probing, setProbing] = useState<string | null>(null)
@@ -399,9 +435,11 @@ export default function RemoteView({
   const canRemovePassphrase = !!savedHost?.hasPassphrase && editing?.authType === 'key'
   const canRemoveElevation = !!savedHost?.hasElevation && shownElevation(savedHost) === 'other'
 
-  const openEditor = (h: SshHostInput) => {
+  const openEditor = (h: SshHostInput, focusNotes = false) => {
     editorOpenedAt.current = Date.now()
     setWriteError(null)
+    setTagsText((h.tags ?? []).join(', '))
+    focusNotesRef.current = focusNotes
     setEditing(h)
   }
 
@@ -413,7 +451,7 @@ export default function RemoteView({
     savingRef.current = true
     setSaving(true)
     try {
-      const res = await window.electronAPI.sshSave(editing)
+      const res = await window.electronAPI.sshSave({ ...editing, tags: parseTagsText(tagsText) })
       if (!res.ok) {
         // Nothing was written: the sheet stays open with what was typed.
         setWriteError(res.error)
@@ -456,12 +494,19 @@ export default function RemoteView({
 
   const q = query.trim().toLowerCase()
   const matchesDistro = (d: WslDistro) => !q || d.name.toLowerCase().includes(q)
-  const matchesHost = (h: SshHostPublic) =>
-    !q || h.name.toLowerCase().includes(q) || h.host.toLowerCase().includes(q) || h.username.toLowerCase().includes(q)
+  // Tags exist on SSH hosts only, so picking one narrows the list to the hosts that carry it.
+  const tagChoices = useMemo(() => allHostTags(hosts), [hosts])
+  const activeTags = selectedTags.filter((tag) => tagChoices.some((c) => c.toLowerCase() === tag.toLowerCase()))
+  const toggleTag = (tag: string) =>
+    setSelectedTags((prev) =>
+      prev.some((x) => x.toLowerCase() === tag.toLowerCase())
+        ? prev.filter((x) => x.toLowerCase() !== tag.toLowerCase())
+        : [...prev, tag]
+    )
 
-  const shownDistros = kind === 'all' || kind === 'wsl' ? visibleDistros.filter(matchesDistro) : []
-  const shownHosts = kind === 'all' || kind === 'ssh' ? hosts.filter(matchesHost) : []
-  const showLocal = local.runtime && (kind === 'all' || kind === 'docker')
+  const shownDistros = (kind === 'all' || kind === 'wsl') && activeTags.length === 0 ? visibleDistros.filter(matchesDistro) : []
+  const shownHosts = kind === 'all' || kind === 'ssh' ? filterHosts(hosts, query, activeTags) : []
+  const showLocal = local.runtime && (kind === 'all' || kind === 'docker') && activeTags.length === 0
   // The containers section answers for itself ("no container matches").
   const nothingMatches = kind !== 'docker' && !showLocal && shownDistros.length === 0 && shownHosts.length === 0
 
@@ -801,21 +846,7 @@ export default function RemoteView({
               <button
                 type="button"
                 className="btn-ghost small"
-                onClick={() =>
-                  openEditor({
-                    id: selHost.id,
-                    name: selHost.name,
-                    host: selHost.host,
-                    port: selHost.port,
-                    username: selHost.username,
-                    authType: selHost.authType,
-                    privateKeyPath: selHost.privateKeyPath,
-                    remotePath: selHost.remotePath,
-                    claudePath: selHost.claudePath,
-                    elevation: selHost.elevation,
-                    elevateCommand: selHost.elevateCommand
-                  })
-                }
+                onClick={() => openEditor(hostToInput(selHost))}
               >
                 {t('remote.col.editHost')}
               </button>
@@ -828,6 +859,24 @@ export default function RemoteView({
             )}
           </div>
         </section>
+
+        {selHost && (
+          <section className="rv-sec">
+            <div className="eyebrow">{t('remote.col.notes')}</div>
+            {selHost.notes ? (
+              <div className="rv-notes">
+                <Markdown content={selHost.notes} />
+              </div>
+            ) : (
+              <span className="rv-dd-muted">{t('remote.col.noNotes')}</span>
+            )}
+            <div className="rv-col-actions">
+              <button type="button" className="btn-ghost small" onClick={() => openEditor(hostToInput(selHost), true)}>
+                {t('remote.col.editNotes')}
+              </button>
+            </div>
+          </section>
+        )}
 
         {selHost && selHostRunbooks.length > 0 && (
           <section className="rv-sec">
@@ -973,6 +1022,30 @@ export default function RemoteView({
             </div>
           </div>
 
+          {tagChoices.length > 0 && (
+            <div className="rv-tagbar" role="group" aria-label={t('remote.filter.tags')}>
+              {tagChoices.map((tag) => {
+                const on = activeTags.some((x) => x.toLowerCase() === tag.toLowerCase())
+                return (
+                  <button
+                    type="button"
+                    key={tag}
+                    className={`chip rv-tag-filter${on ? ' on' : ''}`}
+                    aria-pressed={on}
+                    onClick={() => toggleTag(tag)}
+                  >
+                    {tag}
+                  </button>
+                )
+              })}
+              {activeTags.length > 0 && (
+                <button type="button" className="btn-text rv-tag-clear" onClick={() => setSelectedTags([])}>
+                  {t('remote.filter.clearTags')}
+                </button>
+              )}
+            </div>
+          )}
+
           {nothingMatches && <p className="rv-nothing">{q ? t('remote.filter.nothing', { query }) : t('remote.filter.none')}</p>}
 
           {shownDistros.length > 0 && (
@@ -1035,8 +1108,17 @@ export default function RemoteView({
                   return (
                     <div key={h.id} {...rowProps({ kind: 'ssh', id: h.id }, () => onOpenSession(h), h.name)}>
                       <Dot state={hostDotState(h)} />
+                      {h.favorite && (
+                        <span className="rv-star" title={t('remote.list.favorite')} aria-label={t('remote.list.favorite')}>
+                          <StarIcon />
+                        </span>
+                      )}
                       <span className="rv-name">{h.name}</span>
+                      {h.production && <span className="prod-pill" title={t('remote.prod.title')}>{t('remote.prod.pill')}</span>}
                       <span className="chip">{t(AUTH_CHIP[h.authType])}</span>
+                      {h.tags?.map((tag) => (
+                        <span key={tag} className="chip rv-tag">{tag}</span>
+                      ))}
                       <span className="rv-row-right">
                         {failed && <span className="rv-row-err">{t('remote.list.couldNotConnect')}</span>}
                         <span className="rv-row-meta">
@@ -1276,6 +1358,68 @@ export default function RemoteView({
                 onChange={(e) => setEditing({ ...editing, claudePath: e.target.value })}
               />
               <p className="help">{t('remote.form.claudePathHelp')}</p>
+            </div>
+            <div className="form-group rv-toggle-row">
+              <label>{t('remote.form.favorite')}</label>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={!!editing.favorite}
+                  onChange={(e) => setEditing({ ...editing, favorite: e.target.checked })}
+                  aria-label={t('remote.form.favorite')}
+                />
+                <span className="toggle-track">
+                  <span className="toggle-thumb" />
+                </span>
+              </label>
+            </div>
+            <div className="form-group rv-toggle-row">
+              <label>{t('remote.form.production')}</label>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={!!editing.production}
+                  onChange={(e) => setEditing({ ...editing, production: e.target.checked })}
+                  aria-label={t('remote.form.production')}
+                />
+                <span className="toggle-track">
+                  <span className="toggle-thumb" />
+                </span>
+              </label>
+            </div>
+            <p className="help rv-toggle-help">{t('remote.form.productionHelp')}</p>
+            <div className="form-group">
+              <label>
+                {t('remote.form.tags')}<span className="optional">{t('remote.form.optional')}</span>
+              </label>
+              <input
+                className="text-input"
+                value={tagsText}
+                placeholder={t('remote.form.tagsPlaceholder')}
+                onChange={(e) => setTagsText(e.target.value)}
+              />
+              <p className="help">{t('remote.form.tagsHelp')}</p>
+            </div>
+            <div className="form-group">
+              <label>
+                {t('remote.form.notes')}<span className="optional">{t('remote.form.optional')}</span>
+              </label>
+              <textarea
+                className="text-input rv-notes-input"
+                value={editing.notes ?? ''}
+                rows={6}
+                maxLength={20000}
+                placeholder={t('remote.form.notesPlaceholder')}
+                ref={(el) => {
+                  if (el && focusNotesRef.current) {
+                    focusNotesRef.current = false
+                    el.focus()
+                    el.scrollIntoView({ block: 'nearest' })
+                  }
+                }}
+                onChange={(e) => setEditing({ ...editing, notes: e.target.value })}
+              />
+              <p className="help">{t('remote.form.notesHelp')}</p>
             </div>
           </div>
         </Sheet>

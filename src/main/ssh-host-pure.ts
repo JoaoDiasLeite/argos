@@ -40,6 +40,13 @@ export interface SshHost {
   /** Secret. Only kept while `elevation` is `other`, whatever the auth type. */
   elevationPassword?: string
   elevateCommand?: ElevateCommand
+  /** Organisation only: none of these is a secret, and none counts as a connection change. */
+  favorite?: boolean
+  /** Marks a production server (a red pill in the list and the session header). */
+  production?: boolean
+  tags?: string[]
+  /** Markdown the user keeps about the server. Not a vault: the form says no passwords. */
+  notes?: string
 }
 
 /**
@@ -64,7 +71,11 @@ export const PUBLIC_HOST_FIELDS = [
   'remotePath',
   'claudePath',
   'elevation',
-  'elevateCommand'
+  'elevateCommand',
+  'favorite',
+  'production',
+  'tags',
+  'notes'
 ] as const
 export type PublicHostField = (typeof PUBLIC_HOST_FIELDS)[number]
 
@@ -148,6 +159,41 @@ interface HostText {
   claudePath?: string
   elevation?: string
   elevateCommand?: string
+  tags?: unknown
+  notes?: unknown
+}
+
+export const MAX_HOST_TAGS = 12
+export const MAX_TAG_LENGTH = 32
+export const MAX_NOTES_LENGTH = 20000
+
+/** Letters (any script), digits, space and `- _ .`; anything else is dropped from a tag. */
+const TAG_DISALLOWED = /[^\p{L}\p{N} _.-]/gu
+
+/**
+ * A tag list as it is saved: each tag stripped of disallowed characters, trimmed and cut to
+ * 32 characters, empty ones dropped, duplicates removed ignoring case (the first spelling
+ * wins), at most 12. Never an error: a tag typed with a stray character is just cleaned.
+ */
+export function cleanTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const raw of value) {
+    if (typeof raw !== 'string') continue
+    const tag = cleanHostText(raw.replace(TAG_DISALLOWED, '')).slice(0, MAX_TAG_LENGTH).trim()
+    const key = tag.toLowerCase()
+    if (!tag || seen.has(key)) continue
+    seen.add(key)
+    out.push(tag)
+    if (out.length >= MAX_HOST_TAGS) break
+  }
+  return out
+}
+
+/** Notes trimmed and capped; invisible characters are kept, they are the user's text. */
+export function cleanNotes(value: unknown): string {
+  return typeof value === 'string' ? value.trim().slice(0, MAX_NOTES_LENGTH) : ''
 }
 
 /** `input` with its address, name and path fields cleaned, and an elevation mode or command
@@ -165,6 +211,17 @@ export function cleanHostFields<T extends HostText>(input: T): T {
   if (input.claudePath !== undefined) out.claudePath = cleanHostText(input.claudePath)
   if (input.elevation !== undefined && !isElevationMode(input.elevation)) delete out.elevation
   if (input.elevateCommand !== undefined && !isElevateCommand(input.elevateCommand)) delete out.elevateCommand
+  // Empty values are dropped rather than stored, so an unmarked host stays as small as before.
+  if (input.tags !== undefined) {
+    const tags = cleanTags(input.tags)
+    if (tags.length) out.tags = tags
+    else delete out.tags
+  }
+  if (input.notes !== undefined) {
+    const notes = cleanNotes(input.notes)
+    if (notes) out.notes = notes
+    else delete out.notes
+  }
   return out
 }
 

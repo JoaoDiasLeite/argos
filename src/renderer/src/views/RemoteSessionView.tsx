@@ -371,6 +371,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
         <div className="remote-session-title">
           <span className={`remote-session-dot ${status}`} title={status === 'error' ? statusError || t('remote.session.couldNotConnect') : t(STATUS_LABEL[status])} />
           <span className="remote-session-name">{isSsh ? target.host.name : target.distro}</span>
+          {isSsh && target.host.production && <span className="prod-pill" title={t('remote.prod.title')}>{t('remote.prod.pill')}</span>}
           <span className="remote-session-target">
             {isSsh ? `${target.host.username}@${target.host.host}` : `wsl -d ${target.distro}`}
           </span>

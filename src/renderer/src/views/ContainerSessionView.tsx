@@ -69,6 +69,7 @@ export default function ContainerSessionView({ host, container, name, seq, activ
         <div className="remote-session-title">
           <span className={`remote-session-dot ${status}`} title={status === 'error' ? statusError || t('remote.session.couldNotConnect') : t(STATUS_LABEL[status])} />
           <span className="remote-session-name">{name}</span>
+          {host?.production && <span className="prod-pill" title={t('remote.prod.title')}>{t('remote.prod.pill')}</span>}
           <span className="remote-session-target">
             {host
               ? t('remote.containers.tabTarget', { runtime: `${container.sudo ? 'sudo ' : ''}${container.runtime}`, host: host.name })

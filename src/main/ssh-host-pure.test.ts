@@ -3,6 +3,8 @@ import {
   mergeSecrets,
   cleanHostFields,
   cleanHostText,
+  cleanTags,
+  cleanNotes,
   decodeHostsFile,
   refuseOverwriteMessage,
   connectionFieldsChanged,
@@ -209,7 +211,11 @@ describe('host secrets allowlist', () => {
     claudePath: 'claude',
     elevation: 'other',
     elevationPassword: 'ep',
-    elevateCommand: 'su -'
+    elevateCommand: 'su -',
+    favorite: true,
+    production: true,
+    tags: ['prod'],
+    notes: 'n'
   }
 
   it('keeps the public and secret field lists disjoint and covering every host field', () => {
@@ -301,6 +307,11 @@ describe('connectionFieldsChanged', () => {
     const next = { ...prev, elevation: 'other', elevationPassword: 'root-pw', elevateCommand: 'su -' }
     expect(connectionFieldsChanged(prev, next as never)).toBe(false)
     expect(connectionFieldsChanged(prev, { ...prev, elevationPassword: null } as never)).toBe(false)
+  })
+
+  it('ignores favourite, production, tags and notes', () => {
+    const next = { ...prev, favorite: true, production: true, tags: ['a'], notes: '# hi' }
+    expect(connectionFieldsChanged(prev, next as never)).toBe(false)
   })
 
   it('is true when a secret is replaced or cleared, false when untouched', () => {
@@ -403,5 +414,54 @@ describe('quotePosix / remoteCommandWord', () => {
     expect(remoteCommandWord('~/.local/bin/claude')).toBe("~/'.local/bin/claude'")
     expect(remoteCommandWord('~/a b/$(id)')).toBe("~/'a b/$(id)'")
     expect(remoteCommandWord('~root/claude')).toBe("'~root/claude'")
+  })
+})
+
+describe('cleanTags', () => {
+  it('trims, drops empty ones and removes duplicates ignoring case', () => {
+    expect(cleanTags([' prod ', '', '  ', 'Prod', 'db'])).toEqual(['prod', 'db'])
+  })
+
+  it('drops characters outside letters, digits, space and - _ . without failing', () => {
+    expect(cleanTags(['a;b', 'x/y$z', 'ok-1_2.3 x', 'é ñ'])).toEqual(['ab', 'xyz', 'ok-1_2.3 x', 'é ñ'])
+    expect(cleanTags(['<>', '!!!'])).toEqual([])
+  })
+
+  it('caps a tag at 32 characters and the list at 12', () => {
+    expect(cleanTags(['x'.repeat(50)])[0]).toHaveLength(32)
+    const many = Array.from({ length: 20 }, (_, i) => `t${i}`)
+    expect(cleanTags(many)).toHaveLength(12)
+  })
+
+  it('ignores anything that is not a list of strings', () => {
+    expect(cleanTags('prod')).toEqual([])
+    expect(cleanTags([1, null, 'ok'])).toEqual(['ok'])
+  })
+})
+
+describe('cleanNotes', () => {
+  it('trims and caps at 20000 characters', () => {
+    expect(cleanNotes('  hello \n')).toBe('hello')
+    expect(cleanNotes('a'.repeat(30000))).toHaveLength(20000)
+    expect(cleanNotes(42)).toBe('')
+  })
+})
+
+describe('cleanHostFields, organisation fields', () => {
+  const base = { name: 'n', host: 'h', username: 'u' }
+  it('cleans tags and notes, and drops them when empty', () => {
+    const out = cleanHostFields({ ...base, tags: [' a ', 'A', 'b;'], notes: '  x  ' })
+    expect(out.tags).toEqual(['a', 'b'])
+    expect(out.notes).toBe('x')
+    const empty = cleanHostFields({ ...base, tags: ['!!'], notes: '   ' })
+    expect('tags' in empty).toBe(false)
+    expect('notes' in empty).toBe(false)
+  })
+
+  it('reaches the renderer through toPublicHost', () => {
+    const pub = toPublicHost({
+      id: 'i', ...base, port: 22, authType: 'agent', favorite: true, production: true, tags: ['a'], notes: 'n'
+    })
+    expect(pub).toMatchObject({ favorite: true, production: true, tags: ['a'], notes: 'n' })
   })
 })
