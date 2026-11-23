@@ -153,6 +153,12 @@ const main: Record<keyof typeof en, string> = {
   'ssh.claudeNoOutput': 'O claude não produziu nenhuma saída',
   'ssh.timedOut': 'O servidor não respondeu em 20 s',
   'ssh.notTrusted': 'A chave do servidor não é de confiança; o terminal não foi aberto',
+  'ssh.noSavedPassword': 'Sem palavra-passe guardada: o Argos pede-a quando abrires uma sessão neste servidor',
+  'ssh.noSavedPassphrase': 'A chave está cifrada e a frase-passe não está guardada: o Argos pede-a quando abrires uma sessão neste servidor',
+  'ssh.connectCancelled': 'Ligação cancelada',
+  'ssh.closedEarly': 'O servidor fechou a ligação antes de a verificação terminar',
+  'ssh.askPassword': 'Palavra-passe de {user}@{host}',
+  'ssh.askPassphrase': 'Frase-passe da chave privada de {user}@{host}',
   'ssh.invalid.username':
     'Nome de utilizador inválido: usa letras, números, ".", "_", "-", "@" ou "\\", e não comeces por "-".',
   'ssh.invalid.host':

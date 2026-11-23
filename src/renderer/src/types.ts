@@ -1067,12 +1067,36 @@ export interface OpsSecretRequest {
 }
 
 /**
+ * A secret main asks for while a Remote Session connects (`ssh:secret-request`): a password
+ * nobody saved, a key's passphrase, or a keyboard-interactive question whose `prompt` is the
+ * server's own text (untrusted: plain text only). Shown in the same dialog as the ops one.
+ */
+export interface HostSecretRequest {
+  source: 'host'
+  requestId: string
+  hostId: string
+  hostName: string
+  kind: 'password' | 'passphrase' | 'keyboard'
+  prompt: string
+  /** Show what is typed (a keyboard-interactive question that is not secret). */
+  echo: boolean
+  /** Offer "save this password". */
+  canSave: boolean
+}
+
+/** Which secrets a host's terminal can use right now (`ssh:secret-flags`), counting a password
+ *  typed at the connect prompt for its live session. */
+export type HostSecretFlags = Pick<SshHostPublic, 'hasPassword' | 'hasPassphrase' | 'hasElevation'>
+
+/**
  * What `ops:pending` returns: every prompt main is still waiting on, so a reloaded
  * renderer can rebuild its queues. `toastApprovalIds` are the approvals the toast shows.
  */
 export interface OpsPending {
   approvals: ApprovalRequest[]
   secrets: OpsSecretRequest[]
+  /** Remote Session connect prompts (not ops, but rebuilt the same way). */
+  hostSecrets: HostSecretRequest[]
   operatorAsks: OpsOperatorRequest[]
   toastApprovalIds: string[]
 }
@@ -1788,6 +1812,7 @@ declare global {
       sshKeysList: () => Promise<SshKeyInfo[]>
       sshKeysGenerate: (name: string, comment?: string) => Promise<GenerateKeyResult>
       sshSecretStorage: () => Promise<SecretStorageState>
+      sshSecretFlags: (hostId: string) => Promise<HostSecretFlags | null>
 
       // SFTP (Remote Session file browser)
       sftpConnect: (hostId: string) => Promise<{ ok: boolean; home?: string; cwd?: string; error?: string }>
@@ -1870,6 +1895,9 @@ declare global {
       onOpsSecretRequest: (cb: (data: OpsSecretRequest) => void) => () => void
       /** Answer a secret request; `value: null` declines. */
       respondOpsSecret: (payload: { requestId: string; value: string | null }) => Promise<{ ok: true }>
+      onHostSecretRequest: (cb: (data: HostSecretRequest) => void) => () => void
+      onHostSecretCancel: (cb: (data: { requestId: string }) => void) => () => void
+      respondHostSecret: (payload: { requestId: string; value: string | null; save: boolean }) => Promise<{ ok: boolean }>
       /** The model's ask_operator: a command for the operator to run in their own session and paste back. */
       onOpsOperatorRequest: (cb: (data: OpsOperatorRequest) => void) => () => void
       /** Answer an operator request with the pasted output; `output: null` declines. */

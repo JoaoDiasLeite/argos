@@ -90,7 +90,7 @@ import {
   secretStorageState,
   SshHostInput
 } from './ssh'
-import { connectionFieldsChanged } from './ssh-host-pure'
+import { connectionFieldsChanged, toPublicHost } from './ssh-host-pure'
 import { listSshKeys, generateKey } from './ssh-keys'
 import {
   sftpConnect,
@@ -104,7 +104,10 @@ import {
   sftpUpload,
   sftpHistory,
   sftpDisconnect,
-  sftpDisconnectAll
+  sftpDisconnectAll,
+  getHostWithSessionSecrets,
+  setHostSecretAsker,
+  type HostSecretAsk
 } from './sftp'
 import {
   remoteShellCreate,
@@ -2768,6 +2771,60 @@ ipcMain.handle('ops:secret-response', (_, payload: { requestId: string; value: s
   return { ok: true }
 })
 
+// Pending secret prompts of a Remote Session that is connecting (a password nobody saved, a
+// key's passphrase, a keyboard-interactive question), keyed by a request id. A sibling of the
+// ops prompt above, on its own channels so the ops flow stays as it was; the renderer shows
+// both in the same masked dialog. Main window only, both ways. The answer goes to sftp.ts,
+// which keeps it in memory for the connection or, when the user ticked "save" on a login
+// password, saves it; it is never logged or sent anywhere else.
+const pendingHostSecrets = new Map<
+  string,
+  { req: Record<string, unknown>; canSave: boolean; finish: (answer: { value: string; save: boolean } | null) => void }
+>()
+let hostSecretSeq = 0
+
+function requestHostSecret(req: HostSecretAsk, signal: AbortSignal): Promise<{ value: string; save: boolean } | null> {
+  if (signal.aborted || !mainWindow) return Promise.resolve(null)
+  hostSecretSeq += 1
+  const requestId = `hostsecret_${hostSecretSeq}_${Date.now().toString(36)}`
+  return new Promise((resolve) => {
+    const finish = (answer: { value: string; save: boolean } | null) => {
+      signal.removeEventListener('abort', onAbort)
+      if (!pendingHostSecrets.delete(requestId)) return
+      // Gone from the renderer too when main stopped waiting (a disconnect, a dropped link).
+      if (!answer) send('ssh:secret-cancel', { requestId })
+      resolve(answer)
+    }
+    const onAbort = () => finish(null)
+    const payload = {
+      source: 'host',
+      requestId,
+      hostId: req.hostId,
+      hostName: req.hostName,
+      kind: req.kind,
+      prompt: req.prompt,
+      echo: req.echo,
+      canSave: req.canSave
+    }
+    pendingHostSecrets.set(requestId, { req: payload, canSave: req.canSave, finish })
+    signal.addEventListener('abort', onAbort, { once: true })
+    send('ssh:secret-request', payload)
+    flagAttention('approval')
+  })
+}
+setHostSecretAsker(requestHostSecret)
+
+ipcMain.handle('ssh:secret-response', (e, payload: { requestId?: unknown; value?: unknown; save?: unknown }) => {
+  if (e.sender !== mainWindow?.webContents) return { ok: false }
+  const pending = payload && typeof payload.requestId === 'string' ? pendingHostSecrets.get(payload.requestId) : undefined
+  if (!pending) return { ok: true }
+  // "Save" only counts where main offered it, whatever the renderer sends.
+  pending.finish(
+    typeof payload.value === 'string' ? { value: payload.value, save: pending.canSave && payload.save === true } : null
+  )
+  return { ok: true }
+})
+
 // Pending ask_operator requests of ops runs: a command the model may not run, waiting
 // for the operator to run it in their own session and paste the output. Keyed by a
 // request id; `askId` is the ledger's id for the same ask. Main window only: the answer
@@ -2821,6 +2878,7 @@ ipcMain.handle('ops:operator-response', (_, payload: { requestId: string; output
 ipcMain.handle('ops:pending', () => ({
   approvals: [...pendingApprovals.values()].map((p) => p.req),
   secrets: [...pendingSecrets.values()].map((p) => p.req),
+  hostSecrets: [...pendingHostSecrets.values()].map((p) => p.req),
   operatorAsks: [...pendingOperatorAsks.values()].map((p) => p.req),
   toastApprovalIds: [...toastApprovals]
 }))
@@ -2843,14 +2901,23 @@ ipcMain.handle('ssh:delete', (_, id: string) => {
 ipcMain.handle('ssh:test', (_, id: string) => testConnection(id))
 ipcMain.handle('ssh:test-claude', (_, id: string) => testClaude(id))
 ipcMain.handle('ssh:secret-storage', () => secretStorageState())
+// Which secrets a host's terminal can use right now, counting a password typed at the connect
+// prompt for its live session. Flags only, for the terminal's buttons; never the values.
+ipcMain.handle('ssh:secret-flags', (_, hostId: unknown) => {
+  const h = typeof hostId === 'string' ? getHostWithSessionSecrets(hostId) : null
+  if (!h) return null
+  const { hasPassword, hasPassphrase, hasElevation } = toPublicHost(h)
+  return { hasPassword, hasPassphrase, hasElevation }
+})
 ipcMain.handle('ssh:keys-list', () => listSshKeys())
 ipcMain.handle('ssh:keys-generate', (_, name: string, comment?: string) => generateKey(name, comment))
 
 // ─── SFTP (Remote Session file browser) ────────────────────────────────────
 
 ipcMain.handle('sftp:connect', (_, hostId: string) => sftpConnect(hostId))
-ipcMain.handle('sftp:list', (_, hostId: string, dir: string) => sftpList(hostId, dir))
-ipcMain.handle('sftp:read', (_, hostId: string, p: string) => sftpRead(hostId, p))
+// The renderer's calls serve the user's Remote Session, so they may ask for a secret.
+ipcMain.handle('sftp:list', (_, hostId: string, dir: string) => sftpList(hostId, dir, { interactive: true }))
+ipcMain.handle('sftp:read', (_, hostId: string, p: string) => sftpRead(hostId, p, undefined, { interactive: true }))
 ipcMain.handle('sftp:write', (_, hostId: string, p: string, content: string) => sftpWrite(hostId, p, content))
 ipcMain.handle('sftp:mkdir', (_, hostId: string, dir: string) => sftpMkdir(hostId, dir))
 ipcMain.handle('sftp:rename', (_, hostId: string, from: string, to: string) => sftpRename(hostId, from, to))

@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto'
 import { isEndpointKeyStored, trustedKnownHostsPath, verifyHostKey } from './ssh-trust'
 import { sshOptionPath } from './ssh-trust-pure'
 import { t } from './i18n'
+import { keyboardInteractiveDecision, keyNeedsPassphrase, type KbdPrompt } from './connect-auth-pure'
 import {
   cleanHostFields,
   decodeHostsFile,
@@ -131,7 +132,34 @@ export function deleteHost(id: string): HostsWriteResult {
   return updateHosts((hosts) => hosts.filter((h) => h.id !== id))
 }
 
-export function buildConnectConfig(h: SshHost): ConnectConfig {
+/**
+ * Saves a login password typed at the connect prompt with "save" ticked. Only the password
+ * field changes, on a fresh read of the store (fail-closed like every write here), and only
+ * while the host still exists and still logs in with a password: the form may have changed it
+ * while the prompt was up. Not through saveHost, whose callers close the pooled connection
+ * when a password is touched, and this one has just been opened with it.
+ */
+export function saveHostPassword(id: string, password: string): HostsWriteResult {
+  return updateHosts((hosts) =>
+    hosts.map((h) => (h.id === id && h.authType === 'password' ? { ...h, password } : h))
+  )
+}
+
+export interface ConnectAuthOptions {
+  /** True only for the user-opened Remote Session: someone is there to answer a prompt. */
+  interactive: boolean
+  /** Asks the user for one keyboard-interactive answer; null when they cancelled. */
+  askSecret?: (prompt: string, echo: boolean) => Promise<string | null>
+}
+
+/**
+ * keyboard-interactive is only tried when it can be answered: someone is there to ask, or
+ * the host has a login password for a lone password prompt. Otherwise a server offering it
+ * would get an empty answer, which OpenSSH may take as a protocol error and drop the link
+ * instead of failing the method, and the checks would end in a timeout rather than an
+ * authentication failure.
+ */
+export function buildConnectConfig(h: SshHost, opts: ConnectAuthOptions = { interactive: false }): ConnectConfig {
   const conf: ConnectConfig = {
     host: h.host,
     port: h.port || 22,
@@ -143,6 +171,10 @@ export function buildConnectConfig(h: SshHost): ConnectConfig {
     // `ServerAliveCountMax 4` for the ssh CLI — one minute of silence before giving up.
     keepaliveInterval: 15000,
     keepaliveCountMax: 4,
+    // Servers that only take keyboard-interactive (PAM, an OTP) are reached after the
+    // primary method; the Client's `keyboard-interactive` listener answers (see
+    // connectClient), so a config that tries it must never be connected without one.
+    tryKeyboard: (opts.interactive && !!opts.askSecret) || (h.authType === 'password' && !!h.password),
     hostVerifier: (key: Buffer, callback: (valid: boolean) => void) => {
       verifyHostKey(h.host, h.port || 22, key).then(callback, () => callback(false))
     }
@@ -158,6 +190,69 @@ export function buildConnectConfig(h: SshHost): ConnectConfig {
       (process.platform === 'win32' ? '\\\\.\\pipe\\openssh-ssh-agent' : undefined)
   }
   return conf
+}
+
+/**
+ * Answers ssh2's keyboard-interactive rounds for `conn`: a lone password prompt gets the
+ * known login password (once), anything else goes to `askSecret` when interactive, and fails
+ * otherwise (see keyboardInteractiveDecision). The listener belongs on the Client, not the
+ * config, hence this helper for every place that dials.
+ */
+export function attachKeyboardInteractive(conn: Client, knownPassword: string | undefined, opts: ConnectAuthOptions): void {
+  let autoAnswered = false
+  conn.on('keyboard-interactive', (_name, _instructions, _lang, prompts: KbdPrompt[], finish: (answers: string[]) => void) => {
+    const answer = (answers: string[]) => {
+      try {
+        finish(answers)
+      } catch {
+        // The connection went away while the user was typing.
+      }
+    }
+    const decision = keyboardInteractiveDecision(prompts, {
+      knownPassword,
+      autoAnswered,
+      interactive: opts.interactive && !!opts.askSecret
+    })
+    if (decision.kind === 'answer') {
+      if (decision.auto) autoAnswered = true
+      answer(decision.answers)
+      return
+    }
+    if (decision.kind === 'fail' || !opts.askSecret) {
+      answer([])
+      return
+    }
+    const ask = opts.askSecret
+    void (async () => {
+      const answers: string[] = []
+      for (const p of prompts) {
+        const v = await ask(p.prompt, !!p.echo)
+        if (v === null) return answer([])
+        answers.push(v)
+      }
+      answer(answers)
+    })()
+  })
+}
+
+/** Dials `conn` for `h`: the config plus the keyboard-interactive listener. Throws what
+ *  buildConnectConfig or ssh2's connect throws (an unreadable or unparsable key). */
+export function connectClient(conn: Client, h: SshHost, opts: ConnectAuthOptions = { interactive: false }): void {
+  const conf = buildConnectConfig(h, opts)
+  attachKeyboardInteractive(conn, h.authType === 'password' ? h.password || undefined : undefined, opts)
+  conn.connect(conf)
+}
+
+/**
+ * A clearer message for the background checks when the failure is a secret nobody saved: a
+ * password host without its password, or an encrypted key without its passphrase. Those
+ * hosts are asked for it when a session opens, so "authentication failed" would mislead.
+ */
+function explainCheckFailure(h: SshHost, message: string): string {
+  // Only an authentication failure: an unreachable server must still say so.
+  if (h.authType === 'password' && !h.password && /authentication/i.test(message)) return t('main.ssh.noSavedPassword')
+  if (h.authType === 'key' && !h.passphrase && keyNeedsPassphrase(message)) return t('main.ssh.noSavedPassphrase')
+  return message
 }
 
 /** Every saved host with its secrets, for a profile export. A failed read is an error, not
@@ -253,11 +348,17 @@ export function testConnection(id: string): Promise<{ ok: boolean; message: stri
         message: t('main.ssh.connectedAs', { user: host.username, host: host.host, port: host.port, ms: Date.now() - startedAt })
       })
     )
-    conn.on('error', (e) => done({ ok: false, message: e.message }))
+    // Still dialled without a saved password: the host key is recorded before
+    // authentication, which getSshTerminalCommand relies on.
+    conn.on('error', (e) => done({ ok: false, message: explainCheckFailure(host, e.message) }))
+    // A server that drops the link without an error (one that took an unanswered prompt as
+    // a protocol error) ends the check now rather than at the timeout. done ignores the close
+    // its own conn.end() causes.
+    conn.on('close', () => done({ ok: false, message: explainCheckFailure(host, t('main.ssh.closedEarly')) }))
     try {
-      conn.connect(buildConnectConfig(host))
+      connectClient(conn, host)
     } catch (e) {
-      done({ ok: false, message: e instanceof Error ? e.message : String(e) })
+      done({ ok: false, message: explainCheckFailure(host, e instanceof Error ? e.message : String(e)) })
     }
   })
 }
@@ -309,11 +410,17 @@ export function testClaude(id: string): Promise<{ ok: boolean; message: string }
         })
       })
     })
-    conn.on('error', (e) => done({ ok: false, message: e.message }))
+    // Still dialled without a saved password: the host key is recorded before
+    // authentication, which getSshTerminalCommand relies on.
+    conn.on('error', (e) => done({ ok: false, message: explainCheckFailure(host, e.message) }))
+    // A server that drops the link without an error (one that took an unanswered prompt as
+    // a protocol error) ends the check now rather than at the timeout. done ignores the close
+    // its own conn.end() causes.
+    conn.on('close', () => done({ ok: false, message: explainCheckFailure(host, t('main.ssh.closedEarly')) }))
     try {
-      conn.connect(buildConnectConfig(host))
+      connectClient(conn, host)
     } catch (e) {
-      done({ ok: false, message: e instanceof Error ? e.message : String(e) })
+      done({ ok: false, message: explainCheckFailure(host, e instanceof Error ? e.message : String(e)) })
     }
   })
 }

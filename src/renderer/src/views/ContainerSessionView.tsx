@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { RemoteContainerTarget, SshHostPublic } from '../types'
+import type { HostSecretFlags, RemoteContainerTarget, SshHostPublic } from '../types'
 import RemoteTerminal from '../components/RemoteTerminal'
 import { useT } from '../i18n'
 import type { MessageKey } from '../../../shared/i18n'
@@ -37,6 +37,9 @@ export default function ContainerSessionView({ host, container, name, seq, activ
   const hostId = host?.id ?? null
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>(hostId ? 'connecting' : 'connected')
   const [statusError, setStatusError] = useState<string | null>(null)
+  // A password typed at the connect prompt is not in `host`: ask main what the terminal's
+  // Send password can use once connected (flags only, see RemoteSessionView).
+  const [secretFlags, setSecretFlags] = useState<HostSecretFlags | null>(null)
 
   // Only for the dot: the terminal connects on its own, over the same cached client. This
   // computer has nothing to connect to.
@@ -46,6 +49,14 @@ export default function ContainerSessionView({ host, container, name, seq, activ
     setStatus('connecting')
     window.electronAPI.sftpConnect(hostId).then((res) => {
       if (cancelled) return
+      if (res.ok) {
+        window.electronAPI
+          .sshSecretFlags(hostId)
+          .then((f) => {
+            if (!cancelled) setSecretFlags(f)
+          })
+          .catch(() => undefined)
+      }
       setStatus(res.ok ? 'connected' : 'error')
       setStatusError(res.ok ? null : res.error || t('remote.session.couldNotConnect'))
     })
@@ -86,7 +97,7 @@ export default function ContainerSessionView({ host, container, name, seq, activ
             container={container}
             active={active}
             closable={false}
-            secrets={host}
+            secrets={host && secretFlags ? { ...host, ...secretFlags } : host}
           />
         </div>
       </div>
