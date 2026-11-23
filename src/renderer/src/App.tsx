@@ -205,17 +205,21 @@ const MEMBER_LABELS: Record<string, MessageKey> = {
 // server-sessions-layer render below). A target can have SEVERAL sessions open at once, so
 // the identity is (group, seq): `groupKey` is the target the session belongs to — which is
 // what the tab strip groups by, Chrome-tab-group style — and `seq` is a per-group counter.
+/** What a server tab is on: a session's host or distro, or (a container tab only) this
+ *  computer, for a container from the Servers screen's local list. */
+type ServerTarget = RemoteTarget | { kind: 'local' }
 interface ServerSession {
   id: string
   groupKey: string
-  target: RemoteTarget
+  target: ServerTarget
   /** The target's name, shared by every session in the group. */
   title: string
   /** 1-based, per group. Never reused within a run, so a tab's number doesn't shift
    *  under the user when a sibling closes. */
   seq: number
-  /** A container's own tab (opened from a session's Containers pane): its group is the
-   *  container, its target the host whose SSH connection it rides. */
+  /** A container's own tab (opened from a session's Containers pane, or the Servers
+   *  screen's local containers): its group is the container, its target the host whose SSH
+   *  connection it rides, or this computer. */
   container?: { target: RemoteContainerTarget; name: string }
 }
 function serverGroupKey(target: RemoteTarget): string {
@@ -2302,13 +2306,15 @@ export default function App() {
     setView('remote-session')
   }
   /** The Containers pane's Shell: always a new tab, grouped with any other on that
-   *  container (so its title is the container, not the host). */
-  const openContainerSession = (host: SshHostPublic, container: RemoteContainerTarget, name: string) => {
-    const groupKey = `srv:ctr:${host.id}:${container.id}`
+   *  container (so its title is the container, not the host). A null host is this
+   *  computer (the Servers screen's local containers). */
+  const openContainerSession = (host: SshHostPublic | null, container: RemoteContainerTarget, name: string) => {
+    const groupKey = `srv:ctr:${host ? host.id : 'local'}:${container.id}`
     const seq = (seqCounterRef.current[groupKey] ?? 0) + 1
     seqCounterRef.current[groupKey] = seq
     const id = `${groupKey}#${seq}`
-    const session: ServerSession = { id, groupKey, target: { kind: 'ssh', host }, title: name, seq, container: { target: container, name } }
+    const target: ServerTarget = host ? { kind: 'ssh', host } : { kind: 'local' }
+    const session: ServerSession = { id, groupKey, target, title: name, seq, container: { target: container, name } }
     setServerSessions((prev) => [...prev, session])
     setActiveServerSessionId(id)
     setView('remote-session')
@@ -2358,9 +2364,9 @@ export default function App() {
   const addToTabGroup = (groupKey: string) => {
     const session = serverSessions.find((s) => s.groupKey === groupKey)
     if (!session) return
-    if (session.container && session.target.kind === 'ssh') {
-      openContainerSession(session.target.host, session.container.target, session.container.name)
-    } else {
+    if (session.container) {
+      openContainerSession(session.target.kind === 'ssh' ? session.target.host : null, session.container.target, session.container.name)
+    } else if (session.target.kind !== 'local') {
       openServerSession(session.target, true)
     }
   }
@@ -3115,6 +3121,7 @@ export default function App() {
                 openWslSessions={serverSessions.flatMap((s) => (s.target.kind === 'wsl' ? [s.target.distro] : []))}
                 openSshSessions={connectedSshHosts}
                 failedSshSessions={failedSshHosts}
+                onOpenLocalContainer={(c, name) => openContainerSession(null, c, name)}
               />
             )}
           </Suspense>
@@ -3185,9 +3192,9 @@ export default function App() {
                 className="server-session-pane"
                 style={{ display: s.id === activeServerSessionId ? 'flex' : 'none' }}
               >
-                {s.container && s.target.kind === 'ssh' ? (
+                {s.container ? (
                   <ContainerSessionView
-                    host={s.target.host}
+                    host={s.target.kind === 'ssh' ? s.target.host : null}
                     container={s.container.target}
                     name={s.container.name}
                     seq={s.seq}
@@ -3197,7 +3204,7 @@ export default function App() {
                       setServerSessionStatus((prev) => (prev[s.id] === st ? prev : { ...prev, [s.id]: st }))
                     }
                   />
-                ) : (
+                ) : s.target.kind === 'local' ? null : (
                   <RemoteSessionView
                     target={s.target}
                     seq={s.seq}

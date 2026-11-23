@@ -417,8 +417,8 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
           )}
           {panel === 'containers' && isSsh ? (
             <ContainersPanel
-              hostId={target.host.id}
-              connected={status === 'connected'}
+              source={{ kind: 'host', hostId: target.host.id }}
+              ready={status === 'connected'}
               barSlot={paneSwitch}
               onOpen={(c, name) => onOpenContainer?.(c, name)}
             />

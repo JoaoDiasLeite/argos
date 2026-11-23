@@ -9,8 +9,10 @@ import {
   WslDistro,
   SourceInfo,
   OpsRunbookInfo,
-  OpsRunListItem
+  OpsRunListItem,
+  type RemoteContainerTarget
 } from '../types'
+import ContainersPanel, { type ContainerSource } from '../components/ContainersPanel'
 import Menu, { MoreIcon } from '../components/Menu'
 import Sheet from '../components/Sheet'
 import OpsReportSheet from '../components/OpsReportSheet'
@@ -41,13 +43,15 @@ interface Props {
   openSshSessions?: string[]
   /** SSH host ids whose open sessions have all failed to connect. */
   failedSshSessions?: string[]
+  /** A local container's Shell: a tab with a shell inside it, on this computer. */
+  onOpenLocalContainer?: (container: RemoteContainerTarget, name: string) => void
 }
 
 /** Which screen the view is showing. SSH keys are a sub-screen behind the header's key
  *  button rather than a third section on the list: they're setup, not day-to-day. */
 type Screen = 'targets' | 'keys'
-/** The type filter above the list. */
-type Kind = 'all' | 'wsl' | 'ssh'
+/** The type filter above the list. `docker` is this computer's containers. */
+type Kind = 'all' | 'wsl' | 'ssh' | 'docker'
 /** The target the column describes. Remembered per viewer, so coming back to the screen
  *  shows the same one. */
 type Selection = { kind: 'wsl'; name: string } | { kind: 'ssh'; id: string }
@@ -76,6 +80,8 @@ interface Probes {
   conn?: Probe
   claude?: Probe
 }
+
+const LOCAL_SOURCE: ContainerSource = { kind: 'local' }
 
 const keyOf = (sel: Selection): string => (sel.kind === 'wsl' ? `wsl:${sel.name}` : `ssh:${sel.id}`)
 
@@ -186,7 +192,8 @@ export default function RemoteView({
   onOpenWslSession,
   openWslSessions = [],
   openSshSessions = [],
-  failedSshSessions = []
+  failedSshSessions = [],
+  onOpenLocalContainer
 }: Props) {
   const t = useT()
   const { locale } = useLanguage()
@@ -212,6 +219,8 @@ export default function RemoteView({
 
   const [screen, setScreen] = useState<Screen>('targets')
   const [kind, setKind] = useState<Kind>('all')
+  // This computer's containers, as the section last listed them: no runtime, no section.
+  const [local, setLocal] = useState<{ runtime: boolean; count: number }>({ runtime: false, count: 0 })
   const [query, setQuery] = useState('')
   const [showHidden, setShowHidden] = useState(false)
   const [selected, setSelectedState] = useState<Selection | null>(null)
@@ -429,9 +438,11 @@ export default function RemoteView({
   const matchesHost = (h: SshHostPublic) =>
     !q || h.name.toLowerCase().includes(q) || h.host.toLowerCase().includes(q) || h.username.toLowerCase().includes(q)
 
-  const shownDistros = kind === 'ssh' ? [] : visibleDistros.filter(matchesDistro)
-  const shownHosts = kind === 'wsl' ? [] : hosts.filter(matchesHost)
-  const nothingMatches = shownDistros.length === 0 && shownHosts.length === 0
+  const shownDistros = kind === 'all' || kind === 'wsl' ? visibleDistros.filter(matchesDistro) : []
+  const shownHosts = kind === 'all' || kind === 'ssh' ? hosts.filter(matchesHost) : []
+  const showLocal = local.runtime && (kind === 'all' || kind === 'docker')
+  // The containers section answers for itself ("no container matches").
+  const nothingMatches = kind !== 'docker' && !showLocal && shownDistros.length === 0 && shownHosts.length === 0
 
   // ── Status ─────────────────────────────────────────────────────────────────
   // An open session outranks everything else: you cannot hold a live terminal on a
@@ -926,9 +937,10 @@ export default function RemoteView({
             <div className="seg-control">
               {(
                 [
-                  ['all', t('remote.filter.all'), visibleDistros.length + hosts.length],
+                  ['all', t('remote.filter.all'), visibleDistros.length + hosts.length + local.count],
                   ['wsl', 'WSL', visibleDistros.length],
-                  ['ssh', 'SSH', hosts.length]
+                  ['ssh', 'SSH', hosts.length],
+                  ...(local.runtime ? [['docker', 'Docker', local.count]] : [])
                 ] as [Kind, string, number][]
               ).map(([k, label, n]) => (
                 <button type="button" key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>
@@ -969,7 +981,7 @@ export default function RemoteView({
 
           {/* Hidden distros are noise on the main list: one disclosure line, since the only
               thing you can do with them is show them again. */}
-          {kind !== 'ssh' && hiddenDistros.length > 0 && (
+          {(kind === 'all' || kind === 'wsl') && hiddenDistros.length > 0 && (
             <div className="rv-hidden">
               <button type="button" className="rv-hidden-toggle" onClick={() => setShowHidden((v) => !v)} aria-expanded={showHidden}>
                 <ChevronRight className={showHidden ? 'open' : ''} />
@@ -1014,6 +1026,18 @@ export default function RemoteView({
               </div>
             </>
           )}
+
+          {/* Mounted even while filtered out or absent, so switching the filter does not list
+              again, and so it finds out whether this computer has a runtime at all. */}
+          <div style={{ display: showLocal ? undefined : 'none' }}>
+            <ContainersPanel
+              source={LOCAL_SOURCE}
+              ready
+              query={q}
+              onOpen={(c, name) => onOpenLocalContainer?.(c, name)}
+              onState={setLocal}
+            />
+          </div>
         </div>
 
         <div className={`slide-col ${colOpen ? 'open' : ''}`}>

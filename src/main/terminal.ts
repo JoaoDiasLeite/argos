@@ -310,7 +310,7 @@ function hasCommand(cmd: string): boolean {
  * System32 (wsl.exe, cmd.exe) hit exactly that case while pwsh.exe, which does not, worked.
  * Resolving here leaves node-pty nothing to guess at.
  */
-function resolveWindowsExe(name: string): string {
+export function resolveWindowsExe(name: string): string {
   if (process.platform !== 'win32' || path.isAbsolute(name)) return name
   const system32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32')
   for (const dir of [system32, ...(process.env.PATH || '').split(';')]) {

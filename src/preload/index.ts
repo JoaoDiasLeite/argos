@@ -420,6 +420,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('sftp:upload', hostId, dir, localPaths),
   sftpHistory: (hostId: string) => ipcRenderer.invoke('sftp:history', hostId),
   remoteContainers: (hostId: string) => ipcRenderer.invoke('remote:containers', hostId),
+  localContainers: () => ipcRenderer.invoke('local:containers'),
 
   // Ops runs (docs/OPS_AGENT_PLAN.md): runbook preview, reports, ledger checks, and the
   // live ledger lines of a run for the timeline. The renderer never writes the ledger.
@@ -582,7 +583,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Remote shell (Remote Session SSH terminal, over the SFTP connection)
   remoteShellCreate: (
     id: string,
-    hostId: string,
+    hostId: string | null,
     cols: number,
     rows: number,
     container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string }

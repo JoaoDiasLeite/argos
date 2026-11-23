@@ -108,12 +108,14 @@ import {
 } from './sftp'
 import {
   remoteShellCreate,
+  localContainerShellCreate,
   remoteShellWrite,
   remoteShellResize,
   remoteShellKill,
   remoteShellKillAll
 } from './remote-shell'
 import { remoteContainers } from './remote-containers'
+import { localContainers } from './local-containers'
 import { listDistros, testDistro, testDistroClaude, runWslOneShot, uncToWslPath, wslHistory, wslHome, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths, wslShareRoot } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
 import { createLedger, RUN_LIST_MAX, type OpsLedger, type OpsReportKind } from './ops-audit'
@@ -2856,6 +2858,7 @@ ipcMain.handle('sftp:upload', (_, hostId: string, dir: string, localPaths?: stri
 )
 ipcMain.handle('sftp:history', (_, hostId: string) => sftpHistory(hostId))
 ipcMain.handle('remote:containers', (_, hostId: string) => remoteContainers(hostId))
+ipcMain.handle('local:containers', () => localContainers())
 ipcMain.handle('sftp:disconnect', (_, hostId: string) => sftpDisconnect(hostId))
 
 // ─── WSL ──────────────────────────────────────────────────────────────────
@@ -3380,8 +3383,18 @@ ipcMain.handle(
 
 ipcMain.handle(
   'remote-shell:create',
-  (_, id: string, hostId: string, cols: number, rows: number, container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string }) =>
-    remoteShellCreate(
+  (_, id: string, hostId: string | null, cols: number, rows: number, container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string }) =>
+    // No host: a container on this computer (the Servers screen's local containers).
+    hostId === null
+      ? localContainerShellCreate(
+          id,
+          cols,
+          rows,
+          (tid, data) => send('remote-shell:data', { id: tid, data }),
+          (tid, code) => send('remote-shell:exit', { id: tid, code }),
+          container
+        )
+      : remoteShellCreate(
       id,
       hostId,
       cols,

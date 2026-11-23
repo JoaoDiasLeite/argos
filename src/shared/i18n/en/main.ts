@@ -143,6 +143,8 @@ export default {
   'containers.failed': '{runtime} is installed but could not list containers (no sudo without a password either): {detail}',
   'containers.invalid': 'Not a container this app can open',
   'containers.garbled': 'The server did not answer the container listing as expected',
+  'containers.localFailed': '{runtime} could not list the containers on this computer: {detail}',
+  'containers.localTimedOut': '{runtime} did not answer within 15 s',
 
   'ssh.hostNotFound': 'Host not found',
   'ssh.connectedAs': 'Connected as {user}@{host}:{port} in {ms} ms',
