@@ -1,4 +1,4 @@
-import { app, Notification } from 'electron'
+import { app, Notification, shell } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
 import { t } from './i18n'
@@ -7,8 +7,16 @@ import { updaterLogger } from './updater-log'
 // Auto-update via electron-updater, backed by GitHub Releases (see the "publish"
 // block in package.json). Kept as its own module so index.ts just wires it up.
 
-autoUpdater.autoDownload = true
-autoUpdater.autoInstallOnAppQuit = true
+// macOS builds are ad-hoc signed, not signed with an Apple Developer ID, and
+// Squirrel.Mac refuses to install an update whose signature it cannot verify. There
+// the updater only checks: a new version is announced and the release page opened,
+// and the person installs the dmg by hand.
+const manualInstall = process.platform === 'darwin'
+
+autoUpdater.autoDownload = !manualInstall
+autoUpdater.autoInstallOnAppQuit = !manualInstall
+
+const RELEASES_URL = 'https://github.com/JoaoDiasLeite/argos/releases'
 
 export type UpdaterStateKind =
   | 'disabled'
@@ -23,13 +31,18 @@ interface UpdaterState {
   state: UpdaterStateKind
   version?: string
   error?: string
+  /** True where updates are installed by hand (macOS): 'available' then means "out",
+   *  not "downloading", and quitAndInstall opens the release page. */
+  manual?: boolean
 }
 
 // 'disabled' is the resting state for dev builds — there's no packaged installer to
 // swap in, and unpackaged runs have no update feed to check against.
-const state: UpdaterState = { state: 'disabled' }
+const state: UpdaterState = { state: 'disabled', manual: manualInstall }
 
 let notify: ((channel: string, payload: unknown) => void) | null = null
+/** The last version announced on macOS, so a 4-hourly check doesn't repeat it. */
+let announced: string | undefined
 
 function emit(): void {
   notify?.('updater:event', { ...state })
@@ -68,6 +81,18 @@ export function initUpdater(notifyFn: (channel: string, payload: unknown) => voi
     state.state = 'available'
     state.version = info.version
     emit()
+
+    // Nothing downloads on macOS, so this is the moment to say a version is out —
+    // once per version: every later check finds the same one until it is installed.
+    if (manualInstall && announced !== info.version && Notification.isSupported()) {
+      announced = info.version
+      const n = new Notification({
+        title: t('main.updater.availableTitle'),
+        body: t('main.updater.availableBody', { version: info.version })
+      })
+      n.on('click', () => quitAndInstall())
+      n.show()
+    }
   })
 
   autoUpdater.on('update-not-available', () => {
@@ -148,5 +173,10 @@ export function checkNow(): UpdaterState & { currentVersion: string } {
  * `isForceRunAfter = true` relaunches the app once the install finishes.
  */
 export function quitAndInstall(): void {
+  if (manualInstall) {
+    const url = state.version ? `${RELEASES_URL}/tag/v${state.version}` : RELEASES_URL
+    void shell.openExternal(url)
+    return
+  }
   autoUpdater.quitAndInstall(true, true)
 }

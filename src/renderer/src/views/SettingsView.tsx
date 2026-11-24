@@ -602,7 +602,9 @@ export default function SettingsView({
       case 'checking':
         return t('settings.about.updater.checking')
       case 'available':
-        return t('settings.about.updater.downloading', { version: updater.version ?? '' })
+        return updater.manual
+          ? t('settings.about.updater.availableManual', { version: updater.version ?? '' })
+          : t('settings.about.updater.downloading', { version: updater.version ?? '' })
       case 'not-available':
         return t('settings.about.updater.upToDate')
       case 'downloaded':
@@ -1370,6 +1372,11 @@ export default function SettingsView({
                   >
                     {t('settings.about.checkUpdates')}
                   </button>
+                  {updater.state === 'available' && updater.manual && (
+                    <button type="button" className="btn-primary" onClick={() => window.electronAPI.updaterInstall()}>
+                      {t('settings.about.downloadUpdate')}
+                    </button>
+                  )}
                   {updater.state === 'downloaded' && (
                     <button type="button" className="btn-primary" onClick={() => window.electronAPI.updaterInstall()}>
                       {t('settings.about.restartUpdate')}

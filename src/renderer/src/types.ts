@@ -1572,6 +1572,8 @@ export interface UpdaterState {
   state: UpdaterStateKind
   version?: string
   error?: string
+  /** Updates are installed by hand (macOS): 'available' means a version is out. */
+  manual?: boolean
   currentVersion: string
 }
 

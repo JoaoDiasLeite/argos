@@ -62,7 +62,13 @@ its own login, its own `/model` and its own tool prompts. Argos adds the workspa
 
 Download the latest installer from
 [Releases](https://github.com/JoaoDiasLeite/argos/releases): `Argos-Setup-x.y.z.exe` for
-Windows or the `.AppImage` for Linux. Installed builds update themselves.
+Windows, the `.AppImage` for Linux or `Argos-x.y.z-arm64.dmg` for macOS on Apple Silicon.
+Windows and Linux builds update themselves.
+
+The macOS build is not signed with an Apple Developer ID nor notarized. Drag Argos to
+Applications, open it once, then allow it in System Settings → Privacy & Security →
+**Open Anyway** (or run `xattr -cr /Applications/Argos.app`). It does not install its
+own updates: when a new version is out it says so and opens the download page.
 
 Argos needs the CLIs it drives: install [Claude Code](https://claude.com/claude-code)
 and/or Codex and log in once in a terminal. For WSL and SSH chats the CLI must be
@@ -91,7 +97,7 @@ Files ending in `-pure.ts` hold logic with no Electron or I/O dependency and car
 of the tests.
 
 Releases are cut by pushing a `vX.Y.Z` tag; `.github/workflows/release.yml` builds the
-Windows and Linux installers and publishes them. See `CLAUDE.md` for the full process.
+Windows, Linux and macOS installers and publishes them. See `CLAUDE.md` for the full process.
 
 ## Maintainer and contributors
 

@@ -305,6 +305,8 @@ const main: Record<keyof typeof en, string> = {
   'projects.move.alreadyExists': 'já existe: {path}',
   'updater.readyTitle': 'Atualização pronta',
   'updater.readyBody': 'O Argos {version} será instalado no próximo reinício.',
+  'updater.availableTitle': 'Atualização disponível',
+  'updater.availableBody': 'Saiu o Argos {version}. Clica para abrir a página de transferência.',
   'jumplist.newTerminal': 'Novo terminal',
 
   'profile.exportTitle': 'Exportar perfil do Argos',
