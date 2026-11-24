@@ -97,6 +97,9 @@ const LOCAL_SOURCE: ContainerSource = { kind: 'local' }
 const NEW_CREDENTIAL = '__new__'
 /** The group select's "New group" entry. */
 const NEW_GROUP = '__new_group__'
+/** The "Connect through" select's entries that are not a host id. */
+const INHERIT_JUMP = '__inherit__'
+const DIRECT_JUMP = '__direct__'
 /** Which group headers of the Servers list are folded, per viewer. */
 const FOLDED_GROUPS_KEY = 'argos.remote.foldedGroups'
 
@@ -133,7 +136,8 @@ function hostToInput(h: SshHostPublic): SshHostInput {
     tags: h.tags,
     forwards: h.forwards,
     notes: h.notes,
-    credentialId: h.credentialId
+    credentialId: h.credentialId,
+    jumpHostId: h.jumpHostId
   }
 }
 
@@ -474,6 +478,21 @@ export default function RemoteView({
   const savedHost = editing?.id ? hosts.find((h) => h.id === editing.id) : undefined
   const savedOwnLogin = savedHost && sourceOf(savedHost) === 'own' ? savedHost : undefined
 
+  // The gateways this host may go through: any other saved host that connects directly (one
+  // hop only). A host others already go through must stay direct itself; main checks both.
+  // `jumpViaId` is the gateway in force (its own or its group's), so a host that inherits one
+  // is no gateway candidate either.
+  const jumpChoices = editing ? hosts.filter((h) => h.id !== editing.id && !h.jumpViaId && !h.jumpMissing) : []
+  const isGateway = !!editing?.id && hosts.some((h) => h.jumpViaId === editing.id)
+  // The select's values: an id, DIRECT_JUMP for `''` (explicitly direct), INHERIT_JUMP for
+  // absent (the group's gateway). Without a group gateway, absent simply reads as direct.
+  const groupJump = editingGroup?.jumpHostId ? hosts.find((h) => h.id === editingGroup.jumpHostId) : undefined
+  const jumpValue =
+    editing?.jumpHostId === undefined ? (editingGroup?.jumpHostId ? INHERIT_JUMP : DIRECT_JUMP) : editing.jumpHostId || DIRECT_JUMP
+  const jumpUnknown = jumpValue !== INHERIT_JUMP && jumpValue !== DIRECT_JUMP && !jumpChoices.some((h) => h.id === jumpValue)
+  const pickJump = (value: string): string | undefined =>
+    value === INHERIT_JUMP ? undefined : value === DIRECT_JUMP ? (editingGroup?.jumpHostId ? '' : undefined) : value
+
   /** The host form switching back to a login of its own. The login fields already hold what
    *  the host showed (its own, or its credential's when it was saved linked), so only the link
    *  and any secret typed meanwhile are dropped: a credential's secrets never move to a host. */
@@ -695,6 +714,12 @@ export default function RemoteView({
         ))}
         <span className="rv-row-right">
           {failed && <span className="rv-row-err">{t('remote.list.couldNotConnect')}</span>}
+          {h.jumpHostName && (
+            <span className="rv-row-meta" title={t('remote.viaTitle', { name: h.jumpHostName })}>
+              {t('remote.via', { name: h.jumpHostName })}
+            </span>
+          )}
+          {h.jumpMissing && <span className="rv-row-err">{t('remote.col.gatewayMissing')}</span>}
           <span className="rv-row-meta">
             {h.username}@{h.host}:{h.port}
           </span>
@@ -931,6 +956,20 @@ export default function RemoteView({
                       </dd>
                     </>
                   )
+                )}
+                {(selHost.jumpHostName || selHost.jumpMissing) && (
+                  <>
+                    <dt>{t('remote.col.gateway')}</dt>
+                    <dd>
+                      {selHost.jumpMissing ? (
+                        <span className="rv-dd-err">{t('remote.col.gatewayMissing')}</span>
+                      ) : selHost.jumpSource === 'group' ? (
+                        t('remote.col.gatewayFromGroup', { name: selHost.jumpHostName ?? '' })
+                      ) : (
+                        selHost.jumpHostName
+                      )}
+                    </dd>
+                  </>
                 )}
                 <dt>{t('remote.col.authentication')}</dt>
                 <dd>
@@ -1403,6 +1442,32 @@ export default function RemoteView({
               </Select>
             </div>
             <div className="form-group">
+              <label>{t('remote.form.jump')}</label>
+              <Select
+                value={jumpValue}
+                disabled={isGateway && jumpValue === DIRECT_JUMP}
+                onChange={(e) => setEditing({ ...editing, jumpHostId: pickJump(e.target.value) })}
+              >
+                {editingGroup?.jumpHostId && (
+                  <option value={INHERIT_JUMP}>
+                    {t('remote.form.jumpInherit', { group: editingGroup.name, name: groupJump?.name ?? t('remote.form.jumpMissing') })}
+                  </option>
+                )}
+                <option value={DIRECT_JUMP}>{t('remote.form.jumpDirect')}</option>
+                {jumpUnknown && <option value={jumpValue}>{t('remote.form.jumpMissing')}</option>}
+                {jumpChoices.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.name}
+                  </option>
+                ))}
+              </Select>
+              {jumpUnknown ? (
+                <p className="help rv-error-text">{t('remote.form.jumpMissing')}</p>
+              ) : (
+                <p className="help">{isGateway ? t('remote.form.jumpIsGateway') : t('remote.form.jumpHelp')}</p>
+              )}
+            </div>
+            <div className="form-group">
               <label>{t('remote.form.authSource')}</label>
               <div className="seg-control">
                 <button type="button" className={source === 'own' ? 'on' : ''} onClick={() => source !== 'own' && setEditing(ownLoginFrom(editing))}>
@@ -1595,6 +1660,7 @@ export default function RemoteView({
           start={groupSheet}
           groups={groups}
           credentials={credentials}
+          hosts={hosts}
           onClose={() => setGroupSheet(null)}
           onChanged={groupsChanged}
           onHostsChanged={setHosts}

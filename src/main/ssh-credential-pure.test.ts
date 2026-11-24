@@ -216,6 +216,10 @@ describe('what closes pooled connections', () => {
     expect(hostConnectionChanged(own, { ...own, privateKeyPath: '/k2' })).toBe(true)
     expect(hostConnectionChanged(own, { ...own, passphrase: 'new' })).toBe(true)
     expect(hostConnectionChanged(own, { ...own, passphrase: undefined })).toBe(true)
+    // Going through a gateway, or another one, or no longer, is another connection.
+    expect(hostConnectionChanged(own, { ...own, jumpHostId: 'gw' })).toBe(true)
+    expect(hostConnectionChanged({ ...own, jumpHostId: 'gw' }, { ...own, jumpHostId: 'gw2' })).toBe(true)
+    expect(hostConnectionChanged(own, { ...own, jumpHostId: '' })).toBe(false)
     const pw: EffectiveSshHost = { ...own, authType: 'password', privateKeyPath: undefined, passphrase: undefined, password: 'a' }
     expect(hostConnectionChanged(pw, { ...pw, password: 'b' })).toBe(true)
     expect(hostConnectionChanged(pw, { ...pw, password: undefined })).toBe(true)

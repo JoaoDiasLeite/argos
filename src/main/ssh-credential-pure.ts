@@ -252,7 +252,8 @@ export function withCredentialInfo(pub: SshHostPublic, h: EffectiveSshHost): Ssh
 /**
  * Did saving a host change what its pooled connection was opened with? Compares the resolved
  * host before and after, so a switch to or from a credential, or to another one, counts, and
- * so does any login field or secret that differs. Organisation fields and elevation do not.
+ * so does any login field or secret that differs, and the gateway. Organisation fields and
+ * elevation do not.
  */
 export function hostConnectionChanged(prev: EffectiveSshHost, next: EffectiveSshHost): boolean {
   return (
@@ -264,6 +265,8 @@ export function hostConnectionChanged(prev: EffectiveSshHost, next: EffectiveSsh
     (prev.password ?? '') !== (next.password ?? '') ||
     (prev.passphrase ?? '') !== (next.passphrase ?? '') ||
     (prev.credentialId ?? '') !== (next.credentialId ?? '') ||
-    !!prev.credentialMissing !== !!next.credentialMissing
+    !!prev.credentialMissing !== !!next.credentialMissing ||
+    // A connection through a gateway (or no longer through one) is another connection.
+    (prev.jumpHostId ?? '') !== (next.jumpHostId ?? '')
   )
 }

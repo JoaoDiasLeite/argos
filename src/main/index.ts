@@ -98,6 +98,9 @@ import {
   deleteGroup,
   getStoredGroup,
   hostIdsInheritingGroup,
+  hostIdsTakingGroupJumpOf,
+  getJumpFor,
+  hostIdsBehindGateway,
   SshHostInput,
   type SshCredentialInput,
   type SshGroupInput
@@ -117,6 +120,7 @@ import {
   sftpUpload,
   sftpHistory,
   sftpDisconnect,
+  sftpForceDisconnect,
   sftpDisconnectAll,
   getHostWithSessionSecrets,
   setHostSecretAsker,
@@ -2913,28 +2917,47 @@ ipcMain.handle('ops:pending', () => ({
 // ─── SSH hosts / remote ─────────────────────────────────────────────────────
 
 ipcMain.handle('ssh:list', () => listHosts())
-// The pooled sftp connection was opened with the old host, port, user and secret, so a
-// change to any of them (or deleting the host) must close it; the next use reconnects. The
+
+/**
+ * Closes a host's pooled connection and its tunnels, and the same for every host that rides it
+ * as a gateway: their channels die with it. Explicitly as well as through the connection's
+ * close: a connection the pool already let go of is not ended by the disconnect, and tunnels
+ * riding it would stay up.
+ */
+function closeHostConnection(hostId: string): void {
+  for (const id of [hostId, ...hostIdsBehindGateway(hostId)]) {
+    stopHostForwards(id)
+    sftpForceDisconnect(id)
+  }
+}
+
+// The pooled sftp connection was opened with the old host, port, user, secret and gateway, so
+// a change to any of them (or deleting the host) must close it; the next use reconnects. The
 // login is compared as resolved (getHost), so linking, unlinking or switching a shared
 // credential counts too.
 ipcMain.handle('ssh:save', (_, host: SshHostInput) => {
   const prev = host.id ? getHost(host.id) : null
+  // The gateway in force, not only the host's own field: moving to another group can change it.
+  const prevJump = prev ? effectiveJumpKey(prev.id) : ''
   const res = saveHost(host)
   if (res.ok && prev) {
     const next = getHost(prev.id)
-    if (!next || hostConnectionChanged(prev, next)) {
-      // Explicitly as well as through the connection's close: a connection the pool already
-      // let go of is not ended by sftpDisconnect, and tunnels riding it would stay up.
-      stopHostForwards(prev.id)
-      void sftpDisconnect(prev.id)
-    } else reconcileHostForwards(prev.id)
+    if (!next || hostConnectionChanged(prev, next) || effectiveJumpKey(prev.id) !== prevJump) closeHostConnection(prev.id)
+    else reconcileHostForwards(prev.id)
   }
   return res
 })
+
+/** Which gateway a host goes through right now, as a comparable string. */
+function effectiveJumpKey(hostId: string): string {
+  const j = getJumpFor(hostId)
+  return j.ok ? (j.jump?.id ?? '') : '!'
+}
+// A gateway other hosts still go through is refused by deleteHost, so nothing is closed then.
 ipcMain.handle('ssh:delete', (_, id: string) => {
-  stopHostForwards(id)
-  void sftpDisconnect(id)
-  return deleteHost(id)
+  const res = deleteHost(id)
+  if (res.ok) closeHostConnection(id)
+  return res
 })
 // Shared credentials. A credential edit that changes the login (not elevation alone) closes
 // the pooled connection of every host linked to it, as a host edit does.
@@ -2945,10 +2968,7 @@ ipcMain.handle('ssh:credential-save', (_, cred: SshCredentialInput) => {
   if (res.ok && prev) {
     const next = getStoredCredential(prev.id)
     if (!next || credentialConnectionChanged(prev, next)) {
-      for (const hostId of hostIdsUsingCredential(prev.id)) {
-        stopHostForwards(hostId)
-        void sftpDisconnect(hostId)
-      }
+      for (const hostId of hostIdsUsingCredential(prev.id)) closeHostConnection(hostId)
     }
   }
   return res
@@ -2964,21 +2984,21 @@ ipcMain.handle('ssh:group-save', (_, group: SshGroupInput) => {
   if (res.ok && prev) {
     const next = getStoredGroup(prev.id)
     if ((next?.credentialId ?? '') !== (prev.credentialId ?? '')) {
-      for (const hostId of hostIdsInheritingGroup(prev.id)) {
-        stopHostForwards(hostId)
-        void sftpDisconnect(hostId)
-      }
+      for (const hostId of hostIdsInheritingGroup(prev.id)) closeHostConnection(hostId)
+    }
+    // A new gateway for the group: its servers that take it connect another way now.
+    if ((next?.jumpHostId ?? '') !== (prev.jumpHostId ?? '')) {
+      for (const hostId of hostIdsTakingGroupJumpOf(prev.id)) closeHostConnection(hostId)
     }
   }
   return res
 })
 ipcMain.handle('ssh:group-delete', (_, id: string) => {
+  // Read before the delete moves them out: the servers that went through the group's gateway.
+  const takers = getStoredGroup(id)?.jumpHostId ? hostIdsTakingGroupJumpOf(id) : []
   const res = deleteGroup(id)
   if (res.ok) {
-    for (const hostId of res.orphaned) {
-      stopHostForwards(hostId)
-      void sftpDisconnect(hostId)
-    }
+    for (const hostId of new Set([...res.orphaned, ...takers])) closeHostConnection(hostId)
   }
   return res
 })

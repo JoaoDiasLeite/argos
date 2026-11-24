@@ -3,8 +3,8 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { Client, ConnectConfig } from 'ssh2'
 import { randomUUID } from 'crypto'
-import { isEndpointKeyStored, trustedKnownHostsPath, verifyHostKey } from './ssh-trust'
-import { sshOptionPath } from './ssh-trust-pure'
+import { isEndpointKeyStored, trustedKnownHostsPath, verifyHostKey, type TrustVia } from './ssh-trust'
+import { sshOptionPath, trustAlias, trustKey } from './ssh-trust-pure'
 import { t } from './i18n'
 import { plural } from '../shared/i18n'
 import { keyboardInteractiveDecision, keyNeedsPassphrase, type KbdPrompt } from './connect-auth-pure'
@@ -20,7 +20,9 @@ import {
   isGroupsFile,
   removeGroupFromHosts,
   type SshGroup,
-  type SshGroupInput
+  type SshGroupInput,
+  groupJumpLookup,
+  hostIdsTakingGroupJump
 } from './ssh-group-pure'
 import {
   cleanHostFields,
@@ -52,6 +54,16 @@ import {
   type StoredSshHost
 } from './ssh-credential-pure'
 import { checkForwards, forwardProblemKey, usableForwards, type PortForward } from './port-forwards-pure'
+import {
+  buildProxyCommand,
+  hostIdsUsingJump,
+  jumpBreakage,
+  jumpSaveProblem,
+  resolveJump,
+  type JumpProblem,
+  type JumpSaveProblem
+} from './ssh-jump-pure'
+import type { Duplex } from 'stream'
 
 export type { SshAuthType, SshHost, SshHostPublic } from './ssh-host-pure'
 export type { EffectiveSshHost, SshCredential, SshCredentialInput, SshCredentialPublic, StoredSshHost } from './ssh-credential-pure'
@@ -138,12 +150,42 @@ export function secretStorageState(): { encrypted: boolean; backend?: string } {
 export function listHosts(): SshHostPublic[] {
   const credentials = credentialStore.readOrEmpty()
   const groups = readGroupsOrEmpty()
-  return hostStore.readOrEmpty().map((h) => {
+  const stored = hostStore.readOrEmpty()
+  return stored.map((h) => {
     // Forwards are re-checked on the way out: an imported host never went through saveHost.
     const own = h.forwards === undefined ? h : { ...h, forwards: usableForwards(h.forwards) }
     const eff = resolveHostAuth(own, credentials, groups).effective
-    return withCredentialInfo(toPublicHost(eff), eff)
+    const pub = withCredentialInfo(toPublicHost(eff), eff)
+    // The gateway's name for the "via" hint, or that the one it names cannot be used.
+    const jump = resolveJump(h, stored, groupJumpLookup(groups))
+    if (!jump.ok) return { ...pub, jumpMissing: true }
+    return jump.jump ? { ...pub, jumpHostName: jump.jump.name, jumpViaId: jump.jump.id, jumpSource: jump.source } : pub
   })
+}
+
+/** The message for a jump that does not resolve. */
+function jumpProblemMessage(problem: JumpProblem | JumpSaveProblem, hosts: readonly StoredSshHost[], jumpHostId?: string, riders = 0): string {
+  if (problem === 'self') return t('main.ssh.jump.self')
+  if (problem === 'unknown') return t('main.ssh.jump.unknown')
+  if (problem === 'isGateway') return plural(t, 'main.ssh.jump.isGateway', riders)
+  const name = hosts.find((h) => h.id === jumpHostId)?.name ?? ''
+  return t('main.ssh.jump.chained', { name })
+}
+
+/**
+ * The save's jump check, on the list as it would be after the save (the host replaced or
+ * added): its own gateway must resolve, and a host other servers go through must stay direct.
+ * An unreadable hosts file is left to the write itself, which refuses it.
+ */
+function checkJumpOnSave(next: StoredSshHost): string | null {
+  const read = hostStore.read()
+  if (!read.ok) return null
+  const after = read.hosts.some((h) => h.id === next.id) ? read.hosts.map((h) => (h.id === next.id ? next : h)) : [...read.hosts, next]
+  const groupJumpOf = groupJumpLookup(readGroupsOrEmpty())
+  const problem = jumpSaveProblem(next.id, after, groupJumpOf)
+  if (!problem) return null
+  const named = resolveJump(next, after, groupJumpOf)
+  return jumpProblemMessage(problem, after, named.ok ? undefined : named.jumpHostId, hostIdsUsingJump(next.id, after, groupJumpOf).length)
 }
 
 function genId(): string {
@@ -183,15 +225,19 @@ export function saveHost(raw: SshHostInput): HostsWriteResult {
   if (!forwards.ok) return forwards
   if (forwards.forwards.length) fields.forwards = forwards.forwards
   else delete fields.forwards
+  // The id is settled before the write so the jump check can place the host in the list.
+  const id = fields.id || genId()
+  const jumpError = checkJumpOnSave({ ...fields, id })
+  if (jumpError) return { ok: false, error: jumpError }
   return updateHosts((hosts) => {
-    const idx = fields.id ? hosts.findIndex((h) => h.id === fields.id) : -1
+    const idx = hosts.findIndex((h) => h.id === id)
     // A host that was linked or inheriting has no secrets of its own to keep.
     const prev = idx >= 0 && hostAuthSource(hosts[idx]) === 'own' ? hosts[idx] : undefined
     const secrets = mergeSecrets(prev, raw)
     if (idx >= 0) {
-      hosts[idx] = { ...fields, id: fields.id as string, ...secrets }
+      hosts[idx] = { ...fields, id, ...secrets }
     } else {
-      hosts.push({ ...fields, id: fields.id || genId(), ...secrets })
+      hosts.push({ ...fields, id, ...secrets })
     }
     return hosts
   })
@@ -216,10 +262,13 @@ function saveLinkedHost(raw: SshHostInput, credentialId: string): HostsWriteResu
   const fields = { ...stripCredentialAuth(cleaned), credentialId }
   if (forwards.forwards.length) fields.forwards = forwards.forwards
   else delete fields.forwards
+  const id = fields.id || genId()
+  const jumpError = checkJumpOnSave({ ...fields, id })
+  if (jumpError) return { ok: false, error: jumpError }
   return updateHosts((hosts) => {
-    const idx = fields.id ? hosts.findIndex((h) => h.id === fields.id) : -1
-    if (idx >= 0) hosts[idx] = { ...fields, id: fields.id as string, authSource: 'credential' }
-    else hosts.push({ ...fields, id: fields.id || genId(), authSource: 'credential' })
+    const idx = hosts.findIndex((h) => h.id === id)
+    if (idx >= 0) hosts[idx] = { ...fields, id, authSource: 'credential' }
+    else hosts.push({ ...fields, id, authSource: 'credential' })
     return hosts
   })
 }
@@ -257,16 +306,37 @@ function saveInheritingHost(raw: SshHostInput): HostsWriteResult {
   const fields = { ...stripCredentialAuth(cleaned), groupId, authSource: 'group' as const, credentialId: undefined }
   if (forwards.forwards.length) fields.forwards = forwards.forwards
   else delete fields.forwards
+  const id = fields.id || genId()
+  const jumpError = checkJumpOnSave({ ...fields, id })
+  if (jumpError) return { ok: false, error: jumpError }
   return updateHosts((hosts) => {
-    const idx = fields.id ? hosts.findIndex((h) => h.id === fields.id) : -1
-    if (idx >= 0) hosts[idx] = { ...fields, id: fields.id as string }
-    else hosts.push({ ...fields, id: fields.id || genId() })
+    const idx = hosts.findIndex((h) => h.id === id)
+    if (idx >= 0) hosts[idx] = { ...fields, id }
+    else hosts.push({ ...fields, id })
     return hosts
   })
 }
 
+/**
+ * Deletes a host no other host goes through. A gateway still in use is refused, as a shared
+ * credential is: its riders would be left pointing at nothing. Read strictly, so an unreadable
+ * file never passes for "nobody uses it".
+ */
 export function deleteHost(id: string): HostsWriteResult {
+  const read = hostStore.read()
+  if (!read.ok) return { ok: false, error: t('main.ssh.hostsUnreadable', { error: read.error, file: hostStore.file }) }
+  const groups = readGroupsOrEmpty()
+  const riders = hostIdsUsingJump(id, read.hosts, groupJumpLookup(groups)).length
+  if (riders > 0) return { ok: false, error: plural(t, 'main.ssh.jump.inUse', riders) }
+  // A group naming it would hand every server added later a gateway that is gone.
+  const carriers = groups.filter((g) => g.jumpHostId === id).length
+  if (carriers > 0) return { ok: false, error: plural(t, 'main.ssh.jump.inUseByGroups', carriers) }
   return updateHosts((hosts) => hosts.filter((h) => h.id !== id))
+}
+
+/** The ids of the hosts that connect through `gatewayId`, for closing them with it. */
+export function hostIdsBehindGateway(gatewayId: string): string[] {
+  return hostIdsUsingJump(gatewayId, hostStore.readOrEmpty(), groupJumpLookup(readGroupsOrEmpty()))
 }
 
 /**
@@ -416,11 +486,37 @@ export function saveGroup(raw: SshGroupInput): GroupsWriteResult {
   const groups = readGroups()
   if (!groups.ok) return groups
   const list = groups.groups
+  const jumpError = checkGroupJump(group, list)
+  if (jumpError) return { ok: false, error: jumpError }
   const idx = list.findIndex((g) => g.id === id)
   if (idx >= 0) list[idx] = group
   else list.push(group)
   const res = writeGroups(list)
   return res.ok ? { ok: true, groups: listGroups() } : res
+}
+
+/**
+ * A group's gateway must be a saved host, and giving it to the group must not break any
+ * host's jump that worked before: the gateway sitting in the group and so taking itself, a
+ * gateway that has one, or a member that other servers go through.
+ */
+function checkGroupJump(group: SshGroup, groups: readonly SshGroup[]): string | null {
+  const before = groups.find((g) => g.id === group.id)
+  if ((before?.jumpHostId ?? '') === (group.jumpHostId ?? '')) return null
+  const hosts = hostStore.readOrEmpty()
+  if (group.jumpHostId && !hosts.some((h) => h.id === group.jumpHostId)) return t('main.ssh.jump.unknown')
+  const after = [...groups.filter((g) => g.id !== group.id), group]
+  const broken = jumpBreakage(hosts, groupJumpLookup(groups), groupJumpLookup(after))
+  if (!broken) return null
+  const gateway = hosts.find((h) => h.id === broken.jumpHostId)?.name ?? ''
+  if (broken.problem === 'self' && broken.jumpHostId === group.jumpHostId) return t('main.ssh.jump.groupGatewayInGroup', { name: gateway })
+  const who = hosts.find((h) => h.id === broken.hostId)?.name ?? ''
+  return t('main.ssh.jump.groupBreaks', { name: who, error: jumpProblemMessage(broken.problem, hosts, broken.jumpHostId) })
+}
+
+/** The ids of group `id`'s hosts that take its gateway, for closing them when it changes. */
+export function hostIdsTakingGroupJumpOf(id: string): string[] {
+  return hostIdsTakingGroupJump(hostStore.readOrEmpty(), id)
 }
 
 /**
@@ -461,6 +557,8 @@ export interface ConnectAuthOptions {
   interactive: boolean
   /** Asks the user for one keyboard-interactive answer; null when they cancelled. */
   askSecret?: (prompt: string, echo: boolean) => Promise<string | null>
+  /** The gateway the connection rides, so the host key is trusted under its scope. */
+  via?: TrustVia
 }
 
 /**
@@ -490,7 +588,7 @@ export function buildConnectConfig(h: EffectiveSshHost, opts: ConnectAuthOptions
     // connectClient), so a config that tries it must never be connected without one.
     tryKeyboard: (opts.interactive && !!opts.askSecret) || (h.authType === 'password' && !!h.password),
     hostVerifier: (key: Buffer, callback: (valid: boolean) => void) => {
-      verifyHostKey(h.host, h.port || 22, key).then(callback, () => callback(false))
+      verifyHostKey(h.host, h.port || 22, key, opts.via).then(callback, () => callback(false))
     }
   }
   if (h.authType === 'password') {
@@ -550,11 +648,115 @@ export function attachKeyboardInteractive(conn: Client, knownPassword: string | 
 }
 
 /** Dials `conn` for `h`: the config plus the keyboard-interactive listener. Throws what
- *  buildConnectConfig or ssh2's connect throws (an unreadable or unparsable key). */
-export function connectClient(conn: Client, h: EffectiveSshHost, opts: ConnectAuthOptions = { interactive: false }): void {
+ *  buildConnectConfig or ssh2's connect throws (an unreadable or unparsable key). With `sock`
+ *  (a channel through a gateway, see openJumpSocket) the connection rides it instead of
+ *  dialling `h.host`; the host key is still checked against `h.host:h.port`. */
+export function connectClient(
+  conn: Client,
+  h: EffectiveSshHost,
+  opts: ConnectAuthOptions = { interactive: false },
+  sock?: Duplex
+): void {
   const conf = buildConnectConfig(h, opts)
+  if (sock) conf.sock = sock
   attachKeyboardInteractive(conn, h.authType === 'password' ? h.password || undefined : undefined, opts)
   conn.connect(conf)
+}
+
+// ─── Jump hosts (gateways) ──────────────────────────────────────────────────
+
+/** Opens (or reuses) the pooled connection of a saved host. Set by sftp.ts, which owns the
+ *  pool, so a gateway's connection is shared by everything that goes through it and keeps
+ *  its own login, including a password asked for when it opened. */
+export type JumpDialer = (hostId: string, interactive: boolean) => Promise<{ ok: true; conn: Client } | { ok: false; error: string }>
+export interface JumpPool {
+  dial: JumpDialer
+  /** Whether the host has a pooled connection, live or still opening. */
+  isPooled: (hostId: string) => boolean
+  /** Closes a gateway's pooled connection that a background check opened, unless a session
+   *  tab or a pooled rider holds it by now. */
+  release: (hostId: string) => void
+}
+let jumpPool: JumpPool | null = null
+export function setJumpPool(pool: JumpPool): void {
+  jumpPool = pool
+}
+
+export type JumpLookup = { ok: true; jump: EffectiveSshHost | null } | { ok: false; error: string }
+
+/**
+ * The gateway a saved host connects through, its login resolved, or null for direct. A jump
+ * that does not resolve (itself, a deleted host, a gateway behind another gateway) is an
+ * error, checked before anything dials: waiting on its own pooled entry would never end.
+ */
+export function getJumpFor(hostId: string): JumpLookup {
+  const hosts = hostStore.readOrEmpty()
+  const h = hosts.find((x) => x.id === hostId)
+  if (!h) return { ok: true, jump: null }
+  const groups = readGroupsOrEmpty()
+  const res = resolveJump(h, hosts, groupJumpLookup(groups))
+  if (!res.ok) return { ok: false, error: jumpProblemMessage(res.problem, hosts, res.jumpHostId) }
+  return { ok: true, jump: res.jump ? resolveHostAuth(res.jump, credentialStore.readOrEmpty(), groups).effective : null }
+}
+
+export type JumpSocket = { ok: true; sock?: Duplex; gateway?: Client; via?: TrustVia } | { ok: false; error: string }
+
+/**
+ * The socket a connection to `host` rides: none for a direct host, or a channel opened from
+ * its gateway's pooled connection to `host:port` (what `ssh -J` does). Each failure says which
+ * hop failed. `interactive` is whether the gateway may ask for its password if it is not
+ * connected yet; a background check that cannot connect it without asking reports it as not
+ * connected instead.
+ */
+export async function openJumpSocket(host: EffectiveSshHost, interactive: boolean): Promise<JumpSocket> {
+  const gw = await reachGateway(host.id, interactive)
+  if (!gw.ok) return gw
+  return gw.gateway ? forwardThroughGateway(gw.gateway, host) : { ok: true }
+}
+
+/** A reached gateway: its pooled connection and name, or none for a direct host. */
+export type GatewayReach = { ok: true; gateway?: { conn: Client; id: string; name: string } } | { ok: false; error: string }
+
+/** The first half of openJumpSocket: the host's gateway connected (or reused), not yet any
+ *  channel through it. Split so a Remote Session asks for the gateway's password before the
+ *  target's, and holds no idle channel to the target while the user types. */
+export async function reachGateway(hostId: string, interactive: boolean): Promise<GatewayReach> {
+  const lookup = getJumpFor(hostId)
+  if (!lookup.ok) return lookup
+  const jump = lookup.jump
+  if (!jump) return { ok: true }
+  if (!jumpPool) return { ok: false, error: t('main.ssh.jump.gatewayFailed', { name: jump.name, error: 'not available' }) }
+  const gw = await jumpPool.dial(jump.id, interactive)
+  if (!gw.ok) {
+    return {
+      ok: false,
+      error: interactive
+        ? t('main.ssh.jump.gatewayFailed', { name: jump.name, error: gw.error })
+        : t('main.ssh.jump.notConnected', { name: jump.name, error: gw.error })
+    }
+  }
+  return { ok: true, gateway: { conn: gw.conn, id: jump.id, name: jump.name } }
+}
+
+/** The second half: a channel from the gateway to `host:port`, for the target's connection to
+ *  ride. A refusal here is the target's (or the gateway's network's), and says so. */
+export function forwardThroughGateway(gateway: { conn: Client; id: string; name: string }, host: EffectiveSshHost): Promise<JumpSocket> {
+  const port = host.port || 22
+  return new Promise<JumpSocket>((resolve) => {
+    const unreachable = (error: string): void =>
+      resolve({ ok: false, error: t('main.ssh.jump.targetUnreachable', { name: gateway.name, target: `${host.host}:${port}`, error }) })
+    try {
+      // The gateway's sshd opens the TCP connection to the target; the originator address is
+      // only informational for it.
+      gateway.conn.forwardOut('127.0.0.1', 0, host.host, port, (err, stream) => {
+        if (err) unreachable(err.message)
+        else resolve({ ok: true, sock: stream, gateway: gateway.conn, via: { id: gateway.id, name: gateway.name } })
+      })
+    } catch (e) {
+      // A gateway connection that closed between the pool handing it over and now.
+      unreachable(e instanceof Error ? e.message : String(e))
+    }
+  })
 }
 
 /**
@@ -610,7 +812,8 @@ export function getStoredHost(id: string): StoredSshHost | null {
  * here rather than a terminal that opens anyway.
  */
 export async function getSshTerminalCommand(
-  hostId: string
+  hostId: string,
+  sshPath = 'ssh'
 ): Promise<{ shell: string; args: string[]; remotePath?: string; claudePath?: string } | null> {
   const h = getHost(hostId)
   if (!h) return null
@@ -619,12 +822,34 @@ export async function getSshTerminalCommand(
   // hosts file written by an older version.
   const problem = hostFieldProblem(h)
   if (problem) throw new Error(t(hostFieldProblemKey(problem)))
+  const lookup = getJumpFor(hostId)
+  if (!lookup.ok) throw new Error(lookup.error)
+  const jump = lookup.jump
+  if (jump) {
+    if (jump.credentialMissing) throw new Error(t('main.ssh.jump.gatewayFailed', { name: jump.name, error: t('main.ssh.credentialMissing') }))
+    const jumpProblem = hostFieldProblem(jump)
+    if (jumpProblem) throw new Error(t('main.ssh.jump.gatewayFailed', { name: jump.name, error: t(hostFieldProblemKey(jumpProblem)) }))
+    // The inner ssh checks the gateway against the same trusted list, so its key must be
+    // there first, learnt the usual way (the trust prompt) like the target's below.
+    const jumpPort = jump.port || 22
+    if (!isEndpointKeyStored(jump.host, jumpPort)) {
+      const check = await testConnection(jump.id)
+      if (!isEndpointKeyStored(jump.host, jumpPort)) {
+        const why = check.ok ? t('main.ssh.notTrusted') : `${t('main.ssh.notTrusted')} (${check.message})`
+        throw new Error(t('main.ssh.jump.gatewayFailed', { name: jump.name, error: why }))
+      }
+    }
+  }
   const port = h.port || 22
-  if (!isEndpointKeyStored(h.host, port)) {
+  // Behind a gateway the target is trusted under that gateway's scope, and the ssh CLI finds
+  // it by alias (the generated known_hosts lists it only that way).
+  const scopedKey = jump ? trustKey(h.host, port, jump.id) : null
+  if (jump && !scopedKey) throw new Error(t('main.ssh.notTrusted'))
+  if (!isEndpointKeyStored(h.host, port, jump?.id)) {
     // The verifier records the key before authentication, so a check that then fails to
     // log in (a password the terminal will ask for) still leaves the server trusted.
     const check = await testConnection(hostId)
-    if (!isEndpointKeyStored(h.host, port)) {
+    if (!isEndpointKeyStored(h.host, port, jump?.id)) {
       throw new Error(check.ok ? t('main.ssh.notTrusted') : `${t('main.ssh.notTrusted')} (${check.message})`)
     }
   }
@@ -638,10 +863,33 @@ export async function getSshTerminalCommand(
   // One argv element each, never shell-quoted; sshOptionPath only applies ssh's own
   // option syntax (the userData path can hold spaces, `%` and non-ASCII characters).
   args.push('-o', `UserKnownHostsFile=${sshOptionPath(knownHosts)}`, '-o', 'StrictHostKeyChecking=yes')
+  if (jump) {
+    // ProxyCommand rather than -J: -J's inner ssh gets none of the -o options above (it would
+    // check the gateway against ~/.ssh/known_hosts), and the -F file that could carry them is
+    // passed on unquoted, which breaks on a path with a space. See buildProxyCommand.
+    const proxy = buildProxyCommand({ sshPath, jump, knownHostsPath: knownHosts, platform: process.platform })
+    if (!proxy.ok) {
+      const why =
+        proxy.problem === 'port'
+          ? t('main.ssh.jump.badPort', { name: jump.name })
+          : proxy.problem === 'host'
+            ? t('main.ssh.invalid.host')
+            : proxy.problem === 'username'
+              ? t('main.ssh.invalid.username')
+              : t('main.ssh.jump.unsafePath', {
+                  name: jump.name,
+                  path: proxy.problem === 'keyPath' ? jump.privateKeyPath ?? '' : proxy.problem === 'knownHosts' ? knownHosts : sshPath
+                })
+      throw new Error(why)
+    }
+    args.push('-o', `ProxyCommand=${proxy.command}`)
+    // Letters, digits and `-` only (trustAlias): safe as one argv element.
+    if (scopedKey) args.push('-o', `HostKeyAlias=${trustAlias(scopedKey)}`)
+  }
   const destination = sshDestinationArgs(h.username, h.host)
   if (!destination) throw new Error(t('main.ssh.invalid.host'))
   args.push(...destination)
-  return { shell: 'ssh', args, remotePath: h.remotePath, claudePath: h.claudePath }
+  return { shell: sshPath, args, remotePath: h.remotePath, claudePath: h.claudePath }
 }
 
 /** Upper bound for a whole check (handshake + exec); readyTimeout only covers the handshake. */
@@ -684,12 +932,45 @@ export function testConnection(id: string): Promise<{ ok: boolean; message: stri
     // a protocol error) ends the check now rather than at the timeout. done ignores the close
     // its own conn.end() causes.
     conn.on('close', () => done({ ok: false, message: explainCheckFailure(host, t('main.ssh.closedEarly')) }))
-    try {
-      connectClient(conn, host)
-    } catch (e) {
-      done({ ok: false, message: explainCheckFailure(host, e instanceof Error ? e.message : String(e)) })
-    }
+    dialForCheck(conn, host, () => settled, (message) => done({ ok: false, message }))
   })
+}
+
+/**
+ * Starts a background check's connection: through the host's gateway when it has one (only
+ * if the gateway is pooled already or connects without asking), directly otherwise. `failed`
+ * gets the message of a failure before the dial; `isSettled` stops a dial for a check that
+ * already ended (its timeout) while the gateway was being reached.
+ */
+function dialForCheck(conn: Client, host: EffectiveSshHost, isSettled: () => boolean, failed: (message: string) => void): void {
+  void (async () => {
+    // A gateway this check had to connect is closed again when the check ends, so a status
+    // probe does not leave a session open on it that nothing would ever close.
+    const lookup = getJumpFor(host.id)
+    const gatewayId = lookup.ok ? lookup.jump?.id : undefined
+    const opensGateway = !!gatewayId && !!jumpPool && !jumpPool.isPooled(gatewayId)
+    const release = (): void => {
+      if (opensGateway && gatewayId) jumpPool?.release(gatewayId)
+    }
+    const via = await openJumpSocket(host, false)
+    if (!via.ok) {
+      release()
+      return failed(via.error)
+    }
+    if (isSettled()) {
+      via.sock?.destroy()
+      release()
+      return
+    }
+    conn.once('close', release)
+    try {
+      connectClient(conn, host, { interactive: false, via: via.via }, via.sock)
+    } catch (e) {
+      via.sock?.destroy()
+      release()
+      failed(explainCheckFailure(host, e instanceof Error ? e.message : String(e)))
+    }
+  })()
 }
 
 /**
@@ -747,10 +1028,6 @@ export function testClaude(id: string): Promise<{ ok: boolean; message: string }
     // a protocol error) ends the check now rather than at the timeout. done ignores the close
     // its own conn.end() causes.
     conn.on('close', () => done({ ok: false, message: explainCheckFailure(host, t('main.ssh.closedEarly')) }))
-    try {
-      connectClient(conn, host)
-    } catch (e) {
-      done({ ok: false, message: explainCheckFailure(host, e instanceof Error ? e.message : String(e)) })
-    }
+    dialForCheck(conn, host, () => settled, (message) => done({ ok: false, message }))
   })
 }

@@ -21,6 +21,8 @@ interface Props {
   start: GroupsStart
   groups: SshGroupPublic[]
   credentials: SshCredentialPublic[]
+  /** The saved hosts, for the gateway select. */
+  hosts: SshHostPublic[]
   onClose: () => void
   /** After every write: the new list, and the id of the group just saved. */
   onChanged: (groups: SshGroupPublic[], savedId?: string) => void
@@ -30,9 +32,9 @@ interface Props {
 
 const emptyGroup = (): SshGroupInput => ({ name: '' })
 
-const toInput = (g: SshGroupPublic): SshGroupInput => ({ id: g.id, name: g.name, credentialId: g.credentialId })
+const toInput = (g: SshGroupPublic): SshGroupInput => ({ id: g.id, name: g.name, credentialId: g.credentialId, jumpHostId: g.jumpHostId })
 
-export default function GroupsSheet({ start, groups, credentials, onClose, onChanged, onHostsChanged }: Props) {
+export default function GroupsSheet({ start, groups, credentials, hosts, onClose, onChanged, onHostsChanged }: Props) {
   const t = useT()
   const initial = (): SshGroupInput | null => {
     if (start.kind === 'new') return emptyGroup()
@@ -54,6 +56,8 @@ export default function GroupsSheet({ start, groups, credentials, onClose, onCha
   const saved = editing?.id ? groups.find((g) => g.id === editing.id) : undefined
   const valid = !!editing && !!editing.name.trim()
   const credentialChanged = !!saved && (saved.credentialId ?? '') !== (editing?.credentialId ?? '')
+  // A gateway connects directly: hosts going through one (their own or a group's) are left out.
+  const jumpChoices = hosts.filter((h) => !h.jumpViaId && !h.jumpMissing)
 
   const edit = (g: SshGroupInput) => {
     openedAt.current = Date.now()
@@ -82,7 +86,11 @@ export default function GroupsSheet({ start, groups, credentials, onClose, onCha
   const save = () =>
     run(async () => {
       if (!editing || !valid) return
-      const res = await window.electronAPI.sshGroupSave({ ...editing, credentialId: editing.credentialId || undefined })
+      const res = await window.electronAPI.sshGroupSave({
+        ...editing,
+        credentialId: editing.credentialId || undefined,
+        jumpHostId: editing.jumpHostId || undefined
+      })
       if (!res.ok) {
         setError(res.error)
         return
@@ -175,6 +183,24 @@ export default function GroupsSheet({ start, groups, credentials, onClose, onCha
                   : plural(t, 'remote.groups.credentialClears', saved.inheriting)}
               </p>
             )}
+          </div>
+          <div className="form-group">
+            <label>
+              {t('remote.form.jump')}
+              <span className="optional">{t('remote.form.optional')}</span>
+            </label>
+            <Select value={editing.jumpHostId ?? ''} onChange={(e) => setEditing({ ...editing, jumpHostId: e.target.value || undefined })}>
+              <option value="">{t('remote.form.jumpDirect')}</option>
+              {editing.jumpHostId && !jumpChoices.some((h) => h.id === editing.jumpHostId) && (
+                <option value={editing.jumpHostId}>{t('remote.form.jumpMissing')}</option>
+              )}
+              {jumpChoices.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.name}
+                </option>
+              ))}
+            </Select>
+            <p className="help">{t('remote.groups.jumpHelp')}</p>
           </div>
         </div>
       </Sheet>

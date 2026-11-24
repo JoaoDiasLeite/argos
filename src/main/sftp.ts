@@ -3,7 +3,16 @@ import * as fs from 'fs'
 import { promises as fsp } from 'fs'
 import * as path from 'path'
 import { Client, SFTPWrapper, Stats, utils as ssh2Utils } from 'ssh2'
-import { getHost, connectClient, saveHostPassword, type EffectiveSshHost } from './ssh'
+import type { Duplex } from 'stream'
+import {
+  getHost,
+  connectClient,
+  forwardThroughGateway,
+  reachGateway,
+  saveHostPassword,
+  setJumpPool,
+  type EffectiveSshHost
+} from './ssh'
 import {
   looksLikePasswordPrompt,
   sanitizeServerPrompt,
@@ -139,8 +148,23 @@ async function openSession(hostId: string, evict: () => void, interactive: boole
   const asker = interactive ? askHostSecret : null
   const fail = (error: string): SessionResult => {
     dropAttempt(hostId, attempt)
+    endRide(hostId, ride)
     return { ok: false, error }
   }
+  // The gateway this attempt rides, recorded as soon as it is reached so a gateway in use by
+  // an attempt still opening is not released under it.
+  let ride: string | undefined
+
+  // A host behind a gateway: the gateway first (its own pooled session, which asks for its own
+  // password when this call may ask), so its prompt comes before the target's. A jump that does
+  // not resolve fails here, before anything waits on a pooled entry.
+  const gw = await reachGateway(hostId, !!asker)
+  if (!gw.ok) return fail(gw.error)
+  if (gw.gateway) {
+    ride = gw.gateway.id
+    ridesOn.set(hostId, ride)
+  }
+  if (signal.aborted) return fail(t('main.ssh.connectCancelled'))
 
   // What this attempt logs in with. A secret typed here only joins `attempt.secrets` once the
   // connection is ready, so a mistyped one is neither kept nor saved.
@@ -181,6 +205,19 @@ async function openSession(hostId: string, evict: () => void, interactive: boole
       if (wrong) return fail(wrong)
       typedPassphrase = answer.value
       host = { ...saved, passphrase: answer.value }
+    }
+  }
+
+  // The channel through the gateway, opened only now that every secret is in hand.
+  let sock: Duplex | undefined
+  const gateway = gw.gateway?.conn
+  if (gw.gateway) {
+    const via = await forwardThroughGateway(gw.gateway, saved)
+    if (!via.ok) return fail(via.error)
+    sock = via.sock
+    if (signal.aborted) {
+      sock?.destroy()
+      return fail(t('main.ssh.connectCancelled'))
     }
   }
 
@@ -238,6 +275,16 @@ async function openSession(hostId: string, evict: () => void, interactive: boole
         sftp.on('close', evictAll)
         sftp.on('error', evictAndEnd)
         conn.on('close', evictAll)
+        // Riding a gateway: when its connection goes, this one's channel is dead too. Ended
+        // and evicted at once rather than left for a keepalive to notice a minute later.
+        if (gateway) {
+          gateway.once('close', evictAndEnd)
+          conn.once('close', () => {
+            gateway.removeListener('close', evictAndEnd)
+            // The last rider gone: its gateway closes too, unless a tab holds it.
+            endRide(hostId, ride)
+          })
+        }
         finish({ ok: true, session })
       })
     })
@@ -256,6 +303,7 @@ async function openSession(hostId: string, evict: () => void, interactive: boole
     try {
       connectClient(conn, host, {
         interactive: !!asker,
+        via: gw.gateway ? { id: gw.gateway.id, name: gw.gateway.name } : undefined,
         askSecret: asker
           ? async (prompt, echo) => {
               const answer = await asker(
@@ -278,13 +326,18 @@ async function openSession(hostId: string, evict: () => void, interactive: boole
               return answer.value
             }
           : undefined
-      })
+      }, sock)
     } catch (e) {
       finish({ ok: false, error: e instanceof Error ? e.message : String(e) })
     }
   })
 
-  if (!res.ok) return fail(res.error)
+  if (!res.ok) {
+    // A channel through the gateway that never carried a session is closed here: the gateway
+    // stays up for whatever else rides it.
+    sock?.destroy()
+    return fail(res.error)
+  }
   // Logged in: only now is a typed secret known to be right.
   if (typedPassword !== undefined) {
     const stored = savePassword && !saved.credentialId && saveHostPassword(hostId, typedPassword).ok
@@ -308,11 +361,46 @@ export async function getRemoteClient(
   return res.ok ? { ok: true, conn: res.session.conn } : { ok: false, error: res.error }
 }
 
+// A host behind a gateway reaches it through the same pool, so the gateway's one connection
+// is shared by its own session and every host that rides it.
+setJumpPool({
+  dial: (hostId, interactive) => getRemoteClient(hostId, { interactive }),
+  isPooled: (hostId) => sessions.has(hostId),
+  release: (hostId) => releaseGateway(hostId)
+})
+
+/**
+ * Which gateway each pooled session rides (rider id to gateway id), as it was when it opened,
+ * so a gateway is released by what really rides it, whatever the settings say by now (a group
+ * whose gateway was just removed, say).
+ */
+const ridesOn = new Map<string, string>()
+
+function ridersOf(gatewayId: string): string[] {
+  return [...ridesOn].filter(([rider, gw]) => gw === gatewayId && sessions.has(rider)).map(([rider]) => rider)
+}
+
+/** Closes a gateway's pooled connection when no tab holds it and no pooled session rides it. */
+function releaseGateway(gatewayId: string): void {
+  if (heldByUser.has(gatewayId) || ridersOf(gatewayId).length > 0) return
+  endSession(gatewayId)
+}
+
+/** A rider's session is over (closed, or its attempt failed): forget the ride, and release
+ *  the gateway if that was the last thing using it. Only its own ride: a newer attempt for
+ *  the same host may already have recorded another. */
+function endRide(hostId: string, gatewayId: string | undefined): void {
+  if (!gatewayId || ridesOn.get(hostId) !== gatewayId) return
+  ridesOn.delete(hostId)
+  releaseGateway(gatewayId)
+}
+
 // sftpList and sftpRead are shared with the ops agent and ask only when told to; the other
 // calls below serve the user's Remote Session alone, so they may ask (`true`).
 export async function sftpConnect(
   hostId: string
 ): Promise<{ ok: boolean; home?: string; cwd?: string; error?: string }> {
+  heldByUser.add(hostId)
   const res = await getSession(hostId, true)
   if (!res.ok) return { ok: false, error: res.error }
   return new Promise((resolve) => {
@@ -571,15 +659,45 @@ function endWhenSettled(entry: Promise<SessionResult>): void {
   )
 }
 
-export function sftpDisconnect(hostId: string): { ok: boolean } {
+/**
+ * The hosts the user has a Remote Session open on (sftpConnect, until the renderer's
+ * disconnect for the last one). Only for gateways: a gateway's connection outlives its own
+ * tab while a host rides it, and is closed with the last rider when no tab holds it.
+ */
+const heldByUser = new Set<string>()
+
+function endSession(hostId: string): void {
   // Also dismisses a prompt still waiting on this host's attempt.
   dropAttempt(hostId)
   const entry = sessions.take(hostId)
   if (entry) endWhenSettled(entry)
+}
+
+/**
+ * The user closed the last session on a host. Its connection ends, unless it is a gateway
+ * other pooled hosts ride (closing it would cut them off); and a gateway it rode is closed too
+ * once nothing else holds it.
+ */
+export function sftpDisconnect(hostId: string): { ok: boolean } {
+  heldByUser.delete(hostId)
+  // A gateway others ride stays up for them. The gateway this host rode is released when its
+  // connection closes (endRide).
+  if (ridersOf(hostId).length === 0) endSession(hostId)
   return { ok: true }
 }
 
+/**
+ * Closes a host's pooled connection whatever uses it: its address, login or gateway changed,
+ * or it was deleted. The hosts riding it are the caller's to close too (their channels die
+ * with it, and their tunnels are stopped explicitly).
+ */
+export function sftpForceDisconnect(hostId: string): void {
+  endSession(hostId)
+}
+
 export function sftpDisconnectAll(): void {
+  heldByUser.clear()
+  ridesOn.clear()
   for (const hostId of [...attempts.keys()]) dropAttempt(hostId)
   for (const entry of sessions.takeAll()) endWhenSettled(entry)
 }

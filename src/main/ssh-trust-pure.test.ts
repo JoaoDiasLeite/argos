@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { keyTypeOf, knownHostsFile, knownHostsLine, parseTrustEntry, splitEndpoint, sshOptionPath } from './ssh-trust-pure'
+import { keyTypeOf, knownHostsFile, knownHostsLine, parseTrustEntry, splitEndpoint, splitTrustKey, sshOptionPath, trustAlias, trustKey } from './ssh-trust-pure'
 
 function sshString(s: string | Buffer): Buffer {
   const body = typeof s === 'string' ? Buffer.from(s, 'latin1') : s
@@ -87,5 +87,43 @@ describe('sshOptionPath', () => {
 
   it('quotes a path with spaces and doubles a literal %', () => {
     expect(sshOptionPath(String.raw`C:\Users\Jo Leite\100%\kh`)).toBe(String.raw`"C:\Users\Jo Leite\100%%\kh"`)
+  })
+})
+
+describe('trust scoped by gateway', () => {
+  it('keeps a direct host on its plain host:port key', () => {
+    expect(trustKey('Server.Example', 22)).toBe('server.example:22')
+    expect(trustKey('fe80::1', 2222)).toBe('fe80::1:2222')
+  })
+
+  it('puts a host behind a gateway under that gateway id', () => {
+    expect(trustKey('10.0.0.5', 22, 'ssh_aaa')).toBe('ssh_aaa/10.0.0.5:22')
+    // The same private address at two clients: two different keys.
+    expect(trustKey('10.0.0.5', 22, 'ssh_bbb')).not.toBe(trustKey('10.0.0.5', 22, 'ssh_aaa'))
+  })
+
+  it('refuses a gateway id that could not be a scope', () => {
+    for (const bad of ['', 'a/b', 'a b', 'x\ny', '../x', 'a:b']) expect(trustKey('h', 22, bad), bad).toBeNull()
+  })
+
+  it('splits a store key back into scope and endpoint', () => {
+    expect(splitTrustKey('ssh_aaa/10.0.0.5:22')).toEqual({ gatewayId: 'ssh_aaa', endpoint: '10.0.0.5:22' })
+    expect(splitTrustKey('fe80::1:2222')).toEqual({ endpoint: 'fe80::1:2222' })
+  })
+
+  it('gives each scoped key a stable, plain alias', () => {
+    const a = trustAlias('ssh_aaa/10.0.0.5:22')
+    expect(a).toMatch(/^argos-jump-[0-9a-f]{32}$/)
+    expect(trustAlias('ssh_aaa/10.0.0.5:22')).toBe(a)
+    expect(trustAlias('ssh_bbb/10.0.0.5:22')).not.toBe(a)
+  })
+
+  it('lists a scoped host under its alias only, and a direct one as before', () => {
+    const key = ed25519.toString('base64')
+    const text = knownHostsFile({
+      '10.0.0.5:22': { fp: 'x', type: 'ssh-ed25519', key },
+      'ssh_aaa/10.0.0.5:22': { fp: 'y', type: 'ssh-ed25519', key }
+    })
+    expect(text).toBe(`10.0.0.5 ssh-ed25519 ${key}\n${trustAlias('ssh_aaa/10.0.0.5:22')} ssh-ed25519 ${key}\n`)
   })
 })

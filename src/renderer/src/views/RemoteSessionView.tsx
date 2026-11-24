@@ -389,6 +389,9 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
           {isSsh && target.host.production && <span className="prod-pill" title={t('remote.prod.title')}>{t('remote.prod.pill')}</span>}
           <span className="remote-session-target">
             {isSsh ? `${target.host.username}@${target.host.host}` : `wsl -d ${target.distro}`}
+            {isSsh && target.host.jumpHostName && (
+              <span title={t('remote.viaTitle', { name: target.host.jumpHostName })}> {t('remote.via', { name: target.host.jumpHostName })}</span>
+            )}
           </span>
         </div>
         <span className="remote-session-spacer" />

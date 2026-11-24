@@ -10,6 +10,9 @@ export interface SshGroup {
   id: string
   name: string
   credentialId?: string
+  /** The gateway (a saved host) the group's servers connect through, unless a server sets its
+   *  own (`SshHost.jumpHostId`, where `''` is explicitly direct). See ssh-jump-pure.ts. */
+  jumpHostId?: string
 }
 
 /** The file's shape: an object, so the profile export carries it like the other JSON files. */
@@ -25,6 +28,8 @@ export interface SshGroupInput {
   name: string
   /** Empty or absent: no credential. */
   credentialId?: string
+  /** Empty or absent: no gateway. */
+  jumpHostId?: string
 }
 
 /** One group as read from the file or an import, or null when it is not one. Text is
@@ -37,6 +42,7 @@ export function cleanGroup(v: unknown): SshGroup | null {
   if (!name) return null
   const out: SshGroup = { id: r.id, name }
   if (typeof r.credentialId === 'string' && r.credentialId) out.credentialId = r.credentialId
+  if (typeof r.jumpHostId === 'string' && cleanHostText(r.jumpHostId)) out.jumpHostId = cleanHostText(r.jumpHostId)
   return out
 }
 
@@ -131,4 +137,15 @@ export function mergeGroups(local: SshGroup[], imported: SshGroup[]): SshGroup[]
     else out[idx] = { ...g }
   }
   return out
+}
+
+/** The group-gateway lookup resolveJump takes: a host's group's gateway id, if any. */
+export function groupJumpLookup(groups: readonly SshGroup[]): (h: { groupId?: string }) => string | undefined {
+  return (h) => (h.groupId ? groups.find((g) => g.id === h.groupId)?.jumpHostId : undefined)
+}
+
+/** The ids of group `id`'s hosts that take its gateway (they set none of their own): a change
+ *  of the group's gateway, or the group's deletion, drops their pooled connections. */
+export function hostIdsTakingGroupJump(hosts: readonly { id: string; groupId?: string; jumpHostId?: string }[], id: string): string[] {
+  return hosts.filter((h) => h.groupId === id && h.jumpHostId === undefined).map((h) => h.id)
 }
