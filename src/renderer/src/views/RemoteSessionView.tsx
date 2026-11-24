@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { RemoteTarget, type HostSecretFlags, type RemoteContainerTarget } from '../types'
+import { RemoteTarget, type HostSecretFlags, type RemoteContainerTarget, type VpnDownInfo } from '../types'
 import ChatTerminal from '../components/ChatTerminal'
 import RemoteTerminal from '../components/RemoteTerminal'
 import SftpBrowser from '../components/SftpBrowser'
@@ -7,6 +7,8 @@ import ContainersPanel from '../components/ContainersPanel'
 import LocalBrowser from '../components/LocalBrowser'
 import FileEditor from '../components/FileEditor'
 import PortForwardsButton from '../components/PortForwardsButton'
+import { VpnDot } from '../components/GatewayVpns'
+import { useVpnStates, vpnKey } from '../hooks/useVpnStates'
 import { readLocalFile, writeLocalFile } from '../lib/local-file-io'
 import { expandHome } from '../lib/terminal-cwd'
 import { useT } from '../i18n'
@@ -138,6 +140,11 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     isSsh ? 'connecting' : 'connected'
   )
   const [statusError, setStatusError] = useState<string | null>(null)
+  // The connect stopped on a VPN that is down on the gateway: offers to bring it up.
+  const [vpnDown, setVpnDown] = useState<VpnDownInfo | null>(null)
+  // Bumped after a retry connects, to start the terminal again (its key).
+  const [termEpoch, setTermEpoch] = useState(0)
+  const vpnStates = useVpnStates()
   const [cwd, setCwd] = useState(isSsh ? target.host.remotePath || '/' : '/home')
   // The login user's home on the box — what the shell starts in and what its prompt's
   // `~` stands for. A ref: read by the terminal's cwd reports, not rendered.
@@ -249,8 +256,10 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     const hostId = target.host.id
     setStatus('connecting')
     setStatusError(null)
+    setVpnDown(null)
     window.electronAPI.sftpConnect(hostId).then((res) => {
       if (cancelled) return
+      setVpnDown(res.vpnDown ?? null)
       if (res.ok) {
         refreshSecretFlags()
         setStatus('connected')
@@ -328,16 +337,22 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     setCwd(trimmed.replace(/\/+$/, '') || '/')
   }
 
-  const retryConnect = () => {
+  // `vpnUp`: bring the VPN the connect stopped on up first (main does it within the attempt).
+  const retryConnect = (vpnUp = false) => {
     if (!isSsh) return
     setStatus('connecting')
     setStatusError(null)
-    window.electronAPI.sftpConnect(target.host.id).then((res) => {
+    setVpnDown(null)
+    window.electronAPI.sftpConnect(target.host.id, vpnUp ? { vpnUp: true } : undefined).then((res) => {
+      setVpnDown(res.vpnDown ?? null)
       if (res.ok) {
         refreshSecretFlags()
         setStatus('connected')
         homeRef.current = res.home ?? null
         setCwd(res.home || target.host.remotePath || '/')
+        // The terminal failed with the first connect and never retries by itself: a fresh
+        // one rides the connection that just opened.
+        setTermEpoch((n) => n + 1)
       } else {
         setStatus('error')
         setStatusError(res.error || t('remote.session.couldNotConnect'))
@@ -392,6 +407,13 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
             {isSsh && target.host.jumpHostName && (
               <span title={t('remote.viaTitle', { name: target.host.jumpHostName })}> {t('remote.via', { name: target.host.jumpHostName })}</span>
             )}
+            {isSsh && target.host.jumpHostName && target.host.vpnName && target.host.jumpViaId && target.host.vpnViaId && (
+              <span title={t('remote.vpn.rowTitle', { name: target.host.vpnName })}>
+                {' · '}
+                <VpnDot ev={vpnStates[vpnKey(target.host.jumpViaId, target.host.vpnViaId)]} />
+                {t('remote.vpn.rowSuffix', { name: target.host.vpnName })}
+              </span>
+            )}
           </span>
         </div>
         <span className="remote-session-spacer" />
@@ -422,14 +444,21 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
           {status === 'error' && (
             <div className="block err remote-session-error" role="alert">
               <div className="remote-session-error-head">
-                <span className="remote-session-error-title">{t('remote.session.couldNotConnect')}</span>
-                {statusError && <span className="remote-session-error-why">{statusError}</span>}
+                <span className="remote-session-error-title">
+                  {vpnDown ? t('remote.vpn.downTitle', { name: vpnDown.vpnName, gateway: vpnDown.gatewayName }) : t('remote.session.couldNotConnect')}
+                </span>
+                {statusError && !vpnDown && <span className="remote-session-error-why">{statusError}</span>}
               </div>
               <span className="remote-session-error-text">
                 {t('remote.session.noShell')}
               </span>
-              <div>
-                <button type="button" className="btn-ghost small" onClick={retryConnect}>
+              <div className="remote-session-error-actions">
+                {vpnDown && (
+                  <button type="button" className="btn-primary small" onClick={() => retryConnect(true)}>
+                    {t('remote.vpn.bringUpRetry')}
+                  </button>
+                )}
+                <button type="button" className="btn-ghost small" onClick={() => retryConnect()}>
                   {t('common.retry')}
                 </button>
               </div>
@@ -529,7 +558,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
             "close" that only went back to the targets list read as if it had. */}
         <div className="remote-session-right">
           {isSsh ? (
-            <RemoteTerminal terminalId={terminalId} hostId={target.host.id} active={active} closable={false} onCwdChange={followShell} secrets={secretFlags ? { ...target.host, ...secretFlags } : target.host} />
+            <RemoteTerminal key={termEpoch} terminalId={terminalId} hostId={target.host.id} active={active} closable={false} onCwdChange={followShell} secrets={secretFlags ? { ...target.host, ...secretFlags } : target.host} />
           ) : (
             <ChatTerminal
               terminalId={terminalId}

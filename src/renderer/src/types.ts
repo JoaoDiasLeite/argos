@@ -757,6 +757,18 @@ export interface SshHostPublic {
   jumpSource?: 'host' | 'group' | 'none'
   /** The gateway it names is gone or cannot be one: the host cannot connect until edited. */
   jumpMissing?: boolean
+  /** VPN profiles that run on this host when it is a gateway; see src/main/vpn-pure.ts. */
+  vpns?: VpnProfile[]
+  /** The VPN on its gateway it needs: absent inherits the group's, `''` is explicitly none. */
+  vpnId?: string
+  vpnAutoUp?: boolean
+  /** The VPN it needs as resolved (its own or its group's), for the row and the header. */
+  vpnViaId?: string
+  vpnName?: string
+  vpnSource?: 'host' | 'group'
+  vpnAuto?: boolean
+  /** It asks for a VPN its gateway does not have. */
+  vpnMissing?: boolean
   hasPassword: boolean
   hasPassphrase: boolean
   /** A saved secret can answer sudo/su now (the login password in `login` mode, the
@@ -794,6 +806,9 @@ export interface SshHostInput {
   credentialId?: string
   /** Connect through this saved host (a gateway); absent for direct. */
   jumpHostId?: string
+  vpns?: VpnProfile[]
+  vpnId?: string
+  vpnAutoUp?: boolean
 }
 
 /** A shared login (see src/main/ssh-credential-pure.ts): no secrets, only whether each
@@ -822,6 +837,9 @@ export interface SshGroupPublic {
   credentialName?: string
   /** The gateway its servers connect through, unless they set their own. */
   jumpHostId?: string
+  /** The VPN on that gateway its servers need, unless they set their own. */
+  vpnId?: string
+  vpnAutoUp?: boolean
   /** Hosts in it. */
   hosts: number
   /** Of those, the ones that inherit its credential. */
@@ -833,6 +851,47 @@ export interface SshGroupInput {
   name: string
   credentialId?: string
   jumpHostId?: string
+  vpnId?: string
+  vpnAutoUp?: boolean
+}
+
+/** A VPN that runs on a gateway host (see src/main/vpn-pure.ts). Not secret. */
+export type VpnKind = 'openvpn' | 'wireguard' | 'nmcli' | 'openfortivpn' | 'custom'
+export interface VpnProfile {
+  id: string
+  name: string
+  kind: VpnKind
+  /** The presets' unit, config or connection name. */
+  target?: string
+  /** `custom` only. */
+  up?: string
+  down?: string
+  status?: string
+  /** Unset: sudo for the presets, not for custom. */
+  sudo?: boolean
+}
+export type VpnState = 'up' | 'down' | 'busy' | 'unknown'
+export type VpnFailReason = 'needs-password' | 'wrong-password' | 'sudo' | 'timeout' | 'invalid' | 'connect' | 'failed' | 'not-found'
+export type VpnRunResult =
+  | { ok: true; up: boolean; output?: string }
+  | { ok: false; error: string; reason: VpnFailReason; output?: string }
+/** What main announces on `vpn:changed`. */
+export interface VpnStatusEvent {
+  gatewayId: string
+  vpnId: string
+  state: VpnState
+  error?: string
+  reason?: VpnFailReason
+  output?: string
+  at: number
+}
+export type VpnStatusResult = { ok: true; statuses: { vpnId: string; result: VpnRunResult }[] } | { ok: false; error: string }
+/** A connect that stopped on a VPN that is down, for the "bring it up and try again" button. */
+export interface VpnDownInfo {
+  gatewayId: string
+  gatewayName: string
+  vpnId: string
+  vpnName: string
 }
 
 export type SshGroupsWriteResult = { ok: true; groups: SshGroupPublic[] } | { ok: false; error: string }
@@ -1946,9 +2005,17 @@ declare global {
       forwardsList: () => Promise<ForwardStatus[]>
       forwardsAutoStart: (hostId: string) => Promise<{ forwardId: string; result: ForwardStartResult }[]>
       onForwardsChanged: (cb: (list: ForwardStatus[]) => void) => () => void
+      vpnStatus: (gatewayId: string, vpnId?: string) => Promise<VpnStatusResult>
+      vpnUp: (gatewayId: string, vpnId: string) => Promise<VpnRunResult>
+      vpnDown: (gatewayId: string, vpnId: string) => Promise<VpnRunResult>
+      vpnKnown: () => Promise<VpnStatusEvent[]>
+      onVpnChanged: (cb: (ev: VpnStatusEvent) => void) => () => void
 
       // SFTP (Remote Session file browser)
-      sftpConnect: (hostId: string) => Promise<{ ok: boolean; home?: string; cwd?: string; error?: string }>
+      sftpConnect: (
+        hostId: string,
+        opts?: { vpnUp?: boolean }
+      ) => Promise<{ ok: boolean; home?: string; cwd?: string; error?: string; vpnDown?: VpnDownInfo }>
       sftpList: (hostId: string, dir: string) => Promise<{ ok: boolean; entries?: RemoteEntry[]; error?: string }>
       sftpRead: (
         hostId: string,

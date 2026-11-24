@@ -1,4 +1,5 @@
 import type { PortForward } from './port-forwards-pure'
+import type { VpnProfile } from './vpn-pure'
 
 export type SshAuthType = 'password' | 'key' | 'agent'
 
@@ -86,6 +87,13 @@ export interface SshHost {
    * See ssh-jump-pure.ts.
    */
   jumpHostId?: string
+  /** VPN profiles that run on this host, when it is a gateway (vpn-pure.ts). Not secret. */
+  vpns?: VpnProfile[]
+  /** The VPN on its gateway this server needs: absent takes the group's, `''` is explicitly
+   *  none, an id is one of the gateway's `vpns`. */
+  vpnId?: string
+  /** Bring that VPN up without asking when it is down at connect. Goes with `vpnId`. */
+  vpnAutoUp?: boolean
 }
 
 /**
@@ -119,7 +127,10 @@ export const PUBLIC_HOST_FIELDS = [
   'notes',
   'credentialId',
   'forwards',
-  'jumpHostId'
+  'jumpHostId',
+  'vpns',
+  'vpnId',
+  'vpnAutoUp'
 ] as const
 export type PublicHostField = (typeof PUBLIC_HOST_FIELDS)[number]
 
@@ -151,6 +162,13 @@ export type SshHostPublic = Pick<SshHost, PublicHostField> &
     jumpViaId?: string
     jumpSource?: 'host' | 'group' | 'none'
     jumpMissing?: boolean
+    /** The VPN it needs, as resolved (its own or its group's), for the row and the header. */
+    vpnViaId?: string
+    vpnName?: string
+    vpnSource?: 'host' | 'group'
+    vpnAuto?: boolean
+    /** It asks for a VPN its gateway does not have: it cannot connect until edited. */
+    vpnMissing?: boolean
   }
 
 /** The elevation mode in force: an unset or unknown value is `login` for a password host
@@ -221,6 +239,8 @@ interface HostText {
   groupId?: unknown
   authSource?: unknown
   jumpHostId?: unknown
+  vpnId?: unknown
+  vpnAutoUp?: unknown
 }
 
 export const MAX_HOST_TAGS = 12
@@ -292,6 +312,15 @@ export function cleanHostFields<T extends HostText>(input: T): T {
   if (input.jumpHostId !== undefined) {
     if (typeof input.jumpHostId === 'string') out.jumpHostId = cleanHostText(input.jumpHostId)
     else delete out.jumpHostId
+  }
+  // The same convention for the VPN; the flag is kept only when set, and only with a VPN.
+  if (input.vpnId !== undefined) {
+    if (typeof input.vpnId === 'string') out.vpnId = cleanHostText(input.vpnId)
+    else delete out.vpnId
+  }
+  if (input.vpnAutoUp !== undefined || out.vpnAutoUp !== undefined) {
+    if (out.vpnAutoUp === true && typeof out.vpnId === 'string' && out.vpnId) out.vpnAutoUp = true
+    else delete out.vpnAutoUp
   }
   return out
 }

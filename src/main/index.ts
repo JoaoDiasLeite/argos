@@ -126,6 +126,8 @@ import {
   setHostSecretAsker,
   type HostSecretAsk
 } from './sftp'
+import { vpnStatus, vpnSwitch } from './vpn-gateway'
+import { forgetGatewayVpns, knownVpnStates, setVpnChangedSink } from './vpn-exec'
 import {
   remoteShellCreate,
   localContainerShellCreate,
@@ -2944,6 +2946,8 @@ ipcMain.handle('ssh:save', (_, host: SshHostInput) => {
     const next = getHost(prev.id)
     if (!next || hostConnectionChanged(prev, next) || effectiveJumpKey(prev.id) !== prevJump) closeHostConnection(prev.id)
     else reconcileHostForwards(prev.id)
+    // What was seen of its VPNs may no longer describe the profiles it has now.
+    if (JSON.stringify(prev.vpns ?? []) !== JSON.stringify(next?.vpns ?? [])) forgetGatewayVpns(prev.id)
   }
   return res
 })
@@ -2956,7 +2960,10 @@ function effectiveJumpKey(hostId: string): string {
 // A gateway other hosts still go through is refused by deleteHost, so nothing is closed then.
 ipcMain.handle('ssh:delete', (_, id: string) => {
   const res = deleteHost(id)
-  if (res.ok) closeHostConnection(id)
+  if (res.ok) {
+    closeHostConnection(id)
+    forgetGatewayVpns(id)
+  }
   return res
 })
 // Shared credentials. A credential edit that changes the login (not elevation alone) closes
@@ -3032,12 +3039,29 @@ ipcMain.handle('ssh:forwards-autostart', (e, hostId: unknown) => {
   return startAutoForwards(hostId)
 })
 setForwardsChangedSink((list) => send('ssh:forwards-changed', list))
+// VPNs on a gateway host (vpn-gateway.ts). Ids only cross here; main reads the profile from
+// the saved host. Up and down may connect the gateway and so ask for its password: main
+// window only, as for a tunnel. Status never asks. None of this reaches the ops agent.
+ipcMain.handle('vpn:status', (_, gatewayId: unknown, vpnId?: unknown) => vpnStatus(gatewayId, vpnId))
+ipcMain.handle('vpn:up', (e, gatewayId: unknown, vpnId: unknown) => {
+  if (e.sender !== mainWindow?.webContents) return { ok: false, reason: 'failed', error: 'not allowed' }
+  return vpnSwitch(gatewayId, vpnId, 'up')
+})
+ipcMain.handle('vpn:down', (e, gatewayId: unknown, vpnId: unknown) => {
+  if (e.sender !== mainWindow?.webContents) return { ok: false, reason: 'failed', error: 'not allowed' }
+  return vpnSwitch(gatewayId, vpnId, 'down')
+})
+ipcMain.handle('vpn:known', () => knownVpnStates())
+setVpnChangedSink((ev) => send('vpn:changed', ev))
 ipcMain.handle('ssh:keys-list', () => listSshKeys())
 ipcMain.handle('ssh:keys-generate', (_, name: string, comment?: string) => generateKey(name, comment))
 
 // ─── SFTP (Remote Session file browser) ────────────────────────────────────
 
-ipcMain.handle('sftp:connect', (_, hostId: string) => sftpConnect(hostId))
+// `vpnUp`: the "bring the VPN up and try again" button of a connect that stopped on it.
+ipcMain.handle('sftp:connect', (_, hostId: string, opts?: unknown) =>
+  sftpConnect(hostId, { vpnUp: !!opts && typeof opts === 'object' && (opts as { vpnUp?: unknown }).vpnUp === true })
+)
 // The renderer's calls serve the user's Remote Session, so they may ask for a secret.
 ipcMain.handle('sftp:list', (_, hostId: string, dir: string) => sftpList(hostId, dir, { interactive: true }))
 ipcMain.handle('sftp:read', (_, hostId: string, p: string) => sftpRead(hostId, p, undefined, { interactive: true }))
