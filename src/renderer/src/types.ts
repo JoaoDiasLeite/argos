@@ -748,6 +748,15 @@ export interface SshHostPublic {
   credentialName?: string
   /** The linked credential no longer exists: the host cannot connect until it is edited. */
   credentialMissing?: boolean
+  /** The saved host this one is reached through (a gateway). `''` is explicitly direct. */
+  jumpHostId?: string
+  /** The gateway's name, for the "via" hint. */
+  jumpHostName?: string
+  /** The gateway's id, and whether it is the host's own choice or its group's. */
+  jumpViaId?: string
+  jumpSource?: 'host' | 'group' | 'none'
+  /** The gateway it names is gone or cannot be one: the host cannot connect until edited. */
+  jumpMissing?: boolean
   hasPassword: boolean
   hasPassphrase: boolean
   /** A saved secret can answer sudo/su now (the login password in `login` mode, the
@@ -783,6 +792,8 @@ export interface SshHostInput {
   notes?: string
   /** Log in with this shared credential: main then ignores the login fields above. */
   credentialId?: string
+  /** Connect through this saved host (a gateway); absent for direct. */
+  jumpHostId?: string
 }
 
 /** A shared login (see src/main/ssh-credential-pure.ts): no secrets, only whether each
@@ -809,6 +820,8 @@ export interface SshGroupPublic {
   name: string
   credentialId?: string
   credentialName?: string
+  /** The gateway its servers connect through, unless they set their own. */
+  jumpHostId?: string
   /** Hosts in it. */
   hosts: number
   /** Of those, the ones that inherit its credential. */
@@ -819,6 +832,7 @@ export interface SshGroupInput {
   id?: string
   name: string
   credentialId?: string
+  jumpHostId?: string
 }
 
 export type SshGroupsWriteResult = { ok: true; groups: SshGroupPublic[] } | { ok: false; error: string }

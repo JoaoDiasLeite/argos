@@ -46,6 +46,7 @@ export default {
   'sshTrust.changed.message': 'Connection to {endpoint} was refused.',
   'sshTrust.changed.detail':
     'Trusted: {known}\nReceived: {fingerprint}\nVerify the server identity with its administrator before changing trust.',
+  'sshTrust.via': '{endpoint} through the gateway {gateway}',
   'sshTrust.verify.title': 'Verify SSH server',
   'sshTrust.verify.message': 'Trust {endpoint}?',
   'sshTrust.verify.detail':
@@ -184,6 +185,26 @@ export default {
   'ssh.groupMissing': 'That server group no longer exists. Choose another group or none.',
   'ssh.groupNoCredential': 'The group "{group}" carries no credential to inherit. Give it one, or choose another login for the server.',
   'ssh.groupNameMissing': 'Give the group a name.',
+  'ssh.jump.self': 'A server cannot be its own gateway.',
+  'ssh.jump.unknown':
+    'The gateway this server connects through is no longer saved. Edit the server and choose another gateway, or Direct.',
+  'ssh.jump.chained':
+    'The gateway {name} itself connects through another gateway. Only one hop is supported: choose a gateway that connects directly.',
+  'ssh.jump.isGateway.one': 'This server is the gateway of {n} server, so it must connect directly. Change that server first.',
+  'ssh.jump.isGateway.other': 'This server is the gateway of {n} servers, so it must connect directly. Change those servers first.',
+  'ssh.jump.inUse.one': 'This server is the gateway of {n} server. Choose another gateway for it first.',
+  'ssh.jump.inUse.other': 'This server is the gateway of {n} servers. Choose another gateway for them first.',
+  'ssh.jump.inUseByGroups.one': 'This server is the gateway of {n} server group. Choose another gateway for that group first.',
+  'ssh.jump.inUseByGroups.other': 'This server is the gateway of {n} server groups. Choose another gateway for those groups first.',
+  'ssh.jump.groupGatewayInGroup':
+    'The gateway {name} is in this group, so it would go through itself. Set its own "Connect through" to Direct first.',
+  'ssh.jump.groupBreaks': 'With this gateway, {name} could no longer connect: {error}',
+  'ssh.jump.gatewayFailed': 'Could not connect to the gateway {name}: {error}',
+  'ssh.jump.targetUnreachable': 'The gateway {name} connected, but {target} did not answer: {error}',
+  'ssh.jump.notConnected': 'Gateway {name} not connected: open a session on it first ({error})',
+  'ssh.jump.unsafePath':
+    'The terminal cannot go through the gateway {name}: a path it needs ({path}) has characters ssh cannot carry safely (", $, `, % or a \\ before them).',
+  'ssh.jump.badPort': 'The gateway {name} has an invalid port.',
   'ssh.keys.invalidName': 'Key name may only contain letters, numbers, "_" and "-".',
   'ssh.keys.exists': 'A key named "{name}" already exists in ~/.ssh.',
   'ssh.keys.keygenMissing': 'ssh-keygen not found. Install OpenSSH client and try again.',

@@ -44,6 +44,7 @@ const main: Record<keyof typeof en, string> = {
   'sshTrust.changed.message': 'A ligação a {endpoint} foi recusada.',
   'sshTrust.changed.detail':
     'Confiável: {known}\nRecebida: {fingerprint}\nConfirma a identidade do servidor junto do respetivo administrador antes de alterar a confiança.',
+  'sshTrust.via': '{endpoint} através do gateway {gateway}',
   'sshTrust.verify.title': 'Verificar o servidor SSH',
   'sshTrust.verify.message': 'Confiar em {endpoint}?',
   'sshTrust.verify.detail':
@@ -185,6 +186,26 @@ const main: Record<keyof typeof en, string> = {
   'ssh.groupMissing': 'Esse grupo de servidores já não existe. Escolhe outro grupo ou nenhum.',
   'ssh.groupNoCredential': 'O grupo "{group}" não tem credencial para herdar. Dá-lhe uma, ou escolhe outro login para o servidor.',
   'ssh.groupNameMissing': 'Dá um nome ao grupo.',
+  'ssh.jump.self': 'Um servidor não pode ser o seu próprio gateway.',
+  'ssh.jump.unknown':
+    'O gateway por onde este servidor liga já não está guardado. Edita o servidor e escolhe outro gateway, ou Direto.',
+  'ssh.jump.chained':
+    'O gateway {name} também liga através de outro gateway. Só é suportado um salto: escolhe um gateway que ligue diretamente.',
+  'ssh.jump.isGateway.one': 'Este servidor é o gateway de {n} servidor, por isso tem de ligar diretamente. Muda primeiro esse servidor.',
+  'ssh.jump.isGateway.other': 'Este servidor é o gateway de {n} servidores, por isso tem de ligar diretamente. Muda primeiro esses servidores.',
+  'ssh.jump.inUse.one': 'Este servidor é o gateway de {n} servidor. Escolhe primeiro outro gateway para ele.',
+  'ssh.jump.inUse.other': 'Este servidor é o gateway de {n} servidores. Escolhe primeiro outro gateway para eles.',
+  'ssh.jump.inUseByGroups.one': 'Este servidor é o gateway de {n} grupo de servidores. Escolhe primeiro outro gateway para esse grupo.',
+  'ssh.jump.inUseByGroups.other': 'Este servidor é o gateway de {n} grupos de servidores. Escolhe primeiro outro gateway para esses grupos.',
+  'ssh.jump.groupGatewayInGroup':
+    'O gateway {name} está neste grupo, por isso passaria por si próprio. Põe primeiro o "Ligar através de" dele em Direto.',
+  'ssh.jump.groupBreaks': 'Com este gateway, {name} deixaria de conseguir ligar: {error}',
+  'ssh.jump.gatewayFailed': 'Não foi possível ligar ao gateway {name}: {error}',
+  'ssh.jump.targetUnreachable': 'O gateway {name} ligou, mas {target} não respondeu: {error}',
+  'ssh.jump.notConnected': 'Gateway {name} não ligado: abre primeiro uma sessão nele ({error})',
+  'ssh.jump.unsafePath':
+    'O terminal não consegue passar pelo gateway {name}: um caminho de que precisa ({path}) tem caracteres que o ssh não transporta em segurança (", $, `, % ou uma \\ antes deles).',
+  'ssh.jump.badPort': 'O gateway {name} tem uma porta inválida.',
   'ssh.keys.invalidName': 'O nome da chave só pode ter letras, números, "_" e "-".',
   'ssh.keys.exists': 'Já existe uma chave chamada "{name}" em ~/.ssh.',
   'ssh.keys.keygenMissing': 'O ssh-keygen não foi encontrado. Instala o cliente OpenSSH e tenta novamente.',

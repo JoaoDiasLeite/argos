@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import {
   cleanGroup,
+  groupJumpLookup,
   groupUsage,
   groupsFromFile,
   groupsUsingCredential,
   hostIdsInheritingFrom,
   hostIdsLoggingInWith,
+  hostIdsTakingGroupJump,
   isGroupsFile,
   mergeGroups,
   removeGroupFromHosts,
@@ -93,5 +95,31 @@ describe('profile import', () => {
       { id: 'grp_y', name: 'Câmara Y' },
       { id: 'grp_z', name: 'Z', credentialId: 'cred_z' }
     ])
+  })
+})
+
+describe('group gateway', () => {
+  it('keeps the gateway through cleaning, as a profile export and import do', () => {
+    const g = cleanGroup({ id: 'g1', name: 'Cliente A', jumpHostId: ' ssh_gw ' })
+    expect(g).toEqual({ id: 'g1', name: 'Cliente A', jumpHostId: 'ssh_gw' })
+    expect(groupsFromFile(JSON.parse(JSON.stringify({ groups: [g] })))).toEqual([g])
+    expect(cleanGroup({ id: 'g2', name: 'B', jumpHostId: '' })).toEqual({ id: 'g2', name: 'B' })
+  })
+
+  it("looks up a host's group gateway", () => {
+    const look = groupJumpLookup([{ id: 'g1', name: 'A', jumpHostId: 'gw' }, { id: 'g2', name: 'B' }])
+    expect(look({ groupId: 'g1' })).toBe('gw')
+    expect(look({ groupId: 'g2' })).toBeUndefined()
+    expect(look({})).toBeUndefined()
+  })
+
+  it('lists the members that take the group gateway, not those with their own choice', () => {
+    const hosts = [
+      { id: 'a', groupId: 'g1' },
+      { id: 'b', groupId: 'g1', jumpHostId: '' },
+      { id: 'c', groupId: 'g1', jumpHostId: 'other' },
+      { id: 'd', groupId: 'g2' }
+    ]
+    expect(hostIdsTakingGroupJump(hosts, 'g1')).toEqual(['a'])
   })
 })

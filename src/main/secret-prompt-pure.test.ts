@@ -8,7 +8,10 @@ import {
   lastVisibleLine,
   LOGIN_WINDOW_MS,
   LoginAutoAnswer,
+  LoginChain,
   LoginHold,
+  type LoginHostSecrets,
+  type LoginStep,
   loginPromptSecret,
   matchSecretPrompt,
   secretForForcedSend,
@@ -496,5 +499,158 @@ describe('LoginHold', () => {
     expect(at.write('pw', 'user')).toBe(true)
     expect(at.output('host:~$ ', false)).toEqual([LAUNCH])
     expect(at.expire(false)).toBeNull()
+  })
+
+  it('through a gateway, stays held until both answers are in', () => {
+    const h = new LoginHold(2)
+    h.write(LAUNCH, 'launch')
+    h.answered()
+    // A banner between the gateway's answer and the target's prompt is not the shell.
+    expect(h.output('\r\nAuthorized users only\r\n', false)).toBeNull()
+    h.answered()
+    expect(h.output('\r\nWelcome\r\ntarget:~$ ', false)).toEqual([LAUNCH])
+  })
+})
+
+describe('LoginChain (a login through a gateway)', () => {
+  const T0 = 1_000_000
+  // As Windows OpenSSH prints them, captured in a node-pty run through a real gateway.
+  const JUMP_PROMPT = "\x1b[?25l\x1b[2J\x1b[m\x1b[Hdemo@127.0.0.1's password:\x1b[1C\x1b]0;C:\\Windows\\System32\\OpenSSH\\ssh.exe\x07\x1b[?25h"
+  const TARGET_PROMPT = "\r\ndemo2@argos-vc-target's password: "
+  const secrets: Record<string, LoginHostSecrets> = {
+    gw: { authType: 'password', username: 'demo', host: '127.0.0.1', password: 'gw-secret' },
+    tg: { authType: 'password', username: 'demo2', host: 'argos-vc-target', password: 'target-secret' }
+  }
+  const of = (id: string) => secrets[id] ?? null
+  const step = (id: string, canAnswer = true): LoginStep => ({
+    hostId: id,
+    self: { username: secrets[id].username, host: secrets[id].host },
+    canAnswer
+  })
+
+  it('answers the gateway then the target, each with its own secret, once', () => {
+    const c = new LoginChain([step('gw'), step('tg')], T0)
+    expect(c.expected).toBe(2)
+    let tail = appendTail('', JUMP_PROMPT)
+    expect(c.match(tail)).not.toBeNull()
+    expect(c.answer(T0 + 10, tail, of)).toEqual({ step: 0, kind: 'login', secret: 'gw-secret' })
+    // The caller clears the tail after writing an answer.
+    tail = appendTail('', '\r\n')
+    expect(c.answer(T0 + 20, tail, of)).toBeNull()
+    tail = appendTail(tail, TARGET_PROMPT)
+    expect(c.answer(T0 + 30, tail, of)).toEqual({ step: 1, kind: 'login', secret: 'target-secret' })
+    expect(c.armed(T0 + 40)).toBe(false)
+    expect(c.answer(T0 + 50, appendTail('', TARGET_PROMPT), of)).toBeNull()
+  })
+
+  it('never answers the same gateway prompt twice, nor gives it the target secret', () => {
+    const c = new LoginChain([step('gw'), step('tg')], T0)
+    expect(c.answer(T0, appendTail('', JUMP_PROMPT), of)?.secret).toBe('gw-secret')
+    // A wrong gateway password: ssh asks the gateway again.
+    expect(c.answer(T0 + 1, appendTail('', "\r\nPermission denied, please try again.\r\ndemo@127.0.0.1's password: "), of)).toBeNull()
+    expect(c.armed(T0 + 2)).toBe(false)
+  })
+
+  it('look-alike hosts: only the first prompt (the gateway asks first) is answered, the next is the user', () => {
+    const same: Record<string, LoginHostSecrets> = {
+      gw: { authType: 'password', username: 'demo', host: '127.0.0.1', password: 'gw-secret' },
+      tg: { authType: 'password', username: 'demo', host: '127.0.0.1', password: 'target-secret' }
+    }
+    const s = (id: string): LoginStep => ({ hostId: id, self: { username: 'demo', host: '127.0.0.1' }, canAnswer: true })
+    const c = new LoginChain([s('gw'), s('tg')], T0)
+    expect(c.expected).toBe(1)
+    const prompt = "demo@127.0.0.1's password: "
+    expect(c.answer(T0, appendTail('', prompt), (id) => same[id])?.secret).toBe('gw-secret')
+    // It could be the gateway asking again with no refusal printed: never the target's secret.
+    expect(c.answer(T0 + 1, appendTail('', '\r\n' + prompt), (id) => same[id])).toBeNull()
+  })
+
+  it('look-alike by key file: the same passphrase prompt is answered once, as the gateway', () => {
+    const keys: Record<string, LoginHostSecrets> = {
+      gw: { authType: 'key', username: 'a', host: 'gw', passphrase: 'gw-pp' },
+      tg: { authType: 'key', username: 'b', host: 'tg', passphrase: 'tg-pp' }
+    }
+    const k = 'C:\\Users\\me\\.ssh\\id_ed25519'
+    const c = new LoginChain(
+      [
+        { hostId: 'gw', self: { username: 'a', host: 'gw' }, keyPath: k, canAnswer: true },
+        { hostId: 'tg', self: { username: 'b', host: 'tg' }, keyPath: k, canAnswer: true }
+      ],
+      T0
+    )
+    const prompt = `Enter passphrase for key '${k}': `
+    expect(c.answer(T0, appendTail('', prompt), (id) => keys[id])?.secret).toBe('gw-pp')
+    expect(c.answer(T0 + 1, appendTail('', '\r\n' + prompt), (id) => keys[id])).toBeNull()
+  })
+
+  it('look-alike hosts: a refused gateway answer stops everything, so the target secret never reaches the gateway', () => {
+    const s = (id: string): LoginStep => ({ hostId: id, self: { username: 'demo', host: '127.0.0.1' }, canAnswer: true })
+    const same: Record<string, LoginHostSecrets> = {
+      gw: { authType: 'password', username: 'demo', host: '127.0.0.1', password: 'gw-secret' },
+      tg: { authType: 'password', username: 'demo', host: '127.0.0.1', password: 'target-secret' }
+    }
+    const c = new LoginChain([s('gw'), s('tg')], T0)
+    c.answer(T0, appendTail('', "demo@127.0.0.1's password: "), (id) => same[id])
+    expect(c.answer(T0 + 1, appendTail('', "\r\nPermission denied, please try again.\r\ndemo@127.0.0.1's password: "), (id) => same[id])).toBeNull()
+  })
+
+  it('a gateway without a saved secret leaves its prompt, and a look-alike target, to the user', () => {
+    const s = (id: string, canAnswer: boolean): LoginStep => ({ hostId: id, self: { username: 'demo', host: '127.0.0.1' }, canAnswer })
+    const same: Record<string, LoginHostSecrets> = {
+      gw: { authType: 'password', username: 'demo', host: '127.0.0.1' },
+      tg: { authType: 'password', username: 'demo', host: '127.0.0.1', password: 'target-secret' }
+    }
+    const c = new LoginChain([s('gw', false), s('tg', true)], T0)
+    // Nothing can be answered safely, so the terminal arms no answer at all.
+    expect(c.expected).toBe(0)
+    expect(c.answer(T0, appendTail('', "demo@127.0.0.1's password: "), (id) => same[id])).toBeNull()
+  })
+
+  it('answers a target prompt that names its HostKeyAlias, with the target secret', () => {
+    const alias = 'argos-jump-0123456789abcdef0123456789abcdef'
+    const c = new LoginChain([step('gw'), { hostId: 'tg', self: { username: 'demo2', host: alias }, canAnswer: true }], T0)
+    expect(c.answer(T0, appendTail('', JUMP_PROMPT), of)?.secret).toBe('gw-secret')
+    expect(c.answer(T0 + 1, appendTail('', `\r\ndemo2@${alias}'s password: `), of)).toEqual({ step: 1, kind: 'login', secret: 'target-secret' })
+  })
+
+  it('answers only the target when only it has a secret', () => {
+    const c = new LoginChain([step('gw', false), step('tg')], T0)
+    expect(c.answer(T0, appendTail('', JUMP_PROMPT), of)).toBeNull()
+    expect(c.answer(T0 + 1, appendTail('', TARGET_PROMPT), of)).toEqual({ step: 1, kind: 'login', secret: 'target-secret' })
+  })
+
+  it('does not answer a bare Password: through a gateway, as it names neither host', () => {
+    const c = new LoginChain([step('gw'), step('tg')], T0)
+    expect(c.match(appendTail('', 'Password: '))).not.toBeNull()
+    expect(c.answer(T0, appendTail('', 'Password: '), of)).toBeNull()
+    // A single host still takes it, as before.
+    const single = new LoginChain([step('tg')], T0)
+    expect(single.answer(T0, appendTail('', 'Password: '), of)?.secret).toBe('target-secret')
+  })
+
+  it("gives each host's passphrase only to its own key's prompt", () => {
+    const keys: Record<string, LoginHostSecrets> = {
+      gw: { authType: 'key', username: 'demo', host: '127.0.0.1', passphrase: 'gw-pp' },
+      tg: { authType: 'key', username: 'demo2', host: 'argos-vc-target', passphrase: 'tg-pp' }
+    }
+    const steps: LoginStep[] = [
+      { hostId: 'gw', self: { username: 'demo', host: '127.0.0.1' }, keyPath: 'C:\\Users\\me\\.ssh\\gw_key', canAnswer: true },
+      { hostId: 'tg', self: { username: 'demo2', host: 'argos-vc-target' }, keyPath: 'C:\\Users\\me\\.ssh\\tg_key', canAnswer: true }
+    ]
+    const c = new LoginChain(steps, T0)
+    expect(c.answer(T0, appendTail('', "Enter passphrase for key 'C:\\Users\\me\\.ssh\\tg_key': "), (id) => keys[id])).toEqual({
+      step: 1,
+      kind: 'passphrase',
+      secret: 'tg-pp'
+    })
+    expect(c.answer(T0 + 1, appendTail('', "Enter passphrase for key 'C:\\Users\\me\\.ssh\\gw_key': "), (id) => keys[id])?.secret).toBe('gw-pp')
+  })
+
+  it('runs out with the login window and when disarmed', () => {
+    const late = new LoginChain([step('gw'), step('tg')], T0)
+    expect(late.answer(T0 + LOGIN_WINDOW_MS + 1, appendTail('', JUMP_PROMPT), of)).toBeNull()
+    const typed = new LoginChain([step('gw'), step('tg')], T0)
+    typed.disarm()
+    expect(typed.answer(T0, appendTail('', JUMP_PROMPT), of)).toBeNull()
   })
 })

@@ -80,6 +80,12 @@ export interface SshHost {
   credentialId?: string
   /** Local port forwards (tunnels) over this host; see port-forwards-pure.ts. Not secret. */
   forwards?: PortForward[]
+  /**
+   * Another saved host this one is reached through (a gateway, `ssh -J`). Absent: no jump of
+   * its own (later, the group's); `''`: explicitly direct; an id: that host. One hop only.
+   * See ssh-jump-pure.ts.
+   */
+  jumpHostId?: string
 }
 
 /**
@@ -112,7 +118,8 @@ export const PUBLIC_HOST_FIELDS = [
   'tags',
   'notes',
   'credentialId',
-  'forwards'
+  'forwards',
+  'jumpHostId'
 ] as const
 export type PublicHostField = (typeof PUBLIC_HOST_FIELDS)[number]
 
@@ -138,6 +145,12 @@ export type SshHostPublic = Pick<SshHost, PublicHostField> &
     credentialMissing?: boolean
     /** The group an inherited login comes from. */
     groupName?: string
+    /** The gateway's name, for the "via" hint; or that the one it names is unusable. */
+    jumpHostName?: string
+    /** The gateway's id, and whether it is the host's own choice or its group's. */
+    jumpViaId?: string
+    jumpSource?: 'host' | 'group' | 'none'
+    jumpMissing?: boolean
   }
 
 /** The elevation mode in force: an unset or unknown value is `login` for a password host
@@ -207,6 +220,7 @@ interface HostText {
   notes?: unknown
   groupId?: unknown
   authSource?: unknown
+  jumpHostId?: unknown
 }
 
 export const MAX_HOST_TAGS = 12
@@ -273,6 +287,11 @@ export function cleanHostFields<T extends HostText>(input: T): T {
     const notes = cleanNotes(input.notes)
     if (notes) out.notes = notes
     else delete out.notes
+  }
+  // An id or `''` (explicitly direct); anything else means no jump of its own.
+  if (input.jumpHostId !== undefined) {
+    if (typeof input.jumpHostId === 'string') out.jumpHostId = cleanHostText(input.jumpHostId)
+    else delete out.jumpHostId
   }
   return out
 }

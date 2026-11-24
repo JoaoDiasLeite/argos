@@ -9,19 +9,20 @@ import { accountConfigDir, resolveClaudeBin } from './accounts'
 import { providerAccountEnv } from './provider-accounts'
 import { resolveCodex } from './providers/cli-resolve'
 import { prepareCodexHomeFromToml } from './providers/codex'
-import { getSshTerminalCommand } from './ssh'
+import { getJumpFor, getSshTerminalCommand } from './ssh'
 import { getHostWithSessionSecrets } from './sftp'
 import type { SendSecretResult } from './remote-shell'
 import { remoteCommandWord } from './ssh-host-pure'
+import { trustAlias, trustKey } from './ssh-trust-pure'
 import {
   appendTail,
   decideSecretSend,
-  loginPromptSecret,
-  LoginAutoAnswer,
+  LoginChain,
   LoginHold,
   LOGIN_WINDOW_MS,
   matchSecretPrompt,
   type HeldWriteSource,
+  type LoginStep,
   SecretSendGuard,
   wantsForce,
   type PromptSelf,
@@ -161,7 +162,9 @@ interface SshSecretState {
   keyPath?: string
   tail: string
   hint: SecretPromptKind | null
-  login: LoginAutoAnswer | null
+  /** Every host the login goes through, the gateway first: whose prompt a line is. */
+  steps: LoginStep[]
+  login: LoginChain | null
   /** Holds the renderer's writes (the launch line above all) until the login settles; only
    *  when the login answer was armed at spawn, null once open. */
   hold: LoginHold | null
@@ -236,58 +239,82 @@ function writeSshSecret(id: string, st: SshSecretState, data: string): boolean {
   return true
 }
 
-/** Starts tracking a freshly spawned ssh pty. The login answer is armed only when the host
- *  has a secret ssh could ask for at login: the password of a password host, or the
- *  passphrase of a key host. */
-function trackSshTerminal(id: string, p: pty.IPty, hostId: string): void {
+/** A host's part in an ssh login: who its prompt names, and whether a saved secret (the
+ *  password of a password host, the passphrase of a key host) can answer it. */
+function loginStepFor(hostId: string, viaGatewayId?: string): LoginStep | null {
   const h = getHostWithSessionSecrets(hostId)
-  if (!h) return
+  if (!h) return null
   const keyPath = h.privateKeyPath ? h.privateKeyPath.replace(/^~(?=[\\/]|$)/, os.homedir()) : undefined
   const canAnswer = (h.authType === 'password' && !!h.password) || (h.authType === 'key' && !!h.passphrase && !!keyPath)
+  // Behind a gateway ssh runs with HostKeyAlias, and names the alias in its prompt
+  // (`user@argos-jump-…'s password:`), not the address.
+  const scoped = viaGatewayId ? trustKey(h.host, h.port || 22, viaGatewayId) : null
+  const shownHost = scoped ? trustAlias(scoped) : h.host
+  return { hostId, self: { username: h.username, host: shownHost }, keyPath, canAnswer }
+}
+
+/** Starts tracking a freshly spawned ssh pty. The login answers are armed only when a host
+ *  it logs in to (its gateway, then itself) has a secret ssh could ask for at login. */
+function trackSshTerminal(id: string, p: pty.IPty, hostId: string): void {
+  const lookup = getJumpFor(hostId)
+  const gatewayId = lookup.ok && lookup.jump ? lookup.jump.id : undefined
+  const target = loginStepFor(hostId, gatewayId)
+  if (!target) return
+  const gateway = gatewayId ? loginStepFor(gatewayId) : null
+  const steps = gateway ? [gateway, target] : [target]
+  const login = new LoginChain(steps, Date.now())
+  const canAnswer = login.expected > 0
   const st: SshSecretState = {
     pty: p,
     hostId,
-    self: { username: h.username, host: h.host },
-    keyPath,
+    self: target.self,
+    keyPath: target.keyPath,
     tail: '',
     hint: null,
-    login: canAnswer ? new LoginAutoAnswer(Date.now()) : null,
-    // A host with nothing to answer keeps today's behaviour: no hold.
-    hold: canAnswer ? new LoginHold() : null,
+    steps,
+    login: canAnswer ? login : null,
+    // Nothing to answer keeps today's behaviour: no hold.
+    hold: canAnswer ? new LoginHold(login.expected) : null,
     holdTimer: null
   }
   if (st.hold) {
     st.holdTimer = setTimeout(() => {
       st.holdTimer = null
       if (sshSecrets.get(id) !== st || !st.hold) return
-      flushHeld(st, st.hold.expire(matchSecretPrompt(st.tail, st.self) !== null))
+      flushHeld(st, st.hold.expire(promptOnTail(st) !== null))
     }, LOGIN_WINDOW_MS)
   }
   sshSecrets.set(id, st)
 }
 
-/** Output from an ssh pty: update the tail and the hint, and give the login answer if this is
- *  ssh's own login prompt inside the window. */
+/** The password prompt the tail ends on, the gateway's included. */
+function promptOnTail(st: SshSecretState): ReturnType<typeof matchSecretPrompt> {
+  if (st.login) return st.login.match(st.tail)
+  for (const s of st.steps) {
+    const m = matchSecretPrompt(st.tail, s.self)
+    if (m) return m
+  }
+  return null
+}
+
+/** Output from an ssh pty: update the tail and the hint, and give a login answer if this is
+ *  ssh's own login prompt (the gateway's or the target's) inside the window. */
 function feedSshOutput(id: string, st: SshSecretState, data: string): void {
   st.tail = appendTail(st.tail, data)
-  const match = matchSecretPrompt(st.tail, st.self)
+  const prompt = promptOnTail(st)
   if (st.login) {
     const now = Date.now()
     // The store is read only when the last line looks like a prompt at all.
-    const found = match
-      ? st.login.answer(now, () => {
-          const h = getHostWithSessionSecrets(st.hostId)
-          return h ? loginPromptSecret(st.tail, h, st.keyPath) : null
-        })
-      : null
+    const found = prompt ? st.login.answer(now, st.tail, (hostId) => getHostWithSessionSecrets(hostId)) : null
     if (!st.login.armed(now)) st.login = null
     if (found && writeSshSecret(id, st, found.secret + '\r')) {
       st.hold?.answered()
       return
     }
   }
-  if (st.hold) flushHeld(st, st.hold.output(data, match !== null))
-  setSecretHint(id, st, match?.kind ?? null)
+  if (st.hold) flushHeld(st, st.hold.output(data, prompt !== null))
+  // The hint lights "Send password", which sends this host's own secret: only its prompts.
+  setSecretHint(id, st, matchSecretPrompt(st.tail, st.self)?.kind ?? null)
 }
 
 /**
@@ -302,7 +329,9 @@ export function terminalSendSecret(id: unknown, opts: unknown): SendSecretResult
   const st = sshSecrets.get(id)
   if (!st || st.pty !== p) return { ok: false, reason: 'not-a-host-shell' }
   const now = Date.now()
-  const decision = decideSecretSend(secretGuard, id, st.tail, getHostWithSessionSecrets(st.hostId), wantsForce(opts), now)
+  // Under the name ssh prints for this host (its HostKeyAlias behind a gateway).
+  const h = getHostWithSessionSecrets(st.hostId)
+  const decision = decideSecretSend(secretGuard, id, st.tail, h ? { ...h, host: st.self.host } : null, wantsForce(opts), now)
   if ('reason' in decision) return { ok: false, reason: decision.reason }
   // A click is the user taking over: no automatic answer after it.
   st.login = null
@@ -679,7 +708,8 @@ export async function createTerminal(
       // resolves the CLI.
       // Async: a server whose key Argos has not stored yet is checked (and trusted, through
       // the usual prompt) first. A refusal throws, and the catch below reports it.
-      const ssh = await getSshTerminalCommand(opts.remoteHostId)
+      // The resolved ssh.exe, so a gateway's ProxyCommand runs the very same client.
+      const ssh = await getSshTerminalCommand(opts.remoteHostId, process.platform === 'win32' ? resolveWindowsExe('ssh') : 'ssh')
       if (!ssh) {
         return {
           ok: false,

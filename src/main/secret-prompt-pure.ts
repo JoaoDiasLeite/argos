@@ -266,6 +266,15 @@ function normalisePath(p: string): string {
   return p.replace(/\//g, '\\').toLowerCase()
 }
 
+/** A saved host as the login answer reads it. Secrets included: this runs in main only. */
+export interface LoginHostSecrets {
+  authType: SshAuthType
+  username: string
+  host: string
+  password?: string
+  passphrase?: string
+}
+
 /** Whether a passphrase prompt names this key. ssh prints at most the first 100 bytes of the
  *  path, so the printed one only has to begin the expected one; a cut through a multi-byte
  *  character (an accented user name) leaves a replacement character at the end, dropped here. */
@@ -282,15 +291,19 @@ function sameKeyFile(shown: string | undefined, expected: string): boolean {
  * login password, never the elevation one, and a `[sudo]` prompt is never answered at all.
  *  - `user@host's password:` and `(user@host) Password:` count only for this host's user;
  *  - the login password only on a password host, the passphrase only on a key host and only
- *    for the key file the host names (`keyPath`, `~` already expanded by the caller).
+ *    for the key file the host names (`keyPath`, `~` already expanded by the caller);
+ *  - a bare `Password:` names nobody, so with `bare: false` (a login through a gateway, where
+ *    it could be either host's) it is not answered.
  */
 export function loginPromptSecret(
   tail: string,
-  host: { authType: SshAuthType; username: string; host: string; password?: string; passphrase?: string },
-  keyPath?: string
+  host: LoginHostSecrets,
+  keyPath?: string,
+  opts: { bare?: boolean } = {}
 ): { kind: LoginSecretKind; secret: string } | null {
   const match = matchSecretPrompt(tail, { username: host.username, host: host.host })
   if (!match) return null
+  if (match.kind === 'sudo' && match.ambiguous && opts.bare === false) return null
   const login = match.kind === 'login' || (match.kind === 'sudo' && match.ambiguous)
   if (login) {
     return host.authType === 'password' && host.password ? { kind: 'login', secret: host.password } : null
@@ -344,6 +357,116 @@ export class LoginAutoAnswer {
   }
 }
 
+/** One host an ssh chat terminal logs in to: the target alone, or a gateway then the target. */
+export interface LoginStep {
+  /** The saved host, whose secrets are read only when its prompt shows. */
+  hostId: string
+  self: PromptSelf
+  /** Its key file with `~` expanded, as ssh names it in a passphrase prompt. */
+  keyPath?: string
+  /** Whether it has a secret ssh could ask for at login (decided at spawn). */
+  canAnswer: boolean
+}
+
+/**
+ * The automatic login answers of an ssh chat terminal, one per host it logs in to: through a
+ * gateway, ssh asks `jumpuser@jump's password:` and then `user@target's password:`, and each
+ * gets its own host's secret, once. The same rules as LoginAutoAnswer otherwise: inside the
+ * first LOGIN_WINDOW_MS, and over as soon as the user types.
+ *
+ * Which host a prompt belongs to is read from the `user@host` it names (or the key file of a
+ * passphrase prompt), in order: a prompt goes to the first host not answered yet that it
+ * names, and a host with no saved secret that a prompt names stops the search there, rather
+ * than handing that prompt to a later host's secret. When the target looks exactly like its
+ * gateway (one user on two ports of 127.0.0.1, or the same key file), the prompts cannot be
+ * told apart: the gateway asks first, so the first is answered as the gateway's, and the
+ * target's is left to the user, since a gateway asking twice (a second method, a retry with
+ * no refusal printed) would otherwise get the target's secret. Once an answer went in, a
+ * refusal before the next prompt ("Permission denied, please try again") ends it all. A bare
+ * `Password:` names nobody, so it is only answered when there is a single host.
+ */
+export class LoginChain {
+  private readonly done: boolean[]
+  /** Steps whose prompts look like an earlier step's: never answered automatically. */
+  private readonly lookalike: boolean[]
+  private spent = false
+
+  constructor(
+    readonly steps: readonly LoginStep[],
+    private readonly startedAt: number,
+    private readonly windowMs: number = LOGIN_WINDOW_MS
+  ) {
+    this.done = steps.map(() => false)
+    const same = (a: LoginStep, b: LoginStep): boolean =>
+      (a.self.username.toLowerCase() === b.self.username.toLowerCase() && bareHost(a.self.host) === bareHost(b.self.host)) ||
+      (!!a.keyPath && !!b.keyPath && normalisePath(a.keyPath) === normalisePath(b.keyPath))
+    this.lookalike = steps.map((s, i) => steps.slice(0, i).some((earlier) => same(earlier, s)))
+  }
+
+  /** How many answers the login may need: the hosts with a secret for it. */
+  get expected(): number {
+    return this.steps.filter((s, i) => s.canAnswer && !this.lookalike[i]).length
+  }
+
+  armed(now: number): boolean {
+    if (this.spent) return false
+    if (now - this.startedAt > this.windowMs || now < this.startedAt) this.spent = true
+    else if (!this.steps.some((s, i) => s.canAnswer && !this.lookalike[i] && !this.done[i])) this.spent = true
+    return !this.spent
+  }
+
+  /** The password prompt the tail ends on, if it is any of these hosts' (or a host-less one). */
+  match(tail: string): SecretPromptMatch | null {
+    for (const s of this.steps) {
+      const m = matchSecretPrompt(tail, s.self)
+      if (m) return m
+    }
+    return null
+  }
+
+  /** Whether the prompt on the tail's last line is this step's to answer. */
+  private owns(step: LoginStep, tail: string): boolean {
+    const m = matchSecretPrompt(tail, step.self)
+    if (!m) return false
+    if (m.kind === 'login') return true
+    if (m.kind === 'passphrase') return !!step.keyPath && sameKeyFile(m.keyPath, step.keyPath)
+    return m.ambiguous && this.steps.length === 1
+  }
+
+  /**
+   * Called with the tail after each chunk of output. `secretsOf` reads a host's saved secrets;
+   * it runs only for the host whose prompt is showing. Returns what to write and for which
+   * step, once per step.
+   */
+  answer(now: number, tail: string, secretsOf: (hostId: string) => LoginHostSecrets | null): { step: number; kind: LoginSecretKind; secret: string } | null {
+    if (!this.armed(now)) return null
+    if (this.done.some(Boolean) && AUTH_FAILED_RE.test(stripAnsi(tail))) {
+      this.spent = true
+      return null
+    }
+    const bare = this.steps.length === 1
+    for (let i = 0; i < this.steps.length; i++) {
+      if (this.done[i]) continue
+      const step = this.steps[i]
+      if (!this.owns(step, tail)) continue
+      if (!step.canAnswer || this.lookalike[i]) return null
+      const h = secretsOf(step.hostId)
+      // Matched under the name the prompt uses for this step (a HostKeyAlias, behind a
+      // gateway), with the host's own secrets.
+      const found = h ? loginPromptSecret(tail, { ...h, username: step.self.username, host: step.self.host }, step.keyPath, { bare }) : null
+      if (!found) return null
+      this.done[i] = true
+      return { step: i, ...found }
+    }
+    return null
+  }
+
+  /** The user typed, or the terminal is going away. */
+  disarm(): void {
+    this.spent = true
+  }
+}
+
 /** What wrote to a held ssh terminal: the CLI launch line Argos types, a key the user
  *  pressed, or xterm answering a query (focus, cursor position). */
 export type HeldWriteSource = 'launch' | 'user' | 'report'
@@ -363,8 +486,11 @@ const SHELL_READY_RE = /\x1b\[\?2004h/
  * anything typed while it asks as the answer. Used only when the login answer is armed.
  *
  * Phases:
- *  - `waiting`: no answer yet. Everything is queued.
- *  - `answered`: the saved secret went in. Everything is queued until the shell shows.
+ *  - `waiting`: not every expected answer is in yet (`expected`: one per host with a saved
+ *    secret, so two through a gateway). Everything is queued, and only the shell's own
+ *    bracketed-paste switch ends it: text between the gateway's answer and the target's prompt
+ *    (a banner) must not release the launch line into that prompt.
+ *  - `answered`: every saved secret went in. Everything is queued until the shell shows.
  *  - `user`: a prompt the auto-answer did not take (a refused secret asked again, or the user
  *    typed first). The user's keys pass straight through, since they are the password; keys
  *    queued earlier are dropped rather than typed into that prompt; the launch line stays
@@ -376,6 +502,9 @@ const SHELL_READY_RE = /\x1b\[\?2004h/
 export class LoginHold {
   private phase: 'waiting' | 'answered' | 'user' | 'open' = 'waiting'
   private queue: { data: string; source: HeldWriteSource }[] = []
+  private answers = 0
+
+  constructor(private readonly expected: number = 1) {}
 
   get open(): boolean {
     return this.phase === 'open'
@@ -389,9 +518,10 @@ export class LoginHold {
     return false
   }
 
-  /** The auto-answer just wrote the secret. */
+  /** The auto-answer just wrote a secret. */
   answered(): void {
-    if (this.phase === 'waiting') this.phase = 'answered'
+    this.answers++
+    if (this.phase === 'waiting' && this.answers >= this.expected) this.phase = 'answered'
   }
 
   /**
