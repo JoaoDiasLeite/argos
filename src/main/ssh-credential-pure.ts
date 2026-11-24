@@ -10,9 +10,12 @@ import {
   type HostSecretFlags,
   type SecretField,
   type SshAuthType,
+  hostAuthSource,
+  type AuthSource,
   type SshHost,
   type SshHostPublic
 } from './ssh-host-pure'
+import { hostIdsLoggingInWith, type GroupedHostRef, type SshGroup } from './ssh-group-pure'
 
 /**
  * A login kept once and linked by many hosts: the same account usually exists on every
@@ -50,6 +53,8 @@ void everyCredentialFieldClassified
 export type SshCredentialPublic = Pick<SshCredential, PublicCredentialField> &
   HostSecretFlags & {
     usedBy: number
+    /** How many server groups carry it. A credential a group carries cannot be deleted either. */
+    usedByGroups: number
   }
 
 /** What the renderer sends: `undefined` keeps a stored secret, `null` clears it. */
@@ -78,19 +83,20 @@ export function secretFlags(h: {
   }
 }
 
-export function toPublicCredential(c: SshCredential, usedBy: number): SshCredentialPublic {
+export function toPublicCredential(c: SshCredential, usedBy: number, usedByGroups = 0): SshCredentialPublic {
   const out: Partial<Record<PublicCredentialField, unknown>> = {}
   for (const k of PUBLIC_CREDENTIAL_FIELDS) {
     if (c[k] !== undefined) out[k] = c[k]
   }
   if (!isElevationMode(out.elevation)) delete out.elevation
   if (!isElevateCommand(out.elevateCommand)) delete out.elevateCommand
-  return { ...(out as Pick<SshCredential, PublicCredentialField>), ...secretFlags(c), usedBy }
+  return { ...(out as Pick<SshCredential, PublicCredentialField>), ...secretFlags(c), usedBy, usedByGroups }
 }
 
-/** How many saved hosts link credential `id`. */
-export function credentialUsage(hosts: readonly { credentialId?: string }[], id: string): number {
-  return hosts.filter((h) => h.credentialId === id).length
+/** How many saved hosts log in with credential `id`: those linking it and those inheriting
+ *  it from their group. */
+export function credentialUsage(hosts: readonly GroupedHostRef[], id: string, groups: readonly SshGroup[] = []): number {
+  return hostIdsLoggingInWith(hosts, groups, id).length
 }
 
 /** `input` with its text fields cleaned (as cleanHostFields does for a host) and an elevation
@@ -144,12 +150,29 @@ export type CredentialAuthField = (typeof CREDENTIAL_AUTH_FIELDS)[number]
 export type StoredSshHost = Omit<SshHost, 'username' | 'authType'> & Partial<Pick<SshHost, 'username' | 'authType'>>
 
 /**
- * A host with its login resolved, the shape every connecting path uses. `credentialMissing`
- * marks a host whose linked credential is gone (deleted, or a broken import): it has no
- * login at all, and every connect path refuses it with a clear error instead of trying an
- * empty password or asking for one.
+ * A host with its login resolved, the shape every connecting path uses. `authSource` says
+ * where the login came from. `credentialId` is the credential really used: the host's own
+ * link, or its group's when it inherits, so a check like "has a credential, so no password
+ * of its own to save" holds either way. `credentialMissing` marks a host whose credential is
+ * gone (deleted, a broken import, a group deleted or left without one): it has no login at
+ * all, and every connect path refuses it with a clear error instead of trying an empty
+ * password or asking for one.
  */
-export type EffectiveSshHost = SshHost & { credentialName?: string; credentialMissing?: boolean }
+export type EffectiveSshHost = SshHost & {
+  authSource: AuthSource
+  credentialName?: string
+  credentialMissing?: boolean
+  /** Set when the login is inherited: the group it comes from. */
+  groupName?: string
+}
+
+/** What resolveHostAuth hands back: the host as it logs in, and where its login came from,
+ *  so the UI can always name the origin. */
+export interface HostAuthResolution {
+  effective: EffectiveSshHost
+  source: AuthSource
+  credentialName?: string
+}
 
 /** `h` without any field a credential supplies. */
 export function stripCredentialAuth<T extends object>(h: T): Omit<T, CredentialAuthField> {
@@ -159,31 +182,71 @@ export function stripCredentialAuth<T extends object>(h: T): Omit<T, CredentialA
 }
 
 /**
- * The host as it logs in. An unlinked host is itself. A linked one takes its username, auth
- * type, key path, elevation and secrets from the credential, field by field: whatever the
- * saved record still holds of its own (an older file, an import) never shows through, and
- * the host keeps its own id, name, address and the rest.
+ * The host as it logs in. The chain is explicit, by `authSource` (hostAuthSource for a host
+ * saved before it existed): `own` is the host itself; `credential` takes the login from the
+ * credential it links; `group` from the credential of its group. A host with a login of its
+ * own never inherits, whatever group it is in. A linked or inheriting host takes its
+ * username, auth type, key path, elevation and secrets from the credential, field by field:
+ * whatever the saved record still holds of its own (an older file, an import) never shows
+ * through, and the host keeps its own id, name, address and the rest.
  */
-export function resolveHostAuth(host: StoredSshHost, credentials: readonly SshCredential[]): EffectiveSshHost {
-  if (!host.credentialId) return host as SshHost
+export function resolveHostAuth(
+  host: StoredSshHost,
+  credentials: readonly SshCredential[],
+  groups: readonly SshGroup[] = []
+): HostAuthResolution {
+  const source = hostAuthSource(host)
+  if (source === 'own') {
+    const own = { ...host, authSource: source } as EffectiveSshHost
+    // A credential id left on a host with a login of its own links nothing.
+    delete own.credentialId
+    return { effective: own, source }
+  }
   const base = stripCredentialAuth(host)
-  const cred = credentials.find((c) => c.id === host.credentialId)
-  if (!cred) return { ...base, username: '', authType: 'password', credentialMissing: true }
-  const out: EffectiveSshHost = { ...base, username: cred.username, authType: cred.authType, credentialName: cred.name }
+  delete base.credentialId
+  let credentialId = host.credentialId
+  let groupName: string | undefined
+  if (source === 'group') {
+    const group = host.groupId ? groups.find((g) => g.id === host.groupId) : undefined
+    credentialId = group?.credentialId
+    groupName = group?.name
+  }
+  const cred = credentialId ? credentials.find((c) => c.id === credentialId) : undefined
+  if (!cred) {
+    const missing: EffectiveSshHost = { ...base, username: '', authType: 'password', authSource: source, credentialMissing: true }
+    // The id it points at, so the form can show which link is broken.
+    if (credentialId) missing.credentialId = credentialId
+    if (groupName !== undefined) missing.groupName = groupName
+    return { effective: missing, source }
+  }
+  const out: EffectiveSshHost = {
+    ...base,
+    credentialId: cred.id,
+    username: cred.username,
+    authType: cred.authType,
+    authSource: source,
+    credentialName: cred.name
+  }
+  if (groupName !== undefined) out.groupName = groupName
   if (cred.privateKeyPath !== undefined) out.privateKeyPath = cred.privateKeyPath
   if (cred.elevation !== undefined) out.elevation = cred.elevation
   if (cred.elevateCommand !== undefined) out.elevateCommand = cred.elevateCommand
   for (const k of SECRET_FIELDS) {
     if (cred[k] !== undefined) out[k] = cred[k]
   }
-  return out
+  return { effective: out, source, credentialName: cred.name }
 }
 
 /** The renderer's view of a resolved host: its public fields (with the login it really uses)
  *  plus which credential supplies it, if any. */
 export function withCredentialInfo(pub: SshHostPublic, h: EffectiveSshHost): SshHostPublic {
-  if (!h.credentialId) return pub
-  return h.credentialMissing ? { ...pub, credentialMissing: true } : { ...pub, credentialName: h.credentialName }
+  // The resolved source, so a host saved before groups still says where its login comes from.
+  const out: SshHostPublic = { ...pub, authSource: h.authSource }
+  if (h.authSource === 'own') return out
+  if (h.groupName !== undefined) out.groupName = h.groupName
+  if (h.credentialMissing) out.credentialMissing = true
+  else out.credentialName = h.credentialName
+  return out
 }
 
 /**

@@ -93,8 +93,14 @@ import {
   deleteCredential,
   getStoredCredential,
   hostIdsUsingCredential,
+  listGroups,
+  saveGroup,
+  deleteGroup,
+  getStoredGroup,
+  hostIdsInheritingGroup,
   SshHostInput,
-  type SshCredentialInput
+  type SshCredentialInput,
+  type SshGroupInput
 } from './ssh'
 import { toPublicHost } from './ssh-host-pure'
 import { credentialConnectionChanged, hostConnectionChanged } from './ssh-credential-pure'
@@ -2948,6 +2954,34 @@ ipcMain.handle('ssh:credential-save', (_, cred: SshCredentialInput) => {
   return res
 })
 ipcMain.handle('ssh:credential-delete', (_, id: string) => deleteCredential(id))
+// Server groups. Changing the credential a group carries closes the pooled connection of
+// every host that inherits it; deleting a group closes those of the hosts that inherited
+// from it, which have no login left.
+ipcMain.handle('ssh:groups-list', () => listGroups())
+ipcMain.handle('ssh:group-save', (_, group: SshGroupInput) => {
+  const prev = group && typeof group.id === 'string' && group.id ? getStoredGroup(group.id) : null
+  const res = saveGroup(group)
+  if (res.ok && prev) {
+    const next = getStoredGroup(prev.id)
+    if ((next?.credentialId ?? '') !== (prev.credentialId ?? '')) {
+      for (const hostId of hostIdsInheritingGroup(prev.id)) {
+        stopHostForwards(hostId)
+        void sftpDisconnect(hostId)
+      }
+    }
+  }
+  return res
+})
+ipcMain.handle('ssh:group-delete', (_, id: string) => {
+  const res = deleteGroup(id)
+  if (res.ok) {
+    for (const hostId of res.orphaned) {
+      stopHostForwards(hostId)
+      void sftpDisconnect(hostId)
+    }
+  }
+  return res
+})
 ipcMain.handle('ssh:test', (_, id: string) => testConnection(id))
 ipcMain.handle('ssh:test-claude', (_, id: string) => testClaude(id))
 ipcMain.handle('ssh:secret-storage', () => secretStorageState())

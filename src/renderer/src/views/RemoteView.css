@@ -371,3 +371,10 @@
 }
 .rv-cred-summary .btn-ghost { margin-left: auto; }
 .rv-cred-user { font-family: var(--font-mono); }
+
+/* Server groups: the collapsible header of the Containers panel (.ctr-group-head), with the
+   group menu beside it, so a button never sits inside another. */
+.rv-group-head { display: flex; align-items: center; gap: 4px; }
+.rv-group-toggle { flex: 1; min-width: 0; }
+/* The delete confirm says which servers lose their login: it wraps rather than being cut. */
+.rv-cred-meta.rv-group-confirm { white-space: normal; }

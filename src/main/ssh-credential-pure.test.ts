@@ -17,6 +17,7 @@ import {
 } from './ssh-credential-pure'
 import { SECRET_FIELDS, effectiveElevation, mergeSecrets, toPublicHost } from './ssh-host-pure'
 import { splitHostSecrets, mergeHosts } from './profile-transfer-pure'
+import type { SshGroup } from './ssh-group-pure'
 
 const cred: SshCredential = {
   id: 'cred_1',
@@ -28,6 +29,10 @@ const cred: SshCredential = {
   elevationPassword: 'cred-ep',
   elevateCommand: 'sudo su -'
 }
+
+/** The effective host alone, the shape getHost returns. */
+const resolve = (h: StoredSshHost, creds: readonly SshCredential[], groups: readonly SshGroup[] = []): EffectiveSshHost =>
+  resolveHostAuth(h, creds, groups).effective
 
 const linked: StoredSshHost = {
   id: 'h1',
@@ -42,11 +47,12 @@ const linked: StoredSshHost = {
 describe('resolveHostAuth', () => {
   it('returns an unlinked host as it is', () => {
     const own: StoredSshHost = { id: 'h2', name: 'db', host: 'db', port: 22, username: 'u', authType: 'key', privateKeyPath: '/k', passphrase: 'pp' }
-    expect(resolveHostAuth(own, [cred])).toEqual(own)
+    expect(resolve(own, [cred])).toEqual({ ...own, authSource: 'own' })
+    expect(resolveHostAuth(own, [cred]).source).toBe('own')
   })
 
   it('takes the login of a linked host from its credential and keeps its own fields', () => {
-    const eff = resolveHostAuth(linked, [cred])
+    const eff = resolve(linked, [cred])
     expect(eff).toEqual({
       id: 'h1',
       name: 'web',
@@ -56,6 +62,7 @@ describe('resolveHostAuth', () => {
       production: true,
       credentialId: 'cred_1',
       credentialName: 'Client A admin',
+      authSource: 'credential',
       username: 'admin',
       authType: 'password',
       password: 'cred-pw',
@@ -78,7 +85,7 @@ describe('resolveHostAuth', () => {
       elevateCommand: 'su -'
     } as StoredSshHost
     const agentCred: SshCredential = { id: 'cred_1', name: 'agent', username: 'deploy', authType: 'agent' }
-    const eff = resolveHostAuth(stale, [agentCred])
+    const eff = resolve(stale, [agentCred])
     expect(eff.username).toBe('deploy')
     expect(eff.authType).toBe('agent')
     for (const k of ['privateKeyPath', 'elevation', 'elevateCommand', ...SECRET_FIELDS]) expect(eff, k).not.toHaveProperty(k)
@@ -87,7 +94,7 @@ describe('resolveHostAuth', () => {
 
   it('marks a host whose credential is gone, with no login and no secret', () => {
     const stale = { ...linked, username: 'old', authType: 'password', password: 'stale-pw' } as StoredSshHost
-    const eff = resolveHostAuth(stale, [])
+    const eff = resolve(stale, [])
     expect(eff.credentialMissing).toBe(true)
     expect(eff.username).toBe('')
     for (const k of SECRET_FIELDS) expect(eff).not.toHaveProperty(k)
@@ -95,26 +102,26 @@ describe('resolveHostAuth', () => {
   })
 
   it('inherits the elevation of the credential', () => {
-    expect(effectiveElevation(resolveHostAuth(linked, [cred]))).toBe('other')
+    expect(effectiveElevation(resolve(linked, [cred]))).toBe('other')
     const loginCred: SshCredential = { id: 'cred_1', name: 'x', username: 'u', authType: 'password', password: 'pw' }
-    const eff = resolveHostAuth(linked, [loginCred])
+    const eff = resolve(linked, [loginCred])
     expect(effectiveElevation(eff)).toBe('login')
     expect(toPublicHost(eff).hasElevation).toBe(true)
     const keyCred: SshCredential = { id: 'cred_1', name: 'x', username: 'u', authType: 'key', passphrase: 'pp' }
-    expect(effectiveElevation(resolveHostAuth(linked, [keyCred]))).toBe('none')
+    expect(effectiveElevation(resolve(linked, [keyCred]))).toBe('none')
   })
 })
 
 describe('the renderer view of a linked host', () => {
   it('has the effective flags and the credential name, never a secret', () => {
-    const eff = resolveHostAuth(linked, [cred])
+    const eff = resolve(linked, [cred])
     const pub = withCredentialInfo(toPublicHost(eff), eff)
     expect(pub).toMatchObject({ username: 'admin', authType: 'password', credentialId: 'cred_1', credentialName: 'Client A admin', hasPassword: true, hasElevation: true })
     expect(JSON.stringify(pub)).not.toMatch(/cred-pw|cred-ep/)
   })
 
   it('says when the credential is missing', () => {
-    const eff = resolveHostAuth(linked, [])
+    const eff = resolve(linked, [])
     const pub = withCredentialInfo(toPublicHost(eff), eff)
     expect(pub).toMatchObject({ credentialId: 'cred_1', credentialMissing: true, hasPassword: false })
   })
@@ -139,7 +146,7 @@ describe('credential allowlist', () => {
       expect((PUBLIC_CREDENTIAL_FIELDS as readonly string[]).includes(k) || (SECRET_FIELDS as readonly string[]).includes(k), k).toBe(true)
     }
     const pub = toPublicCredential({ ...full, token: 'x' } as SshCredential, 3)
-    const allowed = new Set<string>([...PUBLIC_CREDENTIAL_FIELDS, 'hasPassword', 'hasPassphrase', 'hasElevation', 'usedBy'])
+    const allowed = new Set<string>([...PUBLIC_CREDENTIAL_FIELDS, 'hasPassword', 'hasPassphrase', 'hasElevation', 'usedBy', 'usedByGroups'])
     for (const k of Object.keys(pub)) expect(allowed.has(k), k).toBe(true)
     expect(JSON.stringify(pub)).not.toMatch(/"(pw|pp|ep)"/)
     expect(pub).toMatchObject({ hasPassword: true, hasPassphrase: true, hasElevation: true, usedBy: 3 })
@@ -152,7 +159,7 @@ describe('credential allowlist', () => {
   })
 
   it('counts the hosts that link a credential', () => {
-    expect(credentialUsage([{ credentialId: 'c' }, {}, { credentialId: 'd' }, { credentialId: 'c' }], 'c')).toBe(2)
+    expect(credentialUsage([{ id: '1', credentialId: 'c' }, { id: '2' }, { id: '3', credentialId: 'd' }, { id: '4', credentialId: 'c' }], 'c')).toBe(2)
   })
 })
 
@@ -191,17 +198,17 @@ describe('what closes pooled connections', () => {
   })
 
   it('a host edit that links, unlinks or switches a credential does', () => {
-    const a = resolveHostAuth(linked, [cred])
+    const a = resolve(linked, [cred])
     const other: SshCredential = { ...cred, id: 'cred_2' }
-    const b = resolveHostAuth({ ...linked, credentialId: 'cred_2' }, [other])
+    const b = resolve({ ...linked, credentialId: 'cred_2' }, [other])
     expect(hostConnectionChanged(a, b)).toBe(true)
-    const own: EffectiveSshHost = { ...stripCredentialAuth(a), credentialId: undefined, credentialName: undefined, username: 'admin', authType: 'password', password: 'cred-pw' }
+    const own: EffectiveSshHost = { ...stripCredentialAuth(a), credentialId: undefined, credentialName: undefined, authSource: 'own', username: 'admin', authType: 'password', password: 'cred-pw' }
     expect(hostConnectionChanged(a, own)).toBe(true)
-    expect(hostConnectionChanged(a, resolveHostAuth(linked, []))).toBe(true)
+    expect(hostConnectionChanged(a, resolve(linked, []))).toBe(true)
   })
 
   it('a login change of an unlinked host does: address, user, auth, key path, a secret replaced or cleared', () => {
-    const own: EffectiveSshHost = { id: 'h', name: 'n', host: 'h', port: 22, username: 'u', authType: 'key', privateKeyPath: '/k', passphrase: 'pp' }
+    const own: EffectiveSshHost = { id: 'h', name: 'n', host: 'h', port: 22, authSource: 'own', username: 'u', authType: 'key', privateKeyPath: '/k', passphrase: 'pp' }
     expect(hostConnectionChanged(own, { ...own })).toBe(false)
     expect(hostConnectionChanged(own, { ...own, host: 'h2' })).toBe(true)
     expect(hostConnectionChanged(own, { ...own, username: 'v' })).toBe(true)
@@ -215,7 +222,7 @@ describe('what closes pooled connections', () => {
   })
 
   it('organisation and elevation edits of a host do not', () => {
-    const a = resolveHostAuth(linked, [cred])
+    const a = resolve(linked, [cred])
     expect(hostConnectionChanged(a, { ...a, name: 'x', tags: ['t'], notes: 'n', favorite: true, elevation: 'none', elevationPassword: undefined })).toBe(false)
     expect(hostConnectionChanged(a, { ...a, port: 22 })).toBe(true)
     expect(hostConnectionChanged({ ...a, port: 22 }, { ...a, port: 0 })).toBe(false)
@@ -248,5 +255,107 @@ describe('credentials in a profile export', () => {
     type H = { id: string; name: string; credentialId?: string; password?: string; authType?: string }
     const merged = mergeHosts<H>([{ id: 'h1', name: 'a', authType: 'password', password: 'local' }], [{ id: 'h1', name: 'a', credentialId: 'cred_1' }])
     expect(merged).toEqual([{ id: 'h1', name: 'a', credentialId: 'cred_1' }])
+  })
+})
+
+describe('resolveHostAuth: the chain own, credential, group', () => {
+  const groupCred: SshCredential = { id: 'cred_g', name: 'Câmara X admin', username: 'cx', authType: 'password', password: 'group-pw' }
+  const groups: SshGroup[] = [
+    { id: 'grp_x', name: 'Câmara X', credentialId: 'cred_g' },
+    { id: 'grp_bare', name: 'Bare' }
+  ]
+  const inheriting: StoredSshHost = { id: 'h3', name: 'app', host: 'app.x', port: 22, groupId: 'grp_x', authSource: 'group' }
+
+  it('takes the login of an inheriting host from its group and says so', () => {
+    const res = resolveHostAuth(inheriting, [cred, groupCred], groups)
+    expect(res.source).toBe('group')
+    expect(res.credentialName).toBe('Câmara X admin')
+    expect(res.effective).toMatchObject({
+      authSource: 'group',
+      groupName: 'Câmara X',
+      credentialId: 'cred_g',
+      credentialName: 'Câmara X admin',
+      username: 'cx',
+      authType: 'password',
+      password: 'group-pw',
+      groupId: 'grp_x'
+    })
+    expect(res.effective.credentialMissing).toBeUndefined()
+  })
+
+  it('never inherits for a host with a login of its own, even in a group with a credential', () => {
+    const own: StoredSshHost = { id: 'h4', name: 'db', host: 'db.x', port: 22, groupId: 'grp_x', username: 'me', authType: 'password', password: 'mine' }
+    const res = resolveHostAuth(own, [groupCred], groups)
+    expect(res.source).toBe('own')
+    expect(res.effective.username).toBe('me')
+    expect(res.effective.password).toBe('mine')
+    expect(res.effective).not.toHaveProperty('credentialId')
+    expect(resolveHostAuth({ ...own, authSource: 'own', credentialId: 'cred_g' }, [groupCred], groups).effective.password).toBe('mine')
+  })
+
+  it('prefers the host\'s own credential link over its group', () => {
+    const res = resolveHostAuth({ ...linked, groupId: 'grp_x', authSource: 'credential' }, [cred, groupCred], groups)
+    expect(res.source).toBe('credential')
+    expect(res.effective.username).toBe('admin')
+    expect(res.effective).not.toHaveProperty('groupName')
+  })
+
+  it('reads a host saved before groups by its credential link', () => {
+    expect(resolveHostAuth(linked, [cred]).source).toBe('credential')
+  })
+
+  it('marks an inheriting host with no login when the group is gone, carries none, or its credential is gone', () => {
+    for (const [host, creds] of [
+      [{ ...inheriting, groupId: 'grp_gone' }, [groupCred]],
+      [{ ...inheriting, groupId: 'grp_bare' }, [groupCred]],
+      [{ ...inheriting, groupId: undefined }, [groupCred]],
+      [inheriting, []]
+    ] as [StoredSshHost, SshCredential[]][]) {
+      const res = resolveHostAuth(host, creds, groups)
+      expect(res.source).toBe('group')
+      expect(res.effective.credentialMissing).toBe(true)
+      expect(res.effective.username).toBe('')
+      for (const k of SECRET_FIELDS) expect(res.effective).not.toHaveProperty(k)
+    }
+  })
+
+  it('never lets a stale login of an inheriting host show through', () => {
+    const stale = { ...inheriting, username: 'old', authType: 'key', password: 'stale-pw', credentialId: 'cred_1' } as StoredSshHost
+    const eff = resolve(stale, [cred, groupCred], groups)
+    expect(eff.username).toBe('cx')
+    expect(eff.credentialId).toBe('cred_g')
+    expect(JSON.stringify(eff)).not.toMatch(/stale|old/)
+  })
+
+  it('shows the origin to the renderer, never the secret', () => {
+    const eff = resolve(inheriting, [groupCred], groups)
+    const pub = withCredentialInfo(toPublicHost(eff), eff)
+    expect(pub).toMatchObject({ authSource: 'group', groupName: 'Câmara X', credentialName: 'Câmara X admin', hasPassword: true })
+    expect(JSON.stringify(pub)).not.toMatch(/group-pw/)
+    const gone = resolve({ ...inheriting, groupId: 'grp_bare' }, [groupCred], groups)
+    expect(withCredentialInfo(toPublicHost(gone), gone)).toMatchObject({ authSource: 'group', groupName: 'Bare', credentialMissing: true })
+  })
+
+  it('a change of the group\'s credential closes the pooled connection', () => {
+    const other: SshCredential = { ...groupCred, id: 'cred_h' }
+    const a = resolve(inheriting, [groupCred, other], groups)
+    const b = resolve(inheriting, [groupCred, other], [{ ...groups[0], credentialId: 'cred_h' }])
+    expect(hostConnectionChanged(a, b)).toBe(true)
+    expect(hostConnectionChanged(a, resolve(inheriting, [groupCred], []))).toBe(true)
+  })
+
+  it('counts hosts that inherit a credential as using it', () => {
+    const hosts = [inheriting, linked, { id: 'h5', groupId: 'grp_x' }]
+    expect(credentialUsage(hosts, 'cred_g', groups)).toBe(1)
+    expect(credentialUsage(hosts, 'cred_1', groups)).toBe(1)
+    expect(credentialUsage(hosts, 'cred_g')).toBe(0)
+  })
+})
+
+describe('profile merge of an inheriting host', () => {
+  it('keeps no secret of its own', () => {
+    const local: { id: string; authSource?: string; groupId?: string; password?: string }[] = [{ id: 'h3', authSource: 'own', password: 'pw' }]
+    const merged = mergeHosts(local, [{ id: 'h3', authSource: 'group', groupId: 'grp_x' }])
+    for (const k of SECRET_FIELDS) expect(merged[0]).not.toHaveProperty(k)
   })
 })

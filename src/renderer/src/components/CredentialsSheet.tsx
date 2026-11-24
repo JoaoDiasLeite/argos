@@ -174,7 +174,7 @@ export default function CredentialsSheet({ start, credentials, keys, secretsEncr
       footer={
         <>
           {errorLine ?? <span className="help rv-sheet-help">{t('remote.creds.sub')}</span>}
-          <button type="button" className="btn-primary" onClick={() => edit(emptyCredential())}>
+          <button type="button" className="btn-primary" style={{ whiteSpace: 'nowrap', flexShrink: 0 }} onClick={() => edit(emptyCredential())}>
             {t('remote.creds.new')}
           </button>
         </>
@@ -191,6 +191,7 @@ export default function CredentialsSheet({ start, credentials, keys, secretsEncr
                   <span className="rv-cred-name">{c.name}</span>
                   <span className="rv-cred-meta">
                     <span className="rv-cred-user">{c.username}</span> · {t(AUTH_CHIP[c.authType])} · {plural(t, 'remote.creds.usedBy', c.usedBy)}
+                    {c.usedByGroups > 0 && <> · {plural(t, 'remote.creds.inGroups', c.usedByGroups)}</>}
                   </span>
                 </div>
                 <div className="rv-cred-actions">
@@ -211,8 +212,8 @@ export default function CredentialsSheet({ start, credentials, keys, secretsEncr
                       <button
                         type="button"
                         className="btn-ghost small"
-                        disabled={c.usedBy > 0}
-                        title={c.usedBy > 0 ? t('remote.creds.inUse') : undefined}
+                        disabled={c.usedBy > 0 || c.usedByGroups > 0}
+                        title={c.usedBy > 0 ? t('remote.creds.inUse') : c.usedByGroups > 0 ? t('remote.creds.inUseByGroups') : undefined}
                         onClick={() => setConfirmDelete(c.id)}
                       >
                         {t('remote.creds.delete')}

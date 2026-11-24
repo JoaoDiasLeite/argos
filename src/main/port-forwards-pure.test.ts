@@ -131,7 +131,7 @@ describe('forwards on the host', () => {
 
   it('stay with a host linked to a shared credential, which only replaces the login', () => {
     const stored = { ...stripCredentialAuth({ id: 'h', name: 'n', host: 'h', port: 22, username: 'u', authType: 'agent' as const }), credentialId: 'c', forwards: [fwd()] }
-    const eff = resolveHostAuth(stored, [{ id: 'c', name: 'ops', username: 'deploy', authType: 'password', password: 'pw' }])
+    const eff = resolveHostAuth(stored, [{ id: 'c', name: 'ops', username: 'deploy', authType: 'password', password: 'pw' }]).effective
     expect(eff.forwards).toEqual([fwd()])
     expect(toPublicHost(eff).forwards).toEqual([fwd()])
   })

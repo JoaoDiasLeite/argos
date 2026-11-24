@@ -9,7 +9,7 @@ import * as path from 'path'
 import { encodeProjectPath } from './codex-data-pure'
 import { projectNameKey } from './project-move-pure'
 import { parseTrustEntry, type TrustEntry } from './ssh-trust-pure'
-import { SECRET_FIELDS, stripSecrets, type HostSecrets, type SecretField } from './ssh-host-pure'
+import { SECRET_FIELDS, hostAuthSource, stripSecrets, type HostSecrets, type SecretField } from './ssh-host-pure'
 
 /**
  * The parts of profile export/import that need no Electron and no disk: the bundle format,
@@ -30,7 +30,9 @@ export const PROFILE_JSON_FILES = [
   'accounts.json',
   'provider-accounts.json',
   'auth-state.json',
-  'ssh-trust.json'
+  'ssh-trust.json',
+  // Server groups: plain data (a name and a credential id), merged by id on import.
+  'ssh-groups.json'
 ] as const
 
 /** Profile folders that travel file by file. */
@@ -674,14 +676,14 @@ export function mergeAccountGroup(
   return { group: base, created }
 }
 
-export type HostLike = { id: string; elevation?: string; credentialId?: string } & HostSecrets
+export type HostLike = { id: string; elevation?: string; credentialId?: string; authSource?: string } & HostSecrets
 
 /**
  * Merge SSH hosts (or shared credentials, which hold the same secrets) by id: imported fields
  * win, and a secret the import lacks is kept from here. A kept elevation password is dropped
  * when the merged entry no longer uses one (its elevation mode is not `other`), as saving it
- * from the form would, and a host that now links a shared credential keeps no secret of its
- * own.
+ * from the form would, and a host that now links a shared credential, or inherits its
+ * group's, keeps no secret of its own.
  */
 export function mergeHosts<T extends HostLike>(local: T[], imported: T[]): T[] {
   const out = local.map((h) => ({ ...h }))
@@ -700,7 +702,7 @@ export function mergeHosts<T extends HostLike>(local: T[], imported: T[]): T[] {
       else delete merged[k]
     }
     if (merged.elevation !== 'other') delete merged.elevationPassword
-    if (merged.credentialId) for (const k of SECRET_FIELDS) delete merged[k]
+    if (hostAuthSource(merged) !== 'own') for (const k of SECRET_FIELDS) delete merged[k]
     out[idx] = merged
   }
   return out

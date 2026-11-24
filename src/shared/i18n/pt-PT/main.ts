@@ -169,7 +169,7 @@ const main: Record<keyof typeof en, string> = {
   'ssh.hostsUnreadable':
     'Não foi possível ler o ficheiro de anfitriões guardado ({error}); não vai ser substituído. Move {file} para outro lado para começar de novo.',
   'ssh.credentialMissing':
-    'A credencial partilhada com que este servidor entra já não existe. Edita o servidor e escolhe outra credencial ou um login próprio.',
+    'O login partilhado com que este servidor entra já não existe (a credencial foi apagada, ou o grupo foi apagado ou já não tem credencial). Edita o servidor e escolhe outra credencial ou um login próprio.',
   'ssh.credentialsSaveFailed': 'Não foi possível guardar o ficheiro de credenciais: {error}',
   'ssh.credentialsUnreadable':
     'Não foi possível ler o ficheiro de credenciais guardado ({error}); não vai ser substituído. Move {file} para outro lado para começar de novo.',
@@ -177,6 +177,14 @@ const main: Record<keyof typeof en, string> = {
   'ssh.credentialAuthInvalid': 'Escolhe como a credencial entra: palavra-passe, chave ou agente.',
   'ssh.credentialInUse.one': 'Esta credencial é usada por {n} servidor. Liga primeiro esse servidor a outro login.',
   'ssh.credentialInUse.other': 'Esta credencial é usada por {n} servidores. Liga primeiro esses servidores a outro login.',
+  'ssh.credentialInUseByGroups.one': 'Esta credencial está em {n} grupo de servidores. Tira-a primeiro desse grupo.',
+  'ssh.credentialInUseByGroups.other': 'Esta credencial está em {n} grupos de servidores. Tira-a primeiro desses grupos.',
+  'ssh.groupsSaveFailed': 'Não foi possível guardar o ficheiro de grupos de servidores: {error}',
+  'ssh.groupsUnreadable':
+    'Não foi possível ler o ficheiro de grupos de servidores guardado ({error}); não vai ser substituído. Move {file} para outro lado para começar de novo.',
+  'ssh.groupMissing': 'Esse grupo de servidores já não existe. Escolhe outro grupo ou nenhum.',
+  'ssh.groupNoCredential': 'O grupo "{group}" não tem credencial para herdar. Dá-lhe uma, ou escolhe outro login para o servidor.',
+  'ssh.groupNameMissing': 'Dá um nome ao grupo.',
   'ssh.keys.invalidName': 'O nome da chave só pode ter letras, números, "_" e "-".',
   'ssh.keys.exists': 'Já existe uma chave chamada "{name}" em ~/.ssh.',
   'ssh.keys.keygenMissing': 'O ssh-keygen não foi encontrado. Instala o cliente OpenSSH e tenta novamente.',
