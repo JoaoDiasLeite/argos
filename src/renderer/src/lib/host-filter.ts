@@ -27,12 +27,15 @@ export function allHostTags(hosts: { tags?: string[] }[]): string[] {
 /**
  * The hosts that match the search text (name, address, user or any tag, case-insensitive)
  * and carry every selected tag, favourites first.
+ *
+ * With `extras` false (the experimental features off) tags and favourites play no part: the
+ * search reads name, address and user only, and the saved order is kept, as before 3.9.0.
  */
-export function filterHosts<T extends FilterableHost>(hosts: T[], query: string, selectedTags: string[]): T[] {
+export function filterHosts<T extends FilterableHost>(hosts: T[], query: string, selectedTags: string[], extras = true): T[] {
   const q = query.trim().toLowerCase()
-  const wanted = selectedTags.map((t) => t.toLowerCase())
+  const wanted = extras ? selectedTags.map((t) => t.toLowerCase()) : []
   const matches = (h: T): boolean => {
-    const tags = (h.tags ?? []).map((t) => t.toLowerCase())
+    const tags = extras ? (h.tags ?? []).map((t) => t.toLowerCase()) : []
     if (!wanted.every((t) => tags.includes(t))) return false
     return (
       !q ||
@@ -42,5 +45,6 @@ export function filterHosts<T extends FilterableHost>(hosts: T[], query: string,
       tags.some((t) => t.includes(q))
     )
   }
-  return favoritesFirst(hosts.filter(matches))
+  const found = hosts.filter(matches)
+  return extras ? favoritesFirst(found) : found
 }

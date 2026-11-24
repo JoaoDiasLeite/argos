@@ -249,6 +249,10 @@ export default {
   'about.changelog.label': 'Changelog',
   'about.changelog.hint': 'What changed in each release.',
   'about.changelog.button': 'What’s new',
+  'about.labs.label': 'Experimental features',
+  'about.labs.hint': 'Unfinished remote features: credentials, tunnels, gateways and VPNs. Turning them off hides them, but servers already set up keep connecting as they are.',
+  'about.labs.tapsLeft.one': '{n} more tap',
+  'about.labs.tapsLeft.other': '{n} more taps',
   'about.author': 'Made by João Dias Leite',
   'about.license': '© 2026 · MIT License · github.com/JoaoDiasLeite/argos',
 

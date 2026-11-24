@@ -9,6 +9,7 @@ import FileEditor from '../components/FileEditor'
 import PortForwardsButton from '../components/PortForwardsButton'
 import { VpnDot } from '../components/GatewayVpns'
 import { useVpnStates, vpnKey } from '../hooks/useVpnStates'
+import { useLabs } from '../hooks/useLabs'
 import { readLocalFile, writeLocalFile } from '../lib/local-file-io'
 import { expandHome } from '../lib/terminal-cwd'
 import { useT } from '../i18n'
@@ -130,6 +131,7 @@ function uncToPosixPath(distro: string, uncPath: string): string {
 
 export default function RemoteSessionView({ target, seq, active, onBack, onStatusChange, onOpenContainer }: Props) {
   const t = useT()
+  const labs = useLabs()
   const isSsh = target.kind === 'ssh'
   // targetId is per TARGET (the run log is shared by every session on the same box, which
   // is what you want — it's that machine's command history). terminalId is per SESSION.
@@ -142,6 +144,9 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
   const [statusError, setStatusError] = useState<string | null>(null)
   // The connect stopped on a VPN that is down on the gateway: offers to bring it up.
   const [vpnDown, setVpnDown] = useState<VpnDownInfo | null>(null)
+  // With the experimental features off the VPN is not named and not offered: the error reads
+  // as a plain failure to connect, with main's reason.
+  const shownVpnDown = labs ? vpnDown : null
   // Bumped after a retry connects, to start the terminal again (its key).
   const [termEpoch, setTermEpoch] = useState(0)
   const vpnStates = useVpnStates()
@@ -401,13 +406,13 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
         <div className="remote-session-title">
           <span className={`remote-session-dot ${status}`} title={status === 'error' ? statusError || t('remote.session.couldNotConnect') : t(STATUS_LABEL[status])} />
           <span className="remote-session-name">{isSsh ? target.host.name : target.distro}</span>
-          {isSsh && target.host.production && <span className="prod-pill" title={t('remote.prod.title')}>{t('remote.prod.pill')}</span>}
+          {labs && isSsh && target.host.production && <span className="prod-pill" title={t('remote.prod.title')}>{t('remote.prod.pill')}</span>}
           <span className="remote-session-target">
             {isSsh ? `${target.host.username}@${target.host.host}` : `wsl -d ${target.distro}`}
-            {isSsh && target.host.jumpHostName && (
+            {labs && isSsh && target.host.jumpHostName && (
               <span title={t('remote.viaTitle', { name: target.host.jumpHostName })}> {t('remote.via', { name: target.host.jumpHostName })}</span>
             )}
-            {isSsh && target.host.jumpHostName && target.host.vpnName && target.host.jumpViaId && target.host.vpnViaId && (
+            {labs && isSsh && target.host.jumpHostName && target.host.vpnName && target.host.jumpViaId && target.host.vpnViaId && (
               <span title={t('remote.vpn.rowTitle', { name: target.host.vpnName })}>
                 {' · '}
                 <VpnDot ev={vpnStates[vpnKey(target.host.jumpViaId, target.host.vpnViaId)]} />
@@ -417,7 +422,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
           </span>
         </div>
         <span className="remote-session-spacer" />
-        {isSsh && <PortForwardsButton hostId={target.host.id} connected={status === 'connected'} />}
+        {labs && isSsh && <PortForwardsButton hostId={target.host.id} connected={status === 'connected'} />}
         <button
           type="button"
           className={`remote-session-pane-toggle${collapsed ? '' : ' on'}`}
@@ -445,15 +450,15 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
             <div className="block err remote-session-error" role="alert">
               <div className="remote-session-error-head">
                 <span className="remote-session-error-title">
-                  {vpnDown ? t('remote.vpn.downTitle', { name: vpnDown.vpnName, gateway: vpnDown.gatewayName }) : t('remote.session.couldNotConnect')}
+                  {shownVpnDown ? t('remote.vpn.downTitle', { name: shownVpnDown.vpnName, gateway: shownVpnDown.gatewayName }) : t('remote.session.couldNotConnect')}
                 </span>
-                {statusError && !vpnDown && <span className="remote-session-error-why">{statusError}</span>}
+                {statusError && !shownVpnDown && <span className="remote-session-error-why">{statusError}</span>}
               </div>
               <span className="remote-session-error-text">
                 {t('remote.session.noShell')}
               </span>
               <div className="remote-session-error-actions">
-                {vpnDown && (
+                {shownVpnDown && (
                   <button type="button" className="btn-primary small" onClick={() => retryConnect(true)}>
                     {t('remote.vpn.bringUpRetry')}
                   </button>

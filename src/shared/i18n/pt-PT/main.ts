@@ -322,7 +322,8 @@ const main: Record<keyof typeof en, string> = {
   'profile.error.hostsUnreadable': 'Não foi possível ler os servidores guardados nesta máquina, por isso nada foi importado: {error}',
   'profile.error.notPreviewed': 'Escolhe primeiro o ficheiro em Importar…',
   'profile.skip.tooLong': 'O nome da pasta teria mais de {max} caracteres, o que o Windows não permite.',
-  'profile.skip.files': '{count} ficheiros não puderam ser escritos: {error}'
+  'profile.skip.files': '{count} ficheiros não puderam ser escritos: {error}',
+  'labs.off': 'Esta é uma funcionalidade experimental, e as funcionalidades experimentais estão desligadas (Definições, Acerca).'
 }
 
 export default main

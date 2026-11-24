@@ -25,7 +25,7 @@ import {
   buildSubprocessEnv,
   AuthMode
 } from './auth'
-import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, reresolveUiPrefs, setSystemPrefs, setOpsPrefs, setCompanionPrefs, opsDir, opsDirsView, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, UsageLimits, UiPrefs, UiPrefsPatch, SystemPrefs, OpsPrefsPatch } from './config'
+import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, reresolveUiPrefs, setSystemPrefs, setOpsPrefs, setCompanionPrefs, setLabs, opsDir, opsDirsView, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, UsageLimits, UiPrefs, UiPrefsPatch, SystemPrefs, OpsPrefsPatch } from './config'
 import { buildModelsCatalog } from './models-catalog'
 import {
   getAllProjects,
@@ -108,6 +108,8 @@ import {
 import { toPublicHost } from './ssh-host-pure'
 import { credentialConnectionChanged, hostConnectionChanged } from './ssh-credential-pure'
 import { listSshKeys, generateKey } from './ssh-keys'
+import { isLabsOn } from './labs'
+import { labsActionAllowed, mayAutoStartForwards } from './labs-pure'
 import {
   sftpConnect,
   sftpList,
@@ -3025,6 +3027,7 @@ ipcMain.handle('ssh:secret-flags', (_, hostId: unknown) => {
 // the other prompts of a Remote Session.
 ipcMain.handle('ssh:forward-start', (e, hostId: unknown, forwardId: unknown) => {
   if (e.sender !== mainWindow?.webContents) return { ok: false, error: 'not allowed' }
+  if (!labsActionAllowed(isLabsOn())) return { ok: false, error: t('main.labs.off') }
   if (typeof hostId !== 'string' || typeof forwardId !== 'string') return { ok: false, error: 'bad request' }
   return startForward(hostId, forwardId)
 })
@@ -3036,6 +3039,8 @@ ipcMain.handle('ssh:forwards-list', () => listActiveForwards())
 // The host's Remote Session has connected: its autoStart forwards start, once each.
 ipcMain.handle('ssh:forwards-autostart', (e, hostId: unknown) => {
   if (e.sender !== mainWindow?.webContents || typeof hostId !== 'string') return []
+  // The tunnels stay saved on the host; with the experimental features off they wait.
+  if (!mayAutoStartForwards(isLabsOn())) return []
   return startAutoForwards(hostId)
 })
 setForwardsChangedSink((list) => send('ssh:forwards-changed', list))
@@ -3045,10 +3050,12 @@ setForwardsChangedSink((list) => send('ssh:forwards-changed', list))
 ipcMain.handle('vpn:status', (_, gatewayId: unknown, vpnId?: unknown) => vpnStatus(gatewayId, vpnId))
 ipcMain.handle('vpn:up', (e, gatewayId: unknown, vpnId: unknown) => {
   if (e.sender !== mainWindow?.webContents) return { ok: false, reason: 'failed', error: 'not allowed' }
+  if (!labsActionAllowed(isLabsOn())) return { ok: false, reason: 'failed', error: t('main.labs.off') }
   return vpnSwitch(gatewayId, vpnId, 'up')
 })
 ipcMain.handle('vpn:down', (e, gatewayId: unknown, vpnId: unknown) => {
   if (e.sender !== mainWindow?.webContents) return { ok: false, reason: 'failed', error: 'not allowed' }
+  if (!labsActionAllowed(isLabsOn())) return { ok: false, reason: 'failed', error: t('main.labs.off') }
   return vpnSwitch(gatewayId, vpnId, 'down')
 })
 ipcMain.handle('vpn:known', () => knownVpnStates())
@@ -3059,8 +3066,14 @@ ipcMain.handle('ssh:keys-generate', (_, name: string, comment?: string) => gener
 // ─── SFTP (Remote Session file browser) ────────────────────────────────────
 
 // `vpnUp`: the "bring the VPN up and try again" button of a connect that stopped on it.
+// Only with the experimental features on: without them the button is hidden and the option
+// is dropped here, so the connect behaves as a plain retry (a VPN set to come up by itself
+// still does, as the host was saved).
 ipcMain.handle('sftp:connect', (_, hostId: string, opts?: unknown) =>
-  sftpConnect(hostId, { vpnUp: !!opts && typeof opts === 'object' && (opts as { vpnUp?: unknown }).vpnUp === true })
+  sftpConnect(hostId, {
+    vpnUp:
+      labsActionAllowed(isLabsOn()) && !!opts && typeof opts === 'object' && (opts as { vpnUp?: unknown }).vpnUp === true
+  })
 )
 // The renderer's calls serve the user's Remote Session, so they may ask for a secret.
 ipcMain.handle('sftp:list', (_, hostId: string, dir: string) => sftpList(hostId, dir, { interactive: true }))
@@ -3144,6 +3157,20 @@ ipcMain.handle('config:set-ui', (_, prefs: UiPrefsPatch) => {
     refreshJumpList()
   }
   return ui
+})
+// The hidden "experimental features" switch. Every window hears it, so the UI it gates
+// appears or goes without a restart; main reads it at use time (labs.ts). Turning it off
+// leaves every saved host, credential, group, gateway, VPN and tunnel as it is.
+ipcMain.handle('config:set-labs', (_, on: unknown) => {
+  const wasOn = isLabsOn()
+  const labs = setLabs(on === true)
+  // A running tunnel would be left with no button to stop it: they close with the switch.
+  // Their settings stay on the hosts.
+  if (wasOn && !labs) stopAllForwards()
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send('config:labs', labs)
+  }
+  return labs
 })
 ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
   const prevOpenAtLogin = getConfig().system.openAtLogin
@@ -3570,7 +3597,11 @@ ipcMain.on('terminal:resize', (_, id: string, cols: number, rows: number) =>
 // for remote-shell:send-secret. The host and its secret are resolved in terminal.ts from the
 // terminal id; nothing secret comes back.
 ipcMain.handle('terminal:send-secret', (e, id: unknown, opts: unknown) =>
-  e.sender === mainWindow?.webContents ? terminalSendSecret(id, opts) : { ok: false, reason: 'unknown-shell' }
+  e.sender !== mainWindow?.webContents
+    ? { ok: false, reason: 'unknown-shell' }
+    : !labsActionAllowed(isLabsOn())
+      ? { ok: false, reason: 'labs-off' }
+      : terminalSendSecret(id, opts)
 )
 // Only whether a prompt is showing, and of which kind: never the text around it.
 setTerminalSecretHintSink((id, kind) => send('terminal:secret-hint', { id, kind }))
@@ -3640,11 +3671,20 @@ ipcMain.on('remote-shell:resize', (_, id: string, cols: number, rows: number) =>
 ipcMain.handle('remote-shell:kill', (_, id: string) => remoteShellKill(id))
 // "Send password" and "Elevate": only the main window may ask, by a click there. The host and
 // its secret are resolved in remote-shell.ts from the shell id; nothing secret comes back.
+// Both refused with the experimental features off ('labs-off'): their buttons are hidden then.
 ipcMain.handle('remote-shell:send-secret', (e, id: unknown, opts: unknown) =>
-  e.sender === mainWindow?.webContents ? remoteShellSendSecret(id, opts) : { ok: false, reason: 'unknown-shell' }
+  e.sender !== mainWindow?.webContents
+    ? { ok: false, reason: 'unknown-shell' }
+    : !labsActionAllowed(isLabsOn())
+      ? { ok: false, reason: 'labs-off' }
+      : remoteShellSendSecret(id, opts)
 )
 ipcMain.handle('remote-shell:elevate', (e, id: unknown) =>
-  e.sender === mainWindow?.webContents ? remoteShellElevate(id) : { ok: false, reason: 'unknown-shell' }
+  e.sender !== mainWindow?.webContents
+    ? { ok: false, reason: 'unknown-shell' }
+    : !labsActionAllowed(isLabsOn())
+      ? { ok: false, reason: 'labs-off' }
+      : remoteShellElevate(id)
 )
 // Only whether a prompt is showing, and of which kind: never the text around it.
 setSecretHintSink((id, kind) => send('remote-shell:secret-hint', { id, kind }))

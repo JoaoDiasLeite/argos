@@ -22,6 +22,8 @@ import {
 } from './connect-auth-pure'
 import { isSafeRemotePath, parseHistoryLines, SingleFlightCache } from './sftp-pure'
 import { t } from './i18n'
+import { isLabsOn } from './labs'
+import { mayAskOnConnect } from './labs-pure'
 import { elevationSecret } from './secret-prompt-pure'
 import { ensureVpn, setVpnSecretSource, type VpnDownInfo } from './vpn-exec'
 
@@ -163,7 +165,10 @@ async function openSession(hostId: string, evict: () => void, interactive: boole
   dropAttempt(hostId)
   attempts.set(hostId, attempt)
   const signal = attempt.abort.signal
-  const asker = interactive ? askHostSecret : null
+  // Asking on connect is an experimental feature: without it a host with nothing saved fails
+  // as before 3.9.0. `interactive` still decides the rest (a VPN that comes up by itself, the
+  // agent's own error), which saved hosts keep either way.
+  const asker = mayAskOnConnect(isLabsOn(), interactive) ? askHostSecret : null
   const fail = (error: string, vpnDown?: VpnDownInfo): SessionResult => {
     dropAttempt(hostId, attempt)
     endRide(hostId, ride)

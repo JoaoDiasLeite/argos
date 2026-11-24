@@ -42,6 +42,8 @@ import './SettingsView.css'
 import Select from '../components/Select'
 import { migrateRecentRunbooks } from '../lib/runbook-library'
 import { useT } from '../i18n'
+import { useLabs } from '../hooks/useLabs'
+import { NO_TAPS, tapVersion } from '../lib/labs-unlock'
 import { LANGUAGES, isLanguage, plural, type MessageKey } from '../../../shared/i18n'
 
 type SectionId = 'appearance' | 'general' | 'connection' | 'system' | 'companion' | 'interventions' | 'ops' | 'about'
@@ -539,6 +541,34 @@ export default function SettingsView({
   // after it was started — the 4-hourly background one, for instance.
   const [updater, setUpdater] = useState<UpdaterState | null>(null)
   const [checking, setChecking] = useState(false)
+
+  // The hidden "experimental features" switch: seven taps on the version reveal it, and it
+  // stays shown while it is on so it can be turned off again.
+  const labs = useLabs()
+  const [labsRevealed, setLabsRevealed] = useState(false)
+  const tapsRef = useRef(NO_TAPS)
+  const [tapsLeft, setTapsLeft] = useState<number | null>(null)
+  const tapsHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [labsBusy, setLabsBusy] = useState(false)
+  useEffect(() => () => {
+    if (tapsHintTimer.current) clearTimeout(tapsHintTimer.current)
+  }, [])
+  const tapVersionLabel = () => {
+    const r = tapVersion(tapsRef.current, Date.now())
+    tapsRef.current = r.state
+    if (r.unlocked) setLabsRevealed(true)
+    setTapsLeft(r.remaining)
+    if (tapsHintTimer.current) clearTimeout(tapsHintTimer.current)
+    if (r.remaining !== null) tapsHintTimer.current = setTimeout(() => setTapsLeft(null), 1500)
+  }
+  const setLabs = async (on: boolean) => {
+    setLabsBusy(true)
+    try {
+      await window.electronAPI.setLabs(on)
+    } finally {
+      setLabsBusy(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -1319,7 +1349,15 @@ export default function SettingsView({
               {updater ? (
                 <div className="srow">
                   <div className="srow-text">
-                    <span className="srow-label">{t('settings.about.version', { version: updater.currentVersion })}</span>
+                    {/* No affordance on purpose: tapping it is the hidden way in (see tapVersion). */}
+                    <span className="srow-label settings-version" onClick={tapVersionLabel}>
+                      {t('settings.about.version', { version: updater.currentVersion })}
+                      {tapsLeft !== null && (
+                        <span className="settings-taps-left" role="status">
+                          {plural(t, 'settings.about.labs.tapsLeft', tapsLeft)}
+                        </span>
+                      )}
+                    </span>
                     <span className={`help ${updater.state === 'error' ? 'settings-error' : ''}`}>
                       {updaterStatusText()}
                     </span>
@@ -1341,6 +1379,8 @@ export default function SettingsView({
               ) : (
                 <p className="help">{t('common.loading')}</p>
               )}
+              {(labsRevealed || labs) &&
+                toggleRow(t('settings.about.labs.label'), t('settings.about.labs.hint'), labs, (on) => void setLabs(on), labsBusy)}
               <div className="srow">
                 <div className="srow-text">
                   <span className="srow-label">{t('settings.about.changelog.label')}</span>

@@ -5,6 +5,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { ProviderId, type HostSecretFlags, type RemoteShellSecretHintEvent } from '../types'
 import { useT } from '../i18n'
+import { useLabs } from '../hooks/useLabs'
 import { TERMINAL_THEME } from './terminal-theme'
 import TerminalContextMenu, { terminalMenuItems } from './TerminalContextMenu'
 import { TerminalAccelContext } from './terminal-accel'
@@ -200,6 +201,7 @@ function loadFontSize(): number {
 
 export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, pinSessionId, autoLaunchCli = true, active, closable = true, onClose, onClosePane, title, place, bare, headProps, onPopOut, onPopIn, onActive, initialPrompt, onInitialPromptSent, accelerated, ops, onCwdChange }: Props) {
   const t = useT()
+  const labs = useLabs()
   // Read from the one-shot setup effect, which cannot close over a prop.
   const onCwdRef = useRef(onCwdChange)
   onCwdRef.current = onCwdChange
@@ -1020,8 +1022,9 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     return () => clearTimeout(timer)
   }, [secretPanel])
 
+  // An experimental feature: hidden with it off (main refuses it too).
   const canSendSecret =
-    secretsAllowed && !!secretFlags && (secretFlags.hasPassword || secretFlags.hasPassphrase || secretFlags.hasElevation)
+    labs && secretsAllowed && !!secretFlags && (secretFlags.hasPassword || secretFlags.hasPassphrase || secretFlags.hasElevation)
 
   // Main checks the prompt and picks the secret; a no-prompt answer asks before a forced send
   // (which goes without Enter). Nothing is ever sent without this click.

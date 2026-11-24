@@ -127,6 +127,9 @@ interface AppConfig {
   system: SystemPrefs
   ops: OpsPrefs
   companion: CompanionPrefs
+  /** The hidden "experimental features" switch (Settings, About: tap the version seven
+   *  times). Absent or anything but true is off. Read through labs.ts's isLabsOn(). */
+  labs?: boolean
 }
 
 const COMPANION_DEFAULTS: CompanionPrefs = {
@@ -207,7 +210,8 @@ export function loadConfig(): void {
         // Backfill for configs saved by older versions that predate `system`.
         system: { ...config.system, ...(loaded.system ?? {}) },
         ops: cleanOpsPrefs(loaded.ops),
-        companion: cleanCompanionPrefs(COMPANION_DEFAULTS, loaded.companion)
+        companion: cleanCompanionPrefs(COMPANION_DEFAULTS, loaded.companion),
+        labs: loaded.labs === true
       }
       return
     } catch {
@@ -269,6 +273,13 @@ export function setSystemPrefs(prefs: Partial<SystemPrefs>): SystemPrefs {
   config.system = { ...config.system, ...prefs }
   saveConfig()
   return config.system
+}
+
+/** Turns the experimental features on or off. Saved data is never touched either way. */
+export function setLabs(on: boolean): boolean {
+  config.labs = on === true
+  saveConfig()
+  return config.labs
 }
 
 // ─── Companion ────────────────────────────────────────────────────────────────
