@@ -6,6 +6,7 @@ import SftpBrowser from '../components/SftpBrowser'
 import ContainersPanel from '../components/ContainersPanel'
 import LocalBrowser from '../components/LocalBrowser'
 import FileEditor from '../components/FileEditor'
+import PortForwardsButton from '../components/PortForwardsButton'
 import { readLocalFile, writeLocalFile } from '../lib/local-file-io'
 import { expandHome } from '../lib/terminal-cwd'
 import { useT } from '../i18n'
@@ -391,6 +392,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
           </span>
         </div>
         <span className="remote-session-spacer" />
+        {isSsh && <PortForwardsButton hostId={target.host.id} connected={status === 'connected'} />}
         <button
           type="button"
           className={`remote-session-pane-toggle${collapsed ? '' : ' on'}`}

@@ -37,6 +37,7 @@ import {
   type SshCredentialPublic,
   type StoredSshHost
 } from './ssh-credential-pure'
+import { checkForwards, forwardProblemKey, usableForwards, type PortForward } from './port-forwards-pure'
 
 export type { SshAuthType, SshHost, SshHostPublic } from './ssh-host-pure'
 export type { EffectiveSshHost, SshCredential, SshCredentialInput, SshCredentialPublic, StoredSshHost } from './ssh-credential-pure'
@@ -83,7 +84,9 @@ export function secretStorageState(): { encrypted: boolean; backend?: string } {
 export function listHosts(): SshHostPublic[] {
   const credentials = credentialStore.readOrEmpty()
   return hostStore.readOrEmpty().map((h) => {
-    const eff = resolveHostAuth(h, credentials)
+    // Forwards are re-checked on the way out: an imported host never went through saveHost.
+    const own = h.forwards === undefined ? h : { ...h, forwards: usableForwards(h.forwards) }
+    const eff = resolveHostAuth(own, credentials)
     return withCredentialInfo(toPublicHost(eff), eff)
   })
 }
@@ -96,6 +99,13 @@ function genCredentialId(): string {
   return `cred_${randomUUID()}`
 }
 
+/** The forwards a host is saved with, or the save's error naming the tunnel at fault. */
+function checkedForwards(value: unknown): { ok: true; forwards: PortForward[] } | { ok: false; error: string } {
+  const res = checkForwards(value)
+  if (res.ok) return res
+  return { ok: false, error: t(forwardProblemKey(res.problem), { n: (res.index ?? 0) + 1 }) }
+}
+
 export function saveHost(raw: SshHostInput): HostsWriteResult {
   const credentialId = typeof raw.credentialId === 'string' && raw.credentialId ? raw.credentialId : undefined
   if (credentialId) return saveLinkedHost(raw, credentialId)
@@ -105,6 +115,10 @@ export function saveHost(raw: SshHostInput): HostsWriteResult {
   delete fields.credentialId
   const problem = hostFieldProblem(fields)
   if (problem) return { ok: false, error: t(hostFieldProblemKey(problem)) }
+  const forwards = checkedForwards(raw.forwards)
+  if (!forwards.ok) return forwards
+  if (forwards.forwards.length) fields.forwards = forwards.forwards
+  else delete fields.forwards
   return updateHosts((hosts) => {
     const idx = fields.id ? hosts.findIndex((h) => h.id === fields.id) : -1
     // A host that was linked has no secrets of its own to keep.
@@ -131,7 +145,11 @@ function saveLinkedHost(raw: SshHostInput, credentialId: string): HostsWriteResu
   const cleaned = cleanHostFields({ ...raw, username: cred.username })
   const problem = hostFieldProblem(cleaned)
   if (problem) return { ok: false, error: t(hostFieldProblemKey(problem)) }
+  const forwards = checkedForwards(raw.forwards)
+  if (!forwards.ok) return forwards
   const fields = { ...stripCredentialAuth(cleaned), credentialId }
+  if (forwards.forwards.length) fields.forwards = forwards.forwards
+  else delete fields.forwards
   return updateHosts((hosts) => {
     const idx = fields.id ? hosts.findIndex((h) => h.id === fields.id) : -1
     if (idx >= 0) hosts[idx] = { ...fields, id: fields.id as string }

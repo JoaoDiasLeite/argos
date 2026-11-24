@@ -1,3 +1,5 @@
+import type { PortForward } from './port-forwards-pure'
+
 export type SshAuthType = 'password' | 'key' | 'agent'
 
 /**
@@ -51,6 +53,8 @@ export interface SshHost {
    * the saved record keeps none of its own (see resolveHostAuth).
    */
   credentialId?: string
+  /** Local port forwards (tunnels) over this host; see port-forwards-pure.ts. Not secret. */
+  forwards?: PortForward[]
 }
 
 /**
@@ -80,7 +84,8 @@ export const PUBLIC_HOST_FIELDS = [
   'production',
   'tags',
   'notes',
-  'credentialId'
+  'credentialId',
+  'forwards'
 ] as const
 export type PublicHostField = (typeof PUBLIC_HOST_FIELDS)[number]
 
