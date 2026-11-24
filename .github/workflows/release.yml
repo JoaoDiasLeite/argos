@@ -1,7 +1,17 @@
-# Builds the Windows installer and the Linux AppImage and publishes them to
-# GitHub Releases whenever a version tag (v0.3.0, v1.0.0, …) is pushed. The tag
-# must match the "version" in package.json — latest.yml and latest-linux.yml
-# (the auto-update feeds) are generated from package.json.
+# Builds the Windows installer, the Linux AppImage and the macOS dmg (Apple
+# Silicon) and publishes them to GitHub Releases whenever a version tag (v0.3.0,
+# v1.0.0, …) is pushed. The tag must match the "version" in package.json —
+# latest.yml, latest-linux.yml and latest-mac.yml (the update feeds) are
+# generated from package.json.
+#
+# The macOS build is ad-hoc signed, not signed with an Apple Developer ID nor
+# notarized: Gatekeeper asks for "Open Anyway" on first launch and the app
+# cannot install its own updates (it only says a new version is out). The mac
+# leg may fail without holding back the Windows and Linux release.
+#
+# Run it by hand (workflow_dispatch) to build every installer as workflow
+# artifacts without publishing anything — the way to check the mac leg before
+# tagging.
 #
 # electron-builder runs with --publish never: its own GitHub publisher races
 # parallel asset uploads and creates duplicate releases. Each OS builds in its
@@ -13,6 +23,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 # The build jobs only read the repository; only the publish job may write
 # (it creates the release and uploads the installers).
@@ -23,6 +34,7 @@ jobs:
   # Fails the run before anything is built when the tag and package.json disagree: the
   # installer and the update feeds carry package.json's version, the release the tag's.
   check-version:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -39,9 +51,13 @@ jobs:
 
   build:
     needs: check-version
+    # A manual run skips check-version (there is no tag to compare); build anyway.
+    if: ${{ !failure() && !cancelled() }}
     permissions:
       contents: read
+    continue-on-error: ${{ matrix.optional }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -49,10 +65,21 @@ jobs:
               release/*.exe
               release/*.blockmap
               release/latest.yml
+            optional: false
           - os: ubuntu-latest
             files: |
               release/*.AppImage
               release/latest-linux.yml
+            optional: false
+          # Apple Silicon only: npm ci installs the native packages
+          # (sherpa-onnx, the Claude SDK binary) for the runner's arch alone.
+          - os: macos-latest
+            files: |
+              release/*.dmg
+              release/*.zip
+              release/*.blockmap
+              release/latest-mac.yml
+            optional: true
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -76,6 +103,7 @@ jobs:
 
   publish:
     needs: build
+    if: ${{ github.event_name == 'push' && !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -304,6 +304,8 @@ export default {
   'projects.move.alreadyExists': 'already exists: {path}',
   'updater.readyTitle': 'Update ready',
   'updater.readyBody': 'Argos {version} will install on next restart.',
+  'updater.availableTitle': 'Update available',
+  'updater.availableBody': 'Argos {version} is out. Click to open the download page.',
   'jumplist.newTerminal': 'New terminal',
 
   'profile.exportTitle': 'Export Argos profile',

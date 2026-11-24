@@ -77,9 +77,29 @@
     },
     "mac": {
       "target": [
-        "dmg"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "category": "public.app-category.developer-tools",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Argos listens to the microphone only while you talk to the companion; audio is transcribed on this machine."
+      }
+    },
+    "dmg": {
+      "artifactName": "Argos-${version}-${arch}.${ext}"
     },
     "linux": {
       "target": [
