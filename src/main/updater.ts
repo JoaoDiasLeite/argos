@@ -41,6 +41,8 @@ interface UpdaterState {
 const state: UpdaterState = { state: 'disabled', manual: manualInstall }
 
 let notify: ((channel: string, payload: unknown) => void) | null = null
+/** The last version announced on macOS, so a 4-hourly check doesn't repeat it. */
+let announced: string | undefined
 
 function emit(): void {
   notify?.('updater:event', { ...state })
@@ -80,8 +82,10 @@ export function initUpdater(notifyFn: (channel: string, payload: unknown) => voi
     state.version = info.version
     emit()
 
-    // Nothing downloads on macOS, so this is the moment to say a version is out.
-    if (manualInstall && Notification.isSupported()) {
+    // Nothing downloads on macOS, so this is the moment to say a version is out —
+    // once per version: every later check finds the same one until it is installed.
+    if (manualInstall && announced !== info.version && Notification.isSupported()) {
+      announced = info.version
       const n = new Notification({
         title: t('main.updater.availableTitle'),
         body: t('main.updater.availableBody', { version: info.version })

@@ -30,6 +30,7 @@
     "productName": "Argos",
     "copyright": "Copyright © 2026 João Dias Leite",
     "npmRebuild": false,
+    "afterPack": "scripts/after-pack.cjs",
     "publish": [
       {
         "provider": "github",
