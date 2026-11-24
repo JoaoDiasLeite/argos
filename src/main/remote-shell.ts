@@ -345,7 +345,8 @@ export function remoteShellKillAll(): void {
 
 export type SendSecretResult =
   | { ok: true }
-  | { ok: false; reason: 'unknown-shell' | 'not-a-host-shell' | 'no-secret' | 'no-prompt' | 'rate-limited' }
+  // 'labs-off': refused in index.ts while the experimental features are off.
+  | { ok: false; reason: 'unknown-shell' | 'not-a-host-shell' | 'no-secret' | 'no-prompt' | 'rate-limited' | 'labs-off' }
 
 /** The live host shell for `id`, or why there is none. A live id without an entry is a local
  *  container pty. */
@@ -382,7 +383,7 @@ export function remoteShellSendSecret(id: unknown, opts: unknown): SendSecretRes
 
 export type ElevateResult =
   | { ok: true }
-  | { ok: false; reason: 'unknown-shell' | 'not-a-host-shell' | 'no-secret' | 'rate-limited' }
+  | { ok: false; reason: 'unknown-shell' | 'not-a-host-shell' | 'no-secret' | 'rate-limited' | 'labs-off' }
 
 /**
  * "Elevate": types the host's elevation command (from the fixed list, never free text) and,

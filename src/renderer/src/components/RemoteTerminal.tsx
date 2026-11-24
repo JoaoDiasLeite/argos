@@ -8,6 +8,7 @@ import { registerOsc52Copy } from '../lib/osc52'
 import { registerCwdReports } from '../lib/terminal-cwd'
 import { registerTerminalLinks } from '../lib/terminal-links'
 import { useT } from '../i18n'
+import { useLabs } from '../hooks/useLabs'
 import type { RemoteContainerTarget, RemoteShellSecretHintEvent, SshHostPublic } from '../types'
 import './ChatTerminal.css'
 
@@ -75,6 +76,7 @@ function loadFontSize(): number {
 
 export default function RemoteTerminal({ terminalId, hostId, active, closable = true, onClose, onCwdChange, container, secrets }: Props) {
   const t = useT()
+  const labs = useLabs()
   // Read from the one-shot setup effect, which cannot close over a prop.
   const onCwdRef = useRef(onCwdChange)
   onCwdRef.current = onCwdChange
@@ -388,8 +390,9 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
   }, [secretPanel])
 
   // Local container ptys have no host, so no secret to send.
-  const canSendSecret = hostId !== null && !!secrets && (secrets.hasPassword || secrets.hasPassphrase || secrets.hasElevation)
-  const canElevate = hostId !== null && !!secrets?.hasElevation
+  // Both are experimental features: hidden with them off (main refuses them too).
+  const canSendSecret = labs && hostId !== null && !!secrets && (secrets.hasPassword || secrets.hasPassphrase || secrets.hasElevation)
+  const canElevate = labs && hostId !== null && !!secrets?.hasElevation
   // Shown as main will type it (elevateCommandFor falls back to the same default).
   const elevateCommand = secrets?.elevateCommand ?? 'sudo -i'
 

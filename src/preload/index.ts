@@ -175,6 +175,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('config:ui', fn)
   },
   setSystemPrefs: (prefs: unknown) => ipcRenderer.invoke('config:set-system', prefs),
+  // The hidden "experimental features" switch, and its change broadcast to every window.
+  setLabs: (on: boolean) => ipcRenderer.invoke('config:set-labs', on),
+  onLabs: (cb: (on: boolean) => void) => {
+    const fn = (_: unknown, on: unknown) => cb(on === true)
+    ipcRenderer.on('config:labs', fn)
+    return () => ipcRenderer.removeListener('config:labs', fn)
+  },
   setOpsPrefs: (patch: unknown) => ipcRenderer.invoke('config:set-ops', patch),
   opsDirs: () => ipcRenderer.invoke('config:ops-dirs'),
   setCompanionPrefs: (patch: unknown) => ipcRenderer.invoke('config:set-companion', patch),

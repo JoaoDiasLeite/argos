@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { HostSecretFlags, RemoteContainerTarget, SshHostPublic } from '../types'
 import RemoteTerminal from '../components/RemoteTerminal'
 import { useT } from '../i18n'
+import { useLabs } from '../hooks/useLabs'
 import type { MessageKey } from '../../../shared/i18n'
 import './views.css'
 import './RemoteSessionView.css'
@@ -34,6 +35,7 @@ const STATUS_LABEL: Record<'connecting' | 'connected' | 'error', MessageKey> = {
  */
 export default function ContainerSessionView({ host, container, name, seq, active, onBack, onStatusChange }: Props) {
   const t = useT()
+  const labs = useLabs()
   const hostId = host?.id ?? null
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>(hostId ? 'connecting' : 'connected')
   const [statusError, setStatusError] = useState<string | null>(null)
@@ -80,7 +82,7 @@ export default function ContainerSessionView({ host, container, name, seq, activ
         <div className="remote-session-title">
           <span className={`remote-session-dot ${status}`} title={status === 'error' ? statusError || t('remote.session.couldNotConnect') : t(STATUS_LABEL[status])} />
           <span className="remote-session-name">{name}</span>
-          {host?.production && <span className="prod-pill" title={t('remote.prod.title')}>{t('remote.prod.pill')}</span>}
+          {labs && host?.production && <span className="prod-pill" title={t('remote.prod.title')}>{t('remote.prod.pill')}</span>}
           <span className="remote-session-target">
             {host
               ? t('remote.containers.tabTarget', { runtime: `${container.sudo ? 'sudo ' : ''}${container.runtime}`, host: host.name })

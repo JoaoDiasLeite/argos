@@ -91,6 +91,7 @@ import { SESSION_DRAG_TYPE, type DropPlan } from './lib/pane-drop'
 // fallback (`ViewLoading`) rendered while each view's chunk is fetched.
 import { SshHostPublic, RemoteTarget, type RemoteContainerTarget } from './types'
 import { useT } from './i18n'
+import { useLabs } from './hooks/useLabs'
 import { NEW_CHAT_NAME, chatDisplayName } from './lib/chat-name'
 import { mergeById } from './lib/merge-by-id'
 import { plural, type MessageKey } from '../../shared/i18n'
@@ -229,6 +230,8 @@ function serverGroupKey(target: RemoteTarget): string {
 
 export default function App() {
   const t = useT()
+  // The experimental features: the PROD marker on server tabs is one of them.
+  const labs = useLabs()
   // Read from inside long-lived effects and intervals, which must not restart when the
   // language changes.
   const tRef = useRef(t)
@@ -2382,7 +2385,7 @@ export default function App() {
   // included) gets its red marker. Read from the host as it was when the session opened.
   const serverTabItems = serverSessions.map((s) => ({
     ...s,
-    production: s.target.kind === 'ssh' && !!s.target.host.production
+    production: labs && s.target.kind === 'ssh' && !!s.target.host.production
   }))
   const addToTabGroup = (groupKey: string) => {
     const session = serverSessions.find((s) => s.groupKey === groupKey)

@@ -5,6 +5,8 @@ import * as os from 'os'
 import * as path from 'path'
 import { buildSubprocessEnv } from './auth'
 import { t } from './i18n'
+import { isLabsOn } from './labs'
+import { chatLoginAnswered } from './labs-pure'
 import { accountConfigDir, resolveClaudeBin } from './accounts'
 import { providerAccountEnv } from './provider-accounts'
 import { resolveCodex } from './providers/cli-resolve'
@@ -263,7 +265,9 @@ function trackSshTerminal(id: string, p: pty.IPty, hostId: string): void {
   const gateway = gatewayId ? loginStepFor(gatewayId) : null
   const steps = gateway ? [gateway, target] : [target]
   const login = new LoginChain(steps, Date.now())
-  const canAnswer = login.expected > 0
+  // Answering ssh's login and holding the launch line are experimental: without them ssh asks
+  // and the user types, as before 3.9.0. Tracked either way, for the prompt hint.
+  const canAnswer = chatLoginAnswered(isLabsOn(), login.expected)
   const st: SshSecretState = {
     pty: p,
     hostId,

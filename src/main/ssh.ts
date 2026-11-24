@@ -6,6 +6,8 @@ import { randomUUID } from 'crypto'
 import { isEndpointKeyStored, trustedKnownHostsPath, verifyHostKey, type TrustVia } from './ssh-trust'
 import { sshOptionPath, trustAlias, trustKey } from './ssh-trust-pure'
 import { t } from './i18n'
+import { isLabsOn } from './labs'
+import { tryKeyboardFor } from './labs-pure'
 import { plural } from '../shared/i18n'
 import { keyboardInteractiveDecision, keyNeedsPassphrase, type KbdPrompt } from './connect-auth-pure'
 import { createEncryptedListStore } from './encrypted-list-store'
@@ -638,7 +640,12 @@ export function buildConnectConfig(h: EffectiveSshHost, opts: ConnectAuthOptions
     // Servers that only take keyboard-interactive (PAM, an OTP) are reached after the
     // primary method; the Client's `keyboard-interactive` listener answers (see
     // connectClient), so a config that tries it must never be connected without one.
-    tryKeyboard: (opts.interactive && !!opts.askSecret) || (h.authType === 'password' && !!h.password),
+    // Never with the experimental features off, as every connection was dialled before 3.9.0.
+    tryKeyboard: tryKeyboardFor(isLabsOn(), {
+      canAsk: opts.interactive && !!opts.askSecret,
+      authType: h.authType,
+      hasPassword: !!h.password
+    }),
     hostVerifier: (key: Buffer, callback: (valid: boolean) => void) => {
       verifyHostKey(h.host, h.port || 22, key, opts.via).then(callback, () => callback(false))
     }

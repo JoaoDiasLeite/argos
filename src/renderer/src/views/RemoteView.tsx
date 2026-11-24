@@ -34,6 +34,7 @@ import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
 import { GatewayVpnsSection, INHERIT_VPN, NO_VPN, VpnDot, VpnNeededField, VpnProfilesEditor } from '../components/GatewayVpns'
 import { useVpnStates, vpnKey } from '../hooks/useVpnStates'
+import { useLabs } from '../hooks/useLabs'
 
 interface Props {
   onConnect: (host: SshHostPublic) => void
@@ -270,6 +271,10 @@ export default function RemoteView({
 }: Props) {
   const t = useT()
   const { locale } = useLanguage()
+  // The experimental features (Settings, About). Off, this screen is the 3.8.0 one: no
+  // credentials, groups, gateways, VPNs, tunnels, favourites, tags, notes or PROD marker.
+  // Only the UI goes: whatever a host carries is kept in the form and saved as it was.
+  const labs = useLabs()
   const [hosts, setHosts] = useState<SshHostPublic[]>([])
   const vpnStates = useVpnStates()
   const [credentials, setCredentials] = useState<SshCredentialPublic[]>([])
@@ -473,6 +478,9 @@ export default function RemoteView({
   const linkedCred = linking ? credentials.find((c) => c.id === editing?.credentialId) : undefined
   const editingGroup = editing?.groupId ? groups.find((g) => g.id === editing.groupId) : undefined
   const groupCred = editingGroup?.credentialId ? credentials.find((c) => c.id === editingGroup.credentialId) : undefined
+  // The credential a linked or inheriting host logs in with, for the form's read-only line
+  // when the features are off.
+  const shownCred = inheriting ? groupCred : linkedCred
   const hostValid =
     !!editing &&
     !!editing.name.trim() &&
@@ -617,7 +625,8 @@ export default function RemoteView({
   const matchesDistro = (d: WslDistro) => !q || d.name.toLowerCase().includes(q)
   // Tags exist on SSH hosts only, so picking one narrows the list to the hosts that carry it.
   const tagChoices = useMemo(() => allHostTags(hosts), [hosts])
-  const activeTags = selectedTags.filter((tag) => tagChoices.some((c) => c.toLowerCase() === tag.toLowerCase()))
+  // A tag picked while the features were on no longer filters once they are off.
+  const activeTags = labs ? selectedTags.filter((tag) => tagChoices.some((c) => c.toLowerCase() === tag.toLowerCase())) : []
   const toggleTag = (tag: string) =>
     setSelectedTags((prev) =>
       prev.some((x) => x.toLowerCase() === tag.toLowerCase())
@@ -626,10 +635,10 @@ export default function RemoteView({
     )
 
   const shownDistros = (kind === 'all' || kind === 'wsl') && activeTags.length === 0 ? visibleDistros.filter(matchesDistro) : []
-  const shownHosts = kind === 'all' || kind === 'ssh' ? filterHosts(hosts, query, activeTags) : []
+  const shownHosts = kind === 'all' || kind === 'ssh' ? filterHosts(hosts, query, activeTags, labs) : []
   const filtering = !!q || activeTags.length > 0
-  // No groups at all: the list stays flat, as before groups existed.
-  const hostSections = groups.length > 0 ? groupHosts(shownHosts, groups, filtering, locale) : []
+  // No groups at all, or the features off: the list stays flat, as before groups existed.
+  const hostSections = labs && groups.length > 0 ? groupHosts(shownHosts, groups, filtering, locale) : []
   const showLocal = local.runtime && (kind === 'all' || kind === 'docker') && activeTags.length === 0
   // The containers section answers for itself ("no container matches").
   const nothingMatches = kind !== 'docker' && !showLocal && shownDistros.length === 0 && shownHosts.length === 0
@@ -716,20 +725,20 @@ export default function RemoteView({
     return (
       <div key={h.id} {...rowProps({ kind: 'ssh', id: h.id }, () => onOpenSession(h), h.name)}>
         <Dot state={hostDotState(h)} />
-        {h.favorite && (
+        {labs && h.favorite && (
           <span className="rv-star" title={t('remote.list.favorite')} aria-label={t('remote.list.favorite')}>
             <StarIcon />
           </span>
         )}
         <span className="rv-name">{h.name}</span>
-        {h.production && <span className="prod-pill" title={t('remote.prod.title')}>{t('remote.prod.pill')}</span>}
+        {labs && h.production && <span className="prod-pill" title={t('remote.prod.title')}>{t('remote.prod.pill')}</span>}
         <span className="chip">{t(AUTH_CHIP[h.authType])}</span>
-        {h.tags?.map((tag) => (
+        {labs && h.tags?.map((tag) => (
           <span key={tag} className="chip rv-tag">{tag}</span>
         ))}
         <span className="rv-row-right">
           {failed && <span className="rv-row-err">{t('remote.list.couldNotConnect')}</span>}
-          {h.jumpHostName && (
+          {labs && h.jumpHostName && (
             <span className="rv-row-meta" title={t('remote.viaTitle', { name: h.jumpHostName })}>
               {t('remote.via', { name: h.jumpHostName })}
               {h.vpnName && h.jumpViaId && h.vpnViaId && (
@@ -741,8 +750,8 @@ export default function RemoteView({
               )}
             </span>
           )}
-          {h.jumpMissing && <span className="rv-row-err">{t('remote.col.gatewayMissing')}</span>}
-          {h.vpnMissing && <span className="rv-row-err">{t('remote.vpn.missingRow')}</span>}
+          {labs && h.jumpMissing && <span className="rv-row-err">{t('remote.col.gatewayMissing')}</span>}
+          {labs && h.vpnMissing && <span className="rv-row-err">{t('remote.vpn.missingRow')}</span>}
           <span className="rv-row-meta">
             {h.username}@{h.host}:{h.port}
           </span>
@@ -949,13 +958,13 @@ export default function RemoteView({
           <dl className="rv-dl">
             {selHost ? (
               <>
-                {selHost.groupId && groups.some((g) => g.id === selHost.groupId) && (
+                {labs && selHost.groupId && groups.some((g) => g.id === selHost.groupId) && (
                   <>
                     <dt>{t('remote.col.group')}</dt>
                     <dd>{groups.find((g) => g.id === selHost.groupId)?.name}</dd>
                   </>
                 )}
-                {selHost.authSource === 'group' ? (
+                {!labs ? null : selHost.authSource === 'group' ? (
                   <>
                     <dt>{t('remote.col.credential')}</dt>
                     <dd>
@@ -980,7 +989,7 @@ export default function RemoteView({
                     </>
                   )
                 )}
-                {(selHost.jumpHostName || selHost.jumpMissing) && (
+                {labs && (selHost.jumpHostName || selHost.jumpMissing) && (
                   <>
                     <dt>{t('remote.col.gateway')}</dt>
                     <dd>
@@ -994,7 +1003,7 @@ export default function RemoteView({
                     </dd>
                   </>
                 )}
-                {(selHost.vpnName || selHost.vpnMissing) && (
+                {labs && (selHost.vpnName || selHost.vpnMissing) && (
                   <>
                     <dt>{t('remote.vpn.needed')}</dt>
                     <dd>
@@ -1086,9 +1095,9 @@ export default function RemoteView({
           </div>
         </section>
 
-        {selHost && (selHost.vpns?.length ?? 0) > 0 && <GatewayVpnsSection host={selHost} states={vpnStates} />}
+        {labs && selHost && (selHost.vpns?.length ?? 0) > 0 && <GatewayVpnsSection host={selHost} states={vpnStates} />}
 
-        {selHost && (
+        {labs && selHost && (
           <section className="rv-sec">
             <div className="eyebrow">{t('remote.col.notes')}</div>
             {selHost.notes ? (
@@ -1204,19 +1213,23 @@ export default function RemoteView({
           <h1>{t('remote.title')}</h1>
           <p className="rv-sub">{t('remote.sub')}</p>
         </div>
-        <ActiveTunnels hosts={hosts} />
+        {labs && <ActiveTunnels hosts={hosts} />}
         <button type="button" className="btn-ghost" onClick={() => setScreen('keys')}>
           <KeyIcon />
           {t('remote.keys.title')}
         </button>
-        <button type="button" className="btn-ghost" onClick={() => setCredSheet({ kind: 'list' })}>
-          <UserIcon />
-          {t('remote.creds.button')}
-        </button>
-        <button type="button" className="btn-ghost" onClick={() => setGroupSheet({ kind: 'list' })}>
-          <FolderIcon />
-          {t('remote.groups.button')}
-        </button>
+        {labs && (
+          <>
+            <button type="button" className="btn-ghost" onClick={() => setCredSheet({ kind: 'list' })}>
+              <UserIcon />
+              {t('remote.creds.button')}
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => setGroupSheet({ kind: 'list' })}>
+              <FolderIcon />
+              {t('remote.groups.button')}
+            </button>
+          </>
+        )}
         <button type="button" className="btn-ghost" onClick={() => openEditor(emptyHost())}>
           <PlusIcon />
           {t('remote.addHost')}
@@ -1259,7 +1272,7 @@ export default function RemoteView({
             </div>
           </div>
 
-          {tagChoices.length > 0 && (
+          {labs && tagChoices.length > 0 && (
             <div className="rv-tagbar" role="group" aria-label={t('remote.filter.tags')}>
               {tagChoices.map((tag) => {
                 const on = activeTags.some((x) => x.toLowerCase() === tag.toLowerCase())
@@ -1460,102 +1473,123 @@ export default function RemoteView({
                 />
               </div>
             </div>
-            <div className="form-group">
-              <label>
-                {t('remote.form.group')}
-                <span className="optional">{t('remote.form.optional')}</span>
-              </label>
-              <Select
-                value={editingGroup ? editingGroup.id : ''}
-                onChange={(e) => {
-                  if (e.target.value === NEW_GROUP) setGroupSheet({ kind: 'new' })
-                  else setEditing({ ...editing, groupId: e.target.value || undefined })
-                }}
-              >
-                <option value="">{t('remote.form.groupNone')}</option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-                <option value={NEW_GROUP}>{t('remote.form.groupNew')}</option>
-              </Select>
-            </div>
-            <div className="form-group">
-              <label>{t('remote.form.jump')}</label>
-              <Select
-                value={jumpValue}
-                disabled={isGateway && jumpValue === DIRECT_JUMP}
-                onChange={(e) => setEditing({ ...editing, jumpHostId: pickJump(e.target.value) })}
-              >
-                {editingGroup?.jumpHostId && (
-                  <option value={INHERIT_JUMP}>
-                    {t('remote.form.jumpInherit', { group: editingGroup.name, name: groupJump?.name ?? t('remote.form.jumpMissing') })}
-                  </option>
-                )}
-                <option value={DIRECT_JUMP}>{t('remote.form.jumpDirect')}</option>
-                {jumpUnknown && <option value={jumpValue}>{t('remote.form.jumpMissing')}</option>}
-                {jumpChoices.map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.name}
-                  </option>
-                ))}
-              </Select>
-              {jumpUnknown ? (
-                <p className="help rv-error-text">{t('remote.form.jumpMissing')}</p>
-              ) : (
-                <p className="help">{isGateway ? t('remote.form.jumpIsGateway') : t('remote.form.jumpHelp')}</p>
-              )}
-            </div>
-            {(formGateway || editing.vpnId) && (
-              <VpnNeededField
-                gateway={formGateway}
-                value={vpnValue}
-                autoUp={!!editing.vpnAutoUp}
-                inherit={
-                  editingGroup?.vpnId
-                    ? { group: editingGroup.name, name: groupVpn?.name ?? t('remote.vpn.neededMissing'), autoUp: !!editingGroup.vpnAutoUp }
-                    : undefined
-                }
-                help={t('remote.vpn.neededHelp')}
-                onChange={(value, autoUp) => {
-                  const vpnId = pickVpn(value)
-                  setEditing({ ...editing, vpnId, vpnAutoUp: vpnId ? autoUp : undefined })
-                }}
-              />
-            )}
-            <div className="form-group">
-              <label>{t('remote.form.authSource')}</label>
-              <div className="seg-control">
-                <button type="button" className={source === 'own' ? 'on' : ''} onClick={() => source !== 'own' && setEditing(ownLoginFrom(editing))}>
-                  {t('remote.form.authSource.own')}
-                </button>
-                <button
-                  type="button"
-                  className={linking ? 'on' : ''}
-                  onClick={() => !linking && setEditing({ ...editing, authSource: 'credential', credentialId: editing.credentialId || (credentials[0]?.id ?? '') })}
-                >
-                  {t('remote.form.authSource.shared')}
-                </button>
-                {/* Offered only in a group that carries a credential, or to show a host that
-                    still inherits from one that no longer does. */}
-                {(inheriting || (editingGroup && groupCred)) && (
-                  <button
-                    type="button"
-                    className={inheriting ? 'on' : ''}
-                    title={
-                      editingGroup && groupCred
-                        ? t('remote.form.authSource.groupTitle', { group: editingGroup.name, credential: groupCred.name })
+            {labs && (
+              <>
+                <div className="form-group">
+                  <label>
+                    {t('remote.form.group')}
+                    <span className="optional">{t('remote.form.optional')}</span>
+                  </label>
+                  <Select
+                    value={editingGroup ? editingGroup.id : ''}
+                    onChange={(e) => {
+                      if (e.target.value === NEW_GROUP) setGroupSheet({ kind: 'new' })
+                      else setEditing({ ...editing, groupId: e.target.value || undefined })
+                    }}
+                  >
+                    <option value="">{t('remote.form.groupNone')}</option>
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                    <option value={NEW_GROUP}>{t('remote.form.groupNew')}</option>
+                  </Select>
+                </div>
+                <div className="form-group">
+                  <label>{t('remote.form.jump')}</label>
+                  <Select
+                    value={jumpValue}
+                    disabled={isGateway && jumpValue === DIRECT_JUMP}
+                    onChange={(e) => setEditing({ ...editing, jumpHostId: pickJump(e.target.value) })}
+                  >
+                    {editingGroup?.jumpHostId && (
+                      <option value={INHERIT_JUMP}>
+                        {t('remote.form.jumpInherit', { group: editingGroup.name, name: groupJump?.name ?? t('remote.form.jumpMissing') })}
+                      </option>
+                    )}
+                    <option value={DIRECT_JUMP}>{t('remote.form.jumpDirect')}</option>
+                    {jumpUnknown && <option value={jumpValue}>{t('remote.form.jumpMissing')}</option>}
+                    {jumpChoices.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name}
+                      </option>
+                    ))}
+                  </Select>
+                  {jumpUnknown ? (
+                    <p className="help rv-error-text">{t('remote.form.jumpMissing')}</p>
+                  ) : (
+                    <p className="help">{isGateway ? t('remote.form.jumpIsGateway') : t('remote.form.jumpHelp')}</p>
+                  )}
+                </div>
+                {(formGateway || editing.vpnId) && (
+                  <VpnNeededField
+                    gateway={formGateway}
+                    value={vpnValue}
+                    autoUp={!!editing.vpnAutoUp}
+                    inherit={
+                      editingGroup?.vpnId
+                        ? { group: editingGroup.name, name: groupVpn?.name ?? t('remote.vpn.neededMissing'), autoUp: !!editingGroup.vpnAutoUp }
                         : undefined
                     }
-                    onClick={() => !inheriting && setEditing({ ...editing, authSource: 'group', credentialId: undefined })}
-                  >
-                    {t('remote.form.authSource.group')}
-                  </button>
+                    help={t('remote.vpn.neededHelp')}
+                    onChange={(value, autoUp) => {
+                      const vpnId = pickVpn(value)
+                      setEditing({ ...editing, vpnId, vpnAutoUp: vpnId ? autoUp : undefined })
+                    }}
+                  />
                 )}
+              </>
+            )}
+            {labs && (
+              <div className="form-group">
+                <label>{t('remote.form.authSource')}</label>
+                <div className="seg-control">
+                  <button type="button" className={source === 'own' ? 'on' : ''} onClick={() => source !== 'own' && setEditing(ownLoginFrom(editing))}>
+                    {t('remote.form.authSource.own')}
+                  </button>
+                  <button
+                    type="button"
+                    className={linking ? 'on' : ''}
+                    onClick={() => !linking && setEditing({ ...editing, authSource: 'credential', credentialId: editing.credentialId || (credentials[0]?.id ?? '') })}
+                  >
+                    {t('remote.form.authSource.shared')}
+                  </button>
+                  {/* Offered only in a group that carries a credential, or to show a host that
+                      still inherits from one that no longer does. */}
+                  {(inheriting || (editingGroup && groupCred)) && (
+                    <button
+                      type="button"
+                      className={inheriting ? 'on' : ''}
+                      title={
+                        editingGroup && groupCred
+                          ? t('remote.form.authSource.groupTitle', { group: editingGroup.name, credential: groupCred.name })
+                          : undefined
+                      }
+                      onClick={() => !inheriting && setEditing({ ...editing, authSource: 'group', credentialId: undefined })}
+                    >
+                      {t('remote.form.authSource.group')}
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-            {inheriting ? (
+            )}
+            {!labs && (linking || inheriting) ? (
+              // Set up with the features on: shown, not editable, and saved as it is.
+              shownCred ? (
+                <div className="form-group">
+                  <label>{t('remote.form.credential')}</label>
+                  <div className="rv-cred-summary">
+                    <span>{shownCred.name}</span>
+                    <span className="rv-cred-user">{shownCred.username}</span>
+                    <span className="chip">{t(AUTH_CHIP[shownCred.authType])}</span>
+                  </div>
+                  <p className="help">{t(inheriting ? 'remote.form.inheritHelp' : 'remote.form.credentialHelp')}</p>
+                </div>
+              ) : (
+                <p className="help rv-error-text">{t('remote.col.credentialMissing')}</p>
+              )
+            ) : inheriting ? (
               editingGroup && groupCred ? (
                 <div className="form-group">
                   <div className="rv-cred-summary">
@@ -1634,73 +1668,77 @@ export default function RemoteView({
               />
               <p className="help">{t('remote.form.claudePathHelp')}</p>
             </div>
-            <div className="form-group rv-toggle-row">
-              <label>{t('remote.form.favorite')}</label>
-              <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={!!editing.favorite}
-                  onChange={(e) => setEditing({ ...editing, favorite: e.target.checked })}
-                  aria-label={t('remote.form.favorite')}
-                />
-                <span className="toggle-track">
-                  <span className="toggle-thumb" />
-                </span>
-              </label>
-            </div>
-            <div className="form-group rv-toggle-row">
-              <label>{t('remote.form.production')}</label>
-              <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={!!editing.production}
-                  onChange={(e) => setEditing({ ...editing, production: e.target.checked })}
-                  aria-label={t('remote.form.production')}
-                />
-                <span className="toggle-track">
-                  <span className="toggle-thumb" />
-                </span>
-              </label>
-            </div>
-            <p className="help rv-toggle-help">{t('remote.form.productionHelp')}</p>
-            <div className="form-group">
-              <label>
-                {t('remote.form.tags')}<span className="optional">{t('remote.form.optional')}</span>
-              </label>
-              <input
-                className="text-input"
-                value={tagsText}
-                placeholder={t('remote.form.tagsPlaceholder')}
-                onChange={(e) => setTagsText(e.target.value)}
-              />
-              <p className="help">{t('remote.form.tagsHelp')}</p>
-            </div>
-            <div className="form-group">
-              <label>
-                {t('remote.form.notes')}<span className="optional">{t('remote.form.optional')}</span>
-              </label>
-              <textarea
-                className="text-input rv-notes-input"
-                value={editing.notes ?? ''}
-                rows={6}
-                maxLength={20000}
-                placeholder={t('remote.form.notesPlaceholder')}
-                ref={(el) => {
-                  if (el && focusNotesRef.current) {
-                    focusNotesRef.current = false
-                    el.focus()
-                    el.scrollIntoView({ block: 'nearest' })
-                  }
-                }}
-                onChange={(e) => setEditing({ ...editing, notes: e.target.value })}
-              />
-              <p className="help">{t('remote.form.notesHelp')}</p>
-            </div>
-            <PortForwardsEditor value={editing.forwards} onChange={(forwards) => setEditing({ ...editing, forwards })} />
-            {/* A gateway connects directly, so only a direct host offers VPNs (one that already
-                carries some keeps showing them, so they can be removed). */}
-            {(jumpValue === DIRECT_JUMP || (editing.vpns?.length ?? 0) > 0) && (
-              <VpnProfilesEditor value={editing.vpns} onChange={(vpns) => setEditing({ ...editing, vpns })} />
+            {labs && (
+              <>
+                <div className="form-group rv-toggle-row">
+                  <label>{t('remote.form.favorite')}</label>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={!!editing.favorite}
+                      onChange={(e) => setEditing({ ...editing, favorite: e.target.checked })}
+                      aria-label={t('remote.form.favorite')}
+                    />
+                    <span className="toggle-track">
+                      <span className="toggle-thumb" />
+                    </span>
+                  </label>
+                </div>
+                <div className="form-group rv-toggle-row">
+                  <label>{t('remote.form.production')}</label>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={!!editing.production}
+                      onChange={(e) => setEditing({ ...editing, production: e.target.checked })}
+                      aria-label={t('remote.form.production')}
+                    />
+                    <span className="toggle-track">
+                      <span className="toggle-thumb" />
+                    </span>
+                  </label>
+                </div>
+                <p className="help rv-toggle-help">{t('remote.form.productionHelp')}</p>
+                <div className="form-group">
+                  <label>
+                    {t('remote.form.tags')}<span className="optional">{t('remote.form.optional')}</span>
+                  </label>
+                  <input
+                    className="text-input"
+                    value={tagsText}
+                    placeholder={t('remote.form.tagsPlaceholder')}
+                    onChange={(e) => setTagsText(e.target.value)}
+                  />
+                  <p className="help">{t('remote.form.tagsHelp')}</p>
+                </div>
+                <div className="form-group">
+                  <label>
+                    {t('remote.form.notes')}<span className="optional">{t('remote.form.optional')}</span>
+                  </label>
+                  <textarea
+                    className="text-input rv-notes-input"
+                    value={editing.notes ?? ''}
+                    rows={6}
+                    maxLength={20000}
+                    placeholder={t('remote.form.notesPlaceholder')}
+                    ref={(el) => {
+                      if (el && focusNotesRef.current) {
+                        focusNotesRef.current = false
+                        el.focus()
+                        el.scrollIntoView({ block: 'nearest' })
+                      }
+                    }}
+                    onChange={(e) => setEditing({ ...editing, notes: e.target.value })}
+                  />
+                  <p className="help">{t('remote.form.notesHelp')}</p>
+                </div>
+                <PortForwardsEditor value={editing.forwards} onChange={(forwards) => setEditing({ ...editing, forwards })} />
+                {/* A gateway connects directly, so only a direct host offers VPNs (one that already
+                    carries some keeps showing them, so they can be removed). */}
+                {(jumpValue === DIRECT_JUMP || (editing.vpns?.length ?? 0) > 0) && (
+                  <VpnProfilesEditor value={editing.vpns} onChange={(vpns) => setEditing({ ...editing, vpns })} />
+                )}
+              </>
             )}
           </div>
         </Sheet>

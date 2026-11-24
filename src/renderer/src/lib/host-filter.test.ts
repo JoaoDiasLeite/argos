@@ -40,4 +40,10 @@ describe('filterHosts', () => {
     expect(filterHosts(list, '', ['prod']).map((x) => x.name)).toEqual(['db', 'web'])
     expect(filterHosts(list, '', ['PROD', 'eu']).map((x) => x.name)).toEqual(['web'])
   })
+  it('with the extras off, keeps the saved order and ignores tags', () => {
+    expect(filterHosts(list, '', [], false).map((x) => x.name)).toEqual(['web', 'db', 'lab', 'plain'])
+    expect(filterHosts(list, 'EU', [], false).map((x) => x.name)).toEqual([])
+    expect(filterHosts(list, '', ['prod'], false).map((x) => x.name)).toEqual(['web', 'db', 'lab', 'plain'])
+    expect(filterHosts(list, 'db', [], false).map((x) => x.name)).toEqual(['db'])
+  })
 })

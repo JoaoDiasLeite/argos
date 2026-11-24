@@ -270,6 +270,8 @@ export interface AppConfig {
   ops: OpsPrefs
   companion: CompanionPrefs
   claudeSettings: Record<string, unknown>
+  /** The hidden "experimental features" switch. Absent is off. Read through useLabs(). */
+  labs?: boolean
 }
 
 export interface SourceAccount {
@@ -1549,11 +1551,11 @@ export interface RemoteShellSecretHintEvent {
 
 export type RemoteShellSendSecretResult =
   | { ok: true }
-  | { ok: false; reason: 'unknown-shell' | 'not-a-host-shell' | 'no-secret' | 'no-prompt' | 'rate-limited' }
+  | { ok: false; reason: 'unknown-shell' | 'not-a-host-shell' | 'no-secret' | 'no-prompt' | 'rate-limited' | 'labs-off' }
 
 export type RemoteShellElevateResult =
   | { ok: true }
-  | { ok: false; reason: 'unknown-shell' | 'not-a-host-shell' | 'no-secret' | 'rate-limited' }
+  | { ok: false; reason: 'unknown-shell' | 'not-a-host-shell' | 'no-secret' | 'rate-limited' | 'labs-off' }
 
 // ─── Auto-update ────────────────────────────────────────────────────────────
 
@@ -1724,6 +1726,10 @@ declare global {
        * Returns its own unsubscribe.
        */
       onUiPrefs: (cb: (ui: UiPrefs) => void) => () => void
+      /** Turns the experimental features on or off; resolves to the saved value. */
+      setLabs: (on: boolean) => Promise<boolean>
+      /** Fires in every window when the experimental features are turned on or off. */
+      onLabs: (cb: (on: boolean) => void) => () => void
       setSystemPrefs: (
         prefs: Partial<SystemPrefs>
       ) => Promise<{ system: SystemPrefs; registeredShortcut: string }>

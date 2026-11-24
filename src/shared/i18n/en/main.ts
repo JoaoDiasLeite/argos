@@ -321,5 +321,6 @@ export default {
   'profile.error.hostsUnreadable': 'The servers saved on this machine could not be read, so nothing was imported: {error}',
   'profile.error.notPreviewed': 'Choose the file with Import… first.',
   'profile.skip.tooLong': 'The folder name would be longer than {max} characters, which Windows does not allow.',
-  'profile.skip.files': '{count} files could not be written: {error}'
+  'profile.skip.files': '{count} files could not be written: {error}',
+  'labs.off': 'This is an experimental feature, and experimental features are off (Settings, About).',
 } satisfies Record<string, string>

@@ -2,6 +2,7 @@ import type { ElevateCommand, ElevationMode, SshAuthType, SshKeyInfo } from '../
 import Select from './Select'
 import type { MessageKey } from '../../../shared/i18n'
 import { useT } from '../i18n'
+import { useLabs } from '../hooks/useLabs'
 
 /**
  * The login part of a form: username, auth type with its password or key, and elevation.
@@ -62,6 +63,7 @@ interface Props {
 
 export default function LoginFields({ value, onChange, saved, keys, secretsEncrypted }: Props) {
   const t = useT()
+  const labs = useLabs()
   // The login password and passphrase count only for the auth type being edited (main drops
   // the other), the elevation password only while it was saved in `other` mode (otherwise
   // hasElevation comes from the login password).
@@ -95,7 +97,8 @@ export default function LoginFields({ value, onChange, saved, keys, secretsEncry
             placeholder={keptPlaceholder(value.password)}
             onChange={(e) => onChange({ password: e.target.value })}
           />
-          <p className="help">{t('remote.form.passwordAskHelp')}</p>
+          {/* Asking on connect is experimental: without it an empty password fails as before. */}
+          {labs && <p className="help">{t('remote.form.passwordAskHelp')}</p>}
           {!secretsEncrypted && <p className="help">{t('remote.form.passwordPlain')}</p>}
           {canRemovePassword && value.password === undefined && (
             <button type="button" className="btn-ghost small rv-remove-secret" onClick={() => onChange({ password: null })}>
@@ -151,60 +154,65 @@ export default function LoginFields({ value, onChange, saved, keys, secretsEncry
           </div>
         </>
       )}
-      <div className="form-group">
-        <label>{t('remote.form.elevation')}</label>
-        <div className="seg-control">
-          {(['login', 'other', 'none'] as ElevationMode[])
-            // Reusing the login password only makes sense when there is one.
-            .filter((m) => m !== 'login' || value.authType === 'password')
-            .map((m) => (
-              <button
-                type="button"
-                key={m}
-                className={shownElevation(value) === m ? 'on' : ''}
-                // A password typed for `other` is not carried into another mode (main
-                // would drop it anyway); a requested removal still applies on save.
-                onClick={() => {
-                  // Re-clicking the current mode must not forget what the (still
-                  // mounted) password field holds.
-                  if (shownElevation(value) === m) return
-                  onChange({ elevation: m, elevationPassword: value.elevationPassword === null ? null : undefined })
-                }}
-              >
-                {t(ELEVATION_LABEL[m])}
-              </button>
-            ))}
-        </div>
-        <p className="help">{t('remote.form.elevationHelp')}</p>
-      </div>
-      {shownElevation(value) === 'other' && (
-        <div className="form-group">
-          <label>{t('remote.form.elevationPassword')}</label>
-          <input
-            className="text-input"
-            type="password"
-            aria-label={t('remote.form.elevationPassword')}
-            placeholder={value.elevationPassword === null ? t('remote.form.removed') : canRemoveElevation ? t('remote.form.unchanged') : ''}
-            onChange={(e) => onChange({ elevationPassword: e.target.value })}
-          />
-          {!secretsEncrypted && <p className="help">{t('remote.form.elevationPlain')}</p>}
-          {canRemoveElevation && value.elevationPassword === undefined && (
-            <button type="button" className="btn-ghost small rv-remove-secret" onClick={() => onChange({ elevationPassword: null })}>
-              {t('remote.form.removeElevationPassword')}
-            </button>
+      {/* Elevation is an experimental feature: with it off the host keeps what it has. */}
+      {labs && (
+        <>
+          <div className="form-group">
+            <label>{t('remote.form.elevation')}</label>
+            <div className="seg-control">
+              {(['login', 'other', 'none'] as ElevationMode[])
+                // Reusing the login password only makes sense when there is one.
+                .filter((m) => m !== 'login' || value.authType === 'password')
+                .map((m) => (
+                  <button
+                    type="button"
+                    key={m}
+                    className={shownElevation(value) === m ? 'on' : ''}
+                    // A password typed for `other` is not carried into another mode (main
+                    // would drop it anyway); a requested removal still applies on save.
+                    onClick={() => {
+                      // Re-clicking the current mode must not forget what the (still
+                      // mounted) password field holds.
+                      if (shownElevation(value) === m) return
+                      onChange({ elevation: m, elevationPassword: value.elevationPassword === null ? null : undefined })
+                    }}
+                  >
+                    {t(ELEVATION_LABEL[m])}
+                  </button>
+                ))}
+            </div>
+            <p className="help">{t('remote.form.elevationHelp')}</p>
+          </div>
+          {shownElevation(value) === 'other' && (
+            <div className="form-group">
+              <label>{t('remote.form.elevationPassword')}</label>
+              <input
+                className="text-input"
+                type="password"
+                aria-label={t('remote.form.elevationPassword')}
+                placeholder={value.elevationPassword === null ? t('remote.form.removed') : canRemoveElevation ? t('remote.form.unchanged') : ''}
+                onChange={(e) => onChange({ elevationPassword: e.target.value })}
+              />
+              {!secretsEncrypted && <p className="help">{t('remote.form.elevationPlain')}</p>}
+              {canRemoveElevation && value.elevationPassword === undefined && (
+                <button type="button" className="btn-ghost small rv-remove-secret" onClick={() => onChange({ elevationPassword: null })}>
+                  {t('remote.form.removeElevationPassword')}
+                </button>
+              )}
+            </div>
           )}
-        </div>
+          <div className="form-group">
+            <label>{t('remote.form.elevateCommand')}</label>
+            <Select value={value.elevateCommand ?? 'sudo -i'} onChange={(e) => onChange({ elevateCommand: e.target.value as ElevateCommand })}>
+              {ELEVATE_COMMANDS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </>
       )}
-      <div className="form-group">
-        <label>{t('remote.form.elevateCommand')}</label>
-        <Select value={value.elevateCommand ?? 'sudo -i'} onChange={(e) => onChange({ elevateCommand: e.target.value as ElevateCommand })}>
-          {ELEVATE_COMMANDS.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </Select>
-      </div>
     </>
   )
 }

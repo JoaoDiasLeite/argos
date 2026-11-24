@@ -249,6 +249,10 @@ const settings: Record<keyof typeof en, string> = {
   'about.changelog.label': 'Novidades',
   'about.changelog.hint': 'O que mudou em cada versão.',
   'about.changelog.button': 'Novidades',
+  'about.labs.label': 'Funcionalidades experimentais',
+  'about.labs.hint': 'Funções remotas ainda por acabar: credenciais, túneis, gateways e VPN. Desligar esconde estas funções, mas os servidores já configurados continuam a ligar como estão.',
+  'about.labs.tapsLeft.one': 'Falta {n} toque',
+  'about.labs.tapsLeft.other': 'Faltam {n} toques',
   'about.author': 'Criado por João Dias Leite',
   'about.license': '© 2026 · Licença MIT · github.com/JoaoDiasLeite/argos',
 
