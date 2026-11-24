@@ -205,7 +205,8 @@ describe('host secrets allowlist', () => {
     production: true,
     tags: ['prod'],
     notes: 'n',
-    credentialId: 'cred_1'
+    credentialId: 'cred_1',
+    forwards: [{ id: 'f1', label: 'db', localPort: 0, remoteHost: 'localhost', remotePort: 5432 }]
   }
 
   it('keeps the public and secret field lists disjoint and covering every host field', () => {

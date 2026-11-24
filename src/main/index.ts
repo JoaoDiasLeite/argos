@@ -127,6 +127,16 @@ import {
   remoteShellElevate,
   setSecretHintSink
 } from './remote-shell'
+import {
+  listActiveForwards,
+  reconcileHostForwards,
+  setForwardsChangedSink,
+  startAutoForwards,
+  startForward,
+  stopAllForwards,
+  stopForward,
+  stopHostForwards
+} from './port-forwards'
 import { remoteContainers } from './remote-containers'
 import { localContainers } from './local-containers'
 import { listDistros, testDistro, testDistroClaude, runWslOneShot, uncToWslPath, wslHistory, wslHome, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths, wslShareRoot } from './wsl'
@@ -863,6 +873,7 @@ app.on('window-all-closed', () => {
   killAllTerminals()
   endAllTerminalOps('the terminals were closed')
   remoteShellKillAll()
+  stopAllForwards()
   sftpDisconnectAll()
   if (!hasTray && process.platform !== 'darwin') app.quit()
 })
@@ -876,6 +887,7 @@ app.on('before-quit', () => {
   opsExecutor?.abortAll('app quit')
   endAllTerminalOps('app quit')
   void stopOpsBridge()
+  stopAllForwards()
   sftpDisconnectAll()
 })
 
@@ -2904,11 +2916,17 @@ ipcMain.handle('ssh:save', (_, host: SshHostInput) => {
   const res = saveHost(host)
   if (res.ok && prev) {
     const next = getHost(prev.id)
-    if (!next || hostConnectionChanged(prev, next)) void sftpDisconnect(prev.id)
+    if (!next || hostConnectionChanged(prev, next)) {
+      // Explicitly as well as through the connection's close: a connection the pool already
+      // let go of is not ended by sftpDisconnect, and tunnels riding it would stay up.
+      stopHostForwards(prev.id)
+      void sftpDisconnect(prev.id)
+    } else reconcileHostForwards(prev.id)
   }
   return res
 })
 ipcMain.handle('ssh:delete', (_, id: string) => {
+  stopHostForwards(id)
   void sftpDisconnect(id)
   return deleteHost(id)
 })
@@ -2921,7 +2939,10 @@ ipcMain.handle('ssh:credential-save', (_, cred: SshCredentialInput) => {
   if (res.ok && prev) {
     const next = getStoredCredential(prev.id)
     if (!next || credentialConnectionChanged(prev, next)) {
-      for (const hostId of hostIdsUsingCredential(prev.id)) void sftpDisconnect(hostId)
+      for (const hostId of hostIdsUsingCredential(prev.id)) {
+        stopHostForwards(hostId)
+        void sftpDisconnect(hostId)
+      }
     }
   }
   return res
@@ -2938,6 +2959,25 @@ ipcMain.handle('ssh:secret-flags', (_, hostId: unknown) => {
   const { hasPassword, hasPassphrase, hasElevation } = toPublicHost(h)
   return { hasPassword, hasPassphrase, hasElevation }
 })
+// Local port forwards (port-forwards.ts). Ids only cross here; main reads the forward from
+// the saved host. Starting may connect and so ask for a password: main window only, as for
+// the other prompts of a Remote Session.
+ipcMain.handle('ssh:forward-start', (e, hostId: unknown, forwardId: unknown) => {
+  if (e.sender !== mainWindow?.webContents) return { ok: false, error: 'not allowed' }
+  if (typeof hostId !== 'string' || typeof forwardId !== 'string') return { ok: false, error: 'bad request' }
+  return startForward(hostId, forwardId)
+})
+ipcMain.handle('ssh:forward-stop', (_, hostId: unknown, forwardId: unknown) => {
+  if (typeof hostId !== 'string' || typeof forwardId !== 'string') return { ok: false }
+  return stopForward(hostId, forwardId)
+})
+ipcMain.handle('ssh:forwards-list', () => listActiveForwards())
+// The host's Remote Session has connected: its autoStart forwards start, once each.
+ipcMain.handle('ssh:forwards-autostart', (e, hostId: unknown) => {
+  if (e.sender !== mainWindow?.webContents || typeof hostId !== 'string') return []
+  return startAutoForwards(hostId)
+})
+setForwardsChangedSink((list) => send('ssh:forwards-changed', list))
 ipcMain.handle('ssh:keys-list', () => listSshKeys())
 ipcMain.handle('ssh:keys-generate', (_, name: string, comment?: string) => generateKey(name, comment))
 
@@ -2958,7 +2998,11 @@ ipcMain.handle('sftp:upload', (_, hostId: string, dir: string, localPaths?: stri
 ipcMain.handle('sftp:history', (_, hostId: string) => sftpHistory(hostId))
 ipcMain.handle('remote:containers', (_, hostId: string) => remoteContainers(hostId))
 ipcMain.handle('local:containers', () => localContainers())
-ipcMain.handle('sftp:disconnect', (_, hostId: string) => sftpDisconnect(hostId))
+// The last session on the host closed: its tunnels go with the connection.
+ipcMain.handle('sftp:disconnect', (_, hostId: string) => {
+  stopHostForwards(hostId)
+  return sftpDisconnect(hostId)
+})
 
 // ─── WSL ──────────────────────────────────────────────────────────────────
 

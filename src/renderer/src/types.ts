@@ -729,6 +729,8 @@ export interface SshHostPublic {
   favorite?: boolean
   production?: boolean
   tags?: string[]
+  /** Local port forwards (tunnels); see src/main/port-forwards-pure.ts. */
+  forwards?: PortForward[]
   notes?: string
   /** The shared credential this host logs in with. When set, the username, auth type, key
    *  path, elevation and the flags below are the credential's. */
@@ -763,6 +765,7 @@ export interface SshHostInput {
   favorite?: boolean
   production?: boolean
   tags?: string[]
+  forwards?: PortForward[]
   notes?: string
   /** Log in with this shared credential: main then ignores the login fields above. */
   credentialId?: string
@@ -799,6 +802,32 @@ export interface SshCredentialInput {
 }
 
 export type SshCredentialsWriteResult = { ok: true; credentials: SshCredentialPublic[] } | { ok: false; error: string }
+
+/** A local port forward kept with a host (src/main/port-forwards-pure.ts). */
+export interface PortForward {
+  id: string
+  label: string
+  /** 0 picks a free port each time it starts. */
+  localPort: number
+  /** As the server resolves it: `localhost` is the server itself. */
+  remoteHost: string
+  remotePort: number
+  autoStart?: boolean
+}
+
+/** A tunnel main knows about (`ssh:forwards-list`, `ssh:forwards-changed`). `active` false is
+ *  one that stopped on its own, with `error` saying why. */
+export interface ForwardStatus {
+  hostId: string
+  forwardId: string
+  localPort: number
+  connections: number
+  startedAt: number
+  active: boolean
+  error?: string
+}
+
+export type ForwardStartResult = { ok: true; localPort: number } | { ok: false; error: string }
 
 export interface SshKeyInfo {
   name: string
@@ -1856,6 +1885,11 @@ declare global {
       sshKeysGenerate: (name: string, comment?: string) => Promise<GenerateKeyResult>
       sshSecretStorage: () => Promise<SecretStorageState>
       sshSecretFlags: (hostId: string) => Promise<HostSecretFlags | null>
+      forwardStart: (hostId: string, forwardId: string) => Promise<ForwardStartResult>
+      forwardStop: (hostId: string, forwardId: string) => Promise<{ ok: boolean }>
+      forwardsList: () => Promise<ForwardStatus[]>
+      forwardsAutoStart: (hostId: string) => Promise<{ forwardId: string; result: ForwardStartResult }[]>
+      onForwardsChanged: (cb: (list: ForwardStatus[]) => void) => () => void
 
       // SFTP (Remote Session file browser)
       sftpConnect: (hostId: string) => Promise<{ ok: boolean; home?: string; cwd?: string; error?: string }>

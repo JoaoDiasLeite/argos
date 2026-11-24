@@ -13,6 +13,8 @@ import {
   type RemoteContainerTarget
 } from '../types'
 import ContainersPanel, { type ContainerSource } from '../components/ContainersPanel'
+import PortForwardsEditor from '../components/PortForwardsEditor'
+import ActiveTunnels from '../components/ActiveTunnels'
 import Menu, { MoreIcon } from '../components/Menu'
 import Sheet from '../components/Sheet'
 import Markdown from '../components/Markdown'
@@ -113,6 +115,7 @@ function hostToInput(h: SshHostPublic): SshHostInput {
     favorite: h.favorite,
     production: h.production,
     tags: h.tags,
+    forwards: h.forwards,
     notes: h.notes,
     credentialId: h.credentialId
   }
@@ -1006,6 +1009,7 @@ export default function RemoteView({
           <h1>{t('remote.title')}</h1>
           <p className="rv-sub">{t('remote.sub')}</p>
         </div>
+        <ActiveTunnels hosts={hosts} />
         <button type="button" className="btn-ghost" onClick={() => setScreen('keys')}>
           <KeyIcon />
           {t('remote.keys.title')}
@@ -1381,6 +1385,7 @@ export default function RemoteView({
               />
               <p className="help">{t('remote.form.notesHelp')}</p>
             </div>
+            <PortForwardsEditor value={editing.forwards} onChange={(forwards) => setEditing({ ...editing, forwards })} />
           </div>
         </Sheet>
       )}

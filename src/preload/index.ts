@@ -408,6 +408,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('ssh:keys-generate', name, comment),
   sshSecretStorage: () => ipcRenderer.invoke('ssh:secret-storage'),
   sshSecretFlags: (hostId: string) => ipcRenderer.invoke('ssh:secret-flags', hostId),
+  // Local port forwards: ids only; main reads the forward from the saved host.
+  forwardStart: (hostId: string, forwardId: string) => ipcRenderer.invoke('ssh:forward-start', hostId, forwardId),
+  forwardStop: (hostId: string, forwardId: string) => ipcRenderer.invoke('ssh:forward-stop', hostId, forwardId),
+  forwardsList: () => ipcRenderer.invoke('ssh:forwards-list'),
+  forwardsAutoStart: (hostId: string) => ipcRenderer.invoke('ssh:forwards-autostart', hostId),
+  onForwardsChanged: (cb: (list: unknown) => void) => {
+    const fn = (_: unknown, list: unknown) => cb(list)
+    ipcRenderer.on('ssh:forwards-changed', fn)
+    return () => ipcRenderer.removeListener('ssh:forwards-changed', fn)
+  },
 
   // SFTP (Remote Session file browser)
   sftpConnect: (hostId: string) => ipcRenderer.invoke('sftp:connect', hostId),
