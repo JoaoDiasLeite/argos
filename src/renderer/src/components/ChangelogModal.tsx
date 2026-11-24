@@ -18,9 +18,21 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
-    version: '3.9.0',
+    version: '3.10.0',
     date: '2026-11-24',
     tag: 'latest',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Argos runs on macOS: each release now ships a dmg for Macs with Apple Silicon. The app is not signed with an Apple Developer ID, so the first launch needs Open Anyway in System Settings → Privacy & Security, and it does not install its own updates: when a new version is out it says so once and opens the download page.'
+        ]
+      }
+    ]
+  },
+  {
+    version: '3.9.0',
+    date: '2026-11-24',
     sections: [
       {
         title: 'Features',
