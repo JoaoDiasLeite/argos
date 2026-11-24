@@ -493,13 +493,19 @@ function hasCommand(cmd: string): boolean {
 export function resolveWindowsExe(name: string): string {
   if (process.platform !== 'win32' || path.isAbsolute(name)) return name
   const system32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32')
+  // A bare name (`ssh`, as the remote chat terminal asks for) is looked up as `ssh.exe` too:
+  // left to node-pty, it failed with "File not found" when the cwd was a home folder whose
+  // name has a non-ASCII letter.
+  const names = path.extname(name) ? [name] : [name, `${name}.exe`]
   for (const dir of [system32, ...(process.env.PATH || '').split(';')]) {
     if (!dir) continue
-    try {
-      const full = path.join(dir, name)
-      if (fs.statSync(full).isFile()) return full
-    } catch {
-      // missing or unreadable PATH entry — keep looking
+    for (const n of names) {
+      try {
+        const full = path.join(dir, n)
+        if (fs.statSync(full).isFile()) return full
+      } catch {
+        // missing or unreadable PATH entry — keep looking
+      }
     }
   }
   return name
