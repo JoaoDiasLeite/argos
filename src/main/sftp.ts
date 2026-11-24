@@ -22,6 +22,8 @@ import {
 } from './connect-auth-pure'
 import { isSafeRemotePath, parseHistoryLines, SingleFlightCache } from './sftp-pure'
 import { t } from './i18n'
+import { elevationSecret } from './secret-prompt-pure'
+import { ensureVpn, setVpnSecretSource, type VpnDownInfo } from './vpn-exec'
 
 export { isSafeRemotePath, parseHistoryLines }
 
@@ -48,7 +50,8 @@ interface Session {
   sftp: SFTPWrapper
 }
 
-type SessionResult = { ok: true; session: Session } | { ok: false; error: string }
+/** `vpnDown`: the server's VPN on its gateway is down and was not brought up (see ensureVpn). */
+type SessionResult = { ok: true; session: Session } | { ok: false; error: string; vpnDown?: VpnDownInfo }
 
 // One entry per host id, holding the *promise* of the session rather than the session:
 // opening a server tab fires sftpConnect, sftpList and the terminal's getRemoteClient at
@@ -113,6 +116,21 @@ export function getHostWithSessionSecrets(hostId: string): EffectiveSshHost | nu
   return h ? withSessionSecrets(h, attempts.get(hostId)?.secrets) : null
 }
 
+// A gateway's VPN commands answer sudo with the gateway's elevation secret, the same choice
+// as the terminal's Send password, counting a password typed at its connect prompt.
+setVpnSecretSource((gatewayId) => {
+  const h = getHostWithSessionSecrets(gatewayId)
+  return h ? elevationSecret(h) : undefined
+})
+
+/**
+ * Hosts whose next open should bring their VPN up even if they do not say so: the Remote
+ * Session's "bring the VPN up and try again". Kept here and consumed by openSession rather
+ * than passed along, as the attempt may be started by another caller (the terminal, a
+ * listing) that joins the same single-flight entry.
+ */
+const vpnUpWanted = new Set<string>()
+
 // Connect (or reuse a live or in-flight connection) for a host id and open its SFTP
 // subsystem. Whoever starts the attempt decides whether it may ask: the calls that serve the
 // user's Remote Session are interactive, the ops agent's are not. A call that joins an
@@ -146,10 +164,10 @@ async function openSession(hostId: string, evict: () => void, interactive: boole
   attempts.set(hostId, attempt)
   const signal = attempt.abort.signal
   const asker = interactive ? askHostSecret : null
-  const fail = (error: string): SessionResult => {
+  const fail = (error: string, vpnDown?: VpnDownInfo): SessionResult => {
     dropAttempt(hostId, attempt)
     endRide(hostId, ride)
-    return { ok: false, error }
+    return vpnDown ? { ok: false, error, vpnDown } : { ok: false, error }
   }
   // The gateway this attempt rides, recorded as soon as it is reached so a gateway in use by
   // an attempt still opening is not released under it.
@@ -159,10 +177,24 @@ async function openSession(hostId: string, evict: () => void, interactive: boole
   // password when this call may ask), so its prompt comes before the target's. A jump that does
   // not resolve fails here, before anything waits on a pooled entry.
   const gw = await reachGateway(hostId, !!asker)
-  if (!gw.ok) return fail(gw.error)
+  if (!gw.ok) return fail(!interactive && gw.vpn ? t('main.vpn.notReadyForAgent') : gw.error)
   if (gw.gateway) {
     ride = gw.gateway.id
     ridesOn.set(hostId, ride)
+  }
+  if (signal.aborted) return fail(t('main.ssh.connectCancelled'))
+
+  // The VPN the server needs on its gateway, before anything is asked of the user for the
+  // server itself. Only a call someone is there for may bring it up (the server says so, or
+  // the user asked to); the ops agent's calls only look, and hear nothing about VPNs: what
+  // the gateway runs stays out of the agent's context.
+  const forceUp = vpnUpWanted.delete(hostId)
+  if (gw.gateway?.vpn) {
+    const v = await ensureVpn(gw.gateway.conn, gw.gateway, gw.gateway.vpn.profile, {
+      bringUp: interactive && (gw.gateway.vpn.autoUp || forceUp),
+      signal
+    })
+    if (!v.ok) return interactive ? fail(v.error, v.vpnDown) : fail(t('main.vpn.notReadyForAgent'))
   }
   if (signal.aborted) return fail(t('main.ssh.connectCancelled'))
 
@@ -386,6 +418,17 @@ function releaseGateway(gatewayId: string): void {
   endSession(gatewayId)
 }
 
+/** Whether a host has a pooled connection, live or still opening. For vpn-gateway.ts, which
+ *  closes again a gateway connection it had to open for a VPN command. */
+export function hasPooledSession(hostId: string): boolean {
+  return sessions.has(hostId)
+}
+
+/** Closes a host's pooled connection unless a session tab holds it or a server rides it. */
+export function releaseUnusedSession(hostId: string): void {
+  releaseGateway(hostId)
+}
+
 /** A rider's session is over (closed, or its attempt failed): forget the ride, and release
  *  the gateway if that was the last thing using it. Only its own ride: a newer attempt for
  *  the same host may already have recorded another. */
@@ -398,11 +441,15 @@ function endRide(hostId: string, gatewayId: string | undefined): void {
 // sftpList and sftpRead are shared with the ops agent and ask only when told to; the other
 // calls below serve the user's Remote Session alone, so they may ask (`true`).
 export async function sftpConnect(
-  hostId: string
-): Promise<{ ok: boolean; home?: string; cwd?: string; error?: string }> {
+  hostId: string,
+  opts: { vpnUp?: boolean } = {}
+): Promise<{ ok: boolean; home?: string; cwd?: string; error?: string; vpnDown?: VpnDownInfo }> {
   heldByUser.add(hostId)
+  if (opts.vpnUp === true) vpnUpWanted.add(hostId)
   const res = await getSession(hostId, true)
-  if (!res.ok) return { ok: false, error: res.error }
+  // Not left for a later attempt when this call joined one already past its VPN check.
+  vpnUpWanted.delete(hostId)
+  if (!res.ok) return res.vpnDown ? { ok: false, error: res.error, vpnDown: res.vpnDown } : { ok: false, error: res.error }
   return new Promise((resolve) => {
     res.session.sftp.realpath('.', (err, absPath) => {
       if (err) {

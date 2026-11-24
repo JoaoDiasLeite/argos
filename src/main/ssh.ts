@@ -22,6 +22,7 @@ import {
   type SshGroup,
   type SshGroupInput,
   groupJumpLookup,
+  groupVpnLookup,
   hostIdsTakingGroupJump
 } from './ssh-group-pure'
 import {
@@ -64,6 +65,8 @@ import {
   type JumpSaveProblem
 } from './ssh-jump-pure'
 import type { Duplex } from 'stream'
+import { checkVpns, groupVpnProblem, resolveVpn, usableVpns, vpnProblemKey, vpnSaveProblem, type VpnProfile, type VpnResolveProblem } from './vpn-pure'
+import { ensureVpn } from './vpn-exec'
 
 export type { SshAuthType, SshHost, SshHostPublic } from './ssh-host-pure'
 export type { EffectiveSshHost, SshCredential, SshCredentialInput, SshCredentialPublic, StoredSshHost } from './ssh-credential-pure'
@@ -155,11 +158,26 @@ export function listHosts(): SshHostPublic[] {
     // Forwards are re-checked on the way out: an imported host never went through saveHost.
     const own = h.forwards === undefined ? h : { ...h, forwards: usableForwards(h.forwards) }
     const eff = resolveHostAuth(own, credentials, groups).effective
-    const pub = withCredentialInfo(toPublicHost(eff), eff)
+    const pub0 = withCredentialInfo(toPublicHost(eff), eff)
+    // Only profiles that pass the check are shown (an import never went through the save).
+    const pub = h.vpns === undefined ? pub0 : { ...pub0, vpns: usableVpns(h.vpns) }
     // The gateway's name for the "via" hint, or that the one it names cannot be used.
     const jump = resolveJump(h, stored, groupJumpLookup(groups))
     if (!jump.ok) return { ...pub, jumpMissing: true }
-    return jump.jump ? { ...pub, jumpHostName: jump.jump.name, jumpViaId: jump.jump.id, jumpSource: jump.source } : pub
+    // The VPN it needs on that gateway, or that the one it asks for is not there (a group's
+    // VPN on a server that connects directly cannot be reached: the connect refuses it).
+    const vpn = resolveVpn(h, stored, groupJumpLookup(groups), groupVpnLookup(groups))
+    if (!jump.jump) return vpn.ok ? pub : { ...pub, vpnMissing: true }
+    const withJump = { ...pub, jumpHostName: jump.jump.name, jumpViaId: jump.jump.id, jumpSource: jump.source }
+    if (!vpn.ok) return { ...withJump, vpnMissing: true }
+    if (!vpn.vpn) return withJump
+    return {
+      ...withJump,
+      vpnViaId: vpn.vpn.id,
+      vpnName: vpn.vpn.name,
+      vpnSource: vpn.vpnSource === 'group' ? ('group' as const) : ('host' as const),
+      vpnAuto: vpn.autoUp
+    }
   })
 }
 
@@ -181,11 +199,34 @@ function checkJumpOnSave(next: StoredSshHost): string | null {
   const read = hostStore.read()
   if (!read.ok) return null
   const after = read.hosts.some((h) => h.id === next.id) ? read.hosts.map((h) => (h.id === next.id ? next : h)) : [...read.hosts, next]
-  const groupJumpOf = groupJumpLookup(readGroupsOrEmpty())
+  const groups = readGroupsOrEmpty()
+  const groupJumpOf = groupJumpLookup(groups)
   const problem = jumpSaveProblem(next.id, after, groupJumpOf)
-  if (!problem) return null
+  if (!problem) {
+    // The server's own VPN must be one of its gateway's.
+    const vpnProblem = vpnSaveProblem(next.id, after, groupJumpOf, groupVpnLookup(groups))
+    return vpnProblem ? vpnResolveMessage(vpnProblem) : null
+  }
   const named = resolveJump(next, after, groupJumpOf)
   return jumpProblemMessage(problem, after, named.ok ? undefined : named.jumpHostId, hostIdsUsingJump(next.id, after, groupJumpOf).length)
+}
+
+/** The message for a VPN choice that does not resolve. */
+function vpnResolveMessage(problem: 'vpnNoGateway' | 'vpnMissing'): string {
+  return t(problem === 'vpnNoGateway' ? 'main.vpn.noGateway' : 'main.vpn.missing')
+}
+
+/** The VPN profiles a host is saved with, or the save's error naming the one at fault. */
+function checkedVpns(value: unknown): { ok: true; vpns: VpnProfile[] } | { ok: false; error: string } {
+  const res = checkVpns(value)
+  if (res.ok) return res
+  return { ok: false, error: t(vpnProblemKey(res.problem), { n: (res.index ?? 0) + 1 }) }
+}
+
+/** `fields` with the checked VPN profiles in place, an empty list dropped. */
+function withVpns<T extends { vpns?: VpnProfile[] }>(fields: T, vpns: VpnProfile[]): void {
+  if (vpns.length) fields.vpns = vpns
+  else delete fields.vpns
 }
 
 function genId(): string {
@@ -225,6 +266,9 @@ export function saveHost(raw: SshHostInput): HostsWriteResult {
   if (!forwards.ok) return forwards
   if (forwards.forwards.length) fields.forwards = forwards.forwards
   else delete fields.forwards
+  const vpns = checkedVpns(raw.vpns)
+  if (!vpns.ok) return vpns
+  withVpns(fields, vpns.vpns)
   // The id is settled before the write so the jump check can place the host in the list.
   const id = fields.id || genId()
   const jumpError = checkJumpOnSave({ ...fields, id })
@@ -262,6 +306,9 @@ function saveLinkedHost(raw: SshHostInput, credentialId: string): HostsWriteResu
   const fields = { ...stripCredentialAuth(cleaned), credentialId }
   if (forwards.forwards.length) fields.forwards = forwards.forwards
   else delete fields.forwards
+  const vpns = checkedVpns(raw.vpns)
+  if (!vpns.ok) return vpns
+  withVpns(fields, vpns.vpns)
   const id = fields.id || genId()
   const jumpError = checkJumpOnSave({ ...fields, id })
   if (jumpError) return { ok: false, error: jumpError }
@@ -306,6 +353,9 @@ function saveInheritingHost(raw: SshHostInput): HostsWriteResult {
   const fields = { ...stripCredentialAuth(cleaned), groupId, authSource: 'group' as const, credentialId: undefined }
   if (forwards.forwards.length) fields.forwards = forwards.forwards
   else delete fields.forwards
+  const vpns = checkedVpns(raw.vpns)
+  if (!vpns.ok) return vpns
+  withVpns(fields, vpns.vpns)
   const id = fields.id || genId()
   const jumpError = checkJumpOnSave({ ...fields, id })
   if (jumpError) return { ok: false, error: jumpError }
@@ -488,6 +538,8 @@ export function saveGroup(raw: SshGroupInput): GroupsWriteResult {
   const list = groups.groups
   const jumpError = checkGroupJump(group, list)
   if (jumpError) return { ok: false, error: jumpError }
+  const vpnProblem = groupVpnProblem(group, hostStore.readOrEmpty())
+  if (vpnProblem) return { ok: false, error: t(vpnProblem === 'vpnNoGateway' ? 'main.vpn.groupNoGateway' : 'main.vpn.groupMissing') }
   const idx = list.findIndex((g) => g.id === id)
   if (idx >= 0) list[idx] = group
   else list.push(group)
@@ -682,7 +734,15 @@ export function setJumpPool(pool: JumpPool): void {
   jumpPool = pool
 }
 
-export type JumpLookup = { ok: true; jump: EffectiveSshHost | null } | { ok: false; error: string }
+/** The VPN a server needs on its gateway, and whether to bring it up without asking. */
+export interface NeededVpn {
+  profile: VpnProfile
+  autoUp: boolean
+}
+
+/** `vpn`: the failure is about the VPN the server needs (one its gateway does not have). The
+ *  ops agent's connects hear a generic message instead, as VPN state stays out of its context. */
+export type JumpLookup = { ok: true; jump: EffectiveSshHost | null; vpn: NeededVpn | null } | { ok: false; error: string; vpn?: true }
 
 /**
  * The gateway a saved host connects through, its login resolved, or null for direct. A jump
@@ -692,11 +752,25 @@ export type JumpLookup = { ok: true; jump: EffectiveSshHost | null } | { ok: fal
 export function getJumpFor(hostId: string): JumpLookup {
   const hosts = hostStore.readOrEmpty()
   const h = hosts.find((x) => x.id === hostId)
-  if (!h) return { ok: true, jump: null }
+  if (!h) return { ok: true, jump: null, vpn: null }
   const groups = readGroupsOrEmpty()
-  const res = resolveJump(h, hosts, groupJumpLookup(groups))
-  if (!res.ok) return { ok: false, error: jumpProblemMessage(res.problem, hosts, res.jumpHostId) }
-  return { ok: true, jump: res.jump ? resolveHostAuth(res.jump, credentialStore.readOrEmpty(), groups).effective : null }
+  // resolveVpn resolves the jump too, and refuses a VPN that is asked for and not there:
+  // connecting without it would dial the client's address on the wrong network.
+  const res = resolveVpn(h, hosts, groupJumpLookup(groups), groupVpnLookup(groups))
+  if (!res.ok) {
+    const error = vpnLookupMessage(res.problem, hosts, res.jumpHostId)
+    return res.problem === 'vpnNoGateway' || res.problem === 'vpnMissing' ? { ok: false, error, vpn: true } : { ok: false, error }
+  }
+  return {
+    ok: true,
+    jump: res.jump ? resolveHostAuth(res.jump, credentialStore.readOrEmpty(), groups).effective : null,
+    vpn: res.vpn ? { profile: res.vpn, autoUp: res.autoUp } : null
+  }
+}
+
+function vpnLookupMessage(problem: VpnResolveProblem, hosts: readonly StoredSshHost[], jumpHostId?: string): string {
+  if (problem === 'vpnNoGateway' || problem === 'vpnMissing') return vpnResolveMessage(problem)
+  return jumpProblemMessage(problem, hosts, jumpHostId)
 }
 
 export type JumpSocket = { ok: true; sock?: Duplex; gateway?: Client; via?: TrustVia } | { ok: false; error: string }
@@ -711,11 +785,20 @@ export type JumpSocket = { ok: true; sock?: Duplex; gateway?: Client; via?: Trus
 export async function openJumpSocket(host: EffectiveSshHost, interactive: boolean): Promise<JumpSocket> {
   const gw = await reachGateway(host.id, interactive)
   if (!gw.ok) return gw
-  return gw.gateway ? forwardThroughGateway(gw.gateway, host) : { ok: true }
+  if (!gw.gateway) return { ok: true }
+  // A background check only looks at the VPN: it never brings one up.
+  if (gw.gateway.vpn) {
+    const v = await ensureVpn(gw.gateway.conn, gw.gateway, gw.gateway.vpn.profile, { bringUp: false })
+    if (!v.ok) return { ok: false, error: v.error }
+  }
+  return forwardThroughGateway(gw.gateway, host)
 }
 
-/** A reached gateway: its pooled connection and name, or none for a direct host. */
-export type GatewayReach = { ok: true; gateway?: { conn: Client; id: string; name: string } } | { ok: false; error: string }
+/** A reached gateway: its pooled connection and name, and the VPN the server needs on it;
+ *  or none for a direct host. */
+export type GatewayReach =
+  | { ok: true; gateway?: { conn: Client; id: string; name: string; vpn: NeededVpn | null } }
+  | { ok: false; error: string; vpn?: true }
 
 /** The first half of openJumpSocket: the host's gateway connected (or reused), not yet any
  *  channel through it. Split so a Remote Session asks for the gateway's password before the
@@ -735,7 +818,7 @@ export async function reachGateway(hostId: string, interactive: boolean): Promis
         : t('main.ssh.jump.notConnected', { name: jump.name, error: gw.error })
     }
   }
-  return { ok: true, gateway: { conn: gw.conn, id: jump.id, name: jump.name } }
+  return { ok: true, gateway: { conn: gw.conn, id: jump.id, name: jump.name, vpn: lookup.vpn } }
 }
 
 /** The second half: a channel from the gateway to `host:port`, for the target's connection to

@@ -209,7 +209,10 @@ describe('host secrets allowlist', () => {
     notes: 'n',
     credentialId: 'cred_1',
     forwards: [{ id: 'f1', label: 'db', localPort: 0, remoteHost: 'localhost', remotePort: 5432 }],
-    jumpHostId: 'ssh_gw'
+    jumpHostId: 'ssh_gw',
+    vpns: [{ id: 'v1', name: 'Client', kind: 'wireguard', target: 'wg0' }],
+    vpnId: 'v1',
+    vpnAutoUp: true
   }
 
   it('keeps the public and secret field lists disjoint and covering every host field', () => {

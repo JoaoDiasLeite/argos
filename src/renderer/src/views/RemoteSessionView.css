@@ -221,3 +221,4 @@
   .remote-session-toggle.seg-tabs { gap: 2px; }
   .remote-session-toggle.seg-tabs button { padding: 5px 8px; font-size: 12.5px; }
 }
+.remote-session-error-actions { display: flex; gap: 8px; flex-wrap: wrap; }

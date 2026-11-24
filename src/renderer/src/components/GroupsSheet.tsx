@@ -4,6 +4,7 @@ import Sheet from './Sheet'
 import Select from './Select'
 import { plural } from '../../../shared/i18n'
 import { useT } from '../i18n'
+import { NO_VPN, VpnNeededField } from './GatewayVpns'
 
 /**
  * Server groups: one per client, as RDM folders. The list (name, credential, how many
@@ -32,7 +33,14 @@ interface Props {
 
 const emptyGroup = (): SshGroupInput => ({ name: '' })
 
-const toInput = (g: SshGroupPublic): SshGroupInput => ({ id: g.id, name: g.name, credentialId: g.credentialId, jumpHostId: g.jumpHostId })
+const toInput = (g: SshGroupPublic): SshGroupInput => ({
+  id: g.id,
+  name: g.name,
+  credentialId: g.credentialId,
+  jumpHostId: g.jumpHostId,
+  vpnId: g.vpnId,
+  vpnAutoUp: g.vpnAutoUp
+})
 
 export default function GroupsSheet({ start, groups, credentials, hosts, onClose, onChanged, onHostsChanged }: Props) {
   const t = useT()
@@ -89,7 +97,10 @@ export default function GroupsSheet({ start, groups, credentials, hosts, onClose
       const res = await window.electronAPI.sshGroupSave({
         ...editing,
         credentialId: editing.credentialId || undefined,
-        jumpHostId: editing.jumpHostId || undefined
+        jumpHostId: editing.jumpHostId || undefined,
+        // A VPN belongs to the gateway: none without one.
+        vpnId: (editing.jumpHostId && editing.vpnId) || undefined,
+        vpnAutoUp: (editing.jumpHostId && editing.vpnId && editing.vpnAutoUp) || undefined
       })
       if (!res.ok) {
         setError(res.error)
@@ -202,6 +213,18 @@ export default function GroupsSheet({ start, groups, credentials, hosts, onClose
             </Select>
             <p className="help">{t('remote.groups.jumpHelp')}</p>
           </div>
+          {editing.jumpHostId && (
+            <VpnNeededField
+              gateway={hosts.find((h) => h.id === editing.jumpHostId)}
+              value={editing.vpnId || NO_VPN}
+              autoUp={!!editing.vpnAutoUp}
+              help={t('remote.vpn.groupHelp')}
+              onChange={(value, autoUp) => {
+                const vpnId = value === NO_VPN ? undefined : value
+                setEditing({ ...editing, vpnId, vpnAutoUp: vpnId ? autoUp : undefined })
+              }}
+            />
+          )}
         </div>
       </Sheet>
     )

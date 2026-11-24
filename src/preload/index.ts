@@ -421,9 +421,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('ssh:forwards-changed', fn)
     return () => ipcRenderer.removeListener('ssh:forwards-changed', fn)
   },
+  // VPNs on a gateway host: ids only; main reads the profile from the saved host.
+  vpnStatus: (gatewayId: string, vpnId?: string) => ipcRenderer.invoke('vpn:status', gatewayId, vpnId),
+  vpnUp: (gatewayId: string, vpnId: string) => ipcRenderer.invoke('vpn:up', gatewayId, vpnId),
+  vpnDown: (gatewayId: string, vpnId: string) => ipcRenderer.invoke('vpn:down', gatewayId, vpnId),
+  vpnKnown: () => ipcRenderer.invoke('vpn:known'),
+  onVpnChanged: (cb: (ev: unknown) => void) => {
+    const fn = (_: unknown, ev: unknown) => cb(ev)
+    ipcRenderer.on('vpn:changed', fn)
+    return () => ipcRenderer.removeListener('vpn:changed', fn)
+  },
 
   // SFTP (Remote Session file browser)
-  sftpConnect: (hostId: string) => ipcRenderer.invoke('sftp:connect', hostId),
+  sftpConnect: (hostId: string, opts?: { vpnUp?: boolean }) => ipcRenderer.invoke('sftp:connect', hostId, opts),
   sftpList: (hostId: string, dir: string) => ipcRenderer.invoke('sftp:list', hostId, dir),
   sftpRead: (hostId: string, p: string) => ipcRenderer.invoke('sftp:read', hostId, p),
   sftpWrite: (hostId: string, p: string, content: string) =>

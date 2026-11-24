@@ -13,6 +13,10 @@ export interface SshGroup {
   /** The gateway (a saved host) the group's servers connect through, unless a server sets its
    *  own (`SshHost.jumpHostId`, where `''` is explicitly direct). See ssh-jump-pure.ts. */
   jumpHostId?: string
+  /** The VPN on that gateway its servers need, unless they set their own (vpn-pure.ts). */
+  vpnId?: string
+  /** Bring it up without asking. Goes with `vpnId`. */
+  vpnAutoUp?: boolean
 }
 
 /** The file's shape: an object, so the profile export carries it like the other JSON files. */
@@ -30,6 +34,9 @@ export interface SshGroupInput {
   credentialId?: string
   /** Empty or absent: no gateway. */
   jumpHostId?: string
+  /** Empty or absent: no VPN. */
+  vpnId?: string
+  vpnAutoUp?: boolean
 }
 
 /** One group as read from the file or an import, or null when it is not one. Text is
@@ -43,6 +50,11 @@ export function cleanGroup(v: unknown): SshGroup | null {
   const out: SshGroup = { id: r.id, name }
   if (typeof r.credentialId === 'string' && r.credentialId) out.credentialId = r.credentialId
   if (typeof r.jumpHostId === 'string' && cleanHostText(r.jumpHostId)) out.jumpHostId = cleanHostText(r.jumpHostId)
+  // A VPN lives on a gateway: without one the choice means nothing and is dropped.
+  if (out.jumpHostId && typeof r.vpnId === 'string' && cleanHostText(r.vpnId)) {
+    out.vpnId = cleanHostText(r.vpnId)
+    if (r.vpnAutoUp === true) out.vpnAutoUp = true
+  }
   return out
 }
 
@@ -148,4 +160,12 @@ export function groupJumpLookup(groups: readonly SshGroup[]): (h: { groupId?: st
  *  of the group's gateway, or the group's deletion, drops their pooled connections. */
 export function hostIdsTakingGroupJump(hosts: readonly { id: string; groupId?: string; jumpHostId?: string }[], id: string): string[] {
   return hosts.filter((h) => h.groupId === id && h.jumpHostId === undefined).map((h) => h.id)
+}
+
+/** The group-VPN lookup resolveVpn takes: a host's group's VPN choice, if any. */
+export function groupVpnLookup(groups: readonly SshGroup[]): (h: { groupId?: string }) => { vpnId?: string; vpnAutoUp?: boolean } | undefined {
+  return (h) => {
+    const g = h.groupId ? groups.find((x) => x.id === h.groupId) : undefined
+    return g ? { vpnId: g.vpnId, vpnAutoUp: g.vpnAutoUp } : undefined
+  }
 }

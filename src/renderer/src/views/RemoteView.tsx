@@ -32,6 +32,8 @@ import GroupsSheet, { type GroupsStart } from '../components/GroupsSheet'
 import { UNGROUPED_KEY, groupHosts, parseFolded, serializeFolded } from '../lib/host-groups'
 import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
+import { GatewayVpnsSection, INHERIT_VPN, NO_VPN, VpnDot, VpnNeededField, VpnProfilesEditor } from '../components/GatewayVpns'
+import { useVpnStates, vpnKey } from '../hooks/useVpnStates'
 
 interface Props {
   onConnect: (host: SshHostPublic) => void
@@ -137,7 +139,10 @@ function hostToInput(h: SshHostPublic): SshHostInput {
     forwards: h.forwards,
     notes: h.notes,
     credentialId: h.credentialId,
-    jumpHostId: h.jumpHostId
+    jumpHostId: h.jumpHostId,
+    vpns: h.vpns,
+    vpnId: h.vpnId,
+    vpnAutoUp: h.vpnAutoUp
   }
 }
 
@@ -266,6 +271,7 @@ export default function RemoteView({
   const t = useT()
   const { locale } = useLanguage()
   const [hosts, setHosts] = useState<SshHostPublic[]>([])
+  const vpnStates = useVpnStates()
   const [credentials, setCredentials] = useState<SshCredentialPublic[]>([])
   // The credentials sheet, and where it opened (the list, or one credential from the host form).
   const [credSheet, setCredSheet] = useState<CredentialsStart | null>(null)
@@ -493,6 +499,15 @@ export default function RemoteView({
   const pickJump = (value: string): string | undefined =>
     value === INHERIT_JUMP ? undefined : value === DIRECT_JUMP ? (editingGroup?.jumpHostId ? '' : undefined) : value
 
+  // The VPN it needs, on the gateway in force in the form. Same convention as the jump:
+  // absent inherits the group's, `''` is explicitly none.
+  const formGateway = jumpValue === INHERIT_JUMP ? groupJump : jumpValue === DIRECT_JUMP ? undefined : hosts.find((h) => h.id === jumpValue)
+  const groupVpn = editingGroup?.vpnId ? groupJump?.vpns?.find((v) => v.id === editingGroup.vpnId) : undefined
+  const vpnValue =
+    editing?.vpnId === undefined ? (editingGroup?.vpnId ? INHERIT_VPN : NO_VPN) : editing.vpnId || NO_VPN
+  const pickVpn = (value: string): string | undefined =>
+    value === INHERIT_VPN ? undefined : value === NO_VPN ? (editingGroup?.vpnId ? '' : undefined) : value
+
   /** The host form switching back to a login of its own. The login fields already hold what
    *  the host showed (its own, or its credential's when it was saved linked), so only the link
    *  and any secret typed meanwhile are dropped: a credential's secrets never move to a host. */
@@ -717,9 +732,17 @@ export default function RemoteView({
           {h.jumpHostName && (
             <span className="rv-row-meta" title={t('remote.viaTitle', { name: h.jumpHostName })}>
               {t('remote.via', { name: h.jumpHostName })}
+              {h.vpnName && h.jumpViaId && h.vpnViaId && (
+                <span title={t('remote.vpn.rowTitle', { name: h.vpnName })}>
+                  {' · '}
+                  <VpnDot ev={vpnStates[vpnKey(h.jumpViaId, h.vpnViaId)]} />
+                  {t('remote.vpn.rowSuffix', { name: h.vpnName })}
+                </span>
+              )}
             </span>
           )}
           {h.jumpMissing && <span className="rv-row-err">{t('remote.col.gatewayMissing')}</span>}
+          {h.vpnMissing && <span className="rv-row-err">{t('remote.vpn.missingRow')}</span>}
           <span className="rv-row-meta">
             {h.username}@{h.host}:{h.port}
           </span>
@@ -971,6 +994,21 @@ export default function RemoteView({
                     </dd>
                   </>
                 )}
+                {(selHost.vpnName || selHost.vpnMissing) && (
+                  <>
+                    <dt>{t('remote.vpn.needed')}</dt>
+                    <dd>
+                      {selHost.vpnMissing ? (
+                        <span className="rv-dd-err">{t('remote.vpn.missingRow')}</span>
+                      ) : (
+                        <>
+                          {selHost.jumpViaId && selHost.vpnViaId && <VpnDot ev={vpnStates[vpnKey(selHost.jumpViaId, selHost.vpnViaId)]} />}{' '}
+                          {selHost.vpnSource === 'group' ? t('remote.col.gatewayFromGroup', { name: selHost.vpnName ?? '' }) : selHost.vpnName}
+                        </>
+                      )}
+                    </dd>
+                  </>
+                )}
                 <dt>{t('remote.col.authentication')}</dt>
                 <dd>
                   {t(AUTH_LABEL[selHost.authType])}
@@ -1047,6 +1085,8 @@ export default function RemoteView({
             )}
           </div>
         </section>
+
+        {selHost && (selHost.vpns?.length ?? 0) > 0 && <GatewayVpnsSection host={selHost} states={vpnStates} />}
 
         {selHost && (
           <section className="rv-sec">
@@ -1467,6 +1507,23 @@ export default function RemoteView({
                 <p className="help">{isGateway ? t('remote.form.jumpIsGateway') : t('remote.form.jumpHelp')}</p>
               )}
             </div>
+            {(formGateway || editing.vpnId) && (
+              <VpnNeededField
+                gateway={formGateway}
+                value={vpnValue}
+                autoUp={!!editing.vpnAutoUp}
+                inherit={
+                  editingGroup?.vpnId
+                    ? { group: editingGroup.name, name: groupVpn?.name ?? t('remote.vpn.neededMissing'), autoUp: !!editingGroup.vpnAutoUp }
+                    : undefined
+                }
+                help={t('remote.vpn.neededHelp')}
+                onChange={(value, autoUp) => {
+                  const vpnId = pickVpn(value)
+                  setEditing({ ...editing, vpnId, vpnAutoUp: vpnId ? autoUp : undefined })
+                }}
+              />
+            )}
             <div className="form-group">
               <label>{t('remote.form.authSource')}</label>
               <div className="seg-control">
@@ -1640,6 +1697,11 @@ export default function RemoteView({
               <p className="help">{t('remote.form.notesHelp')}</p>
             </div>
             <PortForwardsEditor value={editing.forwards} onChange={(forwards) => setEditing({ ...editing, forwards })} />
+            {/* A gateway connects directly, so only a direct host offers VPNs (one that already
+                carries some keeps showing them, so they can be removed). */}
+            {(jumpValue === DIRECT_JUMP || (editing.vpns?.length ?? 0) > 0) && (
+              <VpnProfilesEditor value={editing.vpns} onChange={(vpns) => setEditing({ ...editing, vpns })} />
+            )}
           </div>
         </Sheet>
       )}
