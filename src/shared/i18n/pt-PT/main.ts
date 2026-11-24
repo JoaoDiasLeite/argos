@@ -168,6 +168,15 @@ const main: Record<keyof typeof en, string> = {
   'ssh.hostsSaveFailed': 'Não foi possível guardar o ficheiro de anfitriões: {error}',
   'ssh.hostsUnreadable':
     'Não foi possível ler o ficheiro de anfitriões guardado ({error}); não vai ser substituído. Move {file} para outro lado para começar de novo.',
+  'ssh.credentialMissing':
+    'A credencial partilhada com que este servidor entra já não existe. Edita o servidor e escolhe outra credencial ou um login próprio.',
+  'ssh.credentialsSaveFailed': 'Não foi possível guardar o ficheiro de credenciais: {error}',
+  'ssh.credentialsUnreadable':
+    'Não foi possível ler o ficheiro de credenciais guardado ({error}); não vai ser substituído. Move {file} para outro lado para começar de novo.',
+  'ssh.credentialNameMissing': 'Dá um nome à credencial.',
+  'ssh.credentialAuthInvalid': 'Escolhe como a credencial entra: palavra-passe, chave ou agente.',
+  'ssh.credentialInUse.one': 'Esta credencial é usada por {n} servidor. Liga primeiro esse servidor a outro login.',
+  'ssh.credentialInUse.other': 'Esta credencial é usada por {n} servidores. Liga primeiro esses servidores a outro login.',
   'ssh.keys.invalidName': 'O nome da chave só pode ter letras, números, "_" e "-".',
   'ssh.keys.exists': 'Já existe uma chave chamada "{name}" em ~/.ssh.',
   'ssh.keys.keygenMissing': 'O ssh-keygen não foi encontrado. Instala o cliente OpenSSH e tenta novamente.',
@@ -235,6 +244,7 @@ const main: Record<keyof typeof en, string> = {
   'profile.error.write': 'Não foi possível guardar o perfil: {error}',
   'profile.error.import': 'A importação falhou: {error}',
   'profile.error.importPartial': 'A importação parou a meio: {error}. O teu perfil anterior está guardado em {backup}.',
+  'profile.error.credentialsUnreadable': 'Não foi possível ler as credenciais partilhadas guardadas nesta máquina, por isso nada foi importado: {error}',
   'profile.error.hostsUnreadable': 'Não foi possível ler os servidores guardados nesta máquina, por isso nada foi importado: {error}',
   'profile.error.notPreviewed': 'Escolhe primeiro o ficheiro em Importar…',
   'profile.skip.tooLong': 'O nome da pasta teria mais de {max} caracteres, o que o Windows não permite.',

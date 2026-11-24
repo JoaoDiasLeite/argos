@@ -167,6 +167,15 @@ export default {
   'ssh.hostsSaveFailed': 'Could not save the hosts file: {error}',
   'ssh.hostsUnreadable':
     'The saved hosts file could not be read ({error}); refusing to overwrite it. Move {file} aside to start over.',
+  'ssh.credentialMissing':
+    'The shared credential this server logs in with no longer exists. Edit the server and choose another credential or its own login.',
+  'ssh.credentialsSaveFailed': 'Could not save the credentials file: {error}',
+  'ssh.credentialsUnreadable':
+    'The saved credentials file could not be read ({error}); refusing to overwrite it. Move {file} aside to start over.',
+  'ssh.credentialNameMissing': 'Give the credential a name.',
+  'ssh.credentialAuthInvalid': 'Choose how the credential logs in: password, key or agent.',
+  'ssh.credentialInUse.one': 'This credential is used by {n} server. Link that server to another login first.',
+  'ssh.credentialInUse.other': 'This credential is used by {n} servers. Link those servers to another login first.',
   'ssh.keys.invalidName': 'Key name may only contain letters, numbers, "_" and "-".',
   'ssh.keys.exists': 'A key named "{name}" already exists in ~/.ssh.',
   'ssh.keys.keygenMissing': 'ssh-keygen not found. Install OpenSSH client and try again.',
@@ -234,6 +243,7 @@ export default {
   'profile.error.write': 'Could not save the profile: {error}',
   'profile.error.import': 'The import failed: {error}',
   'profile.error.importPartial': 'The import stopped partway: {error}. Your previous profile is saved in {backup}.',
+  'profile.error.credentialsUnreadable': 'The shared credentials saved on this machine could not be read, so nothing was imported: {error}',
   'profile.error.hostsUnreadable': 'The servers saved on this machine could not be read, so nothing was imported: {error}',
   'profile.error.notPreviewed': 'Choose the file with Import… first.',
   'profile.skip.tooLong': 'The folder name would be longer than {max} characters, which Windows does not allow.',

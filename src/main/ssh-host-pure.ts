@@ -1,5 +1,3 @@
-import type { TFunction } from '../shared/i18n'
-
 export type SshAuthType = 'password' | 'key' | 'agent'
 
 /**
@@ -47,6 +45,12 @@ export interface SshHost {
   tags?: string[]
   /** Markdown the user keeps about the server. Not a vault: the form says no passwords. */
   notes?: string
+  /**
+   * A shared credential (ssh-credential-pure.ts) this host logs in with. When set, the host's
+   * username, auth type, key path, elevation and secrets all come from the credential, and
+   * the saved record keeps none of its own (see resolveHostAuth).
+   */
+  credentialId?: string
 }
 
 /**
@@ -75,7 +79,8 @@ export const PUBLIC_HOST_FIELDS = [
   'favorite',
   'production',
   'tags',
-  'notes'
+  'notes',
+  'credentialId'
 ] as const
 export type PublicHostField = (typeof PUBLIC_HOST_FIELDS)[number]
 
@@ -93,8 +98,13 @@ export interface HostSecretFlags {
   hasElevation: boolean
 }
 
-/** Host with secrets stripped, safe to hand to the renderer. */
-export type SshHostPublic = Pick<SshHost, PublicHostField> & HostSecretFlags
+/** Host with secrets stripped, safe to hand to the renderer. A host linked to a shared
+ *  credential also says which one (`credentialName`), or that it is gone. */
+export type SshHostPublic = Pick<SshHost, PublicHostField> &
+  HostSecretFlags & {
+    credentialName?: string
+    credentialMissing?: boolean
+  }
 
 /** The elevation mode in force: an unset or unknown value is `login` for a password host
  *  and `none` otherwise, and `login` on a host that logs in without a password is `none`. */
@@ -339,35 +349,6 @@ export function mergeSecrets(
   return out
 }
 
-interface ConnectionFields {
-  host: string
-  port?: number
-  username: string
-  authType: SshAuthType
-  privateKeyPath?: string
-}
-
-/**
- * Did an edit change what a pooled connection to the host was opened with? True when the
- * address, port, user, auth type or key path differ, or a login secret was cleared (`null`)
- * or replaced (non-empty string). Text is compared after cleaning, as it is saved. The
- * elevation settings and password are left out on purpose: they are only typed into a
- * terminal later, so changing them must not drop a live session.
- */
-export function connectionFieldsChanged(
-  prev: ConnectionFields,
-  next: ConnectionFields & { password?: string | null; passphrase?: string | null }
-): boolean {
-  const a = cleanHostFields({ name: '', ...prev })
-  const b = cleanHostFields({ name: '', ...next })
-  if (a.host !== b.host || a.username !== b.username) return true
-  if ((prev.port || 22) !== (next.port || 22)) return true
-  if (prev.authType !== next.authType) return true
-  if ((a.privateKeyPath ?? '') !== (b.privateKeyPath ?? '')) return true
-  const secretTouched = (v: string | null | undefined): boolean => v === null || (typeof v === 'string' && v !== '')
-  return secretTouched(next.password) || secretTouched(next.passphrase)
-}
-
 /**
  * Reading the saved hosts file. A failed read must never look like "no hosts": the write
  * paths do read-modify-write, so mistaking a transient decrypt failure for an empty list
@@ -413,9 +394,4 @@ export function decodeHostsFile<T>(buf: Buffer, codec: HostsCodec): HostsRead<T>
     }
   }
   return { ok: false, error: failures.join('; ') }
-}
-
-/** The error a write path reports instead of overwriting a file it could not read. */
-export function refuseOverwriteMessage(t: TFunction, file: string, readError: string): string {
-  return t('main.ssh.hostsUnreadable', { error: readError, file })
 }

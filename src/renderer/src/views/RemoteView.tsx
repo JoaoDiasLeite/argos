@@ -4,10 +4,8 @@ import { useLingering } from '../hooks/useLingering'
 import {
   SshHostPublic,
   SshHostInput,
-  SshAuthType,
   SshKeyInfo,
-  type ElevationMode,
-  type ElevateCommand,
+  type SshCredentialPublic,
   WslDistro,
   SourceInfo,
   OpsRunbookInfo,
@@ -24,6 +22,8 @@ import { allRunbookPaths, readRunbookSources } from '../lib/runbook-library'
 import './views.css'
 import './RemoteView.css'
 import Select from '../components/Select'
+import LoginFields, { AUTH_CHIP, AUTH_LABEL, type LoginValue } from '../components/LoginFields'
+import CredentialsSheet, { type CredentialsStart } from '../components/CredentialsSheet'
 import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
 
@@ -87,6 +87,9 @@ interface Probes {
 
 const LOCAL_SOURCE: ContainerSource = { kind: 'local' }
 
+/** The credential select's "New credential" entry. */
+const NEW_CREDENTIAL = '__new__'
+
 const keyOf = (sel: Selection): string => (sel.kind === 'wsl' ? `wsl:${sel.name}` : `ssh:${sel.id}`)
 
 function emptyHost(): SshHostInput {
@@ -110,7 +113,8 @@ function hostToInput(h: SshHostPublic): SshHostInput {
     favorite: h.favorite,
     production: h.production,
     tags: h.tags,
-    notes: h.notes
+    notes: h.notes,
+    credentialId: h.credentialId
   }
 }
 
@@ -165,6 +169,12 @@ const KeyIcon = () => (
     <path d="M11 11l9-9M16 6l3 3M14 8l2 2" />
   </Icon>
 )
+const UserIcon = () => (
+  <Icon>
+    <circle cx="12" cy="8" r="4" />
+    <path d="M4 21c0-4 4-6 8-6s8 2 8 6" />
+  </Icon>
+)
 const PlusIcon = () => (
   <Icon>
     <path d="M12 5v14M5 12h14" />
@@ -214,23 +224,6 @@ const Dot = ({ state }: { state: DotState }) => {
   return <span className={`rv-dot ${state}`} title={t(DOT_TITLE[state])} aria-label={t(DOT_TITLE[state])} role="img" />
 }
 
-const AUTH_LABEL: Record<SshAuthType, MessageKey> = { password: 'remote.auth.password', key: 'remote.auth.key', agent: 'remote.auth.agent' }
-
-const ELEVATION_LABEL: Record<ElevationMode, MessageKey> = {
-  login: 'remote.form.elevation.login',
-  other: 'remote.form.elevation.other',
-  none: 'remote.form.elevation.none'
-}
-const ELEVATE_COMMANDS: ElevateCommand[] = ['sudo -i', 'sudo su -', 'su -']
-
-/** The elevation mode the form shows. Mirrors main's effectiveElevation: unset is `login` on
- *  a password host and `none` otherwise, and `login` without a login password is `none`. */
-function shownElevation(h: { authType: SshAuthType; elevation?: ElevationMode }): ElevationMode {
-  const mode = h.elevation ?? (h.authType === 'password' ? 'login' : 'none')
-  return mode === 'login' && h.authType !== 'password' ? 'none' : mode
-}
-const AUTH_CHIP: Record<SshAuthType, MessageKey> = { password: 'remote.auth.chipPassword', key: 'remote.auth.chipKey', agent: 'remote.auth.chipAgent' }
-
 export default function RemoteView({
   onConnect,
   onOps,
@@ -245,6 +238,9 @@ export default function RemoteView({
   const t = useT()
   const { locale } = useLanguage()
   const [hosts, setHosts] = useState<SshHostPublic[]>([])
+  const [credentials, setCredentials] = useState<SshCredentialPublic[]>([])
+  // The credentials sheet, and where it opened (the list, or one credential from the host form).
+  const [credSheet, setCredSheet] = useState<CredentialsStart | null>(null)
   const [distros, setDistros] = useState<WslDistro[]>([])
   const [sources, setSources] = useState<SourceInfo[]>([])
   const [hidden, setHidden] = useState<string[]>([])
@@ -296,10 +292,10 @@ export default function RemoteView({
 
   // The column is mounted only while a target is selected (as the Projects column): a
   // mousedown anywhere outside it that is not a target row closes it, and so does Esc when
-  // focus is not in a field. Sheets (Add/Edit host, the report) keep it: a click in them
+  // focus is not in a field. Sheets (Add/Edit host, credentials, the report) keep it: a click in them
   // is not a click outside the column.
   useEffect(() => {
-    if (!selected || editing || reportFor) return
+    if (!selected || editing || reportFor || credSheet) return
     const onDown = (e: MouseEvent) => {
       if (e.button !== 0) return
       const target = e.target as HTMLElement | null
@@ -319,10 +315,11 @@ export default function RemoteView({
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [selected, editing, reportFor])
+  }, [selected, editing, reportFor, credSheet])
 
   const load = async () => {
     setHosts(await window.electronAPI.sshList())
+    setCredentials(await window.electronAPI.sshCredentialsList())
     setDistros(await window.electronAPI.wslList())
     setHidden(await window.electronAPI.wslHidden())
     setSources(await window.electronAPI.ccSources())
@@ -379,8 +376,6 @@ export default function RemoteView({
     }
   }
 
-  const keyLabel = (k: SshKeyInfo) =>
-    `${k.name}${k.type ? ` · ${k.type.replace(/^ssh-/, '')}` : ''}${k.comment ? ` · ${k.comment}` : ''}`
   const accountFor = (distro: string) => sources.find((s) => s.id === `wsl:${distro}`)?.account
   const setDistroHidden = async (name: string, hide: boolean) => {
     setHidden(await window.electronAPI.wslSetHidden(name, hide))
@@ -425,15 +420,27 @@ export default function RemoteView({
     }
   }
 
-  const hostValid = !!editing && !!editing.name.trim() && !!editing.host.trim() && !!editing.username.trim()
+  // `credentialId` defined means "shared credential" is chosen; '' until one is picked.
+  const linking = editing?.credentialId !== undefined
+  const linkedCred = linking ? credentials.find((c) => c.id === editing?.credentialId) : undefined
+  const hostValid =
+    !!editing && !!editing.name.trim() && !!editing.host.trim() && (linking ? !!linkedCred : !!editing.username.trim())
 
-  // Which saved secrets the edited host has. The login password and passphrase count only for
-  // the auth type being edited (main drops the other), the elevation password only while it
-  // was saved in `other` mode (otherwise hasElevation comes from the login password).
+  // The saved host's own secrets, for the "unchanged" placeholders and the remove buttons. A
+  // host saved on a shared credential has none of its own: its flags are the credential's.
   const savedHost = editing?.id ? hosts.find((h) => h.id === editing.id) : undefined
-  const canRemovePassword = !!savedHost?.hasPassword && editing?.authType === 'password'
-  const canRemovePassphrase = !!savedHost?.hasPassphrase && editing?.authType === 'key'
-  const canRemoveElevation = !!savedHost?.hasElevation && shownElevation(savedHost) === 'other'
+  const savedOwnLogin = savedHost && !savedHost.credentialId ? savedHost : undefined
+
+  /** The host form switching back to a login of its own. The login fields already hold what
+   *  the host showed (its own, or its credential's when it was saved linked), so only the link
+   *  and any secret typed meanwhile are dropped: a credential's secrets never move to a host. */
+  const ownLoginFrom = (h: SshHostInput): SshHostInput => ({
+    ...h,
+    credentialId: undefined,
+    password: undefined,
+    passphrase: undefined,
+    elevationPassword: undefined
+  })
 
   const openEditor = (h: SshHostInput, focusNotes = false) => {
     editorOpenedAt.current = Date.now()
@@ -459,6 +466,8 @@ export default function RemoteView({
       }
       setHosts(res.hosts)
       setEditing(null)
+      // How many servers use each credential may have changed.
+      window.electronAPI.sshCredentialsList().then(setCredentials).catch(() => {})
     } finally {
       savingRef.current = false
       setSaving(false)
@@ -484,6 +493,15 @@ export default function RemoteView({
     }
     setHosts(res.hosts)
     select(null)
+    window.electronAPI.sshCredentialsList().then(setCredentials).catch(() => {})
+  }
+
+  // A credential write changes the login every linked host shows, so the hosts are re-read.
+  const credentialsChanged = (next: SshCredentialPublic[], savedId?: string) => {
+    setCredentials(next)
+    window.electronAPI.sshList().then(setHosts).catch(() => {})
+    // A credential created from the host form ("New credential...") is the one it links.
+    if (savedId && editing && credSheet?.kind === 'new') setEditing({ ...editing, credentialId: savedId })
   }
 
   // ── Filtering ──────────────────────────────────────────────────────────────
@@ -783,6 +801,18 @@ export default function RemoteView({
           <dl className="rv-dl">
             {selHost ? (
               <>
+                {selHost.credentialId && (
+                  <>
+                    <dt>{t('remote.col.credential')}</dt>
+                    <dd>
+                      {selHost.credentialMissing ? (
+                        <span className="rv-dd-err">{t('remote.col.credentialMissing')}</span>
+                      ) : (
+                        selHost.credentialName
+                      )}
+                    </dd>
+                  </>
+                )}
                 <dt>{t('remote.col.authentication')}</dt>
                 <dd>
                   {t(AUTH_LABEL[selHost.authType])}
@@ -980,6 +1010,10 @@ export default function RemoteView({
           <KeyIcon />
           {t('remote.keys.title')}
         </button>
+        <button type="button" className="btn-ghost" onClick={() => setCredSheet({ kind: 'list' })}>
+          <UserIcon />
+          {t('remote.creds.button')}
+        </button>
         <button type="button" className="btn-ghost" onClick={() => openEditor(emptyHost())}>
           <PlusIcon />
           {t('remote.addHost')}
@@ -1154,7 +1188,9 @@ export default function RemoteView({
         </div>
       </div>
 
-      {editing && (
+      {/* The host sheet steps aside while a credential opened from it is edited: two stacked
+          sheets would both close on one Esc. Its state stays in `editing`. */}
+      {editing && !credSheet && (
         <Sheet
           title={editing.id ? t('remote.col.editHost') : t('remote.addHost')}
           width={520}
@@ -1203,140 +1239,63 @@ export default function RemoteView({
               </div>
             </div>
             <div className="form-group">
-              <label>{t('remote.form.username')}</label>
-              <input className="text-input mono" value={editing.username} placeholder="ubuntu" onChange={(e) => setEditing({ ...editing, username: e.target.value })} />
-            </div>
-            <div className="form-group">
-              <label>{t('remote.col.authentication')}</label>
+              <label>{t('remote.form.authSource')}</label>
               <div className="seg-control">
-                {(['password', 'key', 'agent'] as SshAuthType[]).map((a) => (
-                  <button type="button" key={a} className={editing.authType === a ? 'on' : ''} onClick={() => setEditing({ ...editing, authType: a })}>
-                    {t(AUTH_LABEL[a])}
-                  </button>
-                ))}
+                <button type="button" className={!linking ? 'on' : ''} onClick={() => linking && setEditing(ownLoginFrom(editing))}>
+                  {t('remote.form.authSource.own')}
+                </button>
+                <button
+                  type="button"
+                  className={linking ? 'on' : ''}
+                  onClick={() => !linking && setEditing({ ...editing, credentialId: credentials[0]?.id ?? '' })}
+                >
+                  {t('remote.form.authSource.shared')}
+                </button>
               </div>
             </div>
-            {editing.authType === 'password' && (
-              <div className="form-group">
-                <label>{t('remote.form.password')}</label>
-                <input
-                  className="text-input"
-                  type="password"
-                  placeholder={editing.password === null ? t('remote.form.removed') : editing.id ? t('remote.form.unchanged') : ''}
-                  onChange={(e) => setEditing({ ...editing, password: e.target.value })}
-                />
-                <p className="help">{t('remote.form.passwordAskHelp')}</p>
-                {!secretsEncrypted && <p className="help">{t('remote.form.passwordPlain')}</p>}
-                {canRemovePassword && editing.password === undefined && (
-                  <button type="button" className="btn-ghost small rv-remove-secret" onClick={() => setEditing({ ...editing, password: null })}>
-                    {t('remote.form.removePassword')}
-                  </button>
-                )}
-              </div>
-            )}
-            {editing.authType === 'key' && (
+            {linking ? (
               <>
-                {keys.length > 0 && (
+                <div className="form-group">
+                  <label>{t('remote.form.credential')}</label>
+                  <Select
+                    value={linkedCred ? linkedCred.id : ''}
+                    onChange={(e) => {
+                      if (e.target.value === NEW_CREDENTIAL) setCredSheet({ kind: 'new' })
+                      else setEditing({ ...editing, credentialId: e.target.value })
+                    }}
+                  >
+                    {!linkedCred && <option value="">{t('remote.form.credentialPick')}</option>}
+                    {credentials.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                    <option value={NEW_CREDENTIAL}>{t('remote.form.credentialNew')}</option>
+                  </Select>
+                  {editing.credentialId && !linkedCred && <p className="help rv-error-text">{t('remote.col.credentialMissing')}</p>}
+                </div>
+                {linkedCred && (
                   <div className="form-group">
-                    <label>{t('remote.form.discoveredKey')}</label>
-                    <Select
-                      value={keys.some((k) => k.privatePath === editing.privateKeyPath) ? editing.privateKeyPath : ''}
-                      onChange={(e) => setEditing({ ...editing, privateKeyPath: e.target.value })}
-                    >
-                      <option value="">{t('remote.form.defaultKey')}</option>
-                      {keys.map((k) => (
-                        <option key={k.privatePath} value={k.privatePath}>
-                          {keyLabel(k)}
-                        </option>
-                      ))}
-                    </Select>
+                    <div className="rv-cred-summary">
+                      <span className="rv-cred-user">{linkedCred.username}</span>
+                      <span className="chip">{t(AUTH_CHIP[linkedCred.authType])}</span>
+                      <button type="button" className="btn-ghost small" onClick={() => setCredSheet({ kind: 'edit', id: linkedCred.id })}>
+                        {t('remote.form.credentialEdit')}
+                      </button>
+                    </div>
+                    <p className="help">{t('remote.form.credentialHelp')}</p>
                   </div>
                 )}
-                <div className="form-group">
-                  <label>{t('remote.form.privateKeyPath')}</label>
-                  <input
-                    className="text-input mono"
-                    value={editing.privateKeyPath ?? ''}
-                    placeholder="C:\Users\you\.ssh\id_ed25519"
-                    onChange={(e) => setEditing({ ...editing, privateKeyPath: e.target.value })}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>
-                    {t('remote.form.passphrase')}<span className="optional">{t('remote.form.optional')}</span>
-                  </label>
-                  <input
-                    className="text-input"
-                    type="password"
-                    placeholder={editing.passphrase === null ? t('remote.form.removed') : editing.id ? t('remote.form.unchanged') : ''}
-                    onChange={(e) => setEditing({ ...editing, passphrase: e.target.value })}
-                  />
-                  {!secretsEncrypted && <p className="help">{t('remote.form.passphrasePlain')}</p>}
-                  {canRemovePassphrase && editing.passphrase === undefined && (
-                    <button type="button" className="btn-ghost small rv-remove-secret" onClick={() => setEditing({ ...editing, passphrase: null })}>
-                      {t('remote.form.removePassphrase')}
-                    </button>
-                  )}
-                </div>
               </>
+            ) : (
+              <LoginFields
+                value={editing}
+                onChange={(patch: Partial<LoginValue>) => setEditing({ ...editing, ...patch })}
+                saved={savedOwnLogin}
+                keys={keys}
+                secretsEncrypted={secretsEncrypted}
+              />
             )}
-            <div className="form-group">
-              <label>{t('remote.form.elevation')}</label>
-              <div className="seg-control">
-                {(['login', 'other', 'none'] as ElevationMode[])
-                  // Reusing the login password only makes sense when there is one.
-                  .filter((m) => m !== 'login' || editing.authType === 'password')
-                  .map((m) => (
-                    <button
-                      type="button"
-                      key={m}
-                      className={shownElevation(editing) === m ? 'on' : ''}
-                      // A password typed for `other` is not carried into another mode (main
-                      // would drop it anyway); a requested removal still applies on save.
-                      onClick={() => {
-                        // Re-clicking the current mode must not forget what the (still
-                        // mounted) password field holds.
-                        if (shownElevation(editing) === m) return
-                        setEditing({ ...editing, elevation: m, elevationPassword: editing.elevationPassword === null ? null : undefined })
-                      }}
-                    >
-                      {t(ELEVATION_LABEL[m])}
-                    </button>
-                  ))}
-              </div>
-              <p className="help">{t('remote.form.elevationHelp')}</p>
-            </div>
-            {shownElevation(editing) === 'other' && (
-              <div className="form-group">
-                <label>{t('remote.form.elevationPassword')}</label>
-                <input
-                  className="text-input"
-                  type="password"
-                  aria-label={t('remote.form.elevationPassword')}
-                  placeholder={editing.elevationPassword === null ? t('remote.form.removed') : canRemoveElevation ? t('remote.form.unchanged') : ''}
-                  onChange={(e) => setEditing({ ...editing, elevationPassword: e.target.value })}
-                />
-                {!secretsEncrypted && <p className="help">{t('remote.form.elevationPlain')}</p>}
-                {canRemoveElevation && editing.elevationPassword === undefined && (
-                  <button type="button" className="btn-ghost small rv-remove-secret" onClick={() => setEditing({ ...editing, elevationPassword: null })}>
-                    {t('remote.form.removeElevationPassword')}
-                  </button>
-                )}
-              </div>
-            )}
-            <div className="form-group">
-              <label>{t('remote.form.elevateCommand')}</label>
-              <Select
-                value={editing.elevateCommand ?? 'sudo -i'}
-                onChange={(e) => setEditing({ ...editing, elevateCommand: e.target.value as ElevateCommand })}
-              >
-                {ELEVATE_COMMANDS.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </Select>
-            </div>
             <div className="form-group">
               <label>
                 {t('remote.form.remotePath')}<span className="optional">{t('remote.form.optional')}</span>
@@ -1424,6 +1383,17 @@ export default function RemoteView({
             </div>
           </div>
         </Sheet>
+      )}
+
+      {credSheet && (
+        <CredentialsSheet
+          start={credSheet}
+          credentials={credentials}
+          keys={keys}
+          secretsEncrypted={secretsEncrypted}
+          onClose={() => setCredSheet(null)}
+          onChanged={credentialsChanged}
+        />
       )}
 
       {reportFor && (
