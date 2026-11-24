@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { containerShellCommand, listContainersCommand, parseContainerListing } from './remote-containers-pure'
+import {
+  containerShellArgs,
+  containerShellCommand,
+  listContainersCommand,
+  parseContainerListing,
+  parsePorts
+} from './remote-containers-pure'
 
 const MARK = '@@argos-containers'
 
@@ -78,5 +84,54 @@ describe('listContainersCommand', () => {
     expect(cmd).toContain(MARK)
     expect(cmd).toContain('docker podman')
     expect(cmd).toContain('sudo -n')
+  })
+})
+
+describe('the compose-aware format', () => {
+  it('reads ports, project and service, and keeps rows without labels ungrouped', () => {
+    const out = [
+      `${MARK} docker`,
+      '6dca71d7a13c|lab-server-1|lab:latest|22/tcp, 127.0.0.1:3001->3000/tcp|lab|server|Up 2 hours',
+      'c56cd6de1969|lab-db-1|postgres:12|0.0.0.0:5401->5432/tcp, :::5401->5432/tcp|lab|db|Up 2 hours (healthy)',
+      'abcdef012345|loose|redis:7||<no value>|<no value>|Exited (0) 1 day ago',
+      '111111111111|podman-one|nginx|0.0.0.0:8053->53/udp|||Up 5 minutes'
+    ].join('\n')
+    const r = parseContainerListing(out)
+    if (r.kind !== 'list') throw new Error('expected a list')
+    const byName = Object.fromEntries(r.containers.map((c) => [c.name, c]))
+    expect(byName['lab-server-1']).toMatchObject({ project: 'lab', service: 'server', ports: ['3001→3000'], running: true })
+    expect(byName['lab-db-1']).toMatchObject({ project: 'lab', service: 'db', ports: ['5401→5432'], status: 'Up 2 hours (healthy)' })
+    expect(byName.loose.project).toBeUndefined()
+    expect(byName.loose.service).toBeUndefined()
+    expect(byName.loose.ports).toEqual([])
+    expect(byName['podman-one']).toMatchObject({ ports: ['8053→53/udp'], running: true })
+  })
+
+  it('asks for the long format first and falls back to the four fields', () => {
+    const cmd = listContainersCommand()
+    expect(cmd).toContain('com.docker.compose.project')
+    expect(cmd.indexOf('--format "$F"')).toBeLessThan(cmd.indexOf('--format "$F0"'))
+  })
+})
+
+describe('parsePorts', () => {
+  it('keeps published ports once and drops exposed ones', () => {
+    expect(parsePorts('0.0.0.0:80->80/tcp, :::80->80/tcp, 443/tcp')).toEqual(['80→80'])
+    expect(parsePorts('127.0.0.1:9000-9001->9000-9001/tcp')).toEqual(['9000-9001→9000-9001'])
+    expect(parsePorts('')).toEqual([])
+  })
+})
+
+describe('containerShellArgs', () => {
+  it('is an argument vector with only the validated id', () => {
+    expect(containerShellArgs('docker', 'abcdef012345')).toEqual([
+      'exec',
+      '-it',
+      'abcdef012345',
+      'sh',
+      '-c',
+      'command -v bash >/dev/null 2>&1 && exec bash || exec sh'
+    ])
+    expect(containerShellArgs('docker', 'web; rm -rf /')).toBeNull()
   })
 })

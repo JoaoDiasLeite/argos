@@ -25,7 +25,7 @@ import {
   buildSubprocessEnv,
   AuthMode
 } from './auth'
-import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, reresolveUiPrefs, setSystemPrefs, setOpsPrefs, setCompanionPrefs, opsDir, opsDirsView, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, UsageLimits, UiPrefs, UiPrefsPatch, SystemPrefs, OpsPrefsPatch } from './config'
+import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, reresolveUiPrefs, setSystemPrefs, setOpsPrefs, setCompanionPrefs, setLabs, opsDir, opsDirsView, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, UsageLimits, UiPrefs, UiPrefsPatch, SystemPrefs, OpsPrefsPatch } from './config'
 import { buildModelsCatalog } from './models-catalog'
 import {
   getAllProjects,
@@ -88,10 +88,28 @@ import {
   testConnection,
   testClaude,
   secretStorageState,
-  SshHostInput
+  listCredentials,
+  saveCredential,
+  deleteCredential,
+  getStoredCredential,
+  hostIdsUsingCredential,
+  listGroups,
+  saveGroup,
+  deleteGroup,
+  getStoredGroup,
+  hostIdsInheritingGroup,
+  hostIdsTakingGroupJumpOf,
+  getJumpFor,
+  hostIdsBehindGateway,
+  SshHostInput,
+  type SshCredentialInput,
+  type SshGroupInput
 } from './ssh'
-import { connectionFieldsChanged } from './ssh-host-pure'
+import { toPublicHost } from './ssh-host-pure'
+import { credentialConnectionChanged, hostConnectionChanged } from './ssh-credential-pure'
 import { listSshKeys, generateKey } from './ssh-keys'
+import { isLabsOn } from './labs'
+import { labsActionAllowed, mayAutoStartForwards } from './labs-pure'
 import {
   sftpConnect,
   sftpList,
@@ -104,16 +122,37 @@ import {
   sftpUpload,
   sftpHistory,
   sftpDisconnect,
-  sftpDisconnectAll
+  sftpForceDisconnect,
+  sftpDisconnectAll,
+  getHostWithSessionSecrets,
+  setHostSecretAsker,
+  type HostSecretAsk
 } from './sftp'
+import { vpnStatus, vpnSwitch } from './vpn-gateway'
+import { forgetGatewayVpns, knownVpnStates, setVpnChangedSink } from './vpn-exec'
 import {
   remoteShellCreate,
+  localContainerShellCreate,
   remoteShellWrite,
   remoteShellResize,
   remoteShellKill,
-  remoteShellKillAll
+  remoteShellKillAll,
+  remoteShellSendSecret,
+  remoteShellElevate,
+  setSecretHintSink
 } from './remote-shell'
+import {
+  listActiveForwards,
+  reconcileHostForwards,
+  setForwardsChangedSink,
+  startAutoForwards,
+  startForward,
+  stopAllForwards,
+  stopForward,
+  stopHostForwards
+} from './port-forwards'
 import { remoteContainers } from './remote-containers'
+import { localContainers } from './local-containers'
 import { listDistros, testDistro, testDistroClaude, runWslOneShot, uncToWslPath, wslHistory, wslHome, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths, wslShareRoot } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
 import { createLedger, RUN_LIST_MAX, type OpsLedger, type OpsReportKind } from './ops-audit'
@@ -196,7 +235,9 @@ import {
   killTerminal,
   listTerminals,
   startCliInTerminal,
-  killAllTerminals
+  killAllTerminals,
+  setTerminalSecretHintSink,
+  terminalSendSecret
 } from './terminal'
 import { createOverlayWindow, hideOverlay, toggleOverlay, registerOverlayShortcut, reregisterOverlayShortcut, overlayShortcut } from './overlay'
 import { createToastWindow, showToast, hideToast, sendToToast } from './toast'
@@ -846,6 +887,7 @@ app.on('window-all-closed', () => {
   killAllTerminals()
   endAllTerminalOps('the terminals were closed')
   remoteShellKillAll()
+  stopAllForwards()
   sftpDisconnectAll()
   if (!hasTray && process.platform !== 'darwin') app.quit()
 })
@@ -859,6 +901,7 @@ app.on('before-quit', () => {
   opsExecutor?.abortAll('app quit')
   endAllTerminalOps('app quit')
   void stopOpsBridge()
+  stopAllForwards()
   sftpDisconnectAll()
 })
 
@@ -2763,6 +2806,60 @@ ipcMain.handle('ops:secret-response', (_, payload: { requestId: string; value: s
   return { ok: true }
 })
 
+// Pending secret prompts of a Remote Session that is connecting (a password nobody saved, a
+// key's passphrase, a keyboard-interactive question), keyed by a request id. A sibling of the
+// ops prompt above, on its own channels so the ops flow stays as it was; the renderer shows
+// both in the same masked dialog. Main window only, both ways. The answer goes to sftp.ts,
+// which keeps it in memory for the connection or, when the user ticked "save" on a login
+// password, saves it; it is never logged or sent anywhere else.
+const pendingHostSecrets = new Map<
+  string,
+  { req: Record<string, unknown>; canSave: boolean; finish: (answer: { value: string; save: boolean } | null) => void }
+>()
+let hostSecretSeq = 0
+
+function requestHostSecret(req: HostSecretAsk, signal: AbortSignal): Promise<{ value: string; save: boolean } | null> {
+  if (signal.aborted || !mainWindow) return Promise.resolve(null)
+  hostSecretSeq += 1
+  const requestId = `hostsecret_${hostSecretSeq}_${Date.now().toString(36)}`
+  return new Promise((resolve) => {
+    const finish = (answer: { value: string; save: boolean } | null) => {
+      signal.removeEventListener('abort', onAbort)
+      if (!pendingHostSecrets.delete(requestId)) return
+      // Gone from the renderer too when main stopped waiting (a disconnect, a dropped link).
+      if (!answer) send('ssh:secret-cancel', { requestId })
+      resolve(answer)
+    }
+    const onAbort = () => finish(null)
+    const payload = {
+      source: 'host',
+      requestId,
+      hostId: req.hostId,
+      hostName: req.hostName,
+      kind: req.kind,
+      prompt: req.prompt,
+      echo: req.echo,
+      canSave: req.canSave
+    }
+    pendingHostSecrets.set(requestId, { req: payload, canSave: req.canSave, finish })
+    signal.addEventListener('abort', onAbort, { once: true })
+    send('ssh:secret-request', payload)
+    flagAttention('approval')
+  })
+}
+setHostSecretAsker(requestHostSecret)
+
+ipcMain.handle('ssh:secret-response', (e, payload: { requestId?: unknown; value?: unknown; save?: unknown }) => {
+  if (e.sender !== mainWindow?.webContents) return { ok: false }
+  const pending = payload && typeof payload.requestId === 'string' ? pendingHostSecrets.get(payload.requestId) : undefined
+  if (!pending) return { ok: true }
+  // "Save" only counts where main offered it, whatever the renderer sends.
+  pending.finish(
+    typeof payload.value === 'string' ? { value: payload.value, save: pending.canSave && payload.save === true } : null
+  )
+  return { ok: true }
+})
+
 // Pending ask_operator requests of ops runs: a command the model may not run, waiting
 // for the operator to run it in their own session and paste the output. Keyed by a
 // request id; `askId` is the ledger's id for the same ask. Main window only: the answer
@@ -2816,6 +2913,7 @@ ipcMain.handle('ops:operator-response', (_, payload: { requestId: string; output
 ipcMain.handle('ops:pending', () => ({
   approvals: [...pendingApprovals.values()].map((p) => p.req),
   secrets: [...pendingSecrets.values()].map((p) => p.req),
+  hostSecrets: [...pendingHostSecrets.values()].map((p) => p.req),
   operatorAsks: [...pendingOperatorAsks.values()].map((p) => p.req),
   toastApprovalIds: [...toastApprovals]
 }))
@@ -2823,29 +2921,163 @@ ipcMain.handle('ops:pending', () => ({
 // ─── SSH hosts / remote ─────────────────────────────────────────────────────
 
 ipcMain.handle('ssh:list', () => listHosts())
-// The pooled sftp connection was opened with the old host, port, user and secret, so a
-// change to any of them (or deleting the host) must close it; the next use reconnects.
+
+/**
+ * Closes a host's pooled connection and its tunnels, and the same for every host that rides it
+ * as a gateway: their channels die with it. Explicitly as well as through the connection's
+ * close: a connection the pool already let go of is not ended by the disconnect, and tunnels
+ * riding it would stay up.
+ */
+function closeHostConnection(hostId: string): void {
+  for (const id of [hostId, ...hostIdsBehindGateway(hostId)]) {
+    stopHostForwards(id)
+    sftpForceDisconnect(id)
+  }
+}
+
+// The pooled sftp connection was opened with the old host, port, user, secret and gateway, so
+// a change to any of them (or deleting the host) must close it; the next use reconnects. The
+// login is compared as resolved (getHost), so linking, unlinking or switching a shared
+// credential counts too.
 ipcMain.handle('ssh:save', (_, host: SshHostInput) => {
   const prev = host.id ? getHost(host.id) : null
+  // The gateway in force, not only the host's own field: moving to another group can change it.
+  const prevJump = prev ? effectiveJumpKey(prev.id) : ''
   const res = saveHost(host)
-  if (res.ok && prev && connectionFieldsChanged(prev, host)) void sftpDisconnect(prev.id)
+  if (res.ok && prev) {
+    const next = getHost(prev.id)
+    if (!next || hostConnectionChanged(prev, next) || effectiveJumpKey(prev.id) !== prevJump) closeHostConnection(prev.id)
+    else reconcileHostForwards(prev.id)
+    // What was seen of its VPNs may no longer describe the profiles it has now.
+    if (JSON.stringify(prev.vpns ?? []) !== JSON.stringify(next?.vpns ?? [])) forgetGatewayVpns(prev.id)
+  }
   return res
 })
+
+/** Which gateway a host goes through right now, as a comparable string. */
+function effectiveJumpKey(hostId: string): string {
+  const j = getJumpFor(hostId)
+  return j.ok ? (j.jump?.id ?? '') : '!'
+}
+// A gateway other hosts still go through is refused by deleteHost, so nothing is closed then.
 ipcMain.handle('ssh:delete', (_, id: string) => {
-  void sftpDisconnect(id)
-  return deleteHost(id)
+  const res = deleteHost(id)
+  if (res.ok) {
+    closeHostConnection(id)
+    forgetGatewayVpns(id)
+  }
+  return res
+})
+// Shared credentials. A credential edit that changes the login (not elevation alone) closes
+// the pooled connection of every host linked to it, as a host edit does.
+ipcMain.handle('ssh:credentials-list', () => listCredentials())
+ipcMain.handle('ssh:credential-save', (_, cred: SshCredentialInput) => {
+  const prev = cred && typeof cred.id === 'string' && cred.id ? getStoredCredential(cred.id) : null
+  const res = saveCredential(cred)
+  if (res.ok && prev) {
+    const next = getStoredCredential(prev.id)
+    if (!next || credentialConnectionChanged(prev, next)) {
+      for (const hostId of hostIdsUsingCredential(prev.id)) closeHostConnection(hostId)
+    }
+  }
+  return res
+})
+ipcMain.handle('ssh:credential-delete', (_, id: string) => deleteCredential(id))
+// Server groups. Changing the credential a group carries closes the pooled connection of
+// every host that inherits it; deleting a group closes those of the hosts that inherited
+// from it, which have no login left.
+ipcMain.handle('ssh:groups-list', () => listGroups())
+ipcMain.handle('ssh:group-save', (_, group: SshGroupInput) => {
+  const prev = group && typeof group.id === 'string' && group.id ? getStoredGroup(group.id) : null
+  const res = saveGroup(group)
+  if (res.ok && prev) {
+    const next = getStoredGroup(prev.id)
+    if ((next?.credentialId ?? '') !== (prev.credentialId ?? '')) {
+      for (const hostId of hostIdsInheritingGroup(prev.id)) closeHostConnection(hostId)
+    }
+    // A new gateway for the group: its servers that take it connect another way now.
+    if ((next?.jumpHostId ?? '') !== (prev.jumpHostId ?? '')) {
+      for (const hostId of hostIdsTakingGroupJumpOf(prev.id)) closeHostConnection(hostId)
+    }
+  }
+  return res
+})
+ipcMain.handle('ssh:group-delete', (_, id: string) => {
+  // Read before the delete moves them out: the servers that went through the group's gateway.
+  const takers = getStoredGroup(id)?.jumpHostId ? hostIdsTakingGroupJumpOf(id) : []
+  const res = deleteGroup(id)
+  if (res.ok) {
+    for (const hostId of new Set([...res.orphaned, ...takers])) closeHostConnection(hostId)
+  }
+  return res
 })
 ipcMain.handle('ssh:test', (_, id: string) => testConnection(id))
 ipcMain.handle('ssh:test-claude', (_, id: string) => testClaude(id))
 ipcMain.handle('ssh:secret-storage', () => secretStorageState())
+// Which secrets a host's terminal can use right now, counting a password typed at the connect
+// prompt for its live session. Flags only, for the terminal's buttons; never the values.
+ipcMain.handle('ssh:secret-flags', (_, hostId: unknown) => {
+  const h = typeof hostId === 'string' ? getHostWithSessionSecrets(hostId) : null
+  if (!h) return null
+  const { hasPassword, hasPassphrase, hasElevation } = toPublicHost(h)
+  return { hasPassword, hasPassphrase, hasElevation }
+})
+// Local port forwards (port-forwards.ts). Ids only cross here; main reads the forward from
+// the saved host. Starting may connect and so ask for a password: main window only, as for
+// the other prompts of a Remote Session.
+ipcMain.handle('ssh:forward-start', (e, hostId: unknown, forwardId: unknown) => {
+  if (e.sender !== mainWindow?.webContents) return { ok: false, error: 'not allowed' }
+  if (!labsActionAllowed(isLabsOn())) return { ok: false, error: t('main.labs.off') }
+  if (typeof hostId !== 'string' || typeof forwardId !== 'string') return { ok: false, error: 'bad request' }
+  return startForward(hostId, forwardId)
+})
+ipcMain.handle('ssh:forward-stop', (_, hostId: unknown, forwardId: unknown) => {
+  if (typeof hostId !== 'string' || typeof forwardId !== 'string') return { ok: false }
+  return stopForward(hostId, forwardId)
+})
+ipcMain.handle('ssh:forwards-list', () => listActiveForwards())
+// The host's Remote Session has connected: its autoStart forwards start, once each.
+ipcMain.handle('ssh:forwards-autostart', (e, hostId: unknown) => {
+  if (e.sender !== mainWindow?.webContents || typeof hostId !== 'string') return []
+  // The tunnels stay saved on the host; with the experimental features off they wait.
+  if (!mayAutoStartForwards(isLabsOn())) return []
+  return startAutoForwards(hostId)
+})
+setForwardsChangedSink((list) => send('ssh:forwards-changed', list))
+// VPNs on a gateway host (vpn-gateway.ts). Ids only cross here; main reads the profile from
+// the saved host. Up and down may connect the gateway and so ask for its password: main
+// window only, as for a tunnel. Status never asks. None of this reaches the ops agent.
+ipcMain.handle('vpn:status', (_, gatewayId: unknown, vpnId?: unknown) => vpnStatus(gatewayId, vpnId))
+ipcMain.handle('vpn:up', (e, gatewayId: unknown, vpnId: unknown) => {
+  if (e.sender !== mainWindow?.webContents) return { ok: false, reason: 'failed', error: 'not allowed' }
+  if (!labsActionAllowed(isLabsOn())) return { ok: false, reason: 'failed', error: t('main.labs.off') }
+  return vpnSwitch(gatewayId, vpnId, 'up')
+})
+ipcMain.handle('vpn:down', (e, gatewayId: unknown, vpnId: unknown) => {
+  if (e.sender !== mainWindow?.webContents) return { ok: false, reason: 'failed', error: 'not allowed' }
+  if (!labsActionAllowed(isLabsOn())) return { ok: false, reason: 'failed', error: t('main.labs.off') }
+  return vpnSwitch(gatewayId, vpnId, 'down')
+})
+ipcMain.handle('vpn:known', () => knownVpnStates())
+setVpnChangedSink((ev) => send('vpn:changed', ev))
 ipcMain.handle('ssh:keys-list', () => listSshKeys())
 ipcMain.handle('ssh:keys-generate', (_, name: string, comment?: string) => generateKey(name, comment))
 
 // ─── SFTP (Remote Session file browser) ────────────────────────────────────
 
-ipcMain.handle('sftp:connect', (_, hostId: string) => sftpConnect(hostId))
-ipcMain.handle('sftp:list', (_, hostId: string, dir: string) => sftpList(hostId, dir))
-ipcMain.handle('sftp:read', (_, hostId: string, p: string) => sftpRead(hostId, p))
+// `vpnUp`: the "bring the VPN up and try again" button of a connect that stopped on it.
+// Only with the experimental features on: without them the button is hidden and the option
+// is dropped here, so the connect behaves as a plain retry (a VPN set to come up by itself
+// still does, as the host was saved).
+ipcMain.handle('sftp:connect', (_, hostId: string, opts?: unknown) =>
+  sftpConnect(hostId, {
+    vpnUp:
+      labsActionAllowed(isLabsOn()) && !!opts && typeof opts === 'object' && (opts as { vpnUp?: unknown }).vpnUp === true
+  })
+)
+// The renderer's calls serve the user's Remote Session, so they may ask for a secret.
+ipcMain.handle('sftp:list', (_, hostId: string, dir: string) => sftpList(hostId, dir, { interactive: true }))
+ipcMain.handle('sftp:read', (_, hostId: string, p: string) => sftpRead(hostId, p, undefined, { interactive: true }))
 ipcMain.handle('sftp:write', (_, hostId: string, p: string, content: string) => sftpWrite(hostId, p, content))
 ipcMain.handle('sftp:mkdir', (_, hostId: string, dir: string) => sftpMkdir(hostId, dir))
 ipcMain.handle('sftp:rename', (_, hostId: string, from: string, to: string) => sftpRename(hostId, from, to))
@@ -2856,7 +3088,12 @@ ipcMain.handle('sftp:upload', (_, hostId: string, dir: string, localPaths?: stri
 )
 ipcMain.handle('sftp:history', (_, hostId: string) => sftpHistory(hostId))
 ipcMain.handle('remote:containers', (_, hostId: string) => remoteContainers(hostId))
-ipcMain.handle('sftp:disconnect', (_, hostId: string) => sftpDisconnect(hostId))
+ipcMain.handle('local:containers', () => localContainers())
+// The last session on the host closed: its tunnels go with the connection.
+ipcMain.handle('sftp:disconnect', (_, hostId: string) => {
+  stopHostForwards(hostId)
+  return sftpDisconnect(hostId)
+})
 
 // ─── WSL ──────────────────────────────────────────────────────────────────
 
@@ -2920,6 +3157,20 @@ ipcMain.handle('config:set-ui', (_, prefs: UiPrefsPatch) => {
     refreshJumpList()
   }
   return ui
+})
+// The hidden "experimental features" switch. Every window hears it, so the UI it gates
+// appears or goes without a restart; main reads it at use time (labs.ts). Turning it off
+// leaves every saved host, credential, group, gateway, VPN and tunnel as it is.
+ipcMain.handle('config:set-labs', (_, on: unknown) => {
+  const wasOn = isLabsOn()
+  const labs = setLabs(on === true)
+  // A running tunnel would be left with no button to stop it: they close with the switch.
+  // Their settings stay on the hosts.
+  if (wasOn && !labs) stopAllForwards()
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send('config:labs', labs)
+  }
+  return labs
 })
 ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
   const prevOpenAtLogin = getConfig().system.openAtLogin
@@ -3342,6 +3593,18 @@ ipcMain.on('terminal:write', (_, id: string, data: string) => writeTerminal(id, 
 ipcMain.on('terminal:resize', (_, id: string, cols: number, rows: number) =>
   resizeTerminal(id, cols, rows)
 )
+// "Send password" in a remote chat's ssh terminal: the main window only, by a click there, as
+// for remote-shell:send-secret. The host and its secret are resolved in terminal.ts from the
+// terminal id; nothing secret comes back.
+ipcMain.handle('terminal:send-secret', (e, id: unknown, opts: unknown) =>
+  e.sender !== mainWindow?.webContents
+    ? { ok: false, reason: 'unknown-shell' }
+    : !labsActionAllowed(isLabsOn())
+      ? { ok: false, reason: 'labs-off' }
+      : terminalSendSecret(id, opts)
+)
+// Only whether a prompt is showing, and of which kind: never the text around it.
+setTerminalSecretHintSink((id, kind) => send('terminal:secret-hint', { id, kind }))
 // killTerminal drops the pty without its onExit, so a closed ops terminal ends its run here.
 // A run still open at that point was cut short (Restart kills the pty without an ops:stop
 // first, aborting any exec in flight), so it ends as aborted. A run already ended (a Stop,
@@ -3380,8 +3643,18 @@ ipcMain.handle(
 
 ipcMain.handle(
   'remote-shell:create',
-  (_, id: string, hostId: string, cols: number, rows: number, container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string }) =>
-    remoteShellCreate(
+  (_, id: string, hostId: string | null, cols: number, rows: number, container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string }) =>
+    // No host: a container on this computer (the Servers screen's local containers).
+    hostId === null
+      ? localContainerShellCreate(
+          id,
+          cols,
+          rows,
+          (tid, data) => send('remote-shell:data', { id: tid, data }),
+          (tid, code) => send('remote-shell:exit', { id: tid, code }),
+          container
+        )
+      : remoteShellCreate(
       id,
       hostId,
       cols,
@@ -3396,6 +3669,25 @@ ipcMain.on('remote-shell:resize', (_, id: string, cols: number, rows: number) =>
   remoteShellResize(id, cols, rows)
 )
 ipcMain.handle('remote-shell:kill', (_, id: string) => remoteShellKill(id))
+// "Send password" and "Elevate": only the main window may ask, by a click there. The host and
+// its secret are resolved in remote-shell.ts from the shell id; nothing secret comes back.
+// Both refused with the experimental features off ('labs-off'): their buttons are hidden then.
+ipcMain.handle('remote-shell:send-secret', (e, id: unknown, opts: unknown) =>
+  e.sender !== mainWindow?.webContents
+    ? { ok: false, reason: 'unknown-shell' }
+    : !labsActionAllowed(isLabsOn())
+      ? { ok: false, reason: 'labs-off' }
+      : remoteShellSendSecret(id, opts)
+)
+ipcMain.handle('remote-shell:elevate', (e, id: unknown) =>
+  e.sender !== mainWindow?.webContents
+    ? { ok: false, reason: 'unknown-shell' }
+    : !labsActionAllowed(isLabsOn())
+      ? { ok: false, reason: 'labs-off' }
+      : remoteShellElevate(id)
+)
+// Only whether a prompt is showing, and of which kind: never the text around it.
+setSecretHintSink((id, kind) => send('remote-shell:secret-hint', { id, kind }))
 
 // ─── Planner ──────────────────────────────────────────────────────────────────
 

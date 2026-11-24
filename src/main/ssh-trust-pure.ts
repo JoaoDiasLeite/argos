@@ -2,6 +2,7 @@
  * The pure half of the SSH host-key trust store (ssh-trust.ts): entry shapes and the
  * OpenSSH known_hosts text derived from them. No Electron, no fs.
  */
+import { createHash } from 'crypto'
 
 /**
  * One trusted endpoint. `fp` is `SHA256:<base64, no padding>` of the wire key blob; `type`
@@ -37,6 +38,38 @@ export function parseTrustEntry(raw: unknown): TrustEntry | null {
   return entry
 }
 
+/**
+ * Trust scoped by gateway. Each client is reached through its own VPN on a gateway, and two
+ * clients' private addresses can be the same (10.0.0.5 at both), so a host reached through a
+ * gateway is trusted under that gateway as well:
+ *  - direct: `host:port`, the host lowercased (unchanged, so nothing already trusted breaks);
+ *  - through a gateway: `<gatewayHostId>/host:port`. The gateway's saved-host id, not its
+ *    address: editing the gateway's address keeps its clients' keys, and two gateways never
+ *    share one. An id that is not plain `[A-Za-z0-9_-]` is refused (null).
+ * The ssh CLI looks such a host up by `HostKeyAlias` (trustAlias), written into the generated
+ * known_hosts in place of `[host]:port`.
+ */
+export function trustKey(host: string, port: number, gatewayId?: string): string | null {
+  const ep = `${host.toLowerCase()}:${port}`
+  if (gatewayId === undefined) return ep
+  return /^[A-Za-z0-9_-]{1,100}$/.test(gatewayId) ? `${gatewayId}/${ep}` : null
+}
+
+/** A store key split into its gateway scope (if any) and the `host:port` after it. */
+export function splitTrustKey(key: string): { gatewayId?: string; endpoint: string } {
+  const slash = key.indexOf('/')
+  return slash > 0 ? { gatewayId: key.slice(0, slash), endpoint: key.slice(slash + 1) } : { endpoint: key }
+}
+
+/**
+ * The `HostKeyAlias` the ssh CLI uses for a scoped key: `argos-jump-` and the first 32 hex
+ * digits of the key's SHA-256. Only letters, digits and `-`, so it is safe as an argument and
+ * as a known_hosts host field, and the same key always gives the same alias.
+ */
+export function trustAlias(scopedKey: string): string {
+  return `argos-jump-${createHash('sha256').update(scopedKey).digest('hex').slice(0, 32)}`
+}
+
 /** Splits a `host:port` store key on its last ':' (an IPv6 host keeps its own colons). */
 export function splitEndpoint(endpoint: string): { host: string; port: number } | null {
   const i = endpoint.lastIndexOf(':')
@@ -53,11 +86,15 @@ const SAFE_HOST = /^[^\s#,[\]]+$/
 /** The known_hosts text for every entry that carries its full key; one line each. */
 export function knownHostsFile(store: Record<string, TrustEntry>): string {
   const lines: string[] = []
-  for (const [endpoint, entry] of Object.entries(store)) {
+  for (const [storeKey, entry] of Object.entries(store)) {
     if (!entry?.type || !entry.key) continue
+    const { gatewayId, endpoint } = splitTrustKey(storeKey)
     const ep = splitEndpoint(endpoint)
     if (!ep || !SAFE_HOST.test(ep.host) || !SAFE_TYPE.test(entry.type) || !SAFE_B64.test(entry.key)) continue
-    lines.push(knownHostsLine(ep.host, ep.port, entry.type, entry.key))
+    // A host behind a gateway is listed under its alias only: `[10.0.0.5]:22` would match
+    // the same address at every client.
+    if (gatewayId !== undefined) lines.push(`${trustAlias(storeKey)} ${entry.type} ${entry.key}`)
+    else lines.push(knownHostsLine(ep.host, ep.port, entry.type, entry.key))
   }
   return lines.length ? lines.join('\n') + '\n' : ''
 }

@@ -9,6 +9,7 @@ import * as path from 'path'
 import { encodeProjectPath } from './codex-data-pure'
 import { projectNameKey } from './project-move-pure'
 import { parseTrustEntry, type TrustEntry } from './ssh-trust-pure'
+import { SECRET_FIELDS, hostAuthSource, stripSecrets, type HostSecrets, type SecretField } from './ssh-host-pure'
 
 /**
  * The parts of profile export/import that need no Electron and no disk: the bundle format,
@@ -29,7 +30,9 @@ export const PROFILE_JSON_FILES = [
   'accounts.json',
   'provider-accounts.json',
   'auth-state.json',
-  'ssh-trust.json'
+  'ssh-trust.json',
+  // Server groups: plain data (a name and a credential id), merged by id on import.
+  'ssh-groups.json'
 ] as const
 
 /** Profile folders that travel file by file. */
@@ -42,7 +45,7 @@ export const PROFILE_DIRS = ['sprints', 'planner', 'ops-audit', 'companion'] as 
 export const COMPANION_FILES = ['todos.json', 'notes.json'] as const
 
 /** Everything an import may replace or merge, copied aside before it starts. */
-export const BACKUP_FILES = [...PROFILE_JSON_FILES, 'ssh-hosts.bin', 'api-key.bin']
+export const BACKUP_FILES = [...PROFILE_JSON_FILES, 'ssh-hosts.bin', 'ssh-credentials.bin', 'api-key.bin']
 
 /** store.json keys that describe this machine rather than the user: never exported. */
 export const STORE_LOCAL_KEYS = ['usageCache', 'sessionMigration']
@@ -67,7 +70,9 @@ export interface EncryptedSecrets {
 }
 
 export interface SecretsPayload {
-  ssh: Record<string, { password?: string; passphrase?: string }>
+  ssh: Record<string, HostSecrets>
+  /** The shared credentials' secrets, keyed by credential id. Absent in older bundles. */
+  sshCredentials?: Record<string, HostSecrets>
   apiKey?: string
 }
 
@@ -94,6 +99,8 @@ export interface ProfileLine {
   json: Record<string, unknown>
   dirs: Record<string, Record<string, string>>
   sshHosts: Record<string, unknown>[]
+  /** Shared credentials, without their secrets (those go in `secrets`). Empty in older bundles. */
+  sshCredentials: Record<string, unknown>[]
   secrets?: EncryptedSecrets
 }
 
@@ -196,6 +203,7 @@ export function parseLine(raw: string): BundleLine {
         json: isObj(v.json) ? v.json : {},
         dirs: isObj(v.dirs) ? (v.dirs as ProfileLine['dirs']) : {},
         sshHosts: Array.isArray(v.sshHosts) ? v.sshHosts.filter(isObj) : [],
+        sshCredentials: Array.isArray(v.sshCredentials) ? v.sshCredentials.filter(isObj) : [],
         ...(isObj(v.secrets) ? { secrets: v.secrets as unknown as EncryptedSecrets } : {})
       }
     case 'chat':
@@ -420,7 +428,11 @@ export async function decryptSecrets(enc: EncryptedSecrets, passphrase: string):
     decipher.setAuthTag(Buffer.from(enc.tag, 'base64'))
     const text = Buffer.concat([decipher.update(Buffer.from(enc.data, 'base64')), decipher.final()]).toString('utf8')
     const parsed = JSON.parse(text) as Partial<SecretsPayload>
-    return { ssh: parsed.ssh && typeof parsed.ssh === 'object' ? parsed.ssh : {}, apiKey: parsed.apiKey }
+    return {
+      ssh: parsed.ssh && typeof parsed.ssh === 'object' ? parsed.ssh : {},
+      sshCredentials: parsed.sshCredentials && typeof parsed.sshCredentials === 'object' ? parsed.sshCredentials : {},
+      apiKey: parsed.apiKey
+    }
   } catch {
     return null
   }
@@ -664,13 +676,15 @@ export function mergeAccountGroup(
   return { group: base, created }
 }
 
-export interface HostLike {
-  id: string
-  password?: string
-  passphrase?: string
-}
+export type HostLike = { id: string; elevation?: string; credentialId?: string; authSource?: string } & HostSecrets
 
-/** Merge SSH hosts by id: imported fields win, and a secret the import lacks is kept from here. */
+/**
+ * Merge SSH hosts (or shared credentials, which hold the same secrets) by id: imported fields
+ * win, and a secret the import lacks is kept from here. A kept elevation password is dropped
+ * when the merged entry no longer uses one (its elevation mode is not `other`), as saving it
+ * from the form would, and a host that now links a shared credential, or inherits its
+ * group's, keeps no secret of its own.
+ */
 export function mergeHosts<T extends HostLike>(local: T[], imported: T[]): T[] {
   const out = local.map((h) => ({ ...h }))
   for (const h of imported) {
@@ -681,24 +695,32 @@ export function mergeHosts<T extends HostLike>(local: T[], imported: T[]): T[] {
       continue
     }
     const prev = out[idx]
-    out[idx] = { ...h, password: h.password || prev.password, passphrase: h.passphrase || prev.passphrase }
-    if (!out[idx].password) delete out[idx].password
-    if (!out[idx].passphrase) delete out[idx].passphrase
+    const merged: T = { ...h }
+    for (const k of SECRET_FIELDS) {
+      const v = h[k] || prev[k]
+      if (v) merged[k] = v as T[SecretField]
+      else delete merged[k]
+    }
+    if (merged.elevation !== 'other') delete merged.elevationPassword
+    if (hostAuthSource(merged) !== 'own') for (const k of SECRET_FIELDS) delete merged[k]
+    out[idx] = merged
   }
   return out
 }
 
-/** The hosts as they travel: no secrets in the clear. */
-export function splitHostSecrets<T extends HostLike>(hosts: T[]): { hosts: Omit<T, 'password' | 'passphrase'>[]; secrets: SecretsPayload['ssh'] } {
+/** The hosts as they travel: no secrets in the clear. Every field in SECRET_FIELDS goes to
+ *  the secrets payload (which is only exported encrypted), so a secret added later travels
+ *  the same way without touching this. */
+export function splitHostSecrets<T extends HostLike>(hosts: T[]): { hosts: Omit<T, SecretField>[]; secrets: SecretsPayload['ssh'] } {
   const secrets: SecretsPayload['ssh'] = {}
   const out = hosts.map((h) => {
-    const { password, passphrase, ...rest } = h
-    if (password || passphrase) {
-      secrets[h.id] = {}
-      if (password) secrets[h.id].password = password
-      if (passphrase) secrets[h.id].passphrase = passphrase
+    const found: HostSecrets = {}
+    for (const k of SECRET_FIELDS) {
+      const v = h[k]
+      if (typeof v === 'string' && v) found[k] = v
     }
-    return rest
+    if (Object.keys(found).length) secrets[h.id] = found
+    return stripSecrets(h)
   })
   return { hosts: out, secrets }
 }

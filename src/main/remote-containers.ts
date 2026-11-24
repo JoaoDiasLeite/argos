@@ -29,7 +29,7 @@ const TIMEOUT_MS = 20000
 const MAX_OUTPUT = 1024 * 1024
 
 function runExec(hostId: string, command: string): Promise<{ ok: true; stdout: string } | { ok: false; error: string }> {
-  return getRemoteClient(hostId).then((res) => {
+  return getRemoteClient(hostId, { interactive: true }).then((res) => {
     if (!res.ok) return { ok: false as const, error: res.error }
     return new Promise((resolve) => {
       let done = false

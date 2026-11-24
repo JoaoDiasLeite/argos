@@ -18,9 +18,29 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '3.9.0',
+    date: '2026-11-24',
+    tag: 'latest',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Remote session: the side pane with Files, History and Containers can be resized by dragging the divider (or with the arrow keys; double-click resets it) and hidden with a button in the header, giving the terminal the whole width. Its tabs now look like the Servers sub-navigation.',
+          'Containers are grouped by compose project, like Docker Desktop: one collapsible group per project with its running count, then the containers outside any project. Each row shows the service, image, status with its health and the published ports, and a Running only switch hides the stopped ones.',
+          'Remote & WSL lists the containers of this computer too (Docker or Podman), with a Docker filter when a runtime is installed. Shell opens a tab inside a local container, and a stopped Docker Desktop is reported as such instead of an error.'
+        ]
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'The terminal of a remote chat starts again on machines whose user folder has an accented letter: ssh.exe is found by its full path instead of being left for the terminal to look up.'
+        ]
+      }
+    ]
+  },
+  {
     version: '3.8.0',
     date: '2026-11-20',
-    tag: 'latest',
     sections: [
       {
         title: 'Features',

@@ -123,6 +123,14 @@
   min-width: 0;
 }
 .srow-label { font-size: 13px; color: var(--text-0); }
+/* The version in About: tapped seven times it reveals the experimental features. Nothing
+   shows it is clickable; the count shows only from the fourth tap. */
+.settings-version { user-select: none; }
+.settings-taps-left {
+  margin-left: 10px;
+  font-size: 12px;
+  color: var(--text-2);
+}
 
 .srow > .toggle-switch,
 .srow > .seg-control,

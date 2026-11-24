@@ -10,6 +10,8 @@ export interface ServerTabItem {
   groupKey: string
   /** The target's name — the same for every session in a group. */
   title: string
+  /** The target is a host marked as production: its tab carries a red underline. */
+  production?: boolean
 }
 
 type SessionStatus = 'connecting' | 'connected' | 'error'
@@ -31,6 +33,7 @@ interface Props {
 interface TabGroup {
   key: string
   title: string
+  production: boolean
   sessions: ServerTabItem[]
 }
 
@@ -40,7 +43,7 @@ function groupSessions(sessions: ServerTabItem[]): TabGroup[] {
   for (const s of sessions) {
     const existing = groups.find((g) => g.key === s.groupKey)
     if (existing) existing.sessions.push(s)
-    else groups.push({ key: s.groupKey, title: s.title, sessions: [s] })
+    else groups.push({ key: s.groupKey, title: s.title, production: !!s.production, sessions: [s] })
   }
   return groups
 }
@@ -132,7 +135,8 @@ function GroupTab({
       <button
         type="button"
         ref={triggerRef}
-        className={`server-tab ${hasActive ? 'active' : ''}`}
+        className={`server-tab ${hasActive ? 'active' : ''} ${group.production ? 'prod' : ''}`}
+       
         onClick={() => setOpen((v) => !v)}
         title={plural(t, 'remote.tabs.sessionsOn', group.sessions.length, { title: group.title })}
         aria-expanded={open}
@@ -140,6 +144,7 @@ function GroupTab({
       >
         <StatusDot status={status} />
         <span className="server-tab-title">{group.title}</span>
+        {group.production && <span className="prod-pill small">{t('remote.prod.pillShort')}</span>}
         {/* Position/total while one of this group's sessions is the visible pane, so you can
             tell which of them you're in without opening the dropdown; bare count otherwise. */}
         <em className="server-tab-count">
@@ -221,7 +226,7 @@ export default function ServerTabs({ sessions, statuses = {}, activeId, onSelect
         g.sessions.length === 1 ? (
           <div
             key={g.key}
-            className={`server-tab ${g.sessions[0].id === activeId ? 'active' : ''}`}
+            className={`server-tab ${g.sessions[0].id === activeId ? 'active' : ''} ${g.production ? 'prod' : ''}`}
             onClick={() => onSelect(g.sessions[0].id)}
             onKeyDown={(e) => e.key === 'Enter' && onSelect(g.sessions[0].id)}
             role="button"
@@ -229,6 +234,7 @@ export default function ServerTabs({ sessions, statuses = {}, activeId, onSelect
           >
             <StatusDot status={statuses[g.sessions[0].id]} />
             <span className="server-tab-title">{g.title}</span>
+            {g.production && <span className="prod-pill small">{t('remote.prod.pillShort')}</span>}
             <button
               type="button"
               className="server-tab-close"

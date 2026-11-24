@@ -1,6 +1,8 @@
 /* ── ContainersPanel.css ─────────────────────────────────────────────────────
-   The Remote Session's Containers pane: the bar (switch + Refresh), then running and
-   stopped containers as rows sized like the history items. ─────────────────────── */
+   Containers, Docker Desktop style: a summary line, one collapsible group per compose
+   project (chevron, stack icon, name, running count), then the containers outside any
+   project. Used as the Remote Session's Containers pane (under the pane's bar) and as a
+   section of the Servers screen (with its own heading). ───────────────────────── */
 
 .containers-bar-spacer { flex: 1; }
 
@@ -15,22 +17,101 @@
 
 .containers-note { padding: 6px 8px; font-size: 12px; color: var(--text-2); }
 .containers-error { margin: 6px 0; font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.containers-eyebrow { padding: 14px 8px 4px; }
 
-.containers-eyebrow { padding: 14px 0 4px; }
+/* ── Summary line and "Running only" ── */
+.ctr-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 0 4px 8px;
+}
+.ctr-summary {
+  font-size: 11.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ctr-toggle {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  background: transparent;
+}
+.ctr-toggle:hover { color: var(--text-1); }
+.ctr-toggle.on { color: var(--text-0); background: var(--bg-2); border-color: transparent; }
 
-.containers-list { display: flex; flex-direction: column; gap: 2px; }
+/* ── A compose project ── */
+.ctr-group { display: flex; flex-direction: column; }
+.ctr-group + .ctr-group { margin-top: 2px; }
 
-.containers-row {
+.ctr-group-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: var(--radius-surface);
+  text-align: left;
+  color: var(--text-0);
+  background: transparent;
+}
+.ctr-group-head:hover { background: var(--bg-hover); }
+.ctr-chevron { flex-shrink: 0; color: var(--text-2); transition: transform 0.12s ease; }
+.ctr-chevron.open { transform: rotate(90deg); }
+.ctr-group-icon { display: inline-flex; flex-shrink: 0; color: var(--text-2); }
+.ctr-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+.ctr-group-count {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.ctr-group-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-2); opacity: 0.6; }
+.ctr-group-count.up .ctr-group-dot { background: var(--success); opacity: 1; }
+.ctr-group-count.part .ctr-group-dot { background: var(--warn); opacity: 1; }
+
+/* The group's containers hang off a guide line under the chevron. */
+.ctr-group-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0 0 4px 13px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+.ctr-loose { display: flex; flex-direction: column; gap: 1px; }
+
+/* ── A container ── */
+.ctr-row {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
   border-radius: var(--radius-surface);
 }
-.containers-row:hover { background: var(--bg-hover); }
-.containers-row.stopped .containers-name { color: var(--text-2); }
+.ctr-row:hover { background: var(--bg-hover); }
+.ctr-row.stopped .ctr-name { color: var(--text-2); }
 
-.containers-dot {
+.ctr-dot {
+  align-self: flex-start;
+  margin-top: 5px;
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -38,18 +119,49 @@
   flex-shrink: 0;
   opacity: 0.6;
 }
-.containers-dot.up { background: var(--success); opacity: 1; }
+.ctr-dot.up { background: var(--success); opacity: 1; }
 
-.containers-main { flex: 1; min-width: 0; }
-.containers-name,
-.containers-meta,
-.containers-status {
+.ctr-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ctr-line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.ctr-name,
+.ctr-sub,
+.ctr-image {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.containers-name { font-size: 12.5px; font-weight: 600; color: var(--text-0); }
-.containers-meta { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-1); }
-.containers-status { font-size: 11.5px; color: var(--text-2); }
+.ctr-name { font-size: 12.5px; font-weight: 600; color: var(--text-0); flex-shrink: 0; max-width: 100%; }
+.ctr-sub { font-size: 11px; color: var(--text-2); min-width: 0; }
+.ctr-image { font-family: var(--font-mono); font-size: 11px; color: var(--text-1); }
+
+.ctr-facts { flex-wrap: wrap; align-items: center; row-gap: 3px; margin-top: 1px; }
+.ctr-status { font-size: 11.5px; color: var(--text-2); }
+.ctr-status.bad { color: var(--error); }
+.ctr-tag,
+.ctr-port {
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.ctr-tag { border: 1px solid currentColor; }
+.ctr-tag.ok { color: var(--success); }
+.ctr-tag.warn { color: var(--warn); }
+.ctr-tag.bad { color: var(--error); }
+.ctr-port { font-family: var(--font-mono); color: var(--text-1); background: var(--bg-2); }
 
 .containers-shell { flex-shrink: 0; }
+
+/* ── As a section of the Servers screen ── */
+.ctr-section { display: flex; flex-direction: column; }
+.ctr-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  margin-top: 14px;
+  padding: 0 0 4px;
+}
+.ctr-section-head .eyebrow { padding: 0; flex-shrink: 0; }
+.ctr-section .containers-note { padding: 6px 0; }

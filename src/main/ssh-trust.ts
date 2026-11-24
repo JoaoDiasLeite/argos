@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 import { t } from './i18n'
-import { keyTypeOf, knownHostsFile, parseTrustEntry, type TrustEntry } from './ssh-trust-pure'
+import { keyTypeOf, knownHostsFile, parseTrustEntry, trustKey, type TrustEntry } from './ssh-trust-pure'
 
 const pending = new Map<string, Promise<boolean>>()
 
@@ -12,7 +12,20 @@ export function hostFingerprint(key: Buffer): string {
 }
 
 const storePath = (): string => path.join(app.getPath('userData'), 'ssh-trust.json')
-const endpointOf = (host: string, port: number): string => `${host.toLowerCase()}:${port}`
+
+/** The gateway a host is reached through, for trust scoped by gateway (see trustKey). */
+export interface TrustVia {
+  id: string
+  name: string
+}
+
+/** The store key for an endpoint, scoped by its gateway when it has one. Throws on a gateway
+ *  id that cannot be a scope, rather than falling back to the unscoped key. */
+function storeKeyOf(host: string, port: number, via?: TrustVia): string {
+  const key = trustKey(host, port, via?.id)
+  if (!key) throw new Error(t('main.sshTrust.storeUnreadable'))
+  return key
+}
 
 /** The raw store; a missing file is empty, anything else unreadable is an error. */
 function readStore(): Record<string, unknown> {
@@ -39,9 +52,12 @@ function entryFor(key: Buffer, fingerprint: string): TrustEntry {
   return type ? { fp: fingerprint, type, key: key.toString('base64') } : { fp: fingerprint }
 }
 
-/** Trust belongs to a network endpoint, independently of account and saved-host ids. */
-export async function verifyHostKey(host: string, port: number, key: Buffer): Promise<boolean> {
-  const endpoint = endpointOf(host, port)
+/** Trust belongs to a network endpoint, independently of account and saved-host ids; behind a
+ *  gateway, to that endpoint as seen from that gateway (`via`). */
+export async function verifyHostKey(host: string, port: number, key: Buffer, via?: TrustVia): Promise<boolean> {
+  const endpoint = storeKeyOf(host, port, via)
+  // What the dialogs name: the address, and the gateway it is reached through.
+  const shown = via ? t('main.sshTrust.via', { endpoint: `${host.toLowerCase()}:${port}`, gateway: via.name }) : endpoint
   const fingerprint = hostFingerprint(key)
   const known = parseTrustEntry(readStore()[endpoint])
   if (known) {
@@ -62,13 +78,13 @@ export async function verifyHostKey(host: string, port: number, key: Buffer): Pr
       }
       return true
     }
-    await dialog.showMessageBox({ type: 'error', title: t('main.sshTrust.changed.title'), message: t('main.sshTrust.changed.message', { endpoint }), detail: t('main.sshTrust.changed.detail', { known: known.fp, fingerprint }), buttons: [t('common.close')] })
+    await dialog.showMessageBox({ type: 'error', title: t('main.sshTrust.changed.title'), message: t('main.sshTrust.changed.message', { endpoint: shown }), detail: t('main.sshTrust.changed.detail', { known: known.fp, fingerprint }), buttons: [t('common.close')] })
     return false
   }
   const pendingKey = `${endpoint}/${fingerprint}`
   if (pending.has(pendingKey)) return pending.get(pendingKey)!
   const decision = (async () => {
-    const result = await dialog.showMessageBox({ type: 'question', title: t('main.sshTrust.verify.title'), message: t('main.sshTrust.verify.message', { endpoint }), detail: t('main.sshTrust.verify.detail', { fingerprint }), buttons: [t('common.cancel'), t('main.sshTrust.verify.trust')], defaultId: 0, cancelId: 0, noLink: true })
+    const result = await dialog.showMessageBox({ type: 'question', title: t('main.sshTrust.verify.title'), message: t('main.sshTrust.verify.message', { endpoint: shown }), detail: t('main.sshTrust.verify.detail', { fingerprint }), buttons: [t('common.cancel'), t('main.sshTrust.verify.trust')], defaultId: 0, cancelId: 0, noLink: true })
     if (result.response !== 1) return false
     const latest = readStore()
     const current = parseTrustEntry(latest[endpoint])
@@ -81,10 +97,13 @@ export async function verifyHostKey(host: string, port: number, key: Buffer): Pr
   try { return await decision } finally { pending.delete(pendingKey) }
 }
 
-/** Whether this endpoint's full key (not only its fingerprint) is in the store. */
-export function isEndpointKeyStored(host: string, port: number): boolean {
+/** Whether this endpoint's full key (not only its fingerprint) is in the store, under its
+ *  gateway's scope when it has one. */
+export function isEndpointKeyStored(host: string, port: number, gatewayId?: string): boolean {
   try {
-    const entry = parseTrustEntry(readStore()[endpointOf(host, port)])
+    const k = trustKey(host, port, gatewayId)
+    if (!k) return false
+    const entry = parseTrustEntry(readStore()[k])
     return !!(entry?.type && entry.key)
   } catch {
     return false

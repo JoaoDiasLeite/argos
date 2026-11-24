@@ -1,11 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
-import { RemoteTarget, type RemoteContainerTarget } from '../types'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { RemoteTarget, type HostSecretFlags, type RemoteContainerTarget, type VpnDownInfo } from '../types'
 import ChatTerminal from '../components/ChatTerminal'
 import RemoteTerminal from '../components/RemoteTerminal'
 import SftpBrowser from '../components/SftpBrowser'
 import ContainersPanel from '../components/ContainersPanel'
 import LocalBrowser from '../components/LocalBrowser'
 import FileEditor from '../components/FileEditor'
+import PortForwardsButton from '../components/PortForwardsButton'
+import { VpnDot } from '../components/GatewayVpns'
+import { useVpnStates, vpnKey } from '../hooks/useVpnStates'
+import { useLabs } from '../hooks/useLabs'
 import { readLocalFile, writeLocalFile } from '../lib/local-file-io'
 import { expandHome } from '../lib/terminal-cwd'
 import { useT } from '../i18n'
@@ -68,6 +72,40 @@ function saveRunLog(targetId: string, log: RunLogEntry[]): void {
   }
 }
 
+// The side pane's width and whether it is folded away, shared by every session and kept
+// across runs. Read once per session mount; a drag in one session does not move the others.
+const PANE_WIDTH_KEY = 'argos.remoteSession.paneWidth'
+const PANE_COLLAPSED_KEY = 'argos.remoteSession.paneCollapsed'
+const PANE_DEFAULT = 440
+const PANE_MIN = 380
+/** The terminal keeps at least this much of the body when the pane is dragged wide. */
+const TERMINAL_MIN = 320
+
+function loadPaneWidth(): number {
+  try {
+    const n = Number(localStorage.getItem(PANE_WIDTH_KEY))
+    return Number.isFinite(n) && n >= PANE_MIN ? n : PANE_DEFAULT
+  } catch {
+    return PANE_DEFAULT
+  }
+}
+
+function loadPaneCollapsed(): boolean {
+  try {
+    return localStorage.getItem(PANE_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function savePane(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    // storage unavailable: the layout just isn't remembered.
+  }
+}
+
 // Quote a command for a POSIX shell — same escaping ssh.ts's shQuote uses.
 function shQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`
@@ -93,6 +131,7 @@ function uncToPosixPath(distro: string, uncPath: string): string {
 
 export default function RemoteSessionView({ target, seq, active, onBack, onStatusChange, onOpenContainer }: Props) {
   const t = useT()
+  const labs = useLabs()
   const isSsh = target.kind === 'ssh'
   // targetId is per TARGET (the run log is shared by every session on the same box, which
   // is what you want — it's that machine's command history). terminalId is per SESSION.
@@ -103,6 +142,14 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     isSsh ? 'connecting' : 'connected'
   )
   const [statusError, setStatusError] = useState<string | null>(null)
+  // The connect stopped on a VPN that is down on the gateway: offers to bring it up.
+  const [vpnDown, setVpnDown] = useState<VpnDownInfo | null>(null)
+  // With the experimental features off the VPN is not named and not offered: the error reads
+  // as a plain failure to connect, with main's reason.
+  const shownVpnDown = labs ? vpnDown : null
+  // Bumped after a retry connects, to start the terminal again (its key).
+  const [termEpoch, setTermEpoch] = useState(0)
+  const vpnStates = useVpnStates()
   const [cwd, setCwd] = useState(isSsh ? target.host.remotePath || '/' : '/home')
   // The login user's home on the box — what the shell starts in and what its prompt's
   // `~` stands for. A ref: read by the terminal's cwd reports, not rendered.
@@ -115,6 +162,65 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
   const [runLog, setRunLog] = useState<RunLogEntry[]>(() => loadRunLog(targetId))
   const [quickRun, setQuickRun] = useState('')
   const historyLoadedRef = useRef(false)
+  const [paneWidth, setPaneWidth] = useState(loadPaneWidth)
+  const [collapsed, setCollapsed] = useState(loadPaneCollapsed)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const paneWidthRef = useRef(paneWidth)
+  paneWidthRef.current = paneWidth
+
+  const toggleCollapsed = () => {
+    setCollapsed((v) => {
+      savePane(PANE_COLLAPSED_KEY, v ? '0' : '1')
+      return !v
+    })
+  }
+
+  // The widest the pane may be: the terminal keeps TERMINAL_MIN of the body.
+  const clampPane = (w: number): number => {
+    const body = bodyRef.current
+    const max = body ? Math.max(PANE_MIN, body.clientWidth - TERMINAL_MIN) : w
+    return Math.round(Math.min(max, Math.max(PANE_MIN, w)))
+  }
+
+  // The divider between the pane and the terminal: the PaneSplitter recipe (listeners on
+  // window, paneDrag set so the terminal fits once at the end, persisted on mouseup).
+  const startPaneDrag = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const body = bodyRef.current
+    if (!body) return
+    const left = body.getBoundingClientRect().left
+    // Kept here too: a mouseup can arrive before React has re-rendered with the last move.
+    let latest = paneWidthRef.current
+    const onMove = (ev: MouseEvent) => {
+      latest = clampPane(ev.clientX - left)
+      setPaneWidth(latest)
+    }
+    const onUp = () => {
+      delete document.body.dataset.paneDrag
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      savePane(PANE_WIDTH_KEY, String(latest))
+      window.dispatchEvent(new Event('panedragend'))
+    }
+    document.body.dataset.paneDrag = '1'
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [])
+
+  // Keyboard on the focused divider: arrows move it 16 px, Home/End go to the bounds.
+  const nudgePane = (e: React.KeyboardEvent) => {
+    const steps: Record<string, number> = { ArrowLeft: -16, ArrowRight: 16, Home: -Infinity, End: Infinity }
+    const step = steps[e.key]
+    if (step === undefined) return
+    e.preventDefault()
+    const next = clampPane(Number.isFinite(step) ? paneWidthRef.current + step : step > 0 ? 1e6 : 0)
+    setPaneWidth(next)
+    savePane(PANE_WIDTH_KEY, String(next))
+  }
 
   // Connect on mount. SSH only — the connection is per-host, cached in main. WSL has
   // nothing to "connect": the terminal (ChatTerminal, wsl.exe) and the file browser
@@ -125,6 +231,18 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
   // Note there's deliberately no disconnect in the cleanup: that ssh2 client is shared by
   // every session on the host, so tearing it down here would kill a sibling session's
   // terminal. App.tsx's closeServerSession drops it once the last one is gone.
+  // What the terminal's Send password and Elevate can use, asked of main once connected: a
+  // password typed at the connect prompt (kept in memory, or just saved) is not in the host
+  // list this view was opened with. Flags only, never the secret.
+  const [secretFlags, setSecretFlags] = useState<HostSecretFlags | null>(null)
+  const refreshSecretFlags = () => {
+    if (!isSsh) return
+    window.electronAPI
+      .sshSecretFlags(target.host.id)
+      .then(setSecretFlags)
+      .catch(() => undefined)
+  }
+
   useEffect(() => {
     let cancelled = false
     if (!isSsh) {
@@ -143,9 +261,12 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     const hostId = target.host.id
     setStatus('connecting')
     setStatusError(null)
+    setVpnDown(null)
     window.electronAPI.sftpConnect(hostId).then((res) => {
       if (cancelled) return
+      setVpnDown(res.vpnDown ?? null)
       if (res.ok) {
+        refreshSecretFlags()
         setStatus('connected')
         homeRef.current = res.home ?? null
         // Where the login shell starts, so the two panes agree from the first prompt.
@@ -221,15 +342,22 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
     setCwd(trimmed.replace(/\/+$/, '') || '/')
   }
 
-  const retryConnect = () => {
+  // `vpnUp`: bring the VPN the connect stopped on up first (main does it within the attempt).
+  const retryConnect = (vpnUp = false) => {
     if (!isSsh) return
     setStatus('connecting')
     setStatusError(null)
-    window.electronAPI.sftpConnect(target.host.id).then((res) => {
+    setVpnDown(null)
+    window.electronAPI.sftpConnect(target.host.id, vpnUp ? { vpnUp: true } : undefined).then((res) => {
+      setVpnDown(res.vpnDown ?? null)
       if (res.ok) {
+        refreshSecretFlags()
         setStatus('connected')
         homeRef.current = res.home ?? null
         setCwd(res.home || target.host.remotePath || '/')
+        // The terminal failed with the first connect and never retries by itself: a fresh
+        // one rides the connection that just opened.
+        setTermEpoch((n) => n + 1)
       } else {
         setStatus('error')
         setStatusError(res.error || t('remote.session.couldNotConnect'))
@@ -241,7 +369,7 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
   // takes it as a slot, so the switch and the toolbar icons share one line); on the
   // history side the view draws the same bar around it.
   const paneSwitch = (
-    <div className="seg-control remote-session-toggle">
+    <div className="seg-control seg-tabs remote-session-toggle">
       <button type="button" className={panel === 'files' ? 'on' : ''} onClick={() => setPanel('files')}>{t('remote.session.files')}</button>
       <button type="button" className={panel === 'history' ? 'on' : ''} onClick={openHistoryPanel}>{t('remote.session.history')}</button>
       {/* SSH only for now: the listing rides the host's ssh2 connection. */}
@@ -278,15 +406,42 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
         <div className="remote-session-title">
           <span className={`remote-session-dot ${status}`} title={status === 'error' ? statusError || t('remote.session.couldNotConnect') : t(STATUS_LABEL[status])} />
           <span className="remote-session-name">{isSsh ? target.host.name : target.distro}</span>
+          {labs && isSsh && target.host.production && <span className="prod-pill" title={t('remote.prod.title')}>{t('remote.prod.pill')}</span>}
           <span className="remote-session-target">
             {isSsh ? `${target.host.username}@${target.host.host}` : `wsl -d ${target.distro}`}
+            {labs && isSsh && target.host.jumpHostName && (
+              <span title={t('remote.viaTitle', { name: target.host.jumpHostName })}> {t('remote.via', { name: target.host.jumpHostName })}</span>
+            )}
+            {labs && isSsh && target.host.jumpHostName && target.host.vpnName && target.host.jumpViaId && target.host.vpnViaId && (
+              <span title={t('remote.vpn.rowTitle', { name: target.host.vpnName })}>
+                {' · '}
+                <VpnDot ev={vpnStates[vpnKey(target.host.jumpViaId, target.host.vpnViaId)]} />
+                {t('remote.vpn.rowSuffix', { name: target.host.vpnName })}
+              </span>
+            )}
           </span>
         </div>
         <span className="remote-session-spacer" />
+        {labs && isSsh && <PortForwardsButton hostId={target.host.id} connected={status === 'connected'} />}
+        <button
+          type="button"
+          className={`remote-session-pane-toggle${collapsed ? '' : ' on'}`}
+          onClick={toggleCollapsed}
+          title={collapsed ? t('remote.session.showPanel') : t('remote.session.hidePanel')}
+          aria-label={collapsed ? t('remote.session.showPanel') : t('remote.session.hidePanel')}
+          aria-pressed={!collapsed}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M9 4v16" />
+          </svg>
+        </button>
       </div>
 
-      <div className="remote-session-body">
-        <div className="remote-session-left">
+      <div className="remote-session-body" ref={bodyRef}>
+        {/* Folded away by hiding, not unmounting: the listing, the containers and the
+            folder the shell is on all survive a hide and show. */}
+        <div className="remote-session-left" style={{ width: paneWidth, display: collapsed ? 'none' : undefined }}>
           {panel === 'history' && <div className="remote-session-pane-bar">{paneSwitch}</div>}
           {/* The connection's failure lives in the pane it is about. The terminal rides the
               same SSH connection as the file browser (sftp.ts getRemoteClient), so when this
@@ -294,14 +449,21 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
           {status === 'error' && (
             <div className="block err remote-session-error" role="alert">
               <div className="remote-session-error-head">
-                <span className="remote-session-error-title">{t('remote.session.couldNotConnect')}</span>
-                {statusError && <span className="remote-session-error-why">{statusError}</span>}
+                <span className="remote-session-error-title">
+                  {shownVpnDown ? t('remote.vpn.downTitle', { name: shownVpnDown.vpnName, gateway: shownVpnDown.gatewayName }) : t('remote.session.couldNotConnect')}
+                </span>
+                {statusError && !shownVpnDown && <span className="remote-session-error-why">{statusError}</span>}
               </div>
               <span className="remote-session-error-text">
                 {t('remote.session.noShell')}
               </span>
-              <div>
-                <button type="button" className="btn-ghost small" onClick={retryConnect}>
+              <div className="remote-session-error-actions">
+                {shownVpnDown && (
+                  <button type="button" className="btn-primary small" onClick={() => retryConnect(true)}>
+                    {t('remote.vpn.bringUpRetry')}
+                  </button>
+                )}
+                <button type="button" className="btn-ghost small" onClick={() => retryConnect()}>
                   {t('common.retry')}
                 </button>
               </div>
@@ -309,8 +471,8 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
           )}
           {panel === 'containers' && isSsh ? (
             <ContainersPanel
-              hostId={target.host.id}
-              connected={status === 'connected'}
+              source={{ kind: 'host', hostId: target.host.id }}
+              ready={status === 'connected'}
               barSlot={paneSwitch}
               onOpen={(c, name) => onOpenContainer?.(c, name)}
             />
@@ -379,11 +541,29 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
           )}
         </div>
 
+        {!collapsed && (
+          <div
+            className="remote-session-divider"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t('remote.session.resizePanel')}
+            aria-valuenow={paneWidth}
+            tabIndex={0}
+            onMouseDown={startPaneDrag}
+            onKeyDown={nudgePane}
+            onDoubleClick={() => {
+              setPaneWidth(PANE_DEFAULT)
+              savePane(PANE_WIDTH_KEY, String(PANE_DEFAULT))
+            }}
+            title={t('remote.session.resizePanel')}
+          />
+        )}
+
         {/* No close button on the terminal: the session's tab is what closes it, and a
             "close" that only went back to the targets list read as if it had. */}
         <div className="remote-session-right">
           {isSsh ? (
-            <RemoteTerminal terminalId={terminalId} hostId={target.host.id} active={active} closable={false} onCwdChange={followShell} />
+            <RemoteTerminal key={termEpoch} terminalId={terminalId} hostId={target.host.id} active={active} closable={false} onCwdChange={followShell} secrets={secretFlags ? { ...target.host, ...secretFlags } : target.host} />
           ) : (
             <ChatTerminal
               terminalId={terminalId}

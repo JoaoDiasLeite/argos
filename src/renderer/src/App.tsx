@@ -17,6 +17,7 @@ import {
   OpsRunListItem,
   OpsOperatorRequest,
   OpsSecretRequest,
+  HostSecretRequest,
   GitFile
 } from './types'
 import Sidebar from './components/Sidebar'
@@ -90,6 +91,7 @@ import { SESSION_DRAG_TYPE, type DropPlan } from './lib/pane-drop'
 // fallback (`ViewLoading`) rendered while each view's chunk is fetched.
 import { SshHostPublic, RemoteTarget, type RemoteContainerTarget } from './types'
 import { useT } from './i18n'
+import { useLabs } from './hooks/useLabs'
 import { NEW_CHAT_NAME, chatDisplayName } from './lib/chat-name'
 import { mergeById } from './lib/merge-by-id'
 import { plural, type MessageKey } from '../../shared/i18n'
@@ -205,17 +207,21 @@ const MEMBER_LABELS: Record<string, MessageKey> = {
 // server-sessions-layer render below). A target can have SEVERAL sessions open at once, so
 // the identity is (group, seq): `groupKey` is the target the session belongs to — which is
 // what the tab strip groups by, Chrome-tab-group style — and `seq` is a per-group counter.
+/** What a server tab is on: a session's host or distro, or (a container tab only) this
+ *  computer, for a container from the Servers screen's local list. */
+type ServerTarget = RemoteTarget | { kind: 'local' }
 interface ServerSession {
   id: string
   groupKey: string
-  target: RemoteTarget
+  target: ServerTarget
   /** The target's name, shared by every session in the group. */
   title: string
   /** 1-based, per group. Never reused within a run, so a tab's number doesn't shift
    *  under the user when a sibling closes. */
   seq: number
-  /** A container's own tab (opened from a session's Containers pane): its group is the
-   *  container, its target the host whose SSH connection it rides. */
+  /** A container's own tab (opened from a session's Containers pane, or the Servers
+   *  screen's local containers): its group is the container, its target the host whose SSH
+   *  connection it rides, or this computer. */
   container?: { target: RemoteContainerTarget; name: string }
 }
 function serverGroupKey(target: RemoteTarget): string {
@@ -224,6 +230,8 @@ function serverGroupKey(target: RemoteTarget): string {
 
 export default function App() {
   const t = useT()
+  // The experimental features: the PROD marker on server tabs is one of them.
+  const labs = useLabs()
   // Read from inside long-lived effects and intervals, which must not restart when the
   // language changes.
   const tRef = useRef(t)
@@ -422,20 +430,36 @@ export default function App() {
     })
   }, [])
   const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([])
-  // Sudo-password requests from ops runs, answered one at a time (head of the queue).
-  const [secretQueue, setSecretQueue] = useState<OpsSecretRequest[]>([])
+  // Masked secret prompts, answered one at a time (head of the queue): sudo passwords from ops
+  // runs, and the secrets a connecting Remote Session asks for (`source: 'host'`). Each goes
+  // back on its own channel.
+  const [secretQueue, setSecretQueue] = useState<(OpsSecretRequest | HostSecretRequest)[]>([])
   useEffect(() => {
-    const bySecretId = (r: OpsSecretRequest): string => r.requestId
+    const bySecretId = (r: OpsSecretRequest | HostSecretRequest): string => r.requestId
     const off = window.electronAPI.onOpsSecretRequest((req) => setSecretQueue((q) => mergeById(q, [req], bySecretId)))
+    const offHost = window.electronAPI.onHostSecretRequest((req) => setSecretQueue((q) => mergeById(q, [req], bySecretId)))
+    // Main stopped waiting (the session was closed while connecting): the prompt goes too.
+    const offCancel = window.electronAPI.onHostSecretCancel(({ requestId }) =>
+      setSecretQueue((q) => q.filter((r) => r.requestId !== requestId))
+    )
     // A reload lost the queue: pull back what main still waits on (a push can race it).
     window.electronAPI
       .opsPending()
-      .then((p) => setSecretQueue((q) => mergeById(q, p.secrets, bySecretId)))
+      .then((p) => setSecretQueue((q) => mergeById(mergeById(q, p.secrets, bySecretId), p.hostSecrets ?? [], bySecretId)))
       .catch(() => undefined)
-    return off
+    return () => {
+      off()
+      offHost()
+      offCancel()
+    }
   }, [])
-  const answerSecret = (requestId: string, value: string | null) => {
-    void window.electronAPI.respondOpsSecret({ requestId, value })
+  const answerSecret = (request: OpsSecretRequest | HostSecretRequest, value: string | null, save: boolean) => {
+    const { requestId } = request
+    if ('source' in request && request.source === 'host') {
+      void window.electronAPI.respondHostSecret({ requestId, value, save })
+    } else {
+      void window.electronAPI.respondOpsSecret({ requestId, value })
+    }
     setSecretQueue((q) => q.filter((r) => r.requestId !== requestId))
   }
   // The model's ask_operator requests: a command for the operator to run in their own
@@ -2302,13 +2326,15 @@ export default function App() {
     setView('remote-session')
   }
   /** The Containers pane's Shell: always a new tab, grouped with any other on that
-   *  container (so its title is the container, not the host). */
-  const openContainerSession = (host: SshHostPublic, container: RemoteContainerTarget, name: string) => {
-    const groupKey = `srv:ctr:${host.id}:${container.id}`
+   *  container (so its title is the container, not the host). A null host is this
+   *  computer (the Servers screen's local containers). */
+  const openContainerSession = (host: SshHostPublic | null, container: RemoteContainerTarget, name: string) => {
+    const groupKey = `srv:ctr:${host ? host.id : 'local'}:${container.id}`
     const seq = (seqCounterRef.current[groupKey] ?? 0) + 1
     seqCounterRef.current[groupKey] = seq
     const id = `${groupKey}#${seq}`
-    const session: ServerSession = { id, groupKey, target: { kind: 'ssh', host }, title: name, seq, container: { target: container, name } }
+    const target: ServerTarget = host ? { kind: 'ssh', host } : { kind: 'local' }
+    const session: ServerSession = { id, groupKey, target, title: name, seq, container: { target: container, name } }
     setServerSessions((prev) => [...prev, session])
     setActiveServerSessionId(id)
     setView('remote-session')
@@ -2355,12 +2381,18 @@ export default function App() {
   }
 
   /** The group header's + button — another session on a target that already has one. */
+  // The tab strip's view of the sessions: a host marked as production (container tabs on it
+  // included) gets its red marker. Read from the host as it was when the session opened.
+  const serverTabItems = serverSessions.map((s) => ({
+    ...s,
+    production: labs && s.target.kind === 'ssh' && !!s.target.host.production
+  }))
   const addToTabGroup = (groupKey: string) => {
     const session = serverSessions.find((s) => s.groupKey === groupKey)
     if (!session) return
-    if (session.container && session.target.kind === 'ssh') {
-      openContainerSession(session.target.host, session.container.target, session.container.name)
-    } else {
+    if (session.container) {
+      openContainerSession(session.target.kind === 'ssh' ? session.target.host : null, session.container.target, session.container.name)
+    } else if (session.target.kind !== 'local') {
       openServerSession(session.target, true)
     }
   }
@@ -3050,7 +3082,7 @@ export default function App() {
       {activeGroup && view !== 'remote-session' && !(view === 'ops-workspace' && opsWorkspace) && (
         <div className="view-with-subnav">
           <div className="view-subnav">
-            <div className="seg-control" role="tablist" aria-label={t(activeGroup.label)}>
+            <div className="seg-control seg-tabs" role="tablist" aria-label={t(activeGroup.label)}>
               {activeGroup.members.map((m) => (
                 <button
                   key={m}
@@ -3074,7 +3106,7 @@ export default function App() {
           {activeGroup.key === 'servers' && serverSessions.length > 0 && (
             <ServerTabs
               inline
-              sessions={serverSessions}
+              sessions={serverTabItems}
               statuses={serverSessionStatus}
               /* Always null: this copy of the strip only renders on a Servers screen, and
                  there no tab is "current" — the session is open, but you aren't looking at
@@ -3115,6 +3147,7 @@ export default function App() {
                 openWslSessions={serverSessions.flatMap((s) => (s.target.kind === 'wsl' ? [s.target.distro] : []))}
                 openSshSessions={connectedSshHosts}
                 failedSshSessions={failedSshHosts}
+                onOpenLocalContainer={(c, name) => openContainerSession(null, c, name)}
               />
             )}
           </Suspense>
@@ -3171,7 +3204,7 @@ export default function App() {
           {/* Topmost strip here, so it keeps the drag region (no `inline`). Selecting a
               tab only swaps the visible pane — we're already in the session view. */}
           <ServerTabs
-            sessions={serverSessions}
+            sessions={serverTabItems}
             statuses={serverSessionStatus}
             activeId={activeServerSessionId}
             onSelect={setActiveServerSessionId}
@@ -3185,9 +3218,9 @@ export default function App() {
                 className="server-session-pane"
                 style={{ display: s.id === activeServerSessionId ? 'flex' : 'none' }}
               >
-                {s.container && s.target.kind === 'ssh' ? (
+                {s.container ? (
                   <ContainerSessionView
-                    host={s.target.host}
+                    host={s.target.kind === 'ssh' ? s.target.host : null}
                     container={s.container.target}
                     name={s.container.name}
                     seq={s.seq}
@@ -3197,7 +3230,7 @@ export default function App() {
                       setServerSessionStatus((prev) => (prev[s.id] === st ? prev : { ...prev, [s.id]: st }))
                     }
                   />
-                ) : (
+                ) : s.target.kind === 'local' ? null : (
                   <RemoteSessionView
                     target={s.target}
                     seq={s.seq}
@@ -3229,7 +3262,7 @@ export default function App() {
         <SecretPrompt
           key={secretQueue[0].requestId}
           request={secretQueue[0]}
-          onSubmit={(value) => answerSecret(secretQueue[0].requestId, value)}
+          onSubmit={(value, save) => answerSecret(secretQueue[0], value, save)}
         />
       )}
       {/* While a password is being asked, the approval modal waits: its window-level Esc would

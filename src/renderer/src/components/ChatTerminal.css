@@ -50,6 +50,10 @@
 }
 .chat-terminal-btn:hover:not(:disabled) { background: var(--bg-2); color: var(--text-0); border-color: var(--border-light); }
 .chat-terminal-btn:disabled { opacity: 0.4; cursor: default; }
+/* The key button (RemoteTerminal's bar, a remote chat's header) while main sees a password
+   prompt: a quiet ring, a hint only. */
+.chat-terminal-btn.is-prompting,
+.chat-head-btn.is-prompting { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
 
 .chat-terminal-fontsize {
   display: flex;
@@ -141,4 +145,28 @@
   text-align: center;
   background: var(--bg-1);
   border: 1px solid var(--border);
+}
+
+/* "Send password" confirmation and refusal notes, pinned under the bar's right end. */
+.chat-terminal-secret-pop {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 11;
+  max-width: 340px;
+  padding: 10px 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  color: var(--text-0);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.chat-terminal-secret-pop p { margin: 0; }
+.chat-terminal-secret-pop-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 10px;
 }

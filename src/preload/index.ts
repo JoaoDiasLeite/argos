@@ -175,6 +175,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('config:ui', fn)
   },
   setSystemPrefs: (prefs: unknown) => ipcRenderer.invoke('config:set-system', prefs),
+  // The hidden "experimental features" switch, and its change broadcast to every window.
+  setLabs: (on: boolean) => ipcRenderer.invoke('config:set-labs', on),
+  onLabs: (cb: (on: boolean) => void) => {
+    const fn = (_: unknown, on: unknown) => cb(on === true)
+    ipcRenderer.on('config:labs', fn)
+    return () => ipcRenderer.removeListener('config:labs', fn)
+  },
   setOpsPrefs: (patch: unknown) => ipcRenderer.invoke('config:set-ops', patch),
   opsDirs: () => ipcRenderer.invoke('config:ops-dirs'),
   setCompanionPrefs: (patch: unknown) => ipcRenderer.invoke('config:set-companion', patch),
@@ -398,15 +405,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sshList: () => ipcRenderer.invoke('ssh:list'),
   sshSave: (host: unknown) => ipcRenderer.invoke('ssh:save', host),
   sshDelete: (id: string) => ipcRenderer.invoke('ssh:delete', id),
+  sshCredentialsList: () => ipcRenderer.invoke('ssh:credentials-list'),
+  sshCredentialSave: (cred: unknown) => ipcRenderer.invoke('ssh:credential-save', cred),
+  sshCredentialDelete: (id: string) => ipcRenderer.invoke('ssh:credential-delete', id),
+  sshGroupsList: () => ipcRenderer.invoke('ssh:groups-list'),
+  sshGroupSave: (group: unknown) => ipcRenderer.invoke('ssh:group-save', group),
+  sshGroupDelete: (id: string) => ipcRenderer.invoke('ssh:group-delete', id),
   sshTest: (id: string) => ipcRenderer.invoke('ssh:test', id),
   sshTestClaude: (id: string) => ipcRenderer.invoke('ssh:test-claude', id),
   sshKeysList: () => ipcRenderer.invoke('ssh:keys-list'),
   sshKeysGenerate: (name: string, comment?: string) =>
     ipcRenderer.invoke('ssh:keys-generate', name, comment),
   sshSecretStorage: () => ipcRenderer.invoke('ssh:secret-storage'),
+  sshSecretFlags: (hostId: string) => ipcRenderer.invoke('ssh:secret-flags', hostId),
+  // Local port forwards: ids only; main reads the forward from the saved host.
+  forwardStart: (hostId: string, forwardId: string) => ipcRenderer.invoke('ssh:forward-start', hostId, forwardId),
+  forwardStop: (hostId: string, forwardId: string) => ipcRenderer.invoke('ssh:forward-stop', hostId, forwardId),
+  forwardsList: () => ipcRenderer.invoke('ssh:forwards-list'),
+  forwardsAutoStart: (hostId: string) => ipcRenderer.invoke('ssh:forwards-autostart', hostId),
+  onForwardsChanged: (cb: (list: unknown) => void) => {
+    const fn = (_: unknown, list: unknown) => cb(list)
+    ipcRenderer.on('ssh:forwards-changed', fn)
+    return () => ipcRenderer.removeListener('ssh:forwards-changed', fn)
+  },
+  // VPNs on a gateway host: ids only; main reads the profile from the saved host.
+  vpnStatus: (gatewayId: string, vpnId?: string) => ipcRenderer.invoke('vpn:status', gatewayId, vpnId),
+  vpnUp: (gatewayId: string, vpnId: string) => ipcRenderer.invoke('vpn:up', gatewayId, vpnId),
+  vpnDown: (gatewayId: string, vpnId: string) => ipcRenderer.invoke('vpn:down', gatewayId, vpnId),
+  vpnKnown: () => ipcRenderer.invoke('vpn:known'),
+  onVpnChanged: (cb: (ev: unknown) => void) => {
+    const fn = (_: unknown, ev: unknown) => cb(ev)
+    ipcRenderer.on('vpn:changed', fn)
+    return () => ipcRenderer.removeListener('vpn:changed', fn)
+  },
 
   // SFTP (Remote Session file browser)
-  sftpConnect: (hostId: string) => ipcRenderer.invoke('sftp:connect', hostId),
+  sftpConnect: (hostId: string, opts?: { vpnUp?: boolean }) => ipcRenderer.invoke('sftp:connect', hostId, opts),
   sftpList: (hostId: string, dir: string) => ipcRenderer.invoke('sftp:list', hostId, dir),
   sftpRead: (hostId: string, p: string) => ipcRenderer.invoke('sftp:read', hostId, p),
   sftpWrite: (hostId: string, p: string, content: string) =>
@@ -420,6 +454,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('sftp:upload', hostId, dir, localPaths),
   sftpHistory: (hostId: string) => ipcRenderer.invoke('sftp:history', hostId),
   remoteContainers: (hostId: string) => ipcRenderer.invoke('remote:containers', hostId),
+  localContainers: () => ipcRenderer.invoke('local:containers'),
 
   // Ops runs (docs/OPS_AGENT_PLAN.md): runbook preview, reports, ledger checks, and the
   // live ledger lines of a run for the timeline. The renderer never writes the ledger.
@@ -452,6 +487,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   respondOpsSecret: (payload: { requestId: string; value: string | null }) =>
     ipcRenderer.invoke('ops:secret-response', payload),
+  // A Remote Session that is connecting asks for a secret (a password nobody saved, a key's
+  // passphrase, a keyboard-interactive question). null = cancelled. The answer only ever goes
+  // this way, renderer to main.
+  onHostSecretRequest: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('ssh:secret-request', fn)
+    return () => ipcRenderer.removeListener('ssh:secret-request', fn)
+  },
+  // Main stopped waiting (the connection was abandoned): drop the prompt.
+  onHostSecretCancel: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('ssh:secret-cancel', fn)
+    return () => ipcRenderer.removeListener('ssh:secret-cancel', fn)
+  },
+  respondHostSecret: (payload: { requestId: string; value: string | null; save: boolean }) =>
+    ipcRenderer.invoke('ssh:secret-response', payload),
   // ask_operator: a command for the operator to run in their own session. null = declined.
   onOpsOperatorRequest: (cb: (data: unknown) => void) => {
     const fn = (_: unknown, data: unknown) => cb(data)
@@ -578,11 +629,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('terminal:notify', fn)
     return () => ipcRenderer.removeListener('terminal:notify', fn)
   },
+  terminalSendSecret: (id: string, opts?: { force?: boolean }) => ipcRenderer.invoke('terminal:send-secret', id, opts),
+  onTerminalSecretHint: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('terminal:secret-hint', fn)
+    return () => ipcRenderer.removeListener('terminal:secret-hint', fn)
+  },
 
   // Remote shell (Remote Session SSH terminal, over the SFTP connection)
   remoteShellCreate: (
     id: string,
-    hostId: string,
+    hostId: string | null,
     cols: number,
     rows: number,
     container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string }
@@ -600,5 +657,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const fn = (_: unknown, data: unknown) => cb(data)
     ipcRenderer.on('remote-shell:exit', fn)
     return () => ipcRenderer.removeListener('remote-shell:exit', fn)
+  },
+  // The secret itself never crosses here: main picks it from the host and types it.
+  remoteShellSendSecret: (id: string, opts?: { force?: boolean }) => ipcRenderer.invoke('remote-shell:send-secret', id, opts),
+  remoteShellElevate: (id: string) => ipcRenderer.invoke('remote-shell:elevate', id),
+  onRemoteShellSecretHint: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('remote-shell:secret-hint', fn)
+    return () => ipcRenderer.removeListener('remote-shell:secret-hint', fn)
   }
 })

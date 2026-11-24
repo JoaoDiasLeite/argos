@@ -4,22 +4,37 @@ import { useLingering } from '../hooks/useLingering'
 import {
   SshHostPublic,
   SshHostInput,
-  SshAuthType,
   SshKeyInfo,
+  type SshCredentialPublic,
+  type SshGroupPublic,
+  type SshAuthSource,
   WslDistro,
   SourceInfo,
   OpsRunbookInfo,
-  OpsRunListItem
+  OpsRunListItem,
+  type RemoteContainerTarget
 } from '../types'
+import ContainersPanel, { type ContainerSource } from '../components/ContainersPanel'
+import PortForwardsEditor from '../components/PortForwardsEditor'
+import ActiveTunnels from '../components/ActiveTunnels'
 import Menu, { MoreIcon } from '../components/Menu'
 import Sheet from '../components/Sheet'
+import Markdown from '../components/Markdown'
+import { allHostTags, filterHosts } from '../lib/host-filter'
 import OpsReportSheet from '../components/OpsReportSheet'
 import { allRunbookPaths, readRunbookSources } from '../lib/runbook-library'
 import './views.css'
 import './RemoteView.css'
 import Select from '../components/Select'
+import LoginFields, { AUTH_CHIP, AUTH_LABEL, type LoginValue } from '../components/LoginFields'
+import CredentialsSheet, { type CredentialsStart } from '../components/CredentialsSheet'
+import GroupsSheet, { type GroupsStart } from '../components/GroupsSheet'
+import { UNGROUPED_KEY, groupHosts, parseFolded, serializeFolded } from '../lib/host-groups'
 import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
+import { GatewayVpnsSection, INHERIT_VPN, NO_VPN, VpnDot, VpnNeededField, VpnProfilesEditor } from '../components/GatewayVpns'
+import { useVpnStates, vpnKey } from '../hooks/useVpnStates'
+import { useLabs } from '../hooks/useLabs'
 
 interface Props {
   onConnect: (host: SshHostPublic) => void
@@ -41,13 +56,15 @@ interface Props {
   openSshSessions?: string[]
   /** SSH host ids whose open sessions have all failed to connect. */
   failedSshSessions?: string[]
+  /** A local container's Shell: a tab with a shell inside it, on this computer. */
+  onOpenLocalContainer?: (container: RemoteContainerTarget, name: string) => void
 }
 
 /** Which screen the view is showing. SSH keys are a sub-screen behind the header's key
  *  button rather than a third section on the list: they're setup, not day-to-day. */
 type Screen = 'targets' | 'keys'
-/** The type filter above the list. */
-type Kind = 'all' | 'wsl' | 'ssh'
+/** The type filter above the list. `docker` is this computer's containers. */
+type Kind = 'all' | 'wsl' | 'ssh' | 'docker'
 /** The target the column describes. Remembered per viewer, so coming back to the screen
  *  shows the same one. */
 type Selection = { kind: 'wsl'; name: string } | { kind: 'ssh'; id: string }
@@ -77,11 +94,61 @@ interface Probes {
   claude?: Probe
 }
 
+const LOCAL_SOURCE: ContainerSource = { kind: 'local' }
+
+/** The credential select's "New credential" entry. */
+const NEW_CREDENTIAL = '__new__'
+/** The group select's "New group" entry. */
+const NEW_GROUP = '__new_group__'
+/** The "Connect through" select's entries that are not a host id. */
+const INHERIT_JUMP = '__inherit__'
+const DIRECT_JUMP = '__direct__'
+/** Which group headers of the Servers list are folded, per viewer. */
+const FOLDED_GROUPS_KEY = 'argos.remote.foldedGroups'
+
+/** The auth source of a host or form, read like main does for one saved before groups. */
+const sourceOf = (h: { authSource?: SshAuthSource; credentialId?: string }): SshAuthSource =>
+  h.authSource ?? (h.credentialId !== undefined ? 'credential' : 'own')
+
 const keyOf = (sel: Selection): string => (sel.kind === 'wsl' ? `wsl:${sel.name}` : `ssh:${sel.id}`)
 
 function emptyHost(): SshHostInput {
   return { name: '', host: '', port: 22, username: '', authType: 'password' }
 }
+
+/** A saved host as the form edits it: no secrets, which only ever travel renderer to main. */
+function hostToInput(h: SshHostPublic): SshHostInput {
+  return {
+    id: h.id,
+    name: h.name,
+    host: h.host,
+    port: h.port,
+    // An inheriting host's credentialId (below) is its group's: the form only reads it with
+    // "shared credential" chosen, and main ignores it for an inherited login.
+    groupId: h.groupId,
+    authSource: sourceOf(h),
+    username: h.username,
+    authType: h.authType,
+    privateKeyPath: h.privateKeyPath,
+    remotePath: h.remotePath,
+    claudePath: h.claudePath,
+    elevation: h.elevation,
+    elevateCommand: h.elevateCommand,
+    favorite: h.favorite,
+    production: h.production,
+    tags: h.tags,
+    forwards: h.forwards,
+    notes: h.notes,
+    credentialId: h.credentialId,
+    jumpHostId: h.jumpHostId,
+    vpns: h.vpns,
+    vpnId: h.vpnId,
+    vpnAutoUp: h.vpnAutoUp
+  }
+}
+
+/** The tags box is free text while typing; main cleans, dedupes and caps what is saved. */
+const parseTagsText = (text: string): string[] => text.split(',').map((x) => x.trim()).filter(Boolean)
 
 /** `C:\Users\you\.ssh\id_ed25519` → `~/.ssh/id_ed25519`; anything else as written. */
 function shortKeyPath(p: string): string {
@@ -131,6 +198,17 @@ const KeyIcon = () => (
     <path d="M11 11l9-9M16 6l3 3M14 8l2 2" />
   </Icon>
 )
+const UserIcon = () => (
+  <Icon>
+    <circle cx="12" cy="8" r="4" />
+    <path d="M4 21c0-4 4-6 8-6s8 2 8 6" />
+  </Icon>
+)
+const FolderIcon = () => (
+  <Icon>
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+  </Icon>
+)
 const PlusIcon = () => (
   <Icon>
     <path d="M12 5v14M5 12h14" />
@@ -141,6 +219,11 @@ const SearchIcon = () => (
     <circle cx="11" cy="11" r="7" />
     <path d="M20 20l-3.5-3.5" />
   </Icon>
+)
+const StarIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 3l2.7 5.6 6.1.8-4.5 4.3 1.1 6.1L12 16.9 6.6 19.8l1.1-6.1L3.2 9.4l6.1-.8z" />
+  </svg>
 )
 const XIcon = () => (
   <Icon>
@@ -175,9 +258,6 @@ const Dot = ({ state }: { state: DotState }) => {
   return <span className={`rv-dot ${state}`} title={t(DOT_TITLE[state])} aria-label={t(DOT_TITLE[state])} role="img" />
 }
 
-const AUTH_LABEL: Record<SshAuthType, MessageKey> = { password: 'remote.auth.password', key: 'remote.auth.key', agent: 'remote.auth.agent' }
-const AUTH_CHIP: Record<SshAuthType, MessageKey> = { password: 'remote.auth.chipPassword', key: 'remote.auth.chipKey', agent: 'remote.auth.chipAgent' }
-
 export default function RemoteView({
   onConnect,
   onOps,
@@ -186,16 +266,40 @@ export default function RemoteView({
   onOpenWslSession,
   openWslSessions = [],
   openSshSessions = [],
-  failedSshSessions = []
+  failedSshSessions = [],
+  onOpenLocalContainer
 }: Props) {
   const t = useT()
   const { locale } = useLanguage()
+  // The experimental features (Settings, About). Off, this screen is the 3.8.0 one: no
+  // credentials, groups, gateways, VPNs, tunnels, favourites, tags, notes or PROD marker.
+  // Only the UI goes: whatever a host carries is kept in the form and saved as it was.
+  const labs = useLabs()
   const [hosts, setHosts] = useState<SshHostPublic[]>([])
+  const vpnStates = useVpnStates()
+  const [credentials, setCredentials] = useState<SshCredentialPublic[]>([])
+  // The credentials sheet, and where it opened (the list, or one credential from the host form).
+  const [credSheet, setCredSheet] = useState<CredentialsStart | null>(null)
+  const [groups, setGroups] = useState<SshGroupPublic[]>([])
+  // The groups sheet, and where it opened (the list, a group header, or the host form).
+  const [groupSheet, setGroupSheet] = useState<GroupsStart | null>(null)
+  const [foldedGroups, setFoldedGroups] = useState<Set<string>>(() => {
+    try {
+      return parseFolded(localStorage.getItem(FOLDED_GROUPS_KEY))
+    } catch {
+      return new Set()
+    }
+  })
   const [distros, setDistros] = useState<WslDistro[]>([])
   const [sources, setSources] = useState<SourceInfo[]>([])
   const [hidden, setHidden] = useState<string[]>([])
   const [wslPaths, setWslPaths] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<SshHostInput | null>(null)
+  // The tags field as typed ("a, b,"): the list is only built when saving.
+  const [tagsText, setTagsText] = useState('')
+  // "Edit notes" opens the same form and lands in the notes box.
+  const focusNotesRef = useRef(false)
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
   const editorOpenedAt = useRef(0)
   const [probes, setProbes] = useState<Record<string, Probes>>({})
   const [probing, setProbing] = useState<string | null>(null)
@@ -212,6 +316,8 @@ export default function RemoteView({
 
   const [screen, setScreen] = useState<Screen>('targets')
   const [kind, setKind] = useState<Kind>('all')
+  // This computer's containers, as the section last listed them: no runtime, no section.
+  const [local, setLocal] = useState<{ runtime: boolean; count: number }>({ runtime: false, count: 0 })
   const [query, setQuery] = useState('')
   const [showHidden, setShowHidden] = useState(false)
   const [selected, setSelectedState] = useState<Selection | null>(null)
@@ -235,10 +341,10 @@ export default function RemoteView({
 
   // The column is mounted only while a target is selected (as the Projects column): a
   // mousedown anywhere outside it that is not a target row closes it, and so does Esc when
-  // focus is not in a field. Sheets (Add/Edit host, the report) keep it: a click in them
+  // focus is not in a field. Sheets (Add/Edit host, credentials, the report) keep it: a click in them
   // is not a click outside the column.
   useEffect(() => {
-    if (!selected || editing || reportFor) return
+    if (!selected || editing || reportFor || credSheet || groupSheet) return
     const onDown = (e: MouseEvent) => {
       if (e.button !== 0) return
       const target = e.target as HTMLElement | null
@@ -258,10 +364,12 @@ export default function RemoteView({
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [selected, editing, reportFor])
+  }, [selected, editing, reportFor, credSheet, groupSheet])
 
   const load = async () => {
     setHosts(await window.electronAPI.sshList())
+    setCredentials(await window.electronAPI.sshCredentialsList())
+    setGroups(await window.electronAPI.sshGroupsList())
     setDistros(await window.electronAPI.wslList())
     setHidden(await window.electronAPI.wslHidden())
     setSources(await window.electronAPI.ccSources())
@@ -318,8 +426,6 @@ export default function RemoteView({
     }
   }
 
-  const keyLabel = (k: SshKeyInfo) =>
-    `${k.name}${k.type ? ` · ${k.type.replace(/^ssh-/, '')}` : ''}${k.comment ? ` · ${k.comment}` : ''}`
   const accountFor = (distro: string) => sources.find((s) => s.id === `wsl:${distro}`)?.account
   const setDistroHidden = async (name: string, hide: boolean) => {
     setHidden(await window.electronAPI.wslSetHidden(name, hide))
@@ -364,14 +470,69 @@ export default function RemoteView({
     }
   }
 
-  const hostValid = !!editing && !!editing.name.trim() && !!editing.host.trim() && !!editing.username.trim()
+  // Where the login comes from. With "shared credential" chosen, `credentialId` is '' until
+  // one is picked; with "inherit", the login is the credential of the group picked above.
+  const source: SshAuthSource = editing ? sourceOf(editing) : 'own'
+  const linking = source === 'credential'
+  const inheriting = source === 'group'
+  const linkedCred = linking ? credentials.find((c) => c.id === editing?.credentialId) : undefined
+  const editingGroup = editing?.groupId ? groups.find((g) => g.id === editing.groupId) : undefined
+  const groupCred = editingGroup?.credentialId ? credentials.find((c) => c.id === editingGroup.credentialId) : undefined
+  // The credential a linked or inheriting host logs in with, for the form's read-only line
+  // when the features are off.
+  const shownCred = inheriting ? groupCred : linkedCred
+  const hostValid =
+    !!editing &&
+    !!editing.name.trim() &&
+    !!editing.host.trim() &&
+    (inheriting ? !!groupCred : linking ? !!linkedCred : !!editing.username.trim())
 
-  // A saved secret exists for the auth type being edited (the main process drops the other).
-  const canRemoveSecret = !!editing?.id && hosts.some((h) => h.id === editing.id && h.hasSecret && h.authType === editing.authType)
+  // The saved host's own secrets, for the "unchanged" placeholders and the remove buttons. A
+  // host saved on a shared credential, or inheriting one, has none of its own.
+  const savedHost = editing?.id ? hosts.find((h) => h.id === editing.id) : undefined
+  const savedOwnLogin = savedHost && sourceOf(savedHost) === 'own' ? savedHost : undefined
 
-  const openEditor = (h: SshHostInput) => {
+  // The gateways this host may go through: any other saved host that connects directly (one
+  // hop only). A host others already go through must stay direct itself; main checks both.
+  // `jumpViaId` is the gateway in force (its own or its group's), so a host that inherits one
+  // is no gateway candidate either.
+  const jumpChoices = editing ? hosts.filter((h) => h.id !== editing.id && !h.jumpViaId && !h.jumpMissing) : []
+  const isGateway = !!editing?.id && hosts.some((h) => h.jumpViaId === editing.id)
+  // The select's values: an id, DIRECT_JUMP for `''` (explicitly direct), INHERIT_JUMP for
+  // absent (the group's gateway). Without a group gateway, absent simply reads as direct.
+  const groupJump = editingGroup?.jumpHostId ? hosts.find((h) => h.id === editingGroup.jumpHostId) : undefined
+  const jumpValue =
+    editing?.jumpHostId === undefined ? (editingGroup?.jumpHostId ? INHERIT_JUMP : DIRECT_JUMP) : editing.jumpHostId || DIRECT_JUMP
+  const jumpUnknown = jumpValue !== INHERIT_JUMP && jumpValue !== DIRECT_JUMP && !jumpChoices.some((h) => h.id === jumpValue)
+  const pickJump = (value: string): string | undefined =>
+    value === INHERIT_JUMP ? undefined : value === DIRECT_JUMP ? (editingGroup?.jumpHostId ? '' : undefined) : value
+
+  // The VPN it needs, on the gateway in force in the form. Same convention as the jump:
+  // absent inherits the group's, `''` is explicitly none.
+  const formGateway = jumpValue === INHERIT_JUMP ? groupJump : jumpValue === DIRECT_JUMP ? undefined : hosts.find((h) => h.id === jumpValue)
+  const groupVpn = editingGroup?.vpnId ? groupJump?.vpns?.find((v) => v.id === editingGroup.vpnId) : undefined
+  const vpnValue =
+    editing?.vpnId === undefined ? (editingGroup?.vpnId ? INHERIT_VPN : NO_VPN) : editing.vpnId || NO_VPN
+  const pickVpn = (value: string): string | undefined =>
+    value === INHERIT_VPN ? undefined : value === NO_VPN ? (editingGroup?.vpnId ? '' : undefined) : value
+
+  /** The host form switching back to a login of its own. The login fields already hold what
+   *  the host showed (its own, or its credential's when it was saved linked), so only the link
+   *  and any secret typed meanwhile are dropped: a credential's secrets never move to a host. */
+  const ownLoginFrom = (h: SshHostInput): SshHostInput => ({
+    ...h,
+    authSource: 'own',
+    credentialId: undefined,
+    password: undefined,
+    passphrase: undefined,
+    elevationPassword: undefined
+  })
+
+  const openEditor = (h: SshHostInput, focusNotes = false) => {
     editorOpenedAt.current = Date.now()
     setWriteError(null)
+    setTagsText((h.tags ?? []).join(', '))
+    focusNotesRef.current = focusNotes
     setEditing(h)
   }
 
@@ -383,7 +544,7 @@ export default function RemoteView({
     savingRef.current = true
     setSaving(true)
     try {
-      const res = await window.electronAPI.sshSave(editing)
+      const res = await window.electronAPI.sshSave({ ...editing, tags: parseTagsText(tagsText) })
       if (!res.ok) {
         // Nothing was written: the sheet stays open with what was typed.
         setWriteError(res.error)
@@ -391,6 +552,9 @@ export default function RemoteView({
       }
       setHosts(res.hosts)
       setEditing(null)
+      // How many servers use each credential, and are in each group, may have changed.
+      window.electronAPI.sshCredentialsList().then(setCredentials).catch(() => {})
+      window.electronAPI.sshGroupsList().then(setGroups).catch(() => {})
     } finally {
       savingRef.current = false
       setSaving(false)
@@ -416,6 +580,39 @@ export default function RemoteView({
     }
     setHosts(res.hosts)
     select(null)
+    window.electronAPI.sshCredentialsList().then(setCredentials).catch(() => {})
+    window.electronAPI.sshGroupsList().then(setGroups).catch(() => {})
+  }
+
+  // A credential write changes the login every linked host shows, so the hosts are re-read.
+  const credentialsChanged = (next: SshCredentialPublic[], savedId?: string) => {
+    setCredentials(next)
+    window.electronAPI.sshList().then(setHosts).catch(() => {})
+    window.electronAPI.sshGroupsList().then(setGroups).catch(() => {})
+    // A credential created from the host form ("New credential...") is the one it links.
+    if (savedId && editing && credSheet?.kind === 'new') setEditing({ ...editing, credentialId: savedId })
+  }
+
+  // A group write changes the origin every inheriting host shows, and how many groups carry
+  // each credential, so both are re-read.
+  const groupsChanged = (next: SshGroupPublic[], savedId?: string) => {
+    setGroups(next)
+    window.electronAPI.sshList().then(setHosts).catch(() => {})
+    window.electronAPI.sshCredentialsList().then(setCredentials).catch(() => {})
+    // A group created from the host form ("New group...") is the one it goes in.
+    if (savedId && editing && groupSheet?.kind === 'new') setEditing({ ...editing, groupId: savedId })
+  }
+
+  const toggleGroupFold = (key: string) => {
+    const next = new Set(foldedGroups)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    setFoldedGroups(next)
+    try {
+      localStorage.setItem(FOLDED_GROUPS_KEY, serializeFolded(next))
+    } catch {
+      // Storage unavailable: the fold lasts for this view only.
+    }
   }
 
   // ── Filtering ──────────────────────────────────────────────────────────────
@@ -426,12 +623,25 @@ export default function RemoteView({
 
   const q = query.trim().toLowerCase()
   const matchesDistro = (d: WslDistro) => !q || d.name.toLowerCase().includes(q)
-  const matchesHost = (h: SshHostPublic) =>
-    !q || h.name.toLowerCase().includes(q) || h.host.toLowerCase().includes(q) || h.username.toLowerCase().includes(q)
+  // Tags exist on SSH hosts only, so picking one narrows the list to the hosts that carry it.
+  const tagChoices = useMemo(() => allHostTags(hosts), [hosts])
+  // A tag picked while the features were on no longer filters once they are off.
+  const activeTags = labs ? selectedTags.filter((tag) => tagChoices.some((c) => c.toLowerCase() === tag.toLowerCase())) : []
+  const toggleTag = (tag: string) =>
+    setSelectedTags((prev) =>
+      prev.some((x) => x.toLowerCase() === tag.toLowerCase())
+        ? prev.filter((x) => x.toLowerCase() !== tag.toLowerCase())
+        : [...prev, tag]
+    )
 
-  const shownDistros = kind === 'ssh' ? [] : visibleDistros.filter(matchesDistro)
-  const shownHosts = kind === 'wsl' ? [] : hosts.filter(matchesHost)
-  const nothingMatches = shownDistros.length === 0 && shownHosts.length === 0
+  const shownDistros = (kind === 'all' || kind === 'wsl') && activeTags.length === 0 ? visibleDistros.filter(matchesDistro) : []
+  const shownHosts = kind === 'all' || kind === 'ssh' ? filterHosts(hosts, query, activeTags, labs) : []
+  const filtering = !!q || activeTags.length > 0
+  // No groups at all, or the features off: the list stays flat, as before groups existed.
+  const hostSections = labs && groups.length > 0 ? groupHosts(shownHosts, groups, filtering, locale) : []
+  const showLocal = local.runtime && (kind === 'all' || kind === 'docker') && activeTags.length === 0
+  // The containers section answers for itself ("no container matches").
+  const nothingMatches = kind !== 'docker' && !showLocal && shownDistros.length === 0 && shownHosts.length === 0
 
   // ── Status ─────────────────────────────────────────────────────────────────
   // An open session outranks everything else: you cannot hold a live terminal on a
@@ -506,6 +716,48 @@ export default function RemoteView({
         }
       }
     }
+  }
+
+  /** One saved host in the Servers list, flat or under its group's header. */
+  const hostRow = (h: SshHostPublic): ReactNode => {
+    const conn = probes[`ssh:${h.id}`]?.conn
+    const failed = (conn && !conn.ok) || (!conn && failedSshSessions.includes(h.id))
+    return (
+      <div key={h.id} {...rowProps({ kind: 'ssh', id: h.id }, () => onOpenSession(h), h.name)}>
+        <Dot state={hostDotState(h)} />
+        {labs && h.favorite && (
+          <span className="rv-star" title={t('remote.list.favorite')} aria-label={t('remote.list.favorite')}>
+            <StarIcon />
+          </span>
+        )}
+        <span className="rv-name">{h.name}</span>
+        {labs && h.production && <span className="prod-pill" title={t('remote.prod.title')}>{t('remote.prod.pill')}</span>}
+        <span className="chip">{t(AUTH_CHIP[h.authType])}</span>
+        {labs && h.tags?.map((tag) => (
+          <span key={tag} className="chip rv-tag">{tag}</span>
+        ))}
+        <span className="rv-row-right">
+          {failed && <span className="rv-row-err">{t('remote.list.couldNotConnect')}</span>}
+          {labs && h.jumpHostName && (
+            <span className="rv-row-meta" title={t('remote.viaTitle', { name: h.jumpHostName })}>
+              {t('remote.via', { name: h.jumpHostName })}
+              {h.vpnName && h.jumpViaId && h.vpnViaId && (
+                <span title={t('remote.vpn.rowTitle', { name: h.vpnName })}>
+                  {' · '}
+                  <VpnDot ev={vpnStates[vpnKey(h.jumpViaId, h.vpnViaId)]} />
+                  {t('remote.vpn.rowSuffix', { name: h.vpnName })}
+                </span>
+              )}
+            </span>
+          )}
+          {labs && h.jumpMissing && <span className="rv-row-err">{t('remote.col.gatewayMissing')}</span>}
+          {labs && h.vpnMissing && <span className="rv-row-err">{t('remote.vpn.missingRow')}</span>}
+          <span className="rv-row-meta">
+            {h.username}@{h.host}:{h.port}
+          </span>
+        </span>
+      </div>
+    )
   }
 
   // ── SSH keys screen ────────────────────────────────────────────────────────
@@ -706,6 +958,66 @@ export default function RemoteView({
           <dl className="rv-dl">
             {selHost ? (
               <>
+                {labs && selHost.groupId && groups.some((g) => g.id === selHost.groupId) && (
+                  <>
+                    <dt>{t('remote.col.group')}</dt>
+                    <dd>{groups.find((g) => g.id === selHost.groupId)?.name}</dd>
+                  </>
+                )}
+                {!labs ? null : selHost.authSource === 'group' ? (
+                  <>
+                    <dt>{t('remote.col.credential')}</dt>
+                    <dd>
+                      {selHost.credentialMissing ? (
+                        <span className="rv-dd-err">{t('remote.col.groupCredentialMissing')}</span>
+                      ) : (
+                        t('remote.col.credentialInherited', { credential: selHost.credentialName ?? '', group: selHost.groupName ?? '' })
+                      )}
+                    </dd>
+                  </>
+                ) : (
+                  selHost.credentialId && (
+                    <>
+                      <dt>{t('remote.col.credential')}</dt>
+                      <dd>
+                        {selHost.credentialMissing ? (
+                          <span className="rv-dd-err">{t('remote.col.credentialMissing')}</span>
+                        ) : (
+                          selHost.credentialName
+                        )}
+                      </dd>
+                    </>
+                  )
+                )}
+                {labs && (selHost.jumpHostName || selHost.jumpMissing) && (
+                  <>
+                    <dt>{t('remote.col.gateway')}</dt>
+                    <dd>
+                      {selHost.jumpMissing ? (
+                        <span className="rv-dd-err">{t('remote.col.gatewayMissing')}</span>
+                      ) : selHost.jumpSource === 'group' ? (
+                        t('remote.col.gatewayFromGroup', { name: selHost.jumpHostName ?? '' })
+                      ) : (
+                        selHost.jumpHostName
+                      )}
+                    </dd>
+                  </>
+                )}
+                {labs && (selHost.vpnName || selHost.vpnMissing) && (
+                  <>
+                    <dt>{t('remote.vpn.needed')}</dt>
+                    <dd>
+                      {selHost.vpnMissing ? (
+                        <span className="rv-dd-err">{t('remote.vpn.missingRow')}</span>
+                      ) : (
+                        <>
+                          {selHost.jumpViaId && selHost.vpnViaId && <VpnDot ev={vpnStates[vpnKey(selHost.jumpViaId, selHost.vpnViaId)]} />}{' '}
+                          {selHost.vpnSource === 'group' ? t('remote.col.gatewayFromGroup', { name: selHost.vpnName ?? '' }) : selHost.vpnName}
+                        </>
+                      )}
+                    </dd>
+                  </>
+                )}
                 <dt>{t('remote.col.authentication')}</dt>
                 <dd>
                   {t(AUTH_LABEL[selHost.authType])}
@@ -769,19 +1081,7 @@ export default function RemoteView({
               <button
                 type="button"
                 className="btn-ghost small"
-                onClick={() =>
-                  openEditor({
-                    id: selHost.id,
-                    name: selHost.name,
-                    host: selHost.host,
-                    port: selHost.port,
-                    username: selHost.username,
-                    authType: selHost.authType,
-                    privateKeyPath: selHost.privateKeyPath,
-                    remotePath: selHost.remotePath,
-                    claudePath: selHost.claudePath
-                  })
-                }
+                onClick={() => openEditor(hostToInput(selHost))}
               >
                 {t('remote.col.editHost')}
               </button>
@@ -794,6 +1094,26 @@ export default function RemoteView({
             )}
           </div>
         </section>
+
+        {labs && selHost && (selHost.vpns?.length ?? 0) > 0 && <GatewayVpnsSection host={selHost} states={vpnStates} />}
+
+        {labs && selHost && (
+          <section className="rv-sec">
+            <div className="eyebrow">{t('remote.col.notes')}</div>
+            {selHost.notes ? (
+              <div className="rv-notes">
+                <Markdown content={selHost.notes} />
+              </div>
+            ) : (
+              <span className="rv-dd-muted">{t('remote.col.noNotes')}</span>
+            )}
+            <div className="rv-col-actions">
+              <button type="button" className="btn-ghost small" onClick={() => openEditor(hostToInput(selHost), true)}>
+                {t('remote.col.editNotes')}
+              </button>
+            </div>
+          </section>
+        )}
 
         {selHost && selHostRunbooks.length > 0 && (
           <section className="rv-sec">
@@ -893,10 +1213,23 @@ export default function RemoteView({
           <h1>{t('remote.title')}</h1>
           <p className="rv-sub">{t('remote.sub')}</p>
         </div>
+        {labs && <ActiveTunnels hosts={hosts} />}
         <button type="button" className="btn-ghost" onClick={() => setScreen('keys')}>
           <KeyIcon />
           {t('remote.keys.title')}
         </button>
+        {labs && (
+          <>
+            <button type="button" className="btn-ghost" onClick={() => setCredSheet({ kind: 'list' })}>
+              <UserIcon />
+              {t('remote.creds.button')}
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => setGroupSheet({ kind: 'list' })}>
+              <FolderIcon />
+              {t('remote.groups.button')}
+            </button>
+          </>
+        )}
         <button type="button" className="btn-ghost" onClick={() => openEditor(emptyHost())}>
           <PlusIcon />
           {t('remote.addHost')}
@@ -926,9 +1259,10 @@ export default function RemoteView({
             <div className="seg-control">
               {(
                 [
-                  ['all', t('remote.filter.all'), visibleDistros.length + hosts.length],
+                  ['all', t('remote.filter.all'), visibleDistros.length + hosts.length + local.count],
                   ['wsl', 'WSL', visibleDistros.length],
-                  ['ssh', 'SSH', hosts.length]
+                  ['ssh', 'SSH', hosts.length],
+                  ...(local.runtime ? [['docker', 'Docker', local.count]] : [])
                 ] as [Kind, string, number][]
               ).map(([k, label, n]) => (
                 <button type="button" key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>
@@ -937,6 +1271,30 @@ export default function RemoteView({
               ))}
             </div>
           </div>
+
+          {labs && tagChoices.length > 0 && (
+            <div className="rv-tagbar" role="group" aria-label={t('remote.filter.tags')}>
+              {tagChoices.map((tag) => {
+                const on = activeTags.some((x) => x.toLowerCase() === tag.toLowerCase())
+                return (
+                  <button
+                    type="button"
+                    key={tag}
+                    className={`chip rv-tag-filter${on ? ' on' : ''}`}
+                    aria-pressed={on}
+                    onClick={() => toggleTag(tag)}
+                  >
+                    {tag}
+                  </button>
+                )
+              })}
+              {activeTags.length > 0 && (
+                <button type="button" className="btn-text rv-tag-clear" onClick={() => setSelectedTags([])}>
+                  {t('remote.filter.clearTags')}
+                </button>
+              )}
+            </div>
+          )}
 
           {nothingMatches && <p className="rv-nothing">{q ? t('remote.filter.nothing', { query }) : t('remote.filter.none')}</p>}
 
@@ -969,7 +1327,7 @@ export default function RemoteView({
 
           {/* Hidden distros are noise on the main list: one disclosure line, since the only
               thing you can do with them is show them again. */}
-          {kind !== 'ssh' && hiddenDistros.length > 0 && (
+          {(kind === 'all' || kind === 'wsl') && hiddenDistros.length > 0 && (
             <div className="rv-hidden">
               <button type="button" className="rv-hidden-toggle" onClick={() => setShowHidden((v) => !v)} aria-expanded={showHidden}>
                 <ChevronRight className={showHidden ? 'open' : ''} />
@@ -993,27 +1351,67 @@ export default function RemoteView({
           {shownHosts.length > 0 && (
             <>
               <div className="eyebrow rv-eyebrow">{t('remote.list.ssh')}</div>
-              <div role="listbox" aria-label={t('remote.list.ssh')} className="rv-rows">
-                {shownHosts.map((h) => {
-                  const conn = probes[`ssh:${h.id}`]?.conn
-                  const failed = (conn && !conn.ok) || (!conn && failedSshSessions.includes(h.id))
+              {hostSections.length === 0 ? (
+                <div role="listbox" aria-label={t('remote.list.ssh')} className="rv-rows">
+                  {shownHosts.map(hostRow)}
+                </div>
+              ) : (
+                hostSections.map(({ group, hosts: members }) => {
+                  const key = group ? group.id : UNGROUPED_KEY
+                  const label = group ? group.name : t('remote.groups.ungrouped')
+                  // A filter shows its matches even inside a folded group.
+                  const open = filtering || !foldedGroups.has(key)
                   return (
-                    <div key={h.id} {...rowProps({ kind: 'ssh', id: h.id }, () => onOpenSession(h), h.name)}>
-                      <Dot state={hostDotState(h)} />
-                      <span className="rv-name">{h.name}</span>
-                      <span className="chip">{t(AUTH_CHIP[h.authType])}</span>
-                      <span className="rv-row-right">
-                        {failed && <span className="rv-row-err">{t('remote.list.couldNotConnect')}</span>}
-                        <span className="rv-row-meta">
-                          {h.username}@{h.host}:{h.port}
-                        </span>
-                      </span>
+                    <div key={key} className="ctr-group rv-group">
+                      <div className="rv-group-head">
+                        <button type="button" className="ctr-group-head rv-group-toggle" aria-expanded={open} onClick={() => toggleGroupFold(key)}>
+                          <ChevronRight className={`ctr-chevron${open ? ' open' : ''}`} />
+                          <span className="ctr-group-name" title={label}>
+                            {label}
+                          </span>
+                          {group?.credentialId && (
+                            <span className="ctr-group-icon" title={t('remote.groups.carries', { name: group.credentialName ?? '' })}>
+                              <KeyIcon />
+                            </span>
+                          )}
+                          <span className="ctr-group-count">{members.length}</span>
+                        </button>
+                        {group && (
+                          <Menu
+                            triggerClass="btn-ghost small rv-icon-btn"
+                            triggerTitle={t('remote.groups.menu')}
+                            ariaLabel={t('remote.groups.menu')}
+                            triggerContent={<MoreIcon />}
+                            items={[
+                              { label: t('remote.groups.edit'), onClick: () => setGroupSheet({ kind: 'edit', id: group.id }) },
+                              { label: t('remote.groups.deleteGroup'), danger: true, onClick: () => setGroupSheet({ kind: 'delete', id: group.id }) }
+                            ]}
+                          />
+                        )}
+                      </div>
+                      {open && members.length > 0 && (
+                        <div role="listbox" aria-label={label} className="rv-rows ctr-group-rows">
+                          {members.map(hostRow)}
+                        </div>
+                      )}
                     </div>
                   )
-                })}
-              </div>
+                })
+              )}
             </>
           )}
+
+          {/* Mounted even while filtered out or absent, so switching the filter does not list
+              again, and so it finds out whether this computer has a runtime at all. */}
+          <div style={{ display: showLocal ? undefined : 'none' }}>
+            <ContainersPanel
+              source={LOCAL_SOURCE}
+              ready
+              query={q}
+              onOpen={(c, name) => onOpenLocalContainer?.(c, name)}
+              onState={setLocal}
+            />
+          </div>
         </div>
 
         <div className={`slide-col ${colOpen ? 'open' : ''}`}>
@@ -1025,7 +1423,9 @@ export default function RemoteView({
         </div>
       </div>
 
-      {editing && (
+      {/* The host sheet steps aside while a credential opened from it is edited: two stacked
+          sheets would both close on one Esc. Its state stays in `editing`. */}
+      {editing && !credSheet && !groupSheet && (
         <Sheet
           title={editing.id ? t('remote.col.editHost') : t('remote.addHost')}
           width={520}
@@ -1073,82 +1473,177 @@ export default function RemoteView({
                 />
               </div>
             </div>
-            <div className="form-group">
-              <label>{t('remote.form.username')}</label>
-              <input className="text-input mono" value={editing.username} placeholder="ubuntu" onChange={(e) => setEditing({ ...editing, username: e.target.value })} />
-            </div>
-            <div className="form-group">
-              <label>{t('remote.col.authentication')}</label>
-              <div className="seg-control">
-                {(['password', 'key', 'agent'] as SshAuthType[]).map((a) => (
-                  <button type="button" key={a} className={editing.authType === a ? 'on' : ''} onClick={() => setEditing({ ...editing, authType: a })}>
-                    {t(AUTH_LABEL[a])}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {editing.authType === 'password' && (
-              <div className="form-group">
-                <label>{t('remote.form.password')}</label>
-                <input
-                  className="text-input"
-                  type="password"
-                  placeholder={editing.password === null ? t('remote.form.removed') : editing.id ? t('remote.form.unchanged') : ''}
-                  onChange={(e) => setEditing({ ...editing, password: e.target.value })}
-                />
-                {!secretsEncrypted && <p className="help">{t('remote.form.passwordPlain')}</p>}
-                {canRemoveSecret && editing.password === undefined && (
-                  <button type="button" className="btn-ghost small rv-remove-secret" onClick={() => setEditing({ ...editing, password: null })}>
-                    {t('remote.form.removePassword')}
-                  </button>
-                )}
-              </div>
-            )}
-            {editing.authType === 'key' && (
+            {labs && (
               <>
-                {keys.length > 0 && (
-                  <div className="form-group">
-                    <label>{t('remote.form.discoveredKey')}</label>
-                    <Select
-                      value={keys.some((k) => k.privatePath === editing.privateKeyPath) ? editing.privateKeyPath : ''}
-                      onChange={(e) => setEditing({ ...editing, privateKeyPath: e.target.value })}
-                    >
-                      <option value="">{t('remote.form.defaultKey')}</option>
-                      {keys.map((k) => (
-                        <option key={k.privatePath} value={k.privatePath}>
-                          {keyLabel(k)}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                )}
-                <div className="form-group">
-                  <label>{t('remote.form.privateKeyPath')}</label>
-                  <input
-                    className="text-input mono"
-                    value={editing.privateKeyPath ?? ''}
-                    placeholder="C:\Users\you\.ssh\id_ed25519"
-                    onChange={(e) => setEditing({ ...editing, privateKeyPath: e.target.value })}
-                  />
-                </div>
                 <div className="form-group">
                   <label>
-                    {t('remote.form.passphrase')}<span className="optional">{t('remote.form.optional')}</span>
+                    {t('remote.form.group')}
+                    <span className="optional">{t('remote.form.optional')}</span>
                   </label>
-                  <input
-                    className="text-input"
-                    type="password"
-                    placeholder={editing.passphrase === null ? t('remote.form.removed') : editing.id ? t('remote.form.unchanged') : ''}
-                    onChange={(e) => setEditing({ ...editing, passphrase: e.target.value })}
+                  <Select
+                    value={editingGroup ? editingGroup.id : ''}
+                    onChange={(e) => {
+                      if (e.target.value === NEW_GROUP) setGroupSheet({ kind: 'new' })
+                      else setEditing({ ...editing, groupId: e.target.value || undefined })
+                    }}
+                  >
+                    <option value="">{t('remote.form.groupNone')}</option>
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                    <option value={NEW_GROUP}>{t('remote.form.groupNew')}</option>
+                  </Select>
+                </div>
+                <div className="form-group">
+                  <label>{t('remote.form.jump')}</label>
+                  <Select
+                    value={jumpValue}
+                    disabled={isGateway && jumpValue === DIRECT_JUMP}
+                    onChange={(e) => setEditing({ ...editing, jumpHostId: pickJump(e.target.value) })}
+                  >
+                    {editingGroup?.jumpHostId && (
+                      <option value={INHERIT_JUMP}>
+                        {t('remote.form.jumpInherit', { group: editingGroup.name, name: groupJump?.name ?? t('remote.form.jumpMissing') })}
+                      </option>
+                    )}
+                    <option value={DIRECT_JUMP}>{t('remote.form.jumpDirect')}</option>
+                    {jumpUnknown && <option value={jumpValue}>{t('remote.form.jumpMissing')}</option>}
+                    {jumpChoices.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name}
+                      </option>
+                    ))}
+                  </Select>
+                  {jumpUnknown ? (
+                    <p className="help rv-error-text">{t('remote.form.jumpMissing')}</p>
+                  ) : (
+                    <p className="help">{isGateway ? t('remote.form.jumpIsGateway') : t('remote.form.jumpHelp')}</p>
+                  )}
+                </div>
+                {(formGateway || editing.vpnId) && (
+                  <VpnNeededField
+                    gateway={formGateway}
+                    value={vpnValue}
+                    autoUp={!!editing.vpnAutoUp}
+                    inherit={
+                      editingGroup?.vpnId
+                        ? { group: editingGroup.name, name: groupVpn?.name ?? t('remote.vpn.neededMissing'), autoUp: !!editingGroup.vpnAutoUp }
+                        : undefined
+                    }
+                    help={t('remote.vpn.neededHelp')}
+                    onChange={(value, autoUp) => {
+                      const vpnId = pickVpn(value)
+                      setEditing({ ...editing, vpnId, vpnAutoUp: vpnId ? autoUp : undefined })
+                    }}
                   />
-                  {!secretsEncrypted && <p className="help">{t('remote.form.passphrasePlain')}</p>}
-                  {canRemoveSecret && editing.passphrase === undefined && (
-                    <button type="button" className="btn-ghost small rv-remove-secret" onClick={() => setEditing({ ...editing, passphrase: null })}>
-                      {t('remote.form.removePassphrase')}
+                )}
+              </>
+            )}
+            {labs && (
+              <div className="form-group">
+                <label>{t('remote.form.authSource')}</label>
+                <div className="seg-control">
+                  <button type="button" className={source === 'own' ? 'on' : ''} onClick={() => source !== 'own' && setEditing(ownLoginFrom(editing))}>
+                    {t('remote.form.authSource.own')}
+                  </button>
+                  <button
+                    type="button"
+                    className={linking ? 'on' : ''}
+                    onClick={() => !linking && setEditing({ ...editing, authSource: 'credential', credentialId: editing.credentialId || (credentials[0]?.id ?? '') })}
+                  >
+                    {t('remote.form.authSource.shared')}
+                  </button>
+                  {/* Offered only in a group that carries a credential, or to show a host that
+                      still inherits from one that no longer does. */}
+                  {(inheriting || (editingGroup && groupCred)) && (
+                    <button
+                      type="button"
+                      className={inheriting ? 'on' : ''}
+                      title={
+                        editingGroup && groupCred
+                          ? t('remote.form.authSource.groupTitle', { group: editingGroup.name, credential: groupCred.name })
+                          : undefined
+                      }
+                      onClick={() => !inheriting && setEditing({ ...editing, authSource: 'group', credentialId: undefined })}
+                    >
+                      {t('remote.form.authSource.group')}
                     </button>
                   )}
                 </div>
+              </div>
+            )}
+            {!labs && (linking || inheriting) ? (
+              // Set up with the features on: shown, not editable, and saved as it is.
+              shownCred ? (
+                <div className="form-group">
+                  <label>{t('remote.form.credential')}</label>
+                  <div className="rv-cred-summary">
+                    <span>{shownCred.name}</span>
+                    <span className="rv-cred-user">{shownCred.username}</span>
+                    <span className="chip">{t(AUTH_CHIP[shownCred.authType])}</span>
+                  </div>
+                  <p className="help">{t(inheriting ? 'remote.form.inheritHelp' : 'remote.form.credentialHelp')}</p>
+                </div>
+              ) : (
+                <p className="help rv-error-text">{t('remote.col.credentialMissing')}</p>
+              )
+            ) : inheriting ? (
+              editingGroup && groupCred ? (
+                <div className="form-group">
+                  <div className="rv-cred-summary">
+                    <span>{t('remote.form.authSource.groupTitle', { group: editingGroup.name, credential: groupCred.name })}</span>
+                    <span className="rv-cred-user">{groupCred.username}</span>
+                    <span className="chip">{t(AUTH_CHIP[groupCred.authType])}</span>
+                  </div>
+                  <p className="help">{t('remote.form.inheritHelp')}</p>
+                </div>
+              ) : (
+                <p className="help rv-error-text">{t('remote.form.inheritUnavailable')}</p>
+              )
+            ) : linking ? (
+              <>
+                <div className="form-group">
+                  <label>{t('remote.form.credential')}</label>
+                  <Select
+                    value={linkedCred ? linkedCred.id : ''}
+                    onChange={(e) => {
+                      if (e.target.value === NEW_CREDENTIAL) setCredSheet({ kind: 'new' })
+                      else setEditing({ ...editing, credentialId: e.target.value })
+                    }}
+                  >
+                    {!linkedCred && <option value="">{t('remote.form.credentialPick')}</option>}
+                    {credentials.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                    <option value={NEW_CREDENTIAL}>{t('remote.form.credentialNew')}</option>
+                  </Select>
+                  {editing.credentialId && !linkedCred && <p className="help rv-error-text">{t('remote.col.credentialMissing')}</p>}
+                </div>
+                {linkedCred && (
+                  <div className="form-group">
+                    <div className="rv-cred-summary">
+                      <span className="rv-cred-user">{linkedCred.username}</span>
+                      <span className="chip">{t(AUTH_CHIP[linkedCred.authType])}</span>
+                      <button type="button" className="btn-ghost small" onClick={() => setCredSheet({ kind: 'edit', id: linkedCred.id })}>
+                        {t('remote.form.credentialEdit')}
+                      </button>
+                    </div>
+                    <p className="help">{t('remote.form.credentialHelp')}</p>
+                  </div>
+                )}
               </>
+            ) : (
+              <LoginFields
+                value={editing}
+                onChange={(patch: Partial<LoginValue>) => setEditing({ ...editing, ...patch })}
+                saved={savedOwnLogin}
+                keys={keys}
+                secretsEncrypted={secretsEncrypted}
+              />
             )}
             <div className="form-group">
               <label>
@@ -1173,8 +1668,103 @@ export default function RemoteView({
               />
               <p className="help">{t('remote.form.claudePathHelp')}</p>
             </div>
+            {labs && (
+              <>
+                <div className="form-group rv-toggle-row">
+                  <label>{t('remote.form.favorite')}</label>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={!!editing.favorite}
+                      onChange={(e) => setEditing({ ...editing, favorite: e.target.checked })}
+                      aria-label={t('remote.form.favorite')}
+                    />
+                    <span className="toggle-track">
+                      <span className="toggle-thumb" />
+                    </span>
+                  </label>
+                </div>
+                <div className="form-group rv-toggle-row">
+                  <label>{t('remote.form.production')}</label>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={!!editing.production}
+                      onChange={(e) => setEditing({ ...editing, production: e.target.checked })}
+                      aria-label={t('remote.form.production')}
+                    />
+                    <span className="toggle-track">
+                      <span className="toggle-thumb" />
+                    </span>
+                  </label>
+                </div>
+                <p className="help rv-toggle-help">{t('remote.form.productionHelp')}</p>
+                <div className="form-group">
+                  <label>
+                    {t('remote.form.tags')}<span className="optional">{t('remote.form.optional')}</span>
+                  </label>
+                  <input
+                    className="text-input"
+                    value={tagsText}
+                    placeholder={t('remote.form.tagsPlaceholder')}
+                    onChange={(e) => setTagsText(e.target.value)}
+                  />
+                  <p className="help">{t('remote.form.tagsHelp')}</p>
+                </div>
+                <div className="form-group">
+                  <label>
+                    {t('remote.form.notes')}<span className="optional">{t('remote.form.optional')}</span>
+                  </label>
+                  <textarea
+                    className="text-input rv-notes-input"
+                    value={editing.notes ?? ''}
+                    rows={6}
+                    maxLength={20000}
+                    placeholder={t('remote.form.notesPlaceholder')}
+                    ref={(el) => {
+                      if (el && focusNotesRef.current) {
+                        focusNotesRef.current = false
+                        el.focus()
+                        el.scrollIntoView({ block: 'nearest' })
+                      }
+                    }}
+                    onChange={(e) => setEditing({ ...editing, notes: e.target.value })}
+                  />
+                  <p className="help">{t('remote.form.notesHelp')}</p>
+                </div>
+                <PortForwardsEditor value={editing.forwards} onChange={(forwards) => setEditing({ ...editing, forwards })} />
+                {/* A gateway connects directly, so only a direct host offers VPNs (one that already
+                    carries some keeps showing them, so they can be removed). */}
+                {(jumpValue === DIRECT_JUMP || (editing.vpns?.length ?? 0) > 0) && (
+                  <VpnProfilesEditor value={editing.vpns} onChange={(vpns) => setEditing({ ...editing, vpns })} />
+                )}
+              </>
+            )}
           </div>
         </Sheet>
+      )}
+
+      {credSheet && (
+        <CredentialsSheet
+          start={credSheet}
+          credentials={credentials}
+          keys={keys}
+          secretsEncrypted={secretsEncrypted}
+          onClose={() => setCredSheet(null)}
+          onChanged={credentialsChanged}
+        />
+      )}
+
+      {groupSheet && (
+        <GroupsSheet
+          start={groupSheet}
+          groups={groups}
+          credentials={credentials}
+          hosts={hosts}
+          onClose={() => setGroupSheet(null)}
+          onChanged={groupsChanged}
+          onHostsChanged={setHosts}
+        />
       )}
 
       {reportFor && (

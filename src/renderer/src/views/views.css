@@ -33,19 +33,8 @@
   -webkit-app-region: drag;
 }
 .view-subnav .seg-control { -webkit-app-region: no-drag; }
-/* The group switcher reads as plain tabs: no frame around it, only the current one on a
-   soft fill. The framed .seg-control stays for toggles inside the views. */
-.view-subnav .seg-control {
-  gap: 4px;
-  padding: 0;
-  border: none;
-}
-.view-subnav .seg-control button {
-  padding: 5px 12px;
-  border-radius: var(--radius);
-  font-size: 13px;
-}
-.view-subnav .seg-control button.on { font-weight: 500; }
+/* The group switcher reads as plain tabs (.seg-tabs in shared.css). The framed
+   .seg-control stays for toggles inside the views. */
 
 /* The interventions left running, one chip each (OpsTabs), inline after the Servers
    sub-nav. Inside a workspace they are a .server-tabs strip instead. */
@@ -180,6 +169,26 @@
 .server-tab:hover { background: var(--bg-hover); color: var(--text-0); }
 .server-tab.active { background: var(--bg-2); color: var(--text-0); }
 .server-tab:focus-visible { outline: none; border-color: var(--border-light); }
+/* A production host: a red underline on the tab, so it is unmistakable which tab is the
+   live server even when the strip is crowded. */
+.server-tab.prod { box-shadow: inset 0 -2px 0 var(--error); }
+
+/* The red "PROD" pill, on the Servers list, the session header and the tabs. */
+.prod-pill {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--error);
+  color: var(--error);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+.prod-pill.small { padding: 0 5px; font-size: 9px; }
 
 .server-tab-dot {
   width: 7px;

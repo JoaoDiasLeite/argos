@@ -28,7 +28,18 @@ import {
   threadNames
 } from './codex-data'
 import { encodeProjectPath, missingThreadNames, pickThreadNames } from './codex-data-pure'
-import { readHostsWithSecrets, updateHostsWith, type SshHost } from './ssh'
+import {
+  readCredentialsWithSecrets,
+  readSavedGroups,
+  readHostsWithSecrets,
+  updateCredentialsWith,
+  updateGroupsWith,
+  updateHostsWith,
+  type SshCredential,
+  type StoredSshHost
+} from './ssh'
+import { SECRET_FIELDS, type HostSecrets } from './ssh-host-pure'
+import { groupsFromFile, mergeGroups } from './ssh-group-pure'
 import { getApiKey, setApiKey, loadAuthState } from './auth'
 import { loadAccounts } from './accounts'
 import { loadProviderAccounts } from './provider-accounts'
@@ -323,10 +334,14 @@ export async function exportProfile(win: BrowserWindow | null, req: ExportReques
     const hostsRead = readHostsWithSecrets()
     if (!hostsRead.ok) console.warn(`[profile] ssh hosts unreadable, exported without them: ${hostsRead.error}`)
     const { hosts, secrets: sshSecrets } = splitHostSecrets(hostsRead.ok ? hostsRead.hosts : [])
+    // Shared credentials travel the same way: fields in the profile, secrets in the envelope.
+    const credsRead = readCredentialsWithSecrets()
+    if (!credsRead.ok) console.warn(`[profile] ssh credentials unreadable, exported without them: ${credsRead.error}`)
+    const { hosts: credentials, secrets: credentialSecrets } = splitHostSecrets(credsRead.ok ? credsRead.hosts : [])
     const passphrase = req.passphrase ?? ''
     let secrets: ProfileLine['secrets']
     if (passphrase) {
-      const payload: SecretsPayload = { ssh: sshSecrets }
+      const payload: SecretsPayload = { ssh: sshSecrets, sshCredentials: credentialSecrets }
       const apiKey = getApiKey()
       if (apiKey) payload.apiKey = apiKey
       secrets = await encryptSecrets(payload, passphrase)
@@ -356,7 +371,14 @@ export async function exportProfile(win: BrowserWindow | null, req: ExportReques
       userData: userData()
     }
     await writer.write(header)
-    await writer.write({ type: 'profile', json, dirs, sshHosts: hosts as Record<string, unknown>[], ...(secrets ? { secrets } : {}) })
+    await writer.write({
+      type: 'profile',
+      json,
+      dirs,
+      sshHosts: hosts as Record<string, unknown>[],
+      sshCredentials: credentials as Record<string, unknown>[],
+      ...(secrets ? { secrets } : {})
+    })
 
     // Chat records of those projects (plus remote ones if asked), with archived transcripts.
     for (const record of records) {
@@ -731,7 +753,24 @@ function fileData(f: FileLine, remapText: PathRemapper['text'] | null): string |
 }
 
 /** Profile-level steps: any failure here stops the import. */
-async function applyProfile(ctx: ImportContext, secrets: SecretsPayload | null, importedHosts: (Record<string, unknown> & { id: string })[]): Promise<void> {
+type Imported = Record<string, unknown> & { id: string }
+
+/** An imported entry with the secrets the envelope holds for its id, as typed fields. */
+function withRestoredSecrets<T extends { id: string }>(entry: T, s: HostSecrets | undefined): T {
+  const restored: HostSecrets = {}
+  for (const k of SECRET_FIELDS) {
+    const v = s?.[k]
+    if (typeof v === 'string' && v) restored[k] = v
+  }
+  return { ...entry, ...restored }
+}
+
+async function applyProfile(
+  ctx: ImportContext,
+  secrets: SecretsPayload | null,
+  importedHosts: Imported[],
+  importedCredentials: Imported[]
+): Promise<void> {
   const { remap } = ctx
   const pj = ctx.profile.json
   const ud = userData()
@@ -762,12 +801,27 @@ async function applyProfile(ctx: ImportContext, secrets: SecretsPayload | null, 
     await writeJsonAtomic(path.join(ud, 'ssh-trust.json'), mergeTrust(isPlainObject(local) ? local : {}, pj['ssh-trust.json']))
   }
 
-  // Servers: through ssh.ts, so they are encrypted for this machine.
+  // Shared credentials first, so the servers that link them never point at a missing one;
+  // both through ssh.ts, so they are encrypted for this machine.
+  if (importedCredentials.length) {
+    const incoming = importedCredentials.map((c) => {
+      const cred = remap.deep(c) as unknown as SshCredential
+      return withRestoredSecrets(cred, secrets?.sshCredentials?.[cred.id])
+    })
+    const res = updateCredentialsWith((local) => mergeHosts(local, incoming))
+    if (!res.ok) throw new Error(res.error)
+  }
+  // Server groups next, merged by id, so the hosts that name one find it. Plain data; nothing
+  // in a group is a path to remap.
+  const importedGroups = groupsFromFile(pj['ssh-groups.json'])
+  if (importedGroups.length) {
+    const res = updateGroupsWith((local) => mergeGroups(local, importedGroups))
+    if (!res.ok) throw new Error(res.error)
+  }
   if (importedHosts.length) {
     const incoming = importedHosts.map((h) => {
-      const host = remap.deep(h) as unknown as SshHost
-      const s = secrets?.ssh[host.id]
-      return { ...host, ...(s?.password ? { password: s.password } : {}), ...(s?.passphrase ? { passphrase: s.passphrase } : {}) }
+      const host = remap.deep(h) as unknown as StoredSshHost
+      return withRestoredSecrets(host, secrets?.ssh[host.id])
     })
     const res = updateHostsWith((local) => mergeHosts(local, incoming))
     if (!res.ok) throw new Error(res.error)
@@ -906,14 +960,30 @@ export async function applyImport(req: ImportRequest): Promise<ImportResult> {
       return { ok: false, error: 'bad-passphrase' }
     }
   }
-  const importedHosts = profile.sshHosts.filter(
-    (h): h is Record<string, unknown> & { id: string } => isPlainObject(h) && typeof h.id === 'string'
-  )
+  const isImported = (h: unknown): h is Imported => isPlainObject(h) && typeof h.id === 'string'
+  const importedHosts = profile.sshHosts.filter(isImported)
+  const importedCredentials = profile.sshCredentials.filter(isImported)
   if (importedHosts.length) {
     const hostsNow = readHostsWithSecrets()
     if (!hostsNow.ok) {
       await close()
       return { ok: false, error: t('main.profile.error.hostsUnreadable', { error: hostsNow.error }) }
+    }
+  }
+  if (importedCredentials.length) {
+    const credsNow = readCredentialsWithSecrets()
+    if (!credsNow.ok) {
+      await close()
+      return { ok: false, error: t('main.profile.error.credentialsUnreadable', { error: credsNow.error }) }
+    }
+  }
+  // The groups file is merged, not replaced: one that cannot be read now stops the import
+  // before anything is written, as the hosts and credentials do. Its error names the file.
+  if (groupsFromFile(profile.json['ssh-groups.json']).length) {
+    const groupsNow = readSavedGroups()
+    if (!groupsNow.ok) {
+      await close()
+      return { ok: false, error: groupsNow.error }
     }
   }
 
@@ -928,7 +998,7 @@ export async function applyImport(req: ImportRequest): Promise<ImportResult> {
   const skipped: ImportSkip[] = []
   try {
     const ctx = await planProfile(opened.header, profile)
-    await applyProfile(ctx, secrets, importedHosts)
+    await applyProfile(ctx, secrets, importedHosts, importedCredentials)
     await applyProfileDirs(ctx, skipped, path.basename(req.path))
 
     const projects = new Map<number, ProjectState>()

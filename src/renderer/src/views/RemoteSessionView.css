@@ -82,13 +82,48 @@
 }
 
 .remote-session-left {
-  width: 440px;
+  /* Width set inline: dragged on the divider, 440 px by default. The cap keeps a width
+     saved in a wider window from squeezing the terminal out of a narrower one. */
+  max-width: max(380px, calc(100% - 320px));
+  container-type: inline-size;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-right: 1px solid var(--border);
+  min-width: 0;
 }
+
+/* The pane's right edge, and the handle that resizes it: 1 px of rule inside a 7 px hit
+   area. Double-click puts it back to the default width. */
+.remote-session-divider {
+  position: relative;
+  flex: 0 0 1px;
+  background: var(--border);
+  cursor: col-resize;
+  z-index: 2;
+}
+.remote-session-divider::before {
+  content: '';
+  position: absolute;
+  inset: 0 -3px;
+}
+.remote-session-divider:hover,
+.remote-session-divider:focus-visible { background: var(--accent); outline: none; }
+
+/* The header's switch that folds the side pane away. */
+.remote-session-pane-toggle {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  color: var(--text-2);
+  background: transparent;
+}
+.remote-session-pane-toggle:hover { color: var(--text-0); background: var(--bg-hover); }
+.remote-session-pane-toggle.on { color: var(--text-1); }
 
 /* The left column's bar on the history side (on the files side the browser's own
    .fb-toolbar is this bar): the Files / History switch, sized like .chat-terminal-bar
@@ -179,3 +214,11 @@
 .remote-history-item:hover { background: var(--bg-hover); color: var(--text-0); }
 
 .remote-history-empty { padding: 6px 8px; font-size: 12px; color: var(--text-2); }
+
+/* A narrow pane: the switch gives up some of its padding so the browser's toolbar icons
+   still fit on the same line (the pane goes down to 380 px). */
+@container (max-width: 430px) {
+  .remote-session-toggle.seg-tabs { gap: 2px; }
+  .remote-session-toggle.seg-tabs button { padding: 5px 8px; font-size: 12.5px; }
+}
+.remote-session-error-actions { display: flex; gap: 8px; flex-wrap: wrap; }

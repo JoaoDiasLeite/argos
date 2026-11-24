@@ -270,6 +270,8 @@ export interface AppConfig {
   ops: OpsPrefs
   companion: CompanionPrefs
   claudeSettings: Record<string, unknown>
+  /** The hidden "experimental features" switch. Absent is off. Read through useLabs(). */
+  labs?: boolean
 }
 
 export interface SourceAccount {
@@ -710,17 +712,70 @@ export interface RepoName {
 
 export type SshAuthType = 'password' | 'key' | 'agent'
 
+/** Which secret answers sudo/su: the login password, a separate one, or none. */
+export type ElevationMode = 'login' | 'other' | 'none'
+export type ElevateCommand = 'sudo -i' | 'sudo su -' | 'su -'
+
+/** Where a host's login comes from: its own fields, a shared credential, or its group's. */
+export type SshAuthSource = 'own' | 'credential' | 'group'
+
 export interface SshHostPublic {
   id: string
   name: string
   host: string
   port: number
+  groupId?: string
+  /** Always set by main on a listed host (resolved for hosts saved before groups). */
+  authSource?: SshAuthSource
+  /** The group an inherited login comes from. With `authSource` `group`, `credentialId` and
+   *  `credentialName` below are the group's credential, and `credentialMissing` also means
+   *  the group is gone or carries none. */
+  groupName?: string
   username: string
   authType: SshAuthType
   privateKeyPath?: string
   remotePath?: string
   claudePath?: string
-  hasSecret: boolean
+  elevation?: ElevationMode
+  elevateCommand?: ElevateCommand
+  favorite?: boolean
+  production?: boolean
+  tags?: string[]
+  /** Local port forwards (tunnels); see src/main/port-forwards-pure.ts. */
+  forwards?: PortForward[]
+  notes?: string
+  /** The shared credential this host logs in with. When set, the username, auth type, key
+   *  path, elevation and the flags below are the credential's. */
+  credentialId?: string
+  credentialName?: string
+  /** The linked credential no longer exists: the host cannot connect until it is edited. */
+  credentialMissing?: boolean
+  /** The saved host this one is reached through (a gateway). `''` is explicitly direct. */
+  jumpHostId?: string
+  /** The gateway's name, for the "via" hint. */
+  jumpHostName?: string
+  /** The gateway's id, and whether it is the host's own choice or its group's. */
+  jumpViaId?: string
+  jumpSource?: 'host' | 'group' | 'none'
+  /** The gateway it names is gone or cannot be one: the host cannot connect until edited. */
+  jumpMissing?: boolean
+  /** VPN profiles that run on this host when it is a gateway; see src/main/vpn-pure.ts. */
+  vpns?: VpnProfile[]
+  /** The VPN on its gateway it needs: absent inherits the group's, `''` is explicitly none. */
+  vpnId?: string
+  vpnAutoUp?: boolean
+  /** The VPN it needs as resolved (its own or its group's), for the row and the header. */
+  vpnViaId?: string
+  vpnName?: string
+  vpnSource?: 'host' | 'group'
+  vpnAuto?: boolean
+  /** It asks for a VPN its gateway does not have. */
+  vpnMissing?: boolean
+  hasPassword: boolean
+  hasPassphrase: boolean
+  /** A saved secret can answer sudo/su now (the login password in `login` mode, the
+   *  elevation password in `other` mode). */
+  hasElevation: boolean
 }
 
 export interface SshHostInput {
@@ -728,6 +783,10 @@ export interface SshHostInput {
   name: string
   host: string
   port: number
+  groupId?: string
+  /** `credential` logs in with `credentialId`, `group` with the group's credential; main
+   *  then ignores the login fields below. */
+  authSource?: SshAuthSource
   username: string
   authType: SshAuthType
   /** undefined keeps the stored secret, null clears it, a non-empty string replaces it. */
@@ -736,7 +795,153 @@ export interface SshHostInput {
   passphrase?: string | null
   remotePath?: string
   claudePath?: string
+  elevation?: ElevationMode
+  /** Same keep/clear/replace rules as the password; kept only in `other` mode. */
+  elevationPassword?: string | null
+  elevateCommand?: ElevateCommand
+  favorite?: boolean
+  production?: boolean
+  tags?: string[]
+  forwards?: PortForward[]
+  notes?: string
+  /** Log in with this shared credential: main then ignores the login fields above. */
+  credentialId?: string
+  /** Connect through this saved host (a gateway); absent for direct. */
+  jumpHostId?: string
+  vpns?: VpnProfile[]
+  vpnId?: string
+  vpnAutoUp?: boolean
 }
+
+/** A shared login (see src/main/ssh-credential-pure.ts): no secrets, only whether each
+ *  exists, and how many hosts link it. */
+export interface SshCredentialPublic {
+  id: string
+  name: string
+  username: string
+  authType: SshAuthType
+  privateKeyPath?: string
+  elevation?: ElevationMode
+  elevateCommand?: ElevateCommand
+  hasPassword: boolean
+  hasPassphrase: boolean
+  hasElevation: boolean
+  usedBy: number
+  /** Server groups that carry it: it cannot be deleted while any does. */
+  usedByGroups: number
+}
+
+/** A server group (see src/main/ssh-group-pure.ts): plain data, no secrets. */
+export interface SshGroupPublic {
+  id: string
+  name: string
+  credentialId?: string
+  credentialName?: string
+  /** The gateway its servers connect through, unless they set their own. */
+  jumpHostId?: string
+  /** The VPN on that gateway its servers need, unless they set their own. */
+  vpnId?: string
+  vpnAutoUp?: boolean
+  /** Hosts in it. */
+  hosts: number
+  /** Of those, the ones that inherit its credential. */
+  inheriting: number
+}
+
+export interface SshGroupInput {
+  id?: string
+  name: string
+  credentialId?: string
+  jumpHostId?: string
+  vpnId?: string
+  vpnAutoUp?: boolean
+}
+
+/** A VPN that runs on a gateway host (see src/main/vpn-pure.ts). Not secret. */
+export type VpnKind = 'openvpn' | 'wireguard' | 'nmcli' | 'openfortivpn' | 'custom'
+export interface VpnProfile {
+  id: string
+  name: string
+  kind: VpnKind
+  /** The presets' unit, config or connection name. */
+  target?: string
+  /** `custom` only. */
+  up?: string
+  down?: string
+  status?: string
+  /** Unset: sudo for the presets, not for custom. */
+  sudo?: boolean
+}
+export type VpnState = 'up' | 'down' | 'busy' | 'unknown'
+export type VpnFailReason = 'needs-password' | 'wrong-password' | 'sudo' | 'timeout' | 'invalid' | 'connect' | 'failed' | 'not-found'
+export type VpnRunResult =
+  | { ok: true; up: boolean; output?: string }
+  | { ok: false; error: string; reason: VpnFailReason; output?: string }
+/** What main announces on `vpn:changed`. */
+export interface VpnStatusEvent {
+  gatewayId: string
+  vpnId: string
+  state: VpnState
+  error?: string
+  reason?: VpnFailReason
+  output?: string
+  at: number
+}
+export type VpnStatusResult = { ok: true; statuses: { vpnId: string; result: VpnRunResult }[] } | { ok: false; error: string }
+/** A connect that stopped on a VPN that is down, for the "bring it up and try again" button. */
+export interface VpnDownInfo {
+  gatewayId: string
+  gatewayName: string
+  vpnId: string
+  vpnName: string
+}
+
+export type SshGroupsWriteResult = { ok: true; groups: SshGroupPublic[] } | { ok: false; error: string }
+export type SshGroupDeleteResult =
+  | { ok: true; groups: SshGroupPublic[]; hosts: SshHostPublic[]; orphaned: string[] }
+  | { ok: false; error: string }
+
+/** What the credentials form sends: the same keep / clear / replace rules for secrets as a host. */
+export interface SshCredentialInput {
+  id?: string
+  name: string
+  username: string
+  authType: SshAuthType
+  password?: string | null
+  privateKeyPath?: string
+  passphrase?: string | null
+  elevation?: ElevationMode
+  elevationPassword?: string | null
+  elevateCommand?: ElevateCommand
+}
+
+export type SshCredentialsWriteResult = { ok: true; credentials: SshCredentialPublic[] } | { ok: false; error: string }
+
+/** A local port forward kept with a host (src/main/port-forwards-pure.ts). */
+export interface PortForward {
+  id: string
+  label: string
+  /** 0 picks a free port each time it starts. */
+  localPort: number
+  /** As the server resolves it: `localhost` is the server itself. */
+  remoteHost: string
+  remotePort: number
+  autoStart?: boolean
+}
+
+/** A tunnel main knows about (`ssh:forwards-list`, `ssh:forwards-changed`). `active` false is
+ *  one that stopped on its own, with `error` saying why. */
+export interface ForwardStatus {
+  hostId: string
+  forwardId: string
+  localPort: number
+  connections: number
+  startedAt: number
+  active: boolean
+  error?: string
+}
+
+export type ForwardStartResult = { ok: true; localPort: number } | { ok: false; error: string }
 
 export interface SshKeyInfo {
   name: string
@@ -778,13 +983,19 @@ export interface WslDistro {
 /** The Remote Session ("Connect") view's target — an SSH host or a WSL distro. */
 export type RemoteTarget = { kind: 'ssh'; host: SshHostPublic } | { kind: 'wsl'; distro: string }
 
-/** One container on a remote host, as main/remote-containers.ts lists it. */
+/** One container on a remote host or this computer, as main/remote-containers.ts and
+ *  main/local-containers.ts list it. */
 export interface RemoteContainerRow {
   id: string
   name: string
   image: string
   status: string
   running: boolean
+  /** Its compose project and service, from the container's labels. */
+  project?: string
+  service?: string
+  /** Published ports, `host→container`. */
+  ports?: string[]
 }
 
 /** Which container a container tab enters; the id is re-validated in main. */
@@ -800,6 +1011,8 @@ export interface RemoteContainerList {
   /** Null when the host has neither docker nor podman. */
   runtime?: 'docker' | 'podman' | null
   sudo?: boolean
+  /** This computer only: the runtime is installed but its engine is not running. */
+  notRunning?: boolean
   containers?: RemoteContainerRow[]
 }
 
@@ -1037,12 +1250,36 @@ export interface OpsSecretRequest {
 }
 
 /**
+ * A secret main asks for while a Remote Session connects (`ssh:secret-request`): a password
+ * nobody saved, a key's passphrase, or a keyboard-interactive question whose `prompt` is the
+ * server's own text (untrusted: plain text only). Shown in the same dialog as the ops one.
+ */
+export interface HostSecretRequest {
+  source: 'host'
+  requestId: string
+  hostId: string
+  hostName: string
+  kind: 'password' | 'passphrase' | 'keyboard'
+  prompt: string
+  /** Show what is typed (a keyboard-interactive question that is not secret). */
+  echo: boolean
+  /** Offer "save this password". */
+  canSave: boolean
+}
+
+/** Which secrets a host's terminal can use right now (`ssh:secret-flags`), counting a password
+ *  typed at the connect prompt for its live session. */
+export type HostSecretFlags = Pick<SshHostPublic, 'hasPassword' | 'hasPassphrase' | 'hasElevation'>
+
+/**
  * What `ops:pending` returns: every prompt main is still waiting on, so a reloaded
  * renderer can rebuild its queues. `toastApprovalIds` are the approvals the toast shows.
  */
 export interface OpsPending {
   approvals: ApprovalRequest[]
   secrets: OpsSecretRequest[]
+  /** Remote Session connect prompts (not ops, but rebuilt the same way). */
+  hostSecrets: HostSecretRequest[]
   operatorAsks: OpsOperatorRequest[]
   toastApprovalIds: string[]
 }
@@ -1306,6 +1543,20 @@ export interface RemoteShellExitEvent {
   code: number
 }
 
+/** Main saw the shell stop at a password prompt (or stop showing one): a hint, no content. */
+export interface RemoteShellSecretHintEvent {
+  id: string
+  kind: 'sudo' | 'login' | 'passphrase' | null
+}
+
+export type RemoteShellSendSecretResult =
+  | { ok: true }
+  | { ok: false; reason: 'unknown-shell' | 'not-a-host-shell' | 'no-secret' | 'no-prompt' | 'rate-limited' | 'labs-off' }
+
+export type RemoteShellElevateResult =
+  | { ok: true }
+  | { ok: false; reason: 'unknown-shell' | 'not-a-host-shell' | 'no-secret' | 'rate-limited' | 'labs-off' }
+
 // ─── Auto-update ────────────────────────────────────────────────────────────
 
 export type UpdaterStateKind =
@@ -1475,6 +1726,10 @@ declare global {
        * Returns its own unsubscribe.
        */
       onUiPrefs: (cb: (ui: UiPrefs) => void) => () => void
+      /** Turns the experimental features on or off; resolves to the saved value. */
+      setLabs: (on: boolean) => Promise<boolean>
+      /** Fires in every window when the experimental features are turned on or off. */
+      onLabs: (cb: (on: boolean) => void) => () => void
       setSystemPrefs: (
         prefs: Partial<SystemPrefs>
       ) => Promise<{ system: SystemPrefs; registeredShortcut: string }>
@@ -1739,14 +1994,34 @@ declare global {
       sshList: () => Promise<SshHostPublic[]>
       sshSave: (host: SshHostInput) => Promise<SshHostsWriteResult>
       sshDelete: (id: string) => Promise<SshHostsWriteResult>
+      sshCredentialsList: () => Promise<SshCredentialPublic[]>
+      sshCredentialSave: (cred: SshCredentialInput) => Promise<SshCredentialsWriteResult>
+      sshCredentialDelete: (id: string) => Promise<SshCredentialsWriteResult>
+      sshGroupsList: () => Promise<SshGroupPublic[]>
+      sshGroupSave: (group: SshGroupInput) => Promise<SshGroupsWriteResult>
+      sshGroupDelete: (id: string) => Promise<SshGroupDeleteResult>
       sshTest: (id: string) => Promise<{ ok: boolean; message: string }>
       sshTestClaude: (id: string) => Promise<{ ok: boolean; message: string }>
       sshKeysList: () => Promise<SshKeyInfo[]>
       sshKeysGenerate: (name: string, comment?: string) => Promise<GenerateKeyResult>
       sshSecretStorage: () => Promise<SecretStorageState>
+      sshSecretFlags: (hostId: string) => Promise<HostSecretFlags | null>
+      forwardStart: (hostId: string, forwardId: string) => Promise<ForwardStartResult>
+      forwardStop: (hostId: string, forwardId: string) => Promise<{ ok: boolean }>
+      forwardsList: () => Promise<ForwardStatus[]>
+      forwardsAutoStart: (hostId: string) => Promise<{ forwardId: string; result: ForwardStartResult }[]>
+      onForwardsChanged: (cb: (list: ForwardStatus[]) => void) => () => void
+      vpnStatus: (gatewayId: string, vpnId?: string) => Promise<VpnStatusResult>
+      vpnUp: (gatewayId: string, vpnId: string) => Promise<VpnRunResult>
+      vpnDown: (gatewayId: string, vpnId: string) => Promise<VpnRunResult>
+      vpnKnown: () => Promise<VpnStatusEvent[]>
+      onVpnChanged: (cb: (ev: VpnStatusEvent) => void) => () => void
 
       // SFTP (Remote Session file browser)
-      sftpConnect: (hostId: string) => Promise<{ ok: boolean; home?: string; cwd?: string; error?: string }>
+      sftpConnect: (
+        hostId: string,
+        opts?: { vpnUp?: boolean }
+      ) => Promise<{ ok: boolean; home?: string; cwd?: string; error?: string; vpnDown?: VpnDownInfo }>
       sftpList: (hostId: string, dir: string) => Promise<{ ok: boolean; entries?: RemoteEntry[]; error?: string }>
       sftpRead: (
         hostId: string,
@@ -1768,6 +2043,8 @@ declare global {
       sftpHistory: (hostId: string) => Promise<{ ok: boolean; commands?: string[]; error?: string }>
       /** The host's docker/podman containers (Remote Session's Containers pane). */
       remoteContainers: (hostId: string) => Promise<RemoteContainerList>
+      /** This computer's docker (or podman) containers, for the Servers screen. */
+      localContainers: () => Promise<RemoteContainerList>
 
       // Ops runs
       /** `onBase`: the runbook as it runs added to the base intervention. */
@@ -1824,6 +2101,9 @@ declare global {
       onOpsSecretRequest: (cb: (data: OpsSecretRequest) => void) => () => void
       /** Answer a secret request; `value: null` declines. */
       respondOpsSecret: (payload: { requestId: string; value: string | null }) => Promise<{ ok: true }>
+      onHostSecretRequest: (cb: (data: HostSecretRequest) => void) => () => void
+      onHostSecretCancel: (cb: (data: { requestId: string }) => void) => () => void
+      respondHostSecret: (payload: { requestId: string; value: string | null; save: boolean }) => Promise<{ ok: boolean }>
       /** The model's ask_operator: a command for the operator to run in their own session and paste back. */
       onOpsOperatorRequest: (cb: (data: OpsOperatorRequest) => void) => () => void
       /** Answer an operator request with the pasted output; `output: null` declines. */
@@ -1991,12 +2271,17 @@ declare global {
       onTerminalExit: (cb: (data: TerminalExitEvent) => void) => () => void
       onTerminalBusy: (cb: (data: TerminalBusyEvent) => void) => () => void
       onTerminalNotify: (cb: (data: TerminalNotifyEvent) => void) => () => void
+      /** "Send password" in a remote chat's ssh terminal: same answers as remoteShellSendSecret. */
+      terminalSendSecret: (id: string, opts?: { force?: boolean }) => Promise<RemoteShellSendSecretResult>
+      /** Same shape as the Remote Session hint, for a chat's ssh terminal. */
+      onTerminalSecretHint: (cb: (data: RemoteShellSecretHintEvent) => void) => () => void
 
       // Remote shell (Remote Session SSH terminal, over the SFTP connection)
-      /** `container`: run that container's shell (`exec -it`) instead of the login shell. */
+      /** `container`: run that container's shell (`exec -it`) instead of the login shell.
+       *  A null host is this computer: then `container` is required and runs on a local pty. */
       remoteShellCreate: (
         id: string,
-        hostId: string,
+        hostId: string | null,
         cols: number,
         rows: number,
         container?: RemoteContainerTarget
@@ -2006,6 +2291,12 @@ declare global {
       remoteShellKill: (id: string) => Promise<{ ok: boolean }>
       onRemoteShellData: (cb: (data: RemoteShellDataEvent) => void) => () => void
       onRemoteShellExit: (cb: (data: RemoteShellExitEvent) => void) => () => void
+      /** Main types the saved secret the shell's prompt asks for; `force` only after a
+       *  `no-prompt` answer for the same shell, and then without Enter. */
+      remoteShellSendSecret: (id: string, opts?: { force?: boolean }) => Promise<RemoteShellSendSecretResult>
+      /** Types the host's elevation command and answers its password prompt once. */
+      remoteShellElevate: (id: string) => Promise<RemoteShellElevateResult>
+      onRemoteShellSecretHint: (cb: (data: RemoteShellSecretHintEvent) => void) => () => void
     }
   }
 }

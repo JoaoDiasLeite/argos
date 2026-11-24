@@ -5,12 +5,31 @@ import * as os from 'os'
 import * as path from 'path'
 import { buildSubprocessEnv } from './auth'
 import { t } from './i18n'
+import { isLabsOn } from './labs'
+import { chatLoginAnswered } from './labs-pure'
 import { accountConfigDir, resolveClaudeBin } from './accounts'
 import { providerAccountEnv } from './provider-accounts'
 import { resolveCodex } from './providers/cli-resolve'
 import { prepareCodexHomeFromToml } from './providers/codex'
-import { getSshTerminalCommand } from './ssh'
+import { getJumpFor, getSshTerminalCommand } from './ssh'
+import { getHostWithSessionSecrets } from './sftp'
+import type { SendSecretResult } from './remote-shell'
 import { remoteCommandWord } from './ssh-host-pure'
+import { trustAlias, trustKey } from './ssh-trust-pure'
+import {
+  appendTail,
+  decideSecretSend,
+  LoginChain,
+  LoginHold,
+  LOGIN_WINDOW_MS,
+  matchSecretPrompt,
+  type HeldWriteSource,
+  type LoginStep,
+  SecretSendGuard,
+  wantsForce,
+  type PromptSelf,
+  type SecretPromptKind
+} from './secret-prompt-pure'
 import { BusyTracker, isMouseClick, isTerminalReport } from './terminal-busy-pure'
 import { isApprovalNotification, OscScanner } from './terminal-osc-pure'
 import {
@@ -127,6 +146,200 @@ function forgetWaiting(id: string): void {
 /** The ptys currently waiting on the user, for the renderer to seed itself from. */
 export function waitingTerminals(): string[] {
   return [...waiting]
+}
+
+/**
+ * What main knows about a remote chat's ssh terminal, for its saved password: the host it was
+ * spawned for (never taken from the renderer), the escape-free tail of its output, the last
+ * prompt hint sent, and the one automatic login answer while it is still armed. The same
+ * guard and choice as the Remote Session shells (remote-shell.ts) sit behind it, in
+ * secret-prompt-pure.ts. Tied to the pty, so a replacement under the same id starts clean.
+ */
+interface SshSecretState {
+  pty: pty.IPty
+  hostId: string
+  /** The host's user and address (not secret), for `user@host's password:`. */
+  self: PromptSelf
+  /** The host's key file with `~` expanded, as ssh names it in its passphrase prompt. */
+  keyPath?: string
+  tail: string
+  hint: SecretPromptKind | null
+  /** Every host the login goes through, the gateway first: whose prompt a line is. */
+  steps: LoginStep[]
+  login: LoginChain | null
+  /** Holds the renderer's writes (the launch line above all) until the login settles; only
+   *  when the login answer was armed at spawn, null once open. */
+  hold: LoginHold | null
+  holdTimer: ReturnType<typeof setTimeout> | null
+}
+
+const sshSecrets = new Map<string, SshSecretState>()
+const secretGuard = new SecretSendGuard()
+
+export type TerminalSecretHintSink = (id: string, kind: SecretPromptKind | null) => void
+let secretHintSink: TerminalSecretHintSink = () => {}
+
+/** Where `terminal:secret-hint` events go (index.ts). A kind, never any text. */
+export function setTerminalSecretHintSink(sink: TerminalSecretHintSink): void {
+  secretHintSink = sink
+}
+
+function setSecretHint(id: string, st: SshSecretState, kind: SecretPromptKind | null): void {
+  if (st.hint === kind) return
+  st.hint = kind
+  secretHintSink(id, kind)
+}
+
+function forgetSshSecrets(id: string): void {
+  const st = sshSecrets.get(id)
+  if (st?.holdTimer) clearTimeout(st.holdTimer)
+  sshSecrets.delete(id)
+  secretGuard.forget(id)
+}
+
+/** Writes what the hold released, in order. */
+function flushHeld(st: SshSecretState, out: string[] | null): void {
+  if (!out) return
+  if (st.hold?.open) {
+    st.hold = null
+    if (st.holdTimer) clearTimeout(st.holdTimer)
+    st.holdTimer = null
+  }
+  for (const data of out) {
+    try {
+      st.pty.write(data)
+    } catch {
+      // no-op
+    }
+  }
+}
+
+/** Whether a write to `p` may go now, or was queued by a login hold. */
+function passesHold(id: string, p: pty.IPty, data: string, source: HeldWriteSource): boolean {
+  const st = sshSecrets.get(id)
+  if (!st || st.pty !== p || !st.hold) return true
+  return st.hold.write(data, source)
+}
+
+/** The CLI launch line (startCliInTerminal): straight to the pty, unless an ssh login is still
+ *  being answered, in which case it waits for the shell (LoginHold). */
+function writeLaunch(id: string, p: pty.IPty, data: string): void {
+  if (passesHold(id, p, data, 'launch')) p.write(data)
+}
+
+/** Writes a secret to the ssh pty and treats the prompt as answered, so the next click needs a
+ *  fresh prompt. Never logs or rethrows anything that could carry it. */
+function writeSshSecret(id: string, st: SshSecretState, data: string): boolean {
+  try {
+    st.pty.write(data)
+  } catch {
+    return false
+  }
+  secretGuard.noteSent(id, Date.now())
+  st.tail = ''
+  setSecretHint(id, st, null)
+  return true
+}
+
+/** A host's part in an ssh login: who its prompt names, and whether a saved secret (the
+ *  password of a password host, the passphrase of a key host) can answer it. */
+function loginStepFor(hostId: string, viaGatewayId?: string): LoginStep | null {
+  const h = getHostWithSessionSecrets(hostId)
+  if (!h) return null
+  const keyPath = h.privateKeyPath ? h.privateKeyPath.replace(/^~(?=[\\/]|$)/, os.homedir()) : undefined
+  const canAnswer = (h.authType === 'password' && !!h.password) || (h.authType === 'key' && !!h.passphrase && !!keyPath)
+  // Behind a gateway ssh runs with HostKeyAlias, and names the alias in its prompt
+  // (`user@argos-jump-…'s password:`), not the address.
+  const scoped = viaGatewayId ? trustKey(h.host, h.port || 22, viaGatewayId) : null
+  const shownHost = scoped ? trustAlias(scoped) : h.host
+  return { hostId, self: { username: h.username, host: shownHost }, keyPath, canAnswer }
+}
+
+/** Starts tracking a freshly spawned ssh pty. The login answers are armed only when a host
+ *  it logs in to (its gateway, then itself) has a secret ssh could ask for at login. */
+function trackSshTerminal(id: string, p: pty.IPty, hostId: string): void {
+  const lookup = getJumpFor(hostId)
+  const gatewayId = lookup.ok && lookup.jump ? lookup.jump.id : undefined
+  const target = loginStepFor(hostId, gatewayId)
+  if (!target) return
+  const gateway = gatewayId ? loginStepFor(gatewayId) : null
+  const steps = gateway ? [gateway, target] : [target]
+  const login = new LoginChain(steps, Date.now())
+  // Answering ssh's login and holding the launch line are experimental: without them ssh asks
+  // and the user types, as before 3.9.0. Tracked either way, for the prompt hint.
+  const canAnswer = chatLoginAnswered(isLabsOn(), login.expected)
+  const st: SshSecretState = {
+    pty: p,
+    hostId,
+    self: target.self,
+    keyPath: target.keyPath,
+    tail: '',
+    hint: null,
+    steps,
+    login: canAnswer ? login : null,
+    // Nothing to answer keeps today's behaviour: no hold.
+    hold: canAnswer ? new LoginHold(login.expected) : null,
+    holdTimer: null
+  }
+  if (st.hold) {
+    st.holdTimer = setTimeout(() => {
+      st.holdTimer = null
+      if (sshSecrets.get(id) !== st || !st.hold) return
+      flushHeld(st, st.hold.expire(promptOnTail(st) !== null))
+    }, LOGIN_WINDOW_MS)
+  }
+  sshSecrets.set(id, st)
+}
+
+/** The password prompt the tail ends on, the gateway's included. */
+function promptOnTail(st: SshSecretState): ReturnType<typeof matchSecretPrompt> {
+  if (st.login) return st.login.match(st.tail)
+  for (const s of st.steps) {
+    const m = matchSecretPrompt(st.tail, s.self)
+    if (m) return m
+  }
+  return null
+}
+
+/** Output from an ssh pty: update the tail and the hint, and give a login answer if this is
+ *  ssh's own login prompt (the gateway's or the target's) inside the window. */
+function feedSshOutput(id: string, st: SshSecretState, data: string): void {
+  st.tail = appendTail(st.tail, data)
+  const prompt = promptOnTail(st)
+  if (st.login) {
+    const now = Date.now()
+    // The store is read only when the last line looks like a prompt at all.
+    const found = prompt ? st.login.answer(now, st.tail, (hostId) => getHostWithSessionSecrets(hostId)) : null
+    if (!st.login.armed(now)) st.login = null
+    if (found && writeSshSecret(id, st, found.secret + '\r')) {
+      st.hold?.answered()
+      return
+    }
+  }
+  if (st.hold) flushHeld(st, st.hold.output(data, prompt !== null))
+  // The hint lights "Send password", which sends this host's own secret: only its prompts.
+  setSecretHint(id, st, matchSecretPrompt(st.tail, st.self)?.kind ?? null)
+}
+
+/**
+ * "Send password" in a remote chat's ssh terminal: the same decision as the Remote Session
+ * shells (decideSecretSend), written to the pty. The secret is read from the store here,
+ * written and dropped: never returned, logged or put in an event.
+ */
+export function terminalSendSecret(id: unknown, opts: unknown): SendSecretResult {
+  if (!isSafeId(id)) return { ok: false, reason: 'unknown-shell' }
+  const p = terminals.get(id)
+  if (!p) return { ok: false, reason: 'unknown-shell' }
+  const st = sshSecrets.get(id)
+  if (!st || st.pty !== p) return { ok: false, reason: 'not-a-host-shell' }
+  const now = Date.now()
+  // Under the name ssh prints for this host (its HostKeyAlias behind a gateway).
+  const h = getHostWithSessionSecrets(st.hostId)
+  const decision = decideSecretSend(secretGuard, id, st.tail, h ? { ...h, host: st.self.host } : null, wantsForce(opts), now)
+  if ('reason' in decision) return { ok: false, reason: decision.reason }
+  // A click is the user taking over: no automatic answer after it.
+  st.login = null
+  return writeSshSecret(id, st, decision.write) ? { ok: true } : { ok: false, reason: 'unknown-shell' }
 }
 
 /**
@@ -310,16 +523,22 @@ function hasCommand(cmd: string): boolean {
  * System32 (wsl.exe, cmd.exe) hit exactly that case while pwsh.exe, which does not, worked.
  * Resolving here leaves node-pty nothing to guess at.
  */
-function resolveWindowsExe(name: string): string {
+export function resolveWindowsExe(name: string): string {
   if (process.platform !== 'win32' || path.isAbsolute(name)) return name
   const system32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32')
+  // A bare name (`ssh`, as the remote chat terminal asks for) is looked up as `ssh.exe` too:
+  // left to node-pty, it failed with "File not found" when the cwd was a home folder whose
+  // name has a non-ASCII letter.
+  const names = path.extname(name) ? [name] : [name, `${name}.exe`]
   for (const dir of [system32, ...(process.env.PATH || '').split(';')]) {
     if (!dir) continue
-    try {
-      const full = path.join(dir, name)
-      if (fs.statSync(full).isFile()) return full
-    } catch {
-      // missing or unreadable PATH entry — keep looking
+    for (const n of names) {
+      try {
+        const full = path.join(dir, n)
+        if (fs.statSync(full).isFile()) return full
+      } catch {
+        // missing or unreadable PATH entry — keep looking
+      }
     }
   }
   return name
@@ -493,7 +712,8 @@ export async function createTerminal(
       // resolves the CLI.
       // Async: a server whose key Argos has not stored yet is checked (and trusted, through
       // the usual prompt) first. A refusal throws, and the catch below reports it.
-      const ssh = await getSshTerminalCommand(opts.remoteHostId)
+      // The resolved ssh.exe, so a gateway's ProxyCommand runs the very same client.
+      const ssh = await getSshTerminalCommand(opts.remoteHostId, process.platform === 'win32' ? resolveWindowsExe('ssh') : 'ssh')
       if (!ssh) {
         return {
           ok: false,
@@ -650,6 +870,8 @@ export async function createTerminal(
       appendToBuffer(id, d)
       busy.noteOutput(id)
       for (const payload of osc.feed(id, d)) setWaiting(id, isApprovalNotification(payload))
+      const sshState = sshSecrets.get(id)
+      if (sshState && sshState.pty === p) feedSshOutput(id, sshState, d)
       onData(id, d)
     })
     p.onExit((e) => {
@@ -666,6 +888,7 @@ export async function createTerminal(
       terminals.delete(id)
       shellKinds.delete(id)
       sshMeta.delete(id)
+      forgetSshSecrets(id)
       launched.delete(id)
       outputBuffers.delete(id)
       configs.delete(id)
@@ -678,6 +901,8 @@ export async function createTerminal(
 
     terminals.set(id, p)
     shellKinds.set(id, kind)
+    // A fresh ssh pty (never a reused one, which returned above): its login may be answered.
+    if (kind === 'ssh' && opts.remoteHostId) trackSshTerminal(id, p, opts.remoteHostId)
     if (ops) opsLaunches.set(id, ops)
     configs.set(id, sig)
     terminalInfo.set(id, {
@@ -719,7 +944,13 @@ export function writeTerminal(id: string, data: string): void {
     // means to the CLI, the user is there dealing with it, so the mark has done its job
     // and comes off now rather than whenever the CLI next happens to look busy.
     setWaiting(id, false)
+    // The same goes for an ssh login: once the user types, the prompt is theirs to answer.
+    const sshState = sshSecrets.get(id)
+    if (sshState) sshState.login = null
   }
+  // While an ssh login is held, keys wait for the shell (or, at a prompt the auto-answer left
+  // to the user, go straight to it: they are the password), and query answers are dropped.
+  if (!passesHold(id, p, data, isTerminalReport(data) ? 'report' : 'user')) return
   try {
     p.write(data)
   } catch {
@@ -774,6 +1005,7 @@ export function killTerminal(id: string): { ok: boolean } {
   terminals.delete(id)
   shellKinds.delete(id)
   sshMeta.delete(id)
+  forgetSshSecrets(id)
   terminalInfo.delete(id)
   forgetOps(id)
   return { ok: true }
@@ -936,7 +1168,7 @@ export function startCliInTerminal(
       // itself (see claudeLaunchCommand) — no need to watch the pty's output from here.
       const resumeId = safeResumeId(resumeSessionId) || ''
       const pinId = resumeId ? '' : safeResumeId(pinSessionId) || ''
-      p.write(claudeLaunchCommand(kind, id, resumeId || pinId, !resumeId && !!pinId, ops))
+      writeLaunch(id, p, claudeLaunchCommand(kind, id, resumeId || pinId, !resumeId && !!pinId, ops))
       return { ok: true }
     }
 
@@ -954,7 +1186,7 @@ export function startCliInTerminal(
 
     if (provider === 'gemini') {
       // Over a wsl/ssh hop the shell ends with the CLI, as for claude (typedLaunchLine).
-      if (kind === 'wsl' || kind === 'ssh') p.write(typedLaunchLine('agy'))
+      if (kind === 'wsl' || kind === 'ssh') writeLaunch(id, p, typedLaunchLine('agy'))
       else p.write(`${clear}agy${kind === 'pwsh' || kind === 'powershell' || kind === 'cmd' ? '\r' : '\n'}`)
       return { ok: true }
     }
@@ -965,7 +1197,7 @@ export function startCliInTerminal(
       // above. The notification flags come along for the same reason they do locally,
       // and are safe against an older CLI over there — codex ignores a config key it
       // does not recognise, and refuses only a bad value for one it does.
-      p.write(typedLaunchLine([provider, ...CODEX_NOTIFY_ARGS].map(quoteUnix).join(' ')))
+      writeLaunch(id, p, typedLaunchLine([provider, ...CODEX_NOTIFY_ARGS].map(quoteUnix).join(' ')))
       return { ok: true }
     }
 
@@ -1004,6 +1236,7 @@ export function killAllTerminals(): void {
     terminals.delete(id)
     shellKinds.delete(id)
     sshMeta.delete(id)
+    forgetSshSecrets(id)
     forgetOps(id)
   }
 }
