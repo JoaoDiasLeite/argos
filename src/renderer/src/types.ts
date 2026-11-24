@@ -714,11 +714,21 @@ export type SshAuthType = 'password' | 'key' | 'agent'
 export type ElevationMode = 'login' | 'other' | 'none'
 export type ElevateCommand = 'sudo -i' | 'sudo su -' | 'su -'
 
+/** Where a host's login comes from: its own fields, a shared credential, or its group's. */
+export type SshAuthSource = 'own' | 'credential' | 'group'
+
 export interface SshHostPublic {
   id: string
   name: string
   host: string
   port: number
+  groupId?: string
+  /** Always set by main on a listed host (resolved for hosts saved before groups). */
+  authSource?: SshAuthSource
+  /** The group an inherited login comes from. With `authSource` `group`, `credentialId` and
+   *  `credentialName` below are the group's credential, and `credentialMissing` also means
+   *  the group is gone or carries none. */
+  groupName?: string
   username: string
   authType: SshAuthType
   privateKeyPath?: string
@@ -750,6 +760,10 @@ export interface SshHostInput {
   name: string
   host: string
   port: number
+  groupId?: string
+  /** `credential` logs in with `credentialId`, `group` with the group's credential; main
+   *  then ignores the login fields below. */
+  authSource?: SshAuthSource
   username: string
   authType: SshAuthType
   /** undefined keeps the stored secret, null clears it, a non-empty string replaces it. */
@@ -785,7 +799,32 @@ export interface SshCredentialPublic {
   hasPassphrase: boolean
   hasElevation: boolean
   usedBy: number
+  /** Server groups that carry it: it cannot be deleted while any does. */
+  usedByGroups: number
 }
+
+/** A server group (see src/main/ssh-group-pure.ts): plain data, no secrets. */
+export interface SshGroupPublic {
+  id: string
+  name: string
+  credentialId?: string
+  credentialName?: string
+  /** Hosts in it. */
+  hosts: number
+  /** Of those, the ones that inherit its credential. */
+  inheriting: number
+}
+
+export interface SshGroupInput {
+  id?: string
+  name: string
+  credentialId?: string
+}
+
+export type SshGroupsWriteResult = { ok: true; groups: SshGroupPublic[] } | { ok: false; error: string }
+export type SshGroupDeleteResult =
+  | { ok: true; groups: SshGroupPublic[]; hosts: SshHostPublic[]; orphaned: string[] }
+  | { ok: false; error: string }
 
 /** What the credentials form sends: the same keep / clear / replace rules for secrets as a host. */
 export interface SshCredentialInput {
@@ -1879,6 +1918,9 @@ declare global {
       sshCredentialsList: () => Promise<SshCredentialPublic[]>
       sshCredentialSave: (cred: SshCredentialInput) => Promise<SshCredentialsWriteResult>
       sshCredentialDelete: (id: string) => Promise<SshCredentialsWriteResult>
+      sshGroupsList: () => Promise<SshGroupPublic[]>
+      sshGroupSave: (group: SshGroupInput) => Promise<SshGroupsWriteResult>
+      sshGroupDelete: (id: string) => Promise<SshGroupDeleteResult>
       sshTest: (id: string) => Promise<{ ok: boolean; message: string }>
       sshTestClaude: (id: string) => Promise<{ ok: boolean; message: string }>
       sshKeysList: () => Promise<SshKeyInfo[]>

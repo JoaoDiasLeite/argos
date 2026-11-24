@@ -191,6 +191,8 @@ describe('host secrets allowlist', () => {
     name: 'n',
     host: 'h',
     port: 22,
+    groupId: 'grp_1',
+    authSource: 'own',
     username: 'u',
     authType: 'password',
     password: 'pw',

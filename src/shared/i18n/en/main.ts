@@ -168,7 +168,7 @@ export default {
   'ssh.hostsUnreadable':
     'The saved hosts file could not be read ({error}); refusing to overwrite it. Move {file} aside to start over.',
   'ssh.credentialMissing':
-    'The shared credential this server logs in with no longer exists. Edit the server and choose another credential or its own login.',
+    'The shared login this server uses no longer exists (its credential was deleted, or its group was deleted or no longer carries one). Edit the server and choose another credential or its own login.',
   'ssh.credentialsSaveFailed': 'Could not save the credentials file: {error}',
   'ssh.credentialsUnreadable':
     'The saved credentials file could not be read ({error}); refusing to overwrite it. Move {file} aside to start over.',
@@ -176,6 +176,14 @@ export default {
   'ssh.credentialAuthInvalid': 'Choose how the credential logs in: password, key or agent.',
   'ssh.credentialInUse.one': 'This credential is used by {n} server. Link that server to another login first.',
   'ssh.credentialInUse.other': 'This credential is used by {n} servers. Link those servers to another login first.',
+  'ssh.credentialInUseByGroups.one': 'This credential is carried by {n} server group. Remove it from that group first.',
+  'ssh.credentialInUseByGroups.other': 'This credential is carried by {n} server groups. Remove it from those groups first.',
+  'ssh.groupsSaveFailed': 'Could not save the server groups file: {error}',
+  'ssh.groupsUnreadable':
+    'The saved server groups file could not be read ({error}); refusing to overwrite it. Move {file} aside to start over.',
+  'ssh.groupMissing': 'That server group no longer exists. Choose another group or none.',
+  'ssh.groupNoCredential': 'The group "{group}" carries no credential to inherit. Give it one, or choose another login for the server.',
+  'ssh.groupNameMissing': 'Give the group a name.',
   'ssh.keys.invalidName': 'Key name may only contain letters, numbers, "_" and "-".',
   'ssh.keys.exists': 'A key named "{name}" already exists in ~/.ssh.',
   'ssh.keys.keygenMissing': 'ssh-keygen not found. Install OpenSSH client and try again.',

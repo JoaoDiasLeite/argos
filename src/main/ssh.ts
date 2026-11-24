@@ -9,8 +9,22 @@ import { t } from './i18n'
 import { plural } from '../shared/i18n'
 import { keyboardInteractiveDecision, keyNeedsPassphrase, type KbdPrompt } from './connect-auth-pure'
 import { createEncryptedListStore } from './encrypted-list-store'
+import { loadJsonFileGuarded, writeJsonFileAtomic } from './json-file'
+import {
+  cleanGroup,
+  groupUsage,
+  groupsFromFile,
+  groupsUsingCredential,
+  hostIdsInheritingFrom,
+  hostIdsLoggingInWith,
+  isGroupsFile,
+  removeGroupFromHosts,
+  type SshGroup,
+  type SshGroupInput
+} from './ssh-group-pure'
 import {
   cleanHostFields,
+  hostAuthSource,
   hostFieldProblem,
   hostFieldProblemKey,
   mergeSecrets,
@@ -41,9 +55,12 @@ import { checkForwards, forwardProblemKey, usableForwards, type PortForward } fr
 
 export type { SshAuthType, SshHost, SshHostPublic } from './ssh-host-pure'
 export type { EffectiveSshHost, SshCredential, SshCredentialInput, SshCredentialPublic, StoredSshHost } from './ssh-credential-pure'
+export type { SshGroup, SshGroupInput } from './ssh-group-pure'
 
-/** What the renderer sends: `undefined` keeps a stored secret, `null` clears it. A host with
- *  `credentialId` set takes its login from that credential; its own login fields are ignored. */
+/** What the renderer sends: `undefined` keeps a stored secret, `null` clears it. A host whose
+ *  `authSource` is `credential` (or that carries a `credentialId` and no source, as before
+ *  groups) takes its login from that credential, one whose source is `group` from its
+ *  group's; its own login fields are ignored then. */
 export type SshHostInput = Omit<SshHost, 'id' | SecretField> & {
   id?: string
 } & { [K in SecretField]?: string | null }
@@ -59,6 +76,43 @@ const credentialStore = createEncryptedListStore<SshCredential>(path.join(app.ge
 })
 
 export type HostsWriteResult = { ok: true; hosts: SshHostPublic[] } | { ok: false; error: string }
+
+// ─── Server groups: storage ─────────────────────────────────────────────────
+// Plain JSON: a group holds a name and the id of a credential, never a secret.
+
+const groupsFile = path.join(app.getPath('userData'), 'ssh-groups.json')
+
+type GroupsRead = { ok: true; groups: SshGroup[] } | { ok: false; error: string }
+
+function errText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e)
+}
+
+/** The saved groups. A missing file is none; a corrupt one is copied aside and read as none
+ *  (loadJsonFileGuarded); one that cannot be read right now is an error, so no write path
+ *  saves over it. */
+function readGroups(): GroupsRead {
+  const res = loadJsonFileGuarded(groupsFile, isGroupsFile)
+  if (res.kind === 'ok') return { ok: true, groups: groupsFromFile(res.value) }
+  if (res.kind === 'unreadable') {
+    return { ok: false, error: t('main.ssh.groupsUnreadable', { error: errText(res.error), file: groupsFile }) }
+  }
+  return { ok: true, groups: [] }
+}
+
+function readGroupsOrEmpty(): SshGroup[] {
+  const res = readGroups()
+  return res.ok ? res.groups : []
+}
+
+function writeGroups(groups: SshGroup[]): { ok: true } | { ok: false; error: string } {
+  try {
+    writeJsonFileAtomic(groupsFile, { groups })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: t('main.ssh.groupsSaveFailed', { error: errText(e) }) }
+  }
+}
 
 function updateHosts(mutate: (hosts: StoredSshHost[]) => StoredSshHost[]): HostsWriteResult {
   const res = hostStore.update(mutate)
@@ -83,10 +137,11 @@ export function secretStorageState(): { encrypted: boolean; backend?: string } {
  *  credential's), never a secret, plus the name of a linked credential. */
 export function listHosts(): SshHostPublic[] {
   const credentials = credentialStore.readOrEmpty()
+  const groups = readGroupsOrEmpty()
   return hostStore.readOrEmpty().map((h) => {
     // Forwards are re-checked on the way out: an imported host never went through saveHost.
     const own = h.forwards === undefined ? h : { ...h, forwards: usableForwards(h.forwards) }
-    const eff = resolveHostAuth(own, credentials)
+    const eff = resolveHostAuth(own, credentials, groups).effective
     return withCredentialInfo(toPublicHost(eff), eff)
   })
 }
@@ -107,12 +162,21 @@ function checkedForwards(value: unknown): { ok: true; forwards: PortForward[] } 
 }
 
 export function saveHost(raw: SshHostInput): HostsWriteResult {
-  const credentialId = typeof raw.credentialId === 'string' && raw.credentialId ? raw.credentialId : undefined
-  if (credentialId) return saveLinkedHost(raw, credentialId)
+  // Main decides from the source, whatever else the input carries: a credential id sent
+  // with a login of its own, or with an inherited one, is dropped.
+  const source = hostAuthSource(raw)
+  if (source === 'group') return saveInheritingHost(raw)
+  if (source === 'credential') {
+    const credentialId = typeof raw.credentialId === 'string' && raw.credentialId ? raw.credentialId : undefined
+    if (!credentialId) return { ok: false, error: t('main.ssh.credentialMissing') }
+    return saveLinkedHost(raw, credentialId)
+  }
   const cleaned = stripSecrets(cleanHostFields({ ...raw, username: typeof raw.username === 'string' ? raw.username : '' }))
   // Unlinked: a credential id the input carried is dropped.
-  const fields: Omit<typeof cleaned, 'credentialId'> & { credentialId?: string } = { ...cleaned }
+  const fields: Omit<typeof cleaned, 'credentialId'> & { credentialId?: string } = { ...cleaned, authSource: 'own' }
   delete fields.credentialId
+  const groupProblem = groupRefProblem(fields.groupId)
+  if (groupProblem) return { ok: false, error: groupProblem }
   const problem = hostFieldProblem(fields)
   if (problem) return { ok: false, error: t(hostFieldProblemKey(problem)) }
   const forwards = checkedForwards(raw.forwards)
@@ -121,8 +185,8 @@ export function saveHost(raw: SshHostInput): HostsWriteResult {
   else delete fields.forwards
   return updateHosts((hosts) => {
     const idx = fields.id ? hosts.findIndex((h) => h.id === fields.id) : -1
-    // A host that was linked has no secrets of its own to keep.
-    const prev = idx >= 0 && !hosts[idx].credentialId ? hosts[idx] : undefined
+    // A host that was linked or inheriting has no secrets of its own to keep.
+    const prev = idx >= 0 && hostAuthSource(hosts[idx]) === 'own' ? hosts[idx] : undefined
     const secrets = mergeSecrets(prev, raw)
     if (idx >= 0) {
       hosts[idx] = { ...fields, id: fields.id as string, ...secrets }
@@ -143,11 +207,54 @@ function saveLinkedHost(raw: SshHostInput, credentialId: string): HostsWriteResu
   // Cleaned with the credential's username in place, so the checks below see the login
   // the host will really use.
   const cleaned = cleanHostFields({ ...raw, username: cred.username })
+  const groupProblem = groupRefProblem(cleaned.groupId)
+  if (groupProblem) return { ok: false, error: groupProblem }
   const problem = hostFieldProblem(cleaned)
   if (problem) return { ok: false, error: t(hostFieldProblemKey(problem)) }
   const forwards = checkedForwards(raw.forwards)
   if (!forwards.ok) return forwards
   const fields = { ...stripCredentialAuth(cleaned), credentialId }
+  if (forwards.forwards.length) fields.forwards = forwards.forwards
+  else delete fields.forwards
+  return updateHosts((hosts) => {
+    const idx = fields.id ? hosts.findIndex((h) => h.id === fields.id) : -1
+    if (idx >= 0) hosts[idx] = { ...fields, id: fields.id as string, authSource: 'credential' }
+    else hosts.push({ ...fields, id: fields.id || genId(), authSource: 'credential' })
+    return hosts
+  })
+}
+
+/** Why a host may not be saved in group `groupId`, or null: no group, or one that exists. */
+function groupRefProblem(groupId: string | undefined): string | null {
+  if (!groupId) return null
+  const groups = readGroups()
+  if (!groups.ok) return groups.error
+  return groups.groups.some((g) => g.id === groupId) ? null : t('main.ssh.groupMissing')
+}
+
+/**
+ * A host that logs in with its group's credential: it must be in a group that carries one.
+ * Kept like a linked host, with no login or secret of its own, and without a credential id:
+ * the group's is looked up on every connect, so changing it there changes it here.
+ */
+function saveInheritingHost(raw: SshHostInput): HostsWriteResult {
+  const groupId = typeof raw.groupId === 'string' ? raw.groupId : ''
+  const groups = readGroups()
+  if (!groups.ok) return { ok: false, error: groups.error }
+  const group = groups.groups.find((g) => g.id === groupId)
+  if (!group) return { ok: false, error: t('main.ssh.groupMissing') }
+  if (!group.credentialId) return { ok: false, error: t('main.ssh.groupNoCredential', { group: group.name }) }
+  const creds = credentialStore.read()
+  if (!creds.ok) return { ok: false, error: t('main.ssh.credentialsUnreadable', { error: creds.error, file: credentialStore.file }) }
+  const cred = creds.hosts.find((c) => c.id === group.credentialId)
+  if (!cred) return { ok: false, error: t('main.ssh.credentialMissing') }
+  const cleaned = cleanHostFields({ ...raw, username: cred.username, groupId })
+  const problem = hostFieldProblem(cleaned)
+  if (problem) return { ok: false, error: t(hostFieldProblemKey(problem)) }
+  const forwards = checkedForwards(raw.forwards)
+  if (!forwards.ok) return forwards
+  // No credential id of its own: undefined is dropped when the file is written.
+  const fields = { ...stripCredentialAuth(cleaned), groupId, authSource: 'group' as const, credentialId: undefined }
   if (forwards.forwards.length) fields.forwards = forwards.forwards
   else delete fields.forwards
   return updateHosts((hosts) => {
@@ -175,7 +282,7 @@ export function saveHostPassword(id: string, password: string): HostsWriteResult
   let saved = false
   const res = updateHosts((hosts) =>
     hosts.map((h) => {
-      if (h.id !== id || h.credentialId || h.authType !== 'password') return h
+      if (h.id !== id || hostAuthSource(h) !== 'own' || h.authType !== 'password') return h
       saved = true
       return { ...h, password }
     })
@@ -191,7 +298,10 @@ export type CredentialsWriteResult = { ok: true; credentials: SshCredentialPubli
 /** The credentials as the renderer sees them: no secrets, and how many hosts link each. */
 export function listCredentials(): SshCredentialPublic[] {
   const hosts = hostStore.readOrEmpty()
-  return credentialStore.readOrEmpty().map((c) => toPublicCredential(c, credentialUsage(hosts, c.id)))
+  const groups = readGroupsOrEmpty()
+  return credentialStore
+    .readOrEmpty()
+    .map((c) => toPublicCredential(c, credentialUsage(hosts, c.id, groups), groupsUsingCredential(groups, c.id).length))
 }
 
 /** One saved credential with its secrets, for main only (comparing before and after a save). */
@@ -199,12 +309,9 @@ export function getStoredCredential(id: string): SshCredential | null {
   return credentialStore.readOrEmpty().find((c) => c.id === id) ?? null
 }
 
-/** The ids of the hosts linked to credential `id`. */
+/** The ids of the hosts that log in with credential `id`, linked or through their group. */
 export function hostIdsUsingCredential(id: string): string[] {
-  return hostStore
-    .readOrEmpty()
-    .filter((h) => h.credentialId === id)
-    .map((h) => h.id)
+  return hostIdsLoggingInWith(hostStore.readOrEmpty(), readGroupsOrEmpty(), id)
 }
 
 /** Same keep / clear / replace rules for its secrets as a host (mergeSecrets). */
@@ -235,8 +342,13 @@ export function saveCredential(raw: SshCredentialInput): CredentialsWriteResult 
 export function deleteCredential(id: string): CredentialsWriteResult {
   const hosts = hostStore.read()
   if (!hosts.ok) return { ok: false, error: t('main.ssh.hostsUnreadable', { error: hosts.error, file: hostStore.file }) }
-  const used = credentialUsage(hosts.hosts, id)
+  // Read strictly too: a group carrying it keeps it in use even with no host inheriting yet.
+  const groups = readGroups()
+  if (!groups.ok) return groups
+  const used = credentialUsage(hosts.hosts, id, groups.groups)
   if (used > 0) return { ok: false, error: plural(t, 'main.ssh.credentialInUse', used) }
+  const carriers = groupsUsingCredential(groups.groups, id).length
+  if (carriers > 0) return { ok: false, error: plural(t, 'main.ssh.credentialInUseByGroups', carriers) }
   const res = credentialStore.update((creds) => creds.filter((c) => c.id !== id))
   return res.ok ? { ok: true, credentials: listCredentials() } : res
 }
@@ -250,6 +362,98 @@ export function readCredentialsWithSecrets(): HostsRead<SshCredential> {
 export function updateCredentialsWith(mutate: (creds: SshCredential[]) => SshCredential[]): CredentialsWriteResult {
   const res = credentialStore.update(mutate)
   return res.ok ? { ok: true, credentials: listCredentials() } : res
+}
+
+// ─── Server groups: list, save, delete ─────────────────────────────────────
+
+/** A group as the renderer sees it: its fields (none is secret), the name of the credential
+ *  it carries, and how many hosts are in it and inherit that credential. */
+export interface SshGroupPublic extends SshGroup {
+  credentialName?: string
+  hosts: number
+  inheriting: number
+}
+
+export type GroupsWriteResult = { ok: true; groups: SshGroupPublic[] } | { ok: false; error: string }
+export type GroupDeleteResult =
+  | { ok: true; groups: SshGroupPublic[]; hosts: SshHostPublic[]; orphaned: string[] }
+  | { ok: false; error: string }
+
+export function listGroups(): SshGroupPublic[] {
+  const hosts = hostStore.readOrEmpty()
+  const creds = credentialStore.readOrEmpty()
+  return readGroupsOrEmpty().map((g) => {
+    const usage = groupUsage(hosts, g.id)
+    const cred = g.credentialId ? creds.find((c) => c.id === g.credentialId) : undefined
+    return { ...g, ...(cred ? { credentialName: cred.name } : {}), hosts: usage.hosts, inheriting: usage.inheriting }
+  })
+}
+
+/** One saved group, for main only (comparing its credential before and after a save). */
+export function getStoredGroup(id: string): SshGroup | null {
+  return readGroupsOrEmpty().find((g) => g.id === id) ?? null
+}
+
+/** The ids of the hosts that inherit group `id`'s credential. */
+export function hostIdsInheritingGroup(id: string): string[] {
+  return hostIdsInheritingFrom(hostStore.readOrEmpty(), id)
+}
+
+function genGroupId(): string {
+  return `grp_${randomUUID()}`
+}
+
+/** Creates or edits a group. The credential it carries must exist; none is fine. */
+export function saveGroup(raw: SshGroupInput): GroupsWriteResult {
+  const id = raw && typeof raw.id === 'string' && raw.id ? raw.id : genGroupId()
+  const group = cleanGroup({ ...raw, id })
+  if (!group) return { ok: false, error: t('main.ssh.groupNameMissing') }
+  if (group.credentialId) {
+    const creds = credentialStore.read()
+    if (!creds.ok) return { ok: false, error: t('main.ssh.credentialsUnreadable', { error: creds.error, file: credentialStore.file }) }
+    if (!creds.hosts.some((c) => c.id === group.credentialId)) return { ok: false, error: t('main.ssh.credentialMissing') }
+  }
+  const groups = readGroups()
+  if (!groups.ok) return groups
+  const list = groups.groups
+  const idx = list.findIndex((g) => g.id === id)
+  if (idx >= 0) list[idx] = group
+  else list.push(group)
+  const res = writeGroups(list)
+  return res.ok ? { ok: true, groups: listGroups() } : res
+}
+
+/**
+ * Deletes a group after moving its hosts to "no group" (the renderer confirms first). Hosts
+ * first, then the group: a failure between the two leaves a group with no hosts, never hosts
+ * pointing at a group that is gone. Those that inherited its credential have no login until
+ * edited; `orphaned` lists them, for the caller to drop their pooled connections.
+ */
+export function deleteGroup(id: string): GroupDeleteResult {
+  const groups = readGroups()
+  if (!groups.ok) return groups
+  let orphaned: string[] = []
+  const hostsRes = hostStore.update((hosts) => {
+    const res = removeGroupFromHosts(hosts, id)
+    orphaned = res.orphaned
+    return res.hosts
+  })
+  if (!hostsRes.ok) return hostsRes
+  const res = writeGroups(groups.groups.filter((g) => g.id !== id))
+  return res.ok ? { ok: true, groups: listGroups(), hosts: listHosts(), orphaned } : res
+}
+
+/** The saved groups, read strictly: a failed read is an error, not an empty list. */
+export function readSavedGroups(): GroupsRead {
+  return readGroups()
+}
+
+/** Replace the saved groups through `mutate`, refusing a file that cannot be read. For a
+ *  profile import. */
+export function updateGroupsWith(mutate: (groups: SshGroup[]) => SshGroup[]): { ok: true } | { ok: false; error: string } {
+  const groups = readGroups()
+  if (!groups.ok) return groups
+  return writeGroups(mutate(groups.groups))
 }
 
 export interface ConnectAuthOptions {
@@ -385,7 +589,7 @@ export function updateHostsWith(mutate: (hosts: StoredSshHost[]) => StoredSshHos
  */
 export function getHost(id: string): EffectiveSshHost | null {
   const h = getStoredHost(id)
-  return h ? resolveHostAuth(h, credentialStore.readOrEmpty()) : null
+  return h ? resolveHostAuth(h, credentialStore.readOrEmpty(), readGroupsOrEmpty()).effective : null
 }
 
 /** A saved host exactly as stored: a linked one has no login of its own. For the paths that

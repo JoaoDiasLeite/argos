@@ -24,11 +24,36 @@ export function isElevateCommand(v: unknown): v is ElevateCommand {
   return typeof v === 'string' && (ELEVATE_COMMANDS as readonly string[]).includes(v)
 }
 
+/**
+ * Where a host's login comes from: its own fields, a shared credential it links, or the
+ * credential of its group. Chosen explicitly in the form: putting a host in a group never
+ * changes how it logs in by itself.
+ */
+export type AuthSource = 'own' | 'credential' | 'group'
+
+const AUTH_SOURCES: readonly AuthSource[] = ['own', 'credential', 'group']
+
+export function isAuthSource(v: unknown): v is AuthSource {
+  return typeof v === 'string' && (AUTH_SOURCES as readonly string[]).includes(v)
+}
+
+/** The auth source in force: the saved choice, or for a host saved before it existed,
+ *  `credential` when it links one and `own` otherwise. */
+export function hostAuthSource(h: { authSource?: unknown; credentialId?: unknown }): AuthSource {
+  if (isAuthSource(h.authSource)) return h.authSource
+  return typeof h.credentialId === 'string' && h.credentialId ? 'credential' : 'own'
+}
+
 export interface SshHost {
   id: string
   name: string
   host: string
   port: number
+  /** The server group it is listed under (ssh-group-pure.ts). Organisation only, unless
+   *  `authSource` is `group`. */
+  groupId?: string
+  /** Unset on hosts saved before groups: `credential` when `credentialId` is set, else `own`. */
+  authSource?: AuthSource
   username: string
   authType: SshAuthType
   password?: string
@@ -73,6 +98,8 @@ export const PUBLIC_HOST_FIELDS = [
   'name',
   'host',
   'port',
+  'groupId',
+  'authSource',
   'username',
   'authType',
   'privateKeyPath',
@@ -109,6 +136,8 @@ export type SshHostPublic = Pick<SshHost, PublicHostField> &
   HostSecretFlags & {
     credentialName?: string
     credentialMissing?: boolean
+    /** The group an inherited login comes from. */
+    groupName?: string
   }
 
 /** The elevation mode in force: an unset or unknown value is `login` for a password host
@@ -176,6 +205,8 @@ interface HostText {
   elevateCommand?: string
   tags?: unknown
   notes?: unknown
+  groupId?: unknown
+  authSource?: unknown
 }
 
 export const MAX_HOST_TAGS = 12
@@ -226,6 +257,12 @@ export function cleanHostFields<T extends HostText>(input: T): T {
   if (input.claudePath !== undefined) out.claudePath = cleanHostText(input.claudePath)
   if (input.elevation !== undefined && !isElevationMode(input.elevation)) delete out.elevation
   if (input.elevateCommand !== undefined && !isElevateCommand(input.elevateCommand)) delete out.elevateCommand
+  if (input.groupId !== undefined) {
+    const groupId = typeof input.groupId === 'string' ? cleanHostText(input.groupId) : ''
+    if (groupId) out.groupId = groupId
+    else delete out.groupId
+  }
+  if (input.authSource !== undefined && !isAuthSource(input.authSource)) delete out.authSource
   // Empty values are dropped rather than stored, so an unmarked host stays as small as before.
   if (input.tags !== undefined) {
     const tags = cleanTags(input.tags)

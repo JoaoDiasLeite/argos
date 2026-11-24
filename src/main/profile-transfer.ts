@@ -30,13 +30,16 @@ import {
 import { encodeProjectPath, missingThreadNames, pickThreadNames } from './codex-data-pure'
 import {
   readCredentialsWithSecrets,
+  readSavedGroups,
   readHostsWithSecrets,
   updateCredentialsWith,
+  updateGroupsWith,
   updateHostsWith,
   type SshCredential,
   type StoredSshHost
 } from './ssh'
 import { SECRET_FIELDS, type HostSecrets } from './ssh-host-pure'
+import { groupsFromFile, mergeGroups } from './ssh-group-pure'
 import { getApiKey, setApiKey, loadAuthState } from './auth'
 import { loadAccounts } from './accounts'
 import { loadProviderAccounts } from './provider-accounts'
@@ -808,6 +811,13 @@ async function applyProfile(
     const res = updateCredentialsWith((local) => mergeHosts(local, incoming))
     if (!res.ok) throw new Error(res.error)
   }
+  // Server groups next, merged by id, so the hosts that name one find it. Plain data; nothing
+  // in a group is a path to remap.
+  const importedGroups = groupsFromFile(pj['ssh-groups.json'])
+  if (importedGroups.length) {
+    const res = updateGroupsWith((local) => mergeGroups(local, importedGroups))
+    if (!res.ok) throw new Error(res.error)
+  }
   if (importedHosts.length) {
     const incoming = importedHosts.map((h) => {
       const host = remap.deep(h) as unknown as StoredSshHost
@@ -965,6 +975,15 @@ export async function applyImport(req: ImportRequest): Promise<ImportResult> {
     if (!credsNow.ok) {
       await close()
       return { ok: false, error: t('main.profile.error.credentialsUnreadable', { error: credsNow.error }) }
+    }
+  }
+  // The groups file is merged, not replaced: one that cannot be read now stops the import
+  // before anything is written, as the hosts and credentials do. Its error names the file.
+  if (groupsFromFile(profile.json['ssh-groups.json']).length) {
+    const groupsNow = readSavedGroups()
+    if (!groupsNow.ok) {
+      await close()
+      return { ok: false, error: groupsNow.error }
     }
   }
 

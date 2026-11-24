@@ -6,6 +6,8 @@ import {
   SshHostInput,
   SshKeyInfo,
   type SshCredentialPublic,
+  type SshGroupPublic,
+  type SshAuthSource,
   WslDistro,
   SourceInfo,
   OpsRunbookInfo,
@@ -26,6 +28,8 @@ import './RemoteView.css'
 import Select from '../components/Select'
 import LoginFields, { AUTH_CHIP, AUTH_LABEL, type LoginValue } from '../components/LoginFields'
 import CredentialsSheet, { type CredentialsStart } from '../components/CredentialsSheet'
+import GroupsSheet, { type GroupsStart } from '../components/GroupsSheet'
+import { UNGROUPED_KEY, groupHosts, parseFolded, serializeFolded } from '../lib/host-groups'
 import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
 
@@ -91,6 +95,14 @@ const LOCAL_SOURCE: ContainerSource = { kind: 'local' }
 
 /** The credential select's "New credential" entry. */
 const NEW_CREDENTIAL = '__new__'
+/** The group select's "New group" entry. */
+const NEW_GROUP = '__new_group__'
+/** Which group headers of the Servers list are folded, per viewer. */
+const FOLDED_GROUPS_KEY = 'argos.remote.foldedGroups'
+
+/** The auth source of a host or form, read like main does for one saved before groups. */
+const sourceOf = (h: { authSource?: SshAuthSource; credentialId?: string }): SshAuthSource =>
+  h.authSource ?? (h.credentialId !== undefined ? 'credential' : 'own')
 
 const keyOf = (sel: Selection): string => (sel.kind === 'wsl' ? `wsl:${sel.name}` : `ssh:${sel.id}`)
 
@@ -105,6 +117,10 @@ function hostToInput(h: SshHostPublic): SshHostInput {
     name: h.name,
     host: h.host,
     port: h.port,
+    // An inheriting host's credentialId (below) is its group's: the form only reads it with
+    // "shared credential" chosen, and main ignores it for an inherited login.
+    groupId: h.groupId,
+    authSource: sourceOf(h),
     username: h.username,
     authType: h.authType,
     privateKeyPath: h.privateKeyPath,
@@ -178,6 +194,11 @@ const UserIcon = () => (
     <path d="M4 21c0-4 4-6 8-6s8 2 8 6" />
   </Icon>
 )
+const FolderIcon = () => (
+  <Icon>
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+  </Icon>
+)
 const PlusIcon = () => (
   <Icon>
     <path d="M12 5v14M5 12h14" />
@@ -244,6 +265,16 @@ export default function RemoteView({
   const [credentials, setCredentials] = useState<SshCredentialPublic[]>([])
   // The credentials sheet, and where it opened (the list, or one credential from the host form).
   const [credSheet, setCredSheet] = useState<CredentialsStart | null>(null)
+  const [groups, setGroups] = useState<SshGroupPublic[]>([])
+  // The groups sheet, and where it opened (the list, a group header, or the host form).
+  const [groupSheet, setGroupSheet] = useState<GroupsStart | null>(null)
+  const [foldedGroups, setFoldedGroups] = useState<Set<string>>(() => {
+    try {
+      return parseFolded(localStorage.getItem(FOLDED_GROUPS_KEY))
+    } catch {
+      return new Set()
+    }
+  })
   const [distros, setDistros] = useState<WslDistro[]>([])
   const [sources, setSources] = useState<SourceInfo[]>([])
   const [hidden, setHidden] = useState<string[]>([])
@@ -298,7 +329,7 @@ export default function RemoteView({
   // focus is not in a field. Sheets (Add/Edit host, credentials, the report) keep it: a click in them
   // is not a click outside the column.
   useEffect(() => {
-    if (!selected || editing || reportFor || credSheet) return
+    if (!selected || editing || reportFor || credSheet || groupSheet) return
     const onDown = (e: MouseEvent) => {
       if (e.button !== 0) return
       const target = e.target as HTMLElement | null
@@ -318,11 +349,12 @@ export default function RemoteView({
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [selected, editing, reportFor, credSheet])
+  }, [selected, editing, reportFor, credSheet, groupSheet])
 
   const load = async () => {
     setHosts(await window.electronAPI.sshList())
     setCredentials(await window.electronAPI.sshCredentialsList())
+    setGroups(await window.electronAPI.sshGroupsList())
     setDistros(await window.electronAPI.wslList())
     setHidden(await window.electronAPI.wslHidden())
     setSources(await window.electronAPI.ccSources())
@@ -423,22 +455,31 @@ export default function RemoteView({
     }
   }
 
-  // `credentialId` defined means "shared credential" is chosen; '' until one is picked.
-  const linking = editing?.credentialId !== undefined
+  // Where the login comes from. With "shared credential" chosen, `credentialId` is '' until
+  // one is picked; with "inherit", the login is the credential of the group picked above.
+  const source: SshAuthSource = editing ? sourceOf(editing) : 'own'
+  const linking = source === 'credential'
+  const inheriting = source === 'group'
   const linkedCred = linking ? credentials.find((c) => c.id === editing?.credentialId) : undefined
+  const editingGroup = editing?.groupId ? groups.find((g) => g.id === editing.groupId) : undefined
+  const groupCred = editingGroup?.credentialId ? credentials.find((c) => c.id === editingGroup.credentialId) : undefined
   const hostValid =
-    !!editing && !!editing.name.trim() && !!editing.host.trim() && (linking ? !!linkedCred : !!editing.username.trim())
+    !!editing &&
+    !!editing.name.trim() &&
+    !!editing.host.trim() &&
+    (inheriting ? !!groupCred : linking ? !!linkedCred : !!editing.username.trim())
 
   // The saved host's own secrets, for the "unchanged" placeholders and the remove buttons. A
-  // host saved on a shared credential has none of its own: its flags are the credential's.
+  // host saved on a shared credential, or inheriting one, has none of its own.
   const savedHost = editing?.id ? hosts.find((h) => h.id === editing.id) : undefined
-  const savedOwnLogin = savedHost && !savedHost.credentialId ? savedHost : undefined
+  const savedOwnLogin = savedHost && sourceOf(savedHost) === 'own' ? savedHost : undefined
 
   /** The host form switching back to a login of its own. The login fields already hold what
    *  the host showed (its own, or its credential's when it was saved linked), so only the link
    *  and any secret typed meanwhile are dropped: a credential's secrets never move to a host. */
   const ownLoginFrom = (h: SshHostInput): SshHostInput => ({
     ...h,
+    authSource: 'own',
     credentialId: undefined,
     password: undefined,
     passphrase: undefined,
@@ -469,8 +510,9 @@ export default function RemoteView({
       }
       setHosts(res.hosts)
       setEditing(null)
-      // How many servers use each credential may have changed.
+      // How many servers use each credential, and are in each group, may have changed.
       window.electronAPI.sshCredentialsList().then(setCredentials).catch(() => {})
+      window.electronAPI.sshGroupsList().then(setGroups).catch(() => {})
     } finally {
       savingRef.current = false
       setSaving(false)
@@ -497,14 +539,38 @@ export default function RemoteView({
     setHosts(res.hosts)
     select(null)
     window.electronAPI.sshCredentialsList().then(setCredentials).catch(() => {})
+    window.electronAPI.sshGroupsList().then(setGroups).catch(() => {})
   }
 
   // A credential write changes the login every linked host shows, so the hosts are re-read.
   const credentialsChanged = (next: SshCredentialPublic[], savedId?: string) => {
     setCredentials(next)
     window.electronAPI.sshList().then(setHosts).catch(() => {})
+    window.electronAPI.sshGroupsList().then(setGroups).catch(() => {})
     // A credential created from the host form ("New credential...") is the one it links.
     if (savedId && editing && credSheet?.kind === 'new') setEditing({ ...editing, credentialId: savedId })
+  }
+
+  // A group write changes the origin every inheriting host shows, and how many groups carry
+  // each credential, so both are re-read.
+  const groupsChanged = (next: SshGroupPublic[], savedId?: string) => {
+    setGroups(next)
+    window.electronAPI.sshList().then(setHosts).catch(() => {})
+    window.electronAPI.sshCredentialsList().then(setCredentials).catch(() => {})
+    // A group created from the host form ("New group...") is the one it goes in.
+    if (savedId && editing && groupSheet?.kind === 'new') setEditing({ ...editing, groupId: savedId })
+  }
+
+  const toggleGroupFold = (key: string) => {
+    const next = new Set(foldedGroups)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    setFoldedGroups(next)
+    try {
+      localStorage.setItem(FOLDED_GROUPS_KEY, serializeFolded(next))
+    } catch {
+      // Storage unavailable: the fold lasts for this view only.
+    }
   }
 
   // ── Filtering ──────────────────────────────────────────────────────────────
@@ -527,6 +593,9 @@ export default function RemoteView({
 
   const shownDistros = (kind === 'all' || kind === 'wsl') && activeTags.length === 0 ? visibleDistros.filter(matchesDistro) : []
   const shownHosts = kind === 'all' || kind === 'ssh' ? filterHosts(hosts, query, activeTags) : []
+  const filtering = !!q || activeTags.length > 0
+  // No groups at all: the list stays flat, as before groups existed.
+  const hostSections = groups.length > 0 ? groupHosts(shownHosts, groups, filtering, locale) : []
   const showLocal = local.runtime && (kind === 'all' || kind === 'docker') && activeTags.length === 0
   // The containers section answers for itself ("no container matches").
   const nothingMatches = kind !== 'docker' && !showLocal && shownDistros.length === 0 && shownHosts.length === 0
@@ -604,6 +673,34 @@ export default function RemoteView({
         }
       }
     }
+  }
+
+  /** One saved host in the Servers list, flat or under its group's header. */
+  const hostRow = (h: SshHostPublic): ReactNode => {
+    const conn = probes[`ssh:${h.id}`]?.conn
+    const failed = (conn && !conn.ok) || (!conn && failedSshSessions.includes(h.id))
+    return (
+      <div key={h.id} {...rowProps({ kind: 'ssh', id: h.id }, () => onOpenSession(h), h.name)}>
+        <Dot state={hostDotState(h)} />
+        {h.favorite && (
+          <span className="rv-star" title={t('remote.list.favorite')} aria-label={t('remote.list.favorite')}>
+            <StarIcon />
+          </span>
+        )}
+        <span className="rv-name">{h.name}</span>
+        {h.production && <span className="prod-pill" title={t('remote.prod.title')}>{t('remote.prod.pill')}</span>}
+        <span className="chip">{t(AUTH_CHIP[h.authType])}</span>
+        {h.tags?.map((tag) => (
+          <span key={tag} className="chip rv-tag">{tag}</span>
+        ))}
+        <span className="rv-row-right">
+          {failed && <span className="rv-row-err">{t('remote.list.couldNotConnect')}</span>}
+          <span className="rv-row-meta">
+            {h.username}@{h.host}:{h.port}
+          </span>
+        </span>
+      </div>
+    )
   }
 
   // ── SSH keys screen ────────────────────────────────────────────────────────
@@ -804,17 +901,36 @@ export default function RemoteView({
           <dl className="rv-dl">
             {selHost ? (
               <>
-                {selHost.credentialId && (
+                {selHost.groupId && groups.some((g) => g.id === selHost.groupId) && (
+                  <>
+                    <dt>{t('remote.col.group')}</dt>
+                    <dd>{groups.find((g) => g.id === selHost.groupId)?.name}</dd>
+                  </>
+                )}
+                {selHost.authSource === 'group' ? (
                   <>
                     <dt>{t('remote.col.credential')}</dt>
                     <dd>
                       {selHost.credentialMissing ? (
-                        <span className="rv-dd-err">{t('remote.col.credentialMissing')}</span>
+                        <span className="rv-dd-err">{t('remote.col.groupCredentialMissing')}</span>
                       ) : (
-                        selHost.credentialName
+                        t('remote.col.credentialInherited', { credential: selHost.credentialName ?? '', group: selHost.groupName ?? '' })
                       )}
                     </dd>
                   </>
+                ) : (
+                  selHost.credentialId && (
+                    <>
+                      <dt>{t('remote.col.credential')}</dt>
+                      <dd>
+                        {selHost.credentialMissing ? (
+                          <span className="rv-dd-err">{t('remote.col.credentialMissing')}</span>
+                        ) : (
+                          selHost.credentialName
+                        )}
+                      </dd>
+                    </>
+                  )
                 )}
                 <dt>{t('remote.col.authentication')}</dt>
                 <dd>
@@ -1018,6 +1134,10 @@ export default function RemoteView({
           <UserIcon />
           {t('remote.creds.button')}
         </button>
+        <button type="button" className="btn-ghost" onClick={() => setGroupSheet({ kind: 'list' })}>
+          <FolderIcon />
+          {t('remote.groups.button')}
+        </button>
         <button type="button" className="btn-ghost" onClick={() => openEditor(emptyHost())}>
           <PlusIcon />
           {t('remote.addHost')}
@@ -1139,34 +1259,53 @@ export default function RemoteView({
           {shownHosts.length > 0 && (
             <>
               <div className="eyebrow rv-eyebrow">{t('remote.list.ssh')}</div>
-              <div role="listbox" aria-label={t('remote.list.ssh')} className="rv-rows">
-                {shownHosts.map((h) => {
-                  const conn = probes[`ssh:${h.id}`]?.conn
-                  const failed = (conn && !conn.ok) || (!conn && failedSshSessions.includes(h.id))
+              {hostSections.length === 0 ? (
+                <div role="listbox" aria-label={t('remote.list.ssh')} className="rv-rows">
+                  {shownHosts.map(hostRow)}
+                </div>
+              ) : (
+                hostSections.map(({ group, hosts: members }) => {
+                  const key = group ? group.id : UNGROUPED_KEY
+                  const label = group ? group.name : t('remote.groups.ungrouped')
+                  // A filter shows its matches even inside a folded group.
+                  const open = filtering || !foldedGroups.has(key)
                   return (
-                    <div key={h.id} {...rowProps({ kind: 'ssh', id: h.id }, () => onOpenSession(h), h.name)}>
-                      <Dot state={hostDotState(h)} />
-                      {h.favorite && (
-                        <span className="rv-star" title={t('remote.list.favorite')} aria-label={t('remote.list.favorite')}>
-                          <StarIcon />
-                        </span>
+                    <div key={key} className="ctr-group rv-group">
+                      <div className="rv-group-head">
+                        <button type="button" className="ctr-group-head rv-group-toggle" aria-expanded={open} onClick={() => toggleGroupFold(key)}>
+                          <ChevronRight className={`ctr-chevron${open ? ' open' : ''}`} />
+                          <span className="ctr-group-name" title={label}>
+                            {label}
+                          </span>
+                          {group?.credentialId && (
+                            <span className="ctr-group-icon" title={t('remote.groups.carries', { name: group.credentialName ?? '' })}>
+                              <KeyIcon />
+                            </span>
+                          )}
+                          <span className="ctr-group-count">{members.length}</span>
+                        </button>
+                        {group && (
+                          <Menu
+                            triggerClass="btn-ghost small rv-icon-btn"
+                            triggerTitle={t('remote.groups.menu')}
+                            ariaLabel={t('remote.groups.menu')}
+                            triggerContent={<MoreIcon />}
+                            items={[
+                              { label: t('remote.groups.edit'), onClick: () => setGroupSheet({ kind: 'edit', id: group.id }) },
+                              { label: t('remote.groups.deleteGroup'), danger: true, onClick: () => setGroupSheet({ kind: 'delete', id: group.id }) }
+                            ]}
+                          />
+                        )}
+                      </div>
+                      {open && members.length > 0 && (
+                        <div role="listbox" aria-label={label} className="rv-rows ctr-group-rows">
+                          {members.map(hostRow)}
+                        </div>
                       )}
-                      <span className="rv-name">{h.name}</span>
-                      {h.production && <span className="prod-pill" title={t('remote.prod.title')}>{t('remote.prod.pill')}</span>}
-                      <span className="chip">{t(AUTH_CHIP[h.authType])}</span>
-                      {h.tags?.map((tag) => (
-                        <span key={tag} className="chip rv-tag">{tag}</span>
-                      ))}
-                      <span className="rv-row-right">
-                        {failed && <span className="rv-row-err">{t('remote.list.couldNotConnect')}</span>}
-                        <span className="rv-row-meta">
-                          {h.username}@{h.host}:{h.port}
-                        </span>
-                      </span>
                     </div>
                   )
-                })}
-              </div>
+                })
+              )}
             </>
           )}
 
@@ -1194,7 +1333,7 @@ export default function RemoteView({
 
       {/* The host sheet steps aside while a credential opened from it is edited: two stacked
           sheets would both close on one Esc. Its state stays in `editing`. */}
-      {editing && !credSheet && (
+      {editing && !credSheet && !groupSheet && (
         <Sheet
           title={editing.id ? t('remote.col.editHost') : t('remote.addHost')}
           width={520}
@@ -1243,21 +1382,71 @@ export default function RemoteView({
               </div>
             </div>
             <div className="form-group">
+              <label>
+                {t('remote.form.group')}
+                <span className="optional">{t('remote.form.optional')}</span>
+              </label>
+              <Select
+                value={editingGroup ? editingGroup.id : ''}
+                onChange={(e) => {
+                  if (e.target.value === NEW_GROUP) setGroupSheet({ kind: 'new' })
+                  else setEditing({ ...editing, groupId: e.target.value || undefined })
+                }}
+              >
+                <option value="">{t('remote.form.groupNone')}</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+                <option value={NEW_GROUP}>{t('remote.form.groupNew')}</option>
+              </Select>
+            </div>
+            <div className="form-group">
               <label>{t('remote.form.authSource')}</label>
               <div className="seg-control">
-                <button type="button" className={!linking ? 'on' : ''} onClick={() => linking && setEditing(ownLoginFrom(editing))}>
+                <button type="button" className={source === 'own' ? 'on' : ''} onClick={() => source !== 'own' && setEditing(ownLoginFrom(editing))}>
                   {t('remote.form.authSource.own')}
                 </button>
                 <button
                   type="button"
                   className={linking ? 'on' : ''}
-                  onClick={() => !linking && setEditing({ ...editing, credentialId: credentials[0]?.id ?? '' })}
+                  onClick={() => !linking && setEditing({ ...editing, authSource: 'credential', credentialId: editing.credentialId || (credentials[0]?.id ?? '') })}
                 >
                   {t('remote.form.authSource.shared')}
                 </button>
+                {/* Offered only in a group that carries a credential, or to show a host that
+                    still inherits from one that no longer does. */}
+                {(inheriting || (editingGroup && groupCred)) && (
+                  <button
+                    type="button"
+                    className={inheriting ? 'on' : ''}
+                    title={
+                      editingGroup && groupCred
+                        ? t('remote.form.authSource.groupTitle', { group: editingGroup.name, credential: groupCred.name })
+                        : undefined
+                    }
+                    onClick={() => !inheriting && setEditing({ ...editing, authSource: 'group', credentialId: undefined })}
+                  >
+                    {t('remote.form.authSource.group')}
+                  </button>
+                )}
               </div>
             </div>
-            {linking ? (
+            {inheriting ? (
+              editingGroup && groupCred ? (
+                <div className="form-group">
+                  <div className="rv-cred-summary">
+                    <span>{t('remote.form.authSource.groupTitle', { group: editingGroup.name, credential: groupCred.name })}</span>
+                    <span className="rv-cred-user">{groupCred.username}</span>
+                    <span className="chip">{t(AUTH_CHIP[groupCred.authType])}</span>
+                  </div>
+                  <p className="help">{t('remote.form.inheritHelp')}</p>
+                </div>
+              ) : (
+                <p className="help rv-error-text">{t('remote.form.inheritUnavailable')}</p>
+              )
+            ) : linking ? (
               <>
                 <div className="form-group">
                   <label>{t('remote.form.credential')}</label>
@@ -1398,6 +1587,17 @@ export default function RemoteView({
           secretsEncrypted={secretsEncrypted}
           onClose={() => setCredSheet(null)}
           onChanged={credentialsChanged}
+        />
+      )}
+
+      {groupSheet && (
+        <GroupsSheet
+          start={groupSheet}
+          groups={groups}
+          credentials={credentials}
+          onClose={() => setGroupSheet(null)}
+          onChanged={groupsChanged}
+          onHostsChanged={setHosts}
         />
       )}
 
