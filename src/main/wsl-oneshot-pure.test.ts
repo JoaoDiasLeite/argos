@@ -16,7 +16,12 @@ describe('oneShotCommand', () => {
   it('keeps an MCP server name with shell characters as one word', () => {
     const cmd = oneShotCommand({ allowedTools: ["mcp__x; touch /tmp/p #'`$(id)`"] }, true)
     expect(cmd).toContain(`--allowedTools ${shQuote("mcp__x; touch /tmp/p #'`$(id)`")}`)
-    expect(cmd.endsWith(`'mcp__x; touch /tmp/p #'\''\`$(id)\`'`)).toBe(true)
+    // Spelled out in a plain string: a template literal turns '\'' into ''' and hid the bug.
+    expect(cmd.endsWith("'mcp__x; touch /tmp/p #'\\''`$(id)`'")).toBe(true)
+  })
+
+  it("closes the quote, escapes the ' and reopens it", () => {
+    expect(shQuote("a';id #")).toBe("'a'\\'';id #'")
   })
 
   it('keeps a model with spaces or a command substitution as one word', () => {
