@@ -18,9 +18,31 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '3.11.0',
+    date: '2026-11-25',
+    tag: 'latest',
+    sections: [
+      {
+        title: 'macOS',
+        items: [
+          'Argos the dog perches on and lands on other apps’ windows on a Mac, and he, his bubble, the quick launcher and the toasts stay above every window, on every Space and over full-screen apps, without bringing Argos forward.',
+          'Opened from Finder or the Dock, Argos reads the PATH of your login shell, so claude, codex, agy and npx are found, and local terminals start as login shells. Account logins open in Terminal without asking for Automation access.',
+          'The window has the native traffic lights; closing it hides Argos (⌘Q quits), the Dock badge says when something needs you, and Claude hooks no longer bounce a Dock icon. The menu bar shows a monochrome icon.',
+          'Shortcuts read ⌃⌥⇧⌘, ⌘Z, ⇧⌘Z and ⌘C work in fields and selected text, replace in the file editor is ⌥⌘F, and the companion asks for the microphone through macOS, with a button to its settings if it was refused.',
+          'Plan usage reads the Claude Code login from the Keychain; macOS asks once for access.'
+        ]
+      },
+      {
+        title: 'Security',
+        items: [
+          'The headless claude run inside a WSL distro now really quotes its model and tool names: since 3.8.0 a name with a quote still escaped the quoting and the rest ran as a command.'
+        ]
+      }
+    ]
+  },
+  {
     version: '3.10.0',
     date: '2026-11-24',
-    tag: 'latest',
     sections: [
       {
         title: 'Features',
