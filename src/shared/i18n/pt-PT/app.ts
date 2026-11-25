@@ -22,6 +22,7 @@ const app: Record<keyof typeof en, string> = {
   'loading': 'A carregar…',
   'views.mcp': 'MCP',
   'views.remote': 'Remoto e WSL',
+  'views.remoteMac': 'Remoto',
   'views.ops': 'Operações',
   'saveFailed': 'Não foi possível guardar a sessão',
   'home.chatFallback': 'Chat',

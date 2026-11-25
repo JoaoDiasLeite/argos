@@ -4,6 +4,8 @@
 import type { CompanionPrefs } from '../types'
 import { useT } from '../i18n'
 import Select from '../components/Select'
+import { displayAccelerator } from '../lib/platform'
+import { AUTO_DICTATION_SHORTCUT } from '../lib/accelerator'
 import { useVoiceStatus } from '../companion/dictation'
 
 const api = window.electronAPI.companion
@@ -41,7 +43,7 @@ export default function CompanionVoiceSettings({
           <span className="srow-label">{t('settings.companion.voice.shortcut.label')}</span>
           <span className="help">{t('settings.companion.voice.shortcut.hint')}</span>
           {registeredShortcut ? (
-            <span className="help">{t('settings.companion.voice.shortcut.registered', { shortcut: registeredShortcut })}</span>
+            <span className="help">{t('settings.companion.voice.shortcut.registered', { shortcut: displayAccelerator(registeredShortcut) })}</span>
           ) : (
             <span className="help settings-error">{t('settings.companion.voice.shortcut.failed')}</span>
           )}
@@ -54,11 +56,11 @@ export default function CompanionVoiceSettings({
           onChange={(e) => onChange({ voiceShortcut: e.target.value })}
           aria-label={t('settings.companion.voice.shortcut.label')}
         >
-          <option value="">{t('settings.companion.voice.shortcut.auto')}</option>
-          <option value="Ctrl+Alt+S">Ctrl+Alt+S</option>
-          <option value="Ctrl+Shift+Alt+S">Ctrl+Shift+Alt+S</option>
-          <option value="Ctrl+Alt+V">Ctrl+Alt+V</option>
-          <option value="Ctrl+Alt+M">Ctrl+Alt+M</option>
+          <option value="">{t('settings.companion.voice.shortcut.auto', { shortcut: displayAccelerator(AUTO_DICTATION_SHORTCUT) })}</option>
+          <option value="Ctrl+Alt+S">{displayAccelerator('Ctrl+Alt+S')}</option>
+          <option value="Ctrl+Shift+Alt+S">{displayAccelerator('Ctrl+Shift+Alt+S')}</option>
+          <option value="Ctrl+Alt+V">{displayAccelerator('Ctrl+Alt+V')}</option>
+          <option value="Ctrl+Alt+M">{displayAccelerator('Ctrl+Alt+M')}</option>
         </Select>
       </div>
       <div className="srow">

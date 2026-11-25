@@ -98,6 +98,7 @@ const companion: Record<keyof typeof en, string> = {
   'catchup.seeAll': 'Ver todos',
 
   'panel.sub': 'Chama o Argos com {shortcut}, em qualquer parte do Windows.',
+  'panel.subMac': 'Chama o Argos com {shortcut}, em qualquer parte do teu Mac.',
   'panel.subNoShortcut': 'O Argos não tem atalho para o chamar. Escolhe um nas Definições.',
   'panel.tabs.aria': 'Tarefas ou notas',
   'panel.tab.todos': 'Tarefas',
@@ -192,6 +193,10 @@ const companion: Record<keyof typeof en, string> = {
   'voice.denied': 'O Windows está a bloquear o microfone: Definições → Privacidade → Microfone → liga "Permitir que as aplicações de ambiente de trabalho acedam ao microfone".',
   'voice.noDevice': 'Não encontrei um microfone. Liga um, ou vê em Definições → Privacidade → Microfone → "Permitir que as aplicações de ambiente de trabalho acedam ao microfone".',
   'voice.micFailed': 'O microfone não arrancou. Vê em Definições → Privacidade → Microfone → "Permitir que as aplicações de ambiente de trabalho acedam ao microfone".',
+  'voice.deniedMac': 'O macOS não está a deixar o Argos usar o microfone. Liga o Argos nas definições de privacidade do microfone.',
+  'voice.noDeviceMac': 'Não encontrei um microfone. Liga um, ou escolhe uma entrada em Definições do Sistema → Som.',
+  'voice.micFailedMac': 'O microfone não arrancou. Vê se o Argos tem permissão nas definições de privacidade do microfone.',
+  'voice.openMicSettings': 'Abrir definições',
   'voice.transcribeFailed': 'Não consegui transcrever. Tenta outra vez.',
   'voice.needsModel': 'O ditado precisa do modelo de voz (564 MB), descarregado uma vez.',
   'voice.installFailed': 'O download falhou. Tenta outra vez.',

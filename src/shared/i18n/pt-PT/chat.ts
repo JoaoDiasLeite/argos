@@ -45,6 +45,7 @@ const chat: Record<keyof typeof en, string> = {
   'config.remote': 'Remoto',
   'config.whereLabel': 'Onde é executado',
   'config.whereHelp': 'Local, uma distro WSL ou um anfitrião SSH. A CLI tem de estar instalada aí.',
+  'config.whereHelpMac': 'Local ou um anfitrião SSH. A CLI tem de estar instalada aí.',
   'config.folder': 'Pasta',
   'config.optional': 'opcional',
   'config.addFolder': 'Adicionar pasta',

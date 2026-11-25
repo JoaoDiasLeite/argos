@@ -32,6 +32,7 @@ import GroupsSheet, { type GroupsStart } from '../components/GroupsSheet'
 import { UNGROUPED_KEY, groupHosts, parseFolded, serializeFolded } from '../lib/host-groups'
 import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
+import { IS_DARWIN } from '../lib/platform'
 import { GatewayVpnsSection, INHERIT_VPN, NO_VPN, VpnDot, VpnNeededField, VpnProfilesEditor } from '../components/GatewayVpns'
 import { useVpnStates, vpnKey } from '../hooks/useVpnStates'
 import { useLabs } from '../hooks/useLabs'
@@ -765,7 +766,7 @@ export default function RemoteView({
     return (
       <div className="view rv">
         <div className="rv-head">
-          <button type="button" className="rv-back" onClick={() => setScreen('targets')} aria-label={t('remote.back')} title={t('remote.back')}>
+          <button type="button" className="rv-back" onClick={() => setScreen('targets')} aria-label={t(IS_DARWIN ? 'remote.backMac' : 'remote.back')} title={t(IS_DARWIN ? 'remote.backMac' : 'remote.back')}>
             <ChevronLeft />
           </button>
           <div className="rv-head-text">
@@ -1210,8 +1211,8 @@ export default function RemoteView({
     <div className="view rv">
       <div className="rv-head">
         <div className="rv-head-text">
-          <h1>{t('remote.title')}</h1>
-          <p className="rv-sub">{t('remote.sub')}</p>
+          <h1>{t(IS_DARWIN ? 'remote.titleMac' : 'remote.title')}</h1>
+          <p className="rv-sub">{t(IS_DARWIN ? 'remote.subMac' : 'remote.sub')}</p>
         </div>
         {labs && <ActiveTunnels hosts={hosts} />}
         <button type="button" className="btn-ghost" onClick={() => setScreen('keys')}>

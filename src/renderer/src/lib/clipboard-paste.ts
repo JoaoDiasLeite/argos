@@ -1,3 +1,5 @@
+import { IS_DARWIN } from './platform'
+
 /**
  * Ctrl+V, handled by the app because nothing else does it.
  *
@@ -48,6 +50,37 @@ export function insertText(text: string): void {
   document.execCommand('insertText', false, text)
 }
 
+/**
+ * ⌘Z, ⇧⌘Z and ⌘C-outside-a-field, which only macOS lacks. True when the keystroke was
+ * taken. Never in a terminal: xterm's selection and the CLI's keys are its own.
+ */
+function macOnlyKey(e: KeyboardEvent, key: string): boolean {
+  const target = document.activeElement
+  if (insideTerminal(target)) return false
+
+  if (key === 'z') {
+    // A plain field's own undo stack — the one insertText above keeps intact.
+    if (!isTextField(target)) return false
+    e.preventDefault()
+    document.execCommand(e.shiftKey ? 'redo' : 'undo')
+    return true
+  }
+
+  if (key === 'c' && !e.shiftKey && !isTextField(target)) {
+    const selection = window.getSelection()
+    const text = selection?.toString() ?? ''
+    if (!text) return false
+    const anchor = selection?.anchorNode
+    const anchorEl = anchor instanceof Element ? anchor : (anchor?.parentElement ?? null)
+    if (insideTerminal(anchorEl)) return false
+    e.preventDefault()
+    void navigator.clipboard.writeText(text).catch(() => {})
+    return true
+  }
+
+  return false
+}
+
 /** The selection inside a field, as offsets. */
 function selectionOf(el: HTMLInputElement | HTMLTextAreaElement): [number, number] {
   return [el.selectionStart ?? 0, el.selectionEnd ?? 0]
@@ -67,11 +100,17 @@ function selectionOf(el: HTMLInputElement | HTMLTextAreaElement): [number, numbe
  * Ctrl+A moves to the start of the line, Ctrl+C interrupts. Taking those would be a
  * far worse bug than the one being fixed. A terminal's own "Select all" lives in its
  * Shift+right-click menu.
+ *
+ * macOS needs two more (`darwin`): there even undo and redo come from the Edit menu, so
+ * ⌘Z / ⇧⌘Z do nothing in a field without it, and ⌘C on text selected in the page (a
+ * chat transcript, a log, a card) copies nothing. Windows and Linux get those from
+ * Chromium itself and are left alone.
  */
 export function installEditingKeys(): () => void {
   const onKeyDown = (e: KeyboardEvent) => {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return
     const key = e.key.toLowerCase()
+    if (IS_DARWIN && e.metaKey && !e.ctrlKey && macOnlyKey(e, key)) return
     if (key !== 'v' && key !== 'a' && key !== 'c' && key !== 'x') return
 
     const target = document.activeElement

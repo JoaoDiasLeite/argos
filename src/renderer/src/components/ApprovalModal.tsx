@@ -6,6 +6,7 @@ import DiffView from './DiffView'
 import CommandExplain from './CommandExplain'
 import { useModalA11y } from '../hooks/useModalA11y'
 import { useT } from '../i18n'
+import { modLabel } from '../lib/shortcuts'
 import './ApprovalModal.css'
 
 interface Props {
@@ -142,7 +143,7 @@ export default function ApprovalModal({ request, onDecide, onStop }: Props) {
         {!ops && filePath && <div className="approval-path">{filePath}</div>}
         <div className="approval-body">{renderBody()}</div>
         <div className="modal-footer approval-footer">
-          <span className="help approval-keys">{t('ops.approval.modal.keys')}</span>
+          <span className="help approval-keys">{t('ops.approval.modal.keys', { allow: modLabel('Enter') })}</span>
           {ops && onStop && (
             <button className="btn-text danger" onClick={onStop}>
               {t('ops.approval.modal.denyStop')}

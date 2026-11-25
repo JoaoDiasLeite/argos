@@ -3,6 +3,7 @@ import { useModalA11y } from '../hooks/useModalA11y'
 import { useT } from '../i18n'
 import type { TFunction } from '../../../shared/i18n'
 import { OVERLAY_CHORD, SHORTCUT_GROUPS, Shortcut } from '../lib/shortcuts'
+import { displayAcceleratorKeys } from '../lib/platform'
 import './ShortcutsModal.css'
 
 interface Props {
@@ -14,7 +15,7 @@ function resolveKeys(item: Shortcut, overlay: string, t: TFunction): string[] {
   if (!item.keys.includes(OVERLAY_CHORD)) return item.keys.map((k) => (k === 'right-click' ? t('shortcuts.key.rightClick') : k))
   // No accelerator could be registered — say so rather than printing an empty key.
   if (!overlay) return [t('shortcuts.key.unavailable')]
-  return overlay.split('+')
+  return displayAcceleratorKeys(overlay)
 }
 
 export default function ShortcutsModal({ onClose }: Props) {

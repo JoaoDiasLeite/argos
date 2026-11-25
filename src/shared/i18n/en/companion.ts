@@ -111,6 +111,7 @@ export default {
 
   // The panel in the main window (CompanionView.tsx).
   'panel.sub': 'Summon Argos with {shortcut}, anywhere in Windows.',
+  'panel.subMac': 'Summon Argos with {shortcut}, anywhere on your Mac.',
   'panel.subNoShortcut': 'Argos has no summon shortcut right now. Pick one in Settings.',
   'panel.tabs.aria': 'Tasks or notes',
   'panel.tab.todos': 'Tasks',
@@ -207,6 +208,10 @@ export default {
   'voice.denied': 'Windows is blocking the microphone: Settings → Privacy → Microphone → turn on "Let desktop apps access your microphone".',
   'voice.noDevice': 'No microphone found. Plug one in, or check Settings → Privacy → Microphone → "Let desktop apps access your microphone".',
   'voice.micFailed': 'The microphone did not start. Check Settings → Privacy → Microphone → "Let desktop apps access your microphone".',
+  'voice.deniedMac': 'macOS is not letting Argos use the microphone. Turn Argos on in the microphone privacy settings.',
+  'voice.noDeviceMac': 'No microphone found. Plug one in, or pick an input in System Settings → Sound.',
+  'voice.micFailedMac': 'The microphone did not start. Check that Argos is allowed in the microphone privacy settings.',
+  'voice.openMicSettings': 'Open settings',
   'voice.transcribeFailed': "Couldn't transcribe that. Try again.",
   'voice.needsModel': 'Dictation needs the speech model (564 MB), downloaded once.',
   'voice.installFailed': 'The download failed. Try again.',

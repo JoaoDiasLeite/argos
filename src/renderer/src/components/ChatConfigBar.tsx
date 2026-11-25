@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Session, WslDistro, SshHostPublic } from '../types'
 import { useT } from '../i18n'
+import { IS_DARWIN } from '../lib/platform'
 import { plural } from '../../../shared/i18n'
 import { rich } from '../lib/t-rich'
 import './ChatConfigBar.css'
@@ -224,7 +225,7 @@ export function ChatConfigFields({ session, onPatch }: Props) {
           </button>
           {cfg.envOpen && <EnvMenu cfg={cfg} session={session} />}
         </div>
-        <span className="help">{t('chat.config.whereHelp')}</span>
+        <span className="help">{t(IS_DARWIN ? 'chat.config.whereHelpMac' : 'chat.config.whereHelp')}</span>
       </div>
 
       <div className="form-group">

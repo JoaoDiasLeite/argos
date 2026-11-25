@@ -4,6 +4,7 @@ import { GitFile, ProviderId } from '../types'
 import { VISIBLE_CLI_PROVIDERS } from '../lib/cli-providers'
 import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
+import { modLabel } from '../lib/shortcuts'
 import ChangesViewer, { ChangeFileRow } from '../components/ChangesViewer'
 import InterventionTag from '../components/InterventionTag'
 import type { InterventionLabel } from '../lib/intervention-label'
@@ -631,7 +632,7 @@ export default function HomeView({
                 {t('home.start.submit')}
               </button>
             </div>
-            <p className="help">{t('home.start.hint')}</p>
+            <p className="help">{t('home.start.hint', { run: modLabel('Enter') })}</p>
           </div>
 
           <div className="home-body">

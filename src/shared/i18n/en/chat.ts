@@ -43,6 +43,7 @@ export default {
   'config.remote': 'Remote',
   'config.whereLabel': 'Where it runs',
   'config.whereHelp': 'Local, a WSL distro or an SSH host. The CLI must be installed there.',
+  'config.whereHelpMac': 'Local or an SSH host. The CLI must be installed there.',
   'config.folder': 'Folder',
   'config.optional': 'optional',
   'config.addFolder': 'Add folder',
