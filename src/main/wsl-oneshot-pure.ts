@@ -5,7 +5,9 @@
 
 /** POSIX single-quote: safe for any byte but NUL. */
 export function shQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\''`)}'`
+  // `'\\''` in a template literal is the four characters ' \ ' ' (close, escaped quote,
+  // reopen); `'\''` would be three quotes and let the rest of the value out of the quoting.
+  return `'${s.replace(/'/g, `'\\''`)}'`
 }
 
 export interface OneShotOptions {
