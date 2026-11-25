@@ -98,7 +98,7 @@ const planner: Record<keyof typeof en, string> = {
   'assist.notesPlaceholder':
     'p. ex. Lançar o novo fluxo de onboarding v2, preparar a apresentação para a administração, 2 idas ao ginásio, manter a tarde de sexta livre para trabalho profundo…',
   'assist.imageHint':
-    'Cola (Ctrl+V), arrasta ou carrega uma captura de ecrã do teu calendário semanal: o Claude lê-a e constrói a semana. Podes rever antes de aplicar.',
+    'Cola ({paste}), arrasta ou carrega uma captura de ecrã do teu calendário semanal: o Claude lê-a e constrói a semana. Podes rever antes de aplicar.',
   'assist.imageAlt': 'calendário a importar',
   'assist.imageDrop': 'Cola, arrasta ou clica para carregar',
   'assist.clear': 'Limpar',

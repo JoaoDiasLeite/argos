@@ -6,6 +6,8 @@ import { createRoot } from 'react-dom/client'
 import '../styles/global.css'
 import '../styles/shared.css'
 import { I18nProvider } from '../i18n'
+import { IS_DARWIN } from '../lib/platform'
+import { installEditingKeys } from '../lib/clipboard-paste'
 import { applyTheme } from '../lib/theme'
 import Pet from './Pet'
 import Bubble from './Bubble'
@@ -50,6 +52,11 @@ function cancelPageZoom(): void {
 }
 
 cancelPageZoom()
+
+// macOS's application menu is shared by every window, and it carries no Edit roles, so
+// this window's fields need the app's own editing keys too. Elsewhere Chromium's defaults
+// already cover them here.
+if (IS_DARWIN) installEditingKeys()
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

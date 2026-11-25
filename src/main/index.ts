@@ -2,7 +2,7 @@
 import { isDevInstance, syncDevFromProd } from './dev-instance'
 import { listExportCandidates, exportProfile, previewImport, applyImport } from './profile-transfer'
 import type { ExportRequest, ImportRequest } from '../shared/profile-transfer'
-import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions, clipboard, nativeTheme, nativeImage, session, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut, Menu, MenuItemConstructorOptions, clipboard, nativeTheme, nativeImage, session, shell, systemPreferences } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { appIconPath } from './app-icon'
@@ -325,6 +325,15 @@ import {
 } from './shell-integration'
 import { refreshJumpList } from './jumplist'
 import { extendLinuxPath, setOpenAtLogin } from './linux-desktop'
+import { extendDarwinEnv } from './shell-env'
+import {
+  mainWindowCloseAction,
+  microphoneAccessFromStatus,
+  microphoneSettingsUrl,
+  shouldStartHidden,
+  trafficLightPosition,
+  type MicrophoneAccess
+} from './main-window-pure'
 import { readJsonFile } from './json-file'
 import {
   PROTOCOL,
@@ -372,7 +381,21 @@ const notifyMode = notifyHookMode(process.argv)
 // reaches this file (see ops-mcp-config-pure.ts for why); this is the fallback for a hand
 // launch.
 const opsMcpMode = process.argv.includes(OPS_MCP_FLAG)
+
+// macOS: the hook roles and the relay launch the whole app bundle, which would bounce a
+// Dock icon on every Claude hook. They show no window, so they run as an accessory app
+// (no Dock icon, no menu bar). Set before anything else can show; the icon may still
+// flash briefly before this line runs, as the bundle launches as a regular app.
+if ((notifyMode || opsMcpMode) && process.platform === 'darwin') {
+  app.setActivationPolicy('accessory')
+  app.dock?.hide()
+}
+
 if (opsMcpMode) void runOpsRelay({ exit: (code) => app.exit(code) })
+
+// The first main window decides startup visibility (--hidden, login item, start
+// minimized); one re-created later (a Dock click after it was destroyed) always shows.
+let firstWindow = true
 
 // Second launches (e.g. clicking the exe while the app lives in the tray) focus
 // the running instance instead of spawning a duplicate. The hook process does its
@@ -386,6 +409,9 @@ if (!notifyMode && !opsMcpMode) {
     }
     app.quit()
   } else {
+    // macOS: start reading the login shell's environment now, so it overlaps startup;
+    // whenReady awaits the same promise. A no-op elsewhere.
+    void extendDarwinEnv()
     app.on('second-instance', (_e, commandLine, _cwd, additionalData) => {
       // A notification relayed by a hook process: show it where the app already is.
       // Emphatically without showMainWindow() — a session on another desktop asking
@@ -501,6 +527,11 @@ function updateRunIndicators(): void {
 function flagAttention(kind: 'success' | 'error' | 'approval'): void {
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isFocused()) return
   mainWindow.flashFrame(true)
+  // macOS has no overlay icon: the Dock badge carries the cue (flashFrame bounces it).
+  if (process.platform === 'darwin') {
+    app.dock?.setBadge('•')
+    return
+  }
   const badge =
     kind === 'success' ? successBadge() : kind === 'error' ? errorBadge() : approvalBadge()
   const desc =
@@ -602,13 +633,17 @@ function installApplicationMenu(): void {
         { role: 'zoomOut', label: t('main.menu.zoomOut') }
       ]
     },
-    {
-      label: t('main.menu.window'),
-      submenu: [
-        { role: 'minimize', label: t('main.menu.minimize') },
-        { role: 'close', label: t('main.menu.close') }
-      ]
-    }
+    // macOS: the system's own Window menu (Minimize, Zoom, Bring All to Front, the window
+    // list) in place of ours. Still no clipboard roles.
+    process.platform === 'darwin'
+      ? { role: 'windowMenu' }
+      : {
+          label: t('main.menu.window'),
+          submenu: [
+            { role: 'minimize', label: t('main.menu.minimize') },
+            { role: 'close', label: t('main.menu.close') }
+          ]
+        }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
@@ -617,16 +652,25 @@ function createWindow(): void {
   // Mirrors global.css --bg-0 for each theme, so the native window background
   // (visible briefly before the renderer paints) doesn't flash the wrong theme.
   const backgroundColor = getConfig().ui.theme === 'light' ? '#f7f5f1' : '#141312'
+  const isMac = process.platform === 'darwin'
+  // A window being created is not a quit in progress: a flag left over from a quit that
+  // never completed would otherwise let the next close destroy this one (macOS keeps the
+  // app alive with no window, so this is where it can happen).
+  if (isMac) isQuitting = false
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 900,
     minHeight: 600,
     show: false,
-    autoHideMenuBar: true,
     // Frameless with a custom title bar (see TitleBar.tsx) drawn by the renderer;
     // the window itself is opaque, flat-themed chrome — no OS backdrop material.
-    frame: false,
+    // macOS keeps the native traffic lights inset into that bar instead (the renderer
+    // hides its own buttons there and leaves room for them); zoom on double-click and
+    // full screen then work as the system preference says.
+    ...(isMac
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: trafficLightPosition() }
+      : { autoHideMenuBar: true, frame: false }),
     resizable: true,
     backgroundColor,
     // Packaged Windows takes the multi-size .ico embedded in Argos.exe: any PNG handed
@@ -648,38 +692,73 @@ function createWindow(): void {
   // app can never end up stranded with no window and no tray to bring one back.
   // Not the preference in dev: it arrives copied from prod, and a dev window that starts
   // hidden sits behind a tray icon indistinguishable from prod's.
+  // macOS ignores login-item args, so there the launch itself says it came from the login
+  // item; only the first window asks, so one re-created by a Dock click always shows.
   const startHidden =
-    process.argv.includes('--hidden') || (!isDevInstance && getConfig().system.startMinimized)
+    (firstWindow || !isMac) &&
+    shouldStartHidden({
+      argv: process.argv,
+      openedAtLogin: isMac && firstWindow && app.getLoginItemSettings().wasOpenedAtLogin,
+      startMinimized: getConfig().system.startMinimized,
+      isDev: isDevInstance
+    })
+  firstWindow = false
   mainWindow.on('ready-to-show', () => {
-    if (startHidden && hasTray) return
+    // macOS needs no tray to come back: the Dock icon stays and a click on it shows the window.
+    if (startHidden && (hasTray || isMac)) return
     mainWindow!.show()
   })
   // Focusing the window means the user is here now: stop flashing and clear the
-  // taskbar overlay badge that was cueing a background run's state change.
+  // taskbar overlay badge (macOS: the Dock badge) that was cueing a background run's state change.
   mainWindow.on('focus', () => {
     mainWindow?.flashFrame(false)
-    mainWindow?.setOverlayIcon(null, '')
+    if (isMac) app.dock?.setBadge('')
+    else mainWindow?.setOverlayIcon(null, '')
     withdrawToastApprovals()
   })
   // Keep the renderer's maximize/restore icon and corner rounding in sync.
   mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximized', true))
   mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximized', false))
+  // macOS: the title bar gives back the room it keeps for the traffic lights in full screen.
+  mainWindow.on('enter-full-screen', () => mainWindow?.webContents.send('window:fullscreen', true))
+  mainWindow.on('leave-full-screen', () => mainWindow?.webContents.send('window:fullscreen', false))
 
   // Close hides to the tray so in-flight runs keep going.
   // A real exit happens via the tray's Quit item or an OS-initiated quit.
   mainWindow.on('close', (e) => {
-    if (isQuitting) return
     // Close-to-tray only engages when a tray exists AND the user hasn't opted out via
     // settings. Otherwise treat this like a real quit so the app fully exits instead
     // of lingering invisibly with no way back in.
     // Dev always quits on close, for the same reason it never starts hidden: closing the
     // window should end the `npm run dev`, not leave it in a look-alike tray icon.
-    if (!hasTray || isDevInstance || !getConfig().system.closeToTray) {
+    // macOS hides on close whatever the tray says (the Dock icon is the way back) and
+    // quits only through Cmd+Q / the app menu, whose before-quit sets isQuitting.
+    const action = mainWindowCloseAction({
+      platform: process.platform,
+      isQuitting,
+      hasTray,
+      isDev: isDevInstance,
+      closeToTray: getConfig().system.closeToTray
+    })
+    if (action === 'proceed') return
+    if (action === 'quit') {
       isQuitting = true
       return
     }
     e.preventDefault()
-    mainWindow?.hide()
+    const win = mainWindow
+    if (!win) return
+    if (isMac) {
+      // Hiding a full-screen window leaves its Space black: leave full screen first.
+      if (win.isFullScreen()) {
+        win.once('leave-full-screen', () => win.hide())
+        win.setFullScreen(false)
+      } else {
+        win.hide()
+      }
+      return
+    }
+    win.hide()
     if (!trayHintShown && Notification.isSupported()) {
       trayHintShown = true
       new Notification({
@@ -693,8 +772,9 @@ function createWindow(): void {
     // A closed main window means exit when there's no tray (the hidden aux windows
     // would otherwise keep the app alive and window-all-closed would never fire) or
     // when the close handler above already decided this close is a real quit
-    // (close-to-tray disabled in settings).
-    if ((isQuitting || !hasTray) && process.platform !== 'darwin') {
+    // (close-to-tray disabled in settings). On macOS only the latter: a closed window
+    // with no quit under way leaves the app in the Dock, as macOS apps do.
+    if (isQuitting || (!hasTray && process.platform !== 'darwin')) {
       isQuitting = true
       app.quit()
     }
@@ -717,7 +797,7 @@ app.whenReady().then(async () => {
   if (notifyMode) {
     // Matches build.appId — on Windows a toast is routed by it, so a hook process
     // that skipped this would post a notification the OS attributes to nothing.
-    electronApp.setAppUserModelId('com.argos.app')
+    if (process.platform !== 'darwin') electronApp.setAppUserModelId('com.argos.app')
     if (notifyMode.kind === 'relay') {
       await runNotifyRelay()
       app.exit(0)
@@ -730,6 +810,10 @@ app.whenReady().then(async () => {
     app.exit(0)
     return
   }
+  // macOS: a Finder/Dock launch gets launchd's bare environment, so PATH lacks Homebrew,
+  // nvm and the rest of what the user's shell sets up. Read it from the login shell
+  // (started early, above) before anything resolves or spawns a CLI. No-op elsewhere.
+  await extendDarwinEnv()
   // Must run before anything touches userData (ensureDirs and the load* calls below): the app
   // was previously named claude-gui, so Electron now points at a fresh, empty directory. See
   // migrate-userdata.ts — it's a copy, and it no-ops once the marker is in place.
@@ -741,7 +825,7 @@ app.whenReady().then(async () => {
   if (dataImport.detail) console.log(`[userdata] ${dataImport.detail}`)
   // Matches build.appId. Windows ties toast notifications and jumplist entries to this id, so
   // a value that disagrees with the installed app's identity silently misroutes both.
-  electronApp.setAppUserModelId('com.argos.app')
+  if (process.platform !== 'darwin') electronApp.setAppUserModelId('com.argos.app')
   // `argos://session?…` — what a notification click follows. Registering it here (on
   // every launch, it is idempotent) is what lets a click start the app when it is
   // closed, which is the case the hook exists for. Not in dev: the registration is
@@ -868,14 +952,15 @@ app.whenReady().then(async () => {
   // entries left behind under the app's former name — one reg.exe run for both. Skip in
   // dev — electron.exe as the target would leave a checkout-specific command in the
   // user's registry.
-  if (!is.dev) {
+  // Windows only (reg.exe): nothing to register or clean up on macOS.
+  if (!is.dev && process.platform !== 'darwin') {
     void syncExplorerContextMenu(getConfig().system.explorerContextMenu ? true : undefined, {
       removeLegacy: true
     })
   }
 
   // Windows Jump List (recent projects + New terminal), refreshed on save below.
-  refreshJumpList()
+  if (process.platform !== 'darwin') refreshJumpList()
 
   // A --folder / --new-chat first launch (Explorer menu or Jump List while the app
   // wasn't already running): route it once the window exists. sendToMainWindow defers
@@ -1797,6 +1882,25 @@ function installMicrophonePermission(): void {
   })
 }
 
+// macOS gates the microphone per app (TCC) on top of the session handlers above: until
+// the user answers the system prompt, getUserMedia gets silence or an error. The renderer
+// asks here before it starts recording. Elsewhere there is no app-level gate to ask.
+ipcMain.handle('mic:ensure-access', async (): Promise<MicrophoneAccess> => {
+  if (process.platform !== 'darwin') return 'granted'
+  try {
+    const known = microphoneAccessFromStatus(systemPreferences.getMediaAccessStatus('microphone'))
+    if (known) return known
+    return (await systemPreferences.askForMediaAccess('microphone')) ? 'granted' : 'denied'
+  } catch {
+    return 'unsupported'
+  }
+})
+// The OS page where the microphone is granted to apps, for a user who said no once.
+ipcMain.handle('mic:open-settings', async () => {
+  const url = microphoneSettingsUrl(process.platform)
+  if (url) await shell.openExternal(url).catch(() => {})
+})
+
 // ─── Notifications ────────────────────────────────────────────────────────────
 
 // ─── Window controls (custom frameless title bar) ─────────────────────────────
@@ -1810,6 +1914,7 @@ ipcMain.handle('window:maximize-toggle', () => {
 })
 ipcMain.handle('window:close', () => mainWindow?.close())
 ipcMain.handle('window:is-maximized', () => mainWindow?.isMaximized() ?? false)
+ipcMain.handle('window:is-fullscreen', () => mainWindow?.isFullScreen() ?? false)
 ipcMain.handle('window:get-bounds', () => mainWindow?.getBounds() ?? { x: 0, y: 0, width: 0, height: 0 })
 ipcMain.on('window:set-bounds', (_, bounds: { x: number; y: number; width: number; height: number }) => {
   mainWindow?.setBounds(bounds)
@@ -3154,7 +3259,7 @@ ipcMain.handle('config:set-ui', (_, prefs: UiPrefsPatch) => {
   if (currentLanguage() !== prevLanguage) {
     installApplicationMenu()
     refreshTrayMenu()
-    refreshJumpList()
+    if (process.platform !== 'darwin') refreshJumpList()
   }
   return ui
 })
@@ -3185,7 +3290,7 @@ ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
     prefs.explorerContextMenu !== undefined &&
     prefs.explorerContextMenu !== prevExplorerMenu
   ) {
-    void syncExplorerContextMenu(system.explorerContextMenu)
+    if (process.platform !== 'darwin') void syncExplorerContextMenu(system.explorerContextMenu)
   }
 
   // Only touch the login entry when the pref actually changed, and never in dev (see
@@ -4328,7 +4433,7 @@ ipcMain.handle('session:save', (_, session: unknown) => {
   fs.renameSync(`${filename}.tmp`, filename)
   // Keep the "Recent projects" Jump List current. Debounced inside refreshJumpList,
   // so a burst of saves only rebuilds once.
-  refreshJumpList()
+  if (process.platform !== 'darwin') refreshJumpList()
   return { success: true }
 })
 

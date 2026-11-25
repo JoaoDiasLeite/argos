@@ -1,4 +1,4 @@
-import { BrowserWindow, globalShortcut, screen, systemPreferences, type Menu, type WebContents } from 'electron'
+import { BrowserWindow, globalShortcut, screen, systemPreferences, type BrowserWindowConstructorOptions, type Menu, type WebContents } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
@@ -42,6 +42,7 @@ import { fallY, isFall, type Fall } from './companion-fall-pure'
 import { BALL_SIZE, ballAt, fetchX, planThrow, type Throw } from './companion-ball-pure'
 import { PERCH_POLL_MS, isOverTitleBar, landingBelow, perchFollow, perchOnScreen, perchPosition } from './companion-perch-pure'
 import { foregroundWindow, windowBounds, windowsOnScreen } from './companion-win32'
+import { mediaSourceWindowId } from './companion-darwin-pure'
 import { restingPetState } from './companion-quiet-pure'
 import { PET_SCALE, POSITIONS_VERSION, VOICE_SHORTCUT_DEFAULTS } from './companion-types'
 import type {
@@ -148,6 +149,36 @@ let appliedSize: CompanionPetSize | null = null
 
 const alive = (win: BrowserWindow | null): win is BrowserWindow => !!win && !win.isDestroyed()
 
+const isMac = process.platform === 'darwin'
+
+/**
+ * macOS-only window options. A non-activating panel (NSPanel) floats over full-screen apps
+ * and never brings Argos forward when shown, clicked or focused; acceptFirstMouse lets the
+ * first click on an inactive Argos reach the dog instead of only activating the window.
+ * Empty elsewhere, so Windows and Linux get exactly the options they always had.
+ */
+function macWindowOptions(clickable: boolean): BrowserWindowConstructorOptions {
+  if (!isMac) return {}
+  return clickable ? { type: 'panel', acceptFirstMouse: true } : { type: 'panel' }
+}
+
+/**
+ * Over every other window. Windows: 'screen-saver', as it always was. macOS: on every Space
+ * and over full-screen apps, at the pop-up-menu level, which is above the Dock, the menu bar
+ * and other apps' floating palettes but below the screen saver and system alerts; the
+ * screen-saver level is known to misbehave with full-screen Spaces there. Called again on
+ * each show, since AppKit can drop the level of a hidden window. skipTransformProcessType
+ * keeps Argos's Dock icon from flickering on every call.
+ */
+function floatOverAll(win: BrowserWindow): void {
+  if (!isMac) {
+    win.setAlwaysOnTop(true, 'screen-saver')
+    return
+  }
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
+  win.setAlwaysOnTop(true, 'pop-up-menu')
+}
+
 /**
  * Move the pet window, always with its size. A bare setPosition on this transparent window
  * at a fractional display scale (125 %) lets Windows round the size on every move, and over
@@ -214,13 +245,15 @@ function createPetWindow(): BrowserWindow {
     focusable: false,
     alwaysOnTop: true,
     backgroundColor: '#00000000',
+    ...macWindowOptions(true),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
       contextIsolation: true
     }
   })
-  win.setAlwaysOnTop(true, 'screen-saver')
+  floatOverAll(win)
+  // On macOS this may not hide the window from ScreenCaptureKit captures (macOS 15+).
   win.setContentProtection(prefs().hideFromCapture)
   win.setIgnoreMouseEvents(true, { forward: true })
   ignoring = true
@@ -397,13 +430,14 @@ function createBubbleWindow(): BrowserWindow {
     skipTaskbar: true,
     alwaysOnTop: true,
     backgroundColor: '#00000000',
+    ...macWindowOptions(true),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
       contextIsolation: true
     }
   })
-  win.setAlwaysOnTop(true, 'screen-saver')
+  floatOverAll(win)
   win.setContentProtection(prefs().hideFromCapture)
   // Typing dismisses like the quick launcher when focus moves on; a reminder stays put
   // until it is answered. Skipped while devtools are open (opening them blurs).
@@ -438,13 +472,14 @@ function createBallWindow(): BrowserWindow {
     focusable: false,
     alwaysOnTop: true,
     backgroundColor: '#00000000',
+    ...macWindowOptions(false),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
       contextIsolation: true
     }
   })
-  win.setAlwaysOnTop(true, 'screen-saver')
+  floatOverAll(win)
   win.setContentProtection(prefs().hideFromCapture)
   win.setIgnoreMouseEvents(true, { forward: true })
   win.on('closed', () => {
@@ -584,11 +619,20 @@ export function startPetDrag(): void {
   startPolling(DRAG_POLL_MS)
 }
 
-/** The companion's own windows, by native handle: nothing to land on or be hidden behind. */
+/**
+ * The companion's own windows, by native handle: nothing to land on or be hidden behind.
+ * On macOS the native handle is an NSView pointer, so it is the CGWindowID instead, from
+ * the "window:<id>:0" media source id, as the window list names them.
+ */
 function ownHandles(): bigint[] {
   const out: bigint[] = []
   for (const w of [petWindow, bubbleWindow, ballWindow]) {
     if (!alive(w)) continue
+    if (isMac) {
+      const id = mediaSourceWindowId(w.getMediaSourceId())
+      if (id !== null) out.push(id)
+      continue
+    }
     const h = w.getNativeWindowHandle()
     out.push(h.length >= 8 ? h.readBigUInt64LE(0) : BigInt(h.readUInt32LE(0)))
   }
@@ -608,7 +652,7 @@ export function endPetDrag(): void {
   // Let go over the title bar of the window in front: he sits on its top edge (plan §13.3, R),
   // unless that edge is the top of the screen and he would sit out of sight.
   const areas = workAreas()
-  const front = foregroundWindow()
+  const front = foregroundWindow(isMac ? ownHandles() : [])
   if (front && isOverTitleBar(b, front.bounds) && perchOnScreen(perchBounds(b, front.bounds), areas)) {
     startPerch(front.hwnd, front.bounds, b)
     return
@@ -1036,6 +1080,7 @@ function showPet(): BrowserWindow {
     placePet(win)
     win.setIgnoreMouseEvents(true, { forward: true })
     ignoring = true
+    if (isMac) floatOverAll(win)
     win.showInactive()
     startPolling()
     hooks.onVisibilityChanged?.()
@@ -1193,11 +1238,20 @@ export function openBubble(next: CompanionBubblePayload): void {
   send(win, 'companion:bubble-anchor', bubbleAnchor)
   send(win, 'companion:bubble-mode', next)
   if (next.mode === 'input') {
-    win.show()
+    if (isMac) {
+      // A panel made key without show(), which would activate Argos and bring its main
+      // window (and maybe its Space) forward; the app in front stays active, and gets the
+      // keyboard back when the bubble hides.
+      floatOverAll(win)
+      win.showInactive()
+    } else {
+      win.show()
+    }
     win.focus()
     send(win, 'companion:shown')
     setPetState('listening')
   } else {
+    if (isMac) floatOverAll(win)
     win.showInactive()
   }
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CompanionVoiceStatus } from '../types'
 import { useT } from '../i18n'
+import { IS_DARWIN } from '../lib/platform'
 import { MicrophoneError, startRecording, type MicError, type Recording } from './recorder'
 import { MAX_RECORD_MS, createSilenceGate, formatElapsed, meterLevel } from '../../../shared/companion-wav'
 
@@ -138,6 +139,18 @@ export function useDictation(enabled: boolean, onText: (text: string) => void): 
     if (!s.available) {
       setState({ kind: 'needs-model' })
       return
+    }
+    // macOS asks once per app (TCC) and getUserMedia alone does not raise that prompt from
+    // an Electron window, so main asks first. A refusal is the same 'denied' getUserMedia
+    // would give; the panel then offers the System Settings pane.
+    if (IS_DARWIN) {
+      const access = await window.electronAPI.ensureMicrophoneAccess().catch(() => 'unsupported' as const)
+      // Esc (or the bubble hidden) while the system prompt was up.
+      if (attempt.current !== mine) return
+      if (access === 'denied' || access === 'restricted') {
+        setState({ kind: 'error', error: 'denied' })
+        return
+      }
     }
     setLevels(new Array(BARS).fill(0))
     const gate = createSilenceGate()
@@ -284,15 +297,31 @@ export function DictationPanel({ dictation }: { dictation: Dictation }) {
     case 'unsupported':
       return <div className="help">{t('companion.voice.unsupported')}</div>
     case 'error':
+      // On macOS the fix for a refused microphone is one switch in System Settings, so the
+      // message comes with a button that opens that pane instead of a path to follow.
+      if (IS_DARWIN && state.error === 'denied') {
+        return (
+          <div className="bq-voice-need">
+            <span className="help bq-err">{t('companion.voice.deniedMac')}</span>
+            <button
+              type="button"
+              className="btn-secondary small"
+              onClick={() => void window.electronAPI.openMicrophoneSettings().catch(() => {})}
+            >
+              {t('companion.voice.openMicSettings')}
+            </button>
+          </div>
+        )
+      }
       return (
         <div className="help bq-err">
           {state.error === 'denied'
             ? t('companion.voice.denied')
             : state.error === 'no-device'
-              ? t('companion.voice.noDevice')
+              ? t(IS_DARWIN ? 'companion.voice.noDeviceMac' : 'companion.voice.noDevice')
               : state.error === 'transcribe'
                 ? t('companion.voice.transcribeFailed')
-                : t('companion.voice.micFailed')}
+                : t(IS_DARWIN ? 'companion.voice.micFailedMac' : 'companion.voice.micFailed')}
         </div>
       )
     case 'needs-model':

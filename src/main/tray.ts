@@ -1,4 +1,5 @@
-import { Tray, Menu, nativeImage, type MenuItemConstructorOptions } from 'electron'
+import { app, Tray, Menu, nativeImage, type NativeImage, type MenuItemConstructorOptions } from 'electron'
+import { join } from 'path'
 import { appIconPath } from './app-icon'
 import { currentLocale, t } from './i18n'
 import { isQuiet, quietUntilDay } from './companion-quiet-pure'
@@ -77,18 +78,46 @@ function buildMenu(actions: TrayActions, overlayShortcut: string): Menu {
   return Menu.buildFromTemplate(trayMenuTemplate(actions, overlayShortcut))
 }
 
+/** The macOS menu-bar icon: build/trayTemplate.png (16 px, with its @2x sibling for
+ *  Retina, both from scripts/gen-icon.mjs), black + alpha so the menu bar tints it.
+ *  Resolved like appIconPath(): the unpacked copy next to app.asar when packaged, the
+ *  archive path as a fallback. Empty when neither exists. */
+function macTrayTemplate(): NativeImage {
+  const inAsar = join(app.getAppPath(), 'build', 'trayTemplate.png')
+  const unpacked = inAsar.replace(/app\.asar([\\/])/,'app.asar.unpacked$1')
+  for (const file of unpacked === inAsar ? [inAsar] : [unpacked, inAsar]) {
+    // Loading the base name picks up trayTemplate@2x.png next to it.
+    const image = nativeImage.createFromPath(file)
+    if (!image.isEmpty()) {
+      image.setTemplateImage(true)
+      return image
+    }
+  }
+  return nativeImage.createEmpty()
+}
+
 /** Returns the created tray, or null when no usable icon exists (close-to-tray is
  *  disabled in that case so the app can't be stranded invisible). */
 export function createTray(actions: TrayActions, overlayShortcut: string): Tray | null {
-  const icon = nativeImage.createFromPath(appIconPath())
-  if (icon.isEmpty()) return null
+  const isMac = process.platform === 'darwin'
+  const template = isMac ? macTrayTemplate() : nativeImage.createEmpty()
+  let trayIcon: NativeImage
+  if (!template.isEmpty()) {
+    trayIcon = template
+  } else {
+    const icon = nativeImage.createFromPath(appIconPath())
+    if (icon.isEmpty()) return null
+    trayIcon = icon.resize({ width: 16, height: 16 })
+  }
 
   trayActions = actions
   trayShortcut = overlayShortcut
-  tray = new Tray(icon.resize({ width: 16, height: 16 }))
+  tray = new Tray(trayIcon)
   tray.setToolTip('Argos')
   tray.setContextMenu(buildMenu(actions, overlayShortcut))
-  tray.on('click', actions.onShowMain)
+  // On macOS a click on a menu-bar item opens its menu ("Open" is its first entry);
+  // also showing the main window on that click would pull it forward every time.
+  if (!isMac) tray.on('click', actions.onShowMain)
   return tray
 }
 

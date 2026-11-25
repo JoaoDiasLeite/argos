@@ -89,6 +89,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('window:maximized', fn)
     return () => ipcRenderer.removeListener('window:maximized', fn)
   },
+  // macOS full screen, so the title bar can drop the room it keeps for the traffic lights.
+  windowIsFullScreen: () => ipcRenderer.invoke('window:is-fullscreen'),
+  onWindowFullScreen: (cb: (fullScreen: boolean) => void) => {
+    const fn = (_: unknown, fullScreen: boolean) => cb(fullScreen)
+    ipcRenderer.on('window:fullscreen', fn)
+    return () => ipcRenderer.removeListener('window:fullscreen', fn)
+  },
+  // Microphone permission (the companion's voice): the macOS prompt, and the OS page to grant it.
+  ensureMicrophoneAccess: () => ipcRenderer.invoke('mic:ensure-access'),
+  openMicrophoneSettings: () => ipcRenderer.invoke('mic:open-settings'),
 
   // Auth
   authStatus: () => ipcRenderer.invoke('auth:status'),

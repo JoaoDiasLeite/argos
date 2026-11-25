@@ -21,6 +21,7 @@ export default {
   'loading': 'Loading…',
   'views.mcp': 'MCP',
   'views.remote': 'Remote & WSL',
+  'views.remoteMac': 'Remote',
   'views.ops': 'Operations',
   'saveFailed': 'Session could not be saved',
   'home.chatFallback': 'Chat',

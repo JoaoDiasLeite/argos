@@ -42,6 +42,8 @@ import './SettingsView.css'
 import Select from '../components/Select'
 import { migrateRecentRunbooks } from '../lib/runbook-library'
 import { useT } from '../i18n'
+import { IS_DARWIN, displayAccelerator } from '../lib/platform'
+import { AUTO_COMPANION_SHORTCUT, AUTO_LAUNCHER_SHORTCUT } from '../lib/accelerator'
 import { useLabs } from '../hooks/useLabs'
 import { NO_TAPS, tapVersion } from '../lib/labs-unlock'
 import { LANGUAGES, isLanguage, plural, type MessageKey } from '../../../shared/i18n'
@@ -883,17 +885,21 @@ export default function SettingsView({
                     (openAtLogin) => updateSystem({ openAtLogin })
                   )}
                   {toggleRow(
-                    t('settings.system.minimized.label'),
-                    t('settings.system.minimized.hint'),
+                    // macOS has no notification area: the tray icon lives in the menu bar.
+                    t(IS_DARWIN ? 'settings.system.minimized.labelMac' : 'settings.system.minimized.label'),
+                    t(IS_DARWIN ? 'settings.system.minimized.hintMac' : 'settings.system.minimized.hint'),
                     system.startMinimized,
                     (startMinimized) => updateSystem({ startMinimized })
                   )}
-                  {toggleRow(
-                    t('settings.system.closeToTray.label'),
-                    t('settings.system.closeToTray.hint'),
-                    system.closeToTray,
-                    (closeToTray) => updateSystem({ closeToTray })
-                  )}
+                  {/* On macOS the close button always hides the window, as in any Mac app
+                      (main-window-pure.ts), so there is nothing to choose. */}
+                  {!IS_DARWIN &&
+                    toggleRow(
+                      t('settings.system.closeToTray.label'),
+                      t('settings.system.closeToTray.hint'),
+                      system.closeToTray,
+                      (closeToTray) => updateSystem({ closeToTray })
+                    )}
                   {isWindows &&
                     toggleRow(
                       t('settings.system.explorerMenu.label'),
@@ -907,7 +913,7 @@ export default function SettingsView({
                       <span className="srow-label">{t('settings.system.shortcut.label')}</span>
                       <span className="help">{t('settings.system.shortcut.hint')}</span>
                       {registeredShortcut ? (
-                        <span className="help">{t('settings.system.shortcut.registered', { shortcut: registeredShortcut })}</span>
+                        <span className="help">{t('settings.system.shortcut.registered', { shortcut: displayAccelerator(registeredShortcut) })}</span>
                       ) : (
                         <span className="help settings-error">
                           {t('settings.system.shortcut.failed')}
@@ -921,11 +927,11 @@ export default function SettingsView({
                       onChange={(e) => updateSystem({ overlayShortcut: e.target.value })}
                       aria-label={t('settings.system.shortcut.label')}
                     >
-                      <option value="">{t('settings.system.shortcut.auto')}</option>
-                      <option value="Alt+Space">Alt+Space</option>
-                      <option value="Ctrl+Shift+Space">Ctrl+Shift+Space</option>
-                      <option value="Ctrl+Alt+Space">Ctrl+Alt+Space</option>
-                      <option value="Ctrl+Alt+K">Ctrl+Alt+K</option>
+                      <option value="">{t('settings.system.shortcut.auto', { shortcut: displayAccelerator(AUTO_LAUNCHER_SHORTCUT) })}</option>
+                      <option value="Alt+Space">{displayAccelerator('Alt+Space')}</option>
+                      <option value="Ctrl+Shift+Space">{displayAccelerator('Ctrl+Shift+Space')}</option>
+                      <option value="Ctrl+Alt+Space">{displayAccelerator('Ctrl+Alt+Space')}</option>
+                      <option value="Ctrl+Alt+K">{displayAccelerator('Ctrl+Alt+K')}</option>
                     </Select>
                   </div>
                 </>
@@ -961,10 +967,12 @@ export default function SettingsView({
                   <div className="srow">
                     <div className="srow-text">
                       <span className="srow-label">{t('settings.companion.shortcut.label')}</span>
-                      <span className="help">{t('settings.companion.shortcut.hint')}</span>
+                      <span className="help">
+                        {t(IS_DARWIN ? 'settings.companion.shortcut.hintMac' : 'settings.companion.shortcut.hint')}
+                      </span>
                       {companionShortcut ? (
                         <span className="help">
-                          {t('settings.companion.shortcut.registered', { shortcut: companionShortcut })}
+                          {t('settings.companion.shortcut.registered', { shortcut: displayAccelerator(companionShortcut) })}
                         </span>
                       ) : (
                         <span className="help settings-error">{t('settings.companion.shortcut.failed')}</span>
@@ -978,11 +986,11 @@ export default function SettingsView({
                       onChange={(e) => updateCompanion({ shortcut: e.target.value })}
                       aria-label={t('settings.companion.shortcut.label')}
                     >
-                      <option value="">{t('settings.companion.shortcut.auto')}</option>
-                      <option value="Ctrl+Alt+A">Ctrl+Alt+A</option>
-                      <option value="Ctrl+Shift+Alt+A">Ctrl+Shift+Alt+A</option>
-                      <option value="Ctrl+Alt+Q">Ctrl+Alt+Q</option>
-                      <option value="Ctrl+Alt+J">Ctrl+Alt+J</option>
+                      <option value="">{t('settings.companion.shortcut.auto', { shortcut: displayAccelerator(AUTO_COMPANION_SHORTCUT) })}</option>
+                      <option value="Ctrl+Alt+A">{displayAccelerator('Ctrl+Alt+A')}</option>
+                      <option value="Ctrl+Shift+Alt+A">{displayAccelerator('Ctrl+Shift+Alt+A')}</option>
+                      <option value="Ctrl+Alt+Q">{displayAccelerator('Ctrl+Alt+Q')}</option>
+                      <option value="Ctrl+Alt+J">{displayAccelerator('Ctrl+Alt+J')}</option>
                     </Select>
                   </div>
                   {toggleRow(
@@ -1042,9 +1050,11 @@ export default function SettingsView({
                       <option value="large">{t('settings.companion.size.large')}</option>
                     </Select>
                   </div>
+                  {/* macOS Focus cannot be read, but a full-screen app in front can
+                      (companion-darwin.ts), so there the row speaks of that alone. */}
                   {toggleRow(
-                    t('settings.companion.focusAssist.label'),
-                    t('settings.companion.focusAssist.hint'),
+                    t(IS_DARWIN ? 'settings.companion.focusAssist.labelMac' : 'settings.companion.focusAssist.label'),
+                    t(IS_DARWIN ? 'settings.companion.focusAssist.hintMac' : 'settings.companion.focusAssist.hint'),
                     companion.focusAssist,
                     (focusAssist) => updateCompanion({ focusAssist }),
                     companionBusy

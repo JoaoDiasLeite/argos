@@ -96,7 +96,7 @@ export default {
   'assist.notesPlaceholder':
     'e.g. Ship the v2 onboarding flow, prep the board deck, 2 gym sessions, keep Friday afternoon free for deep work…',
   'assist.imageHint':
-    'Paste (Ctrl+V), drop, or upload a screenshot of your weekly calendar — Claude reads it and builds the week. You can review before applying.',
+    'Paste ({paste}), drop, or upload a screenshot of your weekly calendar — Claude reads it and builds the week. You can review before applying.',
   'assist.imageAlt': 'calendar to import',
   'assist.imageDrop': 'Paste, drop, or click to upload',
   'assist.clear': 'Clear',

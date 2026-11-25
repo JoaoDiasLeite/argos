@@ -4,6 +4,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import hljs from 'highlight.js/lib/common'
 import Sheet from './Sheet'
 import { useT } from '../i18n'
+import { IS_DARWIN } from '../lib/platform'
+import { modLabel } from '../lib/shortcuts'
 import './FileEditor.css'
 
 interface ReadResult {
@@ -502,10 +504,14 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
       if (editable) void save()
       return
     }
-    if (mod && (key === 'f' || key === 'h') && editable) {
+    // Replace is Ctrl+H elsewhere, but ⌘H hides the app on macOS, so there it is ⌥⌘F (as in
+    // Xcode and Safari). By code, not key: Option turns the F into "ƒ".
+    const wantsReplace = IS_DARWIN ? e.metaKey && e.altKey && e.code === 'KeyF' : mod && key === 'h'
+    const wantsFind = mod && key === 'f'
+    if ((wantsFind || wantsReplace) && editable) {
       e.preventDefault()
       e.stopPropagation()
-      openFind(key === 'h')
+      openFind(wantsReplace)
       return
     }
     if (e.key === 'Escape') {
@@ -548,7 +554,7 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
   ) : (
     <div className="file-editor-foot" onKeyDown={onKeyDown}>
       <span className="help file-editor-foot-note">
-        {editable ? t('editor.file.hintEditable') : t('editor.file.hintReadOnly')}
+        {editable ? t('editor.file.hintEditable', { save: modLabel('S') }) : t('editor.file.hintReadOnly')}
         {editable && !highlightEnabled && (
           <span title={t('editor.file.noHighlightTitle')}>{t('editor.file.noHighlight')}</span>
         )}
@@ -565,7 +571,7 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
       )}
       <button className="btn-ghost" onClick={requestClose}>{t('common.close')}</button>
       {editable && (
-        <button className="btn-primary" onClick={save} disabled={!dirty || saving} title={t('editor.file.saveTitle')}>
+        <button className="btn-primary" onClick={save} disabled={!dirty || saving} title={t('editor.file.saveTitle', { save: modLabel('S') })}>
           {saving ? t('editor.file.saving') : t('common.save')}
         </button>
       )}
@@ -669,7 +675,7 @@ export default function FileEditor({ filePath, onClose, read, write, onDownload 
                     onClick={() => setReplaceShown((v) => !v)}
                     aria-pressed={replaceShown}
                     aria-label={t('editor.find.toggleReplace')}
-                    title={t('editor.find.toggleReplaceTitle')}
+                    title={t('editor.find.toggleReplaceTitle', { shortcut: IS_DARWIN ? '⌥⌘F' : modLabel('H') })}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="M17 3l4 4-4 4M21 7H8M7 21l-4-4 4-4M3 17h13" />

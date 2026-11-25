@@ -38,7 +38,7 @@ const home: Record<keyof typeof en, string> = {
   'start.account': 'Conta',
   'start.newProject': 'Novo projeto',
   'start.submit': 'Iniciar',
-  'start.hint': 'Ctrl+Enter inicia num novo terminal · a pasta é a raiz do projeto',
+  'start.hint': '{run} inicia num novo terminal · a pasta é a raiz do projeto',
 
   'body.empty': 'Nada em execução, nada à espera. Começa algo acima.',
 

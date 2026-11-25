@@ -48,6 +48,7 @@ import OnboardingModal from './components/OnboardingModal'
 import AccountsModal from './components/AccountsModal'
 import ShortcutsModal from './components/ShortcutsModal'
 import { modLabel } from './lib/shortcuts'
+import { IS_DARWIN } from './lib/platform'
 import { UiPrefs, UiPrefsPatch } from './types'
 import {
   provOf,
@@ -199,7 +200,8 @@ function newSession(projectPath: string | undefined, provider: ProviderId, accou
 // Labels for the segmented sub-nav shown above a group's active view.
 const MEMBER_LABELS: Record<string, MessageKey> = {
   mcp: 'app.views.mcp',
-  remote: 'app.views.remote',
+  // No WSL on macOS, so the view is just "Remote" there.
+  remote: IS_DARWIN ? 'app.views.remoteMac' : 'app.views.remote',
   ops: 'app.views.ops'
 }
 
@@ -2700,7 +2702,7 @@ export default function App() {
       { v: 'companion', label: 'sidebar.nav.companion' },
       { v: 'usage', label: 'sidebar.nav.usage' },
       { v: 'mcp', label: 'app.views.mcp' },
-      { v: 'remote', label: 'app.views.remote' },
+      { v: 'remote', label: IS_DARWIN ? 'app.views.remoteMac' : 'app.views.remote' },
       { v: 'ops', label: 'app.views.ops' }
     ]
     for (const { v, label } of views) {

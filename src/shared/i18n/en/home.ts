@@ -37,7 +37,7 @@ export default {
   'start.account': 'Account',
   'start.newProject': 'New project',
   'start.submit': 'Start',
-  'start.hint': "Ctrl+Enter starts in a new terminal · the folder is the project's root",
+  'start.hint': "{run} starts in a new terminal · the folder is the project's root",
 
   'body.empty': 'Nothing running, nothing waiting. Start something above.',
 

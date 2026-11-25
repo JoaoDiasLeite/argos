@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { plural, type MessageKey, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
+import { modLabel } from '../lib/shortcuts'
 import { WeekPlan, PlannerTask, WeeklyPriority, Effort, PlannerAssistMode, CCAccountStatus, ModelInfo, SavedReview, ProviderAccountStatus } from '../types'
 import ModelPicker from '../components/ModelPicker'
 import AccountPicker from '../components/AccountPicker'
@@ -1058,7 +1059,7 @@ function AssistDrawer(props: {
           {props.needImage && !r && (
             <div className="assist-notes">
               <p className="assist-hint">
-                {t('planner.assist.imageHint')}
+                {t('planner.assist.imageHint', { paste: modLabel('V') })}
               </p>
               <div
                 className={`import-zone ${props.image ? 'has-image' : ''}`}

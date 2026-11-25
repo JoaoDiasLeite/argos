@@ -12,6 +12,7 @@ import { chainIsEmpty, chainsOf, type RunChain } from '../lib/ops-chains'
 import { IvsDropdown, RunbookField, runbookHostProblem, useRunbookPicker, type InfoState } from '../components/RunbookPicker'
 import { plural, type TFunction } from '../../../shared/i18n'
 import { useLanguage, useT } from '../i18n'
+import { IS_DARWIN } from '../lib/platform'
 import './InterventionStart.css'
 
 /**
@@ -553,7 +554,7 @@ export default function InterventionStart({ initialHostId, onStart, onResume, li
       <nav className="ivs-rail" aria-label={t('ops.start.servers')}>
         <div className="ivs-eyebrow ivs-rail-head">{t('ops.start.servers')}</div>
         <div className="ivs-rail-list">
-          {hosts && hosts.length === 0 && <p className="ivs-help ivs-rail-note">{t('ops.start.noSshHosts')}</p>}
+          {hosts && hosts.length === 0 && <p className="ivs-help ivs-rail-note">{t(IS_DARWIN ? 'ops.start.noSshHostsMac' : 'ops.start.noSshHosts')}</p>}
           {(hosts ?? []).map((h) => {
             const last = lastByHost[h.id]
             const isLive = live.some((l) => l.hostId === h.id)

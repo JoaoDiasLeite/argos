@@ -1656,6 +1656,14 @@ declare global {
       windowGetBounds: () => Promise<{ x: number; y: number; width: number; height: number }>
       windowSetBounds: (bounds: { x: number; y: number; width: number; height: number }) => void
       onWindowMaximized: (cb: (maximized: boolean) => void) => () => void
+      windowIsFullScreen: () => Promise<boolean>
+      onWindowFullScreen: (cb: (fullScreen: boolean) => void) => () => void
+
+      // Microphone permission for the companion's voice. macOS asks the user once
+      // (TCC); elsewhere the first resolves 'granted'. The second opens the OS page
+      // where the microphone is granted to apps (no-op on Linux).
+      ensureMicrophoneAccess(): Promise<'granted' | 'denied' | 'restricted' | 'unsupported'>
+      openMicrophoneSettings(): Promise<void>
 
       // Auth
       authStatus: () => Promise<AuthStatus>

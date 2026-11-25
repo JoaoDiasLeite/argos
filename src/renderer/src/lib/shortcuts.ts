@@ -1,4 +1,5 @@
 import type { MessageKey } from '../../../shared/i18n'
+import { PLATFORM } from './platform'
 
 /**
  * The app's keyboard shortcuts, written down once so the cheat sheet can show them.
@@ -14,8 +15,8 @@ import type { MessageKey } from '../../../shared/i18n'
  * all), so it is left blank here and filled in at render time from the main process.
  */
 
-/** Mac reports itself in the UA string; Electron gives us nothing better in the renderer. */
-export const IS_MAC = navigator.userAgent.includes('Mac')
+/** The preload's `process.platform`; the UA string where there is no preload. */
+export const IS_MAC = PLATFORM ? PLATFORM === 'darwin' : typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac')
 
 /** What to call the Ctrl/Cmd key on this platform. */
 export const MOD = IS_MAC ? '⌘' : 'Ctrl'
@@ -99,7 +100,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     items: [
       { keys: [MOD, 'S'], action: 'shortcuts.action.save' },
       { keys: [MOD, 'F'], action: 'shortcuts.action.find' },
-      { keys: [MOD, 'H'], action: 'shortcuts.action.replace' },
+      // ⌘H hides the app on macOS, so replace is ⌥⌘F there, as in Xcode and Safari.
+      { keys: IS_MAC ? ['⌥', MOD, 'F'] : [MOD, 'H'], action: 'shortcuts.action.replace' },
       { keys: ['Enter'], action: 'shortcuts.action.nextMatch', note: 'shortcuts.note.findBar' },
       { keys: ['Tab'], action: 'shortcuts.action.indent', note: 'shortcuts.note.outdent' },
       { keys: ['Esc'], action: 'shortcuts.action.close' }

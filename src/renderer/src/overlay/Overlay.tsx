@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Session } from '../types'
 import { applyTheme } from '../lib/theme'
 import { useT } from '../i18n'
+import { displayAccelerator } from '../lib/platform'
 import { chatDisplayName } from '../lib/chat-name'
 
 // Quick-launcher overlay window. Summoned via a global shortcut from anywhere in
@@ -140,7 +141,7 @@ export default function Overlay() {
       <div className="overlay-footer">
         <span><kbd>Enter</kbd> {t('app.overlay.newTerminal')}</span>
         <span><kbd>Esc</kbd> {t('app.overlay.dismiss')}</span>
-        {shortcut && <span className="overlay-shortcut">{shortcut}</span>}
+        {shortcut && <span className="overlay-shortcut">{displayAccelerator(shortcut)}</span>}
       </div>
     </div>
   )

@@ -6,9 +6,15 @@
  * Through koffi (N-API, so the same binary runs under Electron), loaded on first use
  * and only on Windows; anywhere it cannot load, every call answers null and the
  * features stay off. Rects come back in DIPs of the virtual screen, like the rest.
+ *
+ * On macOS the same exports answer from companion-darwin.ts (CGWindowList), with the
+ * window's CGWindowID as its handle; elsewhere they stay null.
  */
 import { screen } from 'electron'
 import type { CompanionRect } from './companion-types'
+import { macForegroundWindow, macFrontIsFullScreen, macWindowBounds, macWindowsOnScreen } from './companion-darwin'
+
+const isMac = process.platform === 'darwin'
 
 /** SHQueryUserNotificationState's answers. */
 export const QUNS = {
@@ -99,6 +105,7 @@ function load(): Win32 | null {
 
 /** The window's drawn bounds in DIPs, or null when it is gone, hidden, cloaked or minimised. */
 export function windowBounds(hwnd: unknown): CompanionRect | null {
+  if (isMac) return macWindowBounds(hwnd)
   const w = load()
   if (!w || !hwnd) return null
   try {
@@ -116,9 +123,11 @@ export function windowBounds(hwnd: unknown): CompanionRect | null {
 
 /**
  * The window in front, unless it is one of Argos's own, maximised (nothing to perch on
- * above the screen's top) or minimised: its handle and bounds.
+ * above the screen's top) or minimised: its handle and bounds. `skip` is for macOS, where
+ * the front of the window list can be one of the companion's; Windows asks the system.
  */
-export function foregroundWindow(): { hwnd: unknown; bounds: CompanionRect } | null {
+export function foregroundWindow(skip: readonly bigint[] = []): { hwnd: unknown; bounds: CompanionRect } | null {
+  if (isMac) return macForegroundWindow(skip)
   const w = load()
   if (!w) return null
   try {
@@ -143,6 +152,7 @@ export function foregroundWindow(): { hwnd: unknown; bounds: CompanionRect } | n
  * unavailable.
  */
 export function windowsOnScreen(skip: readonly bigint[] = []): { hwnd: unknown; bounds: CompanionRect }[] {
+  if (isMac) return macWindowsOnScreen(skip)
   const w = load()
   if (!w) return []
   const out: { hwnd: unknown; bounds: CompanionRect }[] = []
@@ -165,8 +175,13 @@ export function windowsOnScreen(skip: readonly bigint[] = []): { hwnd: unknown; 
   return out
 }
 
-/** Windows' word on notifications (QUNS), or null where it cannot be asked. */
+/**
+ * Windows' word on notifications (QUNS), or null where it cannot be asked. macOS has no
+ * such call (nor a public way to read Focus): another app's window covering a display
+ * reads as a full-screen app, anything else as no answer.
+ */
 export function userNotificationState(): number | null {
+  if (isMac) return macFrontIsFullScreen() ? QUNS.RUNNING_D3D_FULL_SCREEN : null
   const w = load()
   if (!w) return null
   try {

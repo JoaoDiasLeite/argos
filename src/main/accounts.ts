@@ -7,6 +7,8 @@ import { loadJsonFileGuarded, readJsonFile, writeJsonFileAtomic } from './json-f
 import { isPlainObject } from './json-load-pure'
 import { isStrictlyInside } from './path-contain-pure'
 import { openLinuxTerminal } from './linux-desktop'
+import { openMacTerminal } from './mac-terminal'
+import { shQuote, shownCommand } from './mac-terminal-pure'
 
 /**
  * Multi-account support for Claude Code subscription logins.
@@ -260,7 +262,7 @@ export function resolveClaudeBin(): string {
  * OAuth flow; afterwards the dir holds .credentials.json + .claude.json and the account
  * shows as logged in. Returns the command so the UI can show a manual fallback.
  */
-export function loginAccount(id: string): { launched: boolean; command: string } {
+export async function loginAccount(id: string): Promise<{ launched: boolean; command: string }> {
   const account = state.accounts.find((a) => a.id === id)
   const dir = account?.configDir
   if (!account || !dir) {
@@ -270,6 +272,14 @@ export function loginAccount(id: string): { launched: boolean; command: string }
   fs.mkdirSync(dir, { recursive: true })
 
   const claudeBin = resolveClaudeBin()
+  if (process.platform === 'darwin') {
+    // A `.command` file opened with `open -a Terminal`: scripting Terminal through
+    // osascript needs the Automation permission, and its failure went unreported.
+    const env = { CLAUDE_CONFIG_DIR: dir }
+    const bin = shQuote(claudeBin)
+    const launched = await openMacTerminal(`claude-login-${id}`, bin, env)
+    return { launched, command: shownCommand(bin, env) }
+  }
   let command: string
   let child: ReturnType<typeof spawn> | null = null
   try {
@@ -287,12 +297,6 @@ export function loginAccount(id: string): { launched: boolean; command: string }
         detached: true,
         stdio: 'ignore',
         env: { ...process.env, CLAUDE_CONFIG_DIR: dir, CLAUDE_BIN: claudeBin }
-      })
-    } else if (process.platform === 'darwin') {
-      command = `CLAUDE_CONFIG_DIR='${dir}' '${claudeBin}'`
-      child = spawn('osascript', ['-e', `tell application "Terminal" to do script "${command}"`], {
-        detached: true,
-        stdio: 'ignore'
       })
     } else {
       command = `CLAUDE_CONFIG_DIR='${dir}' '${claudeBin}'`

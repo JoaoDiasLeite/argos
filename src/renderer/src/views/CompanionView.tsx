@@ -20,6 +20,7 @@ import type {
   CompanionTodo
 } from '../types'
 import { useLanguage, useT } from '../i18n'
+import { IS_DARWIN, displayAccelerator } from '../lib/platform'
 import { plural } from '../../../shared/i18n'
 import { useLingering } from '../hooks/useLingering'
 import {
@@ -363,7 +364,11 @@ export default function CompanionView({ onOpenSprint }: { onOpenSprint?: () => v
       : ''
   const secondLine = [
     next ? t('companion.panel.next', { when: nextWhen, title: next.title }) : null,
-    shortcut === null ? null : shortcut ? t('companion.panel.sub', { shortcut }) : t('companion.panel.subNoShortcut')
+    shortcut === null
+      ? null
+      : shortcut
+        ? t(IS_DARWIN ? 'companion.panel.subMac' : 'companion.panel.sub', { shortcut: displayAccelerator(shortcut) })
+        : t('companion.panel.subNoShortcut')
   ]
     .filter((s): s is string => !!s)
     .join(' · ')

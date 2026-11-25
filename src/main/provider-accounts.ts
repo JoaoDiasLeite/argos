@@ -8,6 +8,8 @@ import { isPlainObject } from './json-load-pure'
 import { isStrictlyInside } from './path-contain-pure'
 import { checkCodexStatus } from './agent-clis'
 import { openLinuxTerminal } from './linux-desktop'
+import { openMacTerminal } from './mac-terminal'
+import { shownCommand } from './mac-terminal-pure'
 
 /**
  * Multi-account support for Codex and Gemini logins — the Codex/Gemini analog of
@@ -225,7 +227,10 @@ export function setDefaultProviderAccount(provider: AgentProvider, id: string): 
  * user completes the CLI's own login flow (browser OAuth for both); afterwards
  * the account's isolated dir holds its own credentials.
  */
-export function loginProviderAccount(provider: AgentProvider, id: string): { launched: boolean; command: string } {
+export async function loginProviderAccount(
+  provider: AgentProvider,
+  id: string
+): Promise<{ launched: boolean; command: string }> {
   const account = group(provider).accounts.find((a) => a.id === id)
   const dir = account?.configDir
   // Gemini logs in through Antigravity (Google's latest agentic CLI), launched via its
@@ -249,11 +254,17 @@ export function loginProviderAccount(provider: AgentProvider, id: string): { lau
  * non-ASCII paths (e.g. an accented user directory). Same trick as
  * accounts.ts's loginAccount().
  */
-function launchLoginTerminal(
+async function launchLoginTerminal(
   idForTempFile: string,
   command: string,
   envOverride: Record<string, string>
-): { launched: boolean; command: string } {
+): Promise<{ launched: boolean; command: string }> {
+  if (process.platform === 'darwin') {
+    // A `.command` file opened with `open -a Terminal`: scripting Terminal through
+    // osascript needs the Automation permission, and its failure went unreported.
+    const launched = await openMacTerminal(`${idForTempFile}-login`, command, envOverride)
+    return { launched, command: shownCommand(command, envOverride) }
+  }
   try {
     let child: ReturnType<typeof spawn> | null = null
     if (process.platform === 'win32') {
@@ -267,15 +278,6 @@ function launchLoginTerminal(
         detached: true,
         stdio: 'ignore',
         env: { ...process.env, ...envOverride }
-      })
-    } else if (process.platform === 'darwin') {
-      const prefix = Object.entries(envOverride)
-        .map(([k, v]) => `${k}='${v}' `)
-        .join('')
-      const full = `${prefix}${command}`
-      child = spawn('osascript', ['-e', `tell application "Terminal" to do script "${full}"`], {
-        detached: true,
-        stdio: 'ignore'
       })
     } else {
       const prefix = Object.entries(envOverride)
