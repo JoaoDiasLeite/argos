@@ -1050,16 +1050,15 @@ export default function SettingsView({
                       <option value="large">{t('settings.companion.size.large')}</option>
                     </Select>
                   </div>
-                  {/* Focus Assist is Windows'; main has no way to read macOS Focus, so the
-                      row would promise a quiet that never comes. */}
-                  {!IS_DARWIN &&
-                    toggleRow(
-                      t('settings.companion.focusAssist.label'),
-                      t('settings.companion.focusAssist.hint'),
-                      companion.focusAssist,
-                      (focusAssist) => updateCompanion({ focusAssist }),
-                      companionBusy
-                    )}
+                  {/* macOS Focus cannot be read, but a full-screen app in front can
+                      (companion-darwin.ts), so there the row speaks of that alone. */}
+                  {toggleRow(
+                    t(IS_DARWIN ? 'settings.companion.focusAssist.labelMac' : 'settings.companion.focusAssist.label'),
+                    t(IS_DARWIN ? 'settings.companion.focusAssist.hintMac' : 'settings.companion.focusAssist.hint'),
+                    companion.focusAssist,
+                    (focusAssist) => updateCompanion({ focusAssist }),
+                    companionBusy
+                  )}
                   {toggleRow(
                     t('settings.companion.terminalAlerts.label'),
                     t('settings.companion.terminalAlerts.hint'),

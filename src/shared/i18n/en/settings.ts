@@ -121,6 +121,8 @@ export default {
   'companion.follow.label': 'Follow me between screens',
   'companion.follow.hint': 'With Argos on screen, once you have been on another monitor for a while he runs toward it along the floor and stays where the run ends.',
   'companion.focusAssist.label': 'Quiet with Focus Assist',
+  'companion.focusAssist.labelMac': 'Quiet over full-screen apps',
+  'companion.focusAssist.hintMac': 'While an app is in full screen, Argos keeps quiet; reminders go as notifications until it leaves full screen.',
   'companion.focusAssist.hint': 'In Focus Assist, a full-screen app or a presentation, Argos keeps quiet; reminders go as notifications while the screen is full.',
   'companion.size.label': 'Size of Argos',
   'companion.size.hint': 'How big he is on the desktop. He keeps his place when it changes.',

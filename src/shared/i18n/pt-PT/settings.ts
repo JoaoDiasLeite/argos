@@ -121,6 +121,8 @@ const settings: Record<keyof typeof en, string> = {
   'companion.follow.label': 'Seguir-me entre ecrãs',
   'companion.follow.hint': 'Com o Argos no ecrã, quando já estás há uns tempos noutro monitor, ele corre para esse lado pelo chão e fica onde a corrida acabar.',
   'companion.focusAssist.label': 'Silêncio com o Assistente de Concentração',
+  'companion.focusAssist.labelMac': 'Silêncio com aplicações em ecrã inteiro',
+  'companion.focusAssist.hintMac': 'Enquanto uma aplicação estiver em ecrã inteiro, o Argos fica calado; os lembretes vão como notificações até ela sair do ecrã inteiro.',
   'companion.focusAssist.hint': 'Com o Assistente de Concentração, uma aplicação em ecrã inteiro ou uma apresentação, o Argos fica calado; os lembretes vão como notificações enquanto o ecrã estiver cheio.',
   'companion.size.label': 'Tamanho do Argos',
   'companion.size.hint': 'O tamanho dele no ambiente de trabalho. Fica no mesmo sítio quando muda.',
