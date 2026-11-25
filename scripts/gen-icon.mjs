@@ -2,6 +2,8 @@
 // src/renderer/src/brand/argos-mark.json (the same path the title bar and the rail
 // draw) in white on an accent rounded square, rasterised here with an even-odd
 // scanline fill and 4×4 supersampling, then encoded as a PNG via zlib.
+// Also writes build/trayTemplate.png (16×16) and build/trayTemplate@2x.png (32×32):
+// the mark alone in black + alpha, the template image the macOS menu bar tints itself.
 import zlib from 'node:zlib'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -20,55 +22,58 @@ const ACCENT = [0xdf, 0x7a, 0x52] // --accent (Warm Rust)
 
 // ── Path → polygons (flatten cubics) ──
 const [vx, vy, vw] = mark.viewBox.split(/\s+/).map(Number)
-const inset = 0.12 // the mark occupies 76 % of the tile
-const scale = (S * (1 - 2 * inset)) / vw
-const tx = (x) => (x - vx) * scale + S * inset
-const ty = (y) => (y - vy) * scale + S * inset
-
 const tokens = mark.d.match(/[MLCZ]|-?\d*\.?\d+/g)
-const polys = []
-let poly = null
-let cur = [0, 0]
-let i = 0
-let last = 'M'
-const num = () => Number(tokens[i++])
-while (i < tokens.length) {
-  // potrace repeats a command implicitly: a number where a command is expected means "same again".
-  let t = tokens[i++]
-  if (/^[MLCZ]$/.test(t)) last = t
-  else {
-    i--
-    t = last === 'M' ? 'L' : last
-  }
-  if (t === 'M') {
-    cur = [num(), num()]
-    poly = [[tx(cur[0]), ty(cur[1])]]
-    polys.push(poly)
-  } else if (t === 'L') {
-    cur = [num(), num()]
-    poly.push([tx(cur[0]), ty(cur[1])])
-  } else if (t === 'C') {
-    const [x1, y1, x2, y2, x3, y3] = [num(), num(), num(), num(), num(), num()]
-    const [x0, y0] = cur
-    const n = 24
-    for (let k = 1; k <= n; k++) {
-      const u = k / n
-      const a = (1 - u) ** 3
-      const b = 3 * (1 - u) ** 2 * u
-      const c = 3 * (1 - u) * u * u
-      const d = u ** 3
-      poly.push([tx(a * x0 + b * x1 + c * x2 + d * x3), ty(a * y0 + b * y1 + c * y2 + d * y3)])
+
+// The mark's polygons in pixel space, for a `size`-px canvas with `inset` of it as margin.
+const markPolys = (size, inset) => {
+  const scale = (size * (1 - 2 * inset)) / vw
+  const tx = (x) => (x - vx) * scale + size * inset
+  const ty = (y) => (y - vy) * scale + size * inset
+  const polys = []
+  let poly = null
+  let cur = [0, 0]
+  let i = 0
+  let last = 'M'
+  const num = () => Number(tokens[i++])
+  while (i < tokens.length) {
+    // potrace repeats a command implicitly: a number where a command is expected means "same again".
+    let t = tokens[i++]
+    if (/^[MLCZ]$/.test(t)) last = t
+    else {
+      i--
+      t = last === 'M' ? 'L' : last
     }
-    cur = [x3, y3]
-  } else if (t === 'Z') {
-    // closed implicitly by the fill
-  } else {
-    throw new Error(`unexpected token ${t}`)
+    if (t === 'M') {
+      cur = [num(), num()]
+      poly = [[tx(cur[0]), ty(cur[1])]]
+      polys.push(poly)
+    } else if (t === 'L') {
+      cur = [num(), num()]
+      poly.push([tx(cur[0]), ty(cur[1])])
+    } else if (t === 'C') {
+      const [x1, y1, x2, y2, x3, y3] = [num(), num(), num(), num(), num(), num()]
+      const [x0, y0] = cur
+      const n = 24
+      for (let k = 1; k <= n; k++) {
+        const u = k / n
+        const a = (1 - u) ** 3
+        const b = 3 * (1 - u) ** 2 * u
+        const c = 3 * (1 - u) * u * u
+        const d = u ** 3
+        poly.push([tx(a * x0 + b * x1 + c * x2 + d * x3), ty(a * y0 + b * y1 + c * y2 + d * y3)])
+      }
+      cur = [x3, y3]
+    } else if (t === 'Z') {
+      // closed implicitly by the fill
+    } else {
+      throw new Error(`unexpected token ${t}`)
+    }
   }
+  return polys
 }
 
 // Even-odd point test against every polygon (holes are their own subpaths).
-const inside = (x, y) => {
+const insideOf = (polys) => (x, y) => {
   let c = false
   for (const p of polys) {
     for (let a = 0, b = p.length - 1; a < p.length; b = a++) {
@@ -79,6 +84,7 @@ const inside = (x, y) => {
   }
   return c
 }
+const inside = insideOf(markPolys(S, 0.12)) // the mark occupies 76 % of the app-icon tile
 
 // ── Rounded-square background ──
 const margin = 20
@@ -148,16 +154,16 @@ const chunk = (type, data) => {
   crc.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0)
   return Buffer.concat([len, typeBuf, data, crc])
 }
-const ihdr = Buffer.alloc(13)
-ihdr.writeUInt32BE(S, 0)
-ihdr.writeUInt32BE(S, 4)
-ihdr[8] = 8
-ihdr[9] = 6
-const encode = (px) => {
-  const raw = Buffer.alloc(S * (S * 4 + 1))
-  for (let y = 0; y < S; y++) {
-    raw[y * (S * 4 + 1)] = 0
-    px.copy(raw, y * (S * 4 + 1) + 1, y * S * 4, (y + 1) * S * 4)
+const encode = (px, size = S) => {
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(size, 0)
+  ihdr.writeUInt32BE(size, 4)
+  ihdr[8] = 8
+  ihdr[9] = 6
+  const raw = Buffer.alloc(size * (size * 4 + 1))
+  for (let y = 0; y < size; y++) {
+    raw[y * (size * 4 + 1)] = 0
+    px.copy(raw, y * (size * 4 + 1) + 1, y * size * 4, (y + 1) * size * 4)
   }
   return Buffer.concat([
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
@@ -169,6 +175,33 @@ const encode = (px) => {
 fs.mkdirSync(path.join(ROOT, 'build'), { recursive: true })
 for (const [file, withBg] of [['icon.png', true], ['icon-dev.png', false]]) {
   const png = encode(rasterise(withBg))
+  fs.writeFileSync(path.join(ROOT, 'build', file), png)
+  console.log('wrote build/' + file, png.length, 'bytes')
+}
+
+// ── macOS menu-bar template ──
+// Black + alpha only: macOS recolours a "...Template" image for the light/dark menu bar
+// and the highlighted state. A thinner margin than the app tile, so the mark reads at
+// 16 pt. nativeImage picks up the @2x file next to the base one on Retina displays.
+const rasteriseTemplate = (size) => {
+  const hit = insideOf(markPolys(size, 0.03))
+  const ss = 8 // more supersampling: a 16 px edge is mostly antialiasing
+  const px = Buffer.alloc(size * size * 4)
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let hits = 0
+      for (let sy = 0; sy < ss; sy++) {
+        for (let sx = 0; sx < ss; sx++) {
+          if (hit(x + (sx + 0.5) / ss, y + (sy + 0.5) / ss)) hits++
+        }
+      }
+      px[(y * size + x) * 4 + 3] = Math.round((255 * hits) / (ss * ss))
+    }
+  }
+  return px
+}
+for (const [file, size] of [['trayTemplate.png', 16], ['trayTemplate@2x.png', 32]]) {
+  const png = encode(rasteriseTemplate(size), size)
   fs.writeFileSync(path.join(ROOT, 'build', file), png)
   console.log('wrote build/' + file, png.length, 'bytes')
 }

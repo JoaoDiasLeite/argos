@@ -13,6 +13,7 @@ import { hardenWebContents } from './window-security'
 const TOAST_WIDTH = 420
 const TOAST_HEIGHT = 160
 const MARGIN = 12
+const isMac = process.platform === 'darwin'
 
 let toastWindow: BrowserWindow | null = null
 
@@ -30,7 +31,14 @@ export function createToastWindow(): BrowserWindow {
     // Never grab focus: the user may be typing elsewhere when a run stalls on approval.
     focusable: false,
     alwaysOnTop: true,
-    backgroundMaterial: 'acrylic',
+    // Acrylic is Windows-only. On macOS a transparent window lets the CSS shell's
+    // rounded corners show, and a non-activating panel never activates the app,
+    // not even when clicked; acceptFirstMouse makes that first click hit the button
+    // instead of only focusing the window. No shadow: it would be computed from
+    // whatever was painted when shown (the empty state is fully transparent).
+    ...(isMac
+      ? { type: 'panel', transparent: true, hasShadow: false, acceptFirstMouse: true }
+      : { backgroundMaterial: 'acrylic' as const }),
     backgroundColor: '#00000000',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -38,8 +46,15 @@ export function createToastWindow(): BrowserWindow {
       contextIsolation: true
     }
   })
-  // Float above fullscreen apps like a native notification, not just normal windows.
-  toastWindow.setAlwaysOnTop(true, 'screen-saver')
+  if (isMac) {
+    // On every Space and over full-screen apps, keeping the Dock icon. Set before the
+    // level, which this call can reset.
+    toastWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
+    toastWindow.setAlwaysOnTop(true, 'pop-up-menu')
+  } else {
+    // Float above fullscreen apps like a native notification, not just normal windows.
+    toastWindow.setAlwaysOnTop(true, 'screen-saver')
+  }
 
   toastWindow.on('closed', () => {
     toastWindow = null

@@ -9,6 +9,7 @@ import { hardenWebContents } from './window-security'
 
 const OVERLAY_WIDTH = 660
 const OVERLAY_HEIGHT = 440
+const isMac = process.platform === 'darwin'
 
 let overlayWindow: BrowserWindow | null = null
 let registeredShortcut = ''
@@ -30,7 +31,13 @@ export function createOverlayWindow(): BrowserWindow {
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    backgroundMaterial: 'acrylic',
+    // Acrylic is Windows-only. On macOS a transparent window lets the CSS shell's
+    // rounded corners show; a non-activating panel takes keyboard focus without
+    // activating the app, so the main window doesn't jump forward (or switch Space)
+    // and the app the user was in stays active when the launcher hides.
+    ...(isMac
+      ? { type: 'panel', transparent: true, hasShadow: true }
+      : { backgroundMaterial: 'acrylic' as const }),
     backgroundColor: '#00000000',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -38,8 +45,16 @@ export function createOverlayWindow(): BrowserWindow {
       contextIsolation: true
     }
   })
-  // 'screen-saver' level floats above fullscreen apps, not just normal windows.
-  overlayWindow.setAlwaysOnTop(true, 'screen-saver')
+  if (isMac) {
+    // On every Space and over full-screen apps; skipTransformProcessType keeps the
+    // Dock icon (without it Electron turns the app into a UI element). Set before the
+    // level, which this call can reset.
+    overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
+    overlayWindow.setAlwaysOnTop(true, 'pop-up-menu')
+  } else {
+    // 'screen-saver' level floats above fullscreen apps, not just normal windows.
+    overlayWindow.setAlwaysOnTop(true, 'screen-saver')
+  }
 
   // Dismiss like a native flyout when focus moves elsewhere. Skipped while devtools
   // are open, since opening them blurs the window and would instantly hide it.
@@ -82,8 +97,17 @@ export function toggleOverlay(): void {
     Math.round(x + (width - OVERLAY_WIDTH) / 2),
     Math.round(y + height * 0.18)
   )
-  win.show()
-  win.focus()
+  if (isMac) {
+    // show() activates the app even for a panel; showInactive() + focus() makes the
+    // panel key without activating (Electron skips activation for panels in focus()).
+    win.showInactive()
+    win.focus()
+    // The shadow of a transparent window follows its painted pixels; recompute it.
+    win.invalidateShadow()
+  } else {
+    win.show()
+    win.focus()
+  }
   // Tells the overlay renderer to reset + refocus its input and refresh data.
   win.webContents.send('overlay:shown')
 }
