@@ -9,6 +9,7 @@ import {
   userBinDirs,
   withPathDirs
 } from './linux-desktop-pure'
+import { extendDarwinPathStatic } from './shell-env'
 
 function isExecutable(file: string): boolean {
   try {
@@ -48,6 +49,9 @@ export function openLinuxTerminal(script: string): boolean {
  * the registry PATH, which a GUI launch already has.
  */
 export function extendLinuxPath(): void {
+  // macOS has the same problem from Finder/Dock; its sync part (Homebrew, ~/.local/bin)
+  // rides on this early call, the login-shell read is extendDarwinEnv (shell-env.ts).
+  if (process.platform === 'darwin') return extendDarwinPathStatic()
   if (process.platform !== 'linux') return
   process.env.PATH = withPathDirs(
     process.env.PATH,
@@ -68,6 +72,12 @@ function autostartFile(): string {
  * follows the file if an update renamed it.
  */
 export function setOpenAtLogin(openAtLogin: boolean, args: string[]): void {
+  // macOS ignores login-item args (Windows-only); the app tells a login launch apart by
+  // app.getLoginItemSettings().wasOpenedAtLogin instead (see createWindow in index.ts).
+  if (process.platform === 'darwin') {
+    app.setLoginItemSettings({ openAtLogin })
+    return
+  }
   if (process.platform !== 'linux') {
     app.setLoginItemSettings({ openAtLogin, args })
     return

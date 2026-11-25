@@ -1,3 +1,5 @@
+/* Height mirrored in main-window-pure.ts (TITLE_BAR_HEIGHT), which centres the macOS
+   traffic lights on it: change both together. */
 .titlebar {
   height: 36px;
   flex-shrink: 0;
@@ -20,6 +22,18 @@
   display: flex;
   align-items: center;
   color: var(--accent);
+}
+/* macOS: the native traffic lights sit at the bar's left (titleBarStyle 'hiddenInset'),
+   so the brand starts after them; full screen hides them and takes the room back. */
+.titlebar.mac .titlebar-brand {
+  padding-left: 78px;
+}
+.titlebar.mac.fullscreen .titlebar-brand {
+  padding-left: 12px;
+}
+/* With no window controls on the right, the update pill keeps a margin off the edge. */
+.titlebar.mac .titlebar-update-pill {
+  margin-right: 12px;
 }
 .titlebar-title {
   font-size: 12px;

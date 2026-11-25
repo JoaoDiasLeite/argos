@@ -14,10 +14,30 @@ interface Props {
  * Custom window chrome for the frameless window: a draggable bar with our own
  * minimize / maximize / close controls, styled to match the theme. The native
  * frame is hidden (see createWindow in the main process).
+ *
+ * macOS keeps its own traffic lights, inset into this bar (titleBarStyle 'hiddenInset'):
+ * our buttons go, the brand moves right to clear them, and double-click is left to the
+ * system (zoom or minimize, per the user's preference). In full screen the lights are
+ * gone and so is the room kept for them.
  */
 export default function TitleBar({ maximized, runningCount = 0 }: Props) {
   const t = useT()
+  const isMac = window.electronAPI.platform === 'darwin'
   const toggleMaximize = () => window.electronAPI.windowMaximizeToggle()
+
+  const [fullScreen, setFullScreen] = useState(false)
+  useEffect(() => {
+    if (!isMac) return
+    let cancelled = false
+    window.electronAPI.windowIsFullScreen().then((v) => {
+      if (!cancelled) setFullScreen(v)
+    })
+    const off = window.electronAPI.onWindowFullScreen(setFullScreen)
+    return () => {
+      cancelled = true
+      off()
+    }
+  }, [isMac])
 
   // Ambient "restart to update" pill: mirrors the same 'updater:event' feed the
   // Settings modal listens to, so the pill shows up even if Settings was never
@@ -68,7 +88,10 @@ export default function TitleBar({ maximized, runningCount = 0 }: Props) {
   }
 
   return (
-    <div className="titlebar" onDoubleClick={toggleMaximize}>
+    <div
+      className={`titlebar${isMac ? ' mac' : ''}${isMac && fullScreen ? ' fullscreen' : ''}`}
+      onDoubleClick={isMac ? undefined : toggleMaximize}
+    >
       {runningCount > 0 && <div className="titlebar-activity" aria-hidden="true" />}
       <div className="titlebar-brand">
         <span className="titlebar-logo">
@@ -133,46 +156,48 @@ export default function TitleBar({ maximized, runningCount = 0 }: Props) {
         </button>
       )}
 
-      <div className="titlebar-controls" onDoubleClick={(e) => e.stopPropagation()}>
-        <button
-          className="titlebar-btn"
-          onClick={() => window.electronAPI.windowMinimize()}
-          aria-label={t('sidebar.titleBar.minimize')}
-          title={t('sidebar.titleBar.minimize')}
-        >
-          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-            <rect x="1" y="4.5" width="8" height="1" fill="currentColor" />
-          </svg>
-        </button>
-        <button
-          className="titlebar-btn"
-          onClick={toggleMaximize}
-          aria-label={maximized ? t('sidebar.titleBar.restore') : t('sidebar.titleBar.maximize')}
-          title={maximized ? t('sidebar.titleBar.restore') : t('sidebar.titleBar.maximize')}
-        >
-          {maximized ? (
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
-              <rect x="1.5" y="2.5" width="5" height="5" />
-              <path d="M3.5 2.5V1.5h5v5h-1" />
+      {!isMac && (
+        <div className="titlebar-controls" onDoubleClick={(e) => e.stopPropagation()}>
+          <button
+            className="titlebar-btn"
+            onClick={() => window.electronAPI.windowMinimize()}
+            aria-label={t('sidebar.titleBar.minimize')}
+            title={t('sidebar.titleBar.minimize')}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+              <rect x="1" y="4.5" width="8" height="1" fill="currentColor" />
             </svg>
-          ) : (
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
-              <rect x="1.5" y="1.5" width="7" height="7" />
+          </button>
+          <button
+            className="titlebar-btn"
+            onClick={toggleMaximize}
+            aria-label={maximized ? t('sidebar.titleBar.restore') : t('sidebar.titleBar.maximize')}
+            title={maximized ? t('sidebar.titleBar.restore') : t('sidebar.titleBar.maximize')}
+          >
+            {maximized ? (
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
+                <rect x="1.5" y="2.5" width="5" height="5" />
+                <path d="M3.5 2.5V1.5h5v5h-1" />
+              </svg>
+            ) : (
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
+                <rect x="1.5" y="1.5" width="7" height="7" />
+              </svg>
+            )}
+          </button>
+          <button
+            className="titlebar-btn close"
+            onClick={() => window.electronAPI.windowClose()}
+            aria-label={t('common.close')}
+            title={t('common.close')}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" aria-hidden="true">
+              <line x1="1.5" y1="1.5" x2="8.5" y2="8.5" />
+              <line x1="8.5" y1="1.5" x2="1.5" y2="8.5" />
             </svg>
-          )}
-        </button>
-        <button
-          className="titlebar-btn close"
-          onClick={() => window.electronAPI.windowClose()}
-          aria-label={t('common.close')}
-          title={t('common.close')}
-        >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" aria-hidden="true">
-            <line x1="1.5" y1="1.5" x2="8.5" y2="8.5" />
-            <line x1="8.5" y1="1.5" x2="1.5" y2="8.5" />
-          </svg>
-        </button>
-      </div>
+          </button>
+        </div>
+      )}
     </div>
   )
 }
