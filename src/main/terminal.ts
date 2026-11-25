@@ -600,7 +600,8 @@ function pickShell(): { shell: string; kind: ShellKind } {
     if (hasPwsh()) return { shell: 'pwsh.exe', kind: 'pwsh' }
     return { shell: 'powershell.exe', kind: 'powershell' }
   }
-  return { shell: process.env.SHELL || 'bash', kind: 'unix' }
+  // macOS has shipped zsh as the default shell since Catalina; bash stays the Linux default.
+  return { shell: process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : 'bash'), kind: 'unix' }
 }
 
 // parseWslUnc (terminal-ops-pure.ts) recognises a WSL share path, so a local chat pointed
@@ -821,6 +822,10 @@ export async function createTerminal(
         } else if (kind === 'cmd') {
           shell = 'cmd.exe'
           shellArgs = ['/d', '/q', '/c', cliCmd]
+        } else if (process.platform === 'darwin') {
+          // A login shell, as Terminal.app starts one: .zprofile is where Homebrew's
+          // shellenv (and often node's PATH) lives, and a plain `-c` would skip it.
+          shellArgs = ['-l', '-c', cliCmd]
         } else {
           shellArgs = ['-c', cliCmd]
         }
@@ -829,6 +834,9 @@ export async function createTerminal(
         launched.add(id)
       }
     }
+
+    // macOS: a plain local shell also starts as a login shell (`zsh -l`), as in Terminal.app.
+    if (process.platform === 'darwin' && kind === 'unix' && shellArgs.length === 0) shellArgs = ['-l']
 
     const cliLaunched = launched.has(id)
 

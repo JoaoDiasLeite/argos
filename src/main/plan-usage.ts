@@ -9,6 +9,7 @@ import { readJsonFile } from './json-file'
 import { nextAlert, type AlertState } from './plan-alerts-pure'
 import { carryOverSleeping, tokenAccountKey } from './plan-usage-pure'
 import { t } from './i18n'
+import { readClaudeKeychainCredentials } from './claude-keychain'
 import type { MessageKey } from '../shared/i18n'
 
 // Real plan usage straight from Anthropic, the way community HUDs (claude-hud,
@@ -129,12 +130,21 @@ interface Source {
   isDefault: boolean
   accountIds: string[]
   credsPaths: string[]
+  /** macOS: config dirs (null = default) whose login may be in the Keychain instead. */
+  keychainDirs: (string | null)[]
 }
 
 function readCredentialsFile(credsPath: string): OauthCreds | null {
   try {
     if (!fs.existsSync(credsPath)) return null
-    const raw = readJsonFile<Record<string, unknown>>(credsPath)
+    return parseCredentials(readJsonFile<Record<string, unknown>>(credsPath))
+  } catch {
+    return null
+  }
+}
+
+function parseCredentials(raw: Record<string, unknown>): OauthCreds | null {
+  try {
     const o = (raw.claudeAiOauth ?? raw) as Record<string, unknown>
     if (typeof o?.accessToken !== 'string' || !o.accessToken) return null
     return {
@@ -174,6 +184,8 @@ interface Candidate {
   isDefault?: boolean
   /** Lower = preferred within an identity group (local logins before WSL copies). */
   priority: number
+  /** Local logins only: the CLAUDE_CONFIG_DIR (null = default), for the macOS Keychain. */
+  keychainDir?: string | null
 }
 
 /**
@@ -200,7 +212,8 @@ async function enumerateSources(wake: boolean): Promise<{ sources: Source[]; sle
       accountId: acc.id,
       emailHint: acc.email,
       isDefault: acc.isDefault,
-      priority: 0
+      priority: 0,
+      keychainDir: dir || null
     })
   }
 
@@ -212,7 +225,8 @@ async function enumerateSources(wake: boolean): Promise<{ sources: Source[]; sle
         ? path.join(dir, '.credentials.json')
         : path.join(os.homedir(), '.claude', '.credentials.json'),
       claudeJsonPath: dir ? path.join(dir, '.claude.json') : path.join(os.homedir(), '.claude.json'),
-      priority: 1
+      priority: 1,
+      keychainDir: dir || null
     })
   }
 
@@ -262,7 +276,10 @@ async function enumerateSources(wake: boolean): Promise<{ sources: Source[]; sle
       envs: [...new Set(group.map((c) => c.env))],
       isDefault: group.some((c) => c.isDefault),
       accountIds: [...new Set(group.map((c) => c.accountId).filter((id): id is string => !!id))],
-      credsPaths: group.map((c) => c.credsPath)
+      credsPaths: group.map((c) => c.credsPath),
+      keychainDirs: [
+        ...new Set(group.filter((c) => c.keychainDir !== undefined).map((c) => c.keychainDir ?? null))
+      ]
     })
   }
   return { sources, sleeping }
@@ -321,6 +338,23 @@ function extractWindows(body: Record<string, unknown>): PlanWindow[] {
   return windows
 }
 
+async function keychainCreds(dir: string | null, cutoff: number): Promise<OauthCreds | null> {
+  const parse = (raw: string | null): OauthCreds | null => {
+    if (!raw) return null
+    try {
+      return parseCredentials(JSON.parse(raw) as Record<string, unknown>)
+    } catch {
+      return null
+    }
+  }
+  let creds = parse(await readClaudeKeychainCredentials(dir))
+  // An expired cached token: Claude Code may have rotated it since, re-read (rate-limited).
+  if (creds?.expiresAt && creds.expiresAt <= cutoff) {
+    creds = parse(await readClaudeKeychainCredentials(dir, { refresh: true })) ?? creds
+  }
+  return creds
+}
+
 // Fetch one account. Returns { entry, hitNetwork }: hitNetwork distinguishes an actual
 // HTTP request (which must be spaced out) from a cached/expired/backing-off short-circuit.
 async function fetchAccount(
@@ -346,6 +380,14 @@ async function fetchAccount(
   const all = src.credsPaths
     .map(readCredentialsFile)
     .filter((c): c is OauthCreds => !!c)
+  // macOS keeps Claude Code's login in the Keychain, not in .credentials.json. Read only
+  // here, right before a network call, so the "allow access" prompt stays rare.
+  if (process.platform === 'darwin' && all.length === 0) {
+    for (const dir of src.keychainDirs) {
+      const c = await keychainCreds(dir, cutoff)
+      if (c) all.push(c)
+    }
+  }
   if (all.length === 0) return { entry: failure(src, st, { status: 'no-credentials' }), hitNetwork: false }
   const freshest = (arr: OauthCreds[]) =>
     [...arr].sort((a, b) => (b.expiresAt ?? 0) - (a.expiresAt ?? 0))[0]
