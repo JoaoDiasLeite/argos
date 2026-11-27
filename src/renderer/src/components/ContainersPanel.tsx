@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { RemoteContainerList, RemoteContainerRow, RemoteContainerTarget } from '../types'
+import type { ContainerTabMode, RemoteContainerList, RemoteContainerRow, RemoteContainerTarget } from '../types'
 import { groupContainers, readStatus } from '../lib/container-groups'
 import { useT } from '../i18n'
+import { useLabs } from '../hooks/useLabs'
 import './ContainersPanel.css'
 
 /** Whose containers: a remote host's (over its SSH connection) or this computer's. */
@@ -17,8 +18,8 @@ interface Props {
   barSlot?: ReactNode
   /** The Servers screen's filter text. */
   query?: string
-  /** Opens a tab with a shell inside that container. */
-  onOpen: (container: RemoteContainerTarget, name: string) => void
+  /** Opens a tab on that container: a shell inside it, or its logs. */
+  onOpen: (container: RemoteContainerTarget, name: string, mode: ContainerTabMode) => void
   /** After each listing: whether a runtime answered or is installed, and how many
    *  containers it has. The Servers screen hides the section and its filter without one. */
   onState?: (state: { runtime: boolean; count: number }) => void
@@ -38,15 +39,36 @@ const StackIcon = () => (
   </svg>
 )
 
+// `>_`: a shell inside the container.
+const ShellIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M7 9l3 3-3 3" />
+    <path d="M13 15h4" />
+  </svg>
+)
+
+// A page with lines: the container's logs.
+const LogsIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+    <path d="M14 3v5h5" />
+    <path d="M9 13h6" />
+    <path d="M9 17h6" />
+  </svg>
+)
+
 /**
  * The containers of a remote host (the Remote Session's Containers pane) or of this computer
  * (a section of the Servers screen), laid out like Docker Desktop: one collapsible group per
  * compose project, with its running count, then the containers outside any project. Listed
- * when shown and on Refresh, no polling. A running one has a Shell button that opens it in a
- * tab of its own; the command is built in main from the validated id only.
+ * when shown and on Refresh, no polling. Each row ends in a small toolbar of icon buttons:
+ * a running one opens a shell in a tab of its own, and (experimental) any one opens its logs.
+ * The commands are built in main from the validated id only.
  */
 export default function ContainersPanel({ source, ready, barSlot, query, onOpen, onState }: Props) {
   const t = useT()
+  const labs = useLabs()
   const [result, setResult] = useState<RemoteContainerList | null>(null)
   const [loading, setLoading] = useState(false)
   const [runningOnly, setRunningOnly] = useState(false)
@@ -120,16 +142,36 @@ export default function ContainersPanel({ source, ready, barSlot, query, onOpen,
             ))}
           </div>
         </div>
-        {c.running && runtime ? (
-          <button
-            type="button"
-            className="btn-ghost small containers-shell"
-            disabled={!ready}
-            title={ready ? t('remote.containers.shellTitle', { name: c.name || c.id }) : t('remote.containers.notConnected')}
-            onClick={() => onOpen({ runtime, sudo: result?.sudo === true, id: c.id }, c.name || c.id)}
-          >
-            {t('remote.containers.shell')}
-          </button>
+        {runtime && (c.running || labs) ? (
+          <div className="ctr-actions" role="group" aria-label={t('remote.containers.actions', { name: c.name || c.id })}>
+            {c.running && (
+              <button
+                type="button"
+                className="ctr-action"
+                disabled={!ready}
+                title={ready ? t('remote.containers.openShell') : t('remote.containers.notConnected')}
+                aria-label={t('remote.containers.openShell')}
+                onClick={() => onOpen({ runtime, sudo: result?.sudo === true, id: c.id }, c.name || c.id, 'shell')}
+              >
+                <ShellIcon />
+              </button>
+            )}
+            {/* A stopped container's logs matter most (why it stopped), so this one shows
+                on every row, last so it lines up down the list; the shell only where
+                there is something to enter. */}
+            {labs && (
+              <button
+                type="button"
+                className="ctr-action"
+                disabled={!ready}
+                title={ready ? t('remote.containers.viewLogs') : t('remote.containers.notConnected')}
+                aria-label={t('remote.containers.viewLogs')}
+                onClick={() => onOpen({ runtime, sudo: result?.sudo === true, id: c.id }, c.name || c.id, 'logs')}
+              >
+                <LogsIcon />
+              </button>
+            )}
+          </div>
         ) : null}
       </div>
     )
