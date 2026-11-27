@@ -465,6 +465,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sftpHistory: (hostId: string) => ipcRenderer.invoke('sftp:history', hostId),
   remoteContainers: (hostId: string) => ipcRenderer.invoke('remote:containers', hostId),
   localContainers: () => ipcRenderer.invoke('local:containers'),
+  containerAction: (source: string | null, id: string, action: string) =>
+    ipcRenderer.invoke('containers:action', source, id, action),
+  composeAction: (source: string | null, project: string, action: string) =>
+    ipcRenderer.invoke('containers:compose-action', source, project, action),
+  containerStats: (source: string | null) => ipcRenderer.invoke('containers:stats', source),
 
   // Ops runs (docs/OPS_AGENT_PLAN.md): runbook preview, reports, ledger checks, and the
   // live ledger lines of a run for the timeline. The renderer never writes the ledger.
@@ -652,8 +657,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     hostId: string | null,
     cols: number,
     rows: number,
-    container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string }
-  ) => ipcRenderer.invoke('remote-shell:create', id, hostId, cols, rows, container),
+    container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string },
+    logs?: { follow: boolean; tail: '200' | '500' | '2000' | 'all'; timestamps: boolean }
+  ) => ipcRenderer.invoke('remote-shell:create', id, hostId, cols, rows, container, logs),
   remoteShellWrite: (id: string, data: string) => ipcRenderer.send('remote-shell:write', id, data),
   remoteShellResize: (id: string, cols: number, rows: number) =>
     ipcRenderer.send('remote-shell:resize', id, cols, rows),

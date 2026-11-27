@@ -12,7 +12,8 @@ import {
   SourceInfo,
   OpsRunbookInfo,
   OpsRunListItem,
-  type RemoteContainerTarget
+  type RemoteContainerTarget,
+  type ContainerTabMode
 } from '../types'
 import ContainersPanel, { type ContainerSource } from '../components/ContainersPanel'
 import PortForwardsEditor from '../components/PortForwardsEditor'
@@ -57,8 +58,8 @@ interface Props {
   openSshSessions?: string[]
   /** SSH host ids whose open sessions have all failed to connect. */
   failedSshSessions?: string[]
-  /** A local container's Shell: a tab with a shell inside it, on this computer. */
-  onOpenLocalContainer?: (container: RemoteContainerTarget, name: string) => void
+  /** A local container's Shell or Logs: a tab on it, on this computer. */
+  onOpenLocalContainer?: (container: RemoteContainerTarget, name: string, mode: ContainerTabMode) => void
 }
 
 /** Which screen the view is showing. SSH keys are a sub-screen behind the header's key
@@ -1409,7 +1410,7 @@ export default function RemoteView({
               source={LOCAL_SOURCE}
               ready
               query={q}
-              onOpen={(c, name) => onOpenLocalContainer?.(c, name)}
+              onOpen={(c, name, mode) => onOpenLocalContainer?.(c, name, mode)}
               onState={setLocal}
             />
           </div>

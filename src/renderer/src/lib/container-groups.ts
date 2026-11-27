@@ -85,3 +85,20 @@ export function readStatus(status: string): { text: string; tag?: string; tone?:
   if (exited && exited[1] !== '0') return { text: status, tone: 'bad' }
   return { text: status }
 }
+
+export type StatsTone = '' | 'warn' | 'bad'
+
+/** A running row's figures, warn above 80% CPU or memory and bad above 95%. CPU is a share
+ *  of one core, so a busy multi-core container reads past 100 and shows as bad. */
+export function statsTone(cpu: number | null, memPerc: number | null): StatsTone {
+  const top = Math.max(cpu ?? 0, memPerc ?? 0)
+  return top > 95 ? 'bad' : top > 80 ? 'warn' : ''
+}
+
+/** `CPU 3.2% · 245MiB / 7.6GiB`, or only the half that is known; null for neither. */
+export function statsLine(cpu: number | null, mem: string): string | null {
+  const parts: string[] = []
+  if (cpu !== null && Number.isFinite(cpu)) parts.push(`CPU ${cpu.toFixed(1)}%`)
+  if (mem) parts.push(mem)
+  return parts.length ? parts.join(' · ') : null
+}

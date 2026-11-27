@@ -153,6 +153,7 @@ import {
 } from './port-forwards'
 import { remoteContainers } from './remote-containers'
 import { localContainers } from './local-containers'
+import { composeAction, containerAction, containerStats } from './container-actions'
 import { listDistros, testDistro, testDistroClaude, runWslOneShot, uncToWslPath, wslHistory, wslHome, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths, wslShareRoot } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
 import { createLedger, RUN_LIST_MAX, type OpsLedger, type OpsReportKind } from './ops-audit'
@@ -3194,6 +3195,25 @@ ipcMain.handle('sftp:upload', (_, hostId: string, dir: string, localPaths?: stri
 ipcMain.handle('sftp:history', (_, hostId: string) => sftpHistory(hostId))
 ipcMain.handle('remote:containers', (_, hostId: string) => remoteContainers(hostId))
 ipcMain.handle('local:containers', () => localContainers())
+// Start / stop / restart a container or a compose project, and the running ones' CPU and
+// memory: experimental, refused with labs off whatever the renderer shows. The source is a
+// host id or null for this computer; main takes the runtime and sudo from its own last
+// listing of that source (container-actions.ts). Main window only, as an action may connect.
+ipcMain.handle('containers:action', (e, source: unknown, id: unknown, action: unknown) => {
+  if (e.sender !== mainWindow?.webContents) return { ok: false, error: 'not allowed' }
+  if (!labsActionAllowed(isLabsOn())) return { ok: false, reason: 'labs-off', error: t('main.labs.off') }
+  return containerAction(source, id, action)
+})
+ipcMain.handle('containers:compose-action', (e, source: unknown, project: unknown, action: unknown) => {
+  if (e.sender !== mainWindow?.webContents) return { ok: false, error: 'not allowed' }
+  if (!labsActionAllowed(isLabsOn())) return { ok: false, reason: 'labs-off', error: t('main.labs.off') }
+  return composeAction(source, project, action)
+})
+ipcMain.handle('containers:stats', (e, source: unknown) => {
+  if (e.sender !== mainWindow?.webContents) return { ok: false }
+  if (!labsActionAllowed(isLabsOn())) return { ok: false, reason: 'labs-off' }
+  return containerStats(source)
+})
 // The last session on the host closed: its tunnels go with the connection.
 ipcMain.handle('sftp:disconnect', (_, hostId: string) => {
   stopHostForwards(hostId)
@@ -3748,26 +3768,40 @@ ipcMain.handle(
 
 ipcMain.handle(
   'remote-shell:create',
-  (_, id: string, hostId: string | null, cols: number, rows: number, container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string }) =>
-    // No host: a container on this computer (the Servers screen's local containers).
-    hostId === null
-      ? localContainerShellCreate(
-          id,
-          cols,
-          rows,
-          (tid, data) => send('remote-shell:data', { id: tid, data }),
-          (tid, code) => send('remote-shell:exit', { id: tid, code }),
-          container
-        )
-      : remoteShellCreate(
-      id,
-      hostId,
-      cols,
-      rows,
-      (tid, data) => send('remote-shell:data', { id: tid, data }),
-      (tid, code) => send('remote-shell:exit', { id: tid, code }),
-      container
-    )
+  (
+    _,
+    id: string,
+    hostId: string | null,
+    cols: number,
+    rows: number,
+    container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string },
+    logs?: unknown
+  ) =>
+    // A container's logs tab is an experimental feature: refused with it off, whatever the
+    // renderer shows. Any logs argument at all counts, so it can never turn into a shell.
+    logs !== undefined && !labsActionAllowed(isLabsOn())
+      ? Promise.resolve({ ok: false, reason: 'labs-off' as const, error: t('main.labs.off') })
+      : // No host: a container on this computer (the Servers screen's local containers).
+        hostId === null
+        ? localContainerShellCreate(
+            id,
+            cols,
+            rows,
+            (tid, data) => send('remote-shell:data', { id: tid, data }),
+            (tid, code) => send('remote-shell:exit', { id: tid, code }),
+            container,
+            logs
+          )
+        : remoteShellCreate(
+            id,
+            hostId,
+            cols,
+            rows,
+            (tid, data) => send('remote-shell:data', { id: tid, data }),
+            (tid, code) => send('remote-shell:exit', { id: tid, code }),
+            container,
+            logs
+          )
 )
 ipcMain.on('remote-shell:write', (_, id: string, data: string) => remoteShellWrite(id, data))
 ipcMain.on('remote-shell:resize', (_, id: string, cols: number, rows: number) =>

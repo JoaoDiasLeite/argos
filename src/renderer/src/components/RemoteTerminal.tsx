@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import { TERMINAL_THEME } from './terminal-theme'
 import TerminalContextMenu, { terminalMenuItems } from './TerminalContextMenu'
@@ -9,7 +10,7 @@ import { registerCwdReports } from '../lib/terminal-cwd'
 import { registerTerminalLinks } from '../lib/terminal-links'
 import { useT } from '../i18n'
 import { useLabs } from '../hooks/useLabs'
-import type { RemoteContainerTarget, RemoteShellSecretHintEvent, SshHostPublic } from '../types'
+import type { ContainerLogsOptions, RemoteContainerTarget, RemoteShellSecretHintEvent, SshHostPublic } from '../types'
 import './ChatTerminal.css'
 
 /** Only flags: the renderer never holds a host's secrets. */
@@ -35,6 +36,11 @@ interface Props {
   onCwdChange?: (path: string) => void
   /** A container tab: the channel runs that container's shell instead of the login shell. */
   container?: RemoteContainerTarget
+  /** With `container`: a logs tab, which runs `<runtime> logs` with these options instead of
+   *  a shell. Changing them restarts the stream. Fixed as logs-or-not for the tab's life. */
+  logs?: ContainerLogsOptions
+  /** Bumped by the owner to re-run the channel (a logs tab's Restart in its header). */
+  restartSignal?: number
   /** The host's saved-secret flags, for the "Send password" and "Elevate" actions. Main
    *  picks and types the secret itself; these only decide which buttons show. */
   secrets?: SecretFlags | null
@@ -60,6 +66,10 @@ const MAX_FONT_SIZE = 22
 const STARTING_BACKSTOP_MS = 8000
 const REVEAL_PAINT_GRACE_MS = 120
 
+// `--tail all` (or 2000 long wrapped lines) needs far more than a shell's scrollback.
+const SHELL_SCROLLBACK = 5000
+const LOGS_SCROLLBACK = 50000
+
 function hasVisibleContent(term: Terminal): boolean {
   const buf = term.buffer.active
   for (let i = 0; i < term.rows; i++) {
@@ -74,7 +84,18 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function RemoteTerminal({ terminalId, hostId, active, closable = true, onClose, onCwdChange, container, secrets }: Props) {
+export default function RemoteTerminal({
+  terminalId,
+  hostId,
+  active,
+  closable = true,
+  onClose,
+  onCwdChange,
+  container,
+  logs,
+  restartSignal = 0,
+  secrets
+}: Props) {
   const t = useT()
   const labs = useLabs()
   // Read from the one-shot setup effect, which cannot close over a prop.
@@ -90,6 +111,30 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
   const idRef = useRef(terminalId)
   // Fixed for the tab's life; read by the create effect without making it a dependency.
   const containerRef = useRef(container)
+  // A logs tab or not, fixed at mount (the scrollback and the Ctrl+F binding depend on it).
+  const isLogsRef = useRef(logs !== undefined)
+  const isLogs = isLogsRef.current
+  // The current options, read by the create effect; logsKey is what makes it re-run.
+  const logsRef = useRef(logs)
+  logsRef.current = logs
+  const logsKey = logs ? `${logs.follow}|${logs.tail}|${logs.timestamps}` : ''
+  const searchRef = useRef<SearchAddon | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const searchOpenRef = useRef(false)
+  searchOpenRef.current = searchOpen
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchMiss, setSearchMiss] = useState(false)
+  // The key handler is set up once; it opens the search through this.
+  const openSearchRef = useRef<() => void>(() => {})
+  openSearchRef.current = () => {
+    setSearchOpen(true)
+    // Already open: just put the caret back in the box, with its text selected.
+    requestAnimationFrame(() => {
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    })
+  }
   const [exited, setExited] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [fontSize, setFontSize] = useState(loadFontSize)
@@ -111,11 +156,14 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
       cursorBlink: true,
       fontFamily: 'Menlo, Consolas, "Cascadia Code", "DejaVu Sans Mono", monospace',
       fontSize: loadFontSize(),
-      scrollback: 5000,
+      scrollback: isLogsRef.current ? LOGS_SCROLLBACK : SHELL_SCROLLBACK,
       theme: TERMINAL_THEME
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
+    const search = new SearchAddon()
+    term.loadAddon(search)
+    searchRef.current = search
     term.open(host)
     term.onData((d) => window.electronAPI.remoteShellWrite(idRef.current, d))
 
@@ -135,6 +183,8 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
     // Chromium's paste event never fires and leaving it to xterm pasted nothing. The
     // branch below calls preventDefault, which makes it the single path either way.
     term.onSelectionChange(() => {
+      // A search selects each match it finds: that is not the user copying.
+      if (searchOpenRef.current) return
       const sel = term.getSelection()
       if (sel) navigator.clipboard.writeText(sel).catch(() => {})
     })
@@ -156,6 +206,13 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
           // shell looks for it on another — refused, see clipboard:image-to-file.
           if (res.text) term.paste(res.text)
         })
+        return false
+      }
+      // Ctrl/Cmd+F: find, in a logs tab only. A shell keeps the key (less and vim page
+      // forward with it, readline moves the cursor); it has the bar's find button instead.
+      if (isLogsRef.current && mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        openSearchRef.current()
         return false
       }
 
@@ -258,6 +315,7 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
       term.dispose()
       termRef.current = null
       fitRef.current = null
+      searchRef.current = null
     }
   }, [])
 
@@ -341,9 +399,16 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
     })
     const offExit = window.electronAPI.onRemoteShellExit((e) => {
       if (e.id !== terminalId) return
-      setExited(true)
       setSecretHint(null)
       setSecretPanel(null)
+      // `logs` without -f (or of a stopped container) prints what there is and returns: the
+      // end of the output, not a failure. A quiet line, and the output stays readable.
+      if (isLogsRef.current && !e.code) {
+        setStarting(false)
+        term.write(`\r\n\x1b[2m[${tRef.current('remote.logs.end')}]\x1b[0m\r\n`)
+        return
+      }
+      setExited(true)
       term.write(
         `\r\n\x1b[2m[${e.code ? tRef.current('remote.terminal.closedCode', { code: e.code }) : tRef.current('remote.terminal.closed')}]\x1b[0m\r\n`
       )
@@ -356,13 +421,19 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
     // Set by the cleanup: a create still connecting when the effect tears down is killed in
     // main and resolves as a failure — that's not an error to paint into the terminal.
     let disposed = false
-    window.electronAPI.remoteShellCreate(terminalId, hostId, cols, rows, containerRef.current).then((res) => {
+    window.electronAPI.remoteShellCreate(terminalId, hostId, cols, rows, containerRef.current, logsRef.current).then((res) => {
       if (disposed) return
       if (!res.ok) {
         term.write(
           `\r\n\x1b[31m${res.error ? tRef.current('remote.terminal.startFailedWhy', { error: res.error }) : tRef.current('remote.terminal.startFailed')}\x1b[0m\r\n`
         )
         setStarting(false)
+        return
+      }
+      // A logs stream may have nothing to print yet (an empty or quiet container): there is
+      // no prompt to wait for, so the loader lifts straight away.
+      if (isLogsRef.current) {
+        reveal()
         return
       }
       // The PTY is up but nothing gets typed into it — just arm the reveal gate so the
@@ -380,7 +451,25 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
       offHint()
       window.electronAPI.remoteShellKill(terminalId)
     }
-  }, [terminalId, hostId, reloadKey])
+  }, [terminalId, hostId, reloadKey, logsKey, restartSignal])
+
+  // Find in the terminal (@xterm/addon-search). Each match is selected and scrolled into
+  // view; copy-on-select stays off while the box is open.
+  const find = (query: string, backwards: boolean): void => {
+    const search = searchRef.current
+    if (!search || !query) {
+      setSearchMiss(false)
+      return
+    }
+    const found = backwards ? search.findPrevious(query) : search.findNext(query, { incremental: false })
+    setSearchMiss(!found)
+  }
+  const closeSearch = (): void => {
+    setSearchOpen(false)
+    setSearchMiss(false)
+    termRef.current?.clearSelection()
+    termRef.current?.focus()
+  }
 
   // A refusal note clears itself; the confirmation waits for an answer.
   useEffect(() => {
@@ -481,15 +570,30 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
             </button>
           </div>
           <button
-            className="btn-ghost small"
-            onClick={() => {
-              window.electronAPI.remoteShellKill(terminalId)
-              setReloadKey((k) => k + 1)
-            }}
-            title={t('remote.terminal.restartTitle')}
+            className={`chat-terminal-btn${searchOpen ? ' is-on' : ''}`}
+            onClick={() => (searchOpen ? closeSearch() : openSearchRef.current())}
+            title={isLogs ? `${t('remote.terminal.findTitle')} (Ctrl+F)` : t('remote.terminal.findTitle')}
+            aria-label={t('remote.terminal.findTitle')}
+            aria-pressed={searchOpen}
           >
-            {t('remote.terminal.restart')}
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
           </button>
+          {/* A logs tab restarts from its header, with its options. */}
+          {!isLogs && (
+            <button
+              className="btn-ghost small"
+              onClick={() => {
+                window.electronAPI.remoteShellKill(terminalId)
+                setReloadKey((k) => k + 1)
+              }}
+              title={t('remote.terminal.restartTitle')}
+            >
+              {t('remote.terminal.restart')}
+            </button>
+          )}
           {closable && (
             <button className="chat-terminal-btn" onClick={onClose} title={t('remote.terminal.close')} aria-label={t('remote.terminal.close')}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
@@ -501,6 +605,58 @@ export default function RemoteTerminal({ terminalId, hostId, active, closable = 
       </div>
       <div className="chat-terminal-host-wrap">
         <div ref={hostRef} className="chat-terminal-host" />
+        {searchOpen && (
+          <div className="chat-terminal-search" role="search">
+            <input
+              ref={searchInputRef}
+              className={searchMiss ? 'miss' : ''}
+              autoFocus
+              value={searchQuery}
+              placeholder={t('remote.terminal.findPlaceholder')}
+              aria-label={t('remote.terminal.findTitle')}
+              spellCheck={false}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                // Typing searches from where the last match was, so the match grows in place.
+                const search = searchRef.current
+                if (!search || !e.target.value) {
+                  setSearchMiss(false)
+                  termRef.current?.clearSelection()
+                  return
+                }
+                setSearchMiss(!search.findNext(e.target.value, { incremental: true }))
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  closeSearch()
+                } else if (e.key === 'Enter') {
+                  e.preventDefault()
+                  find(searchQuery, e.shiftKey)
+                } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+                  e.preventDefault()
+                  e.currentTarget.select()
+                }
+              }}
+            />
+            {searchMiss && <span className="chat-terminal-search-miss">{t('remote.terminal.findNone')}</span>}
+            <button className="chat-terminal-btn" onClick={() => find(searchQuery, true)} disabled={!searchQuery} title={t('remote.terminal.findPrev')} aria-label={t('remote.terminal.findPrev')}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M18 15l-6-6-6 6" />
+              </svg>
+            </button>
+            <button className="chat-terminal-btn" onClick={() => find(searchQuery, false)} disabled={!searchQuery} title={t('remote.terminal.findNext')} aria-label={t('remote.terminal.findNext')}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+            <button className="chat-terminal-btn" onClick={closeSearch} title={t('remote.terminal.findClose')} aria-label={t('remote.terminal.findClose')}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        )}
         {secretPanel === 'confirm' && (
           <div className="chat-terminal-secret-pop" role="alertdialog" aria-label={t('remote.terminal.sendSecret')}>
             <p>{t('remote.terminal.secretNoPrompt')}</p>

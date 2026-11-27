@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { RemoteTarget, type HostSecretFlags, type RemoteContainerTarget, type VpnDownInfo } from '../types'
+import { RemoteTarget, type ContainerTabMode, type HostSecretFlags, type RemoteContainerTarget, type VpnDownInfo } from '../types'
 import ChatTerminal from '../components/ChatTerminal'
 import RemoteTerminal from '../components/RemoteTerminal'
 import SftpBrowser from '../components/SftpBrowser'
@@ -32,8 +32,8 @@ interface Props {
    *  Remote & WSL list's status dots reflect what actually happened — an open tab is not
    *  evidence a host is reachable, since the connection may have been refused. */
   onStatusChange?: (status: 'connecting' | 'connected' | 'error') => void
-  /** The Containers pane's Shell: a tab of its own on that container (App.tsx). */
-  onOpenContainer?: (container: RemoteContainerTarget, name: string) => void
+  /** The Containers pane's Shell or Logs: a tab of its own on that container (App.tsx). */
+  onOpenContainer?: (container: RemoteContainerTarget, name: string, mode: ContainerTabMode) => void
 }
 
 interface RunLogEntry {
@@ -472,9 +472,11 @@ export default function RemoteSessionView({ target, seq, active, onBack, onStatu
           {panel === 'containers' && isSsh ? (
             <ContainersPanel
               source={{ kind: 'host', hostId: target.host.id }}
+              serverName={target.host.name}
+              production={target.host.production === true}
               ready={status === 'connected'}
               barSlot={paneSwitch}
-              onOpen={(c, name) => onOpenContainer?.(c, name)}
+              onOpen={(c, name, mode) => onOpenContainer?.(c, name, mode)}
             />
           ) : panel === 'files' ? (
             isSsh ? (

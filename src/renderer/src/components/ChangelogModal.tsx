@@ -18,9 +18,22 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '3.12.0',
+    date: '2026-11-27',
+    tag: 'latest',
+    sections: [
+      {
+        title: 'Remote',
+        items: [
+          'Container rows have a small toolbar of icon buttons: the Shell text button is now a >_ icon, still shown on running containers only.',
+          'Remote terminals and container shells have a find button in their bar, with next, previous and Esc to close.'
+        ]
+      }
+    ]
+  },
+  {
     version: '3.11.0',
     date: '2026-11-25',
-    tag: 'latest',
     sections: [
       {
         title: 'macOS',

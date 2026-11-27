@@ -12,6 +12,9 @@ export interface ServerTabItem {
   title: string
   /** The target is a host marked as production: its tab carries a red underline. */
   production?: boolean
+  /** What this one session is, when the group's title alone does not say (a container's
+   *  logs tab): shown after the title, "<title> · <suffix>". */
+  suffix?: string
 }
 
 type SessionStatus = 'connecting' | 'connected' | 'error'
@@ -177,7 +180,10 @@ function GroupTab({
               role="menuitem"
               tabIndex={0}
             >
-              <span>{t('remote.tabs.session', { n: i + 1 })}</span>
+              <span>
+                {t('remote.tabs.session', { n: i + 1 })}
+                {s.suffix ? ` · ${s.suffix}` : ''}
+              </span>
               <button
                 type="button"
                 className="server-tab-close"
@@ -234,6 +240,7 @@ export default function ServerTabs({ sessions, statuses = {}, activeId, onSelect
           >
             <StatusDot status={statuses[g.sessions[0].id]} />
             <span className="server-tab-title">{g.title}</span>
+            {g.sessions[0].suffix && <span className="server-tab-suffix">· {g.sessions[0].suffix}</span>}
             {g.production && <span className="prod-pill small">{t('remote.prod.pillShort')}</span>}
             <button
               type="button"

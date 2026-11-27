@@ -1005,6 +1005,17 @@ export interface RemoteContainerTarget {
   id: string
 }
 
+/** What a container tab runs: a shell inside it, or its logs. */
+export type ContainerTabMode = 'shell' | 'logs'
+
+/** A logs tab's options. Main checks the tail against this same fixed list. */
+export type ContainerLogTail = '200' | '500' | '2000' | 'all'
+export interface ContainerLogsOptions {
+  follow: boolean
+  tail: ContainerLogTail
+  timestamps: boolean
+}
+
 export interface RemoteContainerList {
   ok: boolean
   error?: string
@@ -1015,6 +1026,19 @@ export interface RemoteContainerList {
   notRunning?: boolean
   containers?: RemoteContainerRow[]
 }
+
+/** What a container or a compose project can be asked to do. */
+export type ContainerAction = 'start' | 'stop' | 'restart'
+
+export type ContainerActionResult = { ok: true } | { ok: false; error: string; reason?: 'labs-off' | 'unsupported' }
+
+/** One running container's figures. `cpu` is percent of one CPU, so it can pass 100. */
+export interface ContainerStatsRow {
+  cpu: number | null
+  mem: string
+  memPerc: number | null
+}
+export type ContainerStatsResult = { ok: true; stats: Record<string, ContainerStatsRow> } | { ok: false; reason?: 'labs-off' }
 
 export type AuthMode = 'claude-code' | 'api-key'
 
@@ -2055,6 +2079,13 @@ declare global {
       remoteContainers: (hostId: string) => Promise<RemoteContainerList>
       /** This computer's docker (or podman) containers, for the Servers screen. */
       localContainers: () => Promise<RemoteContainerList>
+      /** Experimental: start, stop or restart one container. `source` is a host id, or null
+       *  for this computer; main takes the runtime and sudo from its own last listing. */
+      containerAction: (source: string | null, id: string, action: ContainerAction) => Promise<ContainerActionResult>
+      /** Experimental: the same for a whole compose project, by its name. */
+      composeAction: (source: string | null, project: string, action: ContainerAction) => Promise<ContainerActionResult>
+      /** Experimental: the running containers' CPU and memory, keyed by listed id. */
+      containerStats: (source: string | null) => Promise<ContainerStatsResult>
 
       // Ops runs
       /** `onBase`: the runbook as it runs added to the base intervention. */
@@ -2288,14 +2319,17 @@ declare global {
 
       // Remote shell (Remote Session SSH terminal, over the SFTP connection)
       /** `container`: run that container's shell (`exec -it`) instead of the login shell.
-       *  A null host is this computer: then `container` is required and runs on a local pty. */
+       *  A null host is this computer: then `container` is required and runs on a local pty.
+       *  `logs` (with `container`): run `<runtime> logs` instead, an experimental feature
+       *  that main refuses with them off (`labs-off`). */
       remoteShellCreate: (
         id: string,
         hostId: string | null,
         cols: number,
         rows: number,
-        container?: RemoteContainerTarget
-      ) => Promise<{ ok: boolean; error?: string }>
+        container?: RemoteContainerTarget,
+        logs?: ContainerLogsOptions
+      ) => Promise<{ ok: boolean; error?: string; reason?: 'labs-off' }>
       remoteShellWrite: (id: string, data: string) => void
       remoteShellResize: (id: string, cols: number, rows: number) => void
       remoteShellKill: (id: string) => Promise<{ ok: boolean }>

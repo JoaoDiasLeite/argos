@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupContainers, readStatus } from './container-groups'
+import { groupContainers, readStatus, statsLine, statsTone } from './container-groups'
 import type { RemoteContainerRow } from '../types'
 
 const row = (id: string, name: string, running: boolean, project?: string, service?: string): RemoteContainerRow => ({
@@ -57,5 +57,24 @@ describe('readStatus', () => {
     expect(readStatus('Exited (1) 3 days ago')).toEqual({ text: 'Exited (1) 3 days ago', tone: 'bad' })
     expect(readStatus('Exited (0) 3 days ago')).toEqual({ text: 'Exited (0) 3 days ago' })
     expect(readStatus('Up 5 days')).toEqual({ text: 'Up 5 days' })
+  })
+})
+
+describe('statsTone / statsLine', () => {
+  it('warns above 80 and flags above 95, on CPU or memory', () => {
+    expect(statsTone(3.2, 10)).toBe('')
+    expect(statsTone(80, 80)).toBe('')
+    expect(statsTone(80.1, 1)).toBe('warn')
+    expect(statsTone(1, 90)).toBe('warn')
+    expect(statsTone(95.5, 1)).toBe('bad')
+    expect(statsTone(180, null)).toBe('bad')
+    expect(statsTone(null, null)).toBe('')
+  })
+
+  it('writes the line from what is known', () => {
+    expect(statsLine(3.21, '245MiB / 7.6GiB')).toBe('CPU 3.2% · 245MiB / 7.6GiB')
+    expect(statsLine(null, '245MiB / 7.6GiB')).toBe('245MiB / 7.6GiB')
+    expect(statsLine(0, '')).toBe('CPU 0.0%')
+    expect(statsLine(null, '')).toBeNull()
   })
 })

@@ -90,7 +90,7 @@ import { SESSION_DRAG_TYPE, type DropPlan } from './lib/pane-drop'
 // of statically imported. That keeps their code — and the vendor libraries
 // they alone pull in — out of the initial renderer chunk. See the Suspense
 // fallback (`ViewLoading`) rendered while each view's chunk is fetched.
-import { SshHostPublic, RemoteTarget, type RemoteContainerTarget } from './types'
+import { SshHostPublic, RemoteTarget, type ContainerTabMode, type RemoteContainerTarget } from './types'
 import { useT } from './i18n'
 import { useLabs } from './hooks/useLabs'
 import { NEW_CHAT_NAME, chatDisplayName } from './lib/chat-name'
@@ -223,8 +223,8 @@ interface ServerSession {
   seq: number
   /** A container's own tab (opened from a session's Containers pane, or the Servers
    *  screen's local containers): its group is the container, its target the host whose SSH
-   *  connection it rides, or this computer. */
-  container?: { target: RemoteContainerTarget; name: string }
+   *  connection it rides, or this computer. `mode`: a shell inside it, or its logs. */
+  container?: { target: RemoteContainerTarget; name: string; mode: ContainerTabMode }
 }
 function serverGroupKey(target: RemoteTarget): string {
   return target.kind === 'ssh' ? `srv:ssh:${target.host.id}` : `srv:wsl:${target.distro}`
@@ -2327,16 +2327,16 @@ export default function App() {
     setActiveServerSessionId(id)
     setView('remote-session')
   }
-  /** The Containers pane's Shell: always a new tab, grouped with any other on that
-   *  container (so its title is the container, not the host). A null host is this
-   *  computer (the Servers screen's local containers). */
-  const openContainerSession = (host: SshHostPublic | null, container: RemoteContainerTarget, name: string) => {
+  /** The Containers pane's Shell or Logs: always a new tab, grouped with any other on that
+   *  container (so its title is the container, not the host), shells and logs alike. A
+   *  null host is this computer (the Servers screen's local containers). */
+  const openContainerSession = (host: SshHostPublic | null, container: RemoteContainerTarget, name: string, mode: ContainerTabMode) => {
     const groupKey = `srv:ctr:${host ? host.id : 'local'}:${container.id}`
     const seq = (seqCounterRef.current[groupKey] ?? 0) + 1
     seqCounterRef.current[groupKey] = seq
     const id = `${groupKey}#${seq}`
     const target: ServerTarget = host ? { kind: 'ssh', host } : { kind: 'local' }
-    const session: ServerSession = { id, groupKey, target, title: name, seq, container: { target: container, name } }
+    const session: ServerSession = { id, groupKey, target, title: name, seq, container: { target: container, name, mode } }
     setServerSessions((prev) => [...prev, session])
     setActiveServerSessionId(id)
     setView('remote-session')
@@ -2387,13 +2387,20 @@ export default function App() {
   // included) gets its red marker. Read from the host as it was when the session opened.
   const serverTabItems = serverSessions.map((s) => ({
     ...s,
-    production: labs && s.target.kind === 'ssh' && !!s.target.host.production
+    production: labs && s.target.kind === 'ssh' && !!s.target.host.production,
+    // A logs tab reads "<name> · logs", so it is not taken for a shell on the container.
+    suffix: s.container?.mode === 'logs' ? t('remote.containers.logsSuffix') : undefined
   }))
   const addToTabGroup = (groupKey: string) => {
     const session = serverSessions.find((s) => s.groupKey === groupKey)
     if (!session) return
     if (session.container) {
-      openContainerSession(session.target.kind === 'ssh' ? session.target.host : null, session.container.target, session.container.name)
+      openContainerSession(
+        session.target.kind === 'ssh' ? session.target.host : null,
+        session.container.target,
+        session.container.name,
+        session.container.mode
+      )
     } else if (session.target.kind !== 'local') {
       openServerSession(session.target, true)
     }
@@ -3149,7 +3156,7 @@ export default function App() {
                 openWslSessions={serverSessions.flatMap((s) => (s.target.kind === 'wsl' ? [s.target.distro] : []))}
                 openSshSessions={connectedSshHosts}
                 failedSshSessions={failedSshHosts}
-                onOpenLocalContainer={(c, name) => openContainerSession(null, c, name)}
+                onOpenLocalContainer={(c, name, mode) => openContainerSession(null, c, name, mode)}
               />
             )}
           </Suspense>
@@ -3225,6 +3232,7 @@ export default function App() {
                     host={s.target.kind === 'ssh' ? s.target.host : null}
                     container={s.container.target}
                     name={s.container.name}
+                    mode={s.container.mode}
                     seq={s.seq}
                     active={view === 'remote-session' && s.id === activeServerSessionId}
                     onBack={() => setView('remote')}
@@ -3241,8 +3249,8 @@ export default function App() {
                     onStatusChange={(st) =>
                       setServerSessionStatus((prev) => (prev[s.id] === st ? prev : { ...prev, [s.id]: st }))
                     }
-                    onOpenContainer={(c, name) => {
-                      if (s.target.kind === 'ssh') openContainerSession(s.target.host, c, name)
+                    onOpenContainer={(c, name, mode) => {
+                      if (s.target.kind === 'ssh') openContainerSession(s.target.host, c, name, mode)
                     }}
                   />
                 )}
