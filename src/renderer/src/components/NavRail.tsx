@@ -1,4 +1,5 @@
 import { plural, type MessageKey } from '../../../shared/i18n'
+import type { NavItemId } from '../../../shared/nav-items'
 import { useT } from '../i18n'
 import './NavRail.css'
 
@@ -59,6 +60,9 @@ interface Props {
   opsRunningCount?: number
   /** One of them is waiting on an approval: the pip turns to the warning colour. */
   opsNeedsYou?: boolean
+  /** Entries switched off in Settings → General (ui.hiddenNavItems). Their views stay
+      reachable from the command palette and deep links; only the button goes. */
+  hidden?: readonly NavItemId[]
 }
 
 const ICONS: Record<string, JSX.Element> = {
@@ -141,20 +145,34 @@ export const VIEW_GROUPS: ViewGroup[] = [
 ]
 
 // A rail entry is either a standalone view or a group of views. Groups use the
-// icon of their first member.
+// icon of their first member. `id` is what Settings → General hides it under; typed
+// as NavItemId so the rail and the stored list cannot drift apart.
 type RailEntry =
-  | { kind: 'single'; view: View; label: MessageKey }
-  | { kind: 'group'; group: ViewGroup }
+  | { kind: 'single'; id: NavItemId; view: View; label: MessageKey }
+  | { kind: 'group'; id: NavItemId; group: ViewGroup }
 
 const RAIL: RailEntry[] = [
-  { kind: 'single', view: 'home', label: 'sidebar.nav.home' },
-  { kind: 'single', view: 'chat', label: 'sidebar.nav.chat' },
-  { kind: 'single', view: 'projects', label: 'sidebar.nav.projects' },
-  { kind: 'single', view: 'planner', label: 'sidebar.nav.planner' },
-  { kind: 'single', view: 'companion', label: 'sidebar.nav.companion' },
-  { kind: 'single', view: 'usage', label: 'sidebar.nav.usage' },
-  { kind: 'group', group: VIEW_GROUPS[0] }
+  { kind: 'single', id: 'home', view: 'home', label: 'sidebar.nav.home' },
+  { kind: 'single', id: 'chat', view: 'chat', label: 'sidebar.nav.chat' },
+  { kind: 'single', id: 'projects', view: 'projects', label: 'sidebar.nav.projects' },
+  { kind: 'single', id: 'planner', view: 'planner', label: 'sidebar.nav.planner' },
+  { kind: 'single', id: 'companion', view: 'companion', label: 'sidebar.nav.companion' },
+  { kind: 'single', id: 'usage', view: 'usage', label: 'sidebar.nav.usage' },
+  { kind: 'group', id: 'servers', group: VIEW_GROUPS[0] }
 ]
+
+/** The rail's entries in order, for the show/hide toggles in Settings → General. */
+export const RAIL_ITEMS: { id: NavItemId; label: MessageKey }[] = RAIL.map((e) => ({
+  id: e.id,
+  label: e.kind === 'single' ? e.label : e.group.label
+}))
+
+/** Where the app should open when Home is hidden: the first entry still on the rail. */
+export function firstVisibleView(hidden: readonly string[] | undefined): View {
+  const entry = RAIL.find((e) => !hidden?.includes(e.id))
+  if (!entry) return 'home'
+  return entry.kind === 'single' ? entry.view : entry.group.members[0]
+}
 
 export default function NavRail({
   view,
@@ -165,13 +183,14 @@ export default function NavRail({
   attentionCount = 0,
   opsRunningCount = 0,
   opsNeedsYou = false,
-  chatListHidden = false
+  chatListHidden = false,
+  hidden
 }: Props) {
   const t = useT()
   return (
     <div className="nav-rail">
       <div className="nav-items">
-        {RAIL.map((entry) => {
+        {RAIL.filter((entry) => !hidden?.includes(entry.id)).map((entry) => {
           if (entry.kind === 'single') {
             return (
               <button

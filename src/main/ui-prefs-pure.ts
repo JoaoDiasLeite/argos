@@ -9,6 +9,7 @@
 // file I/O.
 
 import { isLanguage, type Language } from '../shared/i18n'
+import { sanitizeHiddenNavItems, type NavItemId } from '../shared/nav-items'
 
 /** One side of the appearance model: everything that can differ between light and dark. */
 export interface ThemeSettings {
@@ -71,6 +72,9 @@ export interface UiPrefs {
   codeFontSize?: number
   /** UI language. Absent means English, which is what every older config says. */
   language?: Language
+  /** Nav rail entries the user switched off (Settings → General). Absent or empty means
+   *  every entry shows. The views stay reachable from the command palette and deep links. */
+  hiddenNavItems?: NavItemId[]
 }
 
 /**
@@ -154,6 +158,11 @@ export function migrateUiPrefs(ui: UiPrefs): UiPrefs {
   if (typeof next.showWeekPlanner !== 'boolean') next.showWeekPlanner = false
   // Absent stays absent (= English); only a value no build ever wrote is dropped.
   if ('language' in next && !isLanguage(next.language)) delete next.language
+  if ('hiddenNavItems' in next) {
+    const hidden = sanitizeHiddenNavItems(next.hiddenNavItems)
+    if (hidden.length) next.hiddenNavItems = hidden
+    else delete next.hiddenNavItems
+  }
   if (!next.light) next.light = { palette: ui.palette }
   if (!next.dark) next.dark = { palette: ui.palette }
   return next
@@ -257,6 +266,12 @@ export function applyUiPatch(current: UiPrefs, patch: UiPrefsPatch, systemPrefer
     if (isLanguage(value)) next.language = value
     else if (value === undefined || value === null || base.language === undefined) delete next.language
     else next.language = base.language
+  }
+  if ('hiddenNavItems' in patch) {
+    // The whole list is sent each time, so this replaces rather than merges.
+    const hidden = sanitizeHiddenNavItems(patch.hiddenNavItems)
+    if (hidden.length) next.hiddenNavItems = hidden
+    else delete next.hiddenNavItems
   }
 
   return resolveUiPrefs(next, systemPrefersDark)

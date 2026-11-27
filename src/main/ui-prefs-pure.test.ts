@@ -295,3 +295,31 @@ describe('language', () => {
     expect(applyUiPatch(start, { density: 'comfortable' }, false).language).toBe('pt-PT')
   })
 })
+
+describe('hidden nav rail entries', () => {
+  it('stores known ids once, in rail order', () => {
+    const next = applyUiPatch(LEGACY, { hiddenNavItems: ['usage', 'home', 'usage'] }, false)
+    expect(next.hiddenNavItems).toEqual(['home', 'usage'])
+  })
+
+  it('drops ids no rail entry has, Settings included', () => {
+    const patch = { hiddenNavItems: ['planner', 'settings', 'nope'] } as unknown as Parameters<typeof applyUiPatch>[1]
+    expect(applyUiPatch(LEGACY, patch, false).hiddenNavItems).toEqual(['planner'])
+  })
+
+  it('replaces the list rather than merging it, and goes absent when empty', () => {
+    const start = applyUiPatch(LEGACY, { hiddenNavItems: ['home', 'usage'] }, false)
+    expect(applyUiPatch(start, { hiddenNavItems: ['usage'] }, false).hiddenNavItems).toEqual(['usage'])
+    expect('hiddenNavItems' in applyUiPatch(start, { hiddenNavItems: [] }, false)).toBe(false)
+  })
+
+  it('keeps the list when the patch does not name it', () => {
+    const start = applyUiPatch(LEGACY, { hiddenNavItems: ['companion'] }, false)
+    expect(applyUiPatch(start, { density: 'compact' }, false).hiddenNavItems).toEqual(['companion'])
+  })
+
+  it('cleans a malformed stored value on migration', () => {
+    const bad = { ...LEGACY, hiddenNavItems: 'home' } as unknown as UiPrefs
+    expect('hiddenNavItems' in migrateUiPrefs(bad)).toBe(false)
+  })
+})

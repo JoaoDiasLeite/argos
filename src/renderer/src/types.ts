@@ -1,4 +1,5 @@
 import type { Language } from '../../shared/i18n'
+import type { NavItemId } from '../../shared/nav-items'
 import type {
   ExportCandidates,
   ExportRequest,
@@ -200,6 +201,8 @@ export interface UiPrefs {
   codeFontSize?: number
   /** UI language. Absent means English. */
   language?: Language
+  /** Nav rail entries switched off in Settings → General. Absent means all show. */
+  hiddenNavItems?: NavItemId[]
 }
 
 /**

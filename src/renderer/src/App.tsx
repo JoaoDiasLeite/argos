@@ -26,7 +26,7 @@ import ArgosMark from './components/ArgosMark'
 import ResizeHandles from './components/ResizeHandles'
 import PaneGrid from './components/PaneGrid'
 import { SessionPaneApi } from './hooks/useSessionPane'
-import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, groupOwnsView } from './components/NavRail'
+import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, firstVisibleView, groupOwnsView } from './components/NavRail'
 import ServerTabs from './components/ServerTabs'
 import ApprovalModal from './components/ApprovalModal'
 import SecretPrompt from './components/SecretPrompt'
@@ -685,6 +685,11 @@ export default function App() {
       setDefaultModel(config.defaultModel)
       setUi(config.ui)
       applyUi(config.ui)
+      // Home switched off in the rail: open on the first entry still there instead.
+      // Functional, so a deep link that already moved the view is left alone.
+      if (config.ui.hiddenNavItems?.includes('home')) {
+        setView((v) => (v === 'home' ? firstVisibleView(config.ui.hiddenNavItems) : v))
+      }
       // No auto-created blank draft: with no saved chats the main area shows the
       // welcome pane until the user explicitly starts one.
       // Restore whatever pane layout was persisted, filtered to sessions that still
@@ -2876,6 +2881,7 @@ export default function App() {
           opsRunningCount={opsSummary.count}
           opsNeedsYou={opsSummary.needsYou}
           chatListHidden={sidebarCollapsed}
+          hidden={ui?.hiddenNavItems}
         />
 
       {view === 'chat' && (
