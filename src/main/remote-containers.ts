@@ -6,6 +6,7 @@ import {
   type RemoteContainer
 } from './remote-containers-pure'
 import { t } from './i18n'
+import { rememberListing } from './container-listings'
 
 /**
  * The Remote Session's Containers pane: lists a host's docker (or podman) containers over
@@ -27,15 +28,29 @@ export interface ContainerListResult {
 
 const TIMEOUT_MS = 20000
 const MAX_OUTPUT = 1024 * 1024
+const MAX_STDERR = 16 * 1024
 
-function runExec(hostId: string, command: string): Promise<{ ok: true; stdout: string } | { ok: false; error: string }> {
+/** What one exec on the host came back with. `code` is null when the channel closed
+ *  without an exit status (a dropped connection). */
+export type ExecStatus =
+  | { ok: true; code: number | null; stdout: string; stderr: string }
+  | { ok: false; error: string; timedOut?: boolean }
+
+/**
+ * Runs one command on an exec channel of the host's shared connection, with no pty, and
+ * reports its exit code, stdout and stderr (each capped). Gives up after `timeoutMs`, closing
+ * the channel; whatever the command started on the host may still be going on.
+ */
+export function runExecStatus(hostId: string, command: string, timeoutMs: number): Promise<ExecStatus> {
   return getRemoteClient(hostId, { interactive: true }).then((res) => {
     if (!res.ok) return { ok: false as const, error: res.error }
-    return new Promise((resolve) => {
+    return new Promise<ExecStatus>((resolve) => {
       let done = false
       let stdout = ''
+      let stderr = ''
+      let code: number | null = null
       let channel: { close: () => void } | null = null
-      const finish = (r: { ok: true; stdout: string } | { ok: false; error: string }) => {
+      const finish = (r: ExecStatus) => {
         if (done) return
         done = true
         clearTimeout(timer)
@@ -46,7 +61,7 @@ function runExec(hostId: string, command: string): Promise<{ ok: true; stdout: s
         }
         resolve(r)
       }
-      const timer = setTimeout(() => finish({ ok: false, error: t('main.containers.timedOut') }), TIMEOUT_MS)
+      const timer = setTimeout(() => finish({ ok: false, error: t('main.containers.timedOut'), timedOut: true }), timeoutMs)
       try {
         res.conn.exec(command, (err, stream) => {
           if (err) return finish({ ok: false, error: err.message })
@@ -63,11 +78,16 @@ function runExec(hostId: string, command: string): Promise<{ ok: true; stdout: s
           channel = stream
           stream.on('data', (d: Buffer) => {
             stdout += d.toString('utf8')
-            if (stdout.length > MAX_OUTPUT) finish({ ok: true, stdout: stdout.slice(0, MAX_OUTPUT) })
+            if (stdout.length > MAX_OUTPUT) finish({ ok: true, code, stdout: stdout.slice(0, MAX_OUTPUT), stderr })
           })
-          // Drained so the channel never stalls on a full stderr window; not shown.
-          stream.stderr?.on('data', () => {})
-          stream.on('close', () => finish({ ok: true, stdout }))
+          // Read, and kept short, so the channel never stalls on a full stderr window.
+          stream.stderr?.on('data', (d: Buffer) => {
+            stderr = (stderr + d.toString('utf8')).slice(-MAX_STDERR)
+          })
+          stream.on('exit', (c: number | null) => {
+            code = typeof c === 'number' ? c : null
+          })
+          stream.on('close', () => finish({ ok: true, code, stdout, stderr }))
         })
       } catch (e) {
         finish({ ok: false, error: e instanceof Error ? e.message : String(e) })
@@ -76,12 +96,22 @@ function runExec(hostId: string, command: string): Promise<{ ok: true; stdout: s
   })
 }
 
+/** The listing's exec: only stdout matters, the script itself reports how it went. */
+async function runExec(hostId: string, command: string): Promise<{ ok: true; stdout: string } | { ok: false; error: string }> {
+  const r = await runExecStatus(hostId, command, TIMEOUT_MS)
+  return r.ok ? { ok: true, stdout: r.stdout } : { ok: false, error: r.error }
+}
+
 export async function remoteContainers(hostId: string): Promise<ContainerListResult> {
   if (typeof hostId !== 'string' || !hostId) return { ok: false, error: t('main.ssh.hostNotFound') }
   try {
     const res = await runExec(hostId, listContainersCommand())
-    if (!res.ok) return { ok: false, error: res.error }
+    if (!res.ok) {
+      rememberListing(hostId, null)
+      return { ok: false, error: res.error }
+    }
     const listing = parseContainerListing(res.stdout)
+    rememberListing(hostId, listing.kind === 'list' ? listing : null)
     switch (listing.kind) {
       case 'none':
         return { ok: true, runtime: null, containers: [] }

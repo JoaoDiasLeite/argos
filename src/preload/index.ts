@@ -465,6 +465,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sftpHistory: (hostId: string) => ipcRenderer.invoke('sftp:history', hostId),
   remoteContainers: (hostId: string) => ipcRenderer.invoke('remote:containers', hostId),
   localContainers: () => ipcRenderer.invoke('local:containers'),
+  containerAction: (source: string | null, id: string, action: string) =>
+    ipcRenderer.invoke('containers:action', source, id, action),
+  composeAction: (source: string | null, project: string, action: string) =>
+    ipcRenderer.invoke('containers:compose-action', source, project, action),
+  containerStats: (source: string | null) => ipcRenderer.invoke('containers:stats', source),
 
   // Ops runs (docs/OPS_AGENT_PLAN.md): runbook preview, reports, ledger checks, and the
   // live ledger lines of a run for the timeline. The renderer never writes the ledger.

@@ -1027,6 +1027,19 @@ export interface RemoteContainerList {
   containers?: RemoteContainerRow[]
 }
 
+/** What a container or a compose project can be asked to do. */
+export type ContainerAction = 'start' | 'stop' | 'restart'
+
+export type ContainerActionResult = { ok: true } | { ok: false; error: string; reason?: 'labs-off' | 'unsupported' }
+
+/** One running container's figures. `cpu` is percent of one CPU, so it can pass 100. */
+export interface ContainerStatsRow {
+  cpu: number | null
+  mem: string
+  memPerc: number | null
+}
+export type ContainerStatsResult = { ok: true; stats: Record<string, ContainerStatsRow> } | { ok: false; reason?: 'labs-off' }
+
 export type AuthMode = 'claude-code' | 'api-key'
 
 export interface AuthStatus {
@@ -2066,6 +2079,13 @@ declare global {
       remoteContainers: (hostId: string) => Promise<RemoteContainerList>
       /** This computer's docker (or podman) containers, for the Servers screen. */
       localContainers: () => Promise<RemoteContainerList>
+      /** Experimental: start, stop or restart one container. `source` is a host id, or null
+       *  for this computer; main takes the runtime and sudo from its own last listing. */
+      containerAction: (source: string | null, id: string, action: ContainerAction) => Promise<ContainerActionResult>
+      /** Experimental: the same for a whole compose project, by its name. */
+      composeAction: (source: string | null, project: string, action: ContainerAction) => Promise<ContainerActionResult>
+      /** Experimental: the running containers' CPU and memory, keyed by listed id. */
+      containerStats: (source: string | null) => Promise<ContainerStatsResult>
 
       // Ops runs
       /** `onBase`: the runbook as it runs added to the base intervention. */

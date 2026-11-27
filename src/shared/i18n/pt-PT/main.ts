@@ -145,6 +145,13 @@ const main: Record<keyof typeof en, string> = {
   'containers.garbled': 'O servidor não respondeu à listagem de containers como esperado',
   'containers.localFailed': 'O {runtime} não conseguiu listar os containers deste computador: {detail}',
   'containers.localTimedOut': 'O {runtime} não respondeu em 15 s',
+  'containers.notListed': 'Isso não está na última listagem. Atualiza e tenta outra vez.',
+  'containers.actionInvalid': 'Não é um container nem uma ação que a app consiga executar',
+  'containers.projectInvalid': 'Não é um nome de projeto compose que a app consiga usar',
+  'containers.actionTimedOut': 'O {runtime} não terminou em {s} s. A ação pode ainda estar a decorrer.',
+  'containers.actionFailed': 'O {runtime} {action} falhou (código {code})',
+  'containers.composeMissing': 'Não há "docker compose" nem "docker-compose" disponível, por isso as ações de projeto não correm aqui.',
+  'containers.podmanComposeMissing': 'O "podman compose" não está disponível aqui, por isso as ações de projeto não são suportadas. Usa os botões de cada container.',
 
   'ssh.hostNotFound': 'Anfitrião não encontrado',
   'ssh.connectedAs': 'Ligado como {user}@{host}:{port} em {ms} ms',

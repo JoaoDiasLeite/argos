@@ -153,6 +153,7 @@ import {
 } from './port-forwards'
 import { remoteContainers } from './remote-containers'
 import { localContainers } from './local-containers'
+import { composeAction, containerAction, containerStats } from './container-actions'
 import { listDistros, testDistro, testDistroClaude, runWslOneShot, uncToWslPath, wslHistory, wslHome, listWslDriveMap, wslClipboardImageCapable, wslToLinuxPaths, wslShareRoot } from './wsl'
 import { readTextFile, fsWriteFile, fsMkdir, fsRename, fsDelete } from './local-fs'
 import { createLedger, RUN_LIST_MAX, type OpsLedger, type OpsReportKind } from './ops-audit'
@@ -3194,6 +3195,25 @@ ipcMain.handle('sftp:upload', (_, hostId: string, dir: string, localPaths?: stri
 ipcMain.handle('sftp:history', (_, hostId: string) => sftpHistory(hostId))
 ipcMain.handle('remote:containers', (_, hostId: string) => remoteContainers(hostId))
 ipcMain.handle('local:containers', () => localContainers())
+// Start / stop / restart a container or a compose project, and the running ones' CPU and
+// memory: experimental, refused with labs off whatever the renderer shows. The source is a
+// host id or null for this computer; main takes the runtime and sudo from its own last
+// listing of that source (container-actions.ts). Main window only, as an action may connect.
+ipcMain.handle('containers:action', (e, source: unknown, id: unknown, action: unknown) => {
+  if (e.sender !== mainWindow?.webContents) return { ok: false, error: 'not allowed' }
+  if (!labsActionAllowed(isLabsOn())) return { ok: false, reason: 'labs-off', error: t('main.labs.off') }
+  return containerAction(source, id, action)
+})
+ipcMain.handle('containers:compose-action', (e, source: unknown, project: unknown, action: unknown) => {
+  if (e.sender !== mainWindow?.webContents) return { ok: false, error: 'not allowed' }
+  if (!labsActionAllowed(isLabsOn())) return { ok: false, reason: 'labs-off', error: t('main.labs.off') }
+  return composeAction(source, project, action)
+})
+ipcMain.handle('containers:stats', (e, source: unknown) => {
+  if (e.sender !== mainWindow?.webContents) return { ok: false }
+  if (!labsActionAllowed(isLabsOn())) return { ok: false, reason: 'labs-off' }
+  return containerStats(source)
+})
 // The last session on the host closed: its tunnels go with the connection.
 ipcMain.handle('sftp:disconnect', (_, hostId: string) => {
   stopHostForwards(hostId)

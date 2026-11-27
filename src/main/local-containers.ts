@@ -7,6 +7,7 @@ import {
   type RemoteContainer
 } from './remote-containers-pure'
 import { t } from './i18n'
+import { rememberListing } from './container-listings'
 
 /**
  * The Servers screen's local containers: this computer's docker (Docker Desktop on
@@ -56,6 +57,12 @@ const ENGINE_DOWN_RE =
   /cannot connect to the docker daemon|failed to connect to the docker api|error during connect|docker_engine|dockerdesktoplinuxengine|daemon is running|cannot connect to podman|unable to connect to podman/i
 
 export async function localContainers(): Promise<LocalContainerList> {
+  const r = await listLocal()
+  rememberListing(null, r.ok && r.runtime ? { runtime: r.runtime, sudo: false, containers: r.containers ?? [] } : null)
+  return r
+}
+
+async function listLocal(): Promise<LocalContainerList> {
   try {
     for (const runtime of ['docker', 'podman'] as const) {
       let res = await run(runtime, ['ps', '-a', '--format', CONTAINER_FORMAT])
