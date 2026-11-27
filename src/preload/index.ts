@@ -652,8 +652,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     hostId: string | null,
     cols: number,
     rows: number,
-    container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string }
-  ) => ipcRenderer.invoke('remote-shell:create', id, hostId, cols, rows, container),
+    container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string },
+    logs?: { follow: boolean; tail: '200' | '500' | '2000' | 'all'; timestamps: boolean }
+  ) => ipcRenderer.invoke('remote-shell:create', id, hostId, cols, rows, container, logs),
   remoteShellWrite: (id: string, data: string) => ipcRenderer.send('remote-shell:write', id, data),
   remoteShellResize: (id: string, cols: number, rows: number) =>
     ipcRenderer.send('remote-shell:resize', id, cols, rows),

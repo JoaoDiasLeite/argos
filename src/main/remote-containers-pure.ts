@@ -177,3 +177,54 @@ export function containerShellArgs(runtime: ContainerRuntime, id: string): strin
   if (!CONTAINER_ID_RE.test(id)) return null
   return ['exec', '-it', id, 'sh', '-c', 'command -v bash >/dev/null 2>&1 && exec bash || exec sh']
 }
+
+/** The tail sizes a logs tab offers. Only these ever reach a command line. */
+export const CONTAINER_LOG_TAILS = ['200', '500', '2000', 'all'] as const
+export type ContainerLogTail = (typeof CONTAINER_LOG_TAILS)[number]
+
+export interface ContainerLogsOptions {
+  /** `-f`: keep streaming. Off, the command prints what is there and exits. */
+  follow: boolean
+  tail: ContainerLogTail
+  timestamps: boolean
+}
+
+/**
+ * The logs options as they came over IPC, checked field by field. The tail is matched
+ * against the fixed list and the list's own string is returned, never the input: a number
+ * is accepted for the numeric sizes, any other type is refused (so `['all']`, whose String
+ * is 'all', is not). The two switches must be real booleans. Null for anything else.
+ */
+export function readContainerLogsOptions(raw: unknown): ContainerLogsOptions | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const o = raw as { follow?: unknown; tail?: unknown; timestamps?: unknown }
+  if (typeof o.follow !== 'boolean' || typeof o.timestamps !== 'boolean') return null
+  let tail: ContainerLogTail | undefined
+  if (typeof o.tail === 'string') tail = CONTAINER_LOG_TAILS.find((x) => x === o.tail)
+  else if (typeof o.tail === 'number') tail = CONTAINER_LOG_TAILS.find((x) => x !== 'all' && Number(x) === o.tail)
+  if (!tail) return null
+  return { follow: o.follow, tail, timestamps: o.timestamps }
+}
+
+/**
+ * A container's logs as an argument vector for a local pty: `logs --tail <n> [-t] [-f]
+ * <id>`. Only the validated id and the fixed-list tail go in. Null when either is not one.
+ */
+export function containerLogsArgs(runtime: ContainerRuntime, id: string, opts: unknown): string[] | null {
+  if (runtime !== 'docker' && runtime !== 'podman') return null
+  if (typeof id !== 'string' || !CONTAINER_ID_RE.test(id)) return null
+  const o = readContainerLogsOptions(opts)
+  if (!o) return null
+  return ['logs', '--tail', o.tail, ...(o.timestamps ? ['--timestamps'] : []), ...(o.follow ? ['-f'] : []), id]
+}
+
+/**
+ * The same as one command line for an SSH exec channel, with `sudo` when the listing
+ * needed it, exactly as the shell does. Every argument is already in a fixed set or a hex
+ * id; the id is quoted anyway. Null for anything invalid.
+ */
+export function containerLogsCommand(runtime: ContainerRuntime, sudo: boolean, id: string, opts: unknown): string | null {
+  const args = containerLogsArgs(runtime, id, opts)
+  if (!args) return null
+  return `${sudo === true ? 'sudo ' : ''}${runtime} ${args.slice(0, -1).join(' ')} ${shQuote(args[args.length - 1])}`
+}

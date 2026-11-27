@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import type { HostSecretFlags, RemoteContainerTarget, SshHostPublic } from '../types'
+import { useEffect, useMemo, useState } from 'react'
+import type { ContainerLogTail, ContainerTabMode, HostSecretFlags, RemoteContainerTarget, SshHostPublic } from '../types'
 import RemoteTerminal from '../components/RemoteTerminal'
 import { useT } from '../i18n'
 import { useLabs } from '../hooks/useLabs'
@@ -13,12 +13,17 @@ interface Props {
   container: RemoteContainerTarget
   /** The container's name, as the listing showed it. Display only. */
   name: string
+  /** A shell inside the container, or its logs (an experimental feature). */
+  mode?: ContainerTabMode
   /** This tab's number within its group, so two tabs on one container get their own channel. */
   seq: number
   active?: boolean
   onBack: () => void
   onStatusChange?: (status: 'connecting' | 'connected' | 'error') => void
 }
+
+/** The logs tab's tail sizes, as main accepts them. */
+const TAILS: ContainerLogTail[] = ['200', '500', '2000', 'all']
 
 const STATUS_LABEL: Record<'connecting' | 'connected' | 'error', MessageKey> = {
   connecting: 'remote.session.status.connecting',
@@ -32,8 +37,12 @@ const STATUS_LABEL: Record<'connecting' | 'connected' | 'error', MessageKey> = {
  * (`exec -it`, see main/remote-shell.ts) on the host's shared SSH connection. `exit`
  * ends the channel; Reconnect enters again. A container on this computer (host null) runs
  * the same command on a local pty instead (main/remote-shell.ts localContainerShellCreate).
+ *
+ * In logs mode the channel runs `<runtime> logs --tail <n> [-f]` instead, and the header
+ * carries its options: Follow, the tail size, Timestamps and Restart. Changing one restarts
+ * the stream; with Follow off the output stops, so it can be scrolled in peace.
  */
-export default function ContainerSessionView({ host, container, name, seq, active, onBack, onStatusChange }: Props) {
+export default function ContainerSessionView({ host, container, name, mode = 'shell', seq, active, onBack, onStatusChange }: Props) {
   const t = useT()
   const labs = useLabs()
   const hostId = host?.id ?? null
@@ -42,6 +51,12 @@ export default function ContainerSessionView({ host, container, name, seq, activ
   // A password typed at the connect prompt is not in `host`: ask main what the terminal's
   // Send password can use once connected (flags only, see RemoteSessionView).
   const [secretFlags, setSecretFlags] = useState<HostSecretFlags | null>(null)
+  const isLogs = mode === 'logs'
+  const [follow, setFollow] = useState(true)
+  const [tail, setTail] = useState<ContainerLogTail>('500')
+  const [timestamps, setTimestamps] = useState(false)
+  const [restartSignal, setRestartSignal] = useState(0)
+  const logs = useMemo(() => (isLogs ? { follow, tail, timestamps } : undefined), [isLogs, follow, tail, timestamps])
 
   // Only for the dot: the terminal connects on its own, over the same cached client. This
   // computer has nothing to connect to.
@@ -81,22 +96,62 @@ export default function ContainerSessionView({ host, container, name, seq, activ
         </button>
         <div className="remote-session-title">
           <span className={`remote-session-dot ${status}`} title={status === 'error' ? statusError || t('remote.session.couldNotConnect') : t(STATUS_LABEL[status])} />
-          <span className="remote-session-name">{name}</span>
+          <span className="remote-session-name">{isLogs ? `${name} · ${t('remote.containers.logsSuffix')}` : name}</span>
           {labs && host?.production && <span className="prod-pill" title={t('remote.prod.title')}>{t('remote.prod.pill')}</span>}
           <span className="remote-session-target">
             {host
-              ? t('remote.containers.tabTarget', { runtime: `${container.sudo ? 'sudo ' : ''}${container.runtime}`, host: host.name })
-              : t('remote.containers.tabTargetLocal', { runtime: container.runtime })}
+              ? t(isLogs ? 'remote.containers.tabTargetLogs' : 'remote.containers.tabTarget', {
+                  runtime: `${container.sudo ? 'sudo ' : ''}${container.runtime}`,
+                  host: host.name
+                })
+              : t(isLogs ? 'remote.containers.tabTargetLogsLocal' : 'remote.containers.tabTargetLocal', { runtime: container.runtime })}
           </span>
         </div>
         <span className="remote-session-spacer" />
+        {isLogs && (
+          <div className="ctr-logs-controls">
+            <button
+              type="button"
+              className={`ctr-logs-toggle${follow ? ' on' : ''}`}
+              aria-pressed={follow}
+              title={t('remote.logs.followTitle')}
+              onClick={() => setFollow((v) => !v)}
+            >
+              {t('remote.logs.follow')}
+            </button>
+            <label className="ctr-logs-tail" title={t('remote.logs.tailTitle')}>
+              <span>{t('remote.logs.tail')}</span>
+              <select value={tail} onChange={(e) => setTail(e.target.value as ContainerLogTail)}>
+                {TAILS.map((n) => (
+                  <option key={n} value={n}>
+                    {n === 'all' ? t('remote.logs.tailAll') : n}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className={`ctr-logs-toggle${timestamps ? ' on' : ''}`}
+              aria-pressed={timestamps}
+              title={t('remote.logs.timestampsTitle')}
+              onClick={() => setTimestamps((v) => !v)}
+            >
+              {t('remote.logs.timestamps')}
+            </button>
+            <button type="button" className="btn-ghost small" title={t('remote.logs.restartTitle')} onClick={() => setRestartSignal((n) => n + 1)}>
+              {t('remote.logs.restart')}
+            </button>
+          </div>
+        )}
       </div>
       <div className="remote-session-body">
         <div className="remote-session-right">
           <RemoteTerminal
-            terminalId={`ctrterm_${hostId ?? 'local'}_${container.id}_${seq}`}
+            terminalId={`${isLogs ? 'ctrlogs' : 'ctrterm'}_${hostId ?? 'local'}_${container.id}_${seq}`}
             hostId={hostId}
             container={container}
+            logs={logs}
+            restartSignal={restartSignal}
             active={active}
             closable={false}
             secrets={host && secretFlags ? { ...host, ...secretFlags } : host}

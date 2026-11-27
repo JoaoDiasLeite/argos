@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
+  containerLogsArgs,
+  containerLogsCommand,
+  readContainerLogsOptions,
   containerShellArgs,
   containerShellCommand,
   listContainersCommand,
@@ -133,5 +136,66 @@ describe('containerShellArgs', () => {
       'command -v bash >/dev/null 2>&1 && exec bash || exec sh'
     ])
     expect(containerShellArgs('docker', 'web; rm -rf /')).toBeNull()
+  })
+})
+
+describe('readContainerLogsOptions', () => {
+  it('accepts the fixed tails, as strings or numbers, and returns the list value', () => {
+    expect(readContainerLogsOptions({ follow: true, tail: '500', timestamps: false })).toEqual({ follow: true, tail: '500', timestamps: false })
+    expect(readContainerLogsOptions({ follow: false, tail: 2000, timestamps: true })).toEqual({ follow: false, tail: '2000', timestamps: true })
+    expect(readContainerLogsOptions({ follow: true, tail: 'all', timestamps: false })?.tail).toBe('all')
+  })
+
+  it('refuses anything off the list or of the wrong type', () => {
+    const base = { follow: true, timestamps: false }
+    for (const tail of ['100', '500 ', '0500', '500; rm -rf /', '$(id)', 'ALL', 1e3, 500.5, -500, ['all'], ['500'], null, undefined, {}]) {
+      expect(readContainerLogsOptions({ ...base, tail })).toBeNull()
+    }
+    expect(readContainerLogsOptions({ follow: 'true', tail: '500', timestamps: false })).toBeNull()
+    expect(readContainerLogsOptions({ follow: true, tail: '500', timestamps: 1 })).toBeNull()
+    expect(readContainerLogsOptions({ follow: true, tail: '500' })).toBeNull()
+    expect(readContainerLogsOptions(null)).toBeNull()
+    expect(readContainerLogsOptions('follow')).toBeNull()
+    expect(readContainerLogsOptions([true, '500', false])).toBeNull()
+  })
+})
+
+describe('containerLogsArgs', () => {
+  const id = 'abcdef012345'
+  it('builds the vector from the options', () => {
+    expect(containerLogsArgs('docker', id, { follow: true, tail: '500', timestamps: false })).toEqual(['logs', '--tail', '500', '-f', id])
+    expect(containerLogsArgs('podman', id, { follow: false, tail: 'all', timestamps: true })).toEqual(['logs', '--tail', 'all', '--timestamps', id])
+    expect(containerLogsArgs('docker', id, { follow: true, tail: 200, timestamps: true })).toEqual(['logs', '--tail', '200', '--timestamps', '-f', id])
+  })
+
+  it('refuses a bad id, tail or runtime', () => {
+    const ok = { follow: true, tail: '500', timestamps: false }
+    expect(containerLogsArgs('docker', 'web; rm -rf /', ok)).toBeNull()
+    expect(containerLogsArgs('docker', '$(reboot)', ok)).toBeNull()
+    expect(containerLogsArgs('docker', 'ABCDEF012345', ok)).toBeNull()
+    expect(containerLogsArgs('docker', `${id}\n`, ok)).toBeNull()
+    expect(containerLogsArgs('docker', id, { ...ok, tail: '500 --since=1h' })).toBeNull()
+    expect(containerLogsArgs('docker', id, { ...ok, tail: "500'; id; '" })).toBeNull()
+    expect(containerLogsArgs('docker', id, undefined)).toBeNull()
+    expect(containerLogsArgs('nerdctl' as 'docker', id, ok)).toBeNull()
+  })
+})
+
+describe('containerLogsCommand', () => {
+  const id = 'abcdef012345'
+  it('is the vector as one command line, with the id quoted', () => {
+    expect(containerLogsCommand('docker', false, id, { follow: true, tail: '500', timestamps: false })).toBe(`docker logs --tail 500 -f '${id}'`)
+    expect(containerLogsCommand('docker', false, id, { follow: false, tail: 'all', timestamps: true })).toBe(`docker logs --tail all --timestamps '${id}'`)
+  })
+
+  it('uses sudo when the listing did, and only for a real true', () => {
+    expect(containerLogsCommand('podman', true, id, { follow: true, tail: '2000', timestamps: false })).toBe(`sudo podman logs --tail 2000 -f '${id}'`)
+    expect(containerLogsCommand('docker', 'yes' as unknown as boolean, id, { follow: true, tail: '200', timestamps: false })).toBe(`docker logs --tail 200 -f '${id}'`)
+  })
+
+  it('refuses injection in the id and in the tail', () => {
+    expect(containerLogsCommand('docker', true, "abcdef012345'; id; '", { follow: true, tail: '500', timestamps: false })).toBeNull()
+    expect(containerLogsCommand('docker', true, id, { follow: true, tail: '500 && id', timestamps: false })).toBeNull()
+    expect(containerLogsCommand('docker', true, id, { follow: true, tail: '`id`', timestamps: false })).toBeNull()
   })
 })

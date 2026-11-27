@@ -151,7 +151,29 @@
 .ctr-tag.bad { color: var(--error); }
 .ctr-port { font-family: var(--font-mono); color: var(--text-1); background: var(--bg-2); }
 
-.containers-shell { flex-shrink: 0; }
+/* The row's actions: a small right-aligned toolbar of square icon buttons (shell, logs, and
+   room for start / stop / restart). */
+.ctr-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.ctr-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--text-2);
+  background: transparent;
+}
+.ctr-action:hover:not(:disabled) { color: var(--text-0); background: var(--bg-2); border-color: var(--border); }
+.ctr-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; color: var(--text-0); }
+.ctr-action:disabled { opacity: 0.45; cursor: default; }
 
 /* ── As a section of the Servers screen ── */
 .ctr-section { display: flex; flex-direction: column; }

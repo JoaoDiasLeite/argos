@@ -3748,26 +3748,40 @@ ipcMain.handle(
 
 ipcMain.handle(
   'remote-shell:create',
-  (_, id: string, hostId: string | null, cols: number, rows: number, container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string }) =>
-    // No host: a container on this computer (the Servers screen's local containers).
-    hostId === null
-      ? localContainerShellCreate(
-          id,
-          cols,
-          rows,
-          (tid, data) => send('remote-shell:data', { id: tid, data }),
-          (tid, code) => send('remote-shell:exit', { id: tid, code }),
-          container
-        )
-      : remoteShellCreate(
-      id,
-      hostId,
-      cols,
-      rows,
-      (tid, data) => send('remote-shell:data', { id: tid, data }),
-      (tid, code) => send('remote-shell:exit', { id: tid, code }),
-      container
-    )
+  (
+    _,
+    id: string,
+    hostId: string | null,
+    cols: number,
+    rows: number,
+    container?: { runtime: 'docker' | 'podman'; sudo: boolean; id: string },
+    logs?: unknown
+  ) =>
+    // A container's logs tab is an experimental feature: refused with it off, whatever the
+    // renderer shows. Any logs argument at all counts, so it can never turn into a shell.
+    logs !== undefined && !labsActionAllowed(isLabsOn())
+      ? Promise.resolve({ ok: false, reason: 'labs-off' as const, error: t('main.labs.off') })
+      : // No host: a container on this computer (the Servers screen's local containers).
+        hostId === null
+        ? localContainerShellCreate(
+            id,
+            cols,
+            rows,
+            (tid, data) => send('remote-shell:data', { id: tid, data }),
+            (tid, code) => send('remote-shell:exit', { id: tid, code }),
+            container,
+            logs
+          )
+        : remoteShellCreate(
+            id,
+            hostId,
+            cols,
+            rows,
+            (tid, data) => send('remote-shell:data', { id: tid, data }),
+            (tid, code) => send('remote-shell:exit', { id: tid, code }),
+            container,
+            logs
+          )
 )
 ipcMain.on('remote-shell:write', (_, id: string, data: string) => remoteShellWrite(id, data))
 ipcMain.on('remote-shell:resize', (_, id: string, cols: number, rows: number) =>

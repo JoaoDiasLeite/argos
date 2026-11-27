@@ -3,7 +3,13 @@ import * as os from 'os'
 import * as pty from 'node-pty'
 import { getHostWithSessionSecrets, getRemoteClient } from './sftp'
 import { ShellRegistry, type CreateResult } from './remote-shell-pure'
-import { containerShellArgs, containerShellCommand, type ContainerRuntime } from './remote-containers-pure'
+import {
+  containerLogsArgs,
+  containerLogsCommand,
+  containerShellArgs,
+  containerShellCommand,
+  type ContainerRuntime
+} from './remote-containers-pure'
 import { resolveWindowsExe } from './terminal'
 import { t } from './i18n'
 import { getHost } from './ssh'
@@ -135,12 +141,17 @@ function feedOutput(id: string, channel: ShellChannel, data: string): void {
   setHint(id, st, match?.kind ?? null)
 }
 
-function sshChannel(stream: ClientChannel): ShellChannel {
+function sshChannel(stream: ClientChannel, hangUp = false): ShellChannel {
   return {
     write: (data) => stream.write(data),
     // ssh2 ClientChannel#setWindow arg order: rows, cols, height (px), width (px).
     resize: (cols, rows) => stream.setWindow(rows, cols, 0, 0),
-    end: () => stream.end()
+    // A logs channel never reads its stdin, so an EOF alone may leave `logs -f` running
+    // on the host: it is closed outright, which hangs up its pty.
+    end: () => {
+      stream.end()
+      if (hangUp) stream.close()
+    }
   }
 }
 
@@ -151,16 +162,23 @@ export function remoteShellCreate(
   rows: number,
   onData: (id: string, data: string) => void,
   onExit: (id: string, code: number) => void,
-  container?: { runtime: ContainerRuntime; sudo: boolean; id: string }
+  container?: { runtime: ContainerRuntime; sudo: boolean; id: string },
+  logs?: unknown
 ): Promise<{ ok: boolean; error?: string }> {
   if (!isSafeId(id)) return Promise.resolve({ ok: false, error: t('main.terminal.invalidIdShort') })
   // A container tab runs `<runtime> exec -it <id> …` on its own pty instead of the login
-  // shell, so `exit` ends the tab's channel. Built here from the validated id only.
+  // shell, so `exit` ends the tab's channel; a logs tab runs `<runtime> logs …` the same way.
+  // Built here from the validated id (and the fixed-list logs options) only. Logs options
+  // without a container, or that do not validate, never fall back to a shell.
   let command: string | null = null
-  if (container !== undefined) {
+  if (container !== undefined || logs !== undefined) {
     // Shape-checked as well: it comes over IPC.
     const c = container !== null && typeof container === 'object' ? container : null
-    command = c ? containerShellCommand(c.runtime, c.sudo === true, c.id) : null
+    command = !c
+      ? null
+      : logs !== undefined
+        ? containerLogsCommand(c.runtime, c.sudo === true, c.id, logs)
+        : containerShellCommand(c.runtime, c.sudo === true, c.id)
     if (!command) return Promise.resolve({ ok: false, error: t('main.containers.invalid') })
   }
 
@@ -188,7 +206,7 @@ export function remoteShellCreate(
             resolve({ ok: false, error: err.message })
             return
           }
-          const channel = sshChannel(stream)
+          const channel = sshChannel(stream, logs !== undefined)
           if (!shells.adopt(id, ticket, channel)) {
             try {
               stream.close()
@@ -198,13 +216,16 @@ export function remoteShellCreate(
             resolve({ ok: false, error: KILLED_ERROR })
             return
           }
-          // A container exec on the host belongs to the host too: `sudo docker exec` asks
-          // for the host's password.
+          // A container exec on the host belongs to the host too: `sudo docker exec` (or
+          // `sudo docker logs`) asks for the host's password.
           forgetHostShell(id)
           const h = getHost(hostId)
           const self = h ? { username: h.username, host: h.host } : null
           hostShells.set(id, { channel, hostId, self, tail: '', hint: null, armed: null })
           const onChunk = (d: Buffer) => {
+            // A channel that was killed (an option change re-creates the same id) may still
+            // flush a last chunk: it must not land in the id's new stream.
+            if (shells.get(id) !== channel) return
             const text = d.toString('utf8')
             feedOutput(id, channel, text)
             onData(id, text)
@@ -234,8 +255,9 @@ export function remoteShellCreate(
 /**
  * A shell inside a container on THIS computer, for the Servers screen's local containers:
  * a pty running `<runtime> exec -it <id> sh -c …` from an argument vector, built here from
- * the validated id only. It shares the registry (and so write, resize and kill) with the
- * ssh channels; RemoteTerminal reaches it with a null host.
+ * the validated id only. With `logs` it runs `<runtime> logs …` instead (a logs tab). It
+ * shares the registry (and so write, resize and kill) with the ssh channels; RemoteTerminal
+ * reaches it with a null host.
  */
 export function localContainerShellCreate(
   id: string,
@@ -243,12 +265,18 @@ export function localContainerShellCreate(
   rows: number,
   onData: (id: string, data: string) => void,
   onExit: (id: string, code: number) => void,
-  container: unknown
+  container: unknown,
+  logs?: unknown
 ): Promise<CreateResult> {
   if (!isSafeId(id)) return Promise.resolve({ ok: false, error: t('main.terminal.invalidIdShort') })
   const c = container !== null && typeof container === 'object' ? (container as { runtime?: unknown; id?: unknown }) : null
   const runtime = c?.runtime === 'docker' || c?.runtime === 'podman' ? c.runtime : null
-  const args = runtime && typeof c?.id === 'string' ? containerShellArgs(runtime, c.id) : null
+  const args =
+    runtime && typeof c?.id === 'string'
+      ? logs !== undefined
+        ? containerLogsArgs(runtime, c.id, logs)
+        : containerShellArgs(runtime, c.id)
+      : null
   if (!runtime || !args) return Promise.resolve({ ok: false, error: t('main.containers.invalid') })
 
   return shells.create(id, async (ticket) => {
@@ -280,7 +308,10 @@ export function localContainerShellCreate(
       }
       return { ok: false, error: KILLED_ERROR }
     }
-    p.onData((d) => onData(id, d))
+    p.onData((d) => {
+      // As for the ssh channels: a killed pty's late output is not the new one's.
+      if (shells.get(id) === channel) onData(id, d)
+    })
     p.onExit(({ exitCode }) => {
       if (shells.release(id, channel)) onExit(id, exitCode)
     })

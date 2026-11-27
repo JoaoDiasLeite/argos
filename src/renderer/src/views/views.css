@@ -207,6 +207,8 @@
   white-space: nowrap;
   max-width: 160px;
 }
+/* "· logs" after a container's name: kept whole while the name is cut short. */
+.server-tab-suffix { flex-shrink: 0; margin-left: -2px; white-space: nowrap; color: var(--text-2); }
 
 /* ── Several sessions on one target ──
    They collapse into a single tab (see ServerTabs.tsx) carrying the target name, a muted
