@@ -48,8 +48,14 @@ import { AUTO_COMPANION_SHORTCUT, AUTO_LAUNCHER_SHORTCUT } from '../lib/accelera
 import { useLabs } from '../hooks/useLabs'
 import { NO_TAPS, tapVersion } from '../lib/labs-unlock'
 import { LANGUAGES, isLanguage, plural, type MessageKey } from '../../../shared/i18n'
+import {
+  lastSettingsSection,
+  rememberSettingsSection,
+  settingsSectionOf as sectionOf,
+  type SettingsSectionId
+} from '../lib/settings-sections'
 
-type SectionId = 'appearance' | 'general' | 'connection' | 'system' | 'companion' | 'interventions' | 'ops' | 'about'
+type SectionId = SettingsSectionId
 
 interface Props {
   models: ModelInfo[]
@@ -162,11 +168,6 @@ function humanBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
-/** A deep-linked section name, if it is one of ours. */
-function sectionOf(name: string | undefined): SectionId | null {
-  return SECTIONS.some((s) => s.id === name) ? (name as SectionId) : null
-}
-
 // Ledger files are named by UTC day, so "today" must be the UTC date, not the local one.
 const utcToday = () => new Date().toISOString().slice(0, 10)
 
@@ -184,7 +185,11 @@ export default function SettingsView({
   target
 }: Props) {
   const t = useT()
-  const [section, setSection] = useState<SectionId>(() => sectionOf(target?.section) ?? 'appearance')
+  // A deep link wins; otherwise Settings reopens on the section it was last on.
+  const [section, setSection] = useState<SectionId>(
+    () => sectionOf(target?.section) ?? lastSettingsSection() ?? 'appearance'
+  )
+  useEffect(() => rememberSettingsSection(section), [section])
 
   useEffect(() => {
     const id = sectionOf(target?.section)

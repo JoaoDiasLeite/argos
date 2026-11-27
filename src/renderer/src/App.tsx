@@ -28,6 +28,8 @@ import PaneGrid from './components/PaneGrid'
 import { SessionPaneApi } from './hooks/useSessionPane'
 import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, groupOwnsView, isRestorableView, startViewFor } from './components/NavRail'
 
+import { SETTINGS_SECTIONS, settingsSectionLabel } from './lib/settings-sections'
+
 /** The view the app was on, for "open where I left off" (ui.startView === 'last'). */
 const LAST_VIEW_KEY = 'argos.lastView'
 import ServerTabs from './components/ServerTabs'
@@ -409,7 +411,11 @@ export default function App() {
   // makes the same section asked twice count as a new request.
   const [settingsTarget, setSettingsTarget] = useState<{ section: string; n: number } | null>(null)
   useEffect(() => {
-    if (view !== 'settings') preSettingsView.current = view
+    if (view === 'settings') return
+    preSettingsView.current = view
+    // A deep link's section is for that visit only: once Settings is left, the next
+    // plain "open Settings" goes back to the section it was last on.
+    setSettingsTarget(null)
   }, [view])
   // A conversation named by a notification click (`argos://session`). Held here
   // rather than passed straight through so a second click on the same conversation
@@ -2748,6 +2754,18 @@ export default function App() {
       })
     }
     items.push({ id: 'settings', title: t('app.palette.openSettings'), group: t('app.palette.groupViews'), run: () => setView('settings') })
+    // One entry per Settings section, through the same target a deep link uses.
+    for (const id of SETTINGS_SECTIONS) {
+      items.push({
+        id: `settings:${id}`,
+        title: t('app.palette.settingsSection', { section: t(settingsSectionLabel(id)) }),
+        group: t('app.palette.groupViews'),
+        run: () => {
+          setSettingsTarget((prev) => ({ section: id, n: (prev?.n ?? 0) + 1 }))
+          setView('settings')
+        }
+      })
+    }
     items.push({ id: 'accounts', title: t('app.palette.manageAccounts'), group: t('app.palette.groupViews'), run: () => setAccountsOpen(true) })
     for (const s of sessions) {
       items.push({
