@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import {
+  actionErrorText,
+  composeActionArgv,
+  composeActionCommand,
+  composeProbeCommand,
+  containerActionArgs,
+  containerActionCommand,
+  containerStatsCommand,
+  isComposeProject,
+  parseContainerStats,
+  statsFor,
   containerLogsArgs,
   containerLogsCommand,
   readContainerLogsOptions,
@@ -197,5 +207,124 @@ describe('containerLogsCommand', () => {
     expect(containerLogsCommand('docker', true, "abcdef012345'; id; '", { follow: true, tail: '500', timestamps: false })).toBeNull()
     expect(containerLogsCommand('docker', true, id, { follow: true, tail: '500 && id', timestamps: false })).toBeNull()
     expect(containerLogsCommand('docker', true, id, { follow: true, tail: '`id`', timestamps: false })).toBeNull()
+  })
+})
+
+describe('containerActionArgs / containerActionCommand', () => {
+  const id = 'abcdef012345'
+  it('builds start, stop and restart from the id', () => {
+    expect(containerActionArgs('docker', id, 'start')).toEqual(['start', id])
+    expect(containerActionArgs('podman', id, 'restart')).toEqual(['restart', id])
+    expect(containerActionCommand('docker', false, id, 'stop')).toBe(`docker stop '${id}'`)
+  })
+
+  it('uses sudo -n when the listing did, and only for a real true', () => {
+    expect(containerActionCommand('docker', true, id, 'restart')).toBe(`sudo -n docker restart '${id}'`)
+    expect(containerActionCommand('docker', 1 as unknown as boolean, id, 'restart')).toBe(`docker restart '${id}'`)
+  })
+
+  it('refuses an action outside the fixed list', () => {
+    for (const a of ['rm', 'kill', 'start; id', 'Stop', '', null, ['stop'], 3]) {
+      expect(containerActionArgs('docker', id, a)).toBeNull()
+      expect(containerActionCommand('docker', false, id, a)).toBeNull()
+    }
+  })
+
+  it('refuses injection in the id', () => {
+    for (const bad of ['web', `${id}; reboot`, '$(id)', `${id}\n`, `'${id}'`, 'ABCDEF012345', `${id} --time 0`, 42]) {
+      expect(containerActionArgs('docker', bad, 'stop')).toBeNull()
+      expect(containerActionCommand('docker', true, bad, 'stop')).toBeNull()
+    }
+    expect(containerActionArgs('nerdctl' as 'docker', id, 'stop')).toBeNull()
+  })
+})
+
+describe('compose project actions', () => {
+  it('accepts compose project names only', () => {
+    expect(isComposeProject('argos-vc-demo')).toBe(true)
+    expect(isComposeProject('portal_videos2')).toBe(true)
+    expect(isComposeProject('a'.repeat(64))).toBe(true)
+    for (const bad of ['a'.repeat(65), '-x', '_x', 'Upper', 'a b', 'a;id', '$(id)', "a'b", 'a/b', '', 'a\nb', null, 7]) {
+      expect(isComposeProject(bad)).toBe(false)
+    }
+  })
+
+  it('builds the plugin and the standalone forms', () => {
+    expect(composeActionArgv('docker', 'plugin', 'demo', 'restart')).toEqual({ cmd: 'docker', args: ['compose', '-p', 'demo', 'restart'] })
+    expect(composeActionArgv('docker', 'standalone', 'demo', 'stop')).toEqual({ cmd: 'docker-compose', args: ['-p', 'demo', 'stop'] })
+    expect(composeActionArgv('podman', 'plugin', 'demo', 'start')).toEqual({ cmd: 'podman', args: ['compose', '-p', 'demo', 'start'] })
+    // Podman has no standalone fallback: it is reported as not supported instead.
+    expect(composeActionArgv('podman', 'standalone', 'demo', 'start')).toBeNull()
+  })
+
+  it('quotes the project and uses sudo -n in the command line', () => {
+    expect(composeActionCommand('docker', false, 'plugin', 'demo', 'stop')).toBe(`docker compose -p 'demo' stop`)
+    expect(composeActionCommand('docker', true, 'standalone', 'demo', 'start')).toBe(`sudo -n docker-compose -p 'demo' start`)
+    expect(composeProbeCommand('docker', true, 'plugin')).toBe('sudo -n docker compose version')
+    expect(composeProbeCommand('docker', false, 'standalone')).toBe('docker-compose version')
+    expect(composeProbeCommand('podman', false, 'standalone')).toBeNull()
+  })
+
+  it('refuses injection in the project and a bad action', () => {
+    for (const bad of ["demo'; reboot; '", 'demo && id', 'demo\nid', '`id`', '--file=/etc/passwd', 'demo stop']) {
+      expect(composeActionArgv('docker', 'plugin', bad, 'stop')).toBeNull()
+      expect(composeActionCommand('docker', true, 'plugin', bad, 'stop')).toBeNull()
+    }
+    expect(composeActionArgv('docker', 'plugin', 'demo', 'down')).toBeNull()
+    expect(composeActionArgv('docker', 'plugin', 'demo', 'rm')).toBeNull()
+    expect(composeActionArgv('docker', 'other' as 'plugin', 'demo', 'stop')).toBeNull()
+  })
+})
+
+describe('actionErrorText', () => {
+  it('keeps the last lines, without escapes or blanks', () => {
+    const err = '\x1b[1A\x1b[2K Container demo-a-1  Stopping\r\n\n Container demo-a-1  Stopped\nline3\nline4\nError response from daemon: boom\n'
+    expect(actionErrorText(err)).toBe('Container demo-a-1  Stopped\nline3\nline4\nError response from daemon: boom')
+  })
+
+  it('cuts a long message from the front', () => {
+    const text = actionErrorText('x'.repeat(1000), 4, 50)
+    expect(text.length).toBe(50)
+    expect(text.startsWith('…')).toBe(true)
+  })
+
+  it('is empty for nothing readable', () => {
+    expect(actionErrorText('\x1b[0m\n  \n')).toBe('')
+  })
+})
+
+describe('container stats', () => {
+  it('builds the stats command with the format quoted', () => {
+    expect(containerStatsCommand('docker', false)).toBe(`docker stats --no-stream --format '{{.ID}}|{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}'`)
+    expect(containerStatsCommand('podman', true)).toMatch(/^sudo -n podman stats --no-stream --format '/)
+  })
+
+  it('parses docker and podman rows', () => {
+    const out = [
+      'abcdef012345|3.21%|245.3MiB / 7.6GiB|3.15%',
+      '0123456789abcdef0123|0.00%|1.2MB / 8.2GB|0.01%\r',
+      'ffffffffffff|--|-- / --|--',
+      'not a row',
+      'zzzzzzzzzzzz|1%|1MiB / 2MiB|50%',
+      ''
+    ].join('\n')
+    expect(parseContainerStats(out)).toEqual([
+      { id: 'abcdef012345', cpu: 3.21, mem: '245.3MiB / 7.6GiB', memPerc: 3.15 },
+      { id: '0123456789abcdef0123', cpu: 0, mem: '1.2MB / 8.2GB', memPerc: 0.01 },
+      { id: 'ffffffffffff', cpu: null, mem: '', memPerc: null }
+    ])
+  })
+
+  it('drops a memory column that is not plain sizes', () => {
+    expect(parseContainerStats('abcdef012345|1%|<img src=x>|1%')[0].mem).toBe('')
+  })
+
+  it('matches rows by id prefix, either way', () => {
+    const rows = parseContainerStats('abcdef012345|1%|1MiB / 2MiB|50%\n0123456789abcdef|2%|1MiB / 2MiB|50%')
+    expect(statsFor(rows, 'abcdef012345')?.cpu).toBe(1)
+    expect(statsFor(rows, 'abcdef0123456789abcdef')?.cpu).toBe(1)
+    expect(statsFor(rows, '0123456789ab')?.cpu).toBe(2)
+    expect(statsFor(rows, '999999999999')).toBeUndefined()
+    expect(statsFor(rows, 'abc')).toBeUndefined()
   })
 })

@@ -187,3 +187,73 @@
 }
 .ctr-section-head .eyebrow { padding: 0; flex-shrink: 0; }
 .ctr-section .containers-note { padding: 6px 0; }
+
+/* ── Experimental: start / stop / restart, the confirmation, the notes and the figures ── */
+.ctr-row-wrap { display: flex; flex-direction: column; }
+.ctr-actions { position: relative; }
+.ctr-busy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: var(--text-2);
+}
+
+/* The group head: the fold button takes the row, the project menu sits at its end. */
+.ctr-group-headrow { display: flex; align-items: center; gap: 4px; }
+.ctr-group-headrow .ctr-group-head { flex: 1; min-width: 0; }
+.ctr-group-actions { padding-right: 8px; }
+
+/* Under the button that asked: a 4 px --bg-1 popover with the one shadow popovers are
+   allowed. On a production host, an --error edge and the PRODUÇÃO pill. */
+.ctr-confirm {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: max-content;
+  max-width: 320px;
+  padding: 10px 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+.ctr-confirm.prod {
+  border-color: color-mix(in srgb, var(--error) 60%, transparent);
+  border-left: 3px solid var(--error);
+}
+.ctr-confirm .prod-pill { align-self: flex-start; }
+.ctr-confirm-text {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-0);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ctr-confirm-btns { display: flex; justify-content: flex-end; gap: 6px; }
+
+/* A failed action: under its row or its group head, until the next try or a dismiss. */
+.ctr-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 2px 8px 4px 25px;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--error) 45%, transparent);
+  border-radius: var(--radius);
+  font-size: 11.5px;
+  color: var(--error);
+}
+.ctr-note-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); }
+.ctr-note-close { padding: 0 2px; border: none; background: transparent; color: var(--text-2); font-size: 14px; line-height: 1; cursor: pointer; }
+.ctr-note-close:hover { color: var(--text-0); }
+
+/* CPU and memory at the last refresh. */
+.ctr-stats { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-2); margin-top: 1px; }
+.ctr-stats.warn { color: var(--warn); }
+.ctr-stats.bad { color: var(--error); }

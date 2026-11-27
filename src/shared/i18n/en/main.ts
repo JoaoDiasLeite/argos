@@ -146,6 +146,13 @@ export default {
   'containers.garbled': 'The server did not answer the container listing as expected',
   'containers.localFailed': '{runtime} could not list the containers on this computer: {detail}',
   'containers.localTimedOut': '{runtime} did not answer within 15 s',
+  'containers.notListed': 'That is not in the last listing. Refresh and try again.',
+  'containers.actionInvalid': 'Not a container or an action this app can run',
+  'containers.projectInvalid': 'Not a compose project name this app can use',
+  'containers.actionTimedOut': '{runtime} did not finish within {s} s. The action may still be running.',
+  'containers.actionFailed': '{runtime} {action} failed (exit code {code})',
+  'containers.composeMissing': 'Neither "docker compose" nor "docker-compose" is available, so project actions cannot run here.',
+  'containers.podmanComposeMissing': '"podman compose" is not available here, so project actions are not supported. Use the buttons on each container.',
 
   'ssh.hostNotFound': 'Host not found',
   'ssh.connectedAs': 'Connected as {user}@{host}:{port} in {ms} ms',
