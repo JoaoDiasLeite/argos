@@ -26,7 +26,10 @@ import ArgosMark from './components/ArgosMark'
 import ResizeHandles from './components/ResizeHandles'
 import PaneGrid from './components/PaneGrid'
 import { SessionPaneApi } from './hooks/useSessionPane'
-import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, firstVisibleView, groupOwnsView } from './components/NavRail'
+import NavRail, { ALL_VIEWS, View, VIEW_GROUPS, groupOwnsView, isRestorableView, startViewFor } from './components/NavRail'
+
+/** The view the app was on, for "open where I left off" (ui.startView === 'last'). */
+const LAST_VIEW_KEY = 'argos.lastView'
 import ServerTabs from './components/ServerTabs'
 import ApprovalModal from './components/ApprovalModal'
 import SecretPrompt from './components/SecretPrompt'
@@ -418,6 +421,17 @@ export default function App() {
   const [models, setModels] = useState<ModelInfo[]>([])
   const [defaultModel, setDefaultModel] = useState('claude-sonnet-5-5')
   const [ui, setUi] = useState<UiPrefs | null>(null)
+  // Remember the view for "open where I left off". Not before the config has loaded:
+  // the mount-time 'home' would overwrite the stored view before startup had read it.
+  const uiLoaded = ui !== null
+  useEffect(() => {
+    if (!uiLoaded || !isRestorableView(view)) return
+    try {
+      localStorage.setItem(LAST_VIEW_KEY, view)
+    } catch {
+      // Storage unavailable: nothing to remember.
+    }
+  }, [view, uiLoaded])
   // Prompts waiting to be typed into a chat's terminal, by session id. "Start this" has no
   // transcript to post into, so the text is parked here and ChatTerminal types it into the
   // CLI once that CLI is up. Cleared as soon as it is sent: a restart must not re-run the
@@ -685,11 +699,17 @@ export default function App() {
       setDefaultModel(config.defaultModel)
       setUi(config.ui)
       applyUi(config.ui)
-      // Home switched off in the rail: open on the first entry still there instead.
-      // Functional, so a deep link that already moved the view is left alone.
-      if (config.ui.hiddenNavItems?.includes('home')) {
-        setView((v) => (v === 'home' ? firstVisibleView(config.ui.hiddenNavItems) : v))
+      // Where the app opens (Settings → General): Home, Chat or where it was last, and
+      // never a Home the rail no longer shows. Functional, so a deep link that already
+      // moved the view is left alone.
+      let last: string | null = null
+      try {
+        last = localStorage.getItem(LAST_VIEW_KEY)
+      } catch {
+        // Storage unavailable: open as if nothing was remembered.
       }
+      const start = startViewFor(config.ui.startView, config.ui.hiddenNavItems, config.ui.navOrder, last)
+      if (start !== 'home') setView((v) => (v === 'home' ? start : v))
       // No auto-created blank draft: with no saved chats the main area shows the
       // welcome pane until the user explicitly starts one.
       // Restore whatever pane layout was persisted, filtered to sessions that still
@@ -2884,6 +2904,7 @@ export default function App() {
           opsNeedsYou={opsSummary.needsYou}
           chatListHidden={sidebarCollapsed}
           hidden={ui?.hiddenNavItems}
+          order={ui?.navOrder}
         />
 
       {view === 'chat' && (

@@ -36,7 +36,7 @@ import ExportProfileModal from '../components/ExportProfileModal'
 import ImportProfileModal from '../components/ImportProfileModal'
 import type { ImportPreview } from '../../../shared/profile-transfer'
 import AppearanceSettings from '../components/AppearanceSettings'
-import { RAIL_ITEMS } from '../components/NavRail'
+import NavRailSettings from '../components/NavRailSettings'
 import CompanionVoiceSettings from './CompanionVoiceSettings'
 import './views.css'
 import './SettingsView.css'
@@ -815,6 +815,10 @@ export default function SettingsView({
                     </div>
                   </div>
 
+                  {/* What the rail shows and where the app opens. The weekly planner sits
+                      here too: it is also a choice about what navigation offers. */}
+                  <div className="eyebrow settings-eyebrow">{t('settings.general.navRail.eyebrow')}</div>
+                  <NavRailSettings ui={ui} onSetUi={onSetUi} />
                   <div className="srow">
                     <div className="srow-text">
                       <span className="srow-label">{t('settings.general.weekPlanner.label')}</span>
@@ -832,39 +836,6 @@ export default function SettingsView({
                       </span>
                     </label>
                   </div>
-
-                  {/* One switch per rail entry, on = shown. Settings itself is not in the
-                      list: it is where these switches live, so it can never go. */}
-                  <div className="eyebrow settings-eyebrow">{t('settings.general.navRail.eyebrow')}</div>
-                  <p className="help">{t('settings.general.navRail.hint')}</p>
-                  {RAIL_ITEMS.map((item) => {
-                    const hidden = ui.hiddenNavItems ?? []
-                    const shown = !hidden.includes(item.id)
-                    return (
-                      <div className="srow" key={item.id}>
-                        <div className="srow-text">
-                          <span className="srow-label">{t(item.label)}</span>
-                        </div>
-                        <label className="toggle-switch">
-                          <input
-                            type="checkbox"
-                            checked={shown}
-                            onChange={(e) =>
-                              onSetUi({
-                                hiddenNavItems: e.target.checked
-                                  ? hidden.filter((id) => id !== item.id)
-                                  : [...hidden, item.id]
-                              })
-                            }
-                            aria-label={t('settings.general.navRail.toggle', { name: t(item.label) })}
-                          />
-                          <span className="toggle-track">
-                            <span className="toggle-thumb" />
-                          </span>
-                        </label>
-                      </div>
-                    )
-                  })}
                 </>
               )}
 

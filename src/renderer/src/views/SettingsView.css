@@ -140,6 +140,41 @@
 
 .settings-btn-pair { display: flex; gap: 8px; flex-shrink: 0; }
 
+/* ── Chips ──
+   Several on/off choices of one kind on a single row (the rail's entries). Pressed in
+   the accent's tint; the grip says a chip can also be dragged to a new place. */
+.settings-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+.settings-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.settings-chip::before {
+  content: '';
+  width: 6px;
+  height: 10px;
+  flex-shrink: 0;
+  opacity: 0.5;
+  background: radial-gradient(circle, currentColor 1px, transparent 1.2px) 0 0 / 3px 3.4px;
+}
+.settings-chip:hover { color: var(--text-0); }
+.settings-chip.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--text-0);
+}
+.settings-chip.drop { border-style: dashed; border-color: var(--text-1); }
+.settings-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 .settings-select { width: 220px; }
 .settings-date { width: 160px; }
 

@@ -318,6 +318,21 @@ describe('hidden nav rail entries', () => {
     expect(applyUiPatch(start, { density: 'compact' }, false).hiddenNavItems).toEqual(['companion'])
   })
 
+  it('stores a changed order in full and drops the default one', () => {
+    const next = applyUiPatch(LEGACY, { navOrder: ['usage', 'chat'] }, false)
+    expect(next.navOrder).toEqual(['usage', 'chat', 'home', 'projects', 'planner', 'companion', 'servers'])
+    const back = applyUiPatch(next, { navOrder: ['home', 'chat', 'projects', 'planner', 'companion', 'usage', 'servers'] }, false)
+    expect('navOrder' in back).toBe(false)
+  })
+
+  it('keeps a start view other than Home and drops the rest', () => {
+    expect(applyUiPatch(LEGACY, { startView: 'last' }, false).startView).toBe('last')
+    const start = applyUiPatch(LEGACY, { startView: 'chat' }, false)
+    expect('startView' in applyUiPatch(start, { startView: 'home' }, false)).toBe(false)
+    const bad = { startView: 'settings' } as unknown as Parameters<typeof applyUiPatch>[1]
+    expect('startView' in applyUiPatch(LEGACY, bad, false)).toBe(false)
+  })
+
   it('cleans a malformed stored value on migration', () => {
     const bad = { ...LEGACY, hiddenNavItems: 'home' } as unknown as UiPrefs
     expect('hiddenNavItems' in migrateUiPrefs(bad)).toBe(false)

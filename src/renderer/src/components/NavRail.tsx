@@ -1,5 +1,5 @@
 import { plural, type MessageKey } from '../../../shared/i18n'
-import type { NavItemId } from '../../../shared/nav-items'
+import { orderNavItems, type NavItemId, type StartView } from '../../../shared/nav-items'
 import { useT } from '../i18n'
 import './NavRail.css'
 
@@ -63,6 +63,8 @@ interface Props {
   /** Entries switched off in Settings → General (ui.hiddenNavItems). Their views stay
       reachable from the command palette and deep links; only the button goes. */
   hidden?: readonly NavItemId[]
+  /** The entries' order (ui.navOrder). Absent means the default order. */
+  order?: readonly NavItemId[]
 }
 
 const ICONS: Record<string, JSX.Element> = {
@@ -161,17 +163,41 @@ const RAIL: RailEntry[] = [
   { kind: 'group', id: 'servers', group: VIEW_GROUPS[0] }
 ]
 
-/** The rail's entries in order, for the show/hide toggles in Settings → General. */
-export const RAIL_ITEMS: { id: NavItemId; label: MessageKey }[] = RAIL.map((e) => ({
-  id: e.id,
-  label: e.kind === 'single' ? e.label : e.group.label
-}))
+/** The rail's entries in their stored order (ui.navOrder), hidden ones included. */
+function orderedRail(order: readonly NavItemId[] | undefined): RailEntry[] {
+  return orderNavItems(order).flatMap((id) => RAIL.filter((e) => e.id === id))
+}
 
-/** Where the app should open when Home is hidden: the first entry still on the rail. */
-export function firstVisibleView(hidden: readonly string[] | undefined): View {
-  const entry = RAIL.find((e) => !hidden?.includes(e.id))
-  if (!entry) return 'home'
-  return entry.kind === 'single' ? entry.view : entry.group.members[0]
+const entryView = (e: RailEntry): View => (e.kind === 'single' ? e.view : e.group.members[0])
+
+/** Each entry's label, for the chips in Settings → General. */
+export const RAIL_LABELS = Object.fromEntries(
+  RAIL.map((e) => [e.id, e.kind === 'single' ? e.label : e.group.label])
+) as Record<NavItemId, MessageKey>
+
+/** Views the rail leads to directly: the only ones "open where I left off" may restore.
+    Settings and the extras (a remote session, a runbook workspace) are not among them,
+    since each needs something that is gone after a restart. */
+export function isRestorableView(view: string): view is View {
+  return RAIL.some((e) => (e.kind === 'single' ? e.view === view : (e.group.members as string[]).includes(view)))
+}
+
+/**
+ * Where the app opens (ui.startView). A hidden Home falls through to the first entry
+ * still on the rail; Chat and a remembered view are honoured even when hidden, because
+ * one is an explicit choice and the other is where the user actually was.
+ */
+export function startViewFor(
+  pref: StartView | undefined,
+  hidden: readonly NavItemId[] | undefined,
+  order: readonly NavItemId[] | undefined,
+  last: string | null
+): View {
+  if (pref === 'chat') return 'chat'
+  if (pref === 'last' && last && isRestorableView(last)) return last
+  const entry = orderedRail(order).find((e) => !hidden?.includes(e.id))
+  if (!hidden?.includes('home') || !entry) return 'home'
+  return entryView(entry)
 }
 
 export default function NavRail({
@@ -184,13 +210,14 @@ export default function NavRail({
   opsRunningCount = 0,
   opsNeedsYou = false,
   chatListHidden = false,
-  hidden
+  hidden,
+  order
 }: Props) {
   const t = useT()
   return (
     <div className="nav-rail">
       <div className="nav-items">
-        {RAIL.filter((entry) => !hidden?.includes(entry.id)).map((entry) => {
+        {orderedRail(order).filter((entry) => !hidden?.includes(entry.id)).map((entry) => {
           if (entry.kind === 'single') {
             return (
               <button

@@ -1,5 +1,5 @@
 import type { Language } from '../../shared/i18n'
-import type { NavItemId } from '../../shared/nav-items'
+import type { NavItemId, StartView } from '../../shared/nav-items'
 import type {
   ExportCandidates,
   ExportRequest,
@@ -203,6 +203,10 @@ export interface UiPrefs {
   language?: Language
   /** Nav rail entries switched off in Settings → General. Absent means all show. */
   hiddenNavItems?: NavItemId[]
+  /** The rail's order, every entry named. Absent means the default order. */
+  navOrder?: NavItemId[]
+  /** Where the app opens. Absent means Home. */
+  startView?: StartView
 }
 
 /**
