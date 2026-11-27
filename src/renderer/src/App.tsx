@@ -2708,6 +2708,8 @@ export default function App() {
       run: () => setShortcutsOpen(true)
     })
     const views: { v: View; label: MessageKey }[] = [
+      // Home too: with its rail entry hidden, this is the only way back to it.
+      { v: 'home', label: 'sidebar.nav.home' },
       { v: 'chat', label: 'sidebar.nav.chat' },
       { v: 'projects', label: 'sidebar.nav.projects' },
       { v: 'planner', label: 'sidebar.nav.planner' },
