@@ -12,6 +12,7 @@ import type { MessageKey } from '../../../shared/i18n'
 import { useT } from '../i18n'
 import type { UiPrefs, UiPrefsPatch } from '../types'
 import { RAIL_LABELS } from './NavRail'
+import Hint from './Hint'
 
 /** Its own type, never 'text/plain', so a chip cannot be dropped on a terminal as text. */
 const NAV_DRAG_TYPE = 'application/x-argos-nav-item'
@@ -114,8 +115,7 @@ export default function NavRailSettings({ ui, onSetUi }: Props) {
 
       <div className="srow">
         <div className="srow-text">
-          <span className="srow-label">{t('settings.general.startView.label')}</span>
-          <span className="help">{t('settings.general.startView.hint')}</span>
+          <span className="srow-label">{t('settings.general.startView.label')}<Hint text={t('settings.general.startView.hint')} /></span>
         </div>
         <div className="seg-control" role="group" aria-label={t('settings.general.startView.label')}>
           {START_VIEWS.map((v) => (

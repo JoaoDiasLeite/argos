@@ -36,6 +36,7 @@ import ExportProfileModal from '../components/ExportProfileModal'
 import ImportProfileModal from '../components/ImportProfileModal'
 import type { ImportPreview } from '../../../shared/profile-transfer'
 import AppearanceSettings from '../components/AppearanceSettings'
+import Hint from '../components/Hint'
 import NavRailSettings from '../components/NavRailSettings'
 import CompanionVoiceSettings from './CompanionVoiceSettings'
 import './views.css'
@@ -318,13 +319,12 @@ export default function SettingsView({
   const runbooksDirRow = () => (
     <div className="srow">
       <div className="srow-text">
-        <span className="srow-label">{t('settings.interventions.runbooksDir')}</span>
+        <span className="srow-label">{t('settings.interventions.runbooksDir')}<Hint text={t('settings.interventions.runbooksDirHelp')} /></span>
         {opsDirs?.runbooksDir ? (
           <code className="settings-path">{opsDirs.runbooksDir}</code>
         ) : (
           <span className="help">{t('settings.interventions.noRunbooksDir')}</span>
         )}
-        <span className="help">{t('settings.interventions.runbooksDirHelp')}</span>
         {opsErrorLine('runbooksDir')}
       </div>
       <div className="settings-btn-pair">
@@ -688,8 +688,7 @@ export default function SettingsView({
   ) => (
     <div className="srow">
       <div className="srow-text">
-        <span className="srow-label">{label}</span>
-        <span className="help">{hint}</span>
+        <span className="srow-label">{label}<Hint text={hint} /></span>
       </div>
       <label className="toggle-switch">
         <input
@@ -714,12 +713,14 @@ export default function SettingsView({
   const editRow = (label: string, value: string | undefined, onClick: () => void, action = t('common.edit')) => (
     <div className="srow">
       <div className="srow-text">
-        <span className="srow-label">{label}</span>
-        {value && <span className="help">{value}</span>}
+        <span className="srow-label">
+          {label}
+          {value && <span className="srow-value">{value}</span>}
+        </span>
       </div>
       <button
         type="button"
-        className="btn-ghost"
+        className="btn-ghost small"
         onClick={onClick}
         aria-label={t('settings.row.actionAria', { action, label: label.toLowerCase() })}
       >
@@ -776,8 +777,7 @@ export default function SettingsView({
 
               <div className="srow">
                 <div className="srow-text">
-                  <span className="srow-label">{t('settings.general.backgroundModel.label')}</span>
-                  <span className="help">{t('settings.general.backgroundModel.hint')}</span>
+                  <span className="srow-label">{t('settings.general.backgroundModel.label')}<Hint text={t('settings.general.backgroundModel.hint')} /></span>
                 </div>
                 <ModelPicker models={models} value={defaultModel} onChange={onSetDefaultModel} variant="select" />
               </div>
@@ -786,8 +786,7 @@ export default function SettingsView({
                 <>
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.general.language.label')}</span>
-                      <span className="help">{t('settings.general.language.hint')}</span>
+                      <span className="srow-label">{t('settings.general.language.label')}<Hint text={t('settings.general.language.hint')} /></span>
                     </div>
                     <Select
                       className="settings-select"
@@ -807,8 +806,7 @@ export default function SettingsView({
 
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.general.density.label')}</span>
-                      <span className="help">{t('settings.general.density.hint')}</span>
+                      <span className="srow-label">{t('settings.general.density.label')}<Hint text={t('settings.general.density.hint')} /></span>
                     </div>
                     <div className="seg-control" role="group" aria-label={t('settings.general.density.label')}>
                       <button type="button" className={ui.density === 'comfortable' ? 'on' : ''} onClick={() => onSetUi({ density: 'comfortable' })}>
@@ -826,8 +824,7 @@ export default function SettingsView({
                   <NavRailSettings ui={ui} onSetUi={onSetUi} />
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.general.weekPlanner.label')}</span>
-                      <span className="help">{t('settings.general.weekPlanner.hint')}</span>
+                      <span className="srow-label">{t('settings.general.weekPlanner.label')}<Hint text={t('settings.general.weekPlanner.hint')} /></span>
                     </div>
                     <label className="toggle-switch">
                       <input
@@ -850,7 +847,7 @@ export default function SettingsView({
                     <span className="srow-label">{t('settings.general.archived.label')}</span>
                     <span className="help">{plural(t, 'settings.general.archived.hint', archivedChats)}</span>
                   </div>
-                  <button type="button" className="btn-ghost" onClick={() => void window.electronAPI.openChatExport()}>
+                  <button type="button" className="btn-ghost small" onClick={() => void window.electronAPI.openChatExport()}>
                     {t('settings.general.archived.openFolder')}
                   </button>
                 </div>
@@ -920,8 +917,7 @@ export default function SettingsView({
 
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.system.shortcut.label')}</span>
-                      <span className="help">{t('settings.system.shortcut.hint')}</span>
+                      <span className="srow-label">{t('settings.system.shortcut.label')}<Hint text={t('settings.system.shortcut.hint')} /></span>
                       {registeredShortcut ? (
                         <span className="help">{t('settings.system.shortcut.registered', { shortcut: displayAccelerator(registeredShortcut) })}</span>
                       ) : (
@@ -952,15 +948,14 @@ export default function SettingsView({
               <div className="eyebrow settings-eyebrow">{t('settings.transfer.eyebrow')}</div>
               <div className="srow">
                 <div className="srow-text">
-                  <span className="srow-label">{t('settings.transfer.label')}</span>
-                  <span className="help">{t('settings.transfer.hint')}</span>
+                  <span className="srow-label">{t('settings.transfer.label')}<Hint text={t('settings.transfer.hint')} /></span>
                   {importError && <span className="help settings-error">{importError}</span>}
                 </div>
                 <div className="settings-btn-pair">
-                  <button type="button" className="btn-ghost" onClick={() => setShowExport(true)}>
+                  <button type="button" className="btn-ghost small" onClick={() => setShowExport(true)}>
                     {t('settings.transfer.export')}
                   </button>
-                  <button type="button" className="btn-ghost" disabled={importBusy} onClick={startImport}>
+                  <button type="button" className="btn-ghost small" disabled={importBusy} onClick={startImport}>
                     {t('settings.transfer.import')}
                   </button>
                 </div>
@@ -976,9 +971,9 @@ export default function SettingsView({
                 <>
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.shortcut.label')}</span>
-                      <span className="help">
-                        {t(IS_DARWIN ? 'settings.companion.shortcut.hintMac' : 'settings.companion.shortcut.hint')}
+                      <span className="srow-label">
+                        {t('settings.companion.shortcut.label')}
+                        <Hint text={t(IS_DARWIN ? 'settings.companion.shortcut.hintMac' : 'settings.companion.shortcut.hint')} />
                       </span>
                       {companionShortcut ? (
                         <span className="help">
@@ -1029,8 +1024,7 @@ export default function SettingsView({
                     )}
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.character.label')}</span>
-                      <span className="help">{t('settings.companion.character.hint')}</span>
+                      <span className="srow-label">{t('settings.companion.character.label')}<Hint text={t('settings.companion.character.hint')} /></span>
                     </div>
                     <Select
                       className="settings-select"
@@ -1045,8 +1039,7 @@ export default function SettingsView({
                   </div>
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.size.label')}</span>
-                      <span className="help">{t('settings.companion.size.hint')}</span>
+                      <span className="srow-label">{t('settings.companion.size.label')}<Hint text={t('settings.companion.size.hint')} /></span>
                     </div>
                     <Select
                       className="settings-select"
@@ -1085,8 +1078,7 @@ export default function SettingsView({
                   )}
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.leadTime.label')}</span>
-                      <span className="help">{t('settings.companion.leadTime.hint')}</span>
+                      <span className="srow-label">{t('settings.companion.leadTime.label')}<Hint text={t('settings.companion.leadTime.hint')} /></span>
                     </div>
                     <Select
                       className="settings-select"
@@ -1111,8 +1103,7 @@ export default function SettingsView({
                   </div>
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.morning.label')}</span>
-                      <span className="help">{t('settings.companion.morning.hint')}</span>
+                      <span className="srow-label">{t('settings.companion.morning.label')}<Hint text={t('settings.companion.morning.hint')} /></span>
                     </div>
                     <Select
                       className="settings-select"
@@ -1161,13 +1152,12 @@ export default function SettingsView({
                   )}
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.obsidian.label')}</span>
+                      <span className="srow-label">{t('settings.companion.obsidian.label')}<Hint text={t('settings.companion.obsidian.hint')} /></span>
                       {obsidianVault ? (
                         <code className="settings-path">{obsidianVault}</code>
                       ) : (
                         <span className="help">{t('settings.companion.obsidian.off')}</span>
                       )}
-                      <span className="help">{t('settings.companion.obsidian.hint')}</span>
                       {vault && !vault.exists && (
                         <span className="help settings-error" role="alert">
                           {t('settings.companion.obsidian.missing')}
@@ -1200,8 +1190,7 @@ export default function SettingsView({
                     <>
                       <div className="srow">
                         <div className="srow-text">
-                          <span className="srow-label">{t('settings.companion.obsidian.folder.label')}</span>
-                          <span className="help">{t('settings.companion.obsidian.folder.hint')}</span>
+                          <span className="srow-label">{t('settings.companion.obsidian.folder.label')}<Hint text={t('settings.companion.obsidian.folder.hint')} /></span>
                         </div>
                         <input
                           className="text-input"
@@ -1309,8 +1298,7 @@ export default function SettingsView({
 
               <div className="srow settings-verify">
                 <div className="srow-text">
-                  <span className="srow-label">{t('settings.ops.verify.label')}</span>
-                  <span className="help">{t('settings.ops.verify.hint')}</span>
+                  <span className="srow-label">{t('settings.ops.verify.label')}<Hint text={t('settings.ops.verify.hint')} /></span>
                   {verifyResult && (
                     <span
                       className={`help settings-result ${verifyResult.ok ? (verifyResult.lines === 0 || verifyResult.imported ? '' : 'ok') : 'err'}`}
@@ -1358,7 +1346,7 @@ export default function SettingsView({
                   }}
                   aria-label={t('settings.ops.verify.dayAria')}
                 />
-                <button type="button" className="btn-ghost" onClick={verifyLedger} disabled={verifying || !verifyDate}>
+                <button type="button" className="btn-ghost small" onClick={verifyLedger} disabled={verifying || !verifyDate}>
                   {verifying ? t('settings.ops.verify.verifying') : t('settings.ops.verify.button')}
                 </button>
               </div>
@@ -1410,8 +1398,7 @@ export default function SettingsView({
                 toggleRow(t('settings.about.labs.label'), t('settings.about.labs.hint'), labs, (on) => void setLabs(on), labsBusy)}
               <div className="srow">
                 <div className="srow-text">
-                  <span className="srow-label">{t('settings.about.changelog.label')}</span>
-                  <span className="help">{t('settings.about.changelog.hint')}</span>
+                  <span className="srow-label">{t('settings.about.changelog.label')}<Hint text={t('settings.about.changelog.hint')} /></span>
                 </div>
                 <button type="button" className="btn-ghost" onClick={() => setShowChangelog(true)}>
                   {t('settings.about.changelog.button')}
@@ -1419,8 +1406,7 @@ export default function SettingsView({
               </div>
               <div className="srow">
                 <div className="srow-text">
-                  <span className="srow-label">{t('settings.about.author')}</span>
-                  <span className="help">{t('settings.about.license')}</span>
+                  <span className="srow-label">{t('settings.about.author')}<Hint text={t('settings.about.license')} /></span>
                 </div>
               </div>
             </>
