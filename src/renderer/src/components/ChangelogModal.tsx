@@ -21,7 +21,25 @@ const CHANGELOG: Entry[] = [
     version: '3.13.0',
     date: '2026-11-28',
     tag: 'new',
-    sections: []
+    sections: [
+      {
+        title: 'Settings',
+        items: [
+          'Settings has five sections instead of eight: Interventions and Ops audit are one Ops section, accounts moved to General, and the version, updates and changelog sit at the bottom of the Settings menu.',
+          'A search box finds a setting by its name or its explanation and takes you to it. The command palette lists each section, and Settings reopens on the section you left.',
+          'Rows are one line tall: the explanation is behind the “i” next to each name. Appearance fits its colours, typefaces and sizes on one row each, each theme has a Reset theme button, and Density moved there.',
+          'Companion’s options are grouped, and a global shortcut that is already taken now says so and shows the one in use.',
+          'Ops can open the audit folder and verify the last seven days in one go.'
+        ]
+      },
+      {
+        title: 'Navigation',
+        items: [
+          'The side menu can hide entries and reorder them (Settings → General): click a chip to show or hide, drag it or press Alt+← / Alt+→ to move it. Hidden entries stay in the command palette, which now lists Home too.',
+          'Argos can open on Home, Chat or where you left off.'
+        ]
+      }
+    ]
   },
   {
     version: '3.12.0',
