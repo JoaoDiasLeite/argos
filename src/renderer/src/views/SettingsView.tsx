@@ -55,6 +55,7 @@ import {
   settingsSectionOf as sectionOf,
   type SettingsSectionId
 } from '../lib/settings-sections'
+import { searchSettings, type SettingsHit } from '../lib/settings-index'
 
 type SectionId = SettingsSectionId
 
@@ -160,17 +161,51 @@ export default function SettingsView({
   target
 }: Props) {
   const t = useT()
+  const pane = useRef<HTMLDivElement>(null)
   // A deep link wins; otherwise Settings reopens on the section it was last on.
   const [section, setSection] = useState<SectionId>(
     () => sectionOf(target?.section) ?? lastSettingsSection() ?? 'appearance'
   )
   useEffect(() => rememberSettingsSection(section), [section])
 
+  // ── Search ──
+  // Results replace the section list while there is a query. Picking one opens its
+  // section and scrolls to the row, found by its label: the row may not be mounted yet
+  // (Companion, System and Ops load their values first), so the jump waits for it.
+  const [query, setQuery] = useState('')
+  const hits = searchSettings(query, t, window.electronAPI.platform)
+  const [jump, setJump] = useState<{ text: string; n: number } | null>(null)
+  const goToHit = (hit: SettingsHit) => {
+    setSection(hit.entry.section)
+    setJump((prev) => ({ text: hit.text, n: (prev?.n ?? 0) + 1 }))
+    setQuery('')
+  }
+  useEffect(() => {
+    if (!jump) return
+    let tries = 0
+    let flash: ReturnType<typeof setTimeout> | undefined
+    const timer = setInterval(() => {
+      const label = Array.from(pane.current?.querySelectorAll('.srow-label') ?? []).find((el) =>
+        (el.textContent ?? '').trim().startsWith(jump.text)
+      )
+      const row = label?.closest('.srow')
+      if (!row && ++tries < 20) return
+      clearInterval(timer)
+      if (!row) return
+      row.scrollIntoView({ block: 'center' })
+      row.classList.add('srow-flash')
+      flash = setTimeout(() => row.classList.remove('srow-flash'), 1600)
+    }, 100)
+    return () => {
+      clearInterval(timer)
+      clearTimeout(flash)
+    }
+  }, [jump])
+
   useEffect(() => {
     const id = sectionOf(target?.section)
     if (id) setSection(id)
   }, [target])
-  const pane = useRef<HTMLDivElement>(null)
 
   // Switching section is a page change, not a scroll — landing halfway down System
   // because Appearance was scrolled is the one thing a nav like this gets wrong.
@@ -762,7 +797,42 @@ export default function SettingsView({
 
         <h2 className="settings-nav-title">{t('settings.nav.title')}</h2>
 
-        <div className="settings-nav-items">
+        <input
+          type="search"
+          className="text-input settings-search"
+          value={query}
+          placeholder={t('settings.nav.search')}
+          aria-label={t('settings.nav.search')}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && hits[0]) goToHit(hits[0])
+            if (e.key === 'Escape' && query) {
+              e.stopPropagation()
+              setQuery('')
+            }
+          }}
+        />
+
+        {query.trim() && (
+          <div className="settings-nav-items" role="listbox" aria-label={t('settings.nav.results')}>
+            {hits.length === 0 && <span className="help settings-search-empty">{t('settings.nav.noResults')}</span>}
+            {hits.map((hit) => (
+              <button
+                type="button"
+                key={hit.entry.section + ':' + hit.entry.label}
+                className="settings-nav-item settings-hit"
+                role="option"
+                aria-selected={false}
+                onClick={() => goToHit(hit)}
+              >
+                <span className="settings-hit-label">{hit.text}</span>
+                <span className="settings-hit-section">{t(`settings.section.${hit.entry.section}`)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="settings-nav-items" hidden={!!query.trim()}>
           {SECTIONS.map((s) => (
             <button
               type="button"

@@ -4,6 +4,9 @@ export default {
   'nav.ariaLabel': 'Settings sections',
   'nav.back': 'Back to app',
   'nav.title': 'Settings',
+  'nav.search': 'Search settings',
+  'nav.results': 'Search results',
+  'nav.noResults': 'Nothing found.',
 
   'section.appearance': 'Appearance',
   'section.general': 'General',

@@ -57,6 +57,25 @@
 
 .settings-nav-items { display: flex; flex-direction: column; gap: 2px; }
 
+/* ── Search ──
+   Over the section list; while there is a query the list gives way to the rows found. */
+.settings-search { margin: 0 0 8px; height: 30px; min-height: 30px; flex-shrink: 0; padding: 0 10px; font-size: 12.5px; -webkit-app-region: no-drag; }
+/* The section list steps aside for the results; its own display: flex would win over the hidden attribute. */
+.settings-nav-items[hidden] { display: none; }
+.settings-search-empty { padding: 6px 10px; }
+.settings-nav-item.settings-hit { flex-direction: column; align-items: flex-start; gap: 1px; height: auto; padding-top: 6px; padding-bottom: 6px; text-align: left; }
+.settings-hit-label { color: var(--text-0); }
+.settings-hit-section { font-size: 10.5px; color: var(--text-2); }
+/* The row a result led to, lit for a moment so the eye lands on it. */
+.srow-flash { animation: srow-flash 1.6s ease-out; }
+@keyframes srow-flash {
+  0%, 35% { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .srow-flash { animation: none; outline: 1px solid var(--accent); }
+}
+
 .settings-nav-item {
   display: flex;
   align-items: center;

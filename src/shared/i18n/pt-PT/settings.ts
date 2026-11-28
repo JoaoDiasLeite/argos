@@ -4,6 +4,9 @@ const settings: Record<keyof typeof en, string> = {
   'nav.ariaLabel': 'Secções das definições',
   'nav.back': 'Voltar à aplicação',
   'nav.title': 'Definições',
+  'nav.search': 'Procurar nas definições',
+  'nav.results': 'Resultados da pesquisa',
+  'nav.noResults': 'Nada encontrado.',
 
   'section.appearance': 'Aspeto',
   'section.general': 'Geral',
