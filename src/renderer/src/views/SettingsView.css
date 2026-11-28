@@ -204,7 +204,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 11px 4px 8px;
+  padding: 4px 11px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: transparent;
@@ -214,7 +214,7 @@
   cursor: pointer;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
-.settings-chip::before {
+.settings-chip[draggable='true']::before {
   content: '';
   width: 6px;
   height: 10px;
@@ -223,10 +223,9 @@
   background: radial-gradient(circle, currentColor 1px, transparent 1.2px) 0 0 / 3px 3.4px;
 }
 .settings-chip:hover { color: var(--text-0); }
-/* Chips that only toggle: no grip, and they sit at the end of the row like any control. */
+/* Chips at the end of a row, where any other control would sit. */
 .settings-chips.plain { margin: 0; flex-shrink: 0; justify-content: flex-end; }
-.settings-chips.plain .settings-chip { padding-left: 11px; }
-.settings-chips.plain .settings-chip::before { content: none; }
+.settings-chip[draggable='true'] { padding-left: 8px; }
 .settings-chip:disabled { opacity: 0.6; cursor: default; }
 .settings-chip.on {
   border-color: var(--accent);
@@ -285,7 +284,37 @@
   color: var(--text-1);
   word-break: break-all;
   user-select: text;
+  /* Plain text, not a boxed code chip: boxed, a path read as a field one could type in. */
+  padding: 0;
+  border: none;
+  background: none;
 }
+
+/* ── Groups ──
+   A section's groups stack in one column, and sit two abreast once the window is wide
+   enough that a single reading column leaves half of it empty. */
+.settings-groups { display: flex; flex-direction: column; }
+.settings-group { min-width: 0; display: flex; flex-direction: column; }
+@media (min-width: 1500px) {
+  .settings-column:has(.settings-groups) { max-width: 1320px; }
+  .settings-groups { display: grid; grid-template-columns: 1fr 1fr; column-gap: 56px; align-items: start; }
+}
+
+/* ── Nav footer ──
+   Version, updates and credits: what was the About section. */
+.settings-nav-foot {
+  margin-top: auto;
+  padding: 14px 10px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  -webkit-app-region: no-drag;
+}
+.settings-nav-foot .settings-version { font-size: 12.5px; color: var(--text-1); }
+.settings-nav-foot-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.settings-nav-foot .srow { min-height: 0; padding: 2px 0; border: none; }
+.settings-credits { user-select: text; overflow-wrap: anywhere; }
 
 /* The sentence under "Verify a day": green when the chain is intact, red when it is
    broken, muted when there was nothing to check. */

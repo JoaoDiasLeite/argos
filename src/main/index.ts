@@ -2303,6 +2303,12 @@ ipcMain.handle('ops:open-folder', async (_, which: string) => {
     const error = await shell.openPath(dir)
     return error ? { ok: false, error } : { ok: true, path: dir }
   }
+  // The audit ledger's own folder: already there (the ledger creates it), never chosen.
+  if (which === 'audit') {
+    const { dir } = await getOpsLedger().info()
+    const error = await shell.openPath(dir)
+    return error ? { ok: false, error } : { ok: true, path: dir }
+  }
   if (which !== 'reports' && which !== 'handovers') return { ok: false, error: t('main.ipc.ops.unknownFolder', { which: String(which) }) }
   const dir = opsDir(which === 'reports' ? 'reportsDir' : 'handoversDir')
   try {

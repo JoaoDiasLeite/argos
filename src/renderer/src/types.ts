@@ -2129,7 +2129,7 @@ declare global {
       ) => Promise<{ ok: true; path: string } | { ok: false; error: string }>
       /** Open one of the ops folders in the file manager: reports and handovers are created when
        *  missing; the runbooks folder only opens when one is set. */
-      opsOpenFolder: (which: 'reports' | 'handovers' | 'runbooks') => Promise<{ ok: true; path: string } | { ok: false; error: string }>
+      opsOpenFolder: (which: 'reports' | 'handovers' | 'runbooks' | 'audit') => Promise<{ ok: true; path: string } | { ok: false; error: string }>
       /** `imported`: the day (or, with runId, that run's file) came from a profile archive; its
        *  chain is consistent but its origin cannot be verified. `lines` counts local lines only. */
       opsVerify: (

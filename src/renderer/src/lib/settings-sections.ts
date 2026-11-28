@@ -4,25 +4,30 @@
 // lists one entry per section, and importing the list from the view would pull the whole
 // screen into the main bundle.
 
-export const SETTINGS_SECTIONS = [
-  'appearance',
-  'general',
-  'connection',
-  'system',
-  'companion',
-  'interventions',
-  'ops',
-  'about'
-] as const
+export const SETTINGS_SECTIONS = ['appearance', 'general', 'system', 'companion', 'ops'] as const
 
 export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]
+
+/**
+ * Sections that were folded into others, by where their rows went. A deep link or a
+ * stored "last section" written by an older build still lands somewhere sensible:
+ * Connection's accounts are in General, Interventions is the folders half of Ops, and
+ * About is the footer of the Settings nav, visible from every section.
+ */
+const FORMER_SECTIONS = new Map<string, SettingsSectionId>([
+  ['connection', 'general'],
+  ['interventions', 'ops'],
+  ['about', 'general']
+])
 
 /** The section's name, as shown in the Settings nav and the palette. */
 export const settingsSectionLabel = (id: SettingsSectionId) => `settings.section.${id}` as const
 
 /** A section name from a deep link or from storage, if it is one of ours. */
 export function settingsSectionOf(name: string | null | undefined): SettingsSectionId | null {
-  return (SETTINGS_SECTIONS as readonly string[]).includes(name ?? '') ? (name as SettingsSectionId) : null
+  if (!name) return null
+  if ((SETTINGS_SECTIONS as readonly string[]).includes(name)) return name as SettingsSectionId
+  return FORMER_SECTIONS.get(name) ?? null
 }
 
 const LAST_SECTION_KEY = 'argos.settings.section'
