@@ -21,6 +21,7 @@ import { Rgb, accentRamp, parseHex, readableOn, surfaceRamp, textRamp } from '..
 import { availableFonts } from '../lib/fonts'
 import './AppearanceSettings.css'
 import Select from './Select'
+import Hint from './Hint'
 import { useT } from '../i18n'
 import type { MessageKey } from '../../../shared/i18n'
 
@@ -190,15 +191,27 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   return (
     <div className="srow">
       <div className="srow-text">
-        <span className="srow-label">{label}</span>
-        {hint && <span className="help">{hint}</span>}
+        <span className="srow-label">
+          {label}
+          {hint && <Hint text={hint} />}
+        </span>
       </div>
       {children}
     </div>
   )
 }
 
-/** A quiet button that stays in its place at 45 % when there is nothing to reset. */
+/** A control with a small caption over it, for rows that hold several of one kind. */
+function Field({ caption, children }: { caption: string; children: ReactNode }) {
+  return (
+    <label className="ap-field">
+      <span className="ap-field-cap">{caption}</span>
+      {children}
+    </label>
+  )
+}
+
+/** A quiet button that keeps its place but is not shown when there is nothing to reset. */
 function ResetButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
   const t = useT()
   return (
@@ -252,29 +265,39 @@ function Slider({
  * undefined alike as "delete the override" — so default is a real state of the model,
  * not a sentinel this component invented.
  */
-function ColorRow({
+function ColorSwatch({
   label,
-  hint,
   value,
   fallback,
   onChange
 }: {
   label: string
-  hint: string
   value: string | undefined
   fallback: string
   onChange: (next: string) => void
 }) {
   const t = useT()
-  const custom = !!value
+  // The three colours share one row, so each is a swatch with its name. An untouched one
+  // shows only that; a custom one adds its value and the way back to the preset's.
   return (
-    <Row label={label} hint={hint}>
+    <span className="ap-swatch">
       <label className="ap-color">
         <input type="color" value={value || fallback} onChange={(e) => onChange(e.target.value)} aria-label={label} />
-        <span className="ap-color-value">{custom ? value : t('settings.appearance.colorDefault')}</span>
+        <span className="ap-swatch-name">{label}</span>
+        {value && <span className="ap-color-value">{value}</span>}
       </label>
-      <ResetButton disabled={!custom} onClick={() => onChange('')} />
-    </Row>
+      {value && (
+        <button
+          type="button"
+          className="ap-swatch-reset"
+          onClick={() => onChange('')}
+          title={t('settings.appearance.resetOne', { name: label })}
+          aria-label={t('settings.appearance.resetOne', { name: label })}
+        >
+          ×
+        </button>
+      )}
+    </span>
   )
 }
 
@@ -401,6 +424,19 @@ export default function AppearanceSettings({ ui, onSetUi }: Props) {
   const contrast = contrastSliders[side]
   const mode = ui.mode ?? ui.theme
 
+  // "Reset theme": everything this side overrides, back to its preset. The preset itself
+  // stays, since choosing one is not an override of anything.
+  const sideCustomised =
+    !!settings?.accent ||
+    !!settings?.background ||
+    !!settings?.foreground ||
+    settings?.contrast !== undefined ||
+    settings?.translucentSidebar !== undefined
+  const resetSide = (): void => {
+    contrast.clear()
+    patchSide(side, { accent: null, background: null, foreground: null, contrast: null, translucentSidebar: null })
+  }
+
   return (
     <div className="ap">
       <Row label={t('settings.appearance.mode.label')} hint={t('settings.appearance.mode.hint')}>
@@ -413,15 +449,38 @@ export default function AppearanceSettings({ ui, onSetUi }: Props) {
         </div>
       </Row>
 
-      <Row label={t('settings.appearance.editing.label')} hint={t('settings.appearance.editing.hint')}>
-        <div className="seg-control" role="group" aria-label={t('settings.appearance.editing.label')}>
-          {(['light', 'dark'] as Side[]).map((s) => (
-            <button type="button" key={s} className={editing === s ? 'on' : ''} onClick={() => setEditing(s)} aria-pressed={editing === s}>
-              {s === 'light' ? t('settings.appearance.mode.light') : t('settings.appearance.mode.dark')}
+      <Row label={t('settings.general.density.label')} hint={t('settings.general.density.hint')}>
+        <div className="seg-control" role="group" aria-label={t('settings.general.density.label')}>
+          {(['comfortable', 'compact'] as const).map((d) => (
+            <button type="button" key={d} className={ui.density === d ? 'on' : ''} onClick={() => onSetUi({ density: d })} aria-pressed={ui.density === d}>
+              {t(`settings.general.density.${d}`)}
             </button>
           ))}
         </div>
       </Row>
+
+      {/* Which side the rows below edit, as the heading of those rows: stacked under Mode
+          as a row of its own, a second Light | Dark read as a duplicate of the first. */}
+      <div className="eyebrow ap-eyebrow ap-editing">
+        <span>
+          {t('settings.appearance.editing.label')}
+          <Hint text={t('settings.appearance.editing.hint')} />
+        </span>
+        <div className="ap-editing-controls">
+          {sideCustomised && (
+            <button type="button" className="btn-ghost small" onClick={resetSide}>
+              {t('settings.appearance.resetTheme')}
+            </button>
+          )}
+          <div className="seg-control" role="group" aria-label={t('settings.appearance.editing.label')}>
+            {(['light', 'dark'] as Side[]).map((s) => (
+              <button type="button" key={s} className={editing === s ? 'on' : ''} onClick={() => setEditing(s)} aria-pressed={editing === s}>
+                {s === 'light' ? t('settings.appearance.mode.light') : t('settings.appearance.mode.dark')}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
       <ThemePreview paint={paint} />
 
@@ -429,27 +488,33 @@ export default function AppearanceSettings({ ui, onSetUi }: Props) {
         <PalettePicker side={side} value={settings?.palette || DEFAULT_PALETTE} onChange={(palette) => patchSide(side, { palette })} />
       </Row>
 
-      <ColorRow
-        label={t('settings.appearance.accent.label')}
-        hint={t('settings.appearance.accent.hint')}
-        value={settings?.accent}
-        fallback={paint.accent}
-        onChange={(accent) => patchSide(side, { accent })}
-      />
-      <ColorRow
-        label={t('settings.appearance.background.label')}
-        hint={t('settings.appearance.background.hint')}
-        value={settings?.background}
-        fallback={paint.bg0}
-        onChange={(background) => patchSide(side, { background })}
-      />
-      <ColorRow
-        label={t('settings.appearance.foreground.label')}
-        hint={t('settings.appearance.foreground.hint')}
-        value={settings?.foreground}
-        fallback={paint.text0}
-        onChange={(foreground) => patchSide(side, { foreground })}
-      />
+      <Row
+        label={t('settings.appearance.colors.label')}
+        hint={(['accent', 'background', 'foreground'] as const)
+          .map((k) => `${t(`settings.appearance.${k}.label`)}: ${t(`settings.appearance.${k}.hint`)}`)
+          .join(' ')}
+      >
+        <div className="ap-swatches">
+          <ColorSwatch
+            label={t('settings.appearance.accent.label')}
+            value={settings?.accent}
+            fallback={paint.accent}
+            onChange={(accent) => patchSide(side, { accent })}
+          />
+          <ColorSwatch
+            label={t('settings.appearance.background.label')}
+            value={settings?.background}
+            fallback={paint.bg0}
+            onChange={(background) => patchSide(side, { background })}
+          />
+          <ColorSwatch
+            label={t('settings.appearance.foreground.label')}
+            value={settings?.foreground}
+            fallback={paint.text0}
+            onChange={(foreground) => patchSide(side, { foreground })}
+          />
+        </div>
+      </Row>
 
       <Row label={t('settings.appearance.contrast.label')} hint={t('settings.appearance.contrast.hint')}>
         <Slider min={0} max={100} value={contrast.shown} onChange={contrast.onChange} label={t('settings.appearance.contrast.aria', { side: t(side === 'light' ? 'settings.appearance.mode.light' : 'settings.appearance.mode.dark') })} />
@@ -477,58 +542,77 @@ export default function AppearanceSettings({ ui, onSetUi }: Props) {
         </label>
       </Row>
 
-      <div className="eyebrow ap-eyebrow">{t('settings.appearance.fonts.title')}</div>
-      <Row label={t('settings.appearance.fonts.ui.label')} hint={t('settings.appearance.fonts.ui.hint')}>
-        <Select className="ap-select" value={ui.fonts?.ui || 'system'} onChange={(e) => onSetUi({ fonts: { ui: e.target.value } })}>
-          {uiFonts.map((f) => (
-            <option key={f.id} value={f.id}>
-              {fontName(f)}
-            </option>
-          ))}
-        </Select>
-      </Row>
-      <Row label={t('settings.appearance.fonts.content.label')} hint={t('settings.appearance.fonts.content.hint')}>
-        <Select className="ap-select" value={ui.fonts?.content || 'inherit'} onChange={(e) => onSetUi({ fonts: { content: e.target.value } })}>
-          <option value="inherit">{t('settings.appearance.fonts.content.inherit')}</option>
-          {uiFonts.map((f) => (
-            <option key={f.id} value={f.id}>
-              {fontName(f)}
-            </option>
-          ))}
-        </Select>
-      </Row>
-      <Row label={t('settings.appearance.fonts.code.label')} hint={t('settings.appearance.fonts.code.hint')}>
-        <Select className="ap-select mono" value={ui.fonts?.code || 'system-mono'} onChange={(e) => onSetUi({ fonts: { code: e.target.value } })}>
-          {monoFonts.map((f) => (
-            <option key={f.id} value={f.id}>
-              {fontName(f)}
-            </option>
-          ))}
-        </Select>
+      <div className="eyebrow ap-eyebrow">{t('settings.appearance.type.title')}</div>
+      <Row
+        label={t('settings.appearance.fonts.title')}
+        hint={(['ui', 'content', 'code'] as const)
+          .map((k) => `${t(`settings.appearance.short.${k}`)}: ${t(`settings.appearance.fonts.${k}.hint`)}`)
+          .join(' ')}
+      >
+        <div className="ap-fields">
+          <Field caption={t('settings.appearance.short.ui')}>
+            <Select className="ap-select" value={ui.fonts?.ui || 'system'} onChange={(e) => onSetUi({ fonts: { ui: e.target.value } })} aria-label={t('settings.appearance.fonts.ui.label')}>
+              {uiFonts.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {fontName(f)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field caption={t('settings.appearance.short.content')}>
+            <Select className="ap-select" value={ui.fonts?.content || 'inherit'} onChange={(e) => onSetUi({ fonts: { content: e.target.value } })} aria-label={t('settings.appearance.fonts.content.label')}>
+              <option value="inherit">{t('settings.appearance.fonts.content.inherit')}</option>
+              {uiFonts.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {fontName(f)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field caption={t('settings.appearance.short.code')}>
+            <Select className="ap-select mono" value={ui.fonts?.code || 'system-mono'} onChange={(e) => onSetUi({ fonts: { code: e.target.value } })} aria-label={t('settings.appearance.fonts.code.label')}>
+              {monoFonts.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {fontName(f)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
       </Row>
 
-      <div className="eyebrow ap-eyebrow">{t('settings.appearance.sizes.title')}</div>
-      <Row label={t('settings.appearance.sizes.ui.label')} hint={t('settings.appearance.sizes.ui.hint')}>
-        <Slider min={UI_FONT_SIZE.min} max={UI_FONT_SIZE.max} value={uiSlider.shown} onChange={uiSlider.onChange} label={t('settings.appearance.sizes.ui.label')} />
-        <span className="ap-number">{uiSlider.shown}px</span>
-        <ResetButton
-          disabled={uiSlider.shown === UI_FONT_SIZE.default}
-          onClick={() => {
-            uiSlider.clear()
-            onSetUi({ uiFontSize: UI_FONT_SIZE.default })
-          }}
-        />
-      </Row>
-      <Row label={t('settings.appearance.sizes.code.label')} hint={t('settings.appearance.sizes.code.hint')}>
-        <Slider min={CODE_FONT_SIZE.min} max={CODE_FONT_SIZE.max} value={codeSlider.shown} onChange={codeSlider.onChange} label={t('settings.appearance.sizes.code.label')} />
-        <span className="ap-number">{codeSlider.shown}px</span>
-        <ResetButton
-          disabled={codeSlider.shown === CODE_FONT_SIZE.default}
-          onClick={() => {
-            codeSlider.clear()
-            onSetUi({ codeFontSize: CODE_FONT_SIZE.default })
-          }}
-        />
+      <Row
+        label={t('settings.appearance.sizes.title')}
+        hint={(['ui', 'code'] as const)
+          .map((k) => `${t(`settings.appearance.short.${k}`)}: ${t(`settings.appearance.sizes.${k}.hint`)}`)
+          .join(' ')}
+      >
+        <div className="ap-fields">
+          <Field caption={`${t('settings.appearance.short.ui')} · ${uiSlider.shown}px`}>
+            <span className="ap-size">
+              <Slider min={UI_FONT_SIZE.min} max={UI_FONT_SIZE.max} value={uiSlider.shown} onChange={uiSlider.onChange} label={t('settings.appearance.sizes.ui.label')} />
+              <ResetButton
+                disabled={uiSlider.shown === UI_FONT_SIZE.default}
+                onClick={() => {
+                  uiSlider.clear()
+                  onSetUi({ uiFontSize: UI_FONT_SIZE.default })
+                }}
+              />
+            </span>
+          </Field>
+          <Field caption={`${t('settings.appearance.short.code')} · ${codeSlider.shown}px`}>
+            <span className="ap-size">
+              <Slider min={CODE_FONT_SIZE.min} max={CODE_FONT_SIZE.max} value={codeSlider.shown} onChange={codeSlider.onChange} label={t('settings.appearance.sizes.code.label')} />
+              <ResetButton
+                disabled={codeSlider.shown === CODE_FONT_SIZE.default}
+                onClick={() => {
+                  codeSlider.clear()
+                  onSetUi({ codeFontSize: CODE_FONT_SIZE.default })
+                }}
+              />
+            </span>
+          </Field>
+        </div>
       </Row>
     </div>
   )

@@ -804,20 +804,6 @@ export default function SettingsView({
                     </Select>
                   </div>
 
-                  <div className="srow">
-                    <div className="srow-text">
-                      <span className="srow-label">{t('settings.general.density.label')}<Hint text={t('settings.general.density.hint')} /></span>
-                    </div>
-                    <div className="seg-control" role="group" aria-label={t('settings.general.density.label')}>
-                      <button type="button" className={ui.density === 'comfortable' ? 'on' : ''} onClick={() => onSetUi({ density: 'comfortable' })}>
-                        {t('settings.general.density.comfortable')}
-                      </button>
-                      <button type="button" className={ui.density === 'compact' ? 'on' : ''} onClick={() => onSetUi({ density: 'compact' })}>
-                        {t('settings.general.density.compact')}
-                      </button>
-                    </div>
-                  </div>
-
                   {/* What the rail shows and where the app opens. The weekly planner sits
                       here too: it is also a choice about what navigation offers. */}
                   <div className="eyebrow settings-eyebrow">{t('settings.general.navRail.eyebrow')}</div>
