@@ -9,6 +9,29 @@
 // file I/O.
 
 import { isLanguage, type Language } from '../shared/i18n'
+import {
+  isDefaultNavOrder,
+  isStartView,
+  orderNavItems,
+  sanitizeHiddenNavItems,
+  type NavItemId,
+  type StartView
+} from '../shared/nav-items'
+
+/** Normalise the three navigation prefs in place: known values stay, the rest go absent. */
+function cleanNavPrefs(ui: UiPrefs): void {
+  if ('hiddenNavItems' in ui) {
+    const hidden = sanitizeHiddenNavItems(ui.hiddenNavItems)
+    if (hidden.length) ui.hiddenNavItems = hidden
+    else delete ui.hiddenNavItems
+  }
+  if ('navOrder' in ui) {
+    const order = orderNavItems(ui.navOrder)
+    if (isDefaultNavOrder(order)) delete ui.navOrder
+    else ui.navOrder = order
+  }
+  if ('startView' in ui && (!isStartView(ui.startView) || ui.startView === 'home')) delete ui.startView
+}
 
 /** One side of the appearance model: everything that can differ between light and dark. */
 export interface ThemeSettings {
@@ -71,6 +94,13 @@ export interface UiPrefs {
   codeFontSize?: number
   /** UI language. Absent means English, which is what every older config says. */
   language?: Language
+  /** Nav rail entries the user switched off (Settings → General). Absent or empty means
+   *  every entry shows. The views stay reachable from the command palette and deep links. */
+  hiddenNavItems?: NavItemId[]
+  /** The rail's order, every entry named. Absent means the default order. */
+  navOrder?: NavItemId[]
+  /** Where the app opens. Absent means Home. */
+  startView?: StartView
 }
 
 /**
@@ -154,6 +184,7 @@ export function migrateUiPrefs(ui: UiPrefs): UiPrefs {
   if (typeof next.showWeekPlanner !== 'boolean') next.showWeekPlanner = false
   // Absent stays absent (= English); only a value no build ever wrote is dropped.
   if ('language' in next && !isLanguage(next.language)) delete next.language
+  cleanNavPrefs(next)
   if (!next.light) next.light = { palette: ui.palette }
   if (!next.dark) next.dark = { palette: ui.palette }
   return next
@@ -258,6 +289,9 @@ export function applyUiPatch(current: UiPrefs, patch: UiPrefsPatch, systemPrefer
     else if (value === undefined || value === null || base.language === undefined) delete next.language
     else next.language = base.language
   }
+  // The scalar spread already copied these; each list is sent whole, so a patch replaces
+  // rather than merges. Cleaning here is what keeps unknown ids out of the stored config.
+  cleanNavPrefs(next)
 
   return resolveUiPrefs(next, systemPrefersDark)
 }

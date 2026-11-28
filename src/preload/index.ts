@@ -485,7 +485,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('ops:report', runId, kind, runbookPath),
   opsSaveReport: (runId: string, kind: 'internal' | 'client' | 'handover', runbookPath?: string) =>
     ipcRenderer.invoke('ops:save-report', runId, kind, runbookPath),
-  opsOpenFolder: (which: 'reports' | 'handovers' | 'runbooks') => ipcRenderer.invoke('ops:open-folder', which),
+  opsOpenFolder: (which: 'reports' | 'handovers' | 'runbooks' | 'audit') => ipcRenderer.invoke('ops:open-folder', which),
   opsVerify: (date: string, runId?: string) => ipcRenderer.invoke('ops:verify', date, runId),
   opsLedgerInfo: () => ipcRenderer.invoke('ops:ledger-info'),
   onOpsEvent: (cb: (data: unknown) => void) => {

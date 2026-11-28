@@ -9,6 +9,18 @@
 /* ── Controls ── */
 .ap-select { width: 220px; flex-shrink: 0; }
 
+/* Several controls of one kind on a row, each under a small caption. */
+.ap-fields { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 12px; min-width: 0; }
+.ap-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ap-field-cap { font-size: 10.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.ap-fields .ap-select { width: 204px; }
+.ap-size { display: flex; align-items: center; gap: 8px; height: 28px; }
+.ap-size .ap-slider { width: 130px; }
+
+/* The heading of the per-theme rows carries the Light | Dark choice they follow. */
+.ap-editing { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ap-editing-controls { display: flex; align-items: center; gap: 8px; text-transform: none; letter-spacing: normal; }
+
 .ap-number {
   min-width: 38px;
   text-align: right;
@@ -18,8 +30,9 @@
   color: var(--text-1);
 }
 
-/* "Reset" keeps its place and steps back to 45 % when there is nothing to reset. */
-.ap-reset:disabled { opacity: 0.45; }
+/* "Reset" keeps its place, so the row does not shift, but shows only when there is
+   something to reset. */
+.ap-reset:disabled { visibility: hidden; }
 
 /* ── Slider ──
    4 px track on --bg-3, the filled part on --accent, a 12 px round thumb. The track and
@@ -78,8 +91,23 @@
    read as the colour rather than as a bordered chip inside a bordered box. */
 .ap-color input::-webkit-color-swatch-wrapper { padding: 0; }
 .ap-color input::-webkit-color-swatch { border: none; border-radius: 3px; }
+/* The three colours on one row: a swatch, its name, and for a custom one its value and
+   a way back. */
+.ap-swatches { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 16px; }
+.ap-swatch { display: inline-flex; align-items: center; gap: 4px; }
+.ap-swatch .ap-color { gap: 7px; }
+.ap-swatch-name { font-size: 12.5px; color: var(--text-1); }
+.ap-swatch-reset {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ap-swatch-reset:hover { background: var(--bg-3); color: var(--text-0); }
 .ap-color-value {
-  min-width: 62px;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-2);

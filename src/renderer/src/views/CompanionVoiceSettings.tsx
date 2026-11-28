@@ -3,6 +3,7 @@
 // a one-time 564 MB download), and the line that says the audio stays on this computer.
 import type { CompanionPrefs } from '../types'
 import { useT } from '../i18n'
+import Hint from '../components/Hint'
 import Select from '../components/Select'
 import { displayAccelerator } from '../lib/platform'
 import { AUTO_DICTATION_SHORTCUT } from '../lib/accelerator'
@@ -40,8 +41,7 @@ export default function CompanionVoiceSettings({
     <>
       <div className="srow">
         <div className="srow-text">
-          <span className="srow-label">{t('settings.companion.voice.shortcut.label')}</span>
-          <span className="help">{t('settings.companion.voice.shortcut.hint')}</span>
+          <span className="srow-label">{t('settings.companion.voice.shortcut.label')}<Hint text={t('settings.companion.voice.shortcut.hint')} /></span>
           {registeredShortcut ? (
             <span className="help">{t('settings.companion.voice.shortcut.registered', { shortcut: displayAccelerator(registeredShortcut) })}</span>
           ) : (

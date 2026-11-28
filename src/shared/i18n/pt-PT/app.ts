@@ -31,6 +31,7 @@ const app: Record<keyof typeof en, string> = {
   'palette.shortcuts': 'Atalhos de teclado',
   'palette.goTo': 'Ir para {view}',
   'palette.openSettings': 'Abrir as Definições',
+  'palette.settingsSection': 'Definições: {section}',
   'palette.manageAccounts': 'Gerir contas Claude',
   'palette.switchAccount': 'Mudar a conta predefinida: {name}',
   'palette.accountNewChats': 'novos chats',

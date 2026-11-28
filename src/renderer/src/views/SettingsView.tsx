@@ -36,6 +36,8 @@ import ExportProfileModal from '../components/ExportProfileModal'
 import ImportProfileModal from '../components/ImportProfileModal'
 import type { ImportPreview } from '../../../shared/profile-transfer'
 import AppearanceSettings from '../components/AppearanceSettings'
+import Hint from '../components/Hint'
+import NavRailSettings from '../components/NavRailSettings'
 import CompanionVoiceSettings from './CompanionVoiceSettings'
 import './views.css'
 import './SettingsView.css'
@@ -47,8 +49,15 @@ import { AUTO_COMPANION_SHORTCUT, AUTO_LAUNCHER_SHORTCUT } from '../lib/accelera
 import { useLabs } from '../hooks/useLabs'
 import { NO_TAPS, tapVersion } from '../lib/labs-unlock'
 import { LANGUAGES, isLanguage, plural, type MessageKey } from '../../../shared/i18n'
+import {
+  lastSettingsSection,
+  rememberSettingsSection,
+  settingsSectionOf as sectionOf,
+  type SettingsSectionId
+} from '../lib/settings-sections'
+import { searchSettings, type SettingsHit } from '../lib/settings-index'
 
-type SectionId = 'appearance' | 'general' | 'connection' | 'system' | 'companion' | 'interventions' | 'ops' | 'about'
+type SectionId = SettingsSectionId
 
 interface Props {
   models: ModelInfo[]
@@ -89,16 +98,6 @@ const SECTIONS: { id: SectionId; labelKey: MessageKey; icon: JSX.Element }[] = [
     )
   },
   {
-    id: 'connection',
-    labelKey: 'settings.section.connection',
-    icon: (
-      <>
-        <path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 0 10h-2" />
-        <line x1="8" y1="12" x2="16" y2="12" />
-      </>
-    )
-  },
-  {
     id: 'system',
     labelKey: 'settings.section.system',
     icon: (
@@ -126,11 +125,6 @@ const SECTIONS: { id: SectionId; labelKey: MessageKey; icon: JSX.Element }[] = [
     )
   },
   {
-    id: 'interventions',
-    labelKey: 'settings.section.interventions',
-    icon: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-  },
-  {
     id: 'ops',
     labelKey: 'settings.section.ops',
     icon: (
@@ -140,17 +134,6 @@ const SECTIONS: { id: SectionId; labelKey: MessageKey; icon: JSX.Element }[] = [
       </>
     )
   },
-  {
-    id: 'about',
-    labelKey: 'settings.section.about',
-    icon: (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <line x1="12" y1="11" x2="12" y2="16" />
-        <line x1="12" y1="8" x2="12.01" y2="8" />
-      </>
-    )
-  }
 ]
 
 const isWindows = window.electronAPI.platform === 'win32'
@@ -159,11 +142,6 @@ function humanBytes(n: number): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
-}
-
-/** A deep-linked section name, if it is one of ours. */
-function sectionOf(name: string | undefined): SectionId | null {
-  return SECTIONS.some((s) => s.id === name) ? (name as SectionId) : null
 }
 
 // Ledger files are named by UTC day, so "today" must be the UTC date, not the local one.
@@ -183,13 +161,51 @@ export default function SettingsView({
   target
 }: Props) {
   const t = useT()
-  const [section, setSection] = useState<SectionId>(() => sectionOf(target?.section) ?? 'appearance')
+  const pane = useRef<HTMLDivElement>(null)
+  // A deep link wins; otherwise Settings reopens on the section it was last on.
+  const [section, setSection] = useState<SectionId>(
+    () => sectionOf(target?.section) ?? lastSettingsSection() ?? 'appearance'
+  )
+  useEffect(() => rememberSettingsSection(section), [section])
+
+  // ── Search ──
+  // Results replace the section list while there is a query. Picking one opens its
+  // section and scrolls to the row, found by its label: the row may not be mounted yet
+  // (Companion, System and Ops load their values first), so the jump waits for it.
+  const [query, setQuery] = useState('')
+  const hits = searchSettings(query, t, window.electronAPI.platform)
+  const [jump, setJump] = useState<{ text: string; n: number } | null>(null)
+  const goToHit = (hit: SettingsHit) => {
+    setSection(hit.entry.section)
+    setJump((prev) => ({ text: hit.text, n: (prev?.n ?? 0) + 1 }))
+    setQuery('')
+  }
+  useEffect(() => {
+    if (!jump) return
+    let tries = 0
+    let flash: ReturnType<typeof setTimeout> | undefined
+    const timer = setInterval(() => {
+      const label = Array.from(pane.current?.querySelectorAll('.srow-label') ?? []).find((el) =>
+        (el.textContent ?? '').trim().startsWith(jump.text)
+      )
+      const row = label?.closest('.srow')
+      if (!row && ++tries < 20) return
+      clearInterval(timer)
+      if (!row) return
+      row.scrollIntoView({ block: 'center' })
+      row.classList.add('srow-flash')
+      flash = setTimeout(() => row.classList.remove('srow-flash'), 1600)
+    }, 100)
+    return () => {
+      clearInterval(timer)
+      clearTimeout(flash)
+    }
+  }, [jump])
 
   useEffect(() => {
     const id = sectionOf(target?.section)
     if (id) setSection(id)
   }, [target])
-  const pane = useRef<HTMLDivElement>(null)
 
   // Switching section is a page change, not a scroll — landing halfway down System
   // because Appearance was scrolled is the one thing a nav like this gets wrong.
@@ -224,7 +240,7 @@ export default function SettingsView({
   const [opsDirError, setOpsDirError] = useState<{ key: keyof OpsPrefs; error: string } | null>(null)
 
   useEffect(() => {
-    if (section !== 'interventions') return
+    if (section !== 'ops') return
     let cancelled = false
     // The old start-screen recents become the loose runbooks first, so this list is not
     // empty only because the start screen has not been opened since.
@@ -312,13 +328,12 @@ export default function SettingsView({
   const runbooksDirRow = () => (
     <div className="srow">
       <div className="srow-text">
-        <span className="srow-label">{t('settings.interventions.runbooksDir')}</span>
+        <span className="srow-label">{t('settings.interventions.runbooksDir')}<Hint text={t('settings.interventions.runbooksDirHelp')} /></span>
         {opsDirs?.runbooksDir ? (
           <code className="settings-path">{opsDirs.runbooksDir}</code>
         ) : (
           <span className="help">{t('settings.interventions.noRunbooksDir')}</span>
         )}
-        <span className="help">{t('settings.interventions.runbooksDirHelp')}</span>
         {opsErrorLine('runbooksDir')}
       </div>
       <div className="settings-btn-pair">
@@ -368,11 +383,42 @@ export default function SettingsView({
   const verifyLedger = async () => {
     setVerifying(true)
     setVerifyResult(null)
+    setWeekResult(null)
     try {
       setVerifyResult(await window.electronAPI.opsVerify(verifyDate))
     } catch (e) {
       setVerifyResult({ ok: false, reason: e instanceof Error ? e.message : String(e) })
     } finally {
+      setVerifying(false)
+    }
+  }
+
+  // The last seven UTC days in one go: the same per-day check, summed up. An imported
+  // day is counted apart, since its chain cannot prove where it was written.
+  const [weekResult, setWeekResult] = useState<{
+    intact: number
+    empty: number
+    imported: number
+    broken: { date: string; reason: string }[]
+  } | null>(null)
+  const verifyWeek = async () => {
+    setVerifying(true)
+    setVerifyResult(null)
+    setWeekResult(null)
+    const out = { intact: 0, empty: 0, imported: 0, broken: [] as { date: string; reason: string }[] }
+    try {
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10)
+        const r = await window.electronAPI.opsVerify(date)
+        if (!r.ok) out.broken.push({ date, reason: r.reason })
+        else if (r.imported) out.imported++
+        else if (r.lines === 0) out.empty++
+        else out.intact++
+      }
+    } catch (e) {
+      out.broken.push({ date: utcToday(), reason: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setWeekResult(out)
       setVerifying(false)
     }
   }
@@ -673,6 +719,19 @@ export default function SettingsView({
   })()
 
   // ── Row builders ──
+  // A global shortcut's state, said only when it needs saying: nothing while the OS
+  // granted what was asked for, a warning when it handed out a fallback because the
+  // combination was taken, an error when none could be registered.
+  const shortcutStatus = (wanted: string, registered: string, failed: string) => {
+    if (!registered) return <span className="help settings-error">{failed}</span>
+    if (displayAccelerator(registered) === displayAccelerator(wanted)) return null
+    return (
+      <span className="help settings-warn" role="status">
+        {t('settings.shortcut.busy', { wanted: displayAccelerator(wanted), shortcut: displayAccelerator(registered) })}
+      </span>
+    )
+  }
+
   const toggleRow = (
     label: string,
     hint: string,
@@ -682,8 +741,7 @@ export default function SettingsView({
   ) => (
     <div className="srow">
       <div className="srow-text">
-        <span className="srow-label">{label}</span>
-        <span className="help">{hint}</span>
+        <span className="srow-label">{label}<Hint text={hint} /></span>
       </div>
       <label className="toggle-switch">
         <input
@@ -708,12 +766,14 @@ export default function SettingsView({
   const editRow = (label: string, value: string | undefined, onClick: () => void, action = t('common.edit')) => (
     <div className="srow">
       <div className="srow-text">
-        <span className="srow-label">{label}</span>
-        {value && <span className="help">{value}</span>}
+        <span className="srow-label">
+          {label}
+          {value && <span className="srow-value">{value}</span>}
+        </span>
       </div>
       <button
         type="button"
-        className="btn-ghost"
+        className="btn-ghost small"
         onClick={onClick}
         aria-label={t('settings.row.actionAria', { action, label: label.toLowerCase() })}
       >
@@ -737,7 +797,42 @@ export default function SettingsView({
 
         <h2 className="settings-nav-title">{t('settings.nav.title')}</h2>
 
-        <div className="settings-nav-items">
+        <input
+          type="search"
+          className="text-input settings-search"
+          value={query}
+          placeholder={t('settings.nav.search')}
+          aria-label={t('settings.nav.search')}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && hits[0]) goToHit(hits[0])
+            if (e.key === 'Escape' && query) {
+              e.stopPropagation()
+              setQuery('')
+            }
+          }}
+        />
+
+        {query.trim() && (
+          <div className="settings-nav-items" role="listbox" aria-label={t('settings.nav.results')}>
+            {hits.length === 0 && <span className="help settings-search-empty">{t('settings.nav.noResults')}</span>}
+            {hits.map((hit) => (
+              <button
+                type="button"
+                key={hit.entry.section + ':' + hit.entry.label}
+                className="settings-nav-item settings-hit"
+                role="option"
+                aria-selected={false}
+                onClick={() => goToHit(hit)}
+              >
+                <span className="settings-hit-label">{hit.text}</span>
+                <span className="settings-hit-section">{t(`settings.section.${hit.entry.section}`)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="settings-nav-items" hidden={!!query.trim()}>
           {SECTIONS.map((s) => (
             <button
               type="button"
@@ -752,6 +847,77 @@ export default function SettingsView({
               {t(s.labelKey)}
             </button>
           ))}
+        </div>
+
+        {/* What used to be the About section: three rows did not earn a page of their own. */}
+        <div className="settings-nav-foot">
+          {updater && (
+            <>
+              {/* No affordance on purpose: tapping it is the hidden way in (see tapVersion). */}
+              <span className="settings-version" onClick={tapVersionLabel}>
+                {t('settings.about.version', { version: updater.currentVersion })}
+                {tapsLeft !== null && (
+                  <span className="settings-taps-left" role="status">
+                    {plural(t, 'settings.about.labs.tapsLeft', tapsLeft)}
+                  </span>
+                )}
+              </span>
+              {updaterStatusText() && (
+                <span className={`help ${updater.state === 'error' ? 'settings-error' : ''}`}>{updaterStatusText()}</span>
+              )}
+              <div className="settings-nav-foot-actions">
+                <button
+                  type="button"
+                  className="btn-ghost small"
+                  onClick={checkForUpdates}
+                  disabled={checking || updater.state === 'disabled' || updater.state === 'checking'}
+                >
+                  {t('settings.about.checkUpdates')}
+                </button>
+                {updater.state === 'available' && updater.manual && (
+                  <button type="button" className="btn-primary small" onClick={() => window.electronAPI.updaterInstall()}>
+                    {t('settings.about.downloadUpdate')}
+                  </button>
+                )}
+                {updater.state === 'downloaded' && (
+                  <button type="button" className="btn-primary small" onClick={() => window.electronAPI.updaterInstall()}>
+                    {t('settings.about.restartUpdate')}
+                  </button>
+                )}
+                <button type="button" className="btn-ghost small" onClick={() => setShowChangelog(true)}>
+                  {t('settings.about.changelog.button')}
+                </button>
+              </div>
+            </>
+          )}
+          {/* Its explanation as plain text: a tooltip would be clipped by the nav's scroll box. */}
+          {(labsRevealed || labs) && (
+            <>
+              <div className="srow">
+                <div className="srow-text">
+                  <span className="srow-label">{t('settings.about.labs.label')}</span>
+                </div>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={labs}
+                    disabled={labsBusy}
+                    onChange={(e) => void setLabs(e.target.checked)}
+                    aria-label={t('settings.about.labs.label')}
+                  />
+                  <span className="toggle-track">
+                    <span className="toggle-thumb" />
+                  </span>
+                </label>
+              </div>
+              <span className="help">{t('settings.about.labs.hint')}</span>
+            </>
+          )}
+          <span className="help settings-credits">
+            {t('settings.about.author')}
+            <br />
+            {t('settings.about.license')}
+          </span>
         </div>
       </nav>
 
@@ -770,18 +936,17 @@ export default function SettingsView({
 
               <div className="srow">
                 <div className="srow-text">
-                  <span className="srow-label">{t('settings.general.backgroundModel.label')}</span>
-                  <span className="help">{t('settings.general.backgroundModel.hint')}</span>
+                  <span className="srow-label">{t('settings.general.backgroundModel.label')}<Hint text={t('settings.general.backgroundModel.hint')} /></span>
                 </div>
                 <ModelPicker models={models} value={defaultModel} onChange={onSetDefaultModel} variant="select" />
               </div>
+              {editRow(t('settings.connection.accounts.label'), accountsValue, onManageAccounts, t('settings.connection.accounts.manage'))}
 
               {ui && (
                 <>
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.general.language.label')}</span>
-                      <span className="help">{t('settings.general.language.hint')}</span>
+                      <span className="srow-label">{t('settings.general.language.label')}<Hint text={t('settings.general.language.hint')} /></span>
                     </div>
                     <Select
                       className="settings-select"
@@ -799,25 +964,13 @@ export default function SettingsView({
                     </Select>
                   </div>
 
+                  {/* What the rail shows and where the app opens. The weekly planner sits
+                      here too: it is also a choice about what navigation offers. */}
+                  <div className="eyebrow settings-eyebrow">{t('settings.general.navRail.eyebrow')}</div>
+                  <NavRailSettings ui={ui} onSetUi={onSetUi} />
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.general.density.label')}</span>
-                      <span className="help">{t('settings.general.density.hint')}</span>
-                    </div>
-                    <div className="seg-control" role="group" aria-label={t('settings.general.density.label')}>
-                      <button type="button" className={ui.density === 'comfortable' ? 'on' : ''} onClick={() => onSetUi({ density: 'comfortable' })}>
-                        {t('settings.general.density.comfortable')}
-                      </button>
-                      <button type="button" className={ui.density === 'compact' ? 'on' : ''} onClick={() => onSetUi({ density: 'compact' })}>
-                        {t('settings.general.density.compact')}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="srow">
-                    <div className="srow-text">
-                      <span className="srow-label">{t('settings.general.weekPlanner.label')}</span>
-                      <span className="help">{t('settings.general.weekPlanner.hint')}</span>
+                      <span className="srow-label">{t('settings.general.weekPlanner.label')}<Hint text={t('settings.general.weekPlanner.hint')} /></span>
                     </div>
                     <label className="toggle-switch">
                       <input
@@ -840,7 +993,7 @@ export default function SettingsView({
                     <span className="srow-label">{t('settings.general.archived.label')}</span>
                     <span className="help">{plural(t, 'settings.general.archived.hint', archivedChats)}</span>
                   </div>
-                  <button type="button" className="btn-ghost" onClick={() => void window.electronAPI.openChatExport()}>
+                  <button type="button" className="btn-ghost small" onClick={() => void window.electronAPI.openChatExport()}>
                     {t('settings.general.archived.openFolder')}
                   </button>
                 </div>
@@ -853,53 +1006,61 @@ export default function SettingsView({
             </>
           )}
 
-          {section === 'connection' && (
-            <>
-              <h1 className="settings-title">{t('settings.section.connection')}</h1>
-              <p className="help settings-lead">
-                {t('settings.connection.lead')}
-              </p>
-              {editRow(t('settings.connection.accounts.label'), accountsValue, onManageAccounts, t('settings.connection.accounts.manage'))}
-              {secretStorage && (
-                <div className="srow">
-                  <div className="srow-text">
-                    <span className="srow-label">{t('settings.connection.secrets.label')}</span>
-                    <span className="help">
-                      {secretStorage.encrypted ? t('settings.connection.secrets.encrypted') : t('settings.connection.secrets.plain')}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
           {section === 'system' && (
             <>
               <h1 className="settings-title">{t('settings.section.system')}</h1>
               {system ? (
                 <>
-                  {toggleRow(
-                    isWindows ? t('settings.system.startup.labelWindows') : t('settings.system.startup.label'),
-                    t('settings.system.startup.hint'),
-                    system.openAtLogin,
-                    (openAtLogin) => updateSystem({ openAtLogin })
-                  )}
-                  {toggleRow(
-                    // macOS has no notification area: the tray icon lives in the menu bar.
-                    t(IS_DARWIN ? 'settings.system.minimized.labelMac' : 'settings.system.minimized.label'),
-                    t(IS_DARWIN ? 'settings.system.minimized.hintMac' : 'settings.system.minimized.hint'),
-                    system.startMinimized,
-                    (startMinimized) => updateSystem({ startMinimized })
-                  )}
-                  {/* On macOS the close button always hides the window, as in any Mac app
-                      (main-window-pure.ts), so there is nothing to choose. */}
-                  {!IS_DARWIN &&
-                    toggleRow(
-                      t('settings.system.closeToTray.label'),
-                      t('settings.system.closeToTray.hint'),
-                      system.closeToTray,
-                      (closeToTray) => updateSystem({ closeToTray })
-                    )}
+                  {/* Three switches about one thing (how Argos starts and what closing does) as
+                      chips on one row. On macOS the close button always hides the window, as
+                      in any Mac app (main-window-pure.ts), so that chip is not offered. */}
+                  <div className="srow">
+                    <div className="srow-text">
+                      <span className="srow-label">
+                        {t('settings.system.startClose.label')}
+                        <Hint
+                          text={[
+                            t('settings.system.startup.hint'),
+                            t(IS_DARWIN ? 'settings.system.minimized.hintMac' : 'settings.system.minimized.hint'),
+                            IS_DARWIN ? '' : t('settings.system.closeToTray.hint')
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
+                        />
+                      </span>
+                      <div className="settings-chips" role="group" aria-label={t('settings.system.startClose.label')}>
+                        <button
+                          type="button"
+                          className={`settings-chip${system.openAtLogin ? ' on' : ''}`}
+                          aria-pressed={system.openAtLogin}
+                          disabled={systemBusy}
+                          onClick={() => updateSystem({ openAtLogin: !system.openAtLogin })}
+                        >
+                          {isWindows ? t('settings.system.startup.labelWindows') : t('settings.system.startup.label')}
+                        </button>
+                        <button
+                          type="button"
+                          className={`settings-chip${system.startMinimized ? ' on' : ''}`}
+                          aria-pressed={system.startMinimized}
+                          disabled={systemBusy}
+                          onClick={() => updateSystem({ startMinimized: !system.startMinimized })}
+                        >
+                          {t(IS_DARWIN ? 'settings.system.minimized.labelMac' : 'settings.system.minimized.label')}
+                        </button>
+                        {!IS_DARWIN && (
+                          <button
+                            type="button"
+                            className={`settings-chip${system.closeToTray ? ' on' : ''}`}
+                            aria-pressed={system.closeToTray}
+                            disabled={systemBusy}
+                            onClick={() => updateSystem({ closeToTray: !system.closeToTray })}
+                          >
+                            {t('settings.system.closeToTray.label')}
+                          </button>
+                          )}
+                      </div>
+                    </div>
+                  </div>
                   {isWindows &&
                     toggleRow(
                       t('settings.system.explorerMenu.label'),
@@ -910,15 +1071,8 @@ export default function SettingsView({
 
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.system.shortcut.label')}</span>
-                      <span className="help">{t('settings.system.shortcut.hint')}</span>
-                      {registeredShortcut ? (
-                        <span className="help">{t('settings.system.shortcut.registered', { shortcut: displayAccelerator(registeredShortcut) })}</span>
-                      ) : (
-                        <span className="help settings-error">
-                          {t('settings.system.shortcut.failed')}
-                        </span>
-                      )}
+                      <span className="srow-label">{t('settings.system.shortcut.label')}<Hint text={t('settings.system.shortcut.hint')} /></span>
+                      {shortcutStatus(system.overlayShortcut || AUTO_LAUNCHER_SHORTCUT, registeredShortcut, t('settings.system.shortcut.failed'))}
                     </div>
                     <Select
                       className="settings-select"
@@ -939,18 +1093,30 @@ export default function SettingsView({
                 <p className="help">{t('settings.system.loading')}</p>
               )}
 
+              {secretStorage && (
+                <div className="srow">
+                  <div className="srow-text">
+                    <span className="srow-label">
+                      {t('settings.connection.secrets.label')}
+                      <span className="srow-value">
+                        {secretStorage.encrypted ? t('settings.connection.secrets.encrypted') : t('settings.connection.secrets.plain')}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <div className="eyebrow settings-eyebrow">{t('settings.transfer.eyebrow')}</div>
               <div className="srow">
                 <div className="srow-text">
-                  <span className="srow-label">{t('settings.transfer.label')}</span>
-                  <span className="help">{t('settings.transfer.hint')}</span>
+                  <span className="srow-label">{t('settings.transfer.label')}<Hint text={t('settings.transfer.hint')} /></span>
                   {importError && <span className="help settings-error">{importError}</span>}
                 </div>
                 <div className="settings-btn-pair">
-                  <button type="button" className="btn-ghost" onClick={() => setShowExport(true)}>
+                  <button type="button" className="btn-ghost small" onClick={() => setShowExport(true)}>
                     {t('settings.transfer.export')}
                   </button>
-                  <button type="button" className="btn-ghost" disabled={importBusy} onClick={startImport}>
+                  <button type="button" className="btn-ghost small" disabled={importBusy} onClick={startImport}>
                     {t('settings.transfer.import')}
                   </button>
                 </div>
@@ -962,36 +1128,51 @@ export default function SettingsView({
             <>
               <h1 className="settings-title">{t('settings.section.companion')}</h1>
               <p className="help settings-lead">{t('settings.companion.intro')}</p>
+              {/* Reminders need the app running (plan §10, decision 8): nudge towards
+                  starting with the system while that is off, through the System pref. */}
+              {system && !system.openAtLogin && (
+                <p className="help settings-notice">
+                  {t('settings.companion.login.hint')}{' '}
+                  <button type="button" className="settings-link" disabled={systemBusy} onClick={() => updateSystem({ openAtLogin: true })}>
+                    {isWindows ? t('settings.companion.login.action') : t('settings.companion.login.actionOther')}
+                  </button>
+                </p>
+              )}
               {companion ? (
                 <>
+                  <div className="settings-groups">
+                  <div className="settings-group">
+                  <div className="eyebrow settings-eyebrow">{t('settings.companion.group.presence')}</div>
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.shortcut.label')}</span>
-                      <span className="help">
-                        {t(IS_DARWIN ? 'settings.companion.shortcut.hintMac' : 'settings.companion.shortcut.hint')}
+                      <span className="srow-label">
+                        {t('settings.companion.look.label')}
+                        <Hint text={t('settings.companion.character.hint') + ' ' + t('settings.companion.size.hint')} />
                       </span>
-                      {companionShortcut ? (
-                        <span className="help">
-                          {t('settings.companion.shortcut.registered', { shortcut: displayAccelerator(companionShortcut) })}
-                        </span>
-                      ) : (
-                        <span className="help settings-error">{t('settings.companion.shortcut.failed')}</span>
-                      )}
                     </div>
-                    {/* Never Ctrl+Shift+A: Teams takes it to accept a call (companion-window.ts). */}
-                    <Select
-                      className="settings-select"
-                      value={companion.shortcut}
-                      disabled={companionBusy}
-                      onChange={(e) => updateCompanion({ shortcut: e.target.value })}
-                      aria-label={t('settings.companion.shortcut.label')}
-                    >
-                      <option value="">{t('settings.companion.shortcut.auto', { shortcut: displayAccelerator(AUTO_COMPANION_SHORTCUT) })}</option>
-                      <option value="Ctrl+Alt+A">{displayAccelerator('Ctrl+Alt+A')}</option>
-                      <option value="Ctrl+Shift+Alt+A">{displayAccelerator('Ctrl+Shift+Alt+A')}</option>
-                      <option value="Ctrl+Alt+Q">{displayAccelerator('Ctrl+Alt+Q')}</option>
-                      <option value="Ctrl+Alt+J">{displayAccelerator('Ctrl+Alt+J')}</option>
-                    </Select>
+                    <div className="settings-fields">
+                      <Select
+                        className="settings-select-s"
+                        value={companion.character}
+                        disabled={companionBusy}
+                        onChange={(e) => updateCompanion({ character: e.target.value as CompanionCharacter })}
+                        aria-label={t('settings.companion.look.animal')}
+                      >
+                        <option value="dog">{t('settings.companion.character.dog')}</option>
+                        <option value="ferret">{t('settings.companion.character.ferret')}</option>
+                      </Select>
+                      <Select
+                        className="settings-select-s"
+                        value={companion.size}
+                        disabled={companionBusy}
+                        onChange={(e) => updateCompanion({ size: e.target.value as CompanionPrefs['size'] })}
+                        aria-label={t('settings.companion.size.label')}
+                      >
+                        <option value="small">{t('settings.companion.size.small')}</option>
+                        <option value="normal">{t('settings.companion.size.normal')}</option>
+                        <option value="large">{t('settings.companion.size.large')}</option>
+                      </Select>
+                    </div>
                   </div>
                   {toggleRow(
                     t('settings.companion.stay.label'),
@@ -1019,36 +1200,58 @@ export default function SettingsView({
                     )}
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.character.label')}</span>
-                      <span className="help">{t('settings.companion.character.hint')}</span>
+                      <span className="srow-label">
+                        {t('settings.companion.shortcut.label')}
+                        <Hint text={t(IS_DARWIN ? 'settings.companion.shortcut.hintMac' : 'settings.companion.shortcut.hint')} />
+                      </span>
+                      {shortcutStatus(companion.shortcut || AUTO_COMPANION_SHORTCUT, companionShortcut, t('settings.companion.shortcut.failed'))}
                     </div>
+                    {/* Never Ctrl+Shift+A: Teams takes it to accept a call (companion-window.ts). */}
                     <Select
                       className="settings-select"
-                      value={companion.character}
+                      value={companion.shortcut}
                       disabled={companionBusy}
-                      onChange={(e) => updateCompanion({ character: e.target.value as CompanionCharacter })}
-                      aria-label={t('settings.companion.character.label')}
+                      onChange={(e) => updateCompanion({ shortcut: e.target.value })}
+                      aria-label={t('settings.companion.shortcut.label')}
                     >
-                      <option value="dog">{t('settings.companion.character.dog')}</option>
-                      <option value="ferret">{t('settings.companion.character.ferret')}</option>
+                      <option value="">{t('settings.companion.shortcut.auto', { shortcut: displayAccelerator(AUTO_COMPANION_SHORTCUT) })}</option>
+                      <option value="Ctrl+Alt+A">{displayAccelerator('Ctrl+Alt+A')}</option>
+                      <option value="Ctrl+Shift+Alt+A">{displayAccelerator('Ctrl+Shift+Alt+A')}</option>
+                      <option value="Ctrl+Alt+Q">{displayAccelerator('Ctrl+Alt+Q')}</option>
+                      <option value="Ctrl+Alt+J">{displayAccelerator('Ctrl+Alt+J')}</option>
                     </Select>
                   </div>
+
+                  </div>
+                  <div className="settings-group">
+                  <div className="eyebrow settings-eyebrow">{t('settings.companion.group.alerts')}</div>
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.size.label')}</span>
-                      <span className="help">{t('settings.companion.size.hint')}</span>
+                      <span className="srow-label">
+                        {t('settings.companion.alertWhen.label')}
+                        <Hint text={t('settings.companion.terminalAlerts.hint') + ' ' + t('settings.companion.planAlerts.hint')} />
+                      </span>
                     </div>
-                    <Select
-                      className="settings-select"
-                      value={companion.size}
-                      disabled={companionBusy}
-                      onChange={(e) => updateCompanion({ size: e.target.value as CompanionPrefs['size'] })}
-                      aria-label={t('settings.companion.size.label')}
-                    >
-                      <option value="small">{t('settings.companion.size.small')}</option>
-                      <option value="normal">{t('settings.companion.size.normal')}</option>
-                      <option value="large">{t('settings.companion.size.large')}</option>
-                    </Select>
+                    <div className="settings-chips plain" role="group" aria-label={t('settings.companion.alertWhen.label')}>
+                      <button
+                        type="button"
+                        className={`settings-chip${companion.terminalAlerts ? ' on' : ''}`}
+                        aria-pressed={companion.terminalAlerts}
+                        disabled={companionBusy}
+                        onClick={() => updateCompanion({ terminalAlerts: !companion.terminalAlerts })}
+                      >
+                        {t('settings.companion.alertWhen.chat')}
+                      </button>
+                      <button
+                        type="button"
+                        className={`settings-chip${companion.planAlerts ? ' on' : ''}`}
+                        aria-pressed={companion.planAlerts}
+                        disabled={companionBusy}
+                        onClick={() => updateCompanion({ planAlerts: !companion.planAlerts })}
+                      >
+                        {t('settings.companion.alertWhen.plan')}
+                      </button>
+                    </div>
                   </div>
                   {/* macOS Focus cannot be read, but a full-screen app in front can
                       (companion-darwin.ts), so there the row speaks of that alone. */}
@@ -1059,66 +1262,65 @@ export default function SettingsView({
                     (focusAssist) => updateCompanion({ focusAssist }),
                     companionBusy
                   )}
-                  {toggleRow(
-                    t('settings.companion.terminalAlerts.label'),
-                    t('settings.companion.terminalAlerts.hint'),
-                    companion.terminalAlerts,
-                    (terminalAlerts) => updateCompanion({ terminalAlerts }),
-                    companionBusy
-                  )}
-                  {toggleRow(
-                    t('settings.companion.planAlerts.label'),
-                    t('settings.companion.planAlerts.hint'),
-                    companion.planAlerts,
-                    (planAlerts) => updateCompanion({ planAlerts }),
-                    companionBusy
-                  )}
-                  <div className="srow">
-                    <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.leadTime.label')}</span>
-                      <span className="help">{t('settings.companion.leadTime.hint')}</span>
-                    </div>
-                    <Select
-                      className="settings-select"
-                      value={String(companion.leadMinutes)}
-                      disabled={companionBusy}
-                      onChange={(e) => updateCompanion({ leadMinutes: Number(e.target.value) })}
-                      aria-label={t('settings.companion.leadTime.label')}
-                    >
-                      {/* A value set by hand in config.json still shows. */}
-                      {[...new Set([0, 5, 10, 15, 30, 60, companion.leadMinutes])]
-                        .sort((a, b) => a - b)
-                        .map((n) => (
-                          <option key={n} value={n}>
-                            {n === 0
-                              ? t('settings.companion.leadTime.atTime')
-                              : n === 60
-                                ? t('settings.companion.leadTime.hour')
-                                : t('settings.companion.leadTime.minutes', { n })}
-                          </option>
-                        ))}
-                    </Select>
+
                   </div>
+                  <div className="settings-group">
+                  <div className="eyebrow settings-eyebrow">{t('settings.companion.group.reminders')}</div>
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.morning.label')}</span>
-                      <span className="help">{t('settings.companion.morning.hint')}</span>
+                      <span className="srow-label">
+                        {t('settings.companion.times.label')}
+                        <Hint
+                          text={
+                            t('settings.companion.leadTime.label') + ': ' + t('settings.companion.leadTime.hint') + ' ' +
+                            t('settings.companion.morning.label') + ': ' + t('settings.companion.morning.hint')
+                          }
+                        />
+                      </span>
                     </div>
-                    <Select
-                      className="settings-select"
-                      value={String(companion.morningHour)}
-                      disabled={companionBusy}
-                      onChange={(e) => updateCompanion({ morningHour: Number(e.target.value) })}
-                      aria-label={t('settings.companion.morning.label')}
-                    >
-                      {[...new Set([7, 8, 9, 10, 11, companion.morningHour])]
-                        .sort((a, b) => a - b)
-                        .map((h) => (
-                          <option key={h} value={h}>
-                            {String(h).padStart(2, '0') + ':00'}
-                          </option>
-                        ))}
-                    </Select>
+                    <div className="settings-fields">
+                      <label className="settings-field">
+                        <span className="settings-field-cap">{t('settings.companion.leadTime.label')}</span>
+                        <Select
+                          className="settings-select-s"
+                          value={String(companion.leadMinutes)}
+                          disabled={companionBusy}
+                          onChange={(e) => updateCompanion({ leadMinutes: Number(e.target.value) })}
+                          aria-label={t('settings.companion.leadTime.label')}
+                        >
+                          {/* A value set by hand in config.json still shows. */}
+                          {[...new Set([0, 5, 10, 15, 30, 60, companion.leadMinutes])]
+                            .sort((a, b) => a - b)
+                            .map((n) => (
+                              <option key={n} value={n}>
+                                {n === 0
+                                  ? t('settings.companion.leadTime.atTime')
+                                  : n === 60
+                                    ? t('settings.companion.leadTime.hour')
+                                    : t('settings.companion.leadTime.minutes', { n })}
+                              </option>
+                            ))}
+                        </Select>
+                      </label>
+                      <label className="settings-field">
+                        <span className="settings-field-cap">{t('settings.companion.morning.label')}</span>
+                        <Select
+                          className="settings-select-s"
+                          value={String(companion.morningHour)}
+                          disabled={companionBusy}
+                          onChange={(e) => updateCompanion({ morningHour: Number(e.target.value) })}
+                          aria-label={t('settings.companion.morning.label')}
+                        >
+                          {[...new Set([7, 8, 9, 10, 11, companion.morningHour])]
+                            .sort((a, b) => a - b)
+                            .map((h) => (
+                              <option key={h} value={h}>
+                                {String(h).padStart(2, '0') + ':00'}
+                              </option>
+                            ))}
+                        </Select>
+                      </label>
+                    </div>
                   </div>
                   {toggleRow(
                     t('settings.companion.askModel.label'),
@@ -1127,6 +1329,10 @@ export default function SettingsView({
                     (askModel) => updateCompanion({ askModel }),
                     companionBusy
                   )}
+
+                  </div>
+                  <div className="settings-group">
+                  <div className="eyebrow settings-eyebrow">{t('settings.companion.group.privacy')}</div>
                   {toggleRow(
                     t('settings.companion.capture.label'),
                     t('settings.companion.capture.hint'),
@@ -1151,13 +1357,12 @@ export default function SettingsView({
                   )}
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.obsidian.label')}</span>
+                      <span className="srow-label">{t('settings.companion.obsidian.label')}<Hint text={t('settings.companion.obsidian.hint')} /></span>
                       {obsidianVault ? (
                         <code className="settings-path">{obsidianVault}</code>
                       ) : (
                         <span className="help">{t('settings.companion.obsidian.off')}</span>
                       )}
-                      <span className="help">{t('settings.companion.obsidian.hint')}</span>
                       {vault && !vault.exists && (
                         <span className="help settings-error" role="alert">
                           {t('settings.companion.obsidian.missing')}
@@ -1190,8 +1395,7 @@ export default function SettingsView({
                     <>
                       <div className="srow">
                         <div className="srow-text">
-                          <span className="srow-label">{t('settings.companion.obsidian.folder.label')}</span>
-                          <span className="help">{t('settings.companion.obsidian.folder.hint')}</span>
+                          <span className="srow-label">{t('settings.companion.obsidian.folder.label')}<Hint text={t('settings.companion.obsidian.folder.hint')} /></span>
                         </div>
                         <input
                           className="text-input"
@@ -1226,26 +1430,8 @@ export default function SettingsView({
                       </div>
                     </>
                   )}
-                  {/* Reminders need the app running (plan §10, decision 8): nudge towards
-                      starting with Windows while that is off, through the System pref. */}
-                  {system && !system.openAtLogin && (
-                    <div className="srow">
-                      <div className="srow-text">
-                        <span className="srow-label">
-                          {isWindows ? t('settings.companion.login.label') : t('settings.companion.login.labelOther')}
-                        </span>
-                        <span className="help">{t('settings.companion.login.hint')}</span>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn-ghost"
-                        disabled={systemBusy}
-                        onClick={() => updateSystem({ openAtLogin: true })}
-                      >
-                        {isWindows ? t('settings.companion.login.action') : t('settings.companion.login.actionOther')}
-                      </button>
-                    </div>
-                  )}
+                  </div>
+                  </div>
                 </>
               ) : (
                 <p className="help">{t('settings.companion.loading')}</p>
@@ -1253,10 +1439,15 @@ export default function SettingsView({
             </>
           )}
 
-          {section === 'interventions' && (
+          {section === 'ops' && (
             <>
-              <h1 className="settings-title">{t('settings.section.interventions')}</h1>
-              <p className="help settings-lead">{t('settings.interventions.lead')}</p>
+              <h1 className="settings-title">{t('settings.section.ops')}</h1>
+              <div className="settings-groups">
+                <div className="settings-group">
+                  <div className="eyebrow settings-eyebrow">
+                    {t('settings.ops.group.folders')}
+                    <Hint text={t('settings.interventions.lead')} />
+                  </div>
               {opsDirs ? (
                 <>
                   {runbooksDirRow()}
@@ -1267,16 +1458,12 @@ export default function SettingsView({
               ) : (
                 <p className="help">{t('common.loading')}</p>
               )}
-            </>
-          )}
-
-          {section === 'ops' && (
-            <>
-              <h1 className="settings-title">{t('settings.section.ops')}</h1>
-              <p className="help settings-lead">
-                {t('settings.ops.lead')}
-              </p>
-
+                </div>
+                <div className="settings-group">
+                  <div className="eyebrow settings-eyebrow">
+                    {t('settings.ops.group.audit')}
+                    <Hint text={t('settings.ops.lead')} />
+                  </div>
               {ledger ? (
                 <div className="srow">
                   <div className="srow-text">
@@ -1289,9 +1476,14 @@ export default function SettingsView({
                       })}
                     </span>
                   </div>
-                  <button type="button" className="btn-ghost small" onClick={copyLedgerDir}>
-                    {dirCopied ? t('settings.ops.folder.copied') : t('settings.ops.folder.copy')}
-                  </button>
+                  <div className="settings-btn-pair">
+                    <button type="button" className="btn-ghost small" onClick={() => void window.electronAPI.opsOpenFolder('audit')}>
+                      {t('settings.interventions.open')}
+                    </button>
+                    <button type="button" className="btn-ghost small" onClick={copyLedgerDir}>
+                      {dirCopied ? t('settings.ops.folder.copied') : t('settings.ops.folder.copy')}
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <p className="help">{t('common.loading')}</p>
@@ -1299,8 +1491,20 @@ export default function SettingsView({
 
               <div className="srow settings-verify">
                 <div className="srow-text">
-                  <span className="srow-label">{t('settings.ops.verify.label')}</span>
-                  <span className="help">{t('settings.ops.verify.hint')}</span>
+                  <span className="srow-label">{t('settings.ops.verify.label')}<Hint text={t('settings.ops.verify.hint')} /></span>
+                  {weekResult && (
+                    <span className={`help settings-result ${weekResult.broken.length ? 'err' : weekResult.intact ? 'ok' : ''}`} role="status">
+                      {weekResult.broken.length
+                        ? weekResult.broken
+                            .map((b) => t('settings.ops.verify.weekBroken', { date: b.date, reason: b.reason }))
+                            .join(' ')
+                        : t('settings.ops.verify.weekOk', {
+                            intact: weekResult.intact,
+                            empty: weekResult.empty,
+                            imported: weekResult.imported
+                          })}
+                    </span>
+                  )}
                   {verifyResult && (
                     <span
                       className={`help settings-result ${verifyResult.ok ? (verifyResult.lines === 0 || verifyResult.imported ? '' : 'ok') : 'err'}`}
@@ -1348,69 +1552,13 @@ export default function SettingsView({
                   }}
                   aria-label={t('settings.ops.verify.dayAria')}
                 />
-                <button type="button" className="btn-ghost" onClick={verifyLedger} disabled={verifying || !verifyDate}>
+                <button type="button" className="btn-ghost small" onClick={verifyLedger} disabled={verifying || !verifyDate}>
                   {verifying ? t('settings.ops.verify.verifying') : t('settings.ops.verify.button')}
                 </button>
-              </div>
-            </>
-          )}
-
-          {section === 'about' && (
-            <>
-              <h1 className="settings-title">{t('settings.section.about')}</h1>
-              {updater ? (
-                <div className="srow">
-                  <div className="srow-text">
-                    {/* No affordance on purpose: tapping it is the hidden way in (see tapVersion). */}
-                    <span className="srow-label settings-version" onClick={tapVersionLabel}>
-                      {t('settings.about.version', { version: updater.currentVersion })}
-                      {tapsLeft !== null && (
-                        <span className="settings-taps-left" role="status">
-                          {plural(t, 'settings.about.labs.tapsLeft', tapsLeft)}
-                        </span>
-                      )}
-                    </span>
-                    <span className={`help ${updater.state === 'error' ? 'settings-error' : ''}`}>
-                      {updaterStatusText()}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn-ghost"
-                    onClick={checkForUpdates}
-                    disabled={checking || updater.state === 'disabled' || updater.state === 'checking'}
-                  >
-                    {t('settings.about.checkUpdates')}
-                  </button>
-                  {updater.state === 'available' && updater.manual && (
-                    <button type="button" className="btn-primary" onClick={() => window.electronAPI.updaterInstall()}>
-                      {t('settings.about.downloadUpdate')}
-                    </button>
-                  )}
-                  {updater.state === 'downloaded' && (
-                    <button type="button" className="btn-primary" onClick={() => window.electronAPI.updaterInstall()}>
-                      {t('settings.about.restartUpdate')}
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <p className="help">{t('common.loading')}</p>
-              )}
-              {(labsRevealed || labs) &&
-                toggleRow(t('settings.about.labs.label'), t('settings.about.labs.hint'), labs, (on) => void setLabs(on), labsBusy)}
-              <div className="srow">
-                <div className="srow-text">
-                  <span className="srow-label">{t('settings.about.changelog.label')}</span>
-                  <span className="help">{t('settings.about.changelog.hint')}</span>
-                </div>
-                <button type="button" className="btn-ghost" onClick={() => setShowChangelog(true)}>
-                  {t('settings.about.changelog.button')}
+                <button type="button" className="btn-ghost small" onClick={verifyWeek} disabled={verifying}>
+                  {t('settings.ops.verify.week')}
                 </button>
               </div>
-              <div className="srow">
-                <div className="srow-text">
-                  <span className="srow-label">{t('settings.about.author')}</span>
-                  <span className="help">{t('settings.about.license')}</span>
                 </div>
               </div>
             </>

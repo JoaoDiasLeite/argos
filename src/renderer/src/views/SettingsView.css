@@ -57,6 +57,25 @@
 
 .settings-nav-items { display: flex; flex-direction: column; gap: 2px; }
 
+/* ── Search ──
+   Over the section list; while there is a query the list gives way to the rows found. */
+.settings-search { margin: 0 0 8px; height: 30px; min-height: 30px; flex-shrink: 0; padding: 0 10px; font-size: 12.5px; -webkit-app-region: no-drag; }
+/* The section list steps aside for the results; its own display: flex would win over the hidden attribute. */
+.settings-nav-items[hidden] { display: none; }
+.settings-search-empty { padding: 6px 10px; }
+.settings-nav-item.settings-hit { flex-direction: column; align-items: flex-start; gap: 1px; height: auto; padding-top: 6px; padding-bottom: 6px; text-align: left; }
+.settings-hit-label { color: var(--text-0); }
+.settings-hit-section { font-size: 10.5px; color: var(--text-2); }
+/* The row a result led to, lit for a moment so the eye lands on it. */
+.srow-flash { animation: srow-flash 1.6s ease-out; }
+@keyframes srow-flash {
+  0%, 35% { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .srow-flash { animation: none; outline: 1px solid var(--accent); }
+}
+
 .settings-nav-item {
   display: flex;
   align-items: center;
@@ -100,7 +119,7 @@
 }
 
 /* One line of orientation under a title, where the tab covers less than its name suggests. */
-.settings-lead { margin: -4px 0 6px; max-width: 62ch; }
+.settings-lead { margin: -4px 0 6px; }
 
 .settings-eyebrow { margin-top: 18px; }
 
@@ -110,9 +129,12 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 12px 0;
+  /* One line per row: the explanation is behind the label's "i" (Hint.tsx). */
+  min-height: 44px;
+  padding: 7px 0;
   border-bottom: 1px solid var(--border);
 }
+:root[data-density='compact'] .srow { min-height: 36px; padding: 4px 0; }
 .srow:last-child { border-bottom: none; }
 
 .srow-text {
@@ -123,6 +145,57 @@
   min-width: 0;
 }
 .srow-label { font-size: 13px; color: var(--text-0); }
+/* A row's current value, on the label's own line: "Permissions · 2 allow". */
+.srow-value { margin-left: 8px; font-size: 11.5px; color: var(--text-2); }
+.srow-value::before { content: '· '; }
+
+/* The "i" that holds a row's explanation; the text shows on hover and on focus. */
+.srow-info {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 7px;
+  border: 1px solid var(--text-2);
+  border-radius: 50%;
+  color: var(--text-2);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: 1px;
+  cursor: help;
+  user-select: none;
+}
+.srow-info:hover, .srow-info:focus-visible { color: var(--text-0); border-color: var(--text-0); outline: none; }
+.srow-info::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 7px);
+  left: -9px;
+  z-index: 30;
+  width: max-content;
+  max-width: min(360px, 60vw);
+  padding: 7px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--bg-3);
+  color: var(--text-0);
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  /* Not the eyebrow's: a hint can sit in a group heading, which is uppercase and tracked. */
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.1s;
+}
+.srow-info:hover::after, .srow-info:focus-visible::after { opacity: 1; visibility: visible; }
 /* The version in About: tapped seven times it reveals the experimental features. Nothing
    shows it is clickable; the count shows only from the fourth tap. */
 .settings-version { user-select: none; }
@@ -139,11 +212,65 @@
 .srow > .text-input { flex-shrink: 0; }
 
 .settings-btn-pair { display: flex; gap: 8px; flex-shrink: 0; }
+/* One size for every action at the end of a row. */
+.srow > .btn-ghost, .settings-btn-pair > .btn-ghost { min-height: 28px; padding: 0 10px; font-size: 12px; }
+
+/* ── Chips ──
+   Several on/off choices of one kind on a single row (the rail's entries). Pressed in
+   the accent's tint; the grip says a chip can also be dragged to a new place. */
+.settings-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+.settings-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.settings-chip[draggable='true']::before {
+  content: '';
+  width: 6px;
+  height: 10px;
+  flex-shrink: 0;
+  opacity: 0.5;
+  background: radial-gradient(circle, currentColor 1px, transparent 1.2px) 0 0 / 3px 3.4px;
+}
+.settings-chip:hover { color: var(--text-0); }
+/* Chips at the end of a row, where any other control would sit. */
+.settings-chips.plain { margin: 0; flex-shrink: 0; justify-content: flex-end; }
+.settings-chip[draggable='true'] { padding-left: 8px; }
+.settings-chip:disabled { opacity: 0.6; cursor: default; }
+.settings-chip.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--text-0);
+}
+.settings-chip.drop { border-style: dashed; border-color: var(--text-1); }
+.settings-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .settings-select { width: 220px; }
 .settings-date { width: 160px; }
 
 .settings-error { color: var(--error); }
+.settings-warn { color: var(--warn); }
+.settings-warn::before { content: '⚠ '; }
+
+/* A line under a section's intro that points at something set elsewhere. */
+.settings-notice { margin: 0 0 6px; }
+.settings-link { color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.settings-link:disabled { opacity: 0.5; cursor: default; }
+
+/* Two or three controls of one kind at the end of a row, optionally captioned. */
+.settings-fields { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: flex-end; gap: 6px 10px; flex-shrink: 0; }
+.settings-field { display: flex; flex-direction: column; gap: 3px; }
+.settings-field-cap { font-size: 10.5px; color: var(--text-2); }
+.settings-select-s { width: 150px; }
 
 /* Companion dictation (CompanionVoiceSettings.tsx): the model's folder wraps rather than
    pushing the button off; the download bar sits under it. */
@@ -176,7 +303,37 @@
   color: var(--text-1);
   word-break: break-all;
   user-select: text;
+  /* Plain text, not a boxed code chip: boxed, a path read as a field one could type in. */
+  padding: 0;
+  border: none;
+  background: none;
 }
+
+/* ── Groups ──
+   A section's groups stack in one column, and sit two abreast once the window is wide
+   enough that a single reading column leaves half of it empty. */
+.settings-groups { display: flex; flex-direction: column; }
+.settings-group { min-width: 0; display: flex; flex-direction: column; }
+@media (min-width: 1500px) {
+  .settings-column:has(.settings-groups) { max-width: 1320px; }
+  .settings-groups { display: grid; grid-template-columns: 1fr 1fr; column-gap: 56px; align-items: start; }
+}
+
+/* ── Nav footer ──
+   Version, updates and credits: what was the About section. */
+.settings-nav-foot {
+  margin-top: auto;
+  padding: 14px 10px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  -webkit-app-region: no-drag;
+}
+.settings-nav-foot .settings-version { font-size: 12.5px; color: var(--text-1); }
+.settings-nav-foot-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.settings-nav-foot .srow { min-height: 0; padding: 2px 0; border: none; }
+.settings-credits { user-select: text; overflow-wrap: anywhere; }
 
 /* The sentence under "Verify a day": green when the chain is intact, red when it is
    broken, muted when there was nothing to check. */

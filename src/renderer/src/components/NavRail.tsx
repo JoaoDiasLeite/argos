@@ -1,4 +1,5 @@
 import { plural, type MessageKey } from '../../../shared/i18n'
+import { orderNavItems, type NavItemId, type StartView } from '../../../shared/nav-items'
 import { useT } from '../i18n'
 import './NavRail.css'
 
@@ -59,6 +60,11 @@ interface Props {
   opsRunningCount?: number
   /** One of them is waiting on an approval: the pip turns to the warning colour. */
   opsNeedsYou?: boolean
+  /** Entries switched off in Settings → General (ui.hiddenNavItems). Their views stay
+      reachable from the command palette and deep links; only the button goes. */
+  hidden?: readonly NavItemId[]
+  /** The entries' order (ui.navOrder). Absent means the default order. */
+  order?: readonly NavItemId[]
 }
 
 const ICONS: Record<string, JSX.Element> = {
@@ -141,20 +147,58 @@ export const VIEW_GROUPS: ViewGroup[] = [
 ]
 
 // A rail entry is either a standalone view or a group of views. Groups use the
-// icon of their first member.
+// icon of their first member. `id` is what Settings → General hides it under; typed
+// as NavItemId so the rail and the stored list cannot drift apart.
 type RailEntry =
-  | { kind: 'single'; view: View; label: MessageKey }
-  | { kind: 'group'; group: ViewGroup }
+  | { kind: 'single'; id: NavItemId; view: View; label: MessageKey }
+  | { kind: 'group'; id: NavItemId; group: ViewGroup }
 
 const RAIL: RailEntry[] = [
-  { kind: 'single', view: 'home', label: 'sidebar.nav.home' },
-  { kind: 'single', view: 'chat', label: 'sidebar.nav.chat' },
-  { kind: 'single', view: 'projects', label: 'sidebar.nav.projects' },
-  { kind: 'single', view: 'planner', label: 'sidebar.nav.planner' },
-  { kind: 'single', view: 'companion', label: 'sidebar.nav.companion' },
-  { kind: 'single', view: 'usage', label: 'sidebar.nav.usage' },
-  { kind: 'group', group: VIEW_GROUPS[0] }
+  { kind: 'single', id: 'home', view: 'home', label: 'sidebar.nav.home' },
+  { kind: 'single', id: 'chat', view: 'chat', label: 'sidebar.nav.chat' },
+  { kind: 'single', id: 'projects', view: 'projects', label: 'sidebar.nav.projects' },
+  { kind: 'single', id: 'planner', view: 'planner', label: 'sidebar.nav.planner' },
+  { kind: 'single', id: 'companion', view: 'companion', label: 'sidebar.nav.companion' },
+  { kind: 'single', id: 'usage', view: 'usage', label: 'sidebar.nav.usage' },
+  { kind: 'group', id: 'servers', group: VIEW_GROUPS[0] }
 ]
+
+/** The rail's entries in their stored order (ui.navOrder), hidden ones included. */
+function orderedRail(order: readonly NavItemId[] | undefined): RailEntry[] {
+  return orderNavItems(order).flatMap((id) => RAIL.filter((e) => e.id === id))
+}
+
+const entryView = (e: RailEntry): View => (e.kind === 'single' ? e.view : e.group.members[0])
+
+/** Each entry's label, for the chips in Settings → General. */
+export const RAIL_LABELS = Object.fromEntries(
+  RAIL.map((e) => [e.id, e.kind === 'single' ? e.label : e.group.label])
+) as Record<NavItemId, MessageKey>
+
+/** Views the rail leads to directly: the only ones "open where I left off" may restore.
+    Settings and the extras (a remote session, a runbook workspace) are not among them,
+    since each needs something that is gone after a restart. */
+export function isRestorableView(view: string): view is View {
+  return RAIL.some((e) => (e.kind === 'single' ? e.view === view : (e.group.members as string[]).includes(view)))
+}
+
+/**
+ * Where the app opens (ui.startView). A hidden Home falls through to the first entry
+ * still on the rail; Chat and a remembered view are honoured even when hidden, because
+ * one is an explicit choice and the other is where the user actually was.
+ */
+export function startViewFor(
+  pref: StartView | undefined,
+  hidden: readonly NavItemId[] | undefined,
+  order: readonly NavItemId[] | undefined,
+  last: string | null
+): View {
+  if (pref === 'chat') return 'chat'
+  if (pref === 'last' && last && isRestorableView(last)) return last
+  const entry = orderedRail(order).find((e) => !hidden?.includes(e.id))
+  if (!hidden?.includes('home') || !entry) return 'home'
+  return entryView(entry)
+}
 
 export default function NavRail({
   view,
@@ -165,13 +209,15 @@ export default function NavRail({
   attentionCount = 0,
   opsRunningCount = 0,
   opsNeedsYou = false,
-  chatListHidden = false
+  chatListHidden = false,
+  hidden,
+  order
 }: Props) {
   const t = useT()
   return (
     <div className="nav-rail">
       <div className="nav-items">
-        {RAIL.map((entry) => {
+        {orderedRail(order).filter((entry) => !hidden?.includes(entry.id)).map((entry) => {
           if (entry.kind === 'single') {
             return (
               <button

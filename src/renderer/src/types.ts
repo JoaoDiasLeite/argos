@@ -1,4 +1,5 @@
 import type { Language } from '../../shared/i18n'
+import type { NavItemId, StartView } from '../../shared/nav-items'
 import type {
   ExportCandidates,
   ExportRequest,
@@ -200,6 +201,12 @@ export interface UiPrefs {
   codeFontSize?: number
   /** UI language. Absent means English. */
   language?: Language
+  /** Nav rail entries switched off in Settings → General. Absent means all show. */
+  hiddenNavItems?: NavItemId[]
+  /** The rail's order, every entry named. Absent means the default order. */
+  navOrder?: NavItemId[]
+  /** Where the app opens. Absent means Home. */
+  startView?: StartView
 }
 
 /**
@@ -2122,7 +2129,7 @@ declare global {
       ) => Promise<{ ok: true; path: string } | { ok: false; error: string }>
       /** Open one of the ops folders in the file manager: reports and handovers are created when
        *  missing; the runbooks folder only opens when one is set. */
-      opsOpenFolder: (which: 'reports' | 'handovers' | 'runbooks') => Promise<{ ok: true; path: string } | { ok: false; error: string }>
+      opsOpenFolder: (which: 'reports' | 'handovers' | 'runbooks' | 'audit') => Promise<{ ok: true; path: string } | { ok: false; error: string }>
       /** `imported`: the day (or, with runId, that run's file) came from a profile archive; its
        *  chain is consistent but its origin cannot be verified. `lines` counts local lines only. */
       opsVerify: (

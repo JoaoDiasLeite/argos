@@ -97,7 +97,9 @@
 .nav-item-label {
   font-size: 10px;
   font-weight: 500;
-  letter-spacing: 0.02em;
+  /* No tracking: with it, "Companheiro" touched both edges of the rail. */
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .nav-bottom {

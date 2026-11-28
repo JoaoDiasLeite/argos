@@ -30,6 +30,7 @@ export default {
   'palette.shortcuts': 'Keyboard shortcuts',
   'palette.goTo': 'Go to {view}',
   'palette.openSettings': 'Open Settings',
+  'palette.settingsSection': 'Settings: {section}',
   'palette.manageAccounts': 'Manage Claude accounts',
   'palette.switchAccount': 'Switch default account: {name}',
   'palette.accountNewChats': 'new chats',
