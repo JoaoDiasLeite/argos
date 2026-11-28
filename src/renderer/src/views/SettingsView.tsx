@@ -679,6 +679,19 @@ export default function SettingsView({
   })()
 
   // ── Row builders ──
+  // A global shortcut's state, said only when it needs saying: nothing while the OS
+  // granted what was asked for, a warning when it handed out a fallback because the
+  // combination was taken, an error when none could be registered.
+  const shortcutStatus = (wanted: string, registered: string, failed: string) => {
+    if (!registered) return <span className="help settings-error">{failed}</span>
+    if (displayAccelerator(registered) === displayAccelerator(wanted)) return null
+    return (
+      <span className="help settings-warn" role="status">
+        {t('settings.shortcut.busy', { wanted: displayAccelerator(wanted), shortcut: displayAccelerator(registered) })}
+      </span>
+    )
+  }
+
   const toggleRow = (
     label: string,
     hint: string,
@@ -904,13 +917,7 @@ export default function SettingsView({
                   <div className="srow">
                     <div className="srow-text">
                       <span className="srow-label">{t('settings.system.shortcut.label')}<Hint text={t('settings.system.shortcut.hint')} /></span>
-                      {registeredShortcut ? (
-                        <span className="help">{t('settings.system.shortcut.registered', { shortcut: displayAccelerator(registeredShortcut) })}</span>
-                      ) : (
-                        <span className="help settings-error">
-                          {t('settings.system.shortcut.failed')}
-                        </span>
-                      )}
+                      {shortcutStatus(system.overlayShortcut || AUTO_LAUNCHER_SHORTCUT, registeredShortcut, t('settings.system.shortcut.failed'))}
                     </div>
                     <Select
                       className="settings-select"
@@ -953,36 +960,49 @@ export default function SettingsView({
             <>
               <h1 className="settings-title">{t('settings.section.companion')}</h1>
               <p className="help settings-lead">{t('settings.companion.intro')}</p>
+              {/* Reminders need the app running (plan §10, decision 8): nudge towards
+                  starting with the system while that is off, through the System pref. */}
+              {system && !system.openAtLogin && (
+                <p className="help settings-notice">
+                  {t('settings.companion.login.hint')}{' '}
+                  <button type="button" className="settings-link" disabled={systemBusy} onClick={() => updateSystem({ openAtLogin: true })}>
+                    {isWindows ? t('settings.companion.login.action') : t('settings.companion.login.actionOther')}
+                  </button>
+                </p>
+              )}
               {companion ? (
                 <>
+                  <div className="eyebrow settings-eyebrow">{t('settings.companion.group.presence')}</div>
                   <div className="srow">
                     <div className="srow-text">
                       <span className="srow-label">
-                        {t('settings.companion.shortcut.label')}
-                        <Hint text={t(IS_DARWIN ? 'settings.companion.shortcut.hintMac' : 'settings.companion.shortcut.hint')} />
+                        {t('settings.companion.look.label')}
+                        <Hint text={t('settings.companion.character.hint') + ' ' + t('settings.companion.size.hint')} />
                       </span>
-                      {companionShortcut ? (
-                        <span className="help">
-                          {t('settings.companion.shortcut.registered', { shortcut: displayAccelerator(companionShortcut) })}
-                        </span>
-                      ) : (
-                        <span className="help settings-error">{t('settings.companion.shortcut.failed')}</span>
-                      )}
                     </div>
-                    {/* Never Ctrl+Shift+A: Teams takes it to accept a call (companion-window.ts). */}
-                    <Select
-                      className="settings-select"
-                      value={companion.shortcut}
-                      disabled={companionBusy}
-                      onChange={(e) => updateCompanion({ shortcut: e.target.value })}
-                      aria-label={t('settings.companion.shortcut.label')}
-                    >
-                      <option value="">{t('settings.companion.shortcut.auto', { shortcut: displayAccelerator(AUTO_COMPANION_SHORTCUT) })}</option>
-                      <option value="Ctrl+Alt+A">{displayAccelerator('Ctrl+Alt+A')}</option>
-                      <option value="Ctrl+Shift+Alt+A">{displayAccelerator('Ctrl+Shift+Alt+A')}</option>
-                      <option value="Ctrl+Alt+Q">{displayAccelerator('Ctrl+Alt+Q')}</option>
-                      <option value="Ctrl+Alt+J">{displayAccelerator('Ctrl+Alt+J')}</option>
-                    </Select>
+                    <div className="settings-fields">
+                      <Select
+                        className="settings-select-s"
+                        value={companion.character}
+                        disabled={companionBusy}
+                        onChange={(e) => updateCompanion({ character: e.target.value as CompanionCharacter })}
+                        aria-label={t('settings.companion.look.animal')}
+                      >
+                        <option value="dog">{t('settings.companion.character.dog')}</option>
+                        <option value="ferret">{t('settings.companion.character.ferret')}</option>
+                      </Select>
+                      <Select
+                        className="settings-select-s"
+                        value={companion.size}
+                        disabled={companionBusy}
+                        onChange={(e) => updateCompanion({ size: e.target.value as CompanionPrefs['size'] })}
+                        aria-label={t('settings.companion.size.label')}
+                      >
+                        <option value="small">{t('settings.companion.size.small')}</option>
+                        <option value="normal">{t('settings.companion.size.normal')}</option>
+                        <option value="large">{t('settings.companion.size.large')}</option>
+                      </Select>
+                    </div>
                   </div>
                   {toggleRow(
                     t('settings.companion.stay.label'),
@@ -1010,34 +1030,56 @@ export default function SettingsView({
                     )}
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.character.label')}<Hint text={t('settings.companion.character.hint')} /></span>
+                      <span className="srow-label">
+                        {t('settings.companion.shortcut.label')}
+                        <Hint text={t(IS_DARWIN ? 'settings.companion.shortcut.hintMac' : 'settings.companion.shortcut.hint')} />
+                      </span>
+                      {shortcutStatus(companion.shortcut || AUTO_COMPANION_SHORTCUT, companionShortcut, t('settings.companion.shortcut.failed'))}
                     </div>
+                    {/* Never Ctrl+Shift+A: Teams takes it to accept a call (companion-window.ts). */}
                     <Select
                       className="settings-select"
-                      value={companion.character}
+                      value={companion.shortcut}
                       disabled={companionBusy}
-                      onChange={(e) => updateCompanion({ character: e.target.value as CompanionCharacter })}
-                      aria-label={t('settings.companion.character.label')}
+                      onChange={(e) => updateCompanion({ shortcut: e.target.value })}
+                      aria-label={t('settings.companion.shortcut.label')}
                     >
-                      <option value="dog">{t('settings.companion.character.dog')}</option>
-                      <option value="ferret">{t('settings.companion.character.ferret')}</option>
+                      <option value="">{t('settings.companion.shortcut.auto', { shortcut: displayAccelerator(AUTO_COMPANION_SHORTCUT) })}</option>
+                      <option value="Ctrl+Alt+A">{displayAccelerator('Ctrl+Alt+A')}</option>
+                      <option value="Ctrl+Shift+Alt+A">{displayAccelerator('Ctrl+Shift+Alt+A')}</option>
+                      <option value="Ctrl+Alt+Q">{displayAccelerator('Ctrl+Alt+Q')}</option>
+                      <option value="Ctrl+Alt+J">{displayAccelerator('Ctrl+Alt+J')}</option>
                     </Select>
                   </div>
+
+                  <div className="eyebrow settings-eyebrow">{t('settings.companion.group.alerts')}</div>
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.size.label')}<Hint text={t('settings.companion.size.hint')} /></span>
+                      <span className="srow-label">
+                        {t('settings.companion.alertWhen.label')}
+                        <Hint text={t('settings.companion.terminalAlerts.hint') + ' ' + t('settings.companion.planAlerts.hint')} />
+                      </span>
                     </div>
-                    <Select
-                      className="settings-select"
-                      value={companion.size}
-                      disabled={companionBusy}
-                      onChange={(e) => updateCompanion({ size: e.target.value as CompanionPrefs['size'] })}
-                      aria-label={t('settings.companion.size.label')}
-                    >
-                      <option value="small">{t('settings.companion.size.small')}</option>
-                      <option value="normal">{t('settings.companion.size.normal')}</option>
-                      <option value="large">{t('settings.companion.size.large')}</option>
-                    </Select>
+                    <div className="settings-chips plain" role="group" aria-label={t('settings.companion.alertWhen.label')}>
+                      <button
+                        type="button"
+                        className={`settings-chip${companion.terminalAlerts ? ' on' : ''}`}
+                        aria-pressed={companion.terminalAlerts}
+                        disabled={companionBusy}
+                        onClick={() => updateCompanion({ terminalAlerts: !companion.terminalAlerts })}
+                      >
+                        {t('settings.companion.alertWhen.chat')}
+                      </button>
+                      <button
+                        type="button"
+                        className={`settings-chip${companion.planAlerts ? ' on' : ''}`}
+                        aria-pressed={companion.planAlerts}
+                        disabled={companionBusy}
+                        onClick={() => updateCompanion({ planAlerts: !companion.planAlerts })}
+                      >
+                        {t('settings.companion.alertWhen.plan')}
+                      </button>
+                    </div>
                   </div>
                   {/* macOS Focus cannot be read, but a full-screen app in front can
                       (companion-darwin.ts), so there the row speaks of that alone. */}
@@ -1048,64 +1090,63 @@ export default function SettingsView({
                     (focusAssist) => updateCompanion({ focusAssist }),
                     companionBusy
                   )}
-                  {toggleRow(
-                    t('settings.companion.terminalAlerts.label'),
-                    t('settings.companion.terminalAlerts.hint'),
-                    companion.terminalAlerts,
-                    (terminalAlerts) => updateCompanion({ terminalAlerts }),
-                    companionBusy
-                  )}
-                  {toggleRow(
-                    t('settings.companion.planAlerts.label'),
-                    t('settings.companion.planAlerts.hint'),
-                    companion.planAlerts,
-                    (planAlerts) => updateCompanion({ planAlerts }),
-                    companionBusy
-                  )}
+
+                  <div className="eyebrow settings-eyebrow">{t('settings.companion.group.reminders')}</div>
                   <div className="srow">
                     <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.leadTime.label')}<Hint text={t('settings.companion.leadTime.hint')} /></span>
+                      <span className="srow-label">
+                        {t('settings.companion.times.label')}
+                        <Hint
+                          text={
+                            t('settings.companion.leadTime.label') + ': ' + t('settings.companion.leadTime.hint') + ' ' +
+                            t('settings.companion.morning.label') + ': ' + t('settings.companion.morning.hint')
+                          }
+                        />
+                      </span>
                     </div>
-                    <Select
-                      className="settings-select"
-                      value={String(companion.leadMinutes)}
-                      disabled={companionBusy}
-                      onChange={(e) => updateCompanion({ leadMinutes: Number(e.target.value) })}
-                      aria-label={t('settings.companion.leadTime.label')}
-                    >
-                      {/* A value set by hand in config.json still shows. */}
-                      {[...new Set([0, 5, 10, 15, 30, 60, companion.leadMinutes])]
-                        .sort((a, b) => a - b)
-                        .map((n) => (
-                          <option key={n} value={n}>
-                            {n === 0
-                              ? t('settings.companion.leadTime.atTime')
-                              : n === 60
-                                ? t('settings.companion.leadTime.hour')
-                                : t('settings.companion.leadTime.minutes', { n })}
-                          </option>
-                        ))}
-                    </Select>
-                  </div>
-                  <div className="srow">
-                    <div className="srow-text">
-                      <span className="srow-label">{t('settings.companion.morning.label')}<Hint text={t('settings.companion.morning.hint')} /></span>
+                    <div className="settings-fields">
+                      <label className="settings-field">
+                        <span className="settings-field-cap">{t('settings.companion.leadTime.label')}</span>
+                        <Select
+                          className="settings-select-s"
+                          value={String(companion.leadMinutes)}
+                          disabled={companionBusy}
+                          onChange={(e) => updateCompanion({ leadMinutes: Number(e.target.value) })}
+                          aria-label={t('settings.companion.leadTime.label')}
+                        >
+                          {/* A value set by hand in config.json still shows. */}
+                          {[...new Set([0, 5, 10, 15, 30, 60, companion.leadMinutes])]
+                            .sort((a, b) => a - b)
+                            .map((n) => (
+                              <option key={n} value={n}>
+                                {n === 0
+                                  ? t('settings.companion.leadTime.atTime')
+                                  : n === 60
+                                    ? t('settings.companion.leadTime.hour')
+                                    : t('settings.companion.leadTime.minutes', { n })}
+                              </option>
+                            ))}
+                        </Select>
+                      </label>
+                      <label className="settings-field">
+                        <span className="settings-field-cap">{t('settings.companion.morning.label')}</span>
+                        <Select
+                          className="settings-select-s"
+                          value={String(companion.morningHour)}
+                          disabled={companionBusy}
+                          onChange={(e) => updateCompanion({ morningHour: Number(e.target.value) })}
+                          aria-label={t('settings.companion.morning.label')}
+                        >
+                          {[...new Set([7, 8, 9, 10, 11, companion.morningHour])]
+                            .sort((a, b) => a - b)
+                            .map((h) => (
+                              <option key={h} value={h}>
+                                {String(h).padStart(2, '0') + ':00'}
+                              </option>
+                            ))}
+                        </Select>
+                      </label>
                     </div>
-                    <Select
-                      className="settings-select"
-                      value={String(companion.morningHour)}
-                      disabled={companionBusy}
-                      onChange={(e) => updateCompanion({ morningHour: Number(e.target.value) })}
-                      aria-label={t('settings.companion.morning.label')}
-                    >
-                      {[...new Set([7, 8, 9, 10, 11, companion.morningHour])]
-                        .sort((a, b) => a - b)
-                        .map((h) => (
-                          <option key={h} value={h}>
-                            {String(h).padStart(2, '0') + ':00'}
-                          </option>
-                        ))}
-                    </Select>
                   </div>
                   {toggleRow(
                     t('settings.companion.askModel.label'),
@@ -1114,6 +1155,8 @@ export default function SettingsView({
                     (askModel) => updateCompanion({ askModel }),
                     companionBusy
                   )}
+
+                  <div className="eyebrow settings-eyebrow">{t('settings.companion.group.privacy')}</div>
                   {toggleRow(
                     t('settings.companion.capture.label'),
                     t('settings.companion.capture.hint'),
@@ -1210,26 +1253,6 @@ export default function SettingsView({
                         </button>
                       </div>
                     </>
-                  )}
-                  {/* Reminders need the app running (plan §10, decision 8): nudge towards
-                      starting with Windows while that is off, through the System pref. */}
-                  {system && !system.openAtLogin && (
-                    <div className="srow">
-                      <div className="srow-text">
-                        <span className="srow-label">
-                          {isWindows ? t('settings.companion.login.label') : t('settings.companion.login.labelOther')}
-                        </span>
-                        <span className="help">{t('settings.companion.login.hint')}</span>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn-ghost"
-                        disabled={systemBusy}
-                        onClick={() => updateSystem({ openAtLogin: true })}
-                      >
-                        {isWindows ? t('settings.companion.login.action') : t('settings.companion.login.actionOther')}
-                      </button>
-                    </div>
                   )}
                 </>
               ) : (

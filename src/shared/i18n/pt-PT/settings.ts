@@ -15,6 +15,7 @@ const settings: Record<keyof typeof en, string> = {
   'section.about': 'Acerca',
 
   'row.actionAria': '{action} {label}',
+  'shortcut.busy': '{wanted} está ocupado. Em uso: {shortcut}',
 
   'general.backgroundModel.label': 'Modelo para tarefas em segundo plano',
   'general.backgroundModel.hint': 'Executa o trabalho sem interface: standup, preenchimento de sprints e assistente do planeador.',
@@ -116,6 +117,16 @@ const settings: Record<keyof typeof en, string> = {
 
   // System
   'companion.intro': 'O Argos, o companheiro no teu ambiente de trabalho: que animal é, como o chamas e quando te avisa.',
+  'companion.group.presence': 'Presença',
+  'companion.group.alerts': 'Avisos',
+  'companion.group.reminders': 'Lembretes e datas',
+  'companion.group.privacy': 'Privacidade e notas',
+  'companion.look.label': 'Animal e tamanho',
+  'companion.look.animal': 'Animal',
+  'companion.alertWhen.label': 'Avisar quando',
+  'companion.alertWhen.chat': 'um chat acaba',
+  'companion.alertWhen.plan': 'o plano passa os 85%',
+  'companion.times.label': 'Horas',
   'companion.loading': 'A carregar as preferências do companheiro',
   'companion.character.label': 'Companheiro',
   'companion.character.hint': 'O animal com que o Argos aparece no teu ambiente de trabalho.',
@@ -124,7 +135,6 @@ const settings: Record<keyof typeof en, string> = {
   'companion.shortcut.label': 'Atalho para chamar o Argos',
   'companion.shortcut.hint': 'Funciona em qualquer parte do Windows, mesmo com o Argos escondido.',
   'companion.shortcut.hintMac': 'Funciona em qualquer parte do teu Mac, mesmo com o Argos escondido.',
-  'companion.shortcut.registered': 'Registado: {shortcut}',
   'companion.shortcut.failed': 'Não foi possível registar um atalho para o Argos. Outra aplicação pode estar a usá-lo.',
   'companion.shortcut.auto': 'Automático ({shortcut})',
   'companion.stay.label': 'Ficar no ecrã',
@@ -175,8 +185,6 @@ const settings: Record<keyof typeof en, string> = {
   'companion.obsidian.export.failed': '{n} exportadas, {failed} falharam. Confirma que a pasta está acessível.',
   'companion.capture.label': 'Invisível em partilhas de ecrã',
   'companion.capture.hint': 'No Teams e no Zoom, quem vê o teu ecrã não vê o Argos.',
-  'companion.login.label': 'O Argos não abre com o Windows',
-  'companion.login.labelOther': 'O Argos não abre ao iniciar sessão',
   'companion.login.hint': 'Os lembretes só disparam com o Argos aberto.',
   'companion.login.action': 'Abrir com o Windows',
   'companion.login.actionOther': 'Abrir ao iniciar sessão',
@@ -212,7 +220,6 @@ const settings: Record<keyof typeof en, string> = {
   'system.explorerMenu.hint': 'Adiciona uma entrada ao menu do botão direito das pastas.',
   'system.shortcut.label': 'Atalho do lançador rápido',
   'system.shortcut.hint': 'Abre o lançador a partir de qualquer lado, mesmo com o Argos oculto.',
-  'system.shortcut.registered': 'Registado: {shortcut}',
   'system.shortcut.failed': 'Não foi possível registar um atalho para o lançador rápido. Pode estar a ser utilizado por outra aplicação.',
   'system.shortcut.auto': 'Automático ({shortcut})',
 

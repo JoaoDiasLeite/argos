@@ -15,6 +15,7 @@ export default {
   'section.about': 'About',
 
   'row.actionAria': '{action} {label}',
+  'shortcut.busy': '{wanted} is taken. In use: {shortcut}',
 
   'general.backgroundModel.label': 'Model for background tasks',
   'general.backgroundModel.hint': 'Runs headless work: standup, sprint backfill and planner assist.',
@@ -116,6 +117,16 @@ export default {
 
   // System
   'companion.intro': 'Argos, the companion on your desktop: which animal it is, how you summon it and when it reminds you.',
+  'companion.group.presence': 'Presence',
+  'companion.group.alerts': 'Alerts',
+  'companion.group.reminders': 'Reminders and dates',
+  'companion.group.privacy': 'Privacy and notes',
+  'companion.look.label': 'Animal and size',
+  'companion.look.animal': 'Animal',
+  'companion.alertWhen.label': 'Alert when',
+  'companion.alertWhen.chat': 'a chat finishes',
+  'companion.alertWhen.plan': 'the plan passes 85%',
+  'companion.times.label': 'Times',
   'companion.loading': 'Loading the companion preferences',
   'companion.character.label': 'Companion',
   'companion.character.hint': 'The animal Argos appears as on your desktop.',
@@ -124,7 +135,6 @@ export default {
   'companion.shortcut.label': 'Shortcut to summon Argos',
   'companion.shortcut.hint': 'Works anywhere in Windows, even with Argos hidden.',
   'companion.shortcut.hintMac': 'Works anywhere on your Mac, even with Argos hidden.',
-  'companion.shortcut.registered': 'Registered: {shortcut}',
   'companion.shortcut.failed': 'Could not register a shortcut for Argos. Another app may be using it.',
   'companion.shortcut.auto': 'Auto ({shortcut})',
   'companion.stay.label': 'Stay on screen',
@@ -175,8 +185,6 @@ export default {
   'companion.obsidian.export.failed': '{n} exported, {failed} failed. Check the folder is reachable.',
   'companion.capture.label': 'Hidden from screen shares',
   'companion.capture.hint': 'In Teams and Zoom, whoever sees your screen does not see Argos.',
-  'companion.login.label': 'Argos does not start with Windows',
-  'companion.login.labelOther': 'Argos does not start at login',
   'companion.login.hint': 'Reminders only go off while Argos is open.',
   'companion.login.action': 'Start with Windows',
   'companion.login.actionOther': 'Start at login',
@@ -212,7 +220,6 @@ export default {
   'system.explorerMenu.hint': 'Adds an entry to the right-click menu for folders.',
   'system.shortcut.label': 'Quick launcher shortcut',
   'system.shortcut.hint': 'Opens the launcher from anywhere, even when Argos is hidden.',
-  'system.shortcut.registered': 'Registered: {shortcut}',
   'system.shortcut.failed': 'Could not register a quick-launcher shortcut. It may be in use by another app.',
   'system.shortcut.auto': 'Auto ({shortcut})',
 

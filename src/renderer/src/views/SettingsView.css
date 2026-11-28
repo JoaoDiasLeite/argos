@@ -223,6 +223,11 @@
   background: radial-gradient(circle, currentColor 1px, transparent 1.2px) 0 0 / 3px 3.4px;
 }
 .settings-chip:hover { color: var(--text-0); }
+/* Chips that only toggle: no grip, and they sit at the end of the row like any control. */
+.settings-chips.plain { margin: 0; flex-shrink: 0; justify-content: flex-end; }
+.settings-chips.plain .settings-chip { padding-left: 11px; }
+.settings-chips.plain .settings-chip::before { content: none; }
+.settings-chip:disabled { opacity: 0.6; cursor: default; }
 .settings-chip.on {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 16%, transparent);
@@ -235,6 +240,19 @@
 .settings-date { width: 160px; }
 
 .settings-error { color: var(--error); }
+.settings-warn { color: var(--warn); }
+.settings-warn::before { content: '⚠ '; }
+
+/* A line under a section's intro that points at something set elsewhere. */
+.settings-notice { margin: 0 0 6px; }
+.settings-link { color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.settings-link:disabled { opacity: 0.5; cursor: default; }
+
+/* Two or three controls of one kind at the end of a row, optionally captioned. */
+.settings-fields { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: flex-end; gap: 6px 10px; flex-shrink: 0; }
+.settings-field { display: flex; flex-direction: column; gap: 3px; }
+.settings-field-cap { font-size: 10.5px; color: var(--text-2); }
+.settings-select-s { width: 150px; }
 
 /* Companion dictation (CompanionVoiceSettings.tsx): the model's folder wraps rather than
    pushing the button off; the download bar sits under it. */
